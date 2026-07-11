@@ -130,6 +130,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
         glowGrad.setColorAt(0.0, ambColor);
         ambColor.setAlphaF(0.0);
         glowGrad.setColorAt(0.8, ambColor);
+        glowGrad.setColorAt(1.0, ambColor);
         p.fillRect(rect, glowGrad);
     }
 
@@ -208,7 +209,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
 
     double nLen = radius + m_settings.needleExtension;
     p.setPen(QPen(needleShadowColor, 1.6));
-    p.drawLine(1.5, 1.5, 1.5, -nLen + 1.5);
+    p.drawLine(QPointF(1.5, 1.5), QPointF(1.5, -nLen + 1.5));
 
     p.setPen(QPen(needlePenColor, 1.2));
     p.drawLine(0, 0, 0, -nLen);
