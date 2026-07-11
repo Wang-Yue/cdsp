@@ -145,34 +145,105 @@ int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
 CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     CaptureDeviceConfig cap;
     cap.backend = backend;
-    cap.coreAudio.channels = deviceChannels;
-    cap.coreAudio.device = deviceName();
-    cap.coreAudio.format = format;
-    cap.coreAudio.bypassDoP = bypassDoP;
-    cap.coreAudio.dopCutoffHz = dopCutoffHz;
-    cap.wavFile.filename = filename;
-    cap.rawFile.filename = filename;
-    cap.rawFile.channels = channels;
-    cap.rawFile.format = fileFormat;
-    cap.generator.channels = channels;
-    cap.generator.signal.type = generatorType;
-    cap.generator.signal.freq = generatorFreq;
-    cap.generator.signal.level = generatorLevel;
+    switch (backend) {
+    case AudioBackendType::CoreAudio:
+        cap.coreAudio.channels = deviceChannels;
+        cap.coreAudio.device = deviceName();
+        cap.coreAudio.format = format;
+        cap.coreAudio.bypassDoP = bypassDoP;
+        cap.coreAudio.dopCutoffHz = dopCutoffHz;
+        break;
+    case AudioBackendType::WASAPI:
+        cap.wasapi.channels = deviceChannels;
+        cap.wasapi.device = deviceName();
+        cap.wasapi.format = format;
+        cap.wasapi.bypassDoP = bypassDoP;
+        cap.wasapi.dopCutoffHz = dopCutoffHz;
+        break;
+    case AudioBackendType::ASIO:
+        cap.asio.channels = deviceChannels;
+        cap.asio.device = deviceName();
+        cap.asio.format = format;
+        cap.asio.bypassDoP = bypassDoP;
+        cap.asio.dopCutoffHz = dopCutoffHz;
+        break;
+    case AudioBackendType::ALSA:
+        cap.alsa.channels = deviceChannels;
+        cap.alsa.device = deviceName();
+        cap.alsa.format = format;
+        break;
+    case AudioBackendType::PulseAudio:
+        cap.pulseAudio.channels = deviceChannels;
+        cap.pulseAudio.device = deviceName();
+        cap.pulseAudio.format = format;
+        break;
+    case AudioBackendType::WavFile:
+        cap.wavFile.filename = filename;
+        cap.wavFile.extraSamples = extraSamples;
+        break;
+    case AudioBackendType::RawFile:
+        cap.rawFile.filename = filename;
+        cap.rawFile.channels = channels;
+        cap.rawFile.format = fileFormat;
+        cap.rawFile.skipBytes = skipBytes;
+        cap.rawFile.readBytes = readBytes;
+        cap.rawFile.extraSamples = extraSamples;
+        break;
+    case AudioBackendType::SignalGenerator:
+        cap.generator.channels = channels;
+        cap.generator.signal.type = generatorType;
+        cap.generator.signal.freq = generatorFreq;
+        cap.generator.signal.level = generatorLevel;
+        break;
+    }
     return cap;
 }
 
 PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     PlaybackDeviceConfig pb;
     pb.backend = backend;
-    pb.coreAudio.channels = deviceChannels;
-    pb.coreAudio.device = deviceName();
-    pb.coreAudio.format = format;
-    pb.coreAudio.outputDoP = outputDoP;
-    pb.coreAudio.dopEncoderFilter = dopEncoderFilter;
-    pb.rawFile.filename = filename;
-    pb.rawFile.channels = channels;
-    pb.rawFile.format = fileFormat;
-    pb.rawFile.wavHeader = isWav;
+    switch (backend) {
+    case AudioBackendType::CoreAudio:
+        pb.coreAudio.channels = deviceChannels;
+        pb.coreAudio.device = deviceName();
+        pb.coreAudio.format = format;
+        pb.coreAudio.outputDoP = outputDoP;
+        pb.coreAudio.dopEncoderFilter = dopEncoderFilter;
+        break;
+    case AudioBackendType::WASAPI:
+        pb.wasapi.channels = deviceChannels;
+        pb.wasapi.device = deviceName();
+        pb.wasapi.format = format;
+        pb.wasapi.outputDoP = outputDoP;
+        pb.wasapi.dopEncoderFilter = dopEncoderFilter;
+        break;
+    case AudioBackendType::ASIO:
+        pb.asio.channels = deviceChannels;
+        pb.asio.device = deviceName();
+        pb.asio.format = format;
+        pb.asio.outputDoP = outputDoP;
+        pb.asio.dopEncoderFilter = dopEncoderFilter;
+        break;
+    case AudioBackendType::ALSA:
+        pb.alsa.channels = deviceChannels;
+        pb.alsa.device = deviceName();
+        pb.alsa.format = format;
+        break;
+    case AudioBackendType::PulseAudio:
+        pb.pulseAudio.channels = deviceChannels;
+        pb.pulseAudio.device = deviceName();
+        pb.pulseAudio.format = format;
+        break;
+    case AudioBackendType::RawFile:
+    case AudioBackendType::WavFile:
+        pb.rawFile.filename = filename;
+        pb.rawFile.channels = channels;
+        pb.rawFile.format = fileFormat;
+        pb.rawFile.wavHeader = isWav;
+        break;
+    case AudioBackendType::SignalGenerator:
+        break;
+    }
     return pb;
 }
 

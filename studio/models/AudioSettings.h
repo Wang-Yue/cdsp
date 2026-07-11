@@ -9,6 +9,7 @@
 
 class AudioSettings : public QObject {
     Q_OBJECT
+    Q_DISABLE_COPY(AudioSettings)
 
 public:
     explicit AudioSettings(QObject* parent = nullptr);

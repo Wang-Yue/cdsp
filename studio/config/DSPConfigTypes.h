@@ -157,8 +157,102 @@ struct CoreAudioPlaybackConfig {
     static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
 };
 
-using HardwareCaptureConfig = CoreAudioCaptureConfig;
-using HardwarePlaybackConfig = CoreAudioPlaybackConfig;
+struct WASAPICaptureConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> exclusive;
+    std::optional<bool> loopback;
+    std::optional<bool> polling;
+    std::optional<bool> bypassDoP;
+    std::optional<double> dopCutoffHz;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static WASAPICaptureConfig fromJson(const QJsonObject& json);
+};
+
+struct WASAPIPlaybackConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> exclusive;
+    std::optional<bool> polling;
+    std::optional<bool> outputDoP;
+    std::optional<SDMFilter> dopEncoderFilter;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static WASAPIPlaybackConfig fromJson(const QJsonObject& json);
+};
+
+struct ASIOCaptureConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> bypassDoP;
+    std::optional<double> dopCutoffHz;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static ASIOCaptureConfig fromJson(const QJsonObject& json);
+};
+
+struct ASIOPlaybackConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> outputDoP;
+    std::optional<SDMFilter> dopEncoderFilter;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static ASIOPlaybackConfig fromJson(const QJsonObject& json);
+};
+
+struct ALSACaptureConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> stopOnInactive;
+    std::optional<std::string> linkVolumeControl;
+    std::optional<std::string> linkMuteControl;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static ALSACaptureConfig fromJson(const QJsonObject& json);
+};
+
+struct ALSAPlaybackConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> stopOnInactive;
+    std::optional<std::string> linkVolumeControl;
+    std::optional<std::string> linkMuteControl;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static ALSAPlaybackConfig fromJson(const QJsonObject& json);
+};
+
+struct PulseAudioCaptureConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> stopOnInactive;
+    std::optional<std::string> linkVolumeControl;
+    std::optional<std::string> linkMuteControl;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static PulseAudioCaptureConfig fromJson(const QJsonObject& json);
+};
+
+struct PulseAudioPlaybackConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<bool> stopOnInactive;
+    std::optional<std::string> linkVolumeControl;
+    std::optional<std::string> linkMuteControl;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static PulseAudioPlaybackConfig fromJson(const QJsonObject& json);
+};
 
 struct WavFileCaptureConfig {
     std::string filename;
@@ -201,6 +295,10 @@ struct GeneratorCaptureConfig {
 struct CaptureDeviceConfig {
     AudioBackendType backend = AudioBackendType::CoreAudio;
     CoreAudioCaptureConfig coreAudio;
+    WASAPICaptureConfig wasapi;
+    ASIOCaptureConfig asio;
+    ALSACaptureConfig alsa;
+    PulseAudioCaptureConfig pulseAudio;
     WavFileCaptureConfig wavFile;
     RawFileCaptureConfig rawFile;
     GeneratorCaptureConfig generator;
@@ -212,6 +310,10 @@ struct CaptureDeviceConfig {
 struct PlaybackDeviceConfig {
     AudioBackendType backend = AudioBackendType::CoreAudio;
     CoreAudioPlaybackConfig coreAudio;
+    WASAPIPlaybackConfig wasapi;
+    ASIOPlaybackConfig asio;
+    ALSAPlaybackConfig alsa;
+    PulseAudioPlaybackConfig pulseAudio;
     RawFilePlaybackConfig rawFile;
 
     QJsonObject toJson() const;

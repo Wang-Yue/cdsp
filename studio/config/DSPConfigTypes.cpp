@@ -702,17 +702,381 @@ QJsonObject GeneratorCaptureConfig::toJson() const {
     return obj;
 }
 
+WASAPICaptureConfig WASAPICaptureConfig::fromJson(const QJsonObject& json) {
+    WASAPICaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("exclusive"))
+        cfg.exclusive = json["exclusive"].toBool();
+    if (json.contains("loopback"))
+        cfg.loopback = json["loopback"].toBool();
+    if (json.contains("polling"))
+        cfg.polling = json["polling"].toBool();
+    if (json.contains("bypass_dop"))
+        cfg.bypassDoP = json["bypass_dop"].toBool();
+    if (json.contains("dop_cutoff_hz"))
+        cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject WASAPICaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "WASAPI";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (exclusive.has_value())
+        obj["exclusive"] = exclusive.value();
+    if (loopback.has_value())
+        obj["loopback"] = loopback.value();
+    if (polling.has_value())
+        obj["polling"] = polling.value();
+    if (bypassDoP.has_value())
+        obj["bypass_dop"] = bypassDoP.value();
+    if (dopCutoffHz.has_value())
+        obj["dop_cutoff_hz"] = dopCutoffHz.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+WASAPIPlaybackConfig WASAPIPlaybackConfig::fromJson(const QJsonObject& json) {
+    WASAPIPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("exclusive"))
+        cfg.exclusive = json["exclusive"].toBool();
+    if (json.contains("polling"))
+        cfg.polling = json["polling"].toBool();
+    if (json.contains("output_dop"))
+        cfg.outputDoP = json["output_dop"].toBool();
+    if (json.contains("dop_encoder_filter"))
+        cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject WASAPIPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "WASAPI";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (exclusive.has_value())
+        obj["exclusive"] = exclusive.value();
+    if (polling.has_value())
+        obj["polling"] = polling.value();
+    if (outputDoP.has_value())
+        obj["output_dop"] = outputDoP.value();
+    if (dopEncoderFilter.has_value())
+        obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+ASIOCaptureConfig ASIOCaptureConfig::fromJson(const QJsonObject& json) {
+    ASIOCaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("bypass_dop"))
+        cfg.bypassDoP = json["bypass_dop"].toBool();
+    if (json.contains("dop_cutoff_hz"))
+        cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject ASIOCaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "ASIO";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (bypassDoP.has_value())
+        obj["bypass_dop"] = bypassDoP.value();
+    if (dopCutoffHz.has_value())
+        obj["dop_cutoff_hz"] = dopCutoffHz.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+ASIOPlaybackConfig ASIOPlaybackConfig::fromJson(const QJsonObject& json) {
+    ASIOPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("output_dop"))
+        cfg.outputDoP = json["output_dop"].toBool();
+    if (json.contains("dop_encoder_filter"))
+        cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject ASIOPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "ASIO";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (outputDoP.has_value())
+        obj["output_dop"] = outputDoP.value();
+    if (dopEncoderFilter.has_value())
+        obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+ALSACaptureConfig ALSACaptureConfig::fromJson(const QJsonObject& json) {
+    ALSACaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("stop_on_inactive"))
+        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
+    if (json.contains("link_volume_control"))
+        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
+    if (json.contains("link_mute_control"))
+        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject ALSACaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "ALSA";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (stopOnInactive.has_value())
+        obj["stop_on_inactive"] = stopOnInactive.value();
+    if (linkVolumeControl.has_value())
+        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
+    if (linkMuteControl.has_value())
+        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
+    ALSAPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("stop_on_inactive"))
+        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
+    if (json.contains("link_volume_control"))
+        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
+    if (json.contains("link_mute_control"))
+        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject ALSAPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "ALSA";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (stopOnInactive.has_value())
+        obj["stop_on_inactive"] = stopOnInactive.value();
+    if (linkVolumeControl.has_value())
+        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
+    if (linkMuteControl.has_value())
+        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+PulseAudioCaptureConfig PulseAudioCaptureConfig::fromJson(const QJsonObject& json) {
+    PulseAudioCaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("stop_on_inactive"))
+        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
+    if (json.contains("link_volume_control"))
+        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
+    if (json.contains("link_mute_control"))
+        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject PulseAudioCaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "PulseAudio";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (stopOnInactive.has_value())
+        obj["stop_on_inactive"] = stopOnInactive.value();
+    if (linkVolumeControl.has_value())
+        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
+    if (linkMuteControl.has_value())
+        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+PulseAudioPlaybackConfig PulseAudioPlaybackConfig::fromJson(const QJsonObject& json) {
+    PulseAudioPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("stop_on_inactive"))
+        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
+    if (json.contains("link_volume_control"))
+        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
+    if (json.contains("link_mute_control"))
+        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject PulseAudioPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "PulseAudio";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (stopOnInactive.has_value())
+        obj["stop_on_inactive"] = stopOnInactive.value();
+    if (linkVolumeControl.has_value())
+        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
+    if (linkMuteControl.has_value())
+        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
 CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
     CaptureDeviceConfig cfg;
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
     case AudioBackendType::CoreAudio:
-    case AudioBackendType::WASAPI:
-    case AudioBackendType::ASIO:
-    case AudioBackendType::ALSA:
-    case AudioBackendType::PulseAudio:
         cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::WASAPI:
+        cfg.wasapi = WASAPICaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::ASIO:
+        cfg.asio = ASIOCaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::ALSA:
+        cfg.alsa = ALSACaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::PulseAudio:
+        cfg.pulseAudio = PulseAudioCaptureConfig::fromJson(json);
         break;
     case AudioBackendType::WavFile:
         cfg.wavFile = WavFileCaptureConfig::fromJson(json);
@@ -730,11 +1094,15 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
 QJsonObject CaptureDeviceConfig::toJson() const {
     switch (backend) {
     case AudioBackendType::CoreAudio:
-    case AudioBackendType::WASAPI:
-    case AudioBackendType::ASIO:
-    case AudioBackendType::ALSA:
-    case AudioBackendType::PulseAudio:
         return coreAudio.toJson();
+    case AudioBackendType::WASAPI:
+        return wasapi.toJson();
+    case AudioBackendType::ASIO:
+        return asio.toJson();
+    case AudioBackendType::ALSA:
+        return alsa.toJson();
+    case AudioBackendType::PulseAudio:
+        return pulseAudio.toJson();
     case AudioBackendType::WavFile:
         return wavFile.toJson();
     case AudioBackendType::RawFile:
@@ -751,11 +1119,19 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
     case AudioBackendType::CoreAudio:
-    case AudioBackendType::WASAPI:
-    case AudioBackendType::ASIO:
-    case AudioBackendType::ALSA:
-    case AudioBackendType::PulseAudio:
         cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json);
+        break;
+    case AudioBackendType::WASAPI:
+        cfg.wasapi = WASAPIPlaybackConfig::fromJson(json);
+        break;
+    case AudioBackendType::ASIO:
+        cfg.asio = ASIOPlaybackConfig::fromJson(json);
+        break;
+    case AudioBackendType::ALSA:
+        cfg.alsa = ALSAPlaybackConfig::fromJson(json);
+        break;
+    case AudioBackendType::PulseAudio:
+        cfg.pulseAudio = PulseAudioPlaybackConfig::fromJson(json);
         break;
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
@@ -771,11 +1147,15 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
 QJsonObject PlaybackDeviceConfig::toJson() const {
     switch (backend) {
     case AudioBackendType::CoreAudio:
-    case AudioBackendType::WASAPI:
-    case AudioBackendType::ASIO:
-    case AudioBackendType::ALSA:
-    case AudioBackendType::PulseAudio:
         return coreAudio.toJson();
+    case AudioBackendType::WASAPI:
+        return wasapi.toJson();
+    case AudioBackendType::ASIO:
+        return asio.toJson();
+    case AudioBackendType::ALSA:
+        return alsa.toJson();
+    case AudioBackendType::PulseAudio:
+        return pulseAudio.toJson();
     case AudioBackendType::RawFile:
         return rawFile.toJson();
     case AudioBackendType::WavFile:
@@ -1898,7 +2278,7 @@ void DSPConfiguration::validate() const {
     }
 
     int currentChannels = 2;
-    if (devices.capture.backend == AudioBackendType::CoreAudio) {
+    if (isHardwareBackend(devices.capture.backend)) {
         currentChannels = devices.capture.coreAudio.channels;
     } else if (devices.capture.backend == AudioBackendType::RawFile) {
         currentChannels = devices.capture.rawFile.channels;
@@ -1938,7 +2318,7 @@ void DSPConfiguration::validate() const {
     }
 
     int playbackChannels = 2;
-    if (devices.playback.backend == AudioBackendType::CoreAudio) {
+    if (isHardwareBackend(devices.playback.backend)) {
         playbackChannels = devices.playback.coreAudio.channels;
     } else if (devices.playback.backend == AudioBackendType::RawFile) {
         playbackChannels = devices.playback.rawFile.channels;
