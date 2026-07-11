@@ -210,6 +210,26 @@ typedef struct {
   int combined_channels;
 } asio_shared_state_t;
 
+static const GUID g_IID_IASIO_VAL = {
+    0x9333b620,
+    0x1f0b,
+    0x11d2,
+    {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
+
+static HRESULT create_asio_com_instance(const CLSID* clsid, IASIO** out_iasio) {
+  HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, clsid,
+                                (void**)out_iasio);
+  if (FAILED(hr)) {
+    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, &g_IID_IASIO_VAL,
+                          (void**)out_iasio);
+  }
+  if (FAILED(hr)) {
+    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,
+                          (void**)out_iasio);
+  }
+  return hr;
+}
+
 static asio_shared_state_t g_asio_shared = {.lock = SRWLOCK_INIT,
                                             .cond = CONDITION_VARIABLE_INIT,
                                             .initialized = false,
@@ -267,27 +287,6 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "ASIO driver CLSID not found");
       return false;
-    }
-
-    static const GUID g_IID_IASIO_VAL = {
-        0x9333b620,
-        0x1f0b,
-        0x11d2,
-        {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
-
-    static HRESULT create_asio_com_instance(const CLSID* clsid,
-                                            IASIO** out_iasio) {
-      HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, clsid,
-                                    (void**)out_iasio);
-      if (FAILED(hr)) {
-        hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER,
-                              &g_IID_IASIO_VAL, (void**)out_iasio);
-      }
-      if (FAILED(hr)) {
-        hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,
-                              (void**)out_iasio);
-      }
-      return hr;
     }
 
     HRESULT hr = create_asio_com_instance(&clsid, &g_asio_shared.iasio);
