@@ -358,8 +358,10 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
       }
       cap->samplerates_count = 1;
     } else {
-      const int FALLBACK_RATES[] = {44100, 48000, 96000, 192000};
-      for (size_t dr = 0; dr < 4; dr++) {
+      const int FALLBACK_RATES[] = {44100,  48000,  88200,  96000,  176400,
+                                    192000, 352800, 384000, 705600, 768000};
+      for (size_t dr = 0;
+           dr < sizeof(FALLBACK_RATES) / sizeof(FALLBACK_RATES[0]); dr++) {
         samplerate_capability_t* rate_cap = &cap->samplerates[dr];
         rate_cap->samplerate = FALLBACK_RATES[dr];
         rate_cap->formats = (char**)calloc(1, sizeof(char*));
@@ -368,7 +370,8 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
           rate_cap->formats_count = 1;
         }
       }
-      cap->samplerates_count = 4;
+      cap->samplerates_count =
+          sizeof(FALLBACK_RATES) / sizeof(FALLBACK_RATES[0]);
     }
   }
 
