@@ -314,45 +314,39 @@ QString DevicePickerView::formatSampleRate(int rate) {
     return QString("%1 Hz").arg(rate);
 }
 
-void DevicePickerView::populateDeviceList(
-    QListWidget* listWidget,
+void DevicePickerView::populateDeviceCombo(
+    QComboBox* combo,
     QWidget* warningWidget,
     const std::vector<AudioDevice>& devices,
     const std::optional<std::string>& selectedDeviceName
 ) {
-    listWidget->clear();
+    combo->blockSignals(true);
+    combo->clear();
+
     if (devices.empty()) {
         warningWidget->show();
-        listWidget->hide();
+        combo->hide();
+        combo->blockSignals(false);
         return;
     }
 
     warningWidget->hide();
-    listWidget->show();
+    combo->show();
 
-    bool systemDefaultSelected = !selectedDeviceName.has_value() || selectedDeviceName.value().empty();
-    auto sysDefItem = new QListWidgetItem(listWidget);
-    auto sysDefWidget = new DeviceRowWidget("System Default", systemDefaultSelected, listWidget);
-    sysDefItem->setSizeHint(sysDefWidget->sizeHint());
-    listWidget->setItemWidget(sysDefItem, sysDefWidget);
+    combo->addItem("System Default", QString(""));
 
-    int selectedRow = systemDefaultSelected ? 0 : -1;
-
+    int selectedIdx = 0;
     for (size_t i = 0; i < devices.size(); ++i) {
         const auto& dev = devices[i];
         QString devName = QString::fromStdString(dev.name);
-        bool isSelected = selectedDeviceName.has_value() && selectedDeviceName.value() == dev.name;
-        if (isSelected) selectedRow = static_cast<int>(i + 1);
-
-        auto item = new QListWidgetItem(listWidget);
-        auto itemWidget = new DeviceRowWidget(devName, isSelected, listWidget);
-        item->setSizeHint(itemWidget->sizeHint());
-        listWidget->setItemWidget(item, itemWidget);
+        combo->addItem(devName, devName);
+        if (selectedDeviceName.has_value() && selectedDeviceName.value() == dev.name) {
+            selectedIdx = static_cast<int>(i + 1);
+        }
     }
 
-    if (selectedRow >= 0 && selectedRow < listWidget->count()) {
-        listWidget->setCurrentRow(selectedRow);
-    }
+    combo->setCurrentIndex(selectedIdx);
+    combo->blockSignals(false);
 }
 
 QWidget* DevicePickerView::createCapCoreAudioView() {
@@ -371,14 +365,11 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
 
-    m_capDeviceList = new QListWidget(w);
-    m_capDeviceList->setMaximumHeight(140);
-    connect(m_capDeviceList, &QListWidget::currentRowChanged, [this](int row) {
-        if (m_isRefreshing || row < 0) return;
-        std::string newDev = "";
-        if (row > 0 && row - 1 < static_cast<int>(m_devices->captureDevices.size())) {
-            newDev = m_devices->captureDevices[row - 1].name;
-        }
+    m_capDeviceCombo = new QComboBox(w);
+    m_capDeviceCombo->setMinimumWidth(260);
+    connect(m_capDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (m_isRefreshing || idx < 0) return;
+        std::string newDev = m_capDeviceCombo->currentData().toString().toStdString();
         m_devices->captureConfig.setDeviceName(newDev);
         m_devices->refreshDeviceCapabilities();
         m_devices->validateSampleRates();
@@ -388,7 +379,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 
     auto devBox = new QVBoxLayout();
     devBox->addWidget(m_capWarningWidget);
-    devBox->addWidget(m_capDeviceList);
+    devBox->addWidget(m_capDeviceCombo);
     form->addRow("Device Selection", devBox);
 
     auto chBox = new QHBoxLayout();
@@ -741,14 +732,11 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
 
-    m_pbDeviceList = new QListWidget(w);
-    m_pbDeviceList->setMaximumHeight(140);
-    connect(m_pbDeviceList, &QListWidget::currentRowChanged, [this](int row) {
-        if (m_isRefreshing || row < 0) return;
-        std::string newDev = "";
-        if (row > 0 && row - 1 < static_cast<int>(m_devices->playbackDevices.size())) {
-            newDev = m_devices->playbackDevices[row - 1].name;
-        }
+    m_pbDeviceCombo = new QComboBox(w);
+    m_pbDeviceCombo->setMinimumWidth(260);
+    connect(m_pbDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (m_isRefreshing || idx < 0) return;
+        std::string newDev = m_pbDeviceCombo->currentData().toString().toStdString();
         m_devices->playbackConfig.setDeviceName(newDev);
         m_devices->refreshDeviceCapabilities();
         m_devices->validateSampleRates();
@@ -758,7 +746,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     auto devBox = new QVBoxLayout();
     devBox->addWidget(m_pbWarningWidget);
-    devBox->addWidget(m_pbDeviceList);
+    devBox->addWidget(m_pbDeviceCombo);
     form->addRow("Device Selection", devBox);
 
     auto chBox = new QHBoxLayout();
@@ -949,8 +937,8 @@ void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
     // 1. Refresh Capture Devices List & CoreAudio controls
-    populateDeviceList(
-        m_capDeviceList,
+    populateDeviceCombo(
+        m_capDeviceCombo,
         m_capWarningWidget,
         m_devices->captureDevices,
         m_devices->captureConfig.deviceName()
@@ -1054,8 +1042,8 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    populateDeviceList(
-        m_pbDeviceList,
+    populateDeviceCombo(
+        m_pbDeviceCombo,
         m_pbWarningWidget,
         m_devices->playbackDevices,
         m_devices->playbackConfig.deviceName()
@@ -1178,11 +1166,9 @@ void DevicePickerView::applySettings() {
     }
 
     if (capCfg.backend == AudioBackendType::CoreAudio) {
-        int row = m_capDeviceList->currentRow();
-        if (row <= 0) {
-            capCfg.setDeviceName("");
-        } else if (row - 1 < static_cast<int>(m_devices->captureDevices.size())) {
-            capCfg.setDeviceName(m_devices->captureDevices[row - 1].name);
+        if (m_capDeviceCombo->currentIndex() >= 0) {
+            std::string selectedDev = m_capDeviceCombo->currentData().toString().toStdString();
+            capCfg.setDeviceName(selectedDev);
         }
 
         auto capSuppCh = capCfg.supportedChannels();
@@ -1237,11 +1223,9 @@ void DevicePickerView::applySettings() {
     }
 
     if (pbCfg.backend == AudioBackendType::CoreAudio) {
-        int row = m_pbDeviceList->currentRow();
-        if (row <= 0) {
-            pbCfg.setDeviceName("");
-        } else if (row - 1 < static_cast<int>(m_devices->playbackDevices.size())) {
-            pbCfg.setDeviceName(m_devices->playbackDevices[row - 1].name);
+        if (m_pbDeviceCombo->currentIndex() >= 0) {
+            std::string selectedDev = m_pbDeviceCombo->currentData().toString().toStdString();
+            pbCfg.setDeviceName(selectedDev);
         }
 
         auto pbSuppCh = pbCfg.supportedChannels();

@@ -42,7 +42,7 @@ private:
 
     // Capture CoreAudio
     QWidget* m_capWarningWidget;
-    QListWidget* m_capDeviceList;
+    QComboBox* m_capDeviceCombo;
     QComboBox* m_capDevChannelsCombo;
     QSpinBox* m_capDevChannelsSpin;
     QSpinBox* m_capStreamChannelsSpin;
@@ -83,7 +83,7 @@ private:
 
     // Playback CoreAudio
     QWidget* m_pbWarningWidget;
-    QListWidget* m_pbDeviceList;
+    QComboBox* m_pbDeviceCombo;
     QComboBox* m_pbDevChannelsCombo;
     QSpinBox* m_pbDevChannelsSpin;
     QSpinBox* m_pbStreamChannelsSpin;
@@ -127,8 +127,8 @@ private:
     static QString formatSampleRate(int rate);
     void updateDoPCapability();
     void updateLatencyText();
-    void populateDeviceList(
-        QListWidget* listWidget,
+    void populateDeviceCombo(
+        QComboBox* combo,
         QWidget* warningWidget,
         const std::vector<AudioDevice>& devices,
         const std::optional<std::string>& selectedDeviceName
