@@ -49,7 +49,7 @@ vdsp_complex_dft_t* vdsp_complex_dft_create(size_t n) {
     return NULL;
   }
   vdsp_complex_dft_t* dft =
-      (vdsp_complex_dft_t*)malloc(sizeof(vdsp_complex_dft_t));
+      (vdsp_complex_dft_t*)calloc(1, sizeof(vdsp_complex_dft_t));
   if (!dft) {
     vDSP_DFT_DestroySetupD(fwd);
     vDSP_DFT_DestroySetupD(inv);

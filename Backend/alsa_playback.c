@@ -386,7 +386,7 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
   }
   playback->interleaved_buf_size =
       playback->chunk_size * playback->channels * sample_size;
-  playback->interleaved_buf = malloc(playback->interleaved_buf_size);
+  playback->interleaved_buf = calloc(playback->interleaved_buf_size, 1);
   if (!playback->interleaved_buf) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,

@@ -548,7 +548,7 @@ bool alsa_capture_open(alsa_capture_t* capture, backend_error_t* err) {
   }
   capture->interleaved_buf_size =
       capture->chunk_size * capture->channels * sample_size;
-  capture->interleaved_buf = malloc(capture->interleaved_buf_size);
+  capture->interleaved_buf = calloc(capture->interleaved_buf_size, 1);
   if (!capture->interleaved_buf) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,

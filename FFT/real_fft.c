@@ -72,7 +72,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be even, got %zu", length);
     return NULL;
   }
-  real_fft_t* fft = (real_fft_t*)malloc(sizeof(real_fft_t));
+  real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));
   if (!fft) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate RealFFT");
     return NULL;
@@ -145,7 +145,7 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
 
 real_fftf_t* real_fftf_create(size_t length) {
   if (length == 0 || length % 2 != 0) return NULL;
-  real_fftf_t* fft = (real_fftf_t*)malloc(sizeof(real_fftf_t));
+  real_fftf_t* fft = (real_fftf_t*)calloc(1, sizeof(real_fftf_t));
   if (!fft) return NULL;
   fft->length = length;
   fft->spectrum_length = length / 2 + 1;

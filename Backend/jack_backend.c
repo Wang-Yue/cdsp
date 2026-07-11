@@ -191,7 +191,7 @@ capture_backend_t* jack_capture_create(const capture_device_config_t* config,
   }
 
   capture_backend_t* backend =
-      (capture_backend_t*)malloc(sizeof(capture_backend_t));
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   backend->ctx = capture;
   backend->vtable = &JACK_CAPTURE_VTABLE;
   return backend;
@@ -272,7 +272,7 @@ bool jack_capture_read(jack_capture_t* capture, size_t frames,
     if (!capture->active) return false;
   }
 
-  float* temp = (float*)malloc(frames * sizeof(float));
+  float* temp = (float*)calloc(frames, sizeof(float));
   for (int c = 0; c < capture->channels; c++) {
     size_t consumed =
         spsc_audio_ring_buffer_consume(capture->buffers[c], temp, frames);
@@ -549,7 +549,7 @@ playback_backend_t* jack_playback_create(const playback_device_config_t* config,
   }
 
   playback_backend_t* backend =
-      (playback_backend_t*)malloc(sizeof(playback_backend_t));
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
   backend->ctx = playback;
   backend->vtable = &JACK_PLAYBACK_VTABLE;
   return backend;
@@ -632,7 +632,7 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
     if (!playback->active) return false;
   }
 
-  float* temp = (float*)malloc(frames * sizeof(float));
+  float* temp = (float*)calloc(frames, sizeof(float));
   for (int c = 0; c < playback->channels; c++) {
     const double* src = audio_chunk_get_channel(chunk, c);
     for (size_t f = 0; f < frames; f++) {

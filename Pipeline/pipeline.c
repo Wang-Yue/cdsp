@@ -338,7 +338,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
               pipeline_free(pipeline);
               return NULL;
             }
-            all_chs = (int*)malloc(current_channels * sizeof(int));
+            all_chs = (int*)calloc(current_channels, sizeof(int));
             if (!all_chs) {
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Memory allocation failure");

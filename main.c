@@ -143,7 +143,7 @@ static char* read_file_to_string(const char* path) {
     fclose(fp);
     return NULL;
   }
-  char* buf = (char*)malloc((size_t)len + 1);
+  char* buf = (char*)calloc((size_t)len + 1, sizeof(char));
   if (!buf) {
     fclose(fp);
     return NULL;

@@ -665,8 +665,8 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   for (int s = 0; s < stage_count; s++) {
     int r = fs[s];
     int len = m * r;
-    fft->twiddle_re[s] = (double*)malloc(len * sizeof(double));
-    fft->twiddle_im[s] = (double*)malloc(len * sizeof(double));
+    fft->twiddle_re[s] = (double*)calloc(len, sizeof(double));
+    fft->twiddle_im[s] = (double*)calloc(len, sizeof(double));
     if (!fft->twiddle_re[s] || !fft->twiddle_im[s]) {
       mixed_radix_fft_free(fft);
       return NULL;

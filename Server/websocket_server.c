@@ -9,7 +9,7 @@
 #include <stdarg.h>
 
 void dyn_string_init(dyn_string_t* ds, size_t initial_cap) {
-  ds->data = (char*)malloc(initial_cap);
+  ds->data = (char*)calloc(initial_cap, sizeof(char));
   if (ds->data) {
     ds->data[0] = '\0';
     ds->capacity = initial_cap;
@@ -439,7 +439,7 @@ static void level_history_append(level_history_t* history, const double* levels,
   if (sample->levels) {
     free(sample->levels);
   }
-  sample->levels = (double*)malloc(channels * sizeof(double));
+  sample->levels = (double*)calloc(channels, sizeof(double));
   if (sample->levels) {
     memcpy(sample->levels, levels, channels * sizeof(double));
     sample->timestamp_ms = now_ms;
@@ -698,7 +698,7 @@ static char* server_read_file_to_string(const char* path) {
     fclose(fp);
     return NULL;
   }
-  char* buf = (char*)malloc((size_t)len + 1);
+  char* buf = (char*)calloc((size_t)len + 1, sizeof(char));
   if (!buf) {
     fclose(fp);
     return NULL;
@@ -2868,8 +2868,8 @@ static void* server_thread_func(void* arg) {
             double release = smoothing_alpha(dt, session->vu_release);
 
             if (session->vu_pb_channels != pb_channels) {
-              double* new_rms = (double*)malloc(pb_channels * sizeof(double));
-              double* new_peak = (double*)malloc(pb_channels * sizeof(double));
+              double* new_rms = (double*)calloc(pb_channels, sizeof(double));
+              double* new_peak = (double*)calloc(pb_channels, sizeof(double));
               if (new_rms && new_peak) {
                 size_t copy_count = session->vu_pb_channels < pb_channels
                                         ? session->vu_pb_channels
@@ -2921,9 +2921,9 @@ static void* server_thread_func(void* arg) {
             if (cap_channels > 0) {
               if (session->vu_cap_channels != cap_channels) {
                 double* new_rms =
-                    (double*)malloc(cap_channels * sizeof(double));
+                    (double*)calloc(cap_channels, sizeof(double));
                 double* new_peak =
-                    (double*)malloc(cap_channels * sizeof(double));
+                    (double*)calloc(cap_channels, sizeof(double));
                 if (new_rms && new_peak) {
                   size_t copy_count = session->vu_cap_channels < cap_channels
                                           ? session->vu_cap_channels

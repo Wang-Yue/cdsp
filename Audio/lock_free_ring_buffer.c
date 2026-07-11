@@ -81,7 +81,7 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   size_t cap = spsc_audio_ring_buffer_round_up_to_power_of_two(
       minimum_capacity < 2 ? 2 : minimum_capacity);
   spsc_audio_ring_buffer_t* ring =
-      (spsc_audio_ring_buffer_t*)malloc(sizeof(spsc_audio_ring_buffer_t));
+      (spsc_audio_ring_buffer_t*)calloc(1, sizeof(spsc_audio_ring_buffer_t));
   if (!ring) return NULL;
   ring->capacity = cap;
   ring->mask = cap - 1;
@@ -384,7 +384,7 @@ bool spsc_audio_ring_buffer_read_latest(const spsc_audio_ring_buffer_t* ring,
 spsc_queue_t* spsc_queue_create(size_t minimum_capacity) {
   size_t cap = spsc_audio_ring_buffer_round_up_to_power_of_two(
       minimum_capacity < 2 ? 2 : minimum_capacity);
-  spsc_queue_t* queue = (spsc_queue_t*)malloc(sizeof(spsc_queue_t));
+  spsc_queue_t* queue = (spsc_queue_t*)calloc(1, sizeof(spsc_queue_t));
   if (!queue) return NULL;
   queue->capacity = cap;
   queue->mask = cap - 1;
@@ -436,7 +436,7 @@ void spsc_queue_drain(spsc_queue_t* queue) {
 // MARK: - AtomicDouble Implementation
 
 atomic_double_t* atomic_double_create(double value) {
-  atomic_double_t* a = (atomic_double_t*)malloc(sizeof(atomic_double_t));
+  atomic_double_t* a = (atomic_double_t*)calloc(1, sizeof(atomic_double_t));
   if (!a) return NULL;
   atomic_double_init(a, value);
   return a;

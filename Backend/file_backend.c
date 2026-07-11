@@ -633,7 +633,7 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
   }
   capture->raw_buf_capacity =
       capture->chunk_size * capture->channels * sample_size;
-  capture->raw_buf = (uint8_t*)malloc(capture->raw_buf_capacity);
+  capture->raw_buf = (uint8_t*)calloc(capture->raw_buf_capacity, sizeof(uint8_t));
   if (!capture->raw_buf) {
     if (!capture->is_stdin) {
       fclose(capture->f);
@@ -921,7 +921,7 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
   }
   playback->raw_buf_capacity =
       playback->chunk_size * playback->channels * sample_size;
-  playback->raw_buf = (uint8_t*)malloc(playback->raw_buf_capacity);
+  playback->raw_buf = (uint8_t*)calloc(playback->raw_buf_capacity, sizeof(uint8_t));
   if (!playback->raw_buf) {
     if (!playback->is_stdout) {
       fclose(playback->f);

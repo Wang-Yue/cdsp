@@ -793,7 +793,7 @@ config_change_type_t config_diff(const dsp_config_t* current,
   size_t cp_count = 0;
 
   if (current->filters_count > 0) {
-    changed_filters = malloc(sizeof(char*) * current->filters_count);
+    changed_filters = calloc(current->filters_count, sizeof(char*));
     if (!changed_filters) goto error_cleanup;
   }
   for (size_t i = 0; i < current->filters_count; i++) {
@@ -806,7 +806,7 @@ config_change_type_t config_diff(const dsp_config_t* current,
   }
 
   if (current->mixers_count > 0) {
-    changed_mixers = malloc(sizeof(char*) * current->mixers_count);
+    changed_mixers = calloc(current->mixers_count, sizeof(char*));
     if (!changed_mixers) goto error_cleanup;
   }
   for (size_t i = 0; i < current->mixers_count; i++) {
@@ -819,7 +819,7 @@ config_change_type_t config_diff(const dsp_config_t* current,
   }
 
   if (current->processors_count > 0) {
-    changed_processors = malloc(sizeof(char*) * current->processors_count);
+    changed_processors = calloc(current->processors_count, sizeof(char*));
     if (!changed_processors) goto error_cleanup;
   }
   for (size_t i = 0; i < current->processors_count; i++) {
@@ -875,10 +875,7 @@ error_cleanup:
 }
 
 config_change_t* config_change_create(void) {
-  config_change_t* change = malloc(sizeof(struct config_change));
-  if (change) {
-    memset(change, 0, sizeof(struct config_change));
-  }
+  config_change_t* change = calloc(1, sizeof(struct config_change));
   return change;
 }
 

@@ -76,7 +76,7 @@ typedef sem_t* engine_semaphore_t;
  * @return true on success, false on failure.
  */
 static inline bool engine_sem_init(engine_semaphore_t* sem) {
-  *sem = (sem_t*)malloc(sizeof(sem_t));
+  *sem = (sem_t*)calloc(1, sizeof(sem_t));
   if (!*sem) return false;
   if (sem_init(*sem, 0, 0) != 0) {
     free(*sem);

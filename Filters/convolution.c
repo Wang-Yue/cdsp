@@ -163,13 +163,13 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
     return NULL;
   }
 
-  double* result = (double*)malloc(num_frames * sizeof(double));
+  double* result = (double*)calloc(num_frames, sizeof(double));
   if (!result) {
     fclose(f);
     return NULL;
   }
 
-  uint8_t* frame_buf = (uint8_t*)malloc(channels * bytes_per_sample);
+  uint8_t* frame_buf = (uint8_t*)calloc(channels, bytes_per_sample);
   if (!frame_buf) {
     free(result);
     fclose(f);
@@ -247,7 +247,7 @@ static double* load_raw_file(const char* path, const char* format_str,
       return NULL;
     }
     size_t cap = 1024;
-    double* result = (double*)malloc(cap * sizeof(double));
+    double* result = (double*)calloc(cap, sizeof(double));
     if (!result) {
       fclose(f);
       return NULL;
@@ -314,13 +314,13 @@ static double* load_raw_file(const char* path, const char* format_str,
     return NULL;
   }
 
-  double* result = (double*)malloc(num_samples * sizeof(double));
+  double* result = (double*)calloc(num_samples, sizeof(double));
   if (!result) {
     fclose(f);
     return NULL;
   }
 
-  uint8_t* buf = (uint8_t*)malloc(sample_size);
+  uint8_t* buf = (uint8_t*)calloc(1, sample_size);
   if (!buf) {
     free(result);
     fclose(f);

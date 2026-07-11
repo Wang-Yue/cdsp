@@ -76,7 +76,7 @@ vdsp_real_fft_t* vdsp_real_fft_create(size_t length) {
   FFTSetupD setup = vDSP_create_fftsetupD(log2n, kFFTRadix2);
   if (!setup) return NULL;
 
-  vdsp_real_fft_t* fft = (vdsp_real_fft_t*)malloc(sizeof(vdsp_real_fft_t));
+  vdsp_real_fft_t* fft = (vdsp_real_fft_t*)calloc(1, sizeof(vdsp_real_fft_t));
   if (!fft) {
     vDSP_destroy_fftsetupD(setup);
     return NULL;
@@ -89,8 +89,8 @@ vdsp_real_fft_t* vdsp_real_fft_create(size_t length) {
   fft->half_n = half_n;
   fft->log2n = log2n;
   fft->setup = setup;
-  fft->scratch_re = (double*)malloc(half_n * sizeof(double));
-  fft->scratch_im = (double*)malloc(half_n * sizeof(double));
+  fft->scratch_re = (double*)calloc(half_n, sizeof(double));
+  fft->scratch_im = (double*)calloc(half_n, sizeof(double));
   if (!fft->scratch_re || !fft->scratch_im) {
     vdsp_real_fft_free(fft);
     return NULL;
@@ -201,7 +201,7 @@ vdsp_real_fftf_t* vdsp_real_fftf_create(size_t length) {
   FFTSetup setup = vDSP_create_fftsetup(log2n, kFFTRadix2);
   if (!setup) return NULL;
 
-  vdsp_real_fftf_t* fft = (vdsp_real_fftf_t*)malloc(sizeof(vdsp_real_fftf_t));
+  vdsp_real_fftf_t* fft = (vdsp_real_fftf_t*)calloc(1, sizeof(vdsp_real_fftf_t));
   if (!fft) {
     vDSP_destroy_fftsetup(setup);
     return NULL;
@@ -214,8 +214,8 @@ vdsp_real_fftf_t* vdsp_real_fftf_create(size_t length) {
   fft->half_n = half_n;
   fft->log2n = log2n;
   fft->setup = setup;
-  fft->scratch_re = (float*)malloc(half_n * sizeof(float));
-  fft->scratch_im = (float*)malloc(half_n * sizeof(float));
+  fft->scratch_re = (float*)calloc(half_n, sizeof(float));
+  fft->scratch_im = (float*)calloc(half_n, sizeof(float));
   if (!fft->scratch_re || !fft->scratch_im) {
     vdsp_real_fftf_free(fft);
     return NULL;

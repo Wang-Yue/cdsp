@@ -84,7 +84,7 @@ static void populate_mapping(audio_mixer_t* mixer,
       free(mixer->mapping[dest].sources);
     }
     mixer->mapping[dest].sources =
-        (prepared_source_t*)malloc(valid_count * sizeof(prepared_source_t));
+        (prepared_source_t*)calloc(valid_count, sizeof(prepared_source_t));
     if (!mixer->mapping[dest].sources) continue;
     mixer->mapping[dest].count = valid_count;
 

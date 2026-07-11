@@ -11,7 +11,7 @@ struct gain_filter {
 
 gain_filter_t* gain_filter_create(const char* name,
                                   const gain_parameters_t* params) {
-  gain_filter_t* filter = (gain_filter_t*)malloc(sizeof(gain_filter_t));
+  gain_filter_t* filter = (gain_filter_t*)calloc(1, sizeof(gain_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);

@@ -26,7 +26,7 @@ noise_shaper_t* noise_shaper_create(const double* filter_coeffs, size_t count) {
   if (!filter_coeffs || count == 0) return NULL;
   noise_shaper_t* shaper = (noise_shaper_t*)calloc(1, sizeof(noise_shaper_t));
   if (!shaper) return NULL;
-  shaper->filter = (double*)malloc(count * sizeof(double));
+  shaper->filter = (double*)calloc(count, sizeof(double));
   shaper->buffer = (double*)calloc(count, sizeof(double));
   if (!shaper->filter || !shaper->buffer) {
     noise_shaper_free(shaper);
@@ -323,7 +323,7 @@ static double sample_dither(dither_filter_t* filter) {
 // MARK: - DitherFilter
 dither_filter_t* dither_filter_create(const char* name,
                                       const dither_parameters_t* params) {
-  dither_filter_t* filter = (dither_filter_t*)malloc(sizeof(dither_filter_t));
+  dither_filter_t* filter = (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);

@@ -357,7 +357,7 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
                                                 capture->channels * 8);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
   capture->decode_buf =
-      (float*)malloc(capture->decode_buf_size * sizeof(float));
+      (float*)calloc(capture->decode_buf_size, sizeof(float));
 
   if (!capture->ring || !capture->decode_buf) {
     pipewire_capture_close(capture);
@@ -710,7 +710,7 @@ bool pipewire_playback_open(pipewire_playback_t* playback,
                                                  playback->channels * 8);
   playback->encode_buf_size = playback->chunk_size * playback->channels;
   playback->encode_buf =
-      (float*)malloc(playback->encode_buf_size * sizeof(float));
+      (float*)calloc(playback->encode_buf_size, sizeof(float));
 
   if (!playback->ring || !playback->encode_buf) {
     pipewire_playback_close(playback);

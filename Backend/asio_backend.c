@@ -975,7 +975,7 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
 
   capture->callback_buf_size = capture->actual_buffer_size * capture->channels;
   capture->callback_buf =
-      (float*)malloc(capture->callback_buf_size * sizeof(float));
+      (float*)calloc(capture->callback_buf_size, sizeof(float));
   if (!capture->callback_buf) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -1173,7 +1173,7 @@ capture_backend_t* asio_capture_new(const capture_device_config_t* config,
   capture->full_duplex = full_duplex;
 
   capture_backend_t* backend =
-      (capture_backend_t*)malloc(sizeof(capture_backend_t));
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
     free(capture);
     return NULL;
@@ -1296,7 +1296,7 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
   playback->callback_buf_size =
       playback->actual_buffer_size * playback->channels;
   playback->callback_buf =
-      (float*)malloc(playback->callback_buf_size * sizeof(float));
+      (float*)calloc(playback->callback_buf_size, sizeof(float));
   if (!playback->callback_buf) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -1491,7 +1491,7 @@ playback_backend_t* asio_playback_new(const playback_device_config_t* config,
   playback->full_duplex = full_duplex;
 
   playback_backend_t* backend =
-      (playback_backend_t*)malloc(sizeof(playback_backend_t));
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
   if (!backend) {
     free(playback);
     return NULL;

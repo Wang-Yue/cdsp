@@ -192,7 +192,7 @@ bool pulse_capture_open(pulse_capture_t* capture, backend_error_t* err) {
   // PulseAudio.
   capture->raw_buf_size =
       capture->chunk_size * capture->channels * sizeof(float);
-  capture->raw_buf = (uint8_t*)malloc(capture->raw_buf_size);
+  capture->raw_buf = (uint8_t*)calloc(capture->raw_buf_size, sizeof(uint8_t));
   if (!capture->raw_buf) {
     pa_simple_free(capture->s);
     capture->s = NULL;
@@ -472,7 +472,7 @@ bool pulse_playback_open(pulse_playback_t* playback, backend_error_t* err) {
   // PulseAudio.
   playback->raw_buf_size =
       playback->chunk_size * playback->channels * sizeof(float);
-  playback->raw_buf = (uint8_t*)malloc(playback->raw_buf_size);
+  playback->raw_buf = (uint8_t*)calloc(playback->raw_buf_size, sizeof(uint8_t));
   if (!playback->raw_buf) {
     pa_simple_free(playback->s);
     playback->s = NULL;

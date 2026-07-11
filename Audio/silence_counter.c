@@ -14,7 +14,7 @@ silence_counter_t* silence_counter_create(double threshold_db,
                                           double timeout_seconds,
                                           size_t samplerate, size_t chunksize) {
   silence_counter_t* counter =
-      (silence_counter_t*)malloc(sizeof(silence_counter_t));
+      (silence_counter_t*)calloc(1, sizeof(silence_counter_t));
   if (!counter) return NULL;
   silence_counter_init(counter, threshold_db, timeout_seconds, samplerate,
                        chunksize);

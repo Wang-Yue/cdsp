@@ -60,7 +60,7 @@ audio_chunk_t* audio_chunk_create(size_t frames, size_t channels) {
 audio_chunk_t* audio_chunk_from_buffers(audio_buffers_t* buffers,
                                         size_t valid_frames) {
   if (!buffers) return NULL;
-  audio_chunk_t* chunk = (audio_chunk_t*)malloc(sizeof(audio_chunk_t));
+  audio_chunk_t* chunk = (audio_chunk_t*)calloc(1, sizeof(audio_chunk_t));
   if (!chunk) return NULL;
   chunk->buffers = buffers;
   chunk->valid_frames = valid_frames;

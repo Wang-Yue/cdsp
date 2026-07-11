@@ -34,8 +34,8 @@ diffeq_filter_t* diffeq_filter_create(const char* name,
   filter->a_count = a_cnt;
   filter->b_count = b_cnt;
 
-  filter->a = (double*)malloc(a_cnt * sizeof(double));
-  filter->b = (double*)malloc(b_cnt * sizeof(double));
+  filter->a = (double*)calloc(a_cnt, sizeof(double));
+  filter->b = (double*)calloc(b_cnt, sizeof(double));
   filter->x = (double*)calloc(b_cnt, sizeof(double));
   filter->y = (double*)calloc(a_cnt, sizeof(double));
 

@@ -106,7 +106,7 @@ biquad_combo_filter_t* biquad_combo_filter_create(
     return NULL;
   }
   biquad_combo_filter_t* filter =
-      (biquad_combo_filter_t*)malloc(sizeof(biquad_combo_filter_t));
+      (biquad_combo_filter_t*)calloc(1, sizeof(biquad_combo_filter_t));
   if (!filter) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate BiquadCombo filter '%s'", name ? name : "");
     return NULL;
@@ -234,7 +234,7 @@ biquad_combo_filter_t* biquad_combo_filter_create(
   }
 
   filter->num_sections = num;
-  filter->sections = (biquad_filter_t**)malloc(num * sizeof(biquad_filter_t*));
+  filter->sections = (biquad_filter_t**)calloc(num, sizeof(biquad_filter_t*));
   if (!filter->sections) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate BiquadCombo sections memory");
     for (size_t j = 0; j < num; j++) {

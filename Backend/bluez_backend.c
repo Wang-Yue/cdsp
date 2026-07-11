@@ -240,7 +240,7 @@ capture_backend_t* bluez_capture_create(const capture_device_config_t* config,
   }
 
   capture_backend_t* backend =
-      (capture_backend_t*)malloc(sizeof(capture_backend_t));
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   backend->ctx = capture;
   backend->vtable = &BLUEZ_CAPTURE_VTABLE;
   return backend;

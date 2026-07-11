@@ -39,7 +39,7 @@ struct engine_state_machine {
 
 engine_state_machine_t* engine_state_machine_create(void) {
   engine_state_machine_t* sm =
-      (engine_state_machine_t*)malloc(sizeof(engine_state_machine_t));
+      (engine_state_machine_t*)calloc(1, sizeof(engine_state_machine_t));
   if (!sm) return NULL;
   atomic_init(&sm->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));

@@ -110,12 +110,12 @@ complex_inner_real_fft_t* complex_inner_real_fft_create(
   fft->base.free = complex_inner_real_fft_free_wrapper;
   fft->half_n = half_n;
 
-  fft->twiddle_re = (double*)malloc(half_n * sizeof(double));
-  fft->twiddle_im = (double*)malloc(half_n * sizeof(double));
-  fft->z_re = (double*)malloc(half_n * sizeof(double));
-  fft->z_im = (double*)malloc(half_n * sizeof(double));
-  fft->z_f_re = (double*)malloc(half_n * sizeof(double));
-  fft->z_f_im = (double*)malloc(half_n * sizeof(double));
+  fft->twiddle_re = (double*)calloc(half_n, sizeof(double));
+  fft->twiddle_im = (double*)calloc(half_n, sizeof(double));
+  fft->z_re = (double*)calloc(half_n, sizeof(double));
+  fft->z_im = (double*)calloc(half_n, sizeof(double));
+  fft->z_f_re = (double*)calloc(half_n, sizeof(double));
+  fft->z_f_im = (double*)calloc(half_n, sizeof(double));
 
   if (!fft->twiddle_re || !fft->twiddle_im || !fft->z_re || !fft->z_im ||
       !fft->z_f_re || !fft->z_f_im) {

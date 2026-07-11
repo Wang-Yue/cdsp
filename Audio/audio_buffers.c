@@ -34,7 +34,7 @@ audio_buffers_t* audio_buffers_create(size_t channels, size_t capacity) {
   // Check for overflow before multiplication
   if (capacity > SIZE_MAX / channels) return NULL;
 
-  audio_buffers_t* buf = (audio_buffers_t*)malloc(sizeof(audio_buffers_t));
+  audio_buffers_t* buf = (audio_buffers_t*)calloc(1, sizeof(audio_buffers_t));
   if (!buf) return NULL;
 
   buf->channels = channels;
@@ -49,7 +49,7 @@ audio_buffers_t* audio_buffers_create(size_t channels, size_t capacity) {
   // Allocate the array of pointers that will point to the start of each
   // channel's buffer.
   buf->channel_buffers =
-      (mutable_waveform_t*)malloc(channels * sizeof(mutable_waveform_t));
+      (mutable_waveform_t*)calloc(channels, sizeof(mutable_waveform_t));
 
   if (!buf->storage || !buf->channel_buffers) {
     audio_buffers_free(buf);

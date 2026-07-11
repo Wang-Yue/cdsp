@@ -42,7 +42,7 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter config is NULL");
     return NULL;
   }
-  filter_t* filter = (filter_t*)malloc(sizeof(filter_t));
+  filter_t* filter = (filter_t*)calloc(1, sizeof(filter_t));
   if (!filter) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate filter wrapper");
     return NULL;
