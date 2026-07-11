@@ -94,13 +94,13 @@ void OratoryPresetService::fetchIndex(
         }
 
         QByteArray data = reply->readAll();
-        saveToDiskCache(data);
+        weakThis->saveToDiskCache(data);
 
         QJsonDocument doc = QJsonDocument::fromJson(data);
         if (!doc.isObject()) {
-            if (loadFromDiskCache(m_allEntries)) {
-                m_isLoaded = true;
-                callback(true, m_allEntries);
+            if (weakThis->loadFromDiskCache(weakThis->m_allEntries)) {
+                weakThis->m_isLoaded = true;
+                callback(true, weakThis->m_allEntries);
             } else {
                 callback(false, {});
             }
@@ -126,9 +126,9 @@ void OratoryPresetService::fetchIndex(
                 entries.push_back(entry);
             }
         }
-        m_allEntries = entries;
-        m_isLoaded = true;
-        callback(true, m_allEntries);
+        weakThis->m_allEntries = entries;
+        weakThis->m_isLoaded = true;
+        callback(true, weakThis->m_allEntries);
     });
 }
 
