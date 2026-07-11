@@ -192,7 +192,8 @@ std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& 
     std::vector<double> minPhaseIR;
     MeasurementFFT::inverse(hReal, hImag, minPhaseIR);
 
-    minPhaseIR.resize(options.outputLength);
+    int outLen = options.outputLength.value_or(nFft);
+    minPhaseIR.resize(outLen);
     return minPhaseIR;
 }
 

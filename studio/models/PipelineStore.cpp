@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QStandardPaths>
 #include <algorithm>
 
 PipelineStore::PipelineStore(QObject* parent) : QObject(parent) {
