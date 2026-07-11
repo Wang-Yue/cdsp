@@ -539,6 +539,34 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     cutoffBox->addStretch();
     form->addRow("", cutoffBox);
 
+    m_capWasapiExclusiveCheck = new QCheckBox("WASAPI Exclusive Mode", w);
+    connect(m_capWasapiExclusiveCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_capWasapiExclusiveCheck);
+
+    m_capWasapiLoopbackCheck = new QCheckBox("WASAPI Loopback (Record Output Stream)", w);
+    connect(m_capWasapiLoopbackCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_capWasapiLoopbackCheck);
+
+    m_capWasapiPollingCheck = new QCheckBox("WASAPI Polling Mode", w);
+    connect(m_capWasapiPollingCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_capWasapiPollingCheck);
+
+    m_capAlsaStopInactiveCheck = new QCheckBox("Stop Streams When Inactive", w);
+    connect(m_capAlsaStopInactiveCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_capAlsaStopInactiveCheck);
+
     m_dopCutoffHint = new QLabel("Lower cutoff = higher SINAD; higher cutoff preserves more ultrasonic content", w);
     m_dopCutoffHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_dopCutoffHint);
@@ -911,6 +939,13 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_exclusiveModeHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_exclusiveModeHint);
 
+    m_pbWasapiPollingCheck = new QCheckBox("WASAPI Polling Mode", w);
+    connect(m_pbWasapiPollingCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_pbWasapiPollingCheck);
+
     m_outputDoPCheck = new QCheckBox("Output DoP (DSD-over-PCM)", w);
     connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool) {
         if (m_isRefreshing)
@@ -1118,6 +1153,14 @@ void DevicePickerView::refreshUi() {
     if (cutoffIdx >= 0)
         m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
 
+    bool isCapWasapi = (m_devices->captureConfig.backend == AudioBackendType::WASAPI);
+    bool isCapAlsa = (m_devices->captureConfig.backend == AudioBackendType::ALSA ||
+                      m_devices->captureConfig.backend == AudioBackendType::PulseAudio);
+    m_capWasapiExclusiveCheck->setVisible(isCapWasapi);
+    m_capWasapiLoopbackCheck->setVisible(isCapWasapi);
+    m_capWasapiPollingCheck->setVisible(isCapWasapi);
+    m_capAlsaStopInactiveCheck->setVisible(isCapAlsa);
+
     // 2. Refresh Capture File & Generator Views
     m_capRawFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
     m_capRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->captureConfig.fileFormat));
@@ -1222,6 +1265,7 @@ void DevicePickerView::refreshUi() {
     }
 
     m_exclusiveModeCheck->setChecked(m_devices->exclusiveMode);
+    m_pbWasapiPollingCheck->setVisible(m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dopEncoderFilter));

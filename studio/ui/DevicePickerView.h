@@ -79,7 +79,18 @@ private:
     QComboBox* m_pbBackendCombo;
     QStackedWidget* m_pbStack;
 
-    // Playback CoreAudio
+    // Capture WASAPI / ASIO / ALSA / Pulse
+    QCheckBox* m_capWasapiExclusiveCheck;
+    QCheckBox* m_capWasapiLoopbackCheck;
+    QCheckBox* m_capWasapiPollingCheck;
+    QCheckBox* m_capAlsaStopInactiveCheck;
+    QLineEdit* m_capAlsaLinkVolumeEdit;
+    QLineEdit* m_capAlsaLinkMuteEdit;
+    QCheckBox* m_capPulseStopInactiveCheck;
+    QLineEdit* m_capPulseLinkVolumeEdit;
+    QLineEdit* m_capPulseLinkMuteEdit;
+
+    // Playback CoreAudio / WASAPI / ASIO / ALSA / Pulse
     QWidget* m_pbWarningWidget;
     QComboBox* m_pbDeviceCombo;
     QComboBox* m_pbDevChannelsCombo;
@@ -90,6 +101,13 @@ private:
     QLabel* m_pbFormatLabel;
     QCheckBox* m_exclusiveModeCheck;
     QLabel* m_exclusiveModeHint;
+    QCheckBox* m_pbWasapiPollingCheck;
+    QCheckBox* m_pbAlsaStopInactiveCheck;
+    QLineEdit* m_pbAlsaLinkVolumeEdit;
+    QLineEdit* m_pbAlsaLinkMuteEdit;
+    QCheckBox* m_pbPulseStopInactiveCheck;
+    QLineEdit* m_pbPulseLinkVolumeEdit;
+    QLineEdit* m_pbPulseLinkMuteEdit;
     QCheckBox* m_outputDoPCheck;
     QLabel* m_sdmFilterLabel;
     QComboBox* m_sdmFilterCombo;
