@@ -35,8 +35,7 @@ typedef struct delay_filter delay_filter_t;
  */
 delay_filter_t* delay_filter_create(const char* name,
                                     const delay_parameters_t* params,
-                                    int sample_rate,
-                                    config_error_t* err);
+                                    int sample_rate, config_error_t* err);
 
 /**
  * @brief Process a block of samples in-place.

@@ -356,8 +356,7 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
   capture->ring = spsc_audio_ring_buffer_create(capture->chunk_size *
                                                 capture->channels * 8);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
-  capture->decode_buf =
-      (float*)calloc(capture->decode_buf_size, sizeof(float));
+  capture->decode_buf = (float*)calloc(capture->decode_buf_size, sizeof(float));
 
   if (!capture->ring || !capture->decode_buf) {
     pipewire_capture_close(capture);
@@ -381,8 +380,9 @@ bool pipewire_capture_read(pipewire_capture_t* capture, size_t frames,
                            audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match capture channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
     }
     return false;
   }
@@ -736,8 +736,9 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
                              const audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match playback channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match playback channels");
     }
     return false;
   }

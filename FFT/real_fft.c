@@ -69,7 +69,8 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     return NULL;
   }
   if (length % 2 != 0) {
-    config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be even, got %zu", length);
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "RealFFT: length must be even, got %zu", length);
     return NULL;
   }
   real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));
@@ -118,7 +119,8 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   complex_inner_real_fft_t* complex_inner =
       complex_inner_real_fft_create(length, inner);
   if (!complex_inner) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate ComplexInnerRealFFT");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate ComplexInnerRealFFT");
     arbitrary_complex_fft_free(inner);
     free(fft);
     return NULL;
@@ -243,7 +245,8 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     return NULL;
   }
   if (length % 2 != 0) {
-    config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be even, got %zu", length);
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "RealFFT: length must be even, got %zu", length);
     return NULL;
   }
   real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));

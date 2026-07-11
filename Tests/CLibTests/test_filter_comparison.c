@@ -90,8 +90,8 @@ static const char* get_harness_binary(void) {
   const char* home = getenv("HOME");
   if (home) {
     snprintf(home_path, sizeof(home_path),
-             "%s/CamillaDSP-Monitor/Tests/RustHarnesses/target/release/"
-             HARNESS_NAME,
+             "%s/CamillaDSP-Monitor/Tests/RustHarnesses/target/"
+             "release/" HARNESS_NAME,
              home);
   }
   const char* paths[] = {
@@ -1539,7 +1539,8 @@ TEST(RACE_Vs_RustReference) {
   params.has_delay_unit = true;
   params.attenuation = attenuation;
 
-  race_processor_t* race = race_processor_create("race", &params, SAMPLE_RATE, NULL);
+  race_processor_t* race =
+      race_processor_create("race", &params, SAMPLE_RATE, NULL);
   ASSERT_TRUE(race != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 2);

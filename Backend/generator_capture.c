@@ -165,8 +165,9 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
                             audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match generator channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match generator channels");
     }
     return false;
   }
@@ -197,7 +198,8 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
     case SIGNAL_TYPE_SQUARE: {
       double phase = capture->phase;
       for (size_t f = 0; f < frames; f++) {
-        double val = (sin(phase * 2.0 * M_PI) >= 0.0 ? 1.0 : -1.0) * capture->amplitude;
+        double val =
+            (sin(phase * 2.0 * M_PI) >= 0.0 ? 1.0 : -1.0) * capture->amplitude;
         for (int c = 0; c < capture->channels; c++) {
           audio_chunk_get_channel(chunk, c)[f] = val;
         }
@@ -213,9 +215,10 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
     case SIGNAL_TYPE_WHITE_NOISE: {
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < capture->channels; c++) {
-          double noise_val = (((double)rand_r(&capture->rand_seed) / (double)RAND_MAX) * 2.0 -
-                              1.0) *
-                             capture->amplitude;
+          double noise_val =
+              (((double)rand_r(&capture->rand_seed) / (double)RAND_MAX) * 2.0 -
+               1.0) *
+              capture->amplitude;
           audio_chunk_get_channel(chunk, c)[f] = noise_val;
         }
       }

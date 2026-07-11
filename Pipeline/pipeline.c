@@ -283,8 +283,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     return pipeline;
   }
 
-  pipeline->steps = (pipeline_exec_step_t*)calloc(
-      total_exec_steps, sizeof(pipeline_exec_step_t));
+  pipeline->steps = (pipeline_exec_step_t*)calloc(total_exec_steps,
+                                                  sizeof(pipeline_exec_step_t));
   if (!pipeline->steps) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
     pipeline_free(pipeline);
@@ -468,9 +468,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
               for (size_t k = 0; k < c; k++) {
                 if (new_chains[c].channel == new_chains[k].channel) {
                   free_filter_chains(new_chains, new_chains_count);
-                  config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                                   "Duplicate channel %d in parallel filter step",
-                                   new_chains[c].channel);
+                  config_error_set(
+                      err, CONFIG_ERR_INVALID_PIPELINE,
+                      "Duplicate channel %d in parallel filter step",
+                      new_chains[c].channel);
                   pipeline_free(pipeline);
                   return NULL;
                 }
@@ -538,8 +539,9 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             pipeline_free(pipeline);
             return NULL;
           }
-          dsp_processor_t* p = dsp_processor_create(
-              step->name, p_cfg, pipeline->rate, pipeline->frames_per_chunk, err);
+          dsp_processor_t* p =
+              dsp_processor_create(step->name, p_cfg, pipeline->rate,
+                                   pipeline->frames_per_chunk, err);
           if (!p) {
             pipeline_free(pipeline);
             return NULL;

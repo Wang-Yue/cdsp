@@ -130,10 +130,10 @@ static void assert_inout_matches(resampler_type_t type,
   }
 
   size_t chunk_size = 1024;
-  audio_resampler_t* res_a =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
-  audio_resampler_t* res_b =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
+  audio_resampler_t* res_a = audio_resampler_create_from_config(
+      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  audio_resampler_t* res_b = audio_resampler_create_from_config(
+      &cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res_a != NULL);
   ASSERT_TRUE(res_b != NULL);
 
@@ -187,8 +187,8 @@ static void assert_rejects_too_small(resampler_type_t type,
   }
 
   size_t chunk_size = 1024;
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
+  audio_resampler_t* res = audio_resampler_create_from_config(
+      &cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
   size_t actual_cs = audio_resampler_get_chunk_size(res);

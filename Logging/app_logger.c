@@ -338,44 +338,45 @@ static void* worker_thread_func(void* arg) {
       if (diff == 0) {
         // Safe to read: slot has been written and not yet processed.
         log_record_t rec = logger->storage[slot];
-        // Release the slot back to the producer threads by updating its sequence.
+        // Release the slot back to the producer threads by updating its
+        // sequence.
         atomic_store_explicit(&logger->sequences[slot], r + logger->capacity,
                               memory_order_release);
         // Advance read index.
         atomic_store_explicit(&logger->read_index, r + 1, memory_order_relaxed);
 
-      const char* lvl_str = "INFO";
-      switch (rec.level) {
-        case LOG_LEVEL_OFF:
-          lvl_str = "OFF";
-          break;
-        case LOG_LEVEL_ERROR:
-          lvl_str = "ERROR";
-          break;
-        case LOG_LEVEL_WARN:
-          lvl_str = "WARN";
-          break;
-        case LOG_LEVEL_INFO:
-          lvl_str = "INFO";
-          break;
-        case LOG_LEVEL_DEBUG:
-          lvl_str = "DEBUG";
-          break;
-        case LOG_LEVEL_TRACE:
-          lvl_str = "TRACE";
-          break;
+        const char* lvl_str = "INFO";
+        switch (rec.level) {
+          case LOG_LEVEL_OFF:
+            lvl_str = "OFF";
+            break;
+          case LOG_LEVEL_ERROR:
+            lvl_str = "ERROR";
+            break;
+          case LOG_LEVEL_WARN:
+            lvl_str = "WARN";
+            break;
+          case LOG_LEVEL_INFO:
+            lvl_str = "INFO";
+            break;
+          case LOG_LEVEL_DEBUG:
+            lvl_str = "DEBUG";
+            break;
+          case LOG_LEVEL_TRACE:
+            lvl_str = "TRACE";
+            break;
+        }
+        char formatted_msg[32768];
+        log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
+        format_log_message(formatted_msg, sizeof(formatted_msg), rec.message,
+                           args);
+        printf("[%s] %s: %s\n", lvl_str, rec.label ? rec.label : "",
+               formatted_msg);
+        fflush(stdout);
+      } else {
+        break;
       }
-      char formatted_msg[32768];
-      log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
-      format_log_message(formatted_msg, sizeof(formatted_msg), rec.message,
-                         args);
-      printf("[%s] %s: %s\n", lvl_str, rec.label ? rec.label : "",
-             formatted_msg);
-      fflush(stdout);
-    } else {
-      break;
     }
-  }
   }
   return NULL;
 }
@@ -401,8 +402,8 @@ static void init_shared_logger(void) {
   g_shared_logger->mask = 511;
   g_shared_logger->storage =
       (log_record_t*)calloc(g_shared_logger->capacity, sizeof(log_record_t));
-  g_shared_logger->sequences =
-      (_Atomic uint64_t*)calloc(g_shared_logger->capacity, sizeof(_Atomic uint64_t));
+  g_shared_logger->sequences = (_Atomic uint64_t*)calloc(
+      g_shared_logger->capacity, sizeof(_Atomic uint64_t));
   if (!g_shared_logger->storage || !g_shared_logger->sequences) {
     free_logger_internal(g_shared_logger);
     g_shared_logger = NULL;
@@ -445,7 +446,8 @@ void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
   size_t slot;
   while (true) {
     slot = (size_t)(w & logger->mask);
-    // Load sequence number with acquire to sync with slot release in consumer thread.
+    // Load sequence number with acquire to sync with slot release in consumer
+    // thread.
     uint64_t seq =
         atomic_load_explicit(&logger->sequences[slot], memory_order_acquire);
     int64_t diff = (int64_t)seq - (int64_t)w;
@@ -457,7 +459,8 @@ void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
         break;
       }
     } else if (diff < 0) {
-      // Slot is not yet processed by consumer (queue is full). Drop log (non-blocking).
+      // Slot is not yet processed by consumer (queue is full). Drop log
+      // (non-blocking).
       return;
     } else {
       // Slot is in progress or write_index was advanced. Reload and try again.

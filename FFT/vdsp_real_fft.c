@@ -201,7 +201,8 @@ vdsp_real_fftf_t* vdsp_real_fftf_create(size_t length) {
   FFTSetup setup = vDSP_create_fftsetup(log2n, kFFTRadix2);
   if (!setup) return NULL;
 
-  vdsp_real_fftf_t* fft = (vdsp_real_fftf_t*)calloc(1, sizeof(vdsp_real_fftf_t));
+  vdsp_real_fftf_t* fft =
+      (vdsp_real_fftf_t*)calloc(1, sizeof(vdsp_real_fftf_t));
   if (!fft) {
     vDSP_destroy_fftsetup(setup);
     return NULL;

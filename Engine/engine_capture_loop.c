@@ -204,9 +204,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       }
       // If reading fails with an error, trigger an engine stop.
       if (err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Capture error: %s",
-                      log_arg_string(err.message), log_arg_none(),
-                      log_arg_none(), log_arg_none());
+        logger_error(&logger, "Capture error: %s", log_arg_string(err.message),
+                     log_arg_none(), log_arg_none(), log_arg_none());
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);

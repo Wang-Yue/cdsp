@@ -135,7 +135,8 @@ void audio_chunk_sum_channels(const audio_chunk_t* chunk, const int* channels,
     memset(out_sum, 0, frames * sizeof(double));
     return;
   }
-  const double* src0 = audio_chunk_get_channel((audio_chunk_t*)chunk, (size_t)ch0);
+  const double* src0 =
+      audio_chunk_get_channel((audio_chunk_t*)chunk, (size_t)ch0);
   if (!src0) {
     memset(out_sum, 0, frames * sizeof(double));
     return;
@@ -145,7 +146,8 @@ void audio_chunk_sum_channels(const audio_chunk_t* chunk, const int* channels,
   for (size_t ch_idx = 1; ch_idx < channels_count; ch_idx++) {
     int ch = channels[ch_idx];
     if (ch < 0 || (size_t)ch >= total_channels) continue;
-    const double* src = audio_chunk_get_channel((audio_chunk_t*)chunk, (size_t)ch);
+    const double* src =
+        audio_chunk_get_channel((audio_chunk_t*)chunk, (size_t)ch);
     if (!src) continue;
 #ifdef ENABLE_ACCELERATE
     vDSP_vaddD(out_sum, 1, src, 1, out_sum, 1, frames);

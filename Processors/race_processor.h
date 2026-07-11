@@ -84,8 +84,7 @@ const char* race_processor_get_name(const race_processor_t* processor);
  */
 race_processor_t* race_processor_create(const char* name,
                                         const race_parameters_t* params,
-                                        int sample_rate,
-                                        config_error_t* err);
+                                        int sample_rate, config_error_t* err);
 
 /**
  * @brief Frees all resources associated with the RACE processor.

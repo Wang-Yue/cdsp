@@ -216,8 +216,9 @@ bool pulse_capture_read(pulse_capture_t* capture, size_t frames,
                         audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match capture channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
     }
     return false;
   }
@@ -499,8 +500,9 @@ bool pulse_playback_write(pulse_playback_t* playback,
                           const audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match playback channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match playback channels");
     }
     return false;
   }

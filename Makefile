@@ -215,7 +215,7 @@ CLI_BIN := $(SRC_ROOT)/bin/dsp-cli
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all lib test bench cli clean
+.PHONY: all lib test bench cli clean format
 
 all: cli
 
@@ -276,9 +276,8 @@ $(CLI_BIN): $(CLI_SRC) $(LIB_TARGET)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
 
-
-
+format:
+	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
 
 clean:
 	rm -rf $(OBJ_DIR) $(LIB_TARGET) $(ROOT_DIR)/Tests/CLibTests/bin $(SRC_ROOT)/bin
-

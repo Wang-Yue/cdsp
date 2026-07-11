@@ -19,6 +19,7 @@
  */
 
 #include "race_processor.h"
+
 #include "Logging/app_logger.h"
 
 struct race_processor {
@@ -34,7 +35,8 @@ struct race_processor {
                         ///< path.
   double feedback_b;    ///< Recursive feedback sample from channel B delay/gain
                         ///< path.
-  bool channel_warning_logged; ///< Track if we already logged a channel mismatch warning.
+  bool channel_warning_logged;  ///< Track if we already logged a channel
+                                ///< mismatch warning.
 };
 
 const char* race_processor_get_name(const race_processor_t* processor) {
@@ -47,21 +49,22 @@ const char* race_processor_get_name(const race_processor_t* processor) {
 
 race_processor_t* race_processor_create(const char* name,
                                         const race_parameters_t* params,
-                                        int sample_rate,
-                                        config_error_t* err) {
+                                        int sample_rate, config_error_t* err) {
   if (!params) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "RACE params is NULL");
     return NULL;
   }
   if (sample_rate <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "RACE sample_rate must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "RACE sample_rate must be positive");
     return NULL;
   }
 
   race_processor_t* processor =
       (race_processor_t*)calloc(1, sizeof(race_processor_t));
   if (!processor) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate RACE processor wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate RACE processor wrapper");
     return NULL;
   }
 
@@ -136,9 +139,10 @@ race_processor_t* race_processor_create(const char* name,
 
   if (!processor->delay_a || !processor->delay_b || !processor->gain) {
     if (err && err->type == CONFIG_ERR_NONE) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Failed to initialize sub-filters for RACE processor '%s'",
-                       processor->name);
+      config_error_set(
+          err, CONFIG_ERR_INVALID_FILTER,
+          "Failed to initialize sub-filters for RACE processor '%s'",
+          processor->name);
     }
     race_processor_free(processor);
     return NULL;
@@ -167,11 +171,13 @@ void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
   if (!base_a || !base_b) {
     if (!processor->channel_warning_logged) {
       logger_t logger = logger_create("race_processor");
-      logger_error(&logger, "RACE channel indices (%d, %d) out of bounds for chunk channels (%d)",
-                   log_arg_int((int64_t)processor->channel_a),
-                   log_arg_int((int64_t)processor->channel_b),
-                   log_arg_int((int64_t)audio_chunk_get_channels(chunk)),
-                   log_arg_none());
+      logger_error(
+          &logger,
+          "RACE channel indices (%d, %d) out of bounds for chunk channels (%d)",
+          log_arg_int((int64_t)processor->channel_a),
+          log_arg_int((int64_t)processor->channel_b),
+          log_arg_int((int64_t)audio_chunk_get_channels(chunk)),
+          log_arg_none());
       processor->channel_warning_logged = true;
     }
     return;

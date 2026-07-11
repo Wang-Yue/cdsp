@@ -3,8 +3,8 @@
 
 #include "sinc_window_function.h"
 
-#include <stdint.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 

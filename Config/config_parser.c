@@ -1230,7 +1230,8 @@ static int parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
             mapping->sources =
                 (mixer_source_t*)calloc(src_size, sizeof(mixer_source_t));
             if (!mapping->sources) {
-              config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+              config_error_set(err, CONFIG_ERR_PARSE,
+                               "Memory allocation failure");
               return -1;
             }
             mapping->sources_count = src_size;

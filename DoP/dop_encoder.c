@@ -307,7 +307,8 @@ static void encode_channel_batched(dop_encoder_channel_state_t* state,
     }
 
     uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
-    int32_t int_val = (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
+    int32_t int_val =
+        (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
     buf[t] = (double)int_val / 8388608.0;
 
     marker = (marker == 0x05) ? 0xFA : 0x05;
@@ -476,7 +477,8 @@ static void encode_channel(dop_encoder_channel_state_t* state,
     uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
     // Sign-extend 24-bit to 32-bit: shift left by 8, then arithmetic shift
     // right by 8.
-    int32_t int_val = (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
+    int32_t int_val =
+        (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
     buf[t] = (double)int_val / 8388608.0;
 
     marker = (marker == 0x05) ? 0xFA : 0x05;

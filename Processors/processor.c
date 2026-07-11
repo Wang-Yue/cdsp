@@ -224,12 +224,16 @@ dsp_processor_t* dsp_processor_create(const char* name,
       compressor_processor_t* p = compressor_processor_create(
           name, &config->parameters.compressor, sample_rate, chunk_size);
       if (!p) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to create compressor processor '%s'", name ? name : "");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to create compressor processor '%s'",
+                         name ? name : "");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_compressor(p);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap compressor processor '%s'", name ? name : "");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap compressor processor '%s'",
+                         name ? name : "");
       }
       return wrap;
     }
@@ -237,27 +241,35 @@ dsp_processor_t* dsp_processor_create(const char* name,
       noise_gate_processor_t* p = noise_gate_processor_create(
           name, &config->parameters.noise_gate, sample_rate, chunk_size);
       if (!p) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to create noise gate processor '%s'", name ? name : "");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to create noise gate processor '%s'",
+                         name ? name : "");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_noise_gate(p);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap noise gate processor '%s'", name ? name : "");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap noise gate processor '%s'",
+                         name ? name : "");
       }
       return wrap;
     }
     case PROCESSOR_TYPE_RACE: {
-      race_processor_t* p =
-          race_processor_create(name, &config->parameters.race, sample_rate, err);
+      race_processor_t* p = race_processor_create(
+          name, &config->parameters.race, sample_rate, err);
       if (!p) return NULL;
       dsp_processor_t* wrap = dsp_processor_wrap_race(p);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap RACE processor '%s'", name ? name : "");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap RACE processor '%s'",
+                         name ? name : "");
       }
       return wrap;
     }
     default:
-      config_error_set(err, CONFIG_ERR_PARSE, "Unknown processor type %d for '%s'", config->type, name ? name : "");
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Unknown processor type %d for '%s'", config->type,
+                       name ? name : "");
       return NULL;
   }
 }

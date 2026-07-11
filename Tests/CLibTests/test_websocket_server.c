@@ -24,8 +24,8 @@ typedef int socket_t;
 #include "Server/websocket_server.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
-                                const char* command_text,
-                                char* out_response, size_t max_len) {
+                                const char* command_text, char* out_response,
+                                size_t max_len) {
   dyn_string_t ds;
   dyn_string_init(&ds, max_len);
   websocket_server_handle_command(server, client_idx, command_text, &ds);
@@ -47,7 +47,8 @@ static processing_parameters_t* mock_params = NULL;
 static bool mock_get_status(void* ctx, state_update_t* out_status) {
   (void)ctx;
   if (out_status) {
-    out_status->state = mock_params ? PROCESSING_STATE_RUNNING : PROCESSING_STATE_INACTIVE;
+    out_status->state =
+        mock_params ? PROCESSING_STATE_RUNNING : PROCESSING_STATE_INACTIVE;
     out_status->stop_reason.type = STOP_REASON_NONE;
   }
   return true;
@@ -65,18 +66,25 @@ static bool mock_get_processing_status(void* ctx, double* out_rate_adjust,
                                        double* out_resampler_load) {
   (void)ctx;
   if (!mock_params) return false;
-  if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&mock_params->rate_adjust);
-  if (out_buffer_level) *out_buffer_level = atomic_double_get(&mock_params->buffer_level);
-  if (out_clipped_samples) *out_clipped_samples = atomic_load_explicit(&mock_params->clipped_samples, memory_order_relaxed);
-  if (out_processing_load) *out_processing_load = atomic_double_get(&mock_params->processing_load);
-  if (out_resampler_load) *out_resampler_load = atomic_double_get(&mock_params->resampler_load);
+  if (out_rate_adjust)
+    *out_rate_adjust = atomic_double_get(&mock_params->rate_adjust);
+  if (out_buffer_level)
+    *out_buffer_level = atomic_double_get(&mock_params->buffer_level);
+  if (out_clipped_samples)
+    *out_clipped_samples = atomic_load_explicit(&mock_params->clipped_samples,
+                                                memory_order_relaxed);
+  if (out_processing_load)
+    *out_processing_load = atomic_double_get(&mock_params->processing_load);
+  if (out_resampler_load)
+    *out_resampler_load = atomic_double_get(&mock_params->resampler_load);
   return true;
 }
 
 static void mock_reset_clipped_samples(void* ctx) {
   (void)ctx;
   if (mock_params) {
-    atomic_store_explicit(&mock_params->clipped_samples, 0ULL, memory_order_relaxed);
+    atomic_store_explicit(&mock_params->clipped_samples, 0ULL,
+                          memory_order_relaxed);
   }
 }
 
@@ -87,16 +95,24 @@ static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   out_vu->capture_channels = mock_params->capture_channels;
 
   if (out_vu->playback_channels > 0) {
-    out_vu->playback_rms = (double*)calloc(out_vu->playback_channels, sizeof(double));
-    out_vu->playback_peak = (double*)calloc(out_vu->playback_channels, sizeof(double));
-    processing_parameters_get_playback_signal_rms(mock_params, out_vu->playback_rms, out_vu->playback_channels);
-    processing_parameters_get_playback_signal_peak(mock_params, out_vu->playback_peak, out_vu->playback_channels);
+    out_vu->playback_rms =
+        (double*)calloc(out_vu->playback_channels, sizeof(double));
+    out_vu->playback_peak =
+        (double*)calloc(out_vu->playback_channels, sizeof(double));
+    processing_parameters_get_playback_signal_rms(
+        mock_params, out_vu->playback_rms, out_vu->playback_channels);
+    processing_parameters_get_playback_signal_peak(
+        mock_params, out_vu->playback_peak, out_vu->playback_channels);
   }
   if (out_vu->capture_channels > 0) {
-    out_vu->capture_rms = (double*)calloc(out_vu->capture_channels, sizeof(double));
-    out_vu->capture_peak = (double*)calloc(out_vu->capture_channels, sizeof(double));
-    processing_parameters_get_capture_signal_rms(mock_params, out_vu->capture_rms, out_vu->capture_channels);
-    processing_parameters_get_capture_signal_peak(mock_params, out_vu->capture_peak, out_vu->capture_channels);
+    out_vu->capture_rms =
+        (double*)calloc(out_vu->capture_channels, sizeof(double));
+    out_vu->capture_peak =
+        (double*)calloc(out_vu->capture_channels, sizeof(double));
+    processing_parameters_get_capture_signal_rms(
+        mock_params, out_vu->capture_rms, out_vu->capture_channels);
+    processing_parameters_get_capture_signal_peak(
+        mock_params, out_vu->capture_peak, out_vu->capture_channels);
   }
   return true;
 }
@@ -104,7 +120,8 @@ static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
 static float mock_get_fader_volume(void* ctx, fader_t fader) {
   (void)ctx;
   if (mock_params) {
-    return (float)processing_parameters_get_target_volume_for_fader(mock_params, fader);
+    return (float)processing_parameters_get_target_volume_for_fader(mock_params,
+                                                                    fader);
   }
   return 0.0f;
 }
@@ -520,16 +537,21 @@ TEST(test_websocket_format_alignments) {
   char resp[4096];
 
   // 1. GetConfig value format (should be a JSON string, not parsed object)
-  websocket_server_handle_command(server, 0, "\"GetConfig\"", resp, sizeof(resp));
+  websocket_server_handle_command(server, 0, "\"GetConfig\"", resp,
+                                  sizeof(resp));
   ASSERT_TRUE(strstr(resp, "\"GetConfig\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"value\":\"{\\\"my_config\\\": true}\"") != NULL ||
               strstr(resp, "\"value\":\"{\\\"my_config\\\":true}\"") != NULL);
 
   // 2. ReadConfigJson value format (should return input config string as value)
-  const char* valid_cfg = "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,\\\"capture\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2},\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2}}}";
+  const char* valid_cfg =
+      "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,"
+      "\\\"capture\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2},"
+      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2}}}";
   char read_cmd[1024];
-  snprintf(read_cmd, sizeof(read_cmd), "{\"ReadConfigJson\":\"%s\"}", valid_cfg);
+  snprintf(read_cmd, sizeof(read_cmd), "{\"ReadConfigJson\":\"%s\"}",
+           valid_cfg);
   websocket_server_handle_command(server, 0, read_cmd, resp, sizeof(resp));
   ASSERT_TRUE(strstr(resp, "\"ReadConfigJson\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
@@ -538,19 +560,24 @@ TEST(test_websocket_format_alignments) {
 
   // 3. GetFaderVolume value format (should be [idx, vol] array)
   mock_params = processing_parameters_create(2, 2);
-  websocket_server_handle_command(server, 0, "{\"GetFaderVolume\":0}", resp, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"GetFaderVolume\":0}", resp,
+                                  sizeof(resp));
   ASSERT_TRUE(strstr(resp, "\"GetFaderVolume\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"value\":[0,0]") != NULL);
 
   // 4. GetFaderMute value format (should be [idx, mute] array)
-  websocket_server_handle_command(server, 0, "{\"GetFaderMute\":0}", resp, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"GetFaderMute\":0}", resp,
+                                  sizeof(resp));
   ASSERT_TRUE(strstr(resp, "\"GetFaderMute\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"value\":[0,false]") != NULL);
 
-  // 5. AdjustFaderVolume with optional limits in nested array format: [0, [2.5, -30.0, 10.0]]
-  websocket_server_handle_command(server, 0, "{\"AdjustFaderVolume\":[0, [2.5, -30.0, 10.0]]}", resp, sizeof(resp));
+  // 5. AdjustFaderVolume with optional limits in nested array format: [0, [2.5,
+  // -30.0, 10.0]]
+  websocket_server_handle_command(
+      server, 0, "{\"AdjustFaderVolume\":[0, [2.5, -30.0, 10.0]]}", resp,
+      sizeof(resp));
   ASSERT_TRUE(strstr(resp, "\"AdjustFaderVolume\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
   ASSERT_TRUE(strstr(resp, "\"value\":[0,2.5]") != NULL);

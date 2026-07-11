@@ -93,13 +93,16 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
                                   filter->sample_rate);
 }
 
-loudness_filter_t* loudness_filter_create(
-    const char* name, const loudness_parameters_t* params, int sample_rate,
-    processing_parameters_t* proc_params, config_error_t* err) {
+loudness_filter_t* loudness_filter_create(const char* name,
+                                          const loudness_parameters_t* params,
+                                          int sample_rate,
+                                          processing_parameters_t* proc_params,
+                                          config_error_t* err) {
   loudness_filter_t* filter =
       (loudness_filter_t*)calloc(1, sizeof(loudness_filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate loudness filter wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate loudness filter wrapper");
     return NULL;
   }
   if (name) {

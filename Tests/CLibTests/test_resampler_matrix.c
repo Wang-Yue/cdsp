@@ -128,8 +128,8 @@ static bool check_rubato_available(void) {
   const char* home = getenv("HOME");
   if (home) {
     snprintf(home_path, sizeof(home_path),
-             "%s/CamillaDSP-Monitor/Tests/RustHarnesses/target/release/"
-             RUBATO_HARNESS_NAME,
+             "%s/CamillaDSP-Monitor/Tests/RustHarnesses/target/"
+             "release/" RUBATO_HARNESS_NAME,
              home);
   }
 

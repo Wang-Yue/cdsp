@@ -35,10 +35,10 @@ typedef enum {
 typedef struct {
   log_arg_type_t type; /**< The type of the argument. */
   union {
-    int64_t i;     /**< Integer value. */
-    double d;      /**< Double value. */
-    char s[8192];  /**< String value copy. */
-  } val;           /**< The union containing the argument value. */
+    int64_t i;    /**< Integer value. */
+    double d;     /**< Double value. */
+    char s[8192]; /**< String value copy. */
+  } val;          /**< The union containing the argument value. */
 } log_argument_t;
 
 /**

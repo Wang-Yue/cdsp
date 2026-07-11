@@ -78,8 +78,7 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
                                        double q, double gain, double slope,
                                        double bandwidth,
                                        steepness_type_t steepness_type,
-                                       int sample_rate,
-                                       config_error_t* err) {
+                                       int sample_rate, config_error_t* err) {
   biquad_parameters_t bp;
   memset(&bp, 0, sizeof(bp));
   bp.type = type;
@@ -102,13 +101,16 @@ biquad_combo_filter_t* biquad_combo_filter_create(
     const char* name, const biquad_combo_parameters_t* params, int sample_rate,
     config_error_t* err) {
   if (!params) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "BiquadCombo params is NULL");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "BiquadCombo params is NULL");
     return NULL;
   }
   biquad_combo_filter_t* filter =
       (biquad_combo_filter_t*)calloc(1, sizeof(biquad_combo_filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate BiquadCombo filter '%s'", name ? name : "");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate BiquadCombo filter '%s'",
+                     name ? name : "");
     return NULL;
   }
   if (name) {
@@ -183,8 +185,9 @@ biquad_combo_filter_t* biquad_combo_filter_create(
         if (fabs(g) <= 0.001) continue;
         double log_freq = log_min + ((double)i + 0.5) * bw;
         double f = pow(2.0, log_freq);
-        secs[num++] = create_section(BIQUAD_TYPE_PEAKING, f, 0.0, g, 0.0, bw,
-                                     STEEPNESS_TYPE_BANDWIDTH, sample_rate, err);
+        secs[num++] =
+            create_section(BIQUAD_TYPE_PEAKING, f, 0.0, g, 0.0, bw,
+                           STEEPNESS_TYPE_BANDWIDTH, sample_rate, err);
       }
       break;
     }
@@ -192,31 +195,36 @@ biquad_combo_filter_t* biquad_combo_filter_create(
     case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ: {
       // Low shelf
       if (params->qls > 0.001 && fabs(params->gls) > 0.001) {
-        secs[num++] = create_section(
-            BIQUAD_TYPE_LOWSHELF, params->fls > 0 ? params->fls : 80.0,
-            params->qls, params->gls, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        secs[num++] = create_section(BIQUAD_TYPE_LOWSHELF,
+                                     params->fls > 0 ? params->fls : 80.0,
+                                     params->qls, params->gls, 0.0, 0.0,
+                                     STEEPNESS_TYPE_Q, sample_rate, err);
       }
       // Mid bands
       if (params->qp1 > 0.001 && fabs(params->gp1) > 0.001) {
-        secs[num++] = create_section(
-            BIQUAD_TYPE_PEAKING, params->fp1 > 0 ? params->fp1 : 250.0,
-            params->qp1, params->gp1, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+                                     params->fp1 > 0 ? params->fp1 : 250.0,
+                                     params->qp1, params->gp1, 0.0, 0.0,
+                                     STEEPNESS_TYPE_Q, sample_rate, err);
       }
       if (params->qp2 > 0.001 && fabs(params->gp2) > 0.001) {
-        secs[num++] = create_section(
-            BIQUAD_TYPE_PEAKING, params->fp2 > 0 ? params->fp2 : 1000.0,
-            params->qp2, params->gp2, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+                                     params->fp2 > 0 ? params->fp2 : 1000.0,
+                                     params->qp2, params->gp2, 0.0, 0.0,
+                                     STEEPNESS_TYPE_Q, sample_rate, err);
       }
       if (params->qp3 > 0.001 && fabs(params->gp3) > 0.001) {
-        secs[num++] = create_section(
-            BIQUAD_TYPE_PEAKING, params->fp3 > 0 ? params->fp3 : 4000.0,
-            params->qp3, params->gp3, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+                                     params->fp3 > 0 ? params->fp3 : 4000.0,
+                                     params->qp3, params->gp3, 0.0, 0.0,
+                                     STEEPNESS_TYPE_Q, sample_rate, err);
       }
       // High shelf
       if (params->qhs > 0.001 && fabs(params->ghs) > 0.001) {
-        secs[num++] = create_section(
-            BIQUAD_TYPE_HIGHSHELF, params->fhs > 0 ? params->fhs : 12000.0,
-            params->qhs, params->ghs, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        secs[num++] = create_section(BIQUAD_TYPE_HIGHSHELF,
+                                     params->fhs > 0 ? params->fhs : 12000.0,
+                                     params->qhs, params->ghs, 0.0, 0.0,
+                                     STEEPNESS_TYPE_Q, sample_rate, err);
       }
       break;
     }
@@ -236,7 +244,8 @@ biquad_combo_filter_t* biquad_combo_filter_create(
   filter->num_sections = num;
   filter->sections = (biquad_filter_t**)calloc(num, sizeof(biquad_filter_t*));
   if (!filter->sections) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate BiquadCombo sections memory");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate BiquadCombo sections memory");
     for (size_t j = 0; j < num; j++) {
       biquad_filter_free(secs[j]);
     }

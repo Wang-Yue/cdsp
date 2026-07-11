@@ -88,11 +88,11 @@ static void build_delay(double delay_samples, bool subsample,
 
 delay_filter_t* delay_filter_create(const char* name,
                                     const delay_parameters_t* params,
-                                    int sample_rate,
-                                    config_error_t* err) {
+                                    int sample_rate, config_error_t* err) {
   delay_filter_t* filter = (delay_filter_t*)calloc(1, sizeof(delay_filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate delay filter wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate delay filter wrapper");
     return NULL;
   }
   if (name) {
@@ -107,10 +107,11 @@ delay_filter_t* delay_filter_create(const char* name,
   bool subsample = params ? params->subsample : false;
 
   double delay_samples = compute_delay_samples(delay, unit, sample_rate);
-  if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 || delay_samples > 100000000.0) {
+  if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 ||
+      delay_samples > 100000000.0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Invalid delay value %f (%d) for filter '%s'",
-                     delay, unit, filter->name);
+                     "Invalid delay value %f (%d) for filter '%s'", delay, unit,
+                     filter->name);
     delay_filter_free(filter);
     return NULL;
   }
@@ -123,7 +124,9 @@ delay_filter_t* delay_filter_create(const char* name,
   if (integer_delay > 0) {
     filter->queue = (double*)calloc(integer_delay, sizeof(double));
     if (!filter->queue) {
-      config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate delay line buffer of length %d", integer_delay);
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Failed to allocate delay line buffer of length %d",
+                       integer_delay);
       delay_filter_free(filter);
       return NULL;
     }

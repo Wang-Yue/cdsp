@@ -256,7 +256,8 @@ const dsp_config_t* dsp_engine_get_active_config(const dsp_engine_t* engine);
 /**
  * @brief Get processing parameters.
  * @param engine Pointer to the engine instance.
- * @return Pointer to processing parameters struct (caller must NOT free, owned by engine).
+ * @return Pointer to processing parameters struct (caller must NOT free, owned
+ * by engine).
  */
 processing_parameters_t* dsp_engine_get_processing_parameters(
     const dsp_engine_t* engine);

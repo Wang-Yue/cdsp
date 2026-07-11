@@ -16,6 +16,7 @@
  */
 
 #include "noise_gate_processor.h"
+
 #include "Logging/app_logger.h"
 
 struct noise_gate_processor {
@@ -33,7 +34,8 @@ struct noise_gate_processor {
   size_t scratch_capacity;  ///< Capacity of scratch buffer in frames.
   double prev_loudness;  ///< State variable tracking previous sample envelope
                          ///< loudness.
-  bool channel_warning_logged; ///< Track if we already logged a channel mismatch warning.
+  bool channel_warning_logged;  ///< Track if we already logged a channel
+                                ///< mismatch warning.
 };
 
 const char* noise_gate_processor_get_name(
@@ -135,14 +137,16 @@ void noise_gate_processor_process(noise_gate_processor_t* processor,
   size_t ch_count = audio_chunk_get_channels(chunk);
   bool mismatch = false;
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    if (processor->monitor_channels[i] < 0 || (size_t)processor->monitor_channels[i] >= ch_count) {
+    if (processor->monitor_channels[i] < 0 ||
+        (size_t)processor->monitor_channels[i] >= ch_count) {
       mismatch = true;
       break;
     }
   }
   if (!mismatch) {
     for (size_t i = 0; i < processor->process_channels_count; i++) {
-      if (processor->process_channels[i] < 0 || (size_t)processor->process_channels[i] >= ch_count) {
+      if (processor->process_channels[i] < 0 ||
+          (size_t)processor->process_channels[i] >= ch_count) {
         mismatch = true;
         break;
       }
@@ -151,9 +155,11 @@ void noise_gate_processor_process(noise_gate_processor_t* processor,
   if (mismatch) {
     if (!processor->channel_warning_logged) {
       logger_t logger = logger_create("noise_gate_processor");
-      logger_error(&logger, "Noise Gate channel indices out of bounds for chunk channels (%d)",
-                   log_arg_int((int64_t)ch_count),
-                   log_arg_none(), log_arg_none(), log_arg_none());
+      logger_error(
+          &logger,
+          "Noise Gate channel indices out of bounds for chunk channels (%d)",
+          log_arg_int((int64_t)ch_count), log_arg_none(), log_arg_none(),
+          log_arg_none());
       processor->channel_warning_logged = true;
     }
     return;

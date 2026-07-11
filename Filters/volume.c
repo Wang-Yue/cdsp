@@ -68,16 +68,20 @@ volume_filter_t* volume_filter_create(const char* name,
                                       processing_parameters_t* proc_params,
                                       config_error_t* err) {
   if (sample_rate <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "VolumeFilter: sample_rate must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "VolumeFilter: sample_rate must be positive");
     return NULL;
   }
   if (chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "VolumeFilter: chunk_size must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "VolumeFilter: chunk_size must be positive");
     return NULL;
   }
-  volume_filter_t* filter = (volume_filter_t*)calloc(1, sizeof(volume_filter_t));
+  volume_filter_t* filter =
+      (volume_filter_t*)calloc(1, sizeof(volume_filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate volume filter wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate volume filter wrapper");
     return NULL;
   }
   if (name) {
@@ -101,7 +105,8 @@ volume_filter_t* volume_filter_create(const char* name,
   filter->current_ramp_gains =
       (double*)calloc(chunk_size > 0 ? chunk_size : 1, sizeof(double));
   if (!filter->current_ramp_gains) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate volume fader ramp gains array");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate volume fader ramp gains array");
     volume_filter_free(filter);
     return NULL;
   }

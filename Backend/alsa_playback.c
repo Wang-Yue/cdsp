@@ -450,8 +450,9 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
 
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Chunk channels count is smaller than playback device channels");
+      backend_error_init(
+          err, BACKEND_ERROR_WRITE_ERROR,
+          "Chunk channels count is smaller than playback device channels");
     }
     return false;
   }

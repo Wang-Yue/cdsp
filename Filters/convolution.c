@@ -379,17 +379,20 @@ convolution_filter_t* convolution_filter_create(const char* name,
                                                 size_t chunk_size,
                                                 config_error_t* err) {
   if (!params) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Convolution params is NULL");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Convolution params is NULL");
     return NULL;
   }
   if (chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Convolution chunk_size must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Convolution chunk_size must be positive");
     return NULL;
   }
   convolution_filter_t* filter =
       (convolution_filter_t*)calloc(1, sizeof(convolution_filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate convolution filter wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate convolution filter wrapper");
     return NULL;
   }
   if (name) {
@@ -449,7 +452,8 @@ convolution_filter_t* convolution_filter_create(const char* name,
   filter->hist_re = (double**)calloc(num_seg, sizeof(double*));
   filter->hist_im = (double**)calloc(num_seg, sizeof(double*));
 
-  if (!filter->spec_re || !filter->spec_im || !filter->hist_re || !filter->hist_im) {
+  if (!filter->spec_re || !filter->spec_im || !filter->hist_re ||
+      !filter->hist_im) {
     goto fail;
   }
 
@@ -466,7 +470,8 @@ convolution_filter_t* convolution_filter_create(const char* name,
     filter->hist_re[s] = (double*)calloc(spec_len, sizeof(double));
     filter->hist_im[s] = (double*)calloc(spec_len, sizeof(double));
 
-    if (!filter->spec_re[s] || !filter->spec_im[s] || !filter->hist_re[s] || !filter->hist_im[s]) {
+    if (!filter->spec_re[s] || !filter->spec_im[s] || !filter->hist_re[s] ||
+        !filter->hist_im[s]) {
       goto fail;
     }
 
@@ -496,8 +501,10 @@ convolution_filter_t* convolution_filter_create(const char* name,
   filter->spec_accum_re = (double*)calloc(spec_len, sizeof(double));
   filter->spec_accum_im = (double*)calloc(spec_len, sizeof(double));
 
-  if (!filter->overlap_buffer || !filter->time_buf || !filter->spec_accum_re || !filter->spec_accum_im) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate convolution scratch buffers");
+  if (!filter->overlap_buffer || !filter->time_buf || !filter->spec_accum_re ||
+      !filter->spec_accum_im) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate convolution scratch buffers");
     goto fail;
   }
 
@@ -506,7 +513,8 @@ convolution_filter_t* convolution_filter_create(const char* name,
 fail:
   if (err && err->type == CONFIG_ERR_NONE) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Failed to initialize convolution filter '%s' (check IR values or file format/existence)",
+                     "Failed to initialize convolution filter '%s' (check IR "
+                     "values or file format/existence)",
                      name ? name : "");
   }
   if (dummy_coeffs) free(dummy_coeffs);

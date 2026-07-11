@@ -20,6 +20,7 @@
  */
 
 #include "compressor_processor.h"
+
 #include "Logging/app_logger.h"
 
 struct compressor_processor {
@@ -43,7 +44,8 @@ struct compressor_processor {
                             ///< chunk_size).
   double prev_loudness;     ///< State variable storing envelope loudness from
                             ///< previous sample.
-  bool channel_warning_logged; ///< Track if we already logged a channel mismatch warning.
+  bool channel_warning_logged;  ///< Track if we already logged a channel
+                                ///< mismatch warning.
 };
 
 const char* compressor_processor_get_name(
@@ -160,14 +162,16 @@ void compressor_processor_process(compressor_processor_t* processor,
   size_t ch_count = audio_chunk_get_channels(chunk);
   bool mismatch = false;
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    if (processor->monitor_channels[i] < 0 || (size_t)processor->monitor_channels[i] >= ch_count) {
+    if (processor->monitor_channels[i] < 0 ||
+        (size_t)processor->monitor_channels[i] >= ch_count) {
       mismatch = true;
       break;
     }
   }
   if (!mismatch) {
     for (size_t i = 0; i < processor->process_channels_count; i++) {
-      if (processor->process_channels[i] < 0 || (size_t)processor->process_channels[i] >= ch_count) {
+      if (processor->process_channels[i] < 0 ||
+          (size_t)processor->process_channels[i] >= ch_count) {
         mismatch = true;
         break;
       }
@@ -176,9 +180,11 @@ void compressor_processor_process(compressor_processor_t* processor,
   if (mismatch) {
     if (!processor->channel_warning_logged) {
       logger_t logger = logger_create("compressor_processor");
-      logger_error(&logger, "Compressor channel indices out of bounds for chunk channels (%d)",
-                   log_arg_int((int64_t)ch_count),
-                   log_arg_none(), log_arg_none(), log_arg_none());
+      logger_error(
+          &logger,
+          "Compressor channel indices out of bounds for chunk channels (%d)",
+          log_arg_int((int64_t)ch_count), log_arg_none(), log_arg_none(),
+          log_arg_none());
       processor->channel_warning_logged = true;
     }
     return;

@@ -6,9 +6,6 @@
 // clang-format on
 #include "wasapi_backend.h"
 
-#include "wasapi_capabilities.h"
-
-
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
@@ -20,6 +17,7 @@
 #include <windows.h>
 
 #include "Logging/app_logger.h"
+#include "wasapi_capabilities.h"
 
 #ifndef AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
 #define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
@@ -562,7 +560,8 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+             AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
   }
 
   hr = IAudioClient_Initialize(
@@ -572,7 +571,9 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
   if (FAILED(hr)) {
     if (err) {
       char msg[256];
-      snprintf(msg, sizeof(msg), "Failed to initialize IAudioClient (Capture): hr=0x%08lX", (unsigned long)hr);
+      snprintf(msg, sizeof(msg),
+               "Failed to initialize IAudioClient (Capture): hr=0x%08lX",
+               (unsigned long)hr);
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     goto error_cleanup;
@@ -609,7 +610,8 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  capture->residual_chunk = audio_chunk_create(capture->channels, capture->chunk_size * 4);
+  capture->residual_chunk =
+      audio_chunk_create(capture->channels, capture->chunk_size * 4);
   if (!capture->residual_chunk) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -666,8 +668,9 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
                          audio_chunk_t* chunk, backend_error_t* err) {
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match capture channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
     }
     return false;
   }
@@ -684,7 +687,8 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
       double* dst = audio_chunk_get_channel(chunk, ch);
       const double* src = audio_chunk_get_channel(capture->residual_chunk, ch);
       if (dst && src) {
-        memcpy(dst + frames_read, src + capture->residual_offset, to_copy * sizeof(double));
+        memcpy(dst + frames_read, src + capture->residual_offset,
+               to_copy * sizeof(double));
       }
     }
     frames_read += to_copy;
@@ -699,7 +703,8 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
   while (frames_read < frames) {
     if (GetTickCount() - start_time > 1000) {
       if (err) {
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR, "WASAPI capture timeout (device stalled)");
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "WASAPI capture timeout (device stalled)");
       }
       return false;
     }
@@ -723,7 +728,7 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
       hr = IAudioCaptureClient_GetBuffer(capture->capture_client, &data,
                                          &num_frames, &flags, NULL, NULL);
       if (SUCCEEDED(hr) && data) {
-        start_time = GetTickCount(); // progress made, reset timeout
+        start_time = GetTickCount();  // progress made, reset timeout
         UINT32 to_copy = frames - frames_read;
         if (to_copy >= num_frames) {
           // Consume the entire packet
@@ -738,17 +743,21 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
               chunk, frames_read, data, to_copy, capture->channels, flags,
               capture->bits_per_sample, capture->valid_bits, capture->is_float);
 
-          size_t sample_size = (capture->bits_per_sample > 0) ? ((size_t)capture->bits_per_sample / 8) : 4;
-          const BYTE* extra_data = data + (size_t)to_copy * capture->channels * sample_size;
+          size_t sample_size = (capture->bits_per_sample > 0)
+                                   ? ((size_t)capture->bits_per_sample / 8)
+                                   : 4;
+          const BYTE* extra_data =
+              data + (size_t)to_copy * capture->channels * sample_size;
           UINT32 extra_frames = num_frames - to_copy;
 
           if (extra_frames > capture->chunk_size * 4) {
             extra_frames = capture->chunk_size * 4;
           }
 
-          decode_samples_from_wasapi(
-              capture->residual_chunk, 0, extra_data, extra_frames, capture->channels, flags,
-              capture->bits_per_sample, capture->valid_bits, capture->is_float);
+          decode_samples_from_wasapi(capture->residual_chunk, 0, extra_data,
+                                     extra_frames, capture->channels, flags,
+                                     capture->bits_per_sample,
+                                     capture->valid_bits, capture->is_float);
 
           capture->residual_frames = extra_frames;
           capture->residual_offset = 0;
@@ -1129,7 +1138,8 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+             AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
   }
 
   hr = IAudioClient_Initialize(playback->client, mode, flags, duration,
@@ -1138,7 +1148,9 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
   if (FAILED(hr)) {
     if (err) {
       char msg[256];
-      snprintf(msg, sizeof(msg), "Failed to initialize IAudioClient (Playback): hr=0x%08lX", (unsigned long)hr);
+      snprintf(msg, sizeof(msg),
+               "Failed to initialize IAudioClient (Playback): hr=0x%08lX",
+               (unsigned long)hr);
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     goto error_cleanup;
@@ -1221,8 +1233,9 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
 
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS,
-                         "Chunk channels count does not match playback channels");
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match playback channels");
     }
     return false;
   }
@@ -1236,7 +1249,8 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
   while (frames_written < total_frames) {
     if (GetTickCount() - start_time > 1000) {
       if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "WASAPI playback timeout (device stalled)");
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "WASAPI playback timeout (device stalled)");
       }
       return false;
     }
@@ -1264,7 +1278,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
       hr = IAudioRenderClient_GetBuffer(playback->render_client, to_write,
                                         &data);
       if (SUCCEEDED(hr) && data) {
-        start_time = GetTickCount(); // progress made, reset timeout
+        start_time = GetTickCount();  // progress made, reset timeout
         // Encode and copy the samples from the audio chunk to the WASAPI
         // buffer.
         encode_samples_to_wasapi(data, chunk, frames_written, to_write,

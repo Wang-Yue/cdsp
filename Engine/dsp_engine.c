@@ -3,8 +3,8 @@
 #include <pthread.h>
 
 #include "Audio/audio_history_buffer.h"
-#include "dsp_engine_core.h"
 #include "Config/config_diff.h"
+#include "dsp_engine_core.h"
 
 struct dsp_engine {
   /** Pointer to the underlying DSP core. */
@@ -93,7 +93,8 @@ dsp_engine_t* dsp_engine_create(void) {
   engine->capture_buffer = audio_history_buffer_create();
   engine->playback_buffer = audio_history_buffer_create();
 
-  if (!engine->spectrum || !engine->capture_buffer || !engine->playback_buffer) {
+  if (!engine->spectrum || !engine->capture_buffer ||
+      !engine->playback_buffer) {
     dsp_engine_free(engine);
     return NULL;
   }
@@ -161,7 +162,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
   // dynamically without tearing down audio threads.
   if (engine->core &&
       dsp_engine_core_get_state(engine->core) != PROCESSING_STATE_INACTIVE) {
-    if (devices_config_equal(&engine->core->current_config->devices, &config->devices)) {
+    if (devices_config_equal(&engine->core->current_config->devices,
+                             &config->devices)) {
       audio_backend_error_t berr;
       if (dsp_engine_core_reload_config(engine->core, config, &berr)) {
         return true;
@@ -756,9 +758,13 @@ static bool iface_get_processing_status(void* ctx, double* out_rate_adjust,
   processing_parameters_t* p = engine->core->processing_params;
   if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&p->rate_adjust);
   if (out_buffer_level) *out_buffer_level = atomic_double_get(&p->buffer_level);
-  if (out_clipped_samples) *out_clipped_samples = atomic_load_explicit(&p->clipped_samples, memory_order_relaxed);
-  if (out_processing_load) *out_processing_load = atomic_double_get(&p->processing_load);
-  if (out_resampler_load) *out_resampler_load = atomic_double_get(&p->resampler_load);
+  if (out_clipped_samples)
+    *out_clipped_samples =
+        atomic_load_explicit(&p->clipped_samples, memory_order_relaxed);
+  if (out_processing_load)
+    *out_processing_load = atomic_double_get(&p->processing_load);
+  if (out_resampler_load)
+    *out_resampler_load = atomic_double_get(&p->resampler_load);
   pthread_mutex_unlock(&engine->state_mutex);
   return true;
 }
@@ -768,7 +774,8 @@ static void iface_reset_clipped_samples(void* ctx) {
   dsp_engine_t* engine = (dsp_engine_t*)ctx;
   pthread_mutex_lock(&engine->state_mutex);
   if (engine->core && engine->core->processing_params) {
-    atomic_store_explicit(&engine->core->processing_params->clipped_samples, 0ULL, memory_order_relaxed);
+    atomic_store_explicit(&engine->core->processing_params->clipped_samples,
+                          0ULL, memory_order_relaxed);
   }
   pthread_mutex_unlock(&engine->state_mutex);
 }

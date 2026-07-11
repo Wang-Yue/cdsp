@@ -104,7 +104,8 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                        "chunksize must be between 1 and 1000000");
       return -1;
     }
-    int64_t target_limit = (2 + qlimit_val) * (int64_t)config->devices.chunksize;
+    int64_t target_limit =
+        (2 + qlimit_val) * (int64_t)config->devices.chunksize;
 #if defined(ENABLE_ALSA)
     if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
       target_limit = (4 + qlimit_val) * (int64_t)config->devices.chunksize;
@@ -127,7 +128,8 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
 
-  if (config->devices.has_adjust_period && config->devices.adjust_period < 0.1) {
+  if (config->devices.has_adjust_period &&
+      config->devices.adjust_period < 0.1) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "adjust_period must be at least 0.1 seconds");
     return -1;
@@ -194,9 +196,10 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
         }
         for (size_t j = 0; j < step->names_count; j++) {
           if (!step->names[j] || step->names[j][0] == '\0') {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step %zu has invalid/empty filter name at index %zu",
-                             i, j);
+            config_error_set(
+                err, CONFIG_ERR_INVALID_PIPELINE,
+                "Filter step %zu has invalid/empty filter name at index %zu", i,
+                j);
             return -1;
           }
           if (!dsp_config_get_filter(config, step->names[j])) {

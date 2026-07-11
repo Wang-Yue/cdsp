@@ -44,7 +44,8 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   }
   filter_t* filter = (filter_t*)calloc(1, sizeof(filter_t));
   if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate filter wrapper");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate filter wrapper");
     return NULL;
   }
   if (name) {
@@ -57,9 +58,12 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   switch (config->type) {
     case FILTER_TYPE_BIQUAD: {
       biquad_coefficients_t coeffs;
-      if (!biquad_coefficients_compute(&config->parameters.biquad, sample_rate, &coeffs)) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Failed to compute biquad coefficients for filter '%s'", filter->name);
+      if (!biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
+                                       &coeffs)) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "Failed to compute biquad coefficients for filter '%s'",
+            filter->name);
         free(filter);
         return NULL;
       }
@@ -74,13 +78,13 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
       break;
     case FILTER_TYPE_CONV:
       filter->type = FILTER_INSTANCE_CONVOLUTION;
-      filter->instance =
-          convolution_filter_create(name, &config->parameters.conv, chunk_size, err);
+      filter->instance = convolution_filter_create(
+          name, &config->parameters.conv, chunk_size, err);
       break;
     case FILTER_TYPE_DELAY:
       filter->type = FILTER_INSTANCE_DELAY;
-      filter->instance =
-          delay_filter_create(name, &config->parameters.delay, sample_rate, err);
+      filter->instance = delay_filter_create(name, &config->parameters.delay,
+                                             sample_rate, err);
       break;
     case FILTER_TYPE_DIFF_EQ:
       filter->type = FILTER_INSTANCE_DIFF_EQ;
@@ -117,7 +121,9 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                                chunk_size, proc_params, err);
       break;
     default:
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Unknown filter type %d for '%s'", config->type, filter->name);
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Unknown filter type %d for '%s'", config->type,
+                       filter->name);
       free(filter);
       return NULL;
   }

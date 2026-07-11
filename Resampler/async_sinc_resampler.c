@@ -49,33 +49,40 @@ async_sinc_resampler_t* async_sinc_resampler_create(
     window_function_t window, double f_cutoff, bool has_f_cutoff,
     size_t chunk_size, double max_relative_ratio, config_error_t* err) {
   if (channels == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "AsyncSincResampler: channels must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: channels must be positive");
     return NULL;
   }
   if (chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "AsyncSincResampler: chunk_size must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: chunk_size must be positive");
     return NULL;
   }
   if (input_rate == 0 || output_rate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "AsyncSincResampler: rates must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: rates must be positive");
     return NULL;
   }
   if (oversampling_factor == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "AsyncSincResampler: oversampling_factor must be positive");
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSincResampler: oversampling_factor must be positive");
     return NULL;
   }
   if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
   if (chunk_size < 2 * sinc_len || chunk_size > SIZE_MAX - 2 * sinc_len) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSincResampler: chunk_size %zu is out of bounds for sinc_len %zu",
-                     chunk_size, sinc_len);
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSincResampler: chunk_size %zu is out of bounds for sinc_len %zu",
+        chunk_size, sinc_len);
     return NULL;
   }
 
   async_sinc_resampler_t* resampler =
       (async_sinc_resampler_t*)calloc(1, sizeof(async_sinc_resampler_t));
   if (!resampler) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate AsyncSincResampler");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler");
     return NULL;
   }
 
@@ -99,7 +106,8 @@ async_sinc_resampler_t* async_sinc_resampler_create(
   resampler->sinc_table =
       make_sinc_table(sinc_len, oversampling_factor, window, fc);
   if (!resampler->sinc_table) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to build AsyncSincResampler sinc table");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to build AsyncSincResampler sinc table");
     async_sinc_resampler_free(resampler);
     return NULL;
   }
@@ -109,7 +117,8 @@ async_sinc_resampler_t* async_sinc_resampler_create(
   size_t buf_len = chunk_size + 2 * sinc_len;
   resampler->input_buffer = audio_buffers_create(channels, buf_len);
   if (!resampler->input_buffer) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate AsyncSincResampler input buffer");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler input buffer");
     async_sinc_resampler_free(resampler);
     return NULL;
   }
@@ -129,8 +138,11 @@ async_sinc_resampler_t* async_sinc_resampler_create(
       ((double)chunk_size - (double)(sinc_len + 1) - most_neg_last_index) *
       max_ratio_abs;
 
-  if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 || raw_max > (double)(SIZE_MAX - 32)) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "AsyncSincResampler: calculated maximum output size is invalid");
+  if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
+      raw_max > (double)(SIZE_MAX - 32)) {
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSincResampler: calculated maximum output size is invalid");
     async_sinc_resampler_free(resampler);
     return NULL;
   }
@@ -142,7 +154,8 @@ async_sinc_resampler_t* async_sinc_resampler_create(
   resampler->frac_scratch =
       (double*)calloc(resampler->max_output_frames, sizeof(double));
   if (!resampler->idx_scratch || !resampler->frac_scratch) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate AsyncSincResampler scratch buffers");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler scratch buffers");
     async_sinc_resampler_free(resampler);
     return NULL;
   }
@@ -206,7 +219,8 @@ void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
                                              double multiplier) {
   if (!resampler) return;
   if (multiplier < 0.000001) multiplier = 0.000001;
-  if (multiplier > resampler->max_relative_ratio) multiplier = resampler->max_relative_ratio;
+  if (multiplier > resampler->max_relative_ratio)
+    multiplier = resampler->max_relative_ratio;
   resampler->target_ratio = resampler->base_ratio * multiplier;
 }
 

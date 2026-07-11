@@ -431,7 +431,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       if (!res) return NULL;
       audio_resampler_t* wrap = audio_resampler_wrap_synchronous(res);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap synchronous resampler");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap synchronous resampler");
       }
       return wrap;
     }
@@ -449,7 +450,8 @@ audio_resampler_t* audio_resampler_create_from_config(
         if (!res) return NULL;
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
         if (!wrap) {
-          config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap async sinc resampler");
+          config_error_set(err, CONFIG_ERR_PARSE,
+                           "Failed to wrap async sinc resampler");
         }
         return wrap;
       } else {
@@ -462,7 +464,8 @@ audio_resampler_t* audio_resampler_create_from_config(
         if (!res) return NULL;
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
         if (!wrap) {
-          config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap async sinc resampler");
+          config_error_set(err, CONFIG_ERR_PARSE,
+                           "Failed to wrap async sinc resampler");
         }
         return wrap;
       }
@@ -477,7 +480,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       if (!res) return NULL;
       audio_resampler_t* wrap = audio_resampler_wrap_async_poly(res);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap async poly resampler");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap async poly resampler");
       }
       return wrap;
     }
@@ -494,13 +498,15 @@ audio_resampler_t* audio_resampler_create_from_config(
       if (!res) return NULL;
       audio_resampler_t* wrap = audio_resampler_wrap_apple(res);
       if (!wrap) {
-        config_error_set(err, CONFIG_ERR_PARSE, "Failed to wrap Apple resampler");
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Failed to wrap Apple resampler");
       }
       return wrap;
     }
 #endif
     default:
-      config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %d", config->type);
+      config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %d",
+                       config->type);
       return NULL;
   }
 }

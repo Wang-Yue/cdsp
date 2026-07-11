@@ -17,7 +17,8 @@ struct diffeq_filter {
 
 diffeq_filter_t* diffeq_filter_create(const char* name,
                                       const diff_eq_parameters_t* params) {
-  diffeq_filter_t* filter = (diffeq_filter_t*)calloc(1, sizeof(diffeq_filter_t));
+  diffeq_filter_t* filter =
+      (diffeq_filter_t*)calloc(1, sizeof(diffeq_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);

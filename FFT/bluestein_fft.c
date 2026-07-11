@@ -130,13 +130,17 @@ bluestein_fft_t* bluestein_fft_create(size_t n, config_error_t* err) {
   vDSP_DFT_SetupD fwd =
       vDSP_DFT_zop_CreateSetupD(NULL, (vDSP_Length)m, vDSP_DFT_FORWARD);
   if (!fwd) {
-    config_error_set(err, CONFIG_ERR_PARSE, "BluesteinFFT: vDSP forward DFT setup failed for inner size %zu", m);
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "BluesteinFFT: vDSP forward DFT setup failed for inner size %zu", m);
     return NULL;
   }
   vDSP_DFT_SetupD inv =
       vDSP_DFT_zop_CreateSetupD(NULL, (vDSP_Length)m, vDSP_DFT_INVERSE);
   if (!inv) {
-    config_error_set(err, CONFIG_ERR_PARSE, "BluesteinFFT: vDSP inverse DFT setup failed for inner size %zu", m);
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "BluesteinFFT: vDSP inverse DFT setup failed for inner size %zu", m);
     vDSP_DFT_DestroySetupD(fwd);
     return NULL;
   }

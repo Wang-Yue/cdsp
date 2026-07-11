@@ -576,8 +576,9 @@ bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
 
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Chunk channels count is smaller than capture device channels");
+      backend_error_init(
+          err, BACKEND_ERROR_READ_ERROR,
+          "Chunk channels count is smaller than capture device channels");
     }
     return false;
   }

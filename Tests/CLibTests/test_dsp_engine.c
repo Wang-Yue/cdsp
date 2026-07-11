@@ -850,10 +850,12 @@ TEST(DSPEngineASIOSetConfigAndReload) {
       "            \"channels_out\": 2,\n"
       "            \"mapping\": [{\n"
       "                \"dest\": 0,\n"
-      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, \"inverted\": false, \"mute\": false}]\n"
+      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, "
+      "\"inverted\": false, \"mute\": false}]\n"
       "            }, {\n"
       "                \"dest\": 1,\n"
-      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, \"inverted\": false, \"mute\": false}]\n"
+      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, "
+      "\"inverted\": false, \"mute\": false}]\n"
       "            }]\n"
       "        }\n"
       "    },\n"
@@ -867,7 +869,10 @@ TEST(DSPEngineASIOSetConfigAndReload) {
   memset(&err, 0, sizeof(err));
   bool success1 = dsp_engine_set_config(engine, json1, &err);
   if (!success1) {
-    printf("⚠️ [ASIO Warning] Skipping ASIO SetConfigAndReload test (Failed to set config: %s)\n", err.message);
+    printf(
+        "⚠️ [ASIO Warning] Skipping ASIO SetConfigAndReload test (Failed to set "
+        "config: %s)\n",
+        err.message);
     dsp_engine_free(engine);
     return;
   }
@@ -951,7 +956,10 @@ TEST(DSPEngineASIOHotParameterReload) {
   memset(&err, 0, sizeof(err));
   bool success1 = dsp_engine_set_config(engine, json1, &err);
   if (!success1) {
-    printf("⚠️ [ASIO Warning] Skipping ASIO HotParameterReload test (Failed to set config: %s)\n", err.message);
+    printf(
+        "⚠️ [ASIO Warning] Skipping ASIO HotParameterReload test (Failed to set "
+        "config: %s)\n",
+        err.message);
     dsp_engine_free(engine);
     return;
   }
@@ -1002,7 +1010,10 @@ TEST(DSPEngineASIOSetConfigStruct) {
   audio_backend_error_t berr;
   bool ok = dsp_engine_set_config_struct(engine, parsed, &berr);
   if (!ok) {
-    printf("⚠️ [ASIO Warning] Skipping ASIO SetConfigStruct test (Failed to set config struct: %s)\n", berr.message);
+    printf(
+        "⚠️ [ASIO Warning] Skipping ASIO SetConfigStruct test (Failed to set "
+        "config struct: %s)\n",
+        berr.message);
     dsp_engine_free(engine);
     return;
   }
@@ -1019,4 +1030,3 @@ TEST(DSPEngineASIOSetConfigStruct) {
 #endif
 
 TEST_MAIN()
-

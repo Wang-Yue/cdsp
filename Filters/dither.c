@@ -323,7 +323,8 @@ static double sample_dither(dither_filter_t* filter) {
 // MARK: - DitherFilter
 dither_filter_t* dither_filter_create(const char* name,
                                       const dither_parameters_t* params) {
-  dither_filter_t* filter = (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
+  dither_filter_t* filter =
+      (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);

@@ -60,7 +60,8 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
 
 /**
  * @brief Set whether the ring buffer should overwrite the oldest unread data
- * when capacity is exceeded. Default is false (which caps writes to prevent races).
+ * when capacity is exceeded. Default is false (which caps writes to prevent
+ * races).
  *
  * @param ring Pointer to the ring buffer.
  * @param overwrite True to overwrite on overflow, false to drop/cap writes.
@@ -252,7 +253,7 @@ bool spsc_audio_ring_buffer_read_latest_at(const spsc_audio_ring_buffer_t* ring,
 static inline size_t spsc_audio_ring_buffer_round_up_to_power_of_two(size_t n) {
   if (n == 0) return 1;
   if (n > ((size_t)1 << (sizeof(size_t) * 8 - 1))) {
-    return (size_t)1 << (sizeof(size_t) * 8 - 1); // Cap at max power of two
+    return (size_t)1 << (sizeof(size_t) * 8 - 1);  // Cap at max power of two
   }
   n--;
   n |= n >> 1;

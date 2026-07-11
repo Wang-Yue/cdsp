@@ -28,11 +28,13 @@ audio_history_buffer_t* audio_history_buffer_create(void) {
   return history;
 }
 
-static void audio_history_buffer_clear_internal(audio_history_buffer_t* history) {
+static void audio_history_buffer_clear_internal(
+    audio_history_buffer_t* history) {
   if (!history) return;
   if (history->buffers) {
     for (size_t ch = 0; ch < history->channels; ch++) {
-      if (history->buffers[ch]) spsc_audio_ring_buffer_free(history->buffers[ch]);
+      if (history->buffers[ch])
+        spsc_audio_ring_buffer_free(history->buffers[ch]);
     }
     free(history->buffers);
     history->buffers = NULL;
@@ -62,7 +64,8 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
         audio_history_buffer_clear_internal(history);
         return;
       }
-      spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch], true);
+      spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch],
+                                                       true);
     }
     history->averaging_scratch =
         (float*)calloc(AUDIO_HISTORY_BUFFER_CAPACITY, sizeof(float));

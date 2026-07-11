@@ -214,9 +214,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       backend_error_init(&err, BACKEND_ERROR_NONE, "");
       bool ok = playback_backend_write(loop->playback, chunk, &err);
       if (!ok || err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Playback error: %s",
-                     log_arg_string(err.message), log_arg_none(),
-                     log_arg_none(), log_arg_none());
+        logger_error(&logger, "Playback error: %s", log_arg_string(err.message),
+                     log_arg_none(), log_arg_none(), log_arg_none());
         processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);

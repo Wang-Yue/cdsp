@@ -79,8 +79,8 @@ static inline double get_occupied(lookahead_limiter_filter_t* filter,
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
     const char* name, const lookahead_limiter_parameters_t* params,
     int sample_rate, size_t chunk_size) {
-  lookahead_limiter_filter_t* filter =
-      (lookahead_limiter_filter_t*)calloc(1, sizeof(lookahead_limiter_filter_t));
+  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)calloc(
+      1, sizeof(lookahead_limiter_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);

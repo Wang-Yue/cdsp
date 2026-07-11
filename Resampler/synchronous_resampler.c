@@ -121,8 +121,8 @@ struct synchronous_resampler {
   double* working_spec_im;
 };
 
-#include <stdint.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -156,22 +156,26 @@ synchronous_resampler_t* synchronous_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     size_t requested_chunk_size, config_error_t* err) {
   if (channels == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "SynchronousResampler: channels must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: channels must be positive");
     return NULL;
   }
   if (requested_chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "SynchronousResampler: chunk_size must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: chunk_size must be positive");
     return NULL;
   }
   if (input_rate == 0 || output_rate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "SynchronousResampler: rates must be positive");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: rates must be positive");
     return NULL;
   }
 
   synchronous_resampler_t* resampler =
       (synchronous_resampler_t*)calloc(1, sizeof(synchronous_resampler_t));
   if (!resampler) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate SynchronousResampler");
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate SynchronousResampler");
     return NULL;
   }
 
@@ -191,7 +195,8 @@ synchronous_resampler_t* synchronous_resampler_create(
   size_t output_block = k * m;
 
   if (input_block > SIZE_MAX / 2 || output_block > SIZE_MAX / 2) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "SynchronousResampler: block size overflows SIZE_MAX / 2");
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: block size overflows SIZE_MAX / 2");
     synchronous_resampler_free(resampler);
     return NULL;
   }
@@ -216,7 +221,9 @@ synchronous_resampler_t* synchronous_resampler_create(
   double* kernel =
       make_sinc_table(input_block, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
   if (!kernel) {
-    config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to build anti-aliasing kernel");
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to build anti-aliasing kernel");
     synchronous_resampler_free(resampler);
     return NULL;
   }
@@ -229,7 +236,9 @@ synchronous_resampler_t* synchronous_resampler_create(
   size_t two_n = 2 * input_block;
   double* filter_time = (double*)calloc(two_n, sizeof(double));
   if (!filter_time) {
-    config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to allocate filter time buffer");
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate filter time buffer");
     free(kernel);
     synchronous_resampler_free(resampler);
     return NULL;
@@ -254,7 +263,9 @@ synchronous_resampler_t* synchronous_resampler_create(
   resampler->filter_spec_re = (double*)calloc(input_block + 1, sizeof(double));
   resampler->filter_spec_im = (double*)calloc(input_block + 1, sizeof(double));
   if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
-    config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to allocate filter spectrum buffer");
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate filter spectrum buffer");
     free(filter_time);
     synchronous_resampler_free(resampler);
     return NULL;
@@ -265,14 +276,19 @@ synchronous_resampler_t* synchronous_resampler_create(
 
   resampler->carries = (double**)calloc(channels, sizeof(double*));
   if (!resampler->carries) {
-    config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to allocate channel carries array");
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate channel carries array");
     synchronous_resampler_free(resampler);
     return NULL;
   }
   for (size_t ch = 0; ch < channels; ch++) {
     resampler->carries[ch] = (double*)calloc(output_block, sizeof(double));
     if (!resampler->carries[ch]) {
-      config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to allocate carry buffer for channel %zu", ch);
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "SynchronousResampler: Failed to allocate carry buffer "
+                       "for channel %zu",
+                       ch);
       synchronous_resampler_free(resampler);
       return NULL;
     }
@@ -284,7 +300,9 @@ synchronous_resampler_t* synchronous_resampler_create(
   resampler->working_spec_im = (double*)calloc(max_len + 1, sizeof(double));
   if (!resampler->working_time || !resampler->working_spec_re ||
       !resampler->working_spec_im) {
-    config_error_set(err, CONFIG_ERR_PARSE, "SynchronousResampler: Failed to allocate working buffers");
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate working buffers");
     synchronous_resampler_free(resampler);
     return NULL;
   }
