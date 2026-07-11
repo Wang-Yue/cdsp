@@ -78,7 +78,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             float s = (left[i] - right[i]) * 0.7071f;
             maxVal = std::max(maxVal, std::max(std::abs(m), std::abs(s)));
         }
-        autoScaleFactor = (maxVal > 1e-4f) ? std::min(0.85f / maxVal, 32.0f) : 1.0f;
+        autoScaleFactor = (maxVal > 1e-4f) ? std::min(0.90f / maxVal, 32.0f) : 1.0f;
     }
 
     if (!m_showParticles) {
@@ -99,13 +99,13 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         p.setPen(QPen(QColor("#34c759"), 1.5));
         p.drawPath(path);
     } else {
-        // Particle Mode with Indigo-Cyan gradient, tail age decay, and head glowing halo
+        // Particle Mode matching SwiftUI: Indigo to Cyan HSV gradient, head halo, particle radius decay
         p.setPen(Qt::NoPen);
 
         for (size_t i = 0; i < count; ++i) {
             float l = left[i];
             float r = right[i];
-            float t = static_cast<float>(i) / static_cast<float>(count - 1);
+            float t = (count > 1) ? static_cast<float>(i) / static_cast<float>(count - 1) : 1.0f;
 
             float m = (l + r) * 0.7071f;
             float s = (l - r) * 0.7071f;
@@ -113,17 +113,24 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             float x = centerPt.x() + s * (center * autoScaleFactor);
             float y = centerPt.y() - m * (center * autoScaleFactor);
 
-            float radius = 1.0f + 3.5f * t;
-            QColor col = QColor::fromHsvF(0.65f - 0.2f * t, 0.8f, 0.9f, 0.05f + 0.85f * t);
+            float size = 1.0f + 3.5f * t;
+            float alpha = 0.03f + 0.82f * t;
 
-            p.setBrush(col);
-            p.drawEllipse(QPointF(x, y), radius, radius);
+            // Indigo (HSV 0.65) to Cyan (HSV 0.50)
+            float hue = 0.65f - 0.15f * t;
+            QColor particleColor = QColor::fromHsvF(hue, 0.8f, 0.95f, alpha);
 
-            // Glowing head halo for recent samples
-            if (i + 10 >= count) {
-                p.setBrush(QColor(255, 255, 255, 120));
-                p.drawEllipse(QPointF(x, y), radius + 2.0, radius + 2.0);
+            // Glowing head halo for head of vector stream (t > 0.9)
+            if (t > 0.9f) {
+                float glowSize = size * 2.0f;
+                QColor haloColor = particleColor;
+                haloColor.setAlphaF(0.25f);
+                p.setBrush(haloColor);
+                p.drawEllipse(QPointF(x, y), glowSize / 2.0f, glowSize / 2.0f);
             }
+
+            p.setBrush(particleColor);
+            p.drawEllipse(QPointF(x, y), size / 2.0f, size / 2.0f);
         }
     }
 }

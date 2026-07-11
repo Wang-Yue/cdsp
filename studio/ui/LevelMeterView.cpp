@@ -85,12 +85,14 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int rmsW = static_cast<int>(rmsFrac * barW);
         int peakX = xStart + static_cast<int>(peakFrac * barW);
 
-        // RMS fill (Gradient)
+        // RMS fill (Gradient matching SwiftUI audioLevel)
         QLinearGradient grad(xStart, y, xStart + barW, y);
         grad.setColorAt(0.0, QColor("#34c759"));
+        grad.setColorAt(0.35, QColor("#34c759"));
         grad.setColorAt(0.55, QColor("#ffcc00"));
         grad.setColorAt(0.75, QColor("#ff9500"));
         grad.setColorAt(0.95, QColor("#ff3b30"));
+        grad.setColorAt(1.0, QColor("#ff3b30"));
         p.fillRect(xStart, y, rmsW, barHeight, grad);
 
         // Peak line indicator

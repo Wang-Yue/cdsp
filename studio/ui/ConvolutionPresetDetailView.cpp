@@ -71,7 +71,7 @@ void ConvolutionPresetDetailView::setupUi() {
             m_irPlot->setIRPath(p);
         }
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyLabel->setText(QString("%1 ms").arg(ms, 0, 'f', 1));
+        m_latencyLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     });
     rateBox->addWidget(m_ratePreviewCombo);
     rateBox->addStretch();
@@ -120,7 +120,7 @@ void ConvolutionPresetDetailView::refreshUi() {
         std::string p = m_preset.irPath(m_previewRate);
         if (!p.empty()) m_irPlot->setIRPath(p);
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyLabel->setText(QString("%1 ms").arg(ms, 0, 'f', 1));
+        m_latencyLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     }
 
     // Populate files list

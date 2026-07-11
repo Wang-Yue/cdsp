@@ -168,28 +168,30 @@ void DevicePickerView::setupUi() {
     layout->addWidget(scroll);
 }
 
+QString DevicePickerView::formatSampleRate(int rate) {
+    if (rate >= 1000) {
+        return QString("%1 kHz").arg(rate / 1000.0, 0, 'f', 1);
+    }
+    return QString("%1 Hz").arg(rate);
+}
+
 QWidget* DevicePickerView::createCapCoreAudioView() {
     auto w = new QWidget(this);
     auto form = new QFormLayout(w);
 
     m_capDeviceCombo = new QComboBox(w);
-    connect(m_capDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        Q_UNUSED(idx);
-        applySettings();
-    });
+    m_capDeviceCombo->hide(); // Keep data model, hide visual dropdown to avoid dual controls
 
     m_capDeviceList = new QListWidget(w);
     m_capDeviceList->setMaximumHeight(120);
     connect(m_capDeviceList, &QListWidget::currentRowChanged, [this](int row) {
         if (row >= 0 && row < m_capDeviceCombo->count()) {
             m_capDeviceCombo->setCurrentIndex(row);
+            applySettings();
         }
     });
 
-    auto devBox = new QVBoxLayout();
-    devBox->addWidget(m_capDeviceCombo);
-    devBox->addWidget(m_capDeviceList);
-    form->addRow("Device Selection:", devBox);
+    form->addRow("Device Selection:", m_capDeviceList);
 
     auto chBox = new QHBoxLayout();
     m_capDevChannelsSpin = new QSpinBox(w);
@@ -239,11 +241,17 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 
     m_capFileFormatCombo = new QComboBox(w);
     m_capFileFormatCombo->addItems({"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
-    form->addRow("Format:", m_capFileFormatCombo);
-
     m_capFileChannelsSpin = new QSpinBox(w);
     m_capFileChannelsSpin->setRange(1, 32);
-    form->addRow("Channels:", m_capFileChannelsSpin);
+
+    if (isWav) {
+        auto noteLbl = new QLabel("Sample rate, format, and channel count are parsed from the file header", w);
+        noteLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+        form->addRow("", noteLbl);
+    } else {
+        form->addRow("Format:", m_capFileFormatCombo);
+        form->addRow("Channels:", m_capFileChannelsSpin);
+    }
 
     m_capSkipBytesSpin = new QSpinBox(w);
     m_capSkipBytesSpin->setRange(0, 1000000);
@@ -277,6 +285,10 @@ QWidget* DevicePickerView::createCapGeneratorView() {
     m_genFreqSpin->setSuffix(" Hz");
     form->addRow("Frequency:", m_genFreqSpin);
 
+    connect(m_genTypeCombo, &QComboBox::currentTextChanged, [this](const QString& type) {
+        m_genFreqSpin->setEnabled(type != "WhiteNoise");
+    });
+
     m_genLevelSpin = new QDoubleSpinBox(w);
     m_genLevelSpin->setRange(-100.0, 0.0);
     m_genLevelSpin->setSuffix(" dB");
@@ -290,23 +302,18 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     auto form = new QFormLayout(w);
 
     m_pbDeviceCombo = new QComboBox(w);
-    connect(m_pbDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        Q_UNUSED(idx);
-        applySettings();
-    });
+    m_pbDeviceCombo->hide(); // Keep data model, hide visual dropdown to avoid dual controls
 
     m_pbDeviceList = new QListWidget(w);
     m_pbDeviceList->setMaximumHeight(120);
     connect(m_pbDeviceList, &QListWidget::currentRowChanged, [this](int row) {
         if (row >= 0 && row < m_pbDeviceCombo->count()) {
             m_pbDeviceCombo->setCurrentIndex(row);
+            applySettings();
         }
     });
 
-    auto devBox = new QVBoxLayout();
-    devBox->addWidget(m_pbDeviceCombo);
-    devBox->addWidget(m_pbDeviceList);
-    form->addRow("Device Selection:", devBox);
+    form->addRow("Device Selection:", m_pbDeviceList);
 
     auto chBox = new QHBoxLayout();
     m_pbDevChannelsSpin = new QSpinBox(w);
@@ -321,6 +328,9 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     form->addRow("Channels:", chBox);
 
     m_pbRateCombo = new QComboBox(w);
+    connect(m_pbRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
+        updateDoPCapability();
+    });
     form->addRow("Sample Rate:", m_pbRateCombo);
 
     m_pbFormatCombo = new QComboBox(w);
@@ -336,7 +346,19 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_sdmFilterCombo->addItems({"SDM5", "SDM6", "SDM7"});
     form->addRow("SDM Encoder Filter:", m_sdmFilterCombo);
 
+    connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_sdmFilterCombo->setEnabled(checked && m_outputDoPCheck->isEnabled());
+    });
+
     return w;
+}
+
+void DevicePickerView::updateDoPCapability() {
+    int currentRate = m_pbRateCombo->currentData().toInt();
+    bool isCapable = (currentRate == 176400 || currentRate == 352800 || currentRate == 705600 ||
+                      currentRate == 192000 || currentRate == 384000 || currentRate == 768000);
+    m_outputDoPCheck->setEnabled(isCapable);
+    m_sdmFilterCombo->setEnabled(isCapable && m_outputDoPCheck->isChecked());
 }
 
 QWidget* DevicePickerView::createPbFileView() {
@@ -443,7 +465,7 @@ void DevicePickerView::refreshUi() {
     auto capRates = m_devices->captureConfig.supportedRates();
     if (capRates.empty()) capRates = {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
     for (int rate : capRates) {
-        m_capRateCombo->addItem(QString("%1 Hz").arg(rate), rate);
+        m_capRateCombo->addItem(formatSampleRate(rate), rate);
     }
     int capRateIdx = m_capRateCombo->findData(m_devices->captureConfig.sampleRate);
     if (capRateIdx >= 0) m_capRateCombo->setCurrentIndex(capRateIdx);
@@ -464,10 +486,11 @@ void DevicePickerView::refreshUi() {
     auto pbRates = m_devices->playbackConfig.supportedRates();
     if (pbRates.empty()) pbRates = {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
     for (int rate : pbRates) {
-        m_pbRateCombo->addItem(QString("%1 Hz").arg(rate), rate);
+        m_pbRateCombo->addItem(formatSampleRate(rate), rate);
     }
     int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
     if (pbRateIdx >= 0) m_pbRateCombo->setCurrentIndex(pbRateIdx);
+    updateDoPCapability();
 
     m_pbFormatCombo->clear();
     auto pbFormats = m_devices->playbackConfig.supportedFormats();

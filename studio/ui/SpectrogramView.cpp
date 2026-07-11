@@ -77,34 +77,50 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         size_t colCount = m_history.size();
         int colW = std::max(2, plotW / static_cast<int>(colCount));
 
+        double logMin = std::log10(20.0), logMax = std::log10(20000.0);
+
         for (size_t col = 0; col < colCount; ++col) {
             const auto& spec = m_history[col];
             size_t binCount = spec.magnitudes.size();
             if (binCount == 0) continue;
 
             int x = marginL + plotW - static_cast<int>(col + 1) * colW;
-            double logMin = std::log10(20.0), logMax = std::log10(20000.0);
 
             for (size_t bin = 0; bin < binCount; ++bin) {
-                float freq = (bin < spec.frequencies.size()) ? spec.frequencies[bin] : (20.0f + bin * 100.0f);
+                float freqLower = (bin < spec.frequencies.size()) ? spec.frequencies[bin] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
+                float freqUpper = (bin + 1 < spec.frequencies.size()) ? spec.frequencies[bin + 1] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
+
+                freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
+                freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));
+
+                double fracYBot = (std::log10(freqLower) - logMin) / (logMax - logMin);
+                double fracYTop = (std::log10(freqUpper) - logMin) / (logMax - logMin);
+
+                int yBottom = plotH - static_cast<int>(fracYBot * plotH);
+                int yTop = plotH - static_cast<int>(fracYTop * plotH);
+                int binH = std::max(1, yBottom - yTop);
+
                 float db = spec.magnitudes[bin];
-
-                double fracY = (std::log10(std::max(20.0f, std::min(20000.0f, freq))) - logMin) / (logMax - logMin);
-                int y = plotH - static_cast<int>(fracY * plotH);
-                int binH = std::max(2, plotH / static_cast<int>(binCount));
-
-                p.fillRect(x, y - binH, colW, binH, colorForDB(db));
+                p.fillRect(x, yTop, colW, binH, colorForDB(db));
             }
         }
 
-        // Draw Frequency Y-axis labels
-        p.setFont(QFont("sans-serif", 9));
-        p.setPen(QColor("#8e8e93"));
-        p.drawText(4, 12, "20k");
-        p.drawText(4, plotH / 2, "1k");
-        p.drawText(4, plotH - 2, "20Hz");
+        // Draw Frequency Y-axis labels & grid lines (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
+        p.setFont(QFont("sans-serif", 8));
+        for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
+            double frac = (std::log10(target) - logMin) / (logMax - logMin);
+            int y = plotH - static_cast<int>(frac * plotH);
+
+            p.setPen(QPen(QColor(255, 255, 255, 15), 1, Qt::DashLine));
+            p.drawLine(marginL, y, w, y);
+
+            p.setPen(QColor("#8e8e93"));
+            QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
+            p.drawText(2, y + 4, label);
+        }
 
         // Draw Time X-axis labels (0s to -10s)
+        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
         p.drawLine(marginL, plotH, w, plotH);
         for (int sec : {0, -2, -4, -6, -8, -10}) {
             int x = marginL + plotW - static_cast<int>((-sec / 10.0) * plotW);
@@ -112,54 +128,114 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         }
 
     } else {
-        // 3D Isometric CSD Landscape with solid background occlusion fill
-        double totalDepthY = h * 0.35;
-        double totalShiftX = w * 0.12;
-        double plotW = w - totalShiftX;
-        double plotH = h - totalDepthY;
+        // 3D CSD Waterfall Landscape matching SwiftUI CSDWaterfallView
+        size_t count = m_history.size();
+        if (count < 2) return;
 
-        // Draw floor depth grid lines
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1, Qt::DashLine));
-        for (int g = 0; g <= 5; ++g) {
-            double prog = g / 5.0;
-            double sx = totalShiftX * prog;
-            double sy = totalDepthY * prog;
-            p.drawLine(sx, h - sy, sx + plotW, h - sy);
+        double maxShiftX = w * 0.12;
+        double maxShiftY = -h * 0.18;
+        double maxScale = 0.85;
+
+        double baselineY = h * 0.88;
+        double drawWidth = w * 0.82;
+        double drawHeight = h * 0.58;
+        double leftPadding = w * 0.05;
+
+        auto project = [&](double flatX, double flatY, double t) -> QPointF {
+            double shiftX = (1.0 - t) * maxShiftX;
+            double shiftY = (1.0 - t) * maxShiftY;
+            double scale = maxScale + (1.0 - maxScale) * t;
+            QPointF currentCenter(leftPadding + drawWidth / 2.0, baselineY);
+            double px = currentCenter.x() + (flatX - currentCenter.x()) * scale + shiftX;
+            double py = currentCenter.y() + (flatY - currentCenter.y()) * scale + shiftY;
+            return QPointF(px, py);
+        };
+
+        // 1. Draw 3D floor grid lines (Time Grid Lines)
+        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
+        for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
+            QPainterPath timeGridPath;
+            double xFlat = leftPadding + fraction * drawWidth;
+            timeGridPath.moveTo(project(xFlat, baselineY, 0.0));
+            for (size_t i = 1; i < count; ++i) {
+                double t = static_cast<double>(i) / static_cast<double>(count - 1);
+                timeGridPath.lineTo(project(xFlat, baselineY, t));
+            }
+            p.drawPath(timeGridPath);
         }
 
-        // Draw depth slices back to front for proper solid occlusion
-        for (int r = static_cast<int>(m_history.size()) - 1; r >= 0; --r) {
-            const auto& spec = m_history[r];
-            size_t count = spec.magnitudes.size();
-            if (count == 0) continue;
+        // 2. Draw 3D floor grid lines (Frequency/Depth Grid Lines)
+        for (double t : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+            QPointF ptLeft = project(leftPadding, baselineY, t);
+            QPointF ptRight = project(leftPadding + drawWidth, baselineY, t);
+            p.drawLine(ptLeft, ptRight);
+        }
 
-            double progress = static_cast<double>(r) / static_cast<double>(std::max(1, static_cast<int>(m_history.size()) - 1));
-            double shiftX = totalShiftX * progress;
-            double shiftY = totalDepthY * progress;
+        // 3. Draw stacked curves from back (t = 0.0, oldest) to front (t = 1.0, newest)
+        double logMin = std::log10(20.0), logMax = std::log10(20000.0);
 
-            QPainterPath path;
-            for (size_t c = 0; c < count; ++c) {
-                float db = spec.magnitudes[c];
-                float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
+        for (size_t i = 0; i < count; ++i) {
+            const auto& frame = m_history[i];
+            size_t nBins = frame.magnitudes.size();
+            if (nBins < 2) continue;
 
-                double x = shiftX + (static_cast<double>(c) / static_cast<double>(count)) * plotW;
-                double y = h - shiftY - norm * plotH;
+            double t = static_cast<double>(i) / static_cast<double>(count - 1);
+            QPointF startPt = project(leftPadding, baselineY, t);
 
-                if (c == 0) path.moveTo(x, y);
-                else path.lineTo(x, y);
+            // Build closed filled shape path for background occlusion
+            QPainterPath fillPath;
+            fillPath.moveTo(startPt);
+
+            QPainterPath edgePath;
+            bool firstEdge = true;
+
+            size_t drawBins = std::min(nBins, static_cast<size_t>(100));
+            for (size_t k = 0; k < drawBins; ++k) {
+                size_t j = static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1)));
+                float freq = (j < frame.frequencies.size()) ? frame.frequencies[j] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(j) / (nBins - 1)));
+                freq = std::max(20.0f, std::min(20000.0f, freq));
+
+                double binFrac = (std::log10(freq) - logMin) / (logMax - logMin);
+                double xFlat = leftPadding + binFrac * drawWidth;
+
+                float db = frame.magnitudes[j];
+                float normMag = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
+                double yFlat = baselineY - normMag * drawHeight;
+
+                QPointF projPt = project(xFlat, yFlat, t);
+                fillPath.lineTo(projPt);
+
+                if (firstEdge) {
+                    edgePath.moveTo(projPt);
+                    firstEdge = false;
+                } else {
+                    edgePath.lineTo(projPt);
+                }
             }
 
-            // Closed fill path down to floor for solid background masking
-            QPainterPath fillPath = path;
-            fillPath.lineTo(shiftX + plotW, h - shiftY);
-            fillPath.lineTo(shiftX, h - shiftY);
-            fillPath.closeSubpath();
+            QPointF endPt = project(leftPadding + drawWidth, baselineY, t);
+            fillPath.lineTo(endPt);
+            fillPath.lineTo(startPt);
 
-            p.fillPath(fillPath, StyleTheme::cardBg()); // Solid background occlusion fill
+            // Occlusion fill
+            p.fillPath(fillPath, StyleTheme::cardBg());
 
-            QColor sliceColor = QColor::fromHsvF(0.6f - 0.5f * (1.0f - progress), 0.8f, 0.95f);
+            // Interpolated stroke color (blue at back -> bright accent cyan/orange at front)
+            float tf = static_cast<float>(t);
+            QColor sliceColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
             p.setPen(QPen(sliceColor, 1.5));
-            p.drawPath(path);
+            p.drawPath(edgePath);
+        }
+
+        // 4. Draw frequency labels at the front (t = 1.0)
+        p.setFont(QFont("sans-serif", 8));
+        p.setPen(QColor("#8e8e93"));
+        for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
+            double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
+            double xFlat = leftPadding + binFrac * drawWidth;
+            QPointF pt = project(xFlat, baselineY + 12.0, 1.0);
+            QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
+            p.drawText(QRectF(pt.x() - 15, pt.y(), 30, 14), Qt::AlignCenter, label);
         }
     }
 }

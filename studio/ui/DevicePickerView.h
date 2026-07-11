@@ -90,6 +90,10 @@ private:
 
     QWidget* createPbCoreAudioView();
     QWidget* createPbFileView();
+
+    static QString formatSampleRate(int rate);
+    void updateCapFileVisibility();
+    void updateDoPCapability();
 };
 
 #endif // DEVICE_PICKER_VIEW_H

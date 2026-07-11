@@ -39,6 +39,9 @@ private slots:
     void toggleMiniPlayer();
     void toggleMute();
     void updateTheme();
+    void updateMuteDisplay();
+    void updateVolumeDisplay();
+    void updateStatusBar();
 
 private:
     std::shared_ptr<CDSPEngine> m_engine;
@@ -87,7 +90,6 @@ private:
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);
-    void updateVolumeDisplay();
 };
 
 #endif // MAIN_WINDOW_H

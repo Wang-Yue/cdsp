@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QFont>
+#include <cmath>
 
 DashboardView::DashboardView(
     std::shared_ptr<MonitoringController> monitoring,
@@ -54,10 +55,10 @@ void DashboardView::updateFaderUi() {
         bool muted = s->getMuted(row.fader);
 
         row.slider->blockSignals(true);
-        row.slider->setValue(static_cast<int>(vol * 2.0f));
+        row.slider->setValue(static_cast<int>(std::round(vol * 2.0f)));
         row.slider->blockSignals(false);
 
-        row.gainValueLabel->setText(QString("%1%2 dB").arg(vol > 0.0f ? "+" : "").arg(vol, 4, 'f', 1));
+        row.gainValueLabel->setText(QString::asprintf("%+.1f dB", vol));
         if (vol > 0.0f) {
             row.gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 75px;");
         } else {

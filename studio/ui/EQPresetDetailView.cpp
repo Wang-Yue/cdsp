@@ -306,7 +306,8 @@ void EQPresetDetailView::refreshUi() {
                 l->addWidget(new QLabel(label, container));
                 auto spin = new QDoubleSpinBox(container);
                 spin->setRange(-100.0, 100.0);
-                spin->setSingleStep(0.01);
+                spin->setDecimals(6);
+                spin->setSingleStep(0.001);
                 spin->setValue(val);
                 connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, setter](double v) {
                     setter(v);
@@ -334,6 +335,10 @@ void EQPresetDetailView::refreshUi() {
             auto fpSpin = new QDoubleSpinBox(this); fpSpin->setRange(10, 24000); fpSpin->setValue(b.freqPole);
             connect(fpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].freqPole = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
             notchBox->addWidget(new QLabel("Fp:")); notchBox->addWidget(fpSpin);
+
+            auto qpSpin = new QDoubleSpinBox(this); qpSpin->setRange(0.01, 100.0); qpSpin->setValue(b.qPole);
+            connect(qpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].qPole = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
+            notchBox->addWidget(new QLabel("Qp:")); notchBox->addWidget(qpSpin);
 
             auto normCheck = new QCheckBox("Norm", this); normCheck->setChecked(b.normalizeAtDc);
             connect(normCheck, &QCheckBox::toggled, [this, i](bool chk){ m_preset.bands[i].normalizeAtDc = chk; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
@@ -419,6 +424,8 @@ void EQPresetDetailView::refreshUi() {
                 toggleBtn->setFixedWidth(45);
                 connect(toggleBtn, &QPushButton::clicked, [this, i]() {
                     m_preset.bands[i].useSlope = !m_preset.bands[i].useSlope;
+                    m_diagramWidget->setPreset(m_preset);
+                    m_pipeline->updateEQPreset(m_preset);
                     refreshUi();
                 });
                 qBox->addWidget(toggleBtn);
@@ -427,6 +434,8 @@ void EQPresetDetailView::refreshUi() {
                 toggleBtn->setFixedWidth(45);
                 connect(toggleBtn, &QPushButton::clicked, [this, i]() {
                     m_preset.bands[i].useBandwidth = !m_preset.bands[i].useBandwidth;
+                    m_diagramWidget->setPreset(m_preset);
+                    m_pipeline->updateEQPreset(m_preset);
                     refreshUi();
                 });
                 qBox->addWidget(toggleBtn);

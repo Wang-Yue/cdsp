@@ -47,14 +47,9 @@ void VSliderWidget::paintEvent(QPaintEvent* event) {
     painter.setBrush(QColor(200, 200, 200, 100));
     painter.drawRoundedRect(centerX - trackW / 2, topY, trackW, trackHeight, trackW / 2, trackW / 2);
 
-    // Center 0 dB tick line
+    // Current value knob Y
     double centerPct = (0.0 - m_minVal) / (m_maxVal - m_minVal);
     int centerY = botY - static_cast<int>(centerPct * trackHeight);
-
-    painter.setPen(QPen(QColor(140, 140, 140), 1));
-    painter.drawLine(centerX - 6, centerY, centerX + 6, centerY);
-
-    // Current value knob Y
     double valPct = (m_value - m_minVal) / (m_maxVal - m_minVal);
     int knobY = botY - static_cast<int>(valPct * trackHeight);
 
@@ -66,6 +61,10 @@ void VSliderWidget::paintEvent(QPaintEvent* event) {
         painter.setBrush(QColor(0, 122, 255));
         painter.drawRoundedRect(centerX - trackW / 2, activeTop, trackW, activeHeight, trackW / 2, trackW / 2);
     }
+
+    // Center 0 dB tick line (drawn over active fill track for visibility)
+    painter.setPen(QPen(QColor(140, 140, 140), 1));
+    painter.drawLine(centerX - 6, centerY, centerX + 6, centerY);
 
     // Knob Circle
     painter.setBrush(Qt::white);
@@ -429,6 +428,20 @@ void StageDetailView::buildStageOptionsUi() {
         customToggle->setChecked(stage.cxCustomEnabled);
         connect(customToggle, &QCheckBox::toggled, [this, &stage](bool checked) {
             stage.cxCustomEnabled = checked;
+            if (checked) {
+                double fc = 700.0;
+                double db = 6.0;
+                switch (stage.crossfeedLevel) {
+                case CrossfeedLevel::L1: fc = 650.0; db = 13.5; break;
+                case CrossfeedLevel::L2: fc = 650.0; db = 9.5; break;
+                case CrossfeedLevel::L3: fc = 700.0; db = 6.0; break;
+                case CrossfeedLevel::L4: fc = 700.0; db = 4.5; break;
+                case CrossfeedLevel::L5: fc = 700.0; db = 3.0; break;
+                case CrossfeedLevel::Off: break;
+                }
+                stage.cxFc = fc;
+                stage.cxDb = db;
+            }
             applyConfig();
             refreshUi();
         });
@@ -954,6 +967,7 @@ void StageDetailView::buildStageOptionsUi() {
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
         table->verticalHeader()->setDefaultSectionSize(80);
         table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+        table->setMinimumHeight(std::min(480, rows * 80 + 35));
 
         QStringList headers;
         for (int c = 0; c < cols; ++c) headers << QString("Ch %1").arg(c + 1);

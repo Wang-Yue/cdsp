@@ -33,10 +33,10 @@ void ResamplerDetailView::setupUi() {
     mainLayout->addLayout(headerBox);
 
     auto container = this;
-    auto typeGroup = new QGroupBox("Resampler Type & Parameters", container);
-    m_typeForm = new QFormLayout(typeGroup);
+    m_typeGroup = new QGroupBox("Resampler Type & Parameters", container);
+    m_typeForm = new QFormLayout(m_typeGroup);
 
-    m_typeCombo = new QComboBox(typeGroup);
+    m_typeCombo = new QComboBox(m_typeGroup);
     m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly", "Apple"});
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
         updateVisibility();
@@ -44,60 +44,61 @@ void ResamplerDetailView::setupUi() {
     });
     m_typeForm->addRow("Type:", m_typeCombo);
 
-    m_useProfileCheck = new QCheckBox("Use Quality Profile", typeGroup);
+    m_useProfileCheck = new QCheckBox("Use Quality Profile", m_typeGroup);
     connect(m_useProfileCheck, &QCheckBox::toggled, [this]() {
         updateVisibility();
         applySettings();
     });
     m_typeForm->addRow("", m_useProfileCheck);
 
-    m_profileCombo = new QComboBox(typeGroup);
+    m_profileCombo = new QComboBox(m_typeGroup);
     m_profileCombo->addItems({"VeryFast", "Fast", "Balanced", "Accurate"});
     connect(m_profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Quality Profile:", m_profileCombo);
 
-    m_sincLenSpin = new QSpinBox(typeGroup);
+    m_sincLenSpin = new QSpinBox(m_typeGroup);
     m_sincLenSpin->setRange(16, 4096);
     connect(m_sincLenSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Sinc Length:", m_sincLenSpin);
 
-    m_oversamplingSpin = new QSpinBox(typeGroup);
+    m_oversamplingSpin = new QSpinBox(m_typeGroup);
     m_oversamplingSpin->setRange(16, 2048);
     connect(m_oversamplingSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Oversampling Factor:", m_oversamplingSpin);
 
-    m_windowCombo = new QComboBox(typeGroup);
+    m_windowCombo = new QComboBox(m_typeGroup);
     m_windowCombo->addItems({"Blackman", "Blackman2", "BlackmanHarris", "BlackmanHarris2", "Hann", "Hann2"});
     connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Window Function:", m_windowCombo);
 
-    m_fCutoffSpin = new QDoubleSpinBox(typeGroup);
+    m_fCutoffSpin = new QDoubleSpinBox(m_typeGroup);
     m_fCutoffSpin->setRange(0.5, 0.99);
     m_fCutoffSpin->setSingleStep(0.01);
+    m_fCutoffSpin->setSuffix(" × Fs/2");
     connect(m_fCutoffSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Cutoff Frequency Ratio:", m_fCutoffSpin);
 
-    m_sincInterpCombo = new QComboBox(typeGroup);
+    m_sincInterpCombo = new QComboBox(m_typeGroup);
     m_sincInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
     connect(m_sincInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Sinc Interpolation:", m_sincInterpCombo);
 
-    m_polyInterpCombo = new QComboBox(typeGroup);
+    m_polyInterpCombo = new QComboBox(m_typeGroup);
     m_polyInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Poly Interpolation:", m_polyInterpCombo);
 
-    m_appleQualityCombo = new QComboBox(typeGroup);
+    m_appleQualityCombo = new QComboBox(m_typeGroup);
     m_appleQualityCombo->addItems({"Min", "Low", "Medium", "High", "Max"});
     connect(m_appleQualityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Apple Quality:", m_appleQualityCombo);
 
-    m_appleComplexityCombo = new QComboBox(typeGroup);
+    m_appleComplexityCombo = new QComboBox(m_typeGroup);
     m_appleComplexityCombo->addItems({"Normal", "Mastering"});
     connect(m_appleComplexityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Apple Algorithm:", m_appleComplexityCombo);
 
-    mainLayout->addWidget(typeGroup);
+    mainLayout->addWidget(m_typeGroup);
 
     // Sample Rates Info Card
     auto ratesGroup = new QGroupBox("Sample Rates", container);
@@ -149,6 +150,7 @@ void ResamplerDetailView::updateVisibility() {
 
 void ResamplerDetailView::refreshUi() {
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
+    if (m_typeGroup) m_typeGroup->setEnabled(m_settings->resamplerEnabled);
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));

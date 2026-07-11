@@ -121,7 +121,9 @@ void ConvolutionImportDlg::onAddFilesClicked() {
         m_items.push_back(item);
 
         if (m_nameEdit->text().isEmpty()) {
-            m_nameEdit->setText(fi.baseName());
+            QString base = fi.baseName();
+            base.remove(QRegularExpression("[-_]\\d+Hz|[-_]\\d+k", QRegularExpression::CaseInsensitiveOption));
+            m_nameEdit->setText(base);
         }
     }
     updateTable();
@@ -202,10 +204,32 @@ void ConvolutionImportDlg::onImportClicked() {
 
     std::map<int, std::string> paths;
     int firstCoeffCount = 0;
+    bool doNormalize = m_normalizeCheck->isChecked();
+    double delayMs = m_delayCompSpin->value();
+
     for (const auto& item : m_items) {
         paths[item.sampleRate] = item.filePath.toStdString();
+        auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
+        
+        if (doNormalize && !coeffs.empty()) {
+            double maxVal = 0.0;
+            for (double c : coeffs) {
+                double absVal = std::abs(c);
+                if (absVal > maxVal) maxVal = absVal;
+            }
+            if (maxVal > 0.0) {
+                for (double& c : coeffs) c /= maxVal;
+            }
+        }
+
+        if (delayMs > 0.0) {
+            int padSamples = qRound((delayMs / 1000.0) * item.sampleRate);
+            if (padSamples > 0) {
+                coeffs.insert(coeffs.begin(), padSamples, 0.0);
+            }
+        }
+
         if (firstCoeffCount == 0) {
-            auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
             firstCoeffCount = static_cast<int>(coeffs.size());
         }
     }

@@ -104,11 +104,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawText(x - 10, h - 4, label);
     }
 
-    if (m_data.frequencies.empty()) return;
-
     size_t count = m_data.frequencies.size();
     float spacing = 2.0f;
-    float barW = std::max(2.0f, (w - spacing * static_cast<float>(count - 1)) / static_cast<float>(count));
 
     // Dynamic gradient audio level bars (green -> yellow -> orange -> red)
     QLinearGradient barGrad(0, plotH, 0, 0);
@@ -124,10 +121,16 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         float freq = m_data.frequencies[i];
         if (freq < minF || freq > maxF) continue;
 
+        double x = (std::log10(freq) - logMin) / (logMax - logMin) * w;
+
+        // Calculate dynamic bar width based on log spacing to neighboring frequency bins
+        double xPrev = (i > 0) ? (std::log10(m_data.frequencies[i - 1]) - logMin) / (logMax - logMin) * w : x - 10.0;
+        double xNext = (i + 1 < count) ? (std::log10(m_data.frequencies[i + 1]) - logMin) / (logMax - logMin) * w : x + 10.0;
+        double barW = std::max(2.0, (xNext - xPrev) / 2.0 - spacing);
+
         float db = m_data.magnitudes[i];
         float normY = normDB60(db);
         double barHeight = std::max(2.0, static_cast<double>(normY * plotH));
-        double x = (std::log10(freq) - logMin) / (logMax - logMin) * w;
 
         p.fillRect(QRectF(x - barW / 2.0, plotH - barHeight, barW, barHeight), barGrad);
 

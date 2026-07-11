@@ -8,6 +8,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QFormLayout>
 #include <memory>
@@ -31,6 +32,7 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
 
     QFormLayout* m_typeForm;
+    QGroupBox* m_typeGroup;
 
     QCheckBox* m_enabledCheck;
     QComboBox* m_typeCombo;

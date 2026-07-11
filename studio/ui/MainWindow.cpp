@@ -31,6 +31,12 @@
 #include <QCursor>
 #include <QCheckBox>
 #include <QFrame>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QPlainTextEdit>
+#include <QAbstractSpinBox>
+#include <QContextMenuEvent>
+#include <cmath>
 
 namespace {
 class SidebarToggleRowWidget : public QWidget {
@@ -64,6 +70,14 @@ protected:
         }
         if (m_onRowClick) m_onRowClick();
         QWidget::mousePressEvent(event);
+    }
+
+    void contextMenuEvent(QContextMenuEvent* event) override {
+        if (m_tree && m_item) {
+            m_tree->setCurrentItem(m_item);
+            QPoint pos = m_tree->viewport()->mapFromGlobal(event->globalPos());
+            emit m_tree->customContextMenuRequested(pos);
+        }
     }
 
 private:
@@ -112,7 +126,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
-    connect(m_settings.get(), &AudioSettings::settingsChanged, this, &MainWindow::updateTheme);
+    connect(m_devices.get(), &AudioDeviceManager::configChanged, this, [this]() {
+        if (m_sampleRateBadge) {
+            m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
+        }
+        updateStatusBar();
+    });
+    connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+        updateMuteDisplay();
+        updateVolumeDisplay();
+        updateStatusBar();
+        updateTheme();
+    });
 
     m_monitoring->start();
 }
@@ -251,30 +276,18 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::setupShortcuts() {
-    auto actDash = new QAction(this);
-    actDash->setShortcut(QKeySequence("Ctrl+1"));
-    connect(actDash, &QAction::triggered, [this]() { handleNavigationTag("dashboard"); });
-    addAction(actDash);
+    auto setupNavAction = [this](const QKeySequence& seq, const QString& tag) {
+        auto act = new QAction(this);
+        act->setShortcut(seq);
+        connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
+        addAction(act);
+    };
 
-    auto actDev = new QAction(this);
-    actDev->setShortcut(QKeySequence("Ctrl+2"));
-    connect(actDev, &QAction::triggered, [this]() { handleNavigationTag("devices"); });
-    addAction(actDev);
-
-    auto actLevels = new QAction(this);
-    actLevels->setShortcut(QKeySequence("Ctrl+3"));
-    connect(actLevels, &QAction::triggered, [this]() { handleNavigationTag("levels"); });
-    addAction(actLevels);
-
-    auto actSpec = new QAction(this);
-    actSpec->setShortcut(QKeySequence("Ctrl+4"));
-    connect(actSpec, &QAction::triggered, [this]() { handleNavigationTag("spectrum"); });
-    addAction(actSpec);
-
-    auto actSettings = new QAction(this);
-    actSettings->setShortcut(QKeySequence("Ctrl+5"));
-    connect(actSettings, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
-    addAction(actSettings);
+    setupNavAction(QKeySequence("Ctrl+1"), "devices");
+    setupNavAction(QKeySequence("Ctrl+2"), "dashboard");
+    setupNavAction(QKeySequence("Ctrl+3"), "levels");
+    setupNavAction(QKeySequence("Ctrl+4"), "spectrum");
+    setupNavAction(QKeySequence("Ctrl+5"), "general_settings");
 
     auto actMini = new QAction(this);
     actMini->setShortcut(QKeySequence("Ctrl+M"));
@@ -283,14 +296,28 @@ void MainWindow::setupShortcuts() {
 
     auto actMute = new QAction(this);
     actMute->setShortcut(QKeySequence("Space"));
-    connect(actMute, &QAction::triggered, this, &MainWindow::toggleMute);
+    connect(actMute, &QAction::triggered, [this]() {
+        auto focusW = QApplication::focusWidget();
+        if (focusW && (qobject_cast<QLineEdit*>(focusW) ||
+                       qobject_cast<QAbstractSpinBox*>(focusW) ||
+                       qobject_cast<QTextEdit*>(focusW) ||
+                       qobject_cast<QPlainTextEdit*>(focusW))) {
+            return;
+        }
+        toggleMute();
+    });
     addAction(actMute);
 }
 
 void MainWindow::toggleMute() {
     bool currentMute = m_settings->getMuted(Fader::Main);
     m_dspController->setFaderMute(Fader::Main, !currentMute);
-    if (!currentMute) {
+    updateMuteDisplay();
+}
+
+void MainWindow::updateMuteDisplay() {
+    bool muted = m_settings->getMuted(Fader::Main);
+    if (muted) {
         m_toolbarMuteBtn->setText("🔇 Muted");
         m_toolbarMuteBtn->setStyleSheet("background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px;");
         m_statusMuteLabel->setText("MUTED");
@@ -305,12 +332,36 @@ void MainWindow::toggleMute() {
 
 void MainWindow::updateVolumeDisplay() {
     float gain = m_settings->getVolume(Fader::Main);
-    m_gainValueLabel->setText(QString("%1 dB").arg(gain, 5, 'f', 1, QChar(' ')));
+    m_headerVolumeSlider->blockSignals(true);
+    m_headerVolumeSlider->setValue(static_cast<int>(std::round(gain * 2.0f)));
+    m_headerVolumeSlider->blockSignals(false);
+
+    m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
     if (gain > 0.0f) {
-        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 60px;");
+        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 65px;");
     } else {
-        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #34c759; min-width: 60px;");
+        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #34c759; min-width: 65px;");
     }
+}
+
+void MainWindow::updateStatusBar() {
+    QString stateStr;
+    switch (m_dspController->status) {
+    case ProcessingState::Running: stateStr = "Running"; break;
+    case ProcessingState::Starting: stateStr = "Starting"; break;
+    case ProcessingState::Paused: stateStr = "Paused"; break;
+    case ProcessingState::Stalled: stateStr = "Stalled"; break;
+    case ProcessingState::Inactive: default: stateStr = "Inactive"; break;
+    }
+    m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
+    m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
+
+    QString presetName = "Default";
+    if (!m_pipeline->eqPresets.empty()) {
+        presetName = QString::fromStdString(m_pipeline->eqPresets.front().name);
+    }
+    m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
+    updateMuteDisplay();
 }
 
 void MainWindow::setupToolbar() {
@@ -568,6 +619,19 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
 }
 
 void MainWindow::handleNavigationTag(const QString& tag) {
+    m_sidebarTree->blockSignals(true);
+    for (int i = 0; i < m_sidebarTree->topLevelItemCount(); ++i) {
+        auto topItem = m_sidebarTree->topLevelItem(i);
+        for (int j = 0; j < topItem->childCount(); ++j) {
+            auto child = topItem->child(j);
+            if (child->data(0, Qt::UserRole).toString() == tag) {
+                m_sidebarTree->setCurrentItem(child);
+                break;
+            }
+        }
+    }
+    m_sidebarTree->blockSignals(false);
+
     if (m_pageCache.contains(tag) && m_pageCache[tag]) {
         showCentralWidget(m_pageCache[tag]);
         return;
@@ -651,6 +715,10 @@ void MainWindow::onPipelineChanged() {
     }
 
     refreshSidebarItems();
+
+    if (m_lastActiveTag.startsWith("stage_") || m_lastActiveTag.startsWith("eq_") || m_lastActiveTag.startsWith("conv_")) {
+        handleNavigationTag("dashboard");
+    }
 }
 
 void MainWindow::onEngineStatusChanged(ProcessingState state) {
@@ -678,4 +746,5 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
         break;
     }
     m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
+    updateStatusBar();
 }
