@@ -31,7 +31,7 @@ void ResamplerDetailView::setupUi() {
 
     auto container = this;
     auto typeGroup = new QGroupBox("Resampler Type & Parameters", container);
-    auto form = new QFormLayout(typeGroup);
+    m_typeForm = new QFormLayout(typeGroup);
 
     m_typeCombo = new QComboBox(typeGroup);
     m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly", "Apple"});
@@ -39,60 +39,60 @@ void ResamplerDetailView::setupUi() {
         updateVisibility();
         applySettings();
     });
-    form->addRow("Type:", m_typeCombo);
+    m_typeForm->addRow("Type:", m_typeCombo);
 
     m_useProfileCheck = new QCheckBox("Use Quality Profile", typeGroup);
     connect(m_useProfileCheck, &QCheckBox::toggled, [this]() {
         updateVisibility();
         applySettings();
     });
-    form->addRow("", m_useProfileCheck);
+    m_typeForm->addRow("", m_useProfileCheck);
 
     m_profileCombo = new QComboBox(typeGroup);
     m_profileCombo->addItems({"VeryFast", "Fast", "Balanced", "Accurate"});
     connect(m_profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Quality Profile:", m_profileCombo);
+    m_typeForm->addRow("Quality Profile:", m_profileCombo);
 
     m_sincLenSpin = new QSpinBox(typeGroup);
     m_sincLenSpin->setRange(16, 4096);
     connect(m_sincLenSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
-    form->addRow("Sinc Length:", m_sincLenSpin);
+    m_typeForm->addRow("Sinc Length:", m_sincLenSpin);
 
     m_oversamplingSpin = new QSpinBox(typeGroup);
     m_oversamplingSpin->setRange(16, 2048);
     connect(m_oversamplingSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
-    form->addRow("Oversampling Factor:", m_oversamplingSpin);
+    m_typeForm->addRow("Oversampling Factor:", m_oversamplingSpin);
 
     m_windowCombo = new QComboBox(typeGroup);
     m_windowCombo->addItems({"Blackman", "Blackman2", "BlackmanHarris", "BlackmanHarris2", "Hann", "Hann2"});
     connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Window Function:", m_windowCombo);
+    m_typeForm->addRow("Window Function:", m_windowCombo);
 
     m_fCutoffSpin = new QDoubleSpinBox(typeGroup);
     m_fCutoffSpin->setRange(0.5, 0.99);
     m_fCutoffSpin->setSingleStep(0.01);
     connect(m_fCutoffSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this]() { applySettings(); });
-    form->addRow("Cutoff Frequency Ratio:", m_fCutoffSpin);
+    m_typeForm->addRow("Cutoff Frequency Ratio:", m_fCutoffSpin);
 
     m_sincInterpCombo = new QComboBox(typeGroup);
     m_sincInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
     connect(m_sincInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Sinc Interpolation:", m_sincInterpCombo);
+    m_typeForm->addRow("Sinc Interpolation:", m_sincInterpCombo);
 
     m_polyInterpCombo = new QComboBox(typeGroup);
     m_polyInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Poly Interpolation:", m_polyInterpCombo);
+    m_typeForm->addRow("Poly Interpolation:", m_polyInterpCombo);
 
     m_appleQualityCombo = new QComboBox(typeGroup);
     m_appleQualityCombo->addItems({"Min", "Low", "Medium", "High", "Max"});
     connect(m_appleQualityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Apple Quality:", m_appleQualityCombo);
+    m_typeForm->addRow("Apple Quality:", m_appleQualityCombo);
 
     m_appleComplexityCombo = new QComboBox(typeGroup);
     m_appleComplexityCombo->addItems({"Normal", "Mastering"});
     connect(m_appleComplexityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    form->addRow("Apple Algorithm:", m_appleComplexityCombo);
+    m_typeForm->addRow("Apple Algorithm:", m_appleComplexityCombo);
 
     mainLayout->addWidget(typeGroup);
 
@@ -121,25 +121,27 @@ void ResamplerDetailView::setupUi() {
 }
 
 void ResamplerDetailView::updateVisibility() {
+    if (!m_typeForm) return;
+
     std::string typeStr = m_typeCombo->currentText().toStdString();
-    bool isAsyncSinc = (typeStr == "AsyncSinc");
+    bool isAsyncSinc = (typeStr == "AsyncSinc" || typeStr == "Synchronous");
     bool isAsyncPoly = (typeStr == "AsyncPoly");
     bool isApple = (typeStr == "Apple");
     bool useProfile = m_useProfileCheck->isChecked();
 
-    m_useProfileCheck->setVisible(isAsyncSinc);
-    m_profileCombo->setVisible(isAsyncSinc && useProfile);
-    
-    m_sincLenSpin->setVisible(isAsyncSinc && !useProfile);
-    m_oversamplingSpin->setVisible(isAsyncSinc && !useProfile);
-    m_windowCombo->setVisible(isAsyncSinc && !useProfile);
-    m_fCutoffSpin->setVisible(isAsyncSinc && !useProfile);
-    m_sincInterpCombo->setVisible(isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_useProfileCheck, isAsyncSinc);
+    m_typeForm->setRowVisible(m_profileCombo, isAsyncSinc && useProfile);
 
-    m_polyInterpCombo->setVisible(isAsyncPoly);
+    m_typeForm->setRowVisible(m_sincLenSpin, isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_oversamplingSpin, isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_windowCombo, isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_fCutoffSpin, isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_sincInterpCombo, isAsyncSinc && !useProfile);
 
-    m_appleQualityCombo->setVisible(isApple);
-    m_appleComplexityCombo->setVisible(isApple);
+    m_typeForm->setRowVisible(m_polyInterpCombo, isAsyncPoly);
+
+    m_typeForm->setRowVisible(m_appleQualityCombo, isApple);
+    m_typeForm->setRowVisible(m_appleComplexityCombo, isApple);
 }
 
 void ResamplerDetailView::refreshUi() {

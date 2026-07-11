@@ -8,6 +8,7 @@
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QLabel>
+#include <QFormLayout>
 #include <memory>
 
 class ResamplerDetailView : public QWidget {
@@ -22,6 +23,8 @@ private slots:
 
 private:
     std::shared_ptr<AudioSettings> m_settings;
+
+    QFormLayout* m_typeForm;
 
     QCheckBox* m_enabledCheck;
     QComboBox* m_typeCombo;
