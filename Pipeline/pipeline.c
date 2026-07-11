@@ -124,7 +124,9 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
                   const char* dest_name = filter_get_name(dest_f);
                   for (size_t sf = 0; sf < src_chain->filters_count; sf++) {
                     filter_t* src_f = src_chain->filters[sf];
-                    if (strcmp(filter_get_name(src_f), dest_name) == 0) {
+                    const char* src_name = filter_get_name(src_f);
+                    if (src_name && dest_name &&
+                        strcmp(src_name, dest_name) == 0) {
                       filter_transfer_state(dest_f, src_f);
                       break;
                     }

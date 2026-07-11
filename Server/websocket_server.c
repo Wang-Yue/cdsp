@@ -2882,7 +2882,9 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
         cJSON_AddItemToArray(arr, cJSON_CreateString(devs[i].name));
       }
       reply_ok(cmd_name, arr, ds);
+      free(devs);
     } else {
+      if (devs) free(devs);
       reply_ok(cmd_name, cJSON_CreateArray(), ds);
     }
   } else {

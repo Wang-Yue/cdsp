@@ -336,18 +336,18 @@ static double* load_raw_file(const char* path, const char* format_str,
     switch (format) {
       case BINARY_SAMPLE_FORMAT_S16_LE: {
         int16_t v = buf[0] | (buf[1] << 8);
-        val = (double)v / 32767.0;
+        val = (double)v / 32768.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_S24_3_LE: {
         int32_t v = buf[0] | (buf[1] << 8) | (buf[2] << 16);
         if (v & 0x800000) v |= ~0xFFFFFF;
-        val = (double)v / 8388607.0;
+        val = (double)v / 8388608.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_S32_LE: {
         int32_t v = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
-        val = (double)v / 2147483647.0;
+        val = (double)v / 2147483648.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_F32_LE: {
@@ -658,6 +658,14 @@ void convolution_filter_process(convolution_filter_t* filter,
   while (processed + cs <= count) {
     process_chunk(filter, waveform + processed);
     processed += cs;
+  }
+  if (processed < count) {
+    size_t rem = count - processed;
+    double scratch[cs];
+    memset(scratch, 0, cs * sizeof(double));
+    memcpy(scratch, waveform + processed, rem * sizeof(double));
+    process_chunk(filter, scratch);
+    memcpy(waveform + processed, scratch, rem * sizeof(double));
   }
 }
 

@@ -234,9 +234,11 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
     int start = range.low_k > 0 ? range.low_k : 0;
     int end =
         range.high_k < (int)(half_n + 1) ? range.high_k : (int)(half_n + 1);
+    if (start < 0) start = 0;
+    if (end > (int)(half_n + 1)) end = (int)(half_n + 1);
     int len = end - start;
 
-    if (len > 0) {
+    if (start < end && len > 0) {
       analyzer->out_magnitudes[i] =
           dsp_ops_float_max(analyzer->db_magnitudes + start, len);
     } else {

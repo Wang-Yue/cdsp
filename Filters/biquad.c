@@ -50,6 +50,9 @@ bool biquad_coefficients_compute(const biquad_parameters_t* params,
     sin_w0 = sin(w0);
     A = pow(10.0, gain / 40.0);
 
+    if (fabs(sin_w0) < 1e-12) sin_w0 = 1e-12;
+    if (A < 1e-12) A = 1e-12;
+
     // Compute effective Q if bandwidth or slope is present
     // Bandwidth to Q conversion: Q = 1 / (2 * sinh(ln(2)/2 * BW * w0 /
     // sin(w0)))
@@ -59,9 +62,12 @@ bool biquad_coefficients_compute(const biquad_parameters_t* params,
     } else if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
       // Slope to Q conversion: Q = 1 / sqrt((A + 1/A) * (1/S - 1) + 2)
       double slope_s = params->slope / 12.0;
-      q = 1.0 / sqrt((A + 1.0 / A) * (1.0 / slope_s - 1.0) + 2.0);
+      if (fabs(slope_s) < 1e-12) slope_s = 1e-12;
+      double term = (A + 1.0 / A) * (1.0 / slope_s - 1.0) + 2.0;
+      q = 1.0 / sqrt(term > 1e-12 ? term : 1e-12);
     }
 
+    if (fabs(q) < 1e-12) q = 1e-12;
     alpha = sin_w0 / (2.0 * q);
   }
 

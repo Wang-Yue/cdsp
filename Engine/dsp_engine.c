@@ -815,7 +815,8 @@ static bool iface_get_available_devices(void* ctx, const char* backend,
                                         audio_device_t** out_devices,
                                         size_t* out_count) {
   if (!ctx || !out_devices || !out_count) return false;
-  static _Thread_local audio_device_t devs[32];
+  audio_device_t* devs = (audio_device_t*)calloc(32, sizeof(audio_device_t));
+  if (!devs) return false;
   int n = dsp_engine_get_available_devices(backend, is_input, devs, 32);
   *out_devices = devs;
   *out_count = (size_t)n;

@@ -129,6 +129,8 @@ void audio_chunk_sum_channels(const audio_chunk_t* chunk, const int* channels,
                               size_t frames) {
   if (!chunk || !channels || channels_count == 0 || !out_sum || frames == 0)
     return;
+  size_t max_frames = audio_chunk_get_frames(chunk);
+  if (frames > max_frames) frames = max_frames;
   size_t total_channels = audio_chunk_get_channels(chunk);
   int ch0 = channels[0];
   if (ch0 < 0 || (size_t)ch0 >= total_channels) {
@@ -165,6 +167,8 @@ void audio_chunk_apply_gain(audio_chunk_t* chunk, const int* channels,
   if (!chunk || !channels || channels_count == 0 || !gain_multipliers ||
       frames == 0)
     return;
+  size_t max_frames = audio_chunk_get_frames(chunk);
+  if (frames > max_frames) frames = max_frames;
   size_t total_channels = audio_chunk_get_channels(chunk);
   for (size_t ch_idx = 0; ch_idx < channels_count; ch_idx++) {
     int ch = channels[ch_idx];

@@ -67,7 +67,7 @@ audio_buffers_t* audio_buffers_create(size_t channels, size_t capacity) {
 audio_buffers_t* audio_buffers_copy_from(const double* const* waveforms,
                                          const size_t* channel_lengths,
                                          size_t channels) {
-  if (channels == 0) return NULL;
+  if (channels == 0 || !waveforms || !channel_lengths) return NULL;
 
   // Find the maximum length among all channels to determine the capacity of the
   // new buffer.

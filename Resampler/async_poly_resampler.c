@@ -384,6 +384,9 @@ resampler_error_t async_poly_resampler_process(
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   size_t output_frames = get_next_output_frames(resampler);
+  if (output_frames > resampler->max_output_frames) {
+    output_frames = resampler->max_output_frames;
+  }
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->chunk_size;
     double min_safe_idx = -2.0 * (double)resampler->interpolator_len;

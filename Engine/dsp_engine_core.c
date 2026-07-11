@@ -299,6 +299,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
     }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return false;
   }
   core->playback = create_playback_backend(
@@ -309,6 +311,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
     }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return false;
   }
 
@@ -317,6 +321,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
     }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return false;
   }
   if (!playback_backend_open(core->playback, &berr)) {
@@ -324,6 +330,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
     }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return false;
   }
 
@@ -361,6 +369,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
       err->message[sizeof(err->message) - 1] = '\0';
     }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return false;
   }
 

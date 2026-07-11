@@ -154,7 +154,8 @@ static double* build_ctables(double sample_rate, double cutoff_hz) {
       double angle = 2.0 * M_PI * cutoff * t;
       sinc_val = sin(angle) / (M_PI * t);
     }
-    double widx = sqrt(1.0 - pow(t / alpha, 2.0));
+    double term = 1.0 - pow(t / alpha, 2.0);
+    double widx = sqrt(term > 0.0 ? term : 0.0);
     double window_val = double_bessel_i0(beta * widx) / i0_beta;
     raw_h[i] = sinc_val * window_val;
     total_sum += raw_h[i];
