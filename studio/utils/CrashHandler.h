@@ -5,11 +5,34 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <string>
 
 #if defined(_WIN32)
 #include <dbghelp.h>
 #include <tchar.h>
 #include <windows.h>
+
+inline std::string getLogFilePath() {
+    char path[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string strPath(path);
+    size_t pos = strPath.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        return strPath.substr(0, pos + 1) + "crash_log.txt";
+    }
+    return "crash_log.txt";
+}
+
+inline std::string getDmpFilePath() {
+    char path[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string strPath(path);
+    size_t pos = strPath.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        return strPath.substr(0, pos + 1) + "crash_dump.dmp";
+    }
+    return "crash_dump.dmp";
+}
 
 inline void logCallstack(std::ofstream& crashLog) {
     uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
@@ -51,28 +74,33 @@ inline void logCallstack(std::ofstream& crashLog) {
 }
 
 inline LONG WINAPI customUnhandledExceptionFilter(EXCEPTION_POINTERS* pExceptionInfo) {
-    std::ofstream crashLog("crash_log.txt", std::ios::out | std::ios::app);
+    std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
     crashLog << "========================================" << std::endl;
     crashLog << "CRASH DETECTED AT RUNTIME!" << std::endl;
-    crashLog << "Exception Code    : 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionCode << std::endl;
-    crashLog << "Exception Flags   : 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionFlags << std::endl;
-    crashLog << "Exception Address : 0x" << std::hex << (uintptr_t)pExceptionInfo->ExceptionRecord->ExceptionAddress
-             << std::endl;
-
-    if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
-        crashLog << "Access Violation Details:" << std::endl;
-        crashLog << "  Attempted to "
-                 << (pExceptionInfo->ExceptionRecord->ExceptionInformation[0] ? "write to" : "read from")
-                 << " memory address 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionInformation[1]
+    if (pExceptionInfo && pExceptionInfo->ExceptionRecord) {
+        crashLog << "Exception Code    : 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionCode << std::endl;
+        crashLog << "Exception Flags   : 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionFlags
                  << std::endl;
+        crashLog << "Exception Address : 0x" << std::hex << (uintptr_t)pExceptionInfo->ExceptionRecord->ExceptionAddress
+                 << std::endl;
+
+        if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+            crashLog << "Access Violation Details:" << std::endl;
+            crashLog << "  Attempted to "
+                     << (pExceptionInfo->ExceptionRecord->ExceptionInformation[0] ? "write to" : "read from")
+                     << " memory address 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionInformation[1]
+                     << std::endl;
+        }
     }
 
     logCallstack(crashLog);
     crashLog << "========================================" << std::endl;
+    crashLog.flush();
     crashLog.close();
 
     // Generate Windows Minidump file (.dmp) for WinDbg / GDB analysis
-    HANDLE hFile = CreateFileA("crash_dump.dmp", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hFile =
+        CreateFileA(getDmpFilePath().c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile != INVALID_HANDLE_VALUE) {
         MINIDUMP_EXCEPTION_INFORMATION mdei;
         mdei.ThreadId = GetCurrentThreadId();
@@ -85,34 +113,46 @@ inline LONG WINAPI customUnhandledExceptionFilter(EXCEPTION_POINTERS* pException
 
     return EXCEPTION_EXECUTE_HANDLER;
 }
+
+inline LONG WINAPI customVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
+    if (pExceptionInfo && pExceptionInfo->ExceptionRecord &&
+        pExceptionInfo->ExceptionRecord->ExceptionCode >= 0xc0000000) {
+        customUnhandledExceptionFilter(pExceptionInfo);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
 #endif
 
 inline void signalHandler(int sig) {
+#if defined(_WIN32)
+    std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
+    crashLog << "========================================" << std::endl;
+    crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
+    logCallstack(crashLog);
+    crashLog << "========================================" << std::endl;
+    crashLog.flush();
+    crashLog.close();
+#else
     std::ofstream crashLog("crash_log.txt", std::ios::out | std::ios::app);
     crashLog << "========================================" << std::endl;
     crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
-#if defined(_WIN32)
-    logCallstack(crashLog);
-    HANDLE hFile = CreateFileA("crash_dump.dmp", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        MINIDUMP_EXCEPTION_INFORMATION mdei;
-        mdei.ThreadId = GetCurrentThreadId();
-        mdei.ExceptionPointers = NULL;
-        mdei.ClientPointers = FALSE;
-
-        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &mdei, NULL, NULL);
-        CloseHandle(hFile);
-    }
-#endif
     crashLog << "========================================" << std::endl;
+    crashLog.flush();
     crashLog.close();
+#endif
     std::exit(sig);
+}
+
+inline void customTerminateHandler() {
+    signalHandler(999);
 }
 
 inline void installCrashHandler() {
 #if defined(_WIN32)
+    AddVectoredExceptionHandler(1, customVectoredExceptionHandler);
     SetUnhandledExceptionFilter(customUnhandledExceptionFilter);
 #endif
+    std::set_terminate(customTerminateHandler);
     std::signal(SIGSEGV, signalHandler);
     std::signal(SIGABRT, signalHandler);
     std::signal(SIGFPE, signalHandler);
