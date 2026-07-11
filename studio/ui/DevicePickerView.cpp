@@ -49,8 +49,10 @@ DevicePickerView::DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, 
     : QWidget(parent), m_devices(devices), m_settings(settings) {
     setupUi();
 
-    connect(m_devices.get(), &AudioDeviceManager::devicesRefreshed, this, &DevicePickerView::refreshUi);
-    connect(m_devices.get(), &AudioDeviceManager::configChanged, this, &DevicePickerView::refreshUi);
+    connect(m_devices.get(), &AudioDeviceManager::devicesRefreshed, this, &DevicePickerView::refreshUi,
+            Qt::QueuedConnection);
+    connect(m_devices.get(), &AudioDeviceManager::configChanged, this, &DevicePickerView::refreshUi,
+            Qt::QueuedConnection);
 
     refreshUi();
 }
