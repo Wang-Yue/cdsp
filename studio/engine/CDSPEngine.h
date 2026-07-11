@@ -14,6 +14,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include <stdatomic.h>
+#endif
+
 extern "C" {
 #include "Engine/dsp_engine.h"
 }
