@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QTimer>
 
+#include "models/LevelState.h"
+
 enum class VUTheme {
     VintageAmber,
     DarkStealth,
@@ -40,19 +42,26 @@ class AnalogVUMeterView : public QWidget {
 public:
     explicit AnalogVUMeterView(QWidget* parent = nullptr);
 
+    void setLevelState(LevelState* levelState) { m_levelState = levelState; }
     void setLevelDB(float leftDB, float rightDB);
     void setVUSettings(const VUSettings& settings);
     VUSettings vuSettings() const { return m_settings; }
 
 protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private slots:
     void onAnimTick();
 
 private:
+    LevelState* m_levelState = nullptr;
     float m_leftDB = -60.0f;
     float m_rightDB = -60.0f;
+
+    float m_peakClipLHold = 0.0f;
+    float m_peakClipRHold = 0.0f;
 
     float m_targetAngleL = -45.0f;
     float m_targetAngleR = -45.0f;
@@ -63,7 +72,7 @@ private:
     QTimer m_animTimer;
 
     float computeAngleForLevel(float dbFS) const;
-    void drawSingleVU(QPainter& p, const QRect& rect, float angle, const QString& label);
+    void drawSingleVU(QPainter& p, const QRect& rect, float angle, const QString& label, bool isClipped);
 };
 
 #endif // ANALOG_VU_METER_VIEW_H

@@ -14,8 +14,8 @@
 #include <QWidget>
 #include <QSlider>
 #include <QPushButton>
-#include <QLabel>
-#include <memory>
+#include <QGroupBox>
+#include <vector>
 
 class DashboardView : public QWidget {
     Q_OBJECT
@@ -32,6 +32,8 @@ public:
 
 private slots:
     void refreshMeters();
+    void updateVisibility();
+    void updateFaderUi();
 
 private:
     std::shared_ptr<MonitoringController> m_monitoring;
@@ -40,29 +42,29 @@ private:
     std::shared_ptr<SpectrogramEngine> m_spectrogramEngine;
     std::shared_ptr<VectorScopeEngine> m_vectorScopeEngine;
 
-    LevelMeterView* m_captureMeters;
-    LevelMeterView* m_playbackMeters;
-    SpectrumView* m_spectrumView;
-    SpectrogramView* m_spectrogramView;
-    VectorScopeView* m_vectorScopeView;
-    AnalogVUMeterView* m_analogVUView;
+    QGroupBox* m_levelMetersGroup = nullptr;
+    QGroupBox* m_analogVUGroup = nullptr;
+    QGroupBox* m_spectrumGroup = nullptr;
+    QGroupBox* m_spectrogramGroup = nullptr;
+    QGroupBox* m_vectorScopeGroup = nullptr;
 
-    QSlider* m_mainFaderSlider;
-    QLabel* m_volValueLabel;
-    QPushButton* m_mainMuteBtn;
-    QPushButton* m_linkFadersBtn;
+    LevelMeterView* m_captureMeters = nullptr;
+    LevelMeterView* m_playbackMeters = nullptr;
+    SpectrumView* m_spectrumView = nullptr;
+    SpectrogramView* m_spectrogramView = nullptr;
+    VectorScopeView* m_vectorScopeView = nullptr;
+    AnalogVUMeterView* m_analogVUView = nullptr;
 
-    QPushButton* m_faderMainBtn;
-    QPushButton* m_faderAux1Btn;
-    QPushButton* m_faderAux2Btn;
-    QPushButton* m_faderAux3Btn;
-    QPushButton* m_faderAux4Btn;
-
-    Fader m_activeFader = Fader::Main;
+    struct FaderRowWidgets {
+        Fader fader;
+        QLabel* label;
+        QPushButton* muteBtn;
+        QSlider* slider;
+        QLabel* gainValueLabel;
+    };
+    std::vector<FaderRowWidgets> m_faderRows;
 
     void setupUi();
-    void updateFaderUi();
-    void setFaderVolumeStep(float step);
 };
 
 #endif // DASHBOARD_VIEW_H

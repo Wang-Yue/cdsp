@@ -11,6 +11,10 @@
 
 #include <QTableWidget>
 
+#include "ui/ConvolutionIRPlot.h"
+#include <QCheckBox>
+#include <QDoubleSpinBox>
+
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT
 
@@ -36,7 +40,10 @@ private:
 
     QLineEdit* m_nameEdit;
     QLineEdit* m_kindEdit;
+    QCheckBox* m_normalizeCheck;
+    QDoubleSpinBox* m_delayCompSpin;
     QTableWidget* m_fileTable;
+    ConvolutionIRPlot* m_irPlotPreview;
     QLabel* m_warningLabel;
     QLabel* m_infoLabel;
     QPushButton* m_importBtn;

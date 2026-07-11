@@ -22,7 +22,7 @@ public:
     bool show3D = false;
 
     std::deque<SpectrumData> history;
-    size_t maxHistory = 50;
+    size_t maxHistory = 300;
 
     void pushSpectrum(const SpectrumData& newData) {
         history.push_front(newData);

@@ -51,6 +51,14 @@ public:
     int workerThreads = 0;
     bool darkMode = false;
 
+    bool showLevelMetersInDashboard = true;
+    bool showSpectrumInDashboard = true;
+    bool showSpectrogramInDashboard = true;
+    bool showVectorScopeInDashboard = true;
+    bool showAnalogVUInDashboard = true;
+    bool autoStartEngine = false;
+    int logLevel = 2; // Default to Info level
+
     float getVolume(Fader fader) const;
     void setVolume(float db, Fader fader);
     bool getMuted(Fader fader) const;

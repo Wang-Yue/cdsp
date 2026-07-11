@@ -7,7 +7,7 @@
 OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {
     setWindowTitle("Oratory1990 Headphone EQ Explorer");
-    resize(600, 500);
+    resize(620, 520);
     setupUi();
     loadIndex();
 }
@@ -17,8 +17,12 @@ void OratoryPresetPickerDlg::setupUi() {
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(12);
 
-    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 targets", this);
-    subtitleLbl->setStyleSheet("color: #8e8e93; font-size: 12px; font-weight: bold;");
+    auto headerTitle = new QLabel("Oratory1990 Database", this);
+    headerTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    mainLayout->addWidget(headerTitle);
+
+    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 target curve", this);
+    subtitleLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     mainLayout->addWidget(subtitleLbl);
 
     auto searchLayout = new QHBoxLayout();
@@ -29,7 +33,7 @@ void OratoryPresetPickerDlg::setupUi() {
 
     auto refreshBtn = new QPushButton("🔄 Refresh Database", this);
     connect(refreshBtn, &QPushButton::clicked, [this]() {
-        m_statusLabel->setText("Refreshing database...");
+        m_statusLabel->setText("Refreshing database from GitHub...");
         loadIndex();
     });
     searchLayout->addWidget(refreshBtn);
@@ -37,21 +41,25 @@ void OratoryPresetPickerDlg::setupUi() {
     mainLayout->addLayout(searchLayout);
 
     m_listWidget = new QListWidget(this);
+    m_listWidget->setAlternatingRowColors(true);
+    connect(m_listWidget, &QListWidget::itemDoubleClicked, this, &OratoryPresetPickerDlg::onImportClicked);
     mainLayout->addWidget(m_listWidget);
 
     m_statusLabel = new QLabel("Loading Oratory1990 index...", this);
+    m_statusLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     mainLayout->addWidget(m_statusLabel);
 
     auto btnLayout = new QHBoxLayout();
     btnLayout->addStretch();
 
     m_importBtn = new QPushButton("Import Selected Preset", this);
+    m_importBtn->setStyleSheet("background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
     m_importBtn->setEnabled(false);
     connect(m_importBtn, &QPushButton::clicked, this, &OratoryPresetPickerDlg::onImportClicked);
     btnLayout->addWidget(m_importBtn);
 
-    auto closeBtn = new QPushButton("Close", this);
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
+    auto closeBtn = new QPushButton("Cancel", this);
+    connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
     btnLayout->addWidget(closeBtn);
 
     mainLayout->addLayout(btnLayout);
@@ -66,20 +74,26 @@ void OratoryPresetPickerDlg::loadIndex() {
         if (ok) {
             m_entries = entries;
             m_statusLabel->setText(QString("Loaded %1 Oratory presets.").arg(entries.size()));
+            m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
             onSearchTextChanged(m_searchEdit->text());
         } else {
-            m_statusLabel->setText("Failed to load Oratory index.");
+            m_statusLabel->setText("Failed to load Oratory1990 index.");
         }
     });
 }
 
 void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
     m_listWidget->clear();
+    int count = 0;
     for (size_t i = 0; i < m_entries.size(); ++i) {
         QString name = QString::fromStdString(m_entries[i].name);
-        if (text.isEmpty() || name.contains(text, Qt::CaseInsensitive)) {
-            auto item = new QListWidgetItem(name, m_listWidget);
+        QString path = QString::fromStdString(m_entries[i].path);
+        if (text.isEmpty() || name.contains(text, Qt::CaseInsensitive) || path.contains(text, Qt::CaseInsensitive)) {
+            auto item = new QListWidgetItem(m_listWidget);
+            item->setText(QString("%1\n%2").arg(name, path));
             item->setData(Qt::UserRole, static_cast<int>(i));
+            count++;
+            if (text.isEmpty() && count >= 100) break;
         }
     }
 }
@@ -92,13 +106,19 @@ void OratoryPresetPickerDlg::onImportClicked() {
     const auto& entry = m_entries[idx];
 
     m_statusLabel->setText("Downloading preset...");
+    m_importBtn->setEnabled(false);
+
     m_service.fetchPreset(entry, [this, entry](bool ok, std::optional<EQPreset> preset) {
+        m_importBtn->setEnabled(true);
         if (ok && preset.has_value()) {
-            m_pipeline->addEQPreset(preset.value());
-            QMessageBox::information(this, "Success", QString("Imported preset '%1'").arg(QString::fromStdString(entry.name)));
+            auto p = preset.value();
+            p.name = "[Oratory] " + entry.name;
+            m_pipeline->addEQPreset(p);
+            QMessageBox::information(this, "Success", QString("Imported preset '%1' into Pipeline Store.").arg(QString::fromStdString(p.name)));
             accept();
         } else {
             m_statusLabel->setText("Failed to download preset.");
         }
     });
 }
+

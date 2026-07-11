@@ -10,6 +10,16 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     m_animTimer.start(16); // ~60 FPS continuous ballistic animation
 }
 
+void AnalogVUMeterView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_levelState) m_levelState->visibilityCount++;
+}
+
+void AnalogVUMeterView::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_levelState && m_levelState->visibilityCount > 0) m_levelState->visibilityCount--;
+}
+
 void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
     m_settings = settings;
     update();
@@ -35,6 +45,9 @@ void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
     m_leftDB = leftDB;
     m_rightDB = rightDB;
 
+    if (leftDB >= -0.1f) m_peakClipLHold = 1.0f;
+    if (rightDB >= -0.1f) m_peakClipRHold = 1.0f;
+
     m_targetAngleL = computeAngleForLevel(leftDB);
     m_targetAngleR = computeAngleForLevel(rightDB);
 }
@@ -44,9 +57,10 @@ void AnalogVUMeterView::onAnimTick() {
     m_currentAngleL += (m_targetAngleL - m_currentAngleL) * 0.18f;
     m_currentAngleR += (m_targetAngleR - m_currentAngleR) * 0.18f;
 
-    if (std::abs(m_targetAngleL - m_currentAngleL) > 0.01f || std::abs(m_targetAngleR - m_currentAngleR) > 0.01f) {
-        update();
-    }
+    if (m_peakClipLHold > 0.0f) m_peakClipLHold = std::max(0.0f, m_peakClipLHold - 0.02f);
+    if (m_peakClipRHold > 0.0f) m_peakClipRHold = std::max(0.0f, m_peakClipRHold - 0.02f);
+
+    update();
 }
 
 void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
@@ -58,11 +72,11 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
     int h = height();
     int halfW = (w - 24) / 2;
 
-    drawSingleVU(p, QRect(8, 8, halfW, h - 16), m_currentAngleL, "LEFT");
-    drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT");
+    drawSingleVU(p, QRect(8, 8, halfW, h - 16), m_currentAngleL, "LEFT", m_peakClipLHold > 0.0f);
+    drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT", m_peakClipRHold > 0.0f);
 }
 
-void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label) {
+void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label, bool isClipped) {
     p.save();
     p.setClipRect(rect);
 
@@ -158,6 +172,21 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.drawEllipse(QPointF(0, 0), 8, 8);
 
     p.restore();
+
+    // Peak Clip Indicator Lamp (Top Right)
+    QPointF ledPos(rect.right() - 20, rect.top() + 20);
+    p.setPen(QPen(QColor("#111111"), 1));
+    if (isClipped) {
+        QRadialGradient clipGlow(ledPos, 12);
+        clipGlow.setColorAt(0.0, QColor(255, 50, 50, 255));
+        clipGlow.setColorAt(0.5, QColor(255, 0, 0, 200));
+        clipGlow.setColorAt(1.0, QColor(255, 0, 0, 0));
+        p.fillRect(QRectF(ledPos.x() - 12, ledPos.y() - 12, 24, 24), clipGlow);
+        p.setBrush(QColor("#ff0000"));
+    } else {
+        p.setBrush(QColor("#4a1111"));
+    }
+    p.drawEllipse(ledPos, 5, 5);
 
     // Glass Surface Glare Reflection Overlay
     QLinearGradient glassGrad(rect.topLeft(), rect.bottomRight());

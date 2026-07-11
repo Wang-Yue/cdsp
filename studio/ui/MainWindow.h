@@ -75,6 +75,7 @@ private:
     QSystemTrayIcon* m_trayIcon;
     QMenu* m_trayMenu;
 
+    QMap<QString, QWidget*> m_pageCache;
     QString m_lastActiveTag = "dashboard";
 
     void setupUi();

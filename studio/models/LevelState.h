@@ -5,6 +5,7 @@
 #include <vector>
 
 struct LevelState {
+    int visibilityCount = 0;
     std::vector<float> captureRms;
     std::vector<float> capturePeak;
     std::vector<float> playbackRms;

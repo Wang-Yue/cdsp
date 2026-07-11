@@ -18,6 +18,30 @@
 #include <QLabel>
 #include <memory>
 
+class VSliderWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit VSliderWidget(double value = 0.0, double minVal = -40.0, double maxVal = 40.0, QWidget* parent = nullptr);
+
+    double value() const { return m_value; }
+    void setValue(double val);
+
+signals:
+    void valueChanged(double newVal);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+
+private:
+    double m_value;
+    double m_minVal;
+    double m_maxVal;
+
+    void updateValueFromMouse(int y);
+};
+
 class StageDetailView : public QWidget {
     Q_OBJECT
 
@@ -40,8 +64,6 @@ private:
 
     QLineEdit* m_nameEdit;
     QCheckBox* m_enabledCheck;
-
-    // Stage Options Panels Container
     QWidget* m_optionsContainer;
 
     void setupUi();

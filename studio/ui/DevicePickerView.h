@@ -1,20 +1,21 @@
 #ifndef DEVICE_PICKER_VIEW_H
 #define DEVICE_PICKER_VIEW_H
 
+#include <QWidget>
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
-#include <QWidget>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QStackedWidget>
-#include <memory>
 
 class DevicePickerView : public QWidget {
     Q_OBJECT
+    Q_DISABLE_COPY(DevicePickerView)
 
 public:
     DevicePickerView(
@@ -35,6 +36,7 @@ private:
     QComboBox* m_capBackendCombo;
     QStackedWidget* m_capStack;
     QComboBox* m_capDeviceCombo;
+    QListWidget* m_capDeviceList;
     QSpinBox* m_capDevChannelsSpin;
     QSpinBox* m_capStreamChannelsSpin;
     QComboBox* m_capRateCombo;
@@ -59,6 +61,7 @@ private:
     QComboBox* m_pbBackendCombo;
     QStackedWidget* m_pbStack;
     QComboBox* m_pbDeviceCombo;
+    QListWidget* m_pbDeviceList;
     QSpinBox* m_pbDevChannelsSpin;
     QSpinBox* m_pbStreamChannelsSpin;
     QComboBox* m_pbRateCombo;

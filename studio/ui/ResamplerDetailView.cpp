@@ -6,8 +6,11 @@
 #include <QLabel>
 #include <QPushButton>
 
-ResamplerDetailView::ResamplerDetailView(std::shared_ptr<AudioSettings> settings, QWidget* parent)
-    : QWidget(parent), m_settings(settings) {
+ResamplerDetailView::ResamplerDetailView(
+    std::shared_ptr<AudioSettings> settings,
+    std::shared_ptr<AudioDeviceManager> devices,
+    QWidget* parent
+) : QWidget(parent), m_settings(settings), m_devices(devices) {
     setupUi();
     refreshUi();
 }
@@ -153,6 +156,15 @@ void ResamplerDetailView::refreshUi() {
     m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
     m_windowCombo->setCurrentText(QString::fromStdString(m_settings->resamplerWindow));
     m_fCutoffSpin->setValue(m_settings->resamplerFCutoff);
+
+    if (m_devices) {
+        int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
+        int pbRate = m_devices->playbackConfig.sampleRate > 0 ? m_devices->playbackConfig.sampleRate : 48000;
+        m_capRateLabel->setText(capRate >= 1000 ? QString("%1 kHz").arg(capRate / 1000.0, 0, 'f', 1) : QString("%1 Hz").arg(capRate));
+        m_pbRateLabel->setText(pbRate >= 1000 ? QString("%1 kHz").arg(pbRate / 1000.0, 0, 'f', 1) : QString("%1 Hz").arg(pbRate));
+        double ratio = static_cast<double>(pbRate) / static_cast<double>(capRate);
+        m_ratioLabel->setText(QString("Conversion Ratio: %1").arg(ratio, 0, 'f', 4));
+    }
 
     updateVisibility();
 }

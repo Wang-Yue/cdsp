@@ -47,6 +47,7 @@ void AnalogVUDetailView::setupUi() {
 
     // VU Meter Center Display
     m_vuMeter = new AnalogVUMeterView(this);
+    if (m_monitoring) m_vuMeter->setLevelState(&m_monitoring->levelState);
     m_vuMeter->setVUSettings(m_settings);
     mainLayout->addWidget(m_vuMeter, 1);
 

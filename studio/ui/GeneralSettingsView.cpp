@@ -33,6 +33,22 @@ void GeneralSettingsView::setupUi() {
         qApp->setStyleSheet(m_settings->darkMode ? StyleTheme::darkStylesheet() : StyleTheme::lightStylesheet());
     });
     themeForm->addRow("UI Theme:", m_themeCombo);
+
+    m_logLevelCombo = new QComboBox(themeGroup);
+    m_logLevelCombo->addItems({"Trace & Above", "Debug & Above", "Info & Above", "Warn & Above", "Error Only"});
+    connect(m_logLevelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_settings->logLevel = idx;
+        m_settings->savePreferences();
+    });
+    themeForm->addRow("Default Log Level:", m_logLevelCombo);
+
+    m_autoStartCheck = new QCheckBox("Auto-start DSP Engine on Launch", themeGroup);
+    connect(m_autoStartCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_settings->autoStartEngine = checked;
+        m_settings->savePreferences();
+    });
+    themeForm->addRow("Auto-Start Options:", m_autoStartCheck);
+
     mainLayout->addWidget(themeGroup);
 
     // Monitoring Refresh Group
@@ -98,6 +114,10 @@ void GeneralSettingsView::setupUi() {
 }
 
 void GeneralSettingsView::refreshUi() {
+    m_themeCombo->setCurrentIndex(m_settings->darkMode ? 1 : 0);
+    m_logLevelCombo->setCurrentIndex(m_settings->logLevel);
+    m_autoStartCheck->setChecked(m_settings->autoStartEngine);
+
     int pollRate = static_cast<int>(m_monitoring->pollingRate());
     m_pollingRateSlider->setValue(pollRate);
     m_pollingRateLabel->setText(QString("%1 Hz").arg(pollRate));

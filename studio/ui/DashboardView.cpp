@@ -3,10 +3,12 @@
 #include "models/PipelineStage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGridLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QScrollArea>
+#include <QPushButton>
+#include <QSlider>
+#include <QFont>
 
 DashboardView::DashboardView(
     std::shared_ptr<MonitoringController> monitoring,
@@ -24,39 +26,56 @@ DashboardView::DashboardView(
     setupUi();
 
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &DashboardView::refreshMeters);
+
+    if (m_dspController && m_dspController->settings()) {
+        connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateVisibility);
+        connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateFaderUi);
+    }
+    updateVisibility();
+    updateFaderUi();
+}
+
+void DashboardView::updateVisibility() {
+    if (!m_dspController || !m_dspController->settings()) return;
+    auto s = m_dspController->settings();
+    if (m_levelMetersGroup) m_levelMetersGroup->setVisible(s->showLevelMetersInDashboard);
+    if (m_analogVUGroup) m_analogVUGroup->setVisible(s->showAnalogVUInDashboard);
+    if (m_spectrumGroup) m_spectrumGroup->setVisible(s->showSpectrumInDashboard);
+    if (m_spectrogramGroup) m_spectrogramGroup->setVisible(s->showSpectrogramInDashboard);
+    if (m_vectorScopeGroup) m_vectorScopeGroup->setVisible(s->showVectorScopeInDashboard);
 }
 
 void DashboardView::updateFaderUi() {
-    float vol = m_dspController->settings()->getVolume(m_activeFader);
-    bool muted = m_dspController->settings()->getMuted(m_activeFader);
+    if (!m_dspController || !m_dspController->settings()) return;
+    auto s = m_dspController->settings();
 
-    m_mainFaderSlider->blockSignals(true);
-    m_mainFaderSlider->setValue(static_cast<int>(vol * 2.0f));
-    m_mainFaderSlider->blockSignals(false);
+    for (auto& row : m_faderRows) {
+        float vol = s->getVolume(row.fader);
+        bool muted = s->getMuted(row.fader);
 
-    m_volValueLabel->setText(QString("%1 dB").arg(vol, 4, 'f', 1));
-    m_mainMuteBtn->setChecked(muted);
-    m_mainMuteBtn->setText(muted ? "Unmute" : "Mute");
+        row.slider->blockSignals(true);
+        row.slider->setValue(static_cast<int>(vol * 2.0f));
+        row.slider->blockSignals(false);
 
-    auto updateBtnStyle = [this](QPushButton* btn, Fader f) {
-        if (m_activeFader == f) {
-            btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
+        row.gainValueLabel->setText(QString("%1%2 dB").arg(vol > 0.0f ? "+" : "").arg(vol, 4, 'f', 1));
+        if (vol > 0.0f) {
+            row.gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 75px;");
         } else {
-            btn->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 4px;");
+            row.gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #34c759; min-width: 75px;");
         }
-    };
-    updateBtnStyle(m_faderMainBtn, Fader::Main);
-    updateBtnStyle(m_faderAux1Btn, Fader::Aux1);
-    updateBtnStyle(m_faderAux2Btn, Fader::Aux2);
-    updateBtnStyle(m_faderAux3Btn, Fader::Aux3);
-    updateBtnStyle(m_faderAux4Btn, Fader::Aux4);
-}
 
-void DashboardView::setFaderVolumeStep(float step) {
-    float cur = m_dspController->settings()->getVolume(m_activeFader);
-    float target = std::clamp(cur + step, -60.0f, 20.0f);
-    m_dspController->setFaderVolume(m_activeFader, target);
-    updateFaderUi();
+        row.muteBtn->blockSignals(true);
+        row.muteBtn->setChecked(muted);
+        row.muteBtn->blockSignals(false);
+
+        if (muted) {
+            row.muteBtn->setText("🔇 Muted");
+            row.muteBtn->setStyleSheet("background-color: #ff3b30; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;");
+        } else {
+            row.muteBtn->setText("🔊 Mute");
+            row.muteBtn->setStyleSheet("background-color: #3a3a3c; color: white; padding: 4px 8px; border-radius: 4px;");
+        }
+    }
 }
 
 void DashboardView::setupUi() {
@@ -66,6 +85,7 @@ void DashboardView::setupUi() {
 
     auto container = new QWidget(scroll);
     auto mainLayout = new QVBoxLayout(container);
+    mainLayout->setSpacing(16);
 
     // 1. Signal Chain Overview Card (Horizontal Scrollable)
     auto chainGroup = new QGroupBox("Signal Chain Overview", container);
@@ -150,105 +170,107 @@ void DashboardView::setupUi() {
     chainGroupLayout->addWidget(chainScroll);
     mainLayout->addWidget(chainGroup);
 
-    // Master Controls & Output Faders Bar
-    auto faderGroup = new QGroupBox("Master Controls & Output Faders", container);
+    // 2. Level Meters Card
+    m_levelMetersGroup = new QGroupBox("Level Meters", container);
+    auto levelLayout = new QHBoxLayout(m_levelMetersGroup);
+    m_captureMeters = new LevelMeterView(m_levelMetersGroup);
+    m_captureMeters->setLevelState(&m_monitoring->levelState);
+    m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
+    m_playbackMeters->setLevelState(&m_monitoring->levelState);
+    levelLayout->addWidget(m_captureMeters);
+    levelLayout->addWidget(m_playbackMeters);
+    mainLayout->addWidget(m_levelMetersGroup);
+
+    // 3. Volume Faders Card (All 5 fader rows simultaneously)
+    auto faderGroup = new QGroupBox("Volume Faders", container);
     auto faderVLayout = new QVBoxLayout(faderGroup);
+    faderVLayout->setSpacing(12);
 
-    // Fader Selector Bar
-    auto selectorLayout = new QHBoxLayout();
-    m_faderMainBtn = new QPushButton("Main", faderGroup);
-    m_faderAux1Btn = new QPushButton("Aux 1", faderGroup);
-    m_faderAux2Btn = new QPushButton("Aux 2", faderGroup);
-    m_faderAux3Btn = new QPushButton("Aux 3", faderGroup);
-    m_faderAux4Btn = new QPushButton("Aux 4", faderGroup);
+    struct FaderInfo { Fader fader; QString name; };
+    std::vector<FaderInfo> faders = {
+        {Fader::Main, "Main"},
+        {Fader::Aux1, "Aux 1"},
+        {Fader::Aux2, "Aux 2"},
+        {Fader::Aux3, "Aux 3"},
+        {Fader::Aux4, "Aux 4"}
+    };
 
-    connect(m_faderMainBtn, &QPushButton::clicked, [this]() { m_activeFader = Fader::Main; updateFaderUi(); });
-    connect(m_faderAux1Btn, &QPushButton::clicked, [this]() { m_activeFader = Fader::Aux1; updateFaderUi(); });
-    connect(m_faderAux2Btn, &QPushButton::clicked, [this]() { m_activeFader = Fader::Aux2; updateFaderUi(); });
-    connect(m_faderAux3Btn, &QPushButton::clicked, [this]() { m_activeFader = Fader::Aux3; updateFaderUi(); });
-    connect(m_faderAux4Btn, &QPushButton::clicked, [this]() { m_activeFader = Fader::Aux4; updateFaderUi(); });
+    m_faderRows.clear();
+    for (const auto& info : faders) {
+        auto rowLayout = new QHBoxLayout();
 
-    selectorLayout->addWidget(m_faderMainBtn);
-    selectorLayout->addWidget(m_faderAux1Btn);
-    selectorLayout->addWidget(m_faderAux2Btn);
-    selectorLayout->addWidget(m_faderAux3Btn);
-    selectorLayout->addWidget(m_faderAux4Btn);
-    selectorLayout->addStretch();
+        auto nameLbl = new QLabel(info.name, faderGroup);
+        nameLbl->setFixedWidth(80);
+        nameLbl->setFont(QFont("System", 13, QFont::DemiBold));
 
-    faderVLayout->addLayout(selectorLayout);
+        auto muteBtn = new QPushButton("🔊 Mute", faderGroup);
+        muteBtn->setCheckable(true);
+        muteBtn->setFixedWidth(90);
 
-    // Slider & Controls Bar (-60 to +20 dB, step 0.5)
-    auto controlsLayout = new QHBoxLayout();
-    controlsLayout->addWidget(new QLabel("Fader Gain:", faderGroup));
+        auto slider = new QSlider(Qt::Horizontal, faderGroup);
+        slider->setRange(-120, 40); // -60.0 dB to +20.0 dB
 
-    m_mainFaderSlider = new QSlider(Qt::Horizontal, faderGroup);
-    m_mainFaderSlider->setRange(-120, 40);
-    m_mainFaderSlider->setValue(0);
-    connect(m_mainFaderSlider, &QSlider::valueChanged, [this](int val) {
-        float db = val / 2.0f;
-        m_dspController->setFaderVolume(m_activeFader, db);
-        m_volValueLabel->setText(QString("%1 dB").arg(db, 4, 'f', 1));
-    });
-    controlsLayout->addWidget(m_mainFaderSlider, 1);
+        auto gainLbl = new QLabel(" 0.0 dB", faderGroup);
+        gainLbl->setFont(QFont("monospace", 11, QFont::Bold));
+        gainLbl->setFixedWidth(75);
+        gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    m_volValueLabel = new QLabel(" 0.0 dB", faderGroup);
-    m_volValueLabel->setFont(QFont("monospace", 10, QFont::Bold));
-    m_volValueLabel->setFixedWidth(60);
-    m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    controlsLayout->addWidget(m_volValueLabel);
+        Fader f = info.fader;
+        connect(muteBtn, &QPushButton::clicked, [this, f]() {
+            bool currentMute = m_dspController->settings()->getMuted(f);
+            m_dspController->setFaderMute(f, !currentMute);
+            updateFaderUi();
+        });
 
-    // Step adjustment buttons
-    auto btnMinus1 = new QPushButton("-1 dB", faderGroup);
-    auto btnMinusHalf = new QPushButton("-0.5 dB", faderGroup);
-    auto btnPlusHalf = new QPushButton("+0.5 dB", faderGroup);
-    auto btnPlus1 = new QPushButton("+1 dB", faderGroup);
+        connect(slider, &QSlider::valueChanged, [this, f](int val) {
+            float db = val / 2.0f;
+            m_dspController->setFaderVolume(f, db);
+            updateFaderUi();
+        });
 
-    connect(btnMinus1, &QPushButton::clicked, [this]() { setFaderVolumeStep(-1.0f); });
-    connect(btnMinusHalf, &QPushButton::clicked, [this]() { setFaderVolumeStep(-0.5f); });
-    connect(btnPlusHalf, &QPushButton::clicked, [this]() { setFaderVolumeStep(0.5f); });
-    connect(btnPlus1, &QPushButton::clicked, [this]() { setFaderVolumeStep(1.0f); });
+        rowLayout->addWidget(nameLbl);
+        rowLayout->addWidget(muteBtn);
+        rowLayout->addWidget(slider, 1);
+        rowLayout->addWidget(gainLbl);
 
-    controlsLayout->addWidget(btnMinus1);
-    controlsLayout->addWidget(btnMinusHalf);
-    controlsLayout->addWidget(btnPlusHalf);
-    controlsLayout->addWidget(btnPlus1);
+        faderVLayout->addLayout(rowLayout);
 
-    m_mainMuteBtn = new QPushButton("Mute", faderGroup);
-    m_mainMuteBtn->setCheckable(true);
-    connect(m_mainMuteBtn, &QPushButton::toggled, [this](bool checked) {
-        m_dspController->setFaderMute(m_activeFader, checked);
-        m_mainMuteBtn->setText(checked ? "Unmute" : "Mute");
-    });
-    controlsLayout->addWidget(m_mainMuteBtn);
-
-    faderVLayout->addLayout(controlsLayout);
+        m_faderRows.push_back({f, nameLbl, muteBtn, slider, gainLbl});
+    }
     mainLayout->addWidget(faderGroup);
 
-    updateFaderUi();
+    // 4. Analog VU Card
+    m_analogVUGroup = new QGroupBox("Analog VU Meter", container);
+    auto vuLayout = new QVBoxLayout(m_analogVUGroup);
+    m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
+    m_analogVUView->setLevelState(&m_monitoring->levelState);
+    vuLayout->addWidget(m_analogVUView);
+    mainLayout->addWidget(m_analogVUGroup);
 
-    // Monitoring Cards Grid
-    auto grid = new QGridLayout();
-    grid->setSpacing(16);
+    // 5. Spectrum Card
+    m_spectrumGroup = new QGroupBox("Spectrum Analyzer", container);
+    auto specLayout = new QVBoxLayout(m_spectrumGroup);
+    m_spectrumView = new SpectrumView(m_spectrumEngine, m_spectrumGroup);
+    m_spectrumView->setFixedHeight(220);
+    specLayout->addWidget(m_spectrumView);
+    mainLayout->addWidget(m_spectrumGroup);
 
-    m_captureMeters = new LevelMeterView(container);
-    grid->addWidget(m_captureMeters, 0, 0);
+    // 6. Spectrogram Card
+    m_spectrogramGroup = new QGroupBox("Spectroscope", container);
+    auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
+    m_spectrogramView = new SpectrogramView(m_spectrogramEngine, m_spectrogramGroup);
+    m_spectrogramView->setFixedHeight(360);
+    spectroLayout->addWidget(m_spectrogramView);
+    mainLayout->addWidget(m_spectrogramGroup);
 
-    m_playbackMeters = new LevelMeterView(container);
-    grid->addWidget(m_playbackMeters, 0, 1);
+    // 7. Vector Scope Card
+    m_vectorScopeGroup = new QGroupBox("Vector Scope", container);
+    auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
+    m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, m_vectorScopeGroup);
+    m_vectorScopeView->setFixedHeight(400);
+    vecLayout->addWidget(m_vectorScopeView);
+    mainLayout->addWidget(m_vectorScopeGroup);
 
-    m_analogVUView = new AnalogVUMeterView(container);
-    grid->addWidget(m_analogVUView, 1, 0);
-
-    m_spectrumView = new SpectrumView(m_spectrumEngine, container);
-    grid->addWidget(m_spectrumView, 1, 1);
-
-    m_spectrogramView = new SpectrogramView(m_spectrogramEngine, container);
-    grid->addWidget(m_spectrogramView, 2, 0);
-
-    m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, container);
-    grid->addWidget(m_vectorScopeView, 2, 1);
-
-    mainLayout->addLayout(grid);
     scroll->setWidget(container);
 
     auto layout = new QVBoxLayout(this);
@@ -258,14 +280,14 @@ void DashboardView::setupUi() {
 
 void DashboardView::refreshMeters() {
     const auto& st = m_monitoring->levelState;
-    m_captureMeters->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
-    m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
+    if (m_captureMeters) m_captureMeters->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
+    if (m_playbackMeters) m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
 
     float leftDB = !st.playbackRms.empty() ? st.playbackRms[0] : -60.0f;
     float rightDB = st.playbackRms.size() > 1 ? st.playbackRms[1] : leftDB;
-    m_analogVUView->setLevelDB(leftDB, rightDB);
+    if (m_analogVUView) m_analogVUView->setLevelDB(leftDB, rightDB);
 
-    if (m_spectrumEngine) m_spectrumView->setSpectrum(m_spectrumEngine->data);
-    if (m_spectrogramEngine) m_spectrogramView->setHistory(m_spectrogramEngine->history, m_spectrogramEngine->show3D);
-    if (m_vectorScopeEngine) m_vectorScopeView->setSamples(m_vectorScopeEngine->samples, m_vectorScopeEngine->showParticles);
+    if (m_spectrumEngine && m_spectrumView) m_spectrumView->setSpectrum(m_spectrumEngine->data);
+    if (m_spectrogramEngine && m_spectrogramView) m_spectrogramView->setHistory(m_spectrogramEngine->history, m_spectrogramEngine->show3D);
+    if (m_vectorScopeEngine && m_vectorScopeView) m_vectorScopeView->setSamples(m_vectorScopeEngine->samples, m_vectorScopeEngine->showParticles);
 }

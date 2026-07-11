@@ -1,12 +1,13 @@
 #ifndef GENERAL_SETTINGS_VIEW_H
 #define GENERAL_SETTINGS_VIEW_H
 
+#include <QWidget>
 #include "models/AudioSettings.h"
 #include "models/MonitoringController.h"
-#include <QWidget>
+#include <QComboBox>
 #include <QSlider>
 #include <QLabel>
-#include <QComboBox>
+#include <QCheckBox>
 #include <memory>
 
 class GeneralSettingsView : public QWidget {
@@ -27,6 +28,8 @@ private:
     std::shared_ptr<MonitoringController> m_monitoring;
 
     QComboBox* m_themeCombo;
+    QComboBox* m_logLevelCombo;
+    QCheckBox* m_autoStartCheck;
 
     QSlider* m_pollingRateSlider;
     QLabel* m_pollingRateLabel;

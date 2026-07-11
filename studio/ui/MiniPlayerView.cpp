@@ -15,7 +15,9 @@ MiniPlayerView::MiniPlayerView(
     m_dsp(dsp), m_settings(settings), m_monitoring(monitoring) {
 
     setAttribute(Qt::WA_TranslucentBackground);
-    resize(320, 110);
+    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.15); }");
+    setObjectName("MiniPlayerViewWindow");
+    resize(360, 120);
 
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
@@ -153,21 +155,36 @@ void MiniPlayerView::setupUi() {
     topBar->addWidget(m_volSlider);
     topBar->addWidget(m_volValueLabel);
 
-    // Dynamic Mode Picker Buttons (Compact)
+    // 6 Mode Buttons
     auto pipeBtn = new QPushButton("Pipe", this);
-    pipeBtn->setFixedWidth(32);
+    pipeBtn->setFixedWidth(28);
     connect(pipeBtn, &QPushButton::clicked, [this]() { buildMiniPipelineUi(); m_viewStack->setCurrentIndex(0); });
     topBar->addWidget(pipeBtn);
 
     auto specBtn = new QPushButton("Spec", this);
-    specBtn->setFixedWidth(32);
+    specBtn->setFixedWidth(28);
     connect(specBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(1); });
     topBar->addWidget(specBtn);
 
     auto vuBtn = new QPushButton("VU", this);
-    vuBtn->setFixedWidth(28);
+    vuBtn->setFixedWidth(26);
     connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
     topBar->addWidget(vuBtn);
+
+    auto mtrBtn = new QPushButton("Mtr", this);
+    mtrBtn->setFixedWidth(26);
+    connect(mtrBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
+    topBar->addWidget(mtrBtn);
+
+    auto sgBtn = new QPushButton("SG", this);
+    sgBtn->setFixedWidth(24);
+    connect(sgBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(4); });
+    topBar->addWidget(sgBtn);
+
+    auto vecBtn = new QPushButton("Vec", this);
+    vecBtn->setFixedWidth(26);
+    connect(vecBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(5); });
+    topBar->addWidget(vecBtn);
 
     auto closeBtn = new QPushButton("✕", this);
     closeBtn->setFixedSize(18, 18);
@@ -187,23 +204,25 @@ void MiniPlayerView::setupUi() {
     m_viewStack->addWidget(m_pipelineMiniCard);
 
     // Mode 1: Spectrum
-    m_spectrumView = new SpectrumView(this);
+    m_spectrumView = new SpectrumView(m_monitoring ? m_monitoring->spectrumEngine() : nullptr, this);
     m_viewStack->addWidget(m_spectrumView);
 
     // Mode 2: Analog VU
     m_analogVUView = new AnalogVUMeterView(this);
+    if (m_monitoring) m_analogVUView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_analogVUView);
 
     // Mode 3: Level Meters
     m_metersView = new LevelMeterView(this);
+    if (m_monitoring) m_metersView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_metersView);
 
     // Mode 4: Spectrogram
-    m_spectrogramView = new SpectrogramView(this);
+    m_spectrogramView = new SpectrogramView(m_monitoring ? m_monitoring->spectrogramEngine() : nullptr, this);
     m_viewStack->addWidget(m_spectrogramView);
 
     // Mode 5: Vector Scope
-    m_vectorScopeView = new VectorScopeView(this);
+    m_vectorScopeView = new VectorScopeView(m_monitoring ? m_monitoring->vectorScopeEngine() : nullptr, this);
     m_viewStack->addWidget(m_vectorScopeView);
 
     mainLayout->addWidget(m_viewStack);

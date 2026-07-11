@@ -42,6 +42,10 @@ public:
         m_pollTimer.setInterval(intervalMs);
     }
 
+    std::shared_ptr<SpectrumEngine> spectrumEngine() const { return m_spectrumEngine; }
+    std::shared_ptr<SpectrogramEngine> spectrogramEngine() const { return m_spectrogramEngine; }
+    std::shared_ptr<VectorScopeEngine> vectorScopeEngine() const { return m_vectorScopeEngine; }
+
 signals:
     void levelsUpdated();
 

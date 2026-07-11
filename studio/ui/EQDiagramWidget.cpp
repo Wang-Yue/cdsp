@@ -1,11 +1,23 @@
 #include "ui/EQDiagramWidget.h"
 #include "ui/StyleTheme.h"
 #include <QPainterPath>
+#include <QLinearGradient>
 #include <cmath>
 #include <algorithm>
 
 EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);
+}
+
+void EQDiagramWidget::setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum) {
+    if (m_spectrum) {
+        disconnect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
+    }
+    m_spectrum = spectrum;
+    if (m_spectrum) {
+        connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
+    }
+    update();
 }
 
 void EQDiagramWidget::setPreset(const EQPreset& preset, int sampleRate) {
@@ -51,7 +63,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     int w = width();
     int h = height();
 
-    // Background
+    // Card background
     painter.fillRect(rect(), StyleTheme::cardBg());
 
     // 1. Live Spectrum Analyzer Background Overlay
@@ -80,7 +92,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             fillPath.closeSubpath();
 
             QLinearGradient grad(0, 0, 0, h);
-            grad.setColorAt(0.0, QColor(0, 122, 255, 30));
+            grad.setColorAt(0.0, QColor(0, 122, 255, 35));
             grad.setColorAt(1.0, QColor(0, 122, 255, 2));
             painter.fillPath(fillPath, grad);
             painter.setPen(QPen(QColor(0, 122, 255, 90), 1.2));
@@ -107,7 +119,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
 
-    // Equal-Loudness Contour Curve Overlay
+    // Equal-Loudness Contour (ISO 226) Reference Curve Overlay
     if (m_showLoudnessContour) {
         QPainterPath loudnessPath;
         for (int x = 0; x <= w; x += 2) {
@@ -124,8 +136,12 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Individual Band Curves
-    const QColor colors[] = { QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"), QColor("#34c759"), QColor("#007aff"), QColor("#af52de") };
-    int numColors = 6;
+    const QColor colors[] = {
+        QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"),
+        QColor("#34c759"), QColor("#007aff"), QColor("#af52de"),
+        QColor("#5856d6"), QColor("#ff2d55"), QColor("#a2845e")
+    };
+    int numColors = 9;
 
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& band = m_preset.bands[i];
@@ -140,24 +156,44 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             else path.lineTo(x, y);
         }
         QColor c = colors[i % numColors];
-        c.setAlpha(static_cast<int>(i) == m_selectedIndex ? 200 : 70);
-        painter.setPen(QPen(c, static_cast<int>(i) == m_selectedIndex ? 2.0 : 1.0));
+        bool isSelected = (static_cast<int>(i) == m_selectedIndex);
+        bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
+        c.setAlpha(isSelected ? 220 : (isHovered ? 140 : 70));
+        painter.setPen(QPen(c, isSelected ? 2.2 : (isHovered ? 1.5 : 1.0)));
         painter.drawPath(path);
     }
 
-    // Combined Response Curve
+    // Combined Response Fill Gradient & Anti-aliased Curve
     QPainterPath totalPath;
+    QPainterPath fillPath;
+    fillPath.moveTo(0, zeroY);
+
     for (int x = 0; x <= w; x += 2) {
         double f = xToFreq(x, w);
         double db = m_preset.combinedResponse(f, m_sampleRate);
         double y = dbToY(db, h);
-        if (x == 0) totalPath.moveTo(x, y);
-        else totalPath.lineTo(x, y);
+        if (x == 0) {
+            totalPath.moveTo(x, y);
+        } else {
+            totalPath.lineTo(x, y);
+        }
+        fillPath.lineTo(x, y);
     }
+    fillPath.lineTo(w, zeroY);
+    fillPath.closeSubpath();
+
+    // Fill Gradient
+    QLinearGradient grad(0, 0, 0, h);
+    grad.setColorAt(0.0, QColor(0, 122, 255, 45));
+    grad.setColorAt(0.5, QColor(0, 122, 255, 15));
+    grad.setColorAt(1.0, QColor(0, 122, 255, 3));
+    painter.fillPath(fillPath, grad);
+
+    // Combined Curve Line Stroke
     painter.setPen(QPen(QColor("#007aff"), 2.5));
     painter.drawPath(totalPath);
 
-    // Draggable Band Handles
+    // Draggable Band Handles & Highlight Rings
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& b = m_preset.bands[i];
         if (!b.isEnabled || b.type == EQBandType::Free) continue;
@@ -169,13 +205,89 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         double hx = freqToX(handleFreq, w);
         double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
+        bool isSelected = (static_cast<int>(i) == m_selectedIndex);
+        bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
         QColor c = colors[i % numColors];
-        int r = (static_cast<int>(i) == m_selectedIndex) ? 7 : 5;
 
+        // Draw selection / hover outer glow ring
+        if (isSelected) {
+            painter.setBrush(QColor(c.red(), c.green(), c.blue(), 50));
+            painter.setPen(QPen(c, 1.5));
+            painter.drawEllipse(QPointF(hx, hy), 12, 12);
+        } else if (isHovered) {
+            painter.setBrush(QColor(c.red(), c.green(), c.blue(), 30));
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(QPointF(hx, hy), 10, 10);
+        }
+
+        // Main handle node
+        int r = isSelected ? 7 : 5;
         painter.setBrush(c);
-        painter.setPen(QPen(Qt::white, (static_cast<int>(i) == m_selectedIndex) ? 2.0 : 1.0));
+        painter.setPen(QPen(Qt::white, isSelected ? 2.5 : 1.2));
         painter.drawEllipse(QPointF(hx, hy), r, r);
     }
+
+    // Parameters Readout Overlay Card
+    drawOverlayReadout(painter, w, h);
+}
+
+void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
+    Q_UNUSED(h);
+    QString text;
+    if (m_selectedIndex >= 0 && m_selectedIndex < static_cast<int>(m_preset.bands.size())) {
+        const auto& b = m_preset.bands[m_selectedIndex];
+        double f = b.freq;
+        if (b.type == EQBandType::GeneralNotch) f = b.freqNotch;
+        else if (b.type == EQBandType::LinkwitzTransform) f = b.freqTarget;
+
+        text = QString("Band #%1 [%2] | Fc: %3 Hz")
+                   .arg(m_selectedIndex + 1)
+                   .arg(QString::fromStdString(eqBandTypeToString(b.type)))
+                   .arg(static_cast<int>(std::round(f)));
+
+        if (eqBandTypeHasGain(b.type)) {
+            text += QString(" | Gain: %1%2 dB")
+                        .arg(b.gain >= 0 ? "+" : "")
+                        .arg(b.gain, 0, 'f', 1);
+        }
+
+        if (eqBandTypeHasQ(b.type)) {
+            if (b.type == EQBandType::Lowshelf || b.type == EQBandType::Highshelf) {
+                if (b.useSlope) text += QString(" | Slope: %1 dB/oct").arg(b.slope, 0, 'f', 1);
+                else text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
+            } else if (b.type == EQBandType::Notch || b.type == EQBandType::Bandpass || b.type == EQBandType::Allpass) {
+                if (b.useBandwidth) text += QString(" | BW: %1 oct").arg(b.bandwidth, 0, 'f', 2);
+                else text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
+            } else {
+                text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
+            }
+        }
+    } else {
+        int activeBands = 0;
+        for (const auto& b : m_preset.bands) if (b.isEnabled) activeBands++;
+        text = QString("Preset: %1 | Preamp: %2%3 dB | Active Bands: %4/%5")
+                   .arg(QString::fromStdString(m_preset.name))
+                   .arg(m_preset.preampGain >= 0 ? "+" : "")
+                   .arg(m_preset.preampGain, 0, 'f', 1)
+                   .arg(activeBands)
+                   .arg(m_preset.bands.size());
+    }
+
+    QFont font("sans-serif", 9, QFont::Medium);
+    painter.setFont(font);
+    QFontMetrics fm(font);
+    int textW = fm.horizontalAdvance(text) + 20;
+    int textH = 24;
+    int rectX = w - textW - 12;
+    int rectY = 10;
+
+    QRect bgRect(rectX, rectY, textW, textH);
+    painter.setBrush(QColor(20, 20, 25, 200));
+    painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0));
+    painter.drawRoundedRect(bgRect, 6, 6);
+
+    painter.setPen(QColor(240, 240, 245));
+    painter.drawText(bgRect, Qt::AlignCenter, text);
 }
 
 void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
@@ -184,6 +296,8 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
         int h = height();
 
         m_draggingIndex = -1;
+        int hitIndex = -1;
+
         for (size_t i = 0; i < m_preset.bands.size(); ++i) {
             const auto& b = m_preset.bands[i];
             if (!b.isEnabled || b.type == EQBandType::Free) continue;
@@ -196,21 +310,23 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
             if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 12.0) {
-                m_draggingIndex = static_cast<int>(i);
-                m_selectedIndex = static_cast<int>(i);
-                if (onBandSelected) onBandSelected(m_selectedIndex);
-                update();
+                hitIndex = static_cast<int>(i);
                 break;
             }
         }
+
+        m_draggingIndex = hitIndex;
+        m_selectedIndex = hitIndex;
+        if (onBandSelected) onBandSelected(hitIndex);
+        update();
     }
 }
 
 void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
-    if (m_draggingIndex >= 0 && m_draggingIndex < static_cast<int>(m_preset.bands.size())) {
-        int w = width();
-        int h = height();
+    int w = width();
+    int h = height();
 
+    if (m_draggingIndex >= 0 && m_draggingIndex < static_cast<int>(m_preset.bands.size())) {
         double f = xToFreq(event->position().x(), w);
         double db = yToDb(event->position().y(), h);
 
@@ -228,6 +344,32 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
             onBandDragged(m_draggingIndex, f, b.gain);
         }
         update();
+    } else {
+        // Hover Detection
+        int oldHovered = m_hoveredIndex;
+        m_hoveredIndex = -1;
+
+        for (size_t i = 0; i < m_preset.bands.size(); ++i) {
+            const auto& b = m_preset.bands[i];
+            if (!b.isEnabled || b.type == EQBandType::Free) continue;
+
+            double handleFreq = b.freq;
+            if (b.type == EQBandType::GeneralNotch) handleFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform) handleFreq = b.freqTarget;
+
+            double hx = freqToX(handleFreq, w);
+            double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
+
+            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 12.0) {
+                m_hoveredIndex = static_cast<int>(i);
+                break;
+            }
+        }
+
+        if (m_hoveredIndex != oldHovered) {
+            setCursor(m_hoveredIndex >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+            update();
+        }
     }
 }
 
@@ -237,10 +379,18 @@ void EQDiagramWidget::mouseReleaseEvent(QMouseEvent* event) {
     }
 }
 
+void EQDiagramWidget::leaveEvent(QEvent* event) {
+    Q_UNUSED(event);
+    if (m_hoveredIndex != -1) {
+        m_hoveredIndex = -1;
+        setCursor(Qt::ArrowCursor);
+        update();
+    }
+}
+
 void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
     int targetIdx = m_selectedIndex;
     if (targetIdx < 0 || targetIdx >= static_cast<int>(m_preset.bands.size())) {
-        // Find handle under cursor if no node selected
         int w = width();
         int h = height();
         for (size_t i = 0; i < m_preset.bands.size(); ++i) {
@@ -276,3 +426,4 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
         }
     }
 }
+

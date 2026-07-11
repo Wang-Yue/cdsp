@@ -39,6 +39,19 @@ void SpectrumView::hideEvent(QHideEvent* event) {
 
 void SpectrumView::setSpectrum(const SpectrumData& data) {
     m_data = data;
+
+    if (m_peakHold.size() != m_data.magnitudes.size()) {
+        m_peakHold = m_data.magnitudes;
+    } else {
+        for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
+            if (m_data.magnitudes[i] >= m_peakHold[i]) {
+                m_peakHold[i] = m_data.magnitudes[i];
+            } else {
+                m_peakHold[i] = std::max(-60.0f, m_peakHold[i] - 0.6f);
+            }
+        }
+    }
+
     update();
 }
 
@@ -118,11 +131,19 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
 
         p.fillRect(QRectF(x - barW / 2.0, plotH - barHeight, barW, barHeight), barGrad);
 
+        // Draw Peak Hold Line Segment
+        if (i < m_peakHold.size()) {
+            float peakNormY = normDB60(m_peakHold[i]);
+            double peakY = plotH - static_cast<double>(peakNormY * plotH);
+            p.setPen(QPen(QColor(255, 255, 255, 220), 1.5));
+            p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
+        }
+
         if (i == 0) curvePath.moveTo(x, plotH - barHeight);
         else curvePath.lineTo(x, plotH - barHeight);
     }
 
-    p.setPen(QPen(QColor("#ffffff"), 1.5));
+    p.setPen(QPen(QColor(255, 255, 255, 140), 1.0));
     p.drawPath(curvePath);
 
     // Hover readout

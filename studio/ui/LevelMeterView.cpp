@@ -10,6 +10,16 @@ LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(160);
 }
 
+void LevelMeterView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_levelState) m_levelState->visibilityCount++;
+}
+
+void LevelMeterView::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_levelState && m_levelState->visibilityCount > 0) m_levelState->visibilityCount--;
+}
+
 void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title) {
     m_rms = rms;
     m_peak = peak;
@@ -131,6 +141,16 @@ CompactLevelMeterBar::CompactLevelMeterBar(
         updateState();
     });
     updateState();
+}
+
+void CompactLevelMeterBar::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_monitoring) m_monitoring->levelState.visibilityCount++;
+}
+
+void CompactLevelMeterBar::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0) m_monitoring->levelState.visibilityCount--;
 }
 
 void CompactLevelMeterBar::updateState() {

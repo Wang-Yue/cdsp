@@ -17,9 +17,9 @@ void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &VectorScopeEngine::updated, this, [this]() {
-            if (m_engine) setSamples(m_engine->samples, m_engine->showParticles);
+            if (m_engine) setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale);
         });
-        setSamples(m_engine->samples, m_engine->showParticles);
+        setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale);
     }
 }
 
@@ -33,9 +33,10 @@ void VectorScopeView::hideEvent(QHideEvent* event) {
     if (m_engine && m_engine->visibilityCount > 0) m_engine->visibilityCount--;
 }
 
-void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles) {
+void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles, bool autoScale) {
     m_samples = samples;
     m_showParticles = showParticles;
+    m_autoScale = autoScale;
     update();
 }
 
@@ -68,13 +69,17 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     size_t count = std::min(left.size(), right.size());
     if (count == 0) return;
 
-    float maxVal = 0.0f;
-    for (size_t i = 0; i < count; ++i) {
-        float m = (left[i] + right[i]) * 0.7071f;
-        float s = (left[i] - right[i]) * 0.7071f;
-        maxVal = std::max(maxVal, std::max(std::abs(m), std::abs(s)));
+    bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
+    float autoScaleFactor = 1.0f;
+    if (enableAutoScale) {
+        float maxVal = 0.0f;
+        for (size_t i = 0; i < count; ++i) {
+            float m = (left[i] + right[i]) * 0.7071f;
+            float s = (left[i] - right[i]) * 0.7071f;
+            maxVal = std::max(maxVal, std::max(std::abs(m), std::abs(s)));
+        }
+        autoScaleFactor = (maxVal > 1e-4f) ? std::min(0.85f / maxVal, 32.0f) : 1.0f;
     }
-    float autoScaleFactor = (maxVal > 1e-4f) ? std::min(0.85f / maxVal, 32.0f) : 1.0f;
 
     if (!m_showParticles) {
         QPainterPath path;

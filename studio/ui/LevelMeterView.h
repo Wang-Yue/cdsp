@@ -17,12 +17,16 @@ class LevelMeterView : public QWidget {
 public:
     explicit LevelMeterView(QWidget* parent = nullptr);
 
+    void setLevelState(LevelState* levelState) { m_levelState = levelState; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");
 
 protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    LevelState* m_levelState = nullptr;
     std::vector<float> m_rms;
     std::vector<float> m_peak;
     QString m_title;
@@ -38,6 +42,8 @@ public:
     void updateState();
 
 protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:

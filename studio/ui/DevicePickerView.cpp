@@ -177,7 +177,19 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
         Q_UNUSED(idx);
         applySettings();
     });
-    form->addRow("Device:", m_capDeviceCombo);
+
+    m_capDeviceList = new QListWidget(w);
+    m_capDeviceList->setMaximumHeight(120);
+    connect(m_capDeviceList, &QListWidget::currentRowChanged, [this](int row) {
+        if (row >= 0 && row < m_capDeviceCombo->count()) {
+            m_capDeviceCombo->setCurrentIndex(row);
+        }
+    });
+
+    auto devBox = new QVBoxLayout();
+    devBox->addWidget(m_capDeviceCombo);
+    devBox->addWidget(m_capDeviceList);
+    form->addRow("Device Selection:", devBox);
 
     auto chBox = new QHBoxLayout();
     m_capDevChannelsSpin = new QSpinBox(w);
@@ -282,7 +294,19 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
         Q_UNUSED(idx);
         applySettings();
     });
-    form->addRow("Device:", m_pbDeviceCombo);
+
+    m_pbDeviceList = new QListWidget(w);
+    m_pbDeviceList->setMaximumHeight(120);
+    connect(m_pbDeviceList, &QListWidget::currentRowChanged, [this](int row) {
+        if (row >= 0 && row < m_pbDeviceCombo->count()) {
+            m_pbDeviceCombo->setCurrentIndex(row);
+        }
+    });
+
+    auto devBox = new QVBoxLayout();
+    devBox->addWidget(m_pbDeviceCombo);
+    devBox->addWidget(m_pbDeviceList);
+    form->addRow("Device Selection:", devBox);
 
     auto chBox = new QHBoxLayout();
     m_pbDevChannelsSpin = new QSpinBox(w);
@@ -345,35 +369,63 @@ QWidget* DevicePickerView::createPbFileView() {
 void DevicePickerView::refreshUi() {
     m_capDeviceCombo->blockSignals(true);
     m_pbDeviceCombo->blockSignals(true);
+    m_capDeviceList->blockSignals(true);
+    m_pbDeviceList->blockSignals(true);
 
     m_capDeviceCombo->clear();
+    m_capDeviceList->clear();
     m_capDeviceCombo->addItem("System Default", QString());
+    m_capDeviceList->addItem("✓ System Default");
+
     for (const auto& dev : m_devices->captureDevices) {
-        m_capDeviceCombo->addItem(QString::fromStdString(dev.name), QString::fromStdString(dev.name));
+        QString devName = QString::fromStdString(dev.name);
+        m_capDeviceCombo->addItem(devName, devName);
+        m_capDeviceList->addItem("  " + devName);
     }
 
+    int selectedCapIdx = 0;
     if (auto name = m_devices->captureConfig.deviceName()) {
         int idx = m_capDeviceCombo->findData(QString::fromStdString(name.value()));
-        if (idx >= 0) m_capDeviceCombo->setCurrentIndex(idx);
-    } else {
-        m_capDeviceCombo->setCurrentIndex(0);
+        if (idx >= 0) selectedCapIdx = idx;
     }
+    m_capDeviceCombo->setCurrentIndex(selectedCapIdx);
+    for (int i = 0; i < m_capDeviceList->count(); ++i) {
+        auto item = m_capDeviceList->item(i);
+        QString cleanName = (i == 0) ? "System Default" : QString::fromStdString(m_devices->captureDevices[i-1].name);
+        if (i == selectedCapIdx) item->setText("✓ " + cleanName);
+        else item->setText("  " + cleanName);
+    }
+    m_capDeviceList->setCurrentRow(selectedCapIdx);
 
     m_pbDeviceCombo->clear();
+    m_pbDeviceList->clear();
     m_pbDeviceCombo->addItem("System Default", QString());
+    m_pbDeviceList->addItem("✓ System Default");
+
     for (const auto& dev : m_devices->playbackDevices) {
-        m_pbDeviceCombo->addItem(QString::fromStdString(dev.name), QString::fromStdString(dev.name));
+        QString devName = QString::fromStdString(dev.name);
+        m_pbDeviceCombo->addItem(devName, devName);
+        m_pbDeviceList->addItem("  " + devName);
     }
 
+    int selectedPbIdx = 0;
     if (auto name = m_devices->playbackConfig.deviceName()) {
         int idx = m_pbDeviceCombo->findData(QString::fromStdString(name.value()));
-        if (idx >= 0) m_pbDeviceCombo->setCurrentIndex(idx);
-    } else {
-        m_pbDeviceCombo->setCurrentIndex(0);
+        if (idx >= 0) selectedPbIdx = idx;
     }
+    m_pbDeviceCombo->setCurrentIndex(selectedPbIdx);
+    for (int i = 0; i < m_pbDeviceList->count(); ++i) {
+        auto item = m_pbDeviceList->item(i);
+        QString cleanName = (i == 0) ? "System Default" : QString::fromStdString(m_devices->playbackDevices[i-1].name);
+        if (i == selectedPbIdx) item->setText("✓ " + cleanName);
+        else item->setText("  " + cleanName);
+    }
+    m_pbDeviceList->setCurrentRow(selectedPbIdx);
 
     m_capDeviceCombo->blockSignals(false);
     m_pbDeviceCombo->blockSignals(false);
+    m_capDeviceList->blockSignals(false);
+    m_pbDeviceList->blockSignals(false);
 
     int capBackendIdx = static_cast<int>(m_devices->captureConfig.backend);
     m_capBackendCombo->setCurrentIndex(capBackendIdx);

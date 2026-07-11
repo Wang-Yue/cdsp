@@ -90,6 +90,14 @@ void AudioSettings::loadPreferences() {
     multithreaded = s.value("multithreaded", false).toBool();
     workerThreads = s.value("workerThreads", 0).toInt();
     darkMode = s.value("darkMode", false).toBool();
+    autoStartEngine = s.value("autoStartEngine", false).toBool();
+    logLevel = s.value("logLevel", 2).toInt();
+
+    showLevelMetersInDashboard = s.value("show_levels_in_dashboard", true).toBool();
+    showSpectrumInDashboard = s.value("show_spectrum_in_dashboard", true).toBool();
+    showSpectrogramInDashboard = s.value("show_spectrogram_in_dashboard", true).toBool();
+    showVectorScopeInDashboard = s.value("show_vectorscope_in_dashboard", true).toBool();
+    showAnalogVUInDashboard = s.value("show_analog_vu_in_dashboard", true).toBool();
 }
 
 void AudioSettings::savePreferences() {
@@ -125,5 +133,13 @@ void AudioSettings::savePreferences() {
     s.setValue("multithreaded", multithreaded);
     s.setValue("workerThreads", workerThreads);
     s.setValue("darkMode", darkMode);
+    s.setValue("autoStartEngine", autoStartEngine);
+    s.setValue("logLevel", logLevel);
+
+    s.setValue("show_levels_in_dashboard", showLevelMetersInDashboard);
+    s.setValue("show_spectrum_in_dashboard", showSpectrumInDashboard);
+    s.setValue("show_spectrogram_in_dashboard", showSpectrogramInDashboard);
+    s.setValue("show_vectorscope_in_dashboard", showVectorScopeInDashboard);
+    s.setValue("show_analog_vu_in_dashboard", showAnalogVUInDashboard);
     emit settingsChanged();
 }

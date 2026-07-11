@@ -2,6 +2,7 @@
 #define RESAMPLER_DETAIL_VIEW_H
 
 #include "models/AudioSettings.h"
+#include "models/AudioDeviceManager.h"
 #include <QWidget>
 #include <QComboBox>
 #include <QSpinBox>
@@ -15,7 +16,11 @@ class ResamplerDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    ResamplerDetailView(std::shared_ptr<AudioSettings> settings, QWidget* parent = nullptr);
+    ResamplerDetailView(
+        std::shared_ptr<AudioSettings> settings,
+        std::shared_ptr<AudioDeviceManager> devices = nullptr,
+        QWidget* parent = nullptr
+    );
 
 private slots:
     void refreshUi();
@@ -23,6 +28,7 @@ private slots:
 
 private:
     std::shared_ptr<AudioSettings> m_settings;
+    std::shared_ptr<AudioDeviceManager> m_devices;
 
     QFormLayout* m_typeForm;
 

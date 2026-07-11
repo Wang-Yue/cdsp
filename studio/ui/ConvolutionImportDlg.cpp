@@ -45,6 +45,15 @@ void ConvolutionImportDlg::setupUi() {
     m_kindEdit->setPlaceholderText("e.g. Imported, Min-phase");
     form->addRow("Kind Label:", m_kindEdit);
 
+    m_normalizeCheck = new QCheckBox("Normalize IR Peak (0 dBFS)", this);
+    m_normalizeCheck->setChecked(true);
+    form->addRow("Normalization:", m_normalizeCheck);
+
+    m_delayCompSpin = new QDoubleSpinBox(this);
+    m_delayCompSpin->setRange(0.0, 1000.0);
+    m_delayCompSpin->setSuffix(" ms");
+    form->addRow("Delay Compensation:", m_delayCompSpin);
+
     mainLayout->addLayout(form);
 
     auto tableHeader = new QHBoxLayout();
@@ -65,12 +74,16 @@ void ConvolutionImportDlg::setupUi() {
     m_fileTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     mainLayout->addWidget(m_fileTable);
 
+    m_irPlotPreview = new ConvolutionIRPlot(this);
+    m_irPlotPreview->setFixedHeight(100);
+    mainLayout->addWidget(m_irPlotPreview);
+
     m_warningLabel = new QLabel(this);
     m_warningLabel->setStyleSheet("color: #ff9500; font-size: 11px;");
     m_warningLabel->setVisible(false);
     mainLayout->addWidget(m_warningLabel);
 
-    m_infoLabel = new QLabel("Add IR files to build a multi-rate convolution preset.", this);
+    m_infoLabel = new QLabel("Add IR files to build a multi-rate convolution preset with peak normalization and latency compensation.", this);
     m_infoLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     mainLayout->addWidget(m_infoLabel);
 
@@ -165,6 +178,13 @@ void ConvolutionImportDlg::updateTable() {
             updateTable();
         });
         m_fileTable->setCellWidget(row, 4, delBtn);
+    }
+
+    if (!m_items.empty()) {
+        m_irPlotPreview->setIRPath(m_items[0].filePath.toStdString(), m_items[0].filePath.toStdString());
+        m_irPlotPreview->setVisible(true);
+    } else {
+        m_irPlotPreview->setVisible(false);
     }
 
     if (duplicate) {

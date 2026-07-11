@@ -29,7 +29,52 @@
 #include <QTreeWidgetItem>
 #include <QUuid>
 #include <QCursor>
+#include <QCheckBox>
 #include <QFrame>
+
+namespace {
+class SidebarToggleRowWidget : public QWidget {
+public:
+    SidebarToggleRowWidget(QTreeWidget* tree, QTreeWidgetItem* item, const QString& title, bool isChecked, std::function<void(bool)> onToggle, std::function<void()> onRowClick, QWidget* parent = nullptr)
+        : QWidget(parent), m_tree(tree), m_item(item), m_onToggle(onToggle), m_onRowClick(onRowClick) {
+        auto layout = new QHBoxLayout(this);
+        layout->setContentsMargins(4, 1, 6, 1);
+        layout->setSpacing(4);
+
+        m_label = new QLabel(title, this);
+        layout->addWidget(m_label);
+
+        layout->addStretch();
+
+        m_checkbox = new QCheckBox(this);
+        m_checkbox->setFocusPolicy(Qt::NoFocus);
+        m_checkbox->setChecked(isChecked);
+        m_checkbox->setStyleSheet("QCheckBox::indicator { width: 14px; height: 14px; }");
+        layout->addWidget(m_checkbox);
+
+        connect(m_checkbox, &QCheckBox::toggled, this, [this](bool checked) {
+            if (m_onToggle) m_onToggle(checked);
+        });
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override {
+        if (m_tree && m_item) {
+            m_tree->setCurrentItem(m_item);
+        }
+        if (m_onRowClick) m_onRowClick();
+        QWidget::mousePressEvent(event);
+    }
+
+private:
+    QTreeWidget* m_tree;
+    QTreeWidgetItem* m_item;
+    QLabel* m_label;
+    QCheckBox* m_checkbox;
+    std::function<void(bool)> m_onToggle;
+    std::function<void()> m_onRowClick;
+};
+}
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_engine = std::make_shared<CDSPEngine>();
@@ -55,6 +100,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setupTrayIcon();
     setupShortcuts();
     updateTheme();
+
+    // Wire app state callbacks
+    m_settings->onChanged = [this]() {
+        m_devices->validateSampleRates();
+        m_dspController->applyConfig();
+    };
+    connect(m_pipeline.get(), &PipelineStore::pipelineChanged, [this]() {
+        m_dspController->applyConfig();
+    });
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
@@ -346,16 +400,47 @@ void MainWindow::refreshSidebarItems() {
     // 2. Monitoring Section
     auto monGroup = new QTreeWidgetItem(m_sidebarTree, {"Monitoring"});
     monGroup->setExpanded(true);
-    auto levelsItem = new QTreeWidgetItem(monGroup, {"Level Meters"});
+
+    auto levelsItem = new QTreeWidgetItem(monGroup);
     levelsItem->setData(0, Qt::UserRole, "levels");
-    auto specItem = new QTreeWidgetItem(monGroup, {"Spectrum"});
+    auto levelsW = new SidebarToggleRowWidget(m_sidebarTree, levelsItem, "Level Meters", m_settings->showLevelMetersInDashboard, [this](bool c) {
+        m_settings->showLevelMetersInDashboard = c;
+        m_settings->savePreferences();
+    }, [this, levelsItem]() { onSidebarItemClicked(levelsItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(levelsItem, 0, levelsW);
+
+    auto specItem = new QTreeWidgetItem(monGroup);
     specItem->setData(0, Qt::UserRole, "spectrum");
-    auto spectroItem = new QTreeWidgetItem(monGroup, {"Spectroscope"});
+    auto specW = new SidebarToggleRowWidget(m_sidebarTree, specItem, "Spectrum", m_settings->showSpectrumInDashboard, [this](bool c) {
+        m_settings->showSpectrumInDashboard = c;
+        m_settings->savePreferences();
+    }, [this, specItem]() { onSidebarItemClicked(specItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(specItem, 0, specW);
+
+    auto spectroItem = new QTreeWidgetItem(monGroup);
     spectroItem->setData(0, Qt::UserRole, "spectroscope");
-    auto vecItem = new QTreeWidgetItem(monGroup, {"Vector Scope"});
+    auto spectroW = new SidebarToggleRowWidget(m_sidebarTree, spectroItem, "Spectroscope", m_settings->showSpectrogramInDashboard, [this](bool c) {
+        m_settings->showSpectrogramInDashboard = c;
+        m_settings->savePreferences();
+    }, [this, spectroItem]() { onSidebarItemClicked(spectroItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(spectroItem, 0, spectroW);
+
+    auto vecItem = new QTreeWidgetItem(monGroup);
     vecItem->setData(0, Qt::UserRole, "vectorscope");
-    auto vuItem = new QTreeWidgetItem(monGroup, {"Analog VU"});
+    auto vecW = new SidebarToggleRowWidget(m_sidebarTree, vecItem, "Vector Scope", m_settings->showVectorScopeInDashboard, [this](bool c) {
+        m_settings->showVectorScopeInDashboard = c;
+        m_settings->savePreferences();
+    }, [this, vecItem]() { onSidebarItemClicked(vecItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(vecItem, 0, vecW);
+
+    auto vuItem = new QTreeWidgetItem(monGroup);
     vuItem->setData(0, Qt::UserRole, "analogVU");
+    auto vuW = new SidebarToggleRowWidget(m_sidebarTree, vuItem, "Analog VU", m_settings->showAnalogVUInDashboard, [this](bool c) {
+        m_settings->showAnalogVUInDashboard = c;
+        m_settings->savePreferences();
+    }, [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(vuItem, 0, vuW);
+
     auto logsItem = new QTreeWidgetItem(monGroup, {"Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
     auto settingsItem = new QTreeWidgetItem(monGroup, {"General Settings"});
@@ -364,13 +449,28 @@ void MainWindow::refreshSidebarItems() {
     // 3. Pipeline Section
     auto pipeGroup = new QTreeWidgetItem(m_sidebarTree, {"Pipeline"});
     pipeGroup->setExpanded(true);
-    auto resItem = new QTreeWidgetItem(pipeGroup, {"Resampler"});
+
+    auto resItem = new QTreeWidgetItem(pipeGroup);
     resItem->setData(0, Qt::UserRole, "resampler");
+    auto resW = new SidebarToggleRowWidget(m_sidebarTree, resItem, "Resampler", m_settings->resamplerEnabled, [this](bool c) {
+        m_settings->resamplerEnabled = c;
+        m_settings->savePreferences();
+        m_dspController->applyConfig();
+    }, [this, resItem]() { onSidebarItemClicked(resItem, 0); }, m_sidebarTree);
+    m_sidebarTree->setItemWidget(resItem, 0, resW);
 
     for (size_t i = 0; i < m_pipeline->stages.size(); ++i) {
         const auto& stage = m_pipeline->stages[i];
-        auto sItem = new QTreeWidgetItem(pipeGroup, {QString::fromStdString(stage.name)});
+        auto sItem = new QTreeWidgetItem(pipeGroup);
         sItem->setData(0, Qt::UserRole, QString("stage_%1").arg(i));
+        auto stageW = new SidebarToggleRowWidget(m_sidebarTree, sItem, QString::fromStdString(stage.name), stage.isEnabled, [this, i](bool c) {
+            if (i < m_pipeline->stages.size()) {
+                m_pipeline->stages[i].isEnabled = c;
+                m_pipeline->save();
+                m_dspController->applyConfig();
+            }
+        }, [this, sItem]() { onSidebarItemClicked(sItem, 0); }, m_sidebarTree);
+        m_sidebarTree->setItemWidget(sItem, 0, stageW);
     }
 
     auto addStageItem = new QTreeWidgetItem(pipeGroup, {"+ Add Stage..."});
@@ -407,12 +507,10 @@ void MainWindow::refreshSidebarItems() {
 }
 
 void MainWindow::showCentralWidget(QWidget* widget) {
-    while (m_centralStack->count() > 0) {
-        QWidget* w = m_centralStack->widget(0);
-        m_centralStack->removeWidget(w);
-        w->deleteLater();
+    if (!widget) return;
+    if (m_centralStack->indexOf(widget) == -1) {
+        m_centralStack->addWidget(widget);
     }
-    m_centralStack->addWidget(widget);
     m_centralStack->setCurrentWidget(widget);
 }
 
@@ -425,7 +523,7 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
 
     if (tag == "add_stage") {
         QMenu menu(this);
-        for (StageCategory cat : {StageCategory::Volume, StageCategory::EQ, StageCategory::Dynamics, StageCategory::Delay, StageCategory::Matrix}) {
+        for (StageCategory cat : {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
             QMenu* catMenu = menu.addMenu(QString::fromStdString(stageCategoryToString(cat)));
             for (StageType st : {
                 StageType::Balance, StageType::Width, StageType::MSProc, StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
@@ -470,10 +568,16 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
 }
 
 void MainWindow::handleNavigationTag(const QString& tag) {
+    if (m_pageCache.contains(tag) && m_pageCache[tag]) {
+        showCentralWidget(m_pageCache[tag]);
+        return;
+    }
+
+    QWidget* w = nullptr;
     if (tag == "dashboard") {
-        showCentralWidget(new DashboardView(m_monitoring, m_dspController, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine, this));
+        w = new DashboardView(m_monitoring, m_dspController, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine, this);
     } else if (tag == "devices") {
-        showCentralWidget(new DevicePickerView(m_devices, m_settings, this));
+        w = new DevicePickerView(m_devices, m_settings, this);
     } else if (tag == "levels") {
         auto container = new QWidget(this);
         auto layout = new QVBoxLayout(container);
@@ -487,29 +591,29 @@ void MainWindow::handleNavigationTag(const QString& tag) {
             cap->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
             pb->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
         });
-        showCentralWidget(container);
+        w = container;
     } else if (tag == "spectrum") {
-        showCentralWidget(new SpectrumDetailView(m_spectrumEngine, m_devices, this));
+        w = new SpectrumDetailView(m_spectrumEngine, m_devices, this);
     } else if (tag == "spectroscope") {
-        showCentralWidget(new SpectrogramDetailView(m_spectrogramEngine, m_devices, this));
+        w = new SpectrogramDetailView(m_spectrogramEngine, m_devices, this);
     } else if (tag == "vectorscope") {
-        showCentralWidget(new VectorScopeDetailView(m_vectorScopeEngine, this));
+        w = new VectorScopeDetailView(m_vectorScopeEngine, this);
     } else if (tag == "analogVU") {
-        showCentralWidget(new AnalogVUDetailView(m_monitoring, this));
+        w = new AnalogVUDetailView(m_monitoring, this);
     } else if (tag == "resampler") {
-        showCentralWidget(new ResamplerDetailView(m_settings, this));
+        w = new ResamplerDetailView(m_settings, m_devices, this);
     } else if (tag == "general_settings") {
-        showCentralWidget(new GeneralSettingsView(m_settings, m_monitoring, this));
+        w = new GeneralSettingsView(m_settings, m_monitoring, this);
     } else if (tag == "logs") {
-        showCentralWidget(new ConsoleLogsView(this));
+        w = new ConsoleLogsView(this);
     } else if (tag.startsWith("stage_")) {
         size_t idx = tag.mid(6).toULongLong();
-        showCentralWidget(new StageDetailView(idx, m_pipeline, m_dspController, this));
+        w = new StageDetailView(idx, m_pipeline, m_dspController, this);
     } else if (tag.startsWith("conv_")) {
         QUuid id = QUuid::fromString(tag.mid(5));
         for (const auto& preset : m_pipeline->convPresets) {
             if (preset.id == id) {
-                showCentralWidget(new ConvolutionPresetDetailView(preset, m_pipeline, this));
+                w = new ConvolutionPresetDetailView(preset, m_pipeline, this);
                 break;
             }
         }
@@ -517,14 +621,35 @@ void MainWindow::handleNavigationTag(const QString& tag) {
         QUuid id = QUuid::fromString(tag.mid(3));
         for (const auto& preset : m_pipeline->eqPresets) {
             if (preset.id == id) {
-                showCentralWidget(new EQPresetDetailView(preset, m_pipeline, this));
+                auto eqView = new EQPresetDetailView(preset, m_pipeline, this);
+                eqView->setSpectrumEngine(m_spectrumEngine);
+                w = eqView;
                 break;
             }
         }
     }
+
+    if (w) {
+        m_pageCache[tag] = w;
+        showCentralWidget(w);
+    }
 }
 
 void MainWindow::onPipelineChanged() {
+    QList<QString> keysToDestroy;
+    for (auto it = m_pageCache.begin(); it != m_pageCache.end(); ++it) {
+        if (it.key().startsWith("stage_") || it.key().startsWith("eq_") || it.key().startsWith("conv_")) {
+            keysToDestroy.append(it.key());
+        }
+    }
+    for (const auto& key : keysToDestroy) {
+        QWidget* w = m_pageCache.take(key);
+        if (w) {
+            m_centralStack->removeWidget(w);
+            w->deleteLater();
+        }
+    }
+
     refreshSidebarItems();
 }
 

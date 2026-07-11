@@ -16,6 +16,9 @@
 #include <QLabel>
 #include <memory>
 
+#include <QSlider>
+#include <QTabBar>
+
 class EQPresetDetailView : public QWidget {
     Q_OBJECT
 
@@ -27,6 +30,7 @@ public:
     );
 
     void setPreset(const EQPreset& preset);
+    void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
 
 private slots:
     void refreshUi();
@@ -42,8 +46,9 @@ private:
     std::shared_ptr<PipelineStore> m_pipeline;
 
     QLineEdit* m_nameEdit;
+    QSlider* m_preampSlider;
     QDoubleSpinBox* m_preampSpin;
-    QComboBox* m_modeCombo;
+    QTabBar* m_modeTabBar;
 
     QStackedWidget* m_modeStack;
 

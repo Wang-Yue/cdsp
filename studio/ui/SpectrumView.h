@@ -26,6 +26,7 @@ protected:
 private:
     std::shared_ptr<SpectrumEngine> m_engine;
     SpectrumData m_data;
+    std::vector<float> m_peakHold;
 
     QPoint m_hoverPos;
     bool m_isHovered = false;

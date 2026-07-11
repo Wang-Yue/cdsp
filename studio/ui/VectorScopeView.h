@@ -15,7 +15,7 @@ public:
     explicit VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent = nullptr);
 
     void setEngine(std::shared_ptr<VectorScopeEngine> engine);
-    void setSamples(const AudioSamplesData& samples, bool showParticles = false);
+    void setSamples(const AudioSamplesData& samples, bool showParticles = false, bool autoScale = true);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -26,6 +26,7 @@ private:
     std::shared_ptr<VectorScopeEngine> m_engine;
     AudioSamplesData m_samples;
     bool m_showParticles = false;
+    bool m_autoScale = true;
 };
 
 #endif // VECTOR_SCOPE_VIEW_H

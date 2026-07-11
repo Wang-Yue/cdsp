@@ -19,12 +19,13 @@ public:
 
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
-    void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum) { m_spectrum = spectrum; }
+    void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
     void setShowAnalyzer(bool show) { m_showAnalyzer = show; update(); }
     void setShowLoudnessContour(bool show) { m_showLoudnessContour = show; update(); }
 
     bool showAnalyzer() const { return m_showAnalyzer; }
     bool showLoudnessContour() const { return m_showLoudnessContour; }
+    int selectedBandIndex() const { return m_selectedIndex; }
 
     std::function<void(int index, double freq, double gain)> onBandDragged;
     std::function<void(int index, double q)> onBandQChanged;
@@ -36,12 +37,14 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
     EQPreset m_preset;
     int m_sampleRate = 48000;
     int m_selectedIndex = -1;
     int m_draggingIndex = -1;
+    int m_hoveredIndex = -1;
 
     bool m_showAnalyzer = true;
     bool m_showLoudnessContour = false;
@@ -56,6 +59,7 @@ private:
     double xToFreq(double x, double width) const;
     double dbToY(double db, double height) const;
     double yToDb(double y, double height) const;
+    void drawOverlayReadout(QPainter& painter, int w, int h);
 };
 
 #endif // EQ_DIAGRAM_WIDGET_H

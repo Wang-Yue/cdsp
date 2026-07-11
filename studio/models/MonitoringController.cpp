@@ -33,27 +33,35 @@ void MonitoringController::onPollTimer() {
     if (st.state != ProcessingState::Running) return;
 
     // Poll VU Levels
-    VuLevels levels = m_engine->getVuLevels();
-    levelState.update(levels);
-    emit levelsUpdated();
+    if (levelState.visibilityCount > 0) {
+        VuLevels levels = m_engine->getVuLevels();
+        levelState.update(levels);
+        emit levelsUpdated();
+    }
 
     // Poll Spectrum Engine
-    SpectrumData specData;
-    int specCh = m_spectrumEngine->channel.value_or(-1);
-    if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq, m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
-        m_spectrumEngine->update(specData);
+    if (m_spectrumEngine && m_spectrumEngine->visibilityCount > 0) {
+        SpectrumData specData;
+        int specCh = m_spectrumEngine->channel.value_or(-1);
+        if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq, m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
+            m_spectrumEngine->update(specData);
+        }
     }
 
     // Poll Spectrogram Engine
-    SpectrumData spectroData;
-    int spectroCh = m_spectrogramEngine->channel.value_or(-1);
-    if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq, m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
-        m_spectrogramEngine->pushSpectrum(spectroData);
+    if (m_spectrogramEngine && m_spectrogramEngine->visibilityCount > 0) {
+        SpectrumData spectroData;
+        int spectroCh = m_spectrogramEngine->channel.value_or(-1);
+        if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq, m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
+            m_spectrogramEngine->pushSpectrum(spectroData);
+        }
     }
 
     // Poll Vector Scope Engine
-    AudioSamplesData samples;
-    if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
-        m_vectorScopeEngine->update(samples);
+    if (m_vectorScopeEngine && m_vectorScopeEngine->visibilityCount > 0) {
+        AudioSamplesData samples;
+        if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
+            m_vectorScopeEngine->update(samples);
+        }
     }
 }
