@@ -14,6 +14,7 @@
 #include <QWidget>
 #include <QSlider>
 #include <QPushButton>
+#include <QLabel>
 #include <memory>
 
 class DashboardView : public QWidget {
@@ -47,9 +48,21 @@ private:
     AnalogVUMeterView* m_analogVUView;
 
     QSlider* m_mainFaderSlider;
+    QLabel* m_volValueLabel;
     QPushButton* m_mainMuteBtn;
+    QPushButton* m_linkFadersBtn;
+
+    QPushButton* m_faderMainBtn;
+    QPushButton* m_faderAux1Btn;
+    QPushButton* m_faderAux2Btn;
+    QPushButton* m_faderAux3Btn;
+    QPushButton* m_faderAux4Btn;
+
+    Fader m_activeFader = Fader::Main;
 
     void setupUi();
+    void updateFaderUi();
+    void setFaderVolumeStep(float step);
 };
 
 #endif // DASHBOARD_VIEW_H

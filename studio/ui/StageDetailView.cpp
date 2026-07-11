@@ -99,6 +99,95 @@ void StageDetailView::buildStageOptionsUi() {
     if (m_stageIndex >= m_pipeline->stages.size()) return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
+    int channelCount = 8; // Available system processing channels
+
+    // 1. Channel Selector Card (Unified for all stages except Matrix Mixer)
+    if (stage.type != StageType::MatrixMixer) {
+        auto chanGroup = new QGroupBox("Target Channels", m_optionsContainer);
+        auto chanLayout = new QVBoxLayout(chanGroup);
+
+        if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
+            stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
+            // Stereo channel pair picker
+            auto pairBox = new QHBoxLayout();
+
+            auto leftBox = new QVBoxLayout();
+            leftBox->addWidget(new QLabel("Left Input:", chanGroup));
+            auto leftCombo = new QComboBox(chanGroup);
+            for (int c = 0; c < channelCount; ++c) {
+                leftCombo->addItem(QString("Channel %1").arg(c + 1), c);
+            }
+            leftCombo->setCurrentIndex(std::min(stage.leftChannel, channelCount - 1));
+            connect(leftCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, leftCombo](int idx) {
+                stage.leftChannel = leftCombo->itemData(idx).toInt();
+                applyConfig();
+            });
+            leftBox->addWidget(leftCombo);
+            pairBox->addLayout(leftBox);
+
+            auto rightBox = new QVBoxLayout();
+            rightBox->addWidget(new QLabel("Right Input:", chanGroup));
+            auto rightCombo = new QComboBox(chanGroup);
+            for (int c = 0; c < channelCount; ++c) {
+                rightCombo->addItem(QString("Channel %1").arg(c + 1), c);
+            }
+            rightCombo->setCurrentIndex(std::min(stage.rightChannel, channelCount - 1));
+            connect(rightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, rightCombo](int idx) {
+                stage.rightChannel = rightCombo->itemData(idx).toInt();
+                applyConfig();
+            });
+            rightBox->addWidget(rightCombo);
+            pairBox->addLayout(rightBox);
+
+            pairBox->addStretch();
+            chanLayout->addLayout(pairBox);
+
+            auto descLbl = new QLabel("This stereo stage will process the selected Left and Right channels. All other channels will pass through unaffected.", chanGroup);
+            descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+            chanLayout->addWidget(descLbl);
+        } else {
+            // Multi-channel pill buttons
+            auto pillsLayout = new QHBoxLayout();
+            for (int c = 0; c < channelCount; ++c) {
+                auto btn = new QPushButton(QString::number(c + 1), chanGroup);
+                btn->setFixedWidth(36);
+                btn->setCheckable(true);
+                bool isSelected = std::find(stage.channels.begin(), stage.channels.end(), c) != stage.channels.end();
+                btn->setChecked(isSelected);
+
+                auto updateBtnStyle = [btn](bool checked) {
+                    if (checked) {
+                        btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
+                    } else {
+                        btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
+                    }
+                };
+                updateBtnStyle(isSelected);
+
+                connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateBtnStyle]() {
+                    auto it = std::find(stage.channels.begin(), stage.channels.end(), c);
+                    if (it != stage.channels.end()) {
+                        if (stage.channels.size() > 1) {
+                            stage.channels.erase(it);
+                            btn->setChecked(false);
+                        } else {
+                            btn->setChecked(true); // Minimum 1 channel required
+                        }
+                    } else {
+                        stage.channels.push_back(c);
+                        btn->setChecked(true);
+                    }
+                    updateBtnStyle(btn->isChecked());
+                    applyConfig();
+                });
+                pillsLayout->addWidget(btn);
+            }
+            pillsLayout->addStretch();
+            chanLayout->addLayout(pillsLayout);
+        }
+        containerLayout->addWidget(chanGroup);
+    }
+
     auto optsGroup = new QGroupBox(QString::fromStdString(stageTypeToString(stage.type)) + " Options", m_optionsContainer);
     auto optsForm = new QFormLayout(optsGroup);
 
@@ -233,7 +322,32 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::GraphicEQ: {
-        optsForm->addRow(new QLabel("31-Band Graphic EQ Gains (-12 dB to +12 dB)", optsGroup));
+        auto minFreqSpin = new QDoubleSpinBox(optsGroup);
+        minFreqSpin->setRange(10.0, 1000.0); minFreqSpin->setValue(stage.comboParams.freqMin.value_or(20.0)); minFreqSpin->setSuffix(" Hz");
+        connect(minFreqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.comboParams.freqMin = val; applyConfig();
+        });
+        optsForm->addRow("Min Frequency:", minFreqSpin);
+
+        auto maxFreqSpin = new QDoubleSpinBox(optsGroup);
+        maxFreqSpin->setRange(1000.0, 24000.0); maxFreqSpin->setValue(stage.comboParams.freqMax.value_or(20000.0)); maxFreqSpin->setSuffix(" Hz");
+        connect(maxFreqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.comboParams.freqMax = val; applyConfig();
+        });
+        optsForm->addRow("Max Frequency:", maxFreqSpin);
+
+        auto bandsSpin = new QSpinBox(optsGroup);
+        bandsSpin->setRange(2, 64); bandsSpin->setValue(stage.comboParams.gains.empty() ? 31 : static_cast<int>(stage.comboParams.gains.size()));
+        connect(bandsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+            stage.comboParams.gains.resize(val, 0.0); applyConfig();
+        });
+        optsForm->addRow("Number of Bands:", bandsSpin);
+
+        auto resetGainsBtn = new QPushButton("Reset All Gains to 0 dB", optsGroup);
+        connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
+            stage.comboParams.gains.assign(stage.comboParams.gains.size(), 0.0); applyConfig();
+        });
+        optsForm->addRow("", resetGainsBtn);
         break;
     }
 
@@ -267,14 +381,25 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::Emphasis: {
-        auto deCheck = new QCheckBox("De-Emphasis Filter (50μs/15μs, -9.5 dB at 5.2 kHz)", optsGroup);
-        deCheck->setChecked(stage.deEmphasis);
-        connect(deCheck, &QCheckBox::toggled, [this, &stage](bool chk) { stage.deEmphasis = chk; applyConfig(); });
-        optsForm->addRow("", deCheck);
+        auto modeCombo = new QComboBox(optsGroup);
+        modeCombo->addItems({"De-Emphasis (50μs/15μs)", "Pre-Emphasis"});
+        modeCombo->setCurrentIndex(stage.deEmphasis ? 0 : 1);
+        connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
+            stage.deEmphasis = (idx == 0); applyConfig();
+        });
+        optsForm->addRow("Emphasis Mode:", modeCombo);
+
+        auto descLbl = new QLabel("Applies standard 50μs/15μs pre/de-emphasis digital filter curve.", optsGroup);
+        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+        optsForm->addRow("", descLbl);
         break;
     }
 
     case StageType::DCProtection: {
+        auto descLbl = new QLabel("First-order highpass filter — removes DC offset and subsonic rumble on all channels.", optsGroup);
+        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+        optsForm->addRow("", descLbl);
+
         auto freqSpin = new QDoubleSpinBox(optsGroup);
         freqSpin->setRange(1.0, 50.0); freqSpin->setValue(stage.dcCutoffFreq); freqSpin->setSuffix(" Hz");
         connect(freqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
@@ -409,15 +534,38 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::Volume: {
-        optsForm->addRow(new QLabel("Main System Volume Control Fader", optsGroup));
+        auto faderCombo = new QComboBox(optsGroup);
+        faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
+        optsForm->addRow("Target Fader:", faderCombo);
+
+        auto rampSpin = new QDoubleSpinBox(optsGroup);
+        rampSpin->setRange(0.0, 2000.0); rampSpin->setSingleStep(50.0); rampSpin->setValue(500.0); rampSpin->setSuffix(" ms");
+        optsForm->addRow("Ramp Time:", rampSpin);
+
+        auto limitSpin = new QDoubleSpinBox(optsGroup);
+        limitSpin->setRange(-50.0, 20.0); limitSpin->setSingleStep(0.5); limitSpin->setValue(0.0); limitSpin->setSuffix(" dB");
+        optsForm->addRow("Volume Limit:", limitSpin);
         break;
     }
 
     case StageType::MatrixMixer: {
-        int rows = stage.mixerConfig.mapping.size();
-        int cols = stage.mixerConfig.channelsIn;
-        if (rows == 0) rows = 2;
-        if (cols == 0) cols = 2;
+        auto chanDimBox = new QHBoxLayout();
+        
+        auto inSpin = new QSpinBox(optsGroup);
+        inSpin->setRange(1, 16); inSpin->setValue(stage.mixerConfig.channelsIn > 0 ? stage.mixerConfig.channelsIn : 2);
+        chanDimBox->addWidget(new QLabel("Input Channels:", optsGroup));
+        chanDimBox->addWidget(inSpin);
+
+        auto outSpin = new QSpinBox(optsGroup);
+        outSpin->setRange(1, 16); outSpin->setValue(stage.mixerConfig.mapping.empty() ? 2 : static_cast<int>(stage.mixerConfig.mapping.size()));
+        chanDimBox->addWidget(new QLabel("Output Channels:", optsGroup));
+        chanDimBox->addWidget(outSpin);
+
+        chanDimBox->addStretch();
+        optsForm->addRow("Dimensions:", chanDimBox);
+
+        int rows = outSpin->value();
+        int cols = inSpin->value();
 
         auto matrixTable = new QTableWidget(rows, cols, optsGroup);
         matrixTable->setMinimumHeight(200);
@@ -426,11 +574,56 @@ void StageDetailView::buildStageOptionsUi() {
                 auto spin = new QDoubleSpinBox(optsGroup);
                 spin->setRange(-120.0, 30.0);
                 spin->setSingleStep(0.5);
-                spin->setValue(0.0);
+                double currentVal = 0.0;
+                if (r < static_cast<int>(stage.mixerConfig.mapping.size())) {
+                    for (const auto& src : stage.mixerConfig.mapping[r].sources) {
+                        if (src.channel == c) { currentVal = src.gain.value_or(0.0); break; }
+                    }
+                }
+                spin->setValue(currentVal);
+                connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage, r, c](double val) {
+                    if (r >= static_cast<int>(stage.mixerConfig.mapping.size())) stage.mixerConfig.mapping.resize(r + 1);
+                    auto& map = stage.mixerConfig.mapping[r];
+                    map.dest = r;
+                    bool found = false;
+                    for (auto& src : map.sources) {
+                        if (src.channel == c) { src.gain = val; found = true; break; }
+                    }
+                    if (!found) map.sources.push_back(MixerSource{c, val, false});
+                    applyConfig();
+                });
                 matrixTable->setCellWidget(r, c, spin);
             }
         }
         optsForm->addRow("Matrix Mixer Map:", matrixTable);
+
+        connect(inSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+            stage.mixerConfig.channelsIn = val;
+            applyConfig();
+            refreshUi();
+        });
+        connect(outSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+            stage.mixerConfig.mapping.resize(val);
+            for (int i = 0; i < val; ++i) stage.mixerConfig.mapping[i].dest = i;
+            applyConfig();
+            refreshUi();
+        });
+
+        auto resetBtn = new QPushButton("Reset to 1:1 Passthrough", optsGroup);
+        connect(resetBtn, &QPushButton::clicked, [this, &stage, rows, cols]() {
+            int minCh = std::min(rows, cols);
+            stage.mixerConfig.mapping.clear();
+            for (int r = 0; r < rows; ++r) {
+                MixerMapping m;
+                m.dest = r;
+                int srcCh = r < minCh ? r : 0;
+                m.sources.push_back(MixerSource{srcCh, 0.0, false});
+                stage.mixerConfig.mapping.push_back(m);
+            }
+            applyConfig();
+            refreshUi();
+        });
+        optsForm->addRow("", resetBtn);
         break;
     }
 
@@ -462,6 +655,42 @@ void StageDetailView::buildStageOptionsUi() {
             stage.compressorParams.release = val; applyConfig();
         });
         optsForm->addRow("Release:", relSpin);
+
+        // Sidechain Monitor Ch Row
+        auto monBox = new QHBoxLayout();
+        for (int c = 0; c < 8; ++c) {
+            auto btn = new QPushButton(QString::number(c + 1), optsGroup);
+            btn->setFixedWidth(32);
+            btn->setCheckable(true);
+            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
+            btn->setChecked(isSelected);
+
+            auto updateStyle = [btn](bool chk) {
+                if (chk) btn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 4px;");
+                else btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
+            };
+            updateStyle(isSelected);
+
+            connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateStyle]() {
+                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
+                if (it != stage.monitorChannels.end()) {
+                    if (stage.monitorChannels.size() > 1) {
+                        stage.monitorChannels.erase(it);
+                        btn->setChecked(false);
+                    } else {
+                        btn->setChecked(true);
+                    }
+                } else {
+                    stage.monitorChannels.push_back(c);
+                    btn->setChecked(true);
+                }
+                updateStyle(btn->isChecked());
+                applyConfig();
+            });
+            monBox->addWidget(btn);
+        }
+        monBox->addStretch();
+        optsForm->addRow("Monitor Ch:", monBox);
         break;
     }
 
@@ -479,6 +708,42 @@ void StageDetailView::buildStageOptionsUi() {
             stage.noiseGateParams.attenuation = val; applyConfig();
         });
         optsForm->addRow("Attenuation:", attenSpin);
+
+        // Sidechain Monitor Ch Row
+        auto monBox = new QHBoxLayout();
+        for (int c = 0; c < 8; ++c) {
+            auto btn = new QPushButton(QString::number(c + 1), optsGroup);
+            btn->setFixedWidth(32);
+            btn->setCheckable(true);
+            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
+            btn->setChecked(isSelected);
+
+            auto updateStyle = [btn](bool chk) {
+                if (chk) btn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 4px;");
+                else btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
+            };
+            updateStyle(isSelected);
+
+            connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateStyle]() {
+                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
+                if (it != stage.monitorChannels.end()) {
+                    if (stage.monitorChannels.size() > 1) {
+                        stage.monitorChannels.erase(it);
+                        btn->setChecked(false);
+                    } else {
+                        btn->setChecked(true);
+                    }
+                } else {
+                    stage.monitorChannels.push_back(c);
+                    btn->setChecked(true);
+                }
+                updateStyle(btn->isChecked());
+                applyConfig();
+            });
+            monBox->addWidget(btn);
+        }
+        monBox->addStretch();
+        optsForm->addRow("Monitor Ch:", monBox);
         break;
     }
 
@@ -510,12 +775,66 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::DiffEq: {
-        optsForm->addRow(new QLabel("Custom Differential Equation Filter Coefficients", optsGroup));
+        auto vecToString = [](const std::vector<double>& v) {
+            QStringList list;
+            for (double val : v) list << QString::number(val);
+            return list.join(", ");
+        };
+        auto stringToVec = [](const QString& str) {
+            std::vector<double> v;
+            for (const QString& part : str.split(',')) {
+                bool ok = false;
+                double d = part.trimmed().toDouble(&ok);
+                if (ok) v.push_back(d);
+            }
+            return v;
+        };
+
+        auto bEdit = new QLineEdit(vecToString(stage.diffEqB), optsGroup);
+        bEdit->setPlaceholderText("e.g. 1.0, 0.5, 0.25");
+        connect(bEdit, &QLineEdit::editingFinished, [this, &stage, bEdit, stringToVec]() {
+            stage.diffEqB = stringToVec(bEdit->text()); applyConfig();
+        });
+        optsForm->addRow("Feedforward Coeffs (b):", bEdit);
+
+        auto aEdit = new QLineEdit(vecToString(stage.diffEqA), optsGroup);
+        aEdit->setPlaceholderText("e.g. 1.0, -0.5, 0.1");
+        connect(aEdit, &QLineEdit::editingFinished, [this, &stage, aEdit, stringToVec]() {
+            stage.diffEqA = stringToVec(aEdit->text()); applyConfig();
+        });
+        optsForm->addRow("Feedback Coeffs (a):", aEdit);
         break;
     }
 
     case StageType::BiquadCombo: {
-        optsForm->addRow(new QLabel("Biquad Combination Filter Set", optsGroup));
+        auto typeCombo = new QComboBox(optsGroup);
+        typeCombo->addItems({"Butterworth Lowpass", "Butterworth Highpass", "Linkwitz-Riley Lowpass", "Linkwitz-Riley Highpass", "Tilt", "Five-Point PEQ"});
+        typeCombo->setCurrentIndex(static_cast<int>(stage.comboParams.type));
+        connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
+            stage.comboParams.type = static_cast<BiquadComboType>(idx); applyConfig();
+        });
+        optsForm->addRow("Combination Type:", typeCombo);
+
+        auto freqSpin = new QDoubleSpinBox(optsGroup);
+        freqSpin->setRange(20.0, 20000.0); freqSpin->setValue(stage.comboParams.freq.value_or(1000.0)); freqSpin->setSuffix(" Hz");
+        connect(freqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.comboParams.freq = val; applyConfig();
+        });
+        optsForm->addRow("Cutoff / Center Freq:", freqSpin);
+
+        auto orderSpin = new QSpinBox(optsGroup);
+        orderSpin->setRange(2, 8); orderSpin->setSingleStep(2); orderSpin->setValue(stage.comboParams.order.value_or(2));
+        connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+            stage.comboParams.order = val; applyConfig();
+        });
+        optsForm->addRow("Filter Order:", orderSpin);
+
+        auto tiltSpin = new QDoubleSpinBox(optsGroup);
+        tiltSpin->setRange(-12.0, 12.0); tiltSpin->setValue(stage.comboParams.gain.value_or(0.0)); tiltSpin->setSuffix(" dB");
+        connect(tiltSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.comboParams.gain = val; applyConfig();
+        });
+        optsForm->addRow("Tilt Slope Gain:", tiltSpin);
         break;
     }
 

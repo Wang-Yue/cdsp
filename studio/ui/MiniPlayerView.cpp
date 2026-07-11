@@ -20,12 +20,52 @@ MiniPlayerView::MiniPlayerView(
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
 }
 
+Fader MiniPlayerView::currentFader() const {
+    int idx = m_faderCombo ? m_faderCombo->currentIndex() : 0;
+    switch (idx) {
+    case 1: return Fader::Aux1;
+    case 2: return Fader::Aux2;
+    case 3: return Fader::Aux3;
+    case 4: return Fader::Aux4;
+    default: return Fader::Main;
+    }
+}
+
+void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+        event->accept();
+    }
+}
+
+void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
+    if (event->buttons() & Qt::LeftButton) {
+        move(event->globalPosition().toPoint() - m_dragPosition);
+        event->accept();
+    }
+}
+
+void MiniPlayerView::onFaderChanged(int index) {
+    Q_UNUSED(index);
+    Fader f = currentFader();
+    float vol = m_settings->getVolume(f);
+    bool muted = m_settings->getMuted(f);
+    m_volSlider->setValue(static_cast<int>(vol));
+    m_volValueLabel->setText(QString("%1 dB").arg(static_cast<int>(vol)));
+    m_muteBtn->setText(muted ? "🔇" : "🔊");
+}
+
 void MiniPlayerView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
 
     auto topBar = new QHBoxLayout();
+
+    m_faderCombo = new QComboBox(this);
+    m_faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
+    connect(m_faderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MiniPlayerView::onFaderChanged);
+    topBar->addWidget(m_faderCombo);
 
     m_playStopBtn = new QPushButton("▶", this);
     m_playStopBtn->setFixedSize(24, 24);
@@ -38,8 +78,9 @@ void MiniPlayerView::setupUi() {
     m_muteBtn = new QPushButton("🔊", this);
     m_muteBtn->setFixedSize(24, 24);
     connect(m_muteBtn, &QPushButton::clicked, [this]() {
-        bool muted = m_settings->getMuted(Fader::Main);
-        m_dsp->setFaderMute(Fader::Main, !muted);
+        Fader f = currentFader();
+        bool muted = m_settings->getMuted(f);
+        m_dsp->setFaderMute(f, !muted);
         m_muteBtn->setText(!muted ? "🔇" : "🔊");
     });
     topBar->addWidget(m_muteBtn);
@@ -47,19 +88,40 @@ void MiniPlayerView::setupUi() {
     m_volSlider = new QSlider(Qt::Horizontal, this);
     m_volSlider->setRange(-60, 10);
     m_volSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main)));
+
+    m_volValueLabel = new QLabel("0 dB", this);
+    m_volValueLabel->setFixedWidth(40);
+    m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
     connect(m_volSlider, &QSlider::valueChanged, [this](int val) {
-        m_dsp->setFaderVolume(Fader::Main, static_cast<float>(val));
+        Fader f = currentFader();
+        m_dsp->setFaderVolume(f, static_cast<float>(val));
+        m_volValueLabel->setText(QString("%1 dB").arg(val));
     });
+
     topBar->addWidget(m_volSlider);
+    topBar->addWidget(m_volValueLabel);
 
     // Mode Buttons
     auto specBtn = new QPushButton("Spec", this);
     connect(specBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(0); });
     topBar->addWidget(specBtn);
 
-    auto metersBtn = new QPushButton("VU", this);
-    connect(metersBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(1); });
-    topBar->addWidget(metersBtn);
+    auto vuBtn = new QPushButton("VU", this);
+    connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(1); });
+    topBar->addWidget(vuBtn);
+
+    auto meterBtn = new QPushButton("Meter", this);
+    connect(meterBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
+    topBar->addWidget(meterBtn);
+
+    auto sgBtn = new QPushButton("3D", this);
+    connect(sgBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
+    topBar->addWidget(sgBtn);
+
+    auto vecBtn = new QPushButton("Vec", this);
+    connect(vecBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(4); });
+    topBar->addWidget(vecBtn);
 
     auto closeBtn = new QPushButton("✕", this);
     closeBtn->setFixedSize(20, 20);
@@ -79,7 +141,19 @@ void MiniPlayerView::setupUi() {
     m_metersView = new LevelMeterView(this);
     m_viewStack->addWidget(m_metersView);
 
+    m_spectrogramView = new SpectrogramView(this);
+    m_viewStack->addWidget(m_spectrogramView);
+
+    m_vectorScopeView = new VectorScopeView(this);
+    m_viewStack->addWidget(m_vectorScopeView);
+
     mainLayout->addWidget(m_viewStack);
+}
+
+void MiniPlayerView::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        hide();
+    }
 }
 
 void MiniPlayerView::refreshMeters() {

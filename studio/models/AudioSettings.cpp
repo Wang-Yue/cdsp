@@ -51,6 +51,7 @@ void AudioSettings::setMuted(bool muted, Fader fader) {
 void AudioSettings::notifyChange() {
     savePreferences();
     emit changed();
+    emit settingsChanged();
     if (onChanged) onChanged();
 }
 
@@ -88,6 +89,7 @@ void AudioSettings::loadPreferences() {
     rateMeasureInterval = s.value("rateMeasureInterval", 1.0).toDouble();
     multithreaded = s.value("multithreaded", false).toBool();
     workerThreads = s.value("workerThreads", 0).toInt();
+    darkMode = s.value("darkMode", false).toBool();
 }
 
 void AudioSettings::savePreferences() {
@@ -122,4 +124,6 @@ void AudioSettings::savePreferences() {
     s.setValue("rateMeasureInterval", rateMeasureInterval);
     s.setValue("multithreaded", multithreaded);
     s.setValue("workerThreads", workerThreads);
+    s.setValue("darkMode", darkMode);
+    emit settingsChanged();
 }

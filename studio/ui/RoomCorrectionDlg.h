@@ -61,6 +61,9 @@ private:
     // FIR Tab Widgets
     QComboBox* m_firKindCombo;
     QSpinBox* m_firTapSpin;
+    QSlider* m_firPhaseBlendSlider;
+    QLabel* m_firPhaseBlendLabel;
+    QComboBox* m_smoothingCombo;
 
     QLabel* m_statusLabel;
 

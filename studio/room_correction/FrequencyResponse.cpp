@@ -91,23 +91,44 @@ FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetF
 }
 
 FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycles, int targetFftSize) {
-    size_t peak = ir.peakIndex();
-    int fs = ir.sampleRate;
-    int nFft = targetFftSize;
+    int n = targetFftSize;
+    if (n <= 0) n = static_cast<int>(ir.samples.size());
+    if (n % 2 != 0) n += 1;
+    size_t bins = n / 2 + 1;
 
-    std::vector<double> fdwIR(ir.samples.size(), 0.0);
+    std::vector<double> re(bins, 0.0);
+    std::vector<double> im(bins, 0.0);
 
-    for (size_t i = 0; i < ir.samples.size(); ++i) {
-        double distSamples = std::abs(static_cast<double>(i) - static_cast<double>(peak));
-        double distSec = distSamples / static_cast<double>(fs);
+    double twoPi = 2.0 * M_PI;
+    size_t p = ir.peakIndex();
+    size_t count = ir.samples.size();
 
-        // FDW width scales inversely with frequency f
-        // Window length at f Hz is cycles / f
-        fdwIR[i] = ir.samples[i];
+    for (size_t k = 0; k < bins; ++k) {
+        size_t kEff = std::max(static_cast<size_t>(1), k);
+        double w_k = cycles * static_cast<double>(n) / static_cast<double>(kEff);
+        double h_k = w_k / 2.0;
+
+        int startIdx = std::max(0, static_cast<int>(std::floor(static_cast<double>(p) - h_k)));
+        int endIdx = std::min(static_cast<int>(count) - 1, static_cast<int>(std::ceil(static_cast<double>(p) + h_k)));
+
+        double rSum = 0.0;
+        double iSum = 0.0;
+
+        double kOverN = static_cast<double>(k) / static_cast<double>(n);
+        for (int i = startIdx; i <= endIdx; ++i) {
+            double d = std::abs(static_cast<double>(i) - static_cast<double>(p));
+            if (d <= h_k && h_k > 0.0) {
+                double w = 0.5 * (1.0 + std::cos(M_PI * d / h_k));
+                double angle = twoPi * kOverN * static_cast<double>(i);
+                rSum += ir.samples[i] * w * std::cos(angle);
+                iSum -= ir.samples[i] * w * std::sin(angle);
+            }
+        }
+        re[k] = rSum;
+        im[k] = iSum;
     }
 
-    ImpulseResponse windowedIR(fdwIR, fs);
-    return from(windowedIR, nFft);
+    return FrequencyResponse(re, im, ir.sampleRate, n);
 }
 
 std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(

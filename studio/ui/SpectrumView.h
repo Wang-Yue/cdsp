@@ -21,10 +21,14 @@ protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
 
 private:
     std::shared_ptr<SpectrumEngine> m_engine;
     SpectrumData m_data;
+
+    QPoint m_hoverPos;
+    bool m_isHovered = false;
 };
 
 #endif // SPECTRUM_VIEW_H

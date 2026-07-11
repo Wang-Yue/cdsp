@@ -141,6 +141,34 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
     m_firTapSpin->setRange(1024, 65536); m_firTapSpin->setValue(8192); m_firTapSpin->setSingleStep(1024);
     form->addRow("FIR Tap Count (FFT Size):", m_firTapSpin);
 
+    auto blendLayout = new QHBoxLayout();
+    m_firPhaseBlendSlider = new QSlider(Qt::Horizontal, tab);
+    m_firPhaseBlendSlider->setRange(0, 100);
+    m_firPhaseBlendSlider->setValue(0);
+    blendLayout->addWidget(m_firPhaseBlendSlider);
+
+    m_firPhaseBlendLabel = new QLabel("Min-phase (0%)", tab);
+    m_firPhaseBlendLabel->setFixedWidth(120);
+    blendLayout->addWidget(m_firPhaseBlendLabel);
+
+    connect(m_firPhaseBlendSlider, &QSlider::valueChanged, [this](int val) {
+        double blend = val / 100.0;
+        m_session.firPhaseBlend = blend;
+        if (val == 0) m_firPhaseBlendLabel->setText("Min-phase (0%)");
+        else if (val == 100) m_firPhaseBlendLabel->setText("Linear-phase (100%)");
+        else m_firPhaseBlendLabel->setText(QString("%1% Blend").arg(val));
+    });
+    form->addRow("Phase Blend (Measurement):", blendLayout);
+
+    m_smoothingCombo = new QComboBox(tab);
+    m_smoothingCombo->addItems({"No Smoothing", "1/48 Octave", "1/24 Octave", "1/12 Octave", "1/6 Octave", "1/3 Octave", "ERB"});
+    m_smoothingCombo->setCurrentIndex(4);
+    connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_session.displaySmoothing = static_cast<DisplaySmoothing>(idx);
+        refreshSessionUi();
+    });
+    form->addRow("Display Smoothing:", m_smoothingCombo);
+
     layout->addLayout(form);
 
     auto genBtn = new QPushButton("Generate Multi-Rate FIR Preset", tab);

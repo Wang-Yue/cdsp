@@ -25,6 +25,8 @@ public:
     std::string lastErrorMessage;
 
     DSPConfiguration buildConfiguration() const;
+    std::shared_ptr<AudioSettings> settings() const { return m_settings; }
+    std::shared_ptr<PipelineStore> pipelineStore() const { return m_pipeline; }
 
     void startEngine();
     void stopEngine();

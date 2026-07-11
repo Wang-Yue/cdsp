@@ -35,6 +35,18 @@ public:
         const FIRDesignOptions& options = FIRDesignOptions()
     );
 
+    static std::vector<double> minimumPhaseFromMagDB(
+        const std::vector<double>& magDB,
+        int sampleRate,
+        const FIRDesignOptions& options = FIRDesignOptions()
+    );
+
+    static std::vector<double> linearPhaseFromMagDB(
+        const std::vector<double>& magDB,
+        int sampleRate,
+        const FIRDesignOptions& options = FIRDesignOptions()
+    );
+
     static std::vector<double> fromMeasurement(
         const FrequencyResponse& measured,
         const TargetCurve& target,

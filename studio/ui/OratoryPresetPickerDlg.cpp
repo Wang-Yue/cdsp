@@ -17,10 +17,24 @@ void OratoryPresetPickerDlg::setupUi() {
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(12);
 
+    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 targets", this);
+    subtitleLbl->setStyleSheet("color: #8e8e93; font-size: 12px; font-weight: bold;");
+    mainLayout->addWidget(subtitleLbl);
+
+    auto searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Search Oratory headphone preset...");
     connect(m_searchEdit, &QLineEdit::textChanged, this, &OratoryPresetPickerDlg::onSearchTextChanged);
-    mainLayout->addWidget(m_searchEdit);
+    searchLayout->addWidget(m_searchEdit);
+
+    auto refreshBtn = new QPushButton("🔄 Refresh Database", this);
+    connect(refreshBtn, &QPushButton::clicked, [this]() {
+        m_statusLabel->setText("Refreshing database...");
+        loadIndex();
+    });
+    searchLayout->addWidget(refreshBtn);
+
+    mainLayout->addLayout(searchLayout);
 
     m_listWidget = new QListWidget(this);
     mainLayout->addWidget(m_listWidget);

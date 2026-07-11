@@ -5,26 +5,47 @@
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
+    connect(&m_animTimer, &QTimer::timeout, this, &AnalogVUMeterView::onAnimTick);
+    m_animTimer.start(16); // ~60 FPS continuous ballistic animation
+}
+
+void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
+    m_settings = settings;
+    update();
+}
+
+float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
+    double level = static_cast<double>(dbFS);
+    double refLevel = -18.0; // 0 VU = -18 dBFS
+    double vu = level - refLevel;
+
+    double ratio = std::pow(10.0, vu / 20.0);
+    double minR = 0.1;
+    double maxR = 1.412;
+    double norm = (ratio - minR) / (maxR - minR);
+    double clippedNorm = std::min(std::max(norm, -0.076), 1.1);
+
+    double startAngle = -45.0;
+    double totalSpan = 90.0;
+    return static_cast<float>(startAngle + clippedNorm * totalSpan);
 }
 
 void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
-    auto dbToAngle = [](float db) -> float {
-        float clamped = std::max(-20.0f, std::min(3.0f, db));
-        float norm = (clamped + 20.0f) / 23.0f;
-        return -45.0f + norm * 90.0f; // -45 deg to +45 deg
-    };
-
-    float targetL = dbToAngle(leftDB);
-    float targetR = dbToAngle(rightDB);
-
-    // Ballistic inertia dampening
-    m_currentAngleL += (targetL - m_currentAngleL) * 0.25f;
-    m_currentAngleR += (targetR - m_currentAngleR) * 0.25f;
-
     m_leftDB = leftDB;
     m_rightDB = rightDB;
 
-    update();
+    m_targetAngleL = computeAngleForLevel(leftDB);
+    m_targetAngleR = computeAngleForLevel(rightDB);
+}
+
+void AnalogVUMeterView::onAnimTick() {
+    // 60 FPS Ballistic spring inertia physics update
+    m_currentAngleL += (m_targetAngleL - m_currentAngleL) * 0.18f;
+    m_currentAngleR += (m_targetAngleR - m_currentAngleR) * 0.18f;
+
+    if (std::abs(m_targetAngleL - m_currentAngleL) > 0.01f || std::abs(m_targetAngleR - m_currentAngleR) > 0.01f) {
+        update();
+    }
 }
 
 void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
@@ -44,28 +65,49 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.save();
     p.setClipRect(rect);
 
-    // Cream / Vintage Warm Face Card
+    QColor bgTop, bgBot, textColor, arcPenColor, redPenColor, needlePenColor;
+    if (m_settings.theme == VUTheme::VintageAmber) {
+        bgTop = QColor("#f4ecd8"); bgBot = QColor("#dfd3b6");
+        textColor = QColor("#3d2f21"); arcPenColor = QColor("#1b1b1b");
+        redPenColor = QColor("#cc2929"); needlePenColor = QColor("#111111");
+    } else if (m_settings.theme == VUTheme::DarkStealth) {
+        bgTop = QColor("#1c1c1e"); bgBot = QColor("#0c0c0e");
+        textColor = QColor("#e5e5ea"); arcPenColor = QColor("#8e8e93");
+        redPenColor = QColor("#ff453a"); needlePenColor = QColor("#ffffff");
+    } else { // Warm Tube
+        bgTop = QColor("#2c1b12"); bgBot = QColor("#1a0e08");
+        textColor = QColor("#ff9f0a"); arcPenColor = QColor("#ff9f0a");
+        redPenColor = QColor("#ff3b30"); needlePenColor = QColor("#ff9f0a");
+    }
+
+    // Vintage Amber / Stealth Background
     QRadialGradient faceGrad(rect.center(), rect.width() / 2);
-    faceGrad.setColorAt(0.0, QColor("#f4ecd8"));
-    faceGrad.setColorAt(1.0, QColor("#dfd3b6"));
+    faceGrad.setColorAt(0.0, bgTop);
+    faceGrad.setColorAt(1.0, bgBot);
     p.fillRect(rect, faceGrad);
     p.setPen(QPen(QColor("#4a3b2c"), 2));
     p.drawRect(rect);
 
-    QPointF pivot(rect.center().x(), rect.bottom() + 20);
-    double radius = rect.height() * 0.85;
+    QPointF pivot(rect.center().x(), rect.bottom() * m_settings.pivotY - rect.height() * (m_settings.pivotY - 1.0));
+    double radius = rect.height() * 0.85 * m_settings.radiusScale;
+
+    // Ambient Warm Bulb Glow Shading
+    QRadialGradient glowGrad(QPointF(rect.center().x(), rect.bottom()), rect.height() * 1.2);
+    glowGrad.setColorAt(0.0, QColor(255, 180, 50, static_cast<int>(255 * m_settings.ambientGlow)));
+    glowGrad.setColorAt(0.8, QColor(255, 180, 50, 0));
+    p.fillRect(rect, glowGrad);
 
     // Scale Arc
-    p.setPen(QPen(QColor("#1b1b1b"), 2));
+    p.setPen(QPen(arcPenColor, 2));
     p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 45 * 16, 90 * 16);
 
     // Red zone (> 0 dB)
-    p.setPen(QPen(QColor("#cc2929"), 3));
+    p.setPen(QPen(redPenColor, 3));
     p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 45 * 16, 20 * 16);
 
     // Labels
     p.setFont(QFont("sans-serif", 10, QFont::Bold));
-    p.setPen(QColor("#3d2f21"));
+    p.setPen(textColor);
     p.drawText(rect.center().x() - 20, rect.top() + 30, label);
     p.drawText(rect.center().x() - 10, rect.top() + 50, "VU");
 
@@ -73,8 +115,9 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.translate(pivot);
     p.rotate(angleDeg);
 
-    p.setPen(QPen(QColor("#111111"), 2));
-    p.drawLine(0, 0, 0, -radius * 0.9);
+    p.setPen(QPen(needlePenColor, 2));
+    double nLen = radius * 0.9 + m_settings.needleExtension;
+    p.drawLine(0, 0, 0, -nLen);
 
     // Pivot cap
     p.setBrush(QColor("#2b2b2b"));

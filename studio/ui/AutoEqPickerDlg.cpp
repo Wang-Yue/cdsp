@@ -17,10 +17,20 @@ void AutoEqPickerDlg::setupUi() {
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(12);
 
+    auto searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Search headphone model...");
     connect(m_searchEdit, &QLineEdit::textChanged, this, &AutoEqPickerDlg::onSearchTextChanged);
-    mainLayout->addWidget(m_searchEdit);
+    searchLayout->addWidget(m_searchEdit);
+
+    auto refreshBtn = new QPushButton("🔄 Refresh Database", this);
+    connect(refreshBtn, &QPushButton::clicked, [this]() {
+        m_statusLabel->setText("Refreshing database...");
+        loadIndex();
+    });
+    searchLayout->addWidget(refreshBtn);
+
+    mainLayout->addLayout(searchLayout);
 
     m_listWidget = new QListWidget(this);
     mainLayout->addWidget(m_listWidget);

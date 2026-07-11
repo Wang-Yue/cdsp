@@ -7,6 +7,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
+#include <QLabel>
 #include <memory>
 
 class ResamplerDetailView : public QWidget {
@@ -24,10 +25,22 @@ private:
 
     QCheckBox* m_enabledCheck;
     QComboBox* m_typeCombo;
+    QCheckBox* m_useProfileCheck;
     QComboBox* m_profileCombo;
     QSpinBox* m_sincLenSpin;
     QSpinBox* m_oversamplingSpin;
+    QComboBox* m_windowCombo;
     QDoubleSpinBox* m_fCutoffSpin;
+    QComboBox* m_sincInterpCombo;
+    QComboBox* m_polyInterpCombo;
+    QComboBox* m_appleQualityCombo;
+    QComboBox* m_appleComplexityCombo;
+
+    QLabel* m_capRateLabel;
+    QLabel* m_pbRateLabel;
+    QLabel* m_ratioLabel;
+
+    void updateVisibility();
 
     void setupUi();
 };

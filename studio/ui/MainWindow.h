@@ -17,8 +17,11 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QLabel>
-#include <QSlider>
-#include <memory>
+#include <QSystemTrayIcon>
+#include <QSplitter>
+#include <QStatusBar>
+#include <QAction>
+#include <QKeySequence>
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -32,6 +35,8 @@ private slots:
     void onPipelineChanged();
     void onEngineStatusChanged(ProcessingState state);
     void toggleMiniPlayer();
+    void toggleMute();
+    void updateTheme();
 
 private:
     std::shared_ptr<CDSPEngine> m_engine;
@@ -49,16 +54,30 @@ private:
 
     QTreeWidget* m_sidebarTree;
     QStackedWidget* m_centralStack;
+    QSplitter* m_splitter;
 
     QPushButton* m_startStopBtn;
     QLabel* m_sampleRateBadge;
     QSlider* m_headerVolumeSlider;
+
+    // Status Bar Widgets
+    QLabel* m_statusStateLabel;
+    QLabel* m_statusBufferLabel;
+    QLabel* m_statusActivePresetLabel;
+    QLabel* m_statusMuteLabel;
+
+    // Tray Icon
+    QSystemTrayIcon* m_trayIcon;
+    QMenu* m_trayMenu;
 
     QString m_lastActiveTag = "dashboard";
 
     void setupUi();
     void setupSidebar();
     void setupToolbar();
+    void setupStatusBar();
+    void setupTrayIcon();
+    void setupShortcuts();
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);

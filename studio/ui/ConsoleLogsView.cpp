@@ -58,6 +58,10 @@ void ConsoleLogsView::setupUi() {
     });
     topToolbar->addWidget(m_clearBtn);
 
+    m_autoScrollCheck = new QCheckBox("Auto-scroll", this);
+    m_autoScrollCheck->setChecked(true);
+    topToolbar->addWidget(m_autoScrollCheck);
+
     mainLayout->addLayout(topToolbar);
 
     m_table = new QTableWidget(this);
@@ -131,7 +135,9 @@ void ConsoleLogsView::refreshLogs() {
         m_table->setItem(row, 1, levelItem);
         m_table->setItem(row, 2, msgItem);
     }
-    m_table->scrollToBottom();
+    if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
+        m_table->scrollToBottom();
+    }
 }
 
 void ConsoleLogsView::onLogAppended(const LogEntry& entry) {

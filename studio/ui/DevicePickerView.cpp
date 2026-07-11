@@ -85,14 +85,32 @@ void DevicePickerView::setupUi() {
     auto procGroup = new QGroupBox("Processing", container);
     auto procForm = new QFormLayout(procGroup);
 
+    auto chunkLayout = new QHBoxLayout();
     m_chunkSizeCombo = new QComboBox(procGroup);
     for (int size : {256, 512, 1024, 2048, 4096, 8192, 16384, 32768}) {
         m_chunkSizeCombo->addItem(QString("%1 samples").arg(size), size);
     }
-    procForm->addRow("Chunk Size:", m_chunkSizeCombo);
+    chunkLayout->addWidget(m_chunkSizeCombo);
 
-    m_enableRateAdjustCheck = new QCheckBox("Enable Dynamic Rate Adjustment (Clock drift compensation)", procGroup);
+    auto latencyLbl = new QLabel("(10.7 ms latency)", procGroup);
+    latencyLbl->setStyleSheet("color: #8e8e93; font-style: italic;");
+    auto updateLatencyText = [this, latencyLbl]() {
+        int chunkSize = m_chunkSizeCombo->currentData().toInt();
+        double sampleRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 48000.0;
+        double ms = (chunkSize * 1000.0) / sampleRate;
+        latencyLbl->setText(QString("(%1 ms latency)").arg(ms, 0, 'f', 1));
+    };
+    updateLatencyText();
+    connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), updateLatencyText);
+    chunkLayout->addWidget(latencyLbl);
+    chunkLayout->addStretch();
+    procForm->addRow("Chunk Size:", chunkLayout);
+
+    m_enableRateAdjustCheck = new QCheckBox("Enable Dynamic Rate Adjustment", procGroup);
     procForm->addRow("", m_enableRateAdjustCheck);
+    auto rateAdjustNote = new QLabel("Compensate for clock drift between capture and playback devices", procGroup);
+    rateAdjustNote->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    procForm->addRow("", rateAdjustNote);
 
     m_queueLimitSpin = new QSpinBox(procGroup);
     m_queueLimitSpin->setRange(1, 32);

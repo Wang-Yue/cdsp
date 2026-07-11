@@ -67,3 +67,4 @@ target_link_libraries(MonitorQt PRIVATE
     "${CDSP_DIR}/libdsp.a"
     ${PLATFORM_LIBS}
 )
+

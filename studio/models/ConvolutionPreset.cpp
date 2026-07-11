@@ -9,10 +9,22 @@ ConvolutionPreset::ConvolutionPreset(const std::string& name, const std::map<int
     : id(QUuid::createUuid()), name(name), irPaths(irPaths), taps(taps), kindLabelStr(kindLabel) {}
 
 std::string ConvolutionPreset::irPath(int sampleRate) const {
+    if (irPaths.empty()) return "";
     auto it = irPaths.find(sampleRate);
     if (it != irPaths.end()) return it->second;
-    if (!irPaths.empty()) return irPaths.begin()->second;
-    return "";
+
+    double targetLog = std::log(static_cast<double>(sampleRate));
+    int bestRate = irPaths.begin()->first;
+    double minDiff = std::abs(std::log(static_cast<double>(bestRate)) - targetLog);
+
+    for (const auto& [rate, path] : irPaths) {
+        double diff = std::abs(std::log(static_cast<double>(rate)) - targetLog);
+        if (diff < minDiff) {
+            minDiff = diff;
+            bestRate = rate;
+        }
+    }
+    return irPaths.at(bestRate);
 }
 
 std::vector<int> ConvolutionPreset::availableSampleRates() const {

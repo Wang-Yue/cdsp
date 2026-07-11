@@ -1,0 +1,114 @@
+#ifndef VISUALIZER_DETAIL_VIEWS_H
+#define VISUALIZER_DETAIL_VIEWS_H
+
+#include "models/MonitoringController.h"
+#include "models/SpectrumEngine.h"
+#include "models/SpectrogramEngine.h"
+#include "models/VectorScopeEngine.h"
+#include "models/AudioDeviceManager.h"
+#include "ui/AnalogVUMeterView.h"
+#include "ui/SpectrumView.h"
+#include "ui/SpectrogramView.h"
+#include "ui/VectorScopeView.h"
+
+#include <QWidget>
+#include <QComboBox>
+#include <QSlider>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QCheckBox>
+#include <QPushButton>
+#include <QLabel>
+#include <memory>
+
+class AnalogVUDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit AnalogVUDetailView(std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
+
+private slots:
+    void refreshUi();
+    void resetDefaults();
+
+private:
+    std::shared_ptr<MonitoringController> m_monitoring;
+    AnalogVUMeterView* m_vuMeter;
+    VUSettings m_settings;
+
+    QComboBox* m_themeCombo;
+    QSlider* m_radiusSlider;
+    QLabel* m_radiusLbl;
+    QSlider* m_pivotYSlider;
+    QLabel* m_pivotYLbl;
+    QSlider* m_needleExtSlider;
+    QLabel* m_needleExtLbl;
+    QSlider* m_ambientGlowSlider;
+    QLabel* m_ambientGlowLbl;
+    QSlider* m_hotSpotSlider;
+    QLabel* m_hotSpotLbl;
+    QSlider* m_lightWashSlider;
+    QLabel* m_lightWashLbl;
+
+    void setupUi();
+};
+
+class SpectrumDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent = nullptr);
+
+private:
+    std::shared_ptr<SpectrumEngine> m_engine;
+    std::shared_ptr<AudioDeviceManager> m_devices;
+    SpectrumView* m_spectrumView;
+
+    QComboBox* m_sourceCombo;
+    QComboBox* m_channelCombo;
+    QSpinBox* m_binsSpin;
+    QSpinBox* m_minFreqSpin;
+    QSpinBox* m_maxFreqSpin;
+    QLabel* m_rangeLbl;
+
+    void setupUi();
+};
+
+class SpectrogramDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent = nullptr);
+
+private:
+    std::shared_ptr<SpectrogramEngine> m_engine;
+    std::shared_ptr<AudioDeviceManager> m_devices;
+    SpectrogramView* m_spectrogramView;
+
+    QComboBox* m_sourceCombo;
+    QComboBox* m_channelCombo;
+    QSpinBox* m_binsSpin;
+    QComboBox* m_modeCombo;
+
+    void setupUi();
+};
+
+class VectorScopeDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit VectorScopeDetailView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent = nullptr);
+
+private:
+    std::shared_ptr<VectorScopeEngine> m_engine;
+    VectorScopeView* m_vectorView;
+
+    QComboBox* m_sourceCombo;
+    QSpinBox* m_framesSpin;
+    QComboBox* m_modeCombo;
+    QCheckBox* m_autoScaleCheck;
+
+    void setupUi();
+};
+
+#endif // VISUALIZER_DETAIL_VIEWS_H

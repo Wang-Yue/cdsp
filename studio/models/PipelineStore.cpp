@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QFile>
 #include <algorithm>
 
 PipelineStore::PipelineStore(QObject* parent) : QObject(parent) {
@@ -98,6 +99,16 @@ void PipelineStore::updateConvPreset(const ConvolutionPreset& preset) {
 }
 
 void PipelineStore::deleteConvPreset(const QUuid& id) {
+    for (const auto& preset : convPresets) {
+        if (preset.id == id) {
+            for (const auto& [rate, path] : preset.irPaths) {
+                if (!path.empty()) {
+                    QFile::remove(QString::fromStdString(path));
+                }
+            }
+            break;
+        }
+    }
     convPresets.erase(std::remove_if(convPresets.begin(), convPresets.end(), [&id](const ConvolutionPreset& p) {
         return p.id == id;
     }), convPresets.end());

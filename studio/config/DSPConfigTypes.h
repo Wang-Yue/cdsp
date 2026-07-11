@@ -132,11 +132,25 @@ enum class SincInterpolation { Nearest, Linear, Quadratic, Cubic };
 enum class AppleResamplerQuality { Min, Low, Medium, High, Max };
 enum class AppleResamplerComplexity { Linear, Normal, Mastering, MinimumPhase };
 
+enum class ConfigErrorType {
+    ParseError,
+    ValidationError,
+    InvalidFilter,
+    InvalidMixer,
+    InvalidPipeline
+};
+
+struct ConfigError {
+    ConfigErrorType type = ConfigErrorType::ValidationError;
+    std::string message;
+};
+
 struct GeneratorConfig {
     std::string type = "Sine";
     std::optional<double> freq = 1000.0;
     double level = -6.0;
     QJsonObject toJson() const;
+    static GeneratorConfig fromJson(const QJsonObject& json);
 };
 
 struct CoreAudioCaptureConfig {
@@ -145,7 +159,9 @@ struct CoreAudioCaptureConfig {
     std::optional<std::string> format;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static CoreAudioCaptureConfig fromJson(const QJsonObject& json);
 };
 
 struct CoreAudioPlaybackConfig {
@@ -155,13 +171,17 @@ struct CoreAudioPlaybackConfig {
     std::optional<bool> exclusive;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dopEncoderFilter;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
 };
 
 struct WavFileCaptureConfig {
     std::string filename;
     std::optional<int> extraSamples;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static WavFileCaptureConfig fromJson(const QJsonObject& json);
 };
 
 struct RawFileCaptureConfig {
@@ -171,7 +191,9 @@ struct RawFileCaptureConfig {
     std::optional<int> skipBytes;
     std::optional<int> readBytes;
     std::optional<int> extraSamples;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static RawFileCaptureConfig fromJson(const QJsonObject& json);
 };
 
 struct RawFilePlaybackConfig {
@@ -179,13 +201,17 @@ struct RawFilePlaybackConfig {
     std::string filename;
     std::string format = "S16_LE";
     std::optional<bool> wavHeader;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static RawFilePlaybackConfig fromJson(const QJsonObject& json);
 };
 
 struct GeneratorCaptureConfig {
     int channels = 2;
     GeneratorConfig signal;
+    std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
+    static GeneratorCaptureConfig fromJson(const QJsonObject& json);
 };
 
 struct CaptureDeviceConfig {
@@ -196,6 +222,7 @@ struct CaptureDeviceConfig {
     GeneratorCaptureConfig generator;
 
     QJsonObject toJson() const;
+    static CaptureDeviceConfig fromJson(const QJsonObject& json);
 };
 
 struct PlaybackDeviceConfig {
@@ -204,6 +231,7 @@ struct PlaybackDeviceConfig {
     RawFilePlaybackConfig rawFile;
 
     QJsonObject toJson() const;
+    static PlaybackDeviceConfig fromJson(const QJsonObject& json);
 };
 
 struct ResamplerConfig {
@@ -218,6 +246,7 @@ struct ResamplerConfig {
     std::optional<double> fCutoff;
 
     QJsonObject toJson() const;
+    static ResamplerConfig fromJson(const QJsonObject& json);
 };
 
 struct DevicesConfig {
@@ -241,12 +270,14 @@ struct DevicesConfig {
     std::optional<int> workerThreads;
 
     QJsonObject toJson() const;
+    static DevicesConfig fromJson(const QJsonObject& json);
 };
 
 enum class FilterType {
     Gain, Volume, Loudness, Biquad, Conv, Delay, BiquadCombo, DiffEq, Dither, Limiter, LookaheadLimiter
 };
 std::string filterTypeToString(FilterType t);
+FilterType stringToFilterType(const std::string& str);
 
 struct GainParameters {
     std::optional<double> gain;
@@ -254,6 +285,7 @@ struct GainParameters {
     std::optional<bool> inverted;
     std::optional<bool> mute;
     QJsonObject toJson() const;
+    static GainParameters fromJson(const QJsonObject& json);
 };
 
 struct LoudnessParameters {
@@ -263,6 +295,7 @@ struct LoudnessParameters {
     std::optional<bool> attenuateMid;
     std::optional<Fader> fader;
     QJsonObject toJson() const;
+    static LoudnessParameters fromJson(const QJsonObject& json);
 };
 
 enum class ConvType { Values, Wav, Raw, Dummy };
@@ -277,6 +310,7 @@ struct ConvParameters {
     std::optional<int> skipBytesLines;
     std::optional<int> readBytesLines;
     QJsonObject toJson() const;
+    static ConvParameters fromJson(const QJsonObject& json);
 };
 
 struct DelayParameters {
@@ -284,12 +318,14 @@ struct DelayParameters {
     std::optional<DelayUnit> unit;
     std::optional<bool> subsample;
     QJsonObject toJson() const;
+    static DelayParameters fromJson(const QJsonObject& json);
 };
 
 enum class BiquadComboType {
     ButterworthHighpass, ButterworthLowpass, LinkwitzRileyHighpass, LinkwitzRileyLowpass, Tilt, FivePointPeq, GraphicEqualizer
 };
 std::string biquadComboTypeToString(BiquadComboType t);
+BiquadComboType stringToBiquadComboType(const std::string& str);
 
 struct BiquadComboParameters {
     BiquadComboType type = BiquadComboType::ButterworthLowpass;
@@ -304,30 +340,35 @@ struct BiquadComboParameters {
     std::optional<double> freqMin, freqMax;
     std::vector<double> gains;
     QJsonObject toJson() const;
+    static BiquadComboParameters fromJson(const QJsonObject& json);
 };
 
 struct DiffEqParameters {
     std::vector<double> a;
     std::vector<double> b;
     QJsonObject toJson() const;
+    static DiffEqParameters fromJson(const QJsonObject& json);
 };
 
 enum class DitherType {
     None, Flat, Highpass, Fweighted441, FweightedLong441, FweightedShort441, Gesemann441, Gesemann48, Lipshitz441, LipshitzLong441, Shibata441, ShibataHigh441, ShibataLow441, Shibata48, ShibataHigh48, ShibataLow48, Shibata882, ShibataLow882, Shibata96, ShibataLow96, Shibata192, ShibataLow192
 };
 std::string ditherTypeToString(DitherType t);
+DitherType stringToDitherType(const std::string& str);
 
 struct DitherParameters {
     DitherType type = DitherType::Flat;
     int bits = 16;
     std::optional<double> amplitude;
     QJsonObject toJson() const;
+    static DitherParameters fromJson(const QJsonObject& json);
 };
 
 struct LimiterParameters {
     double clipLimit = 0.0;
     std::optional<bool> softClip;
     QJsonObject toJson() const;
+    static LimiterParameters fromJson(const QJsonObject& json);
 };
 
 struct LookaheadLimiterParameters {
@@ -336,6 +377,7 @@ struct LookaheadLimiterParameters {
     double release = 100.0;
     std::optional<DelayUnit> unit;
     QJsonObject toJson() const;
+    static LookaheadLimiterParameters fromJson(const QJsonObject& json);
 };
 
 struct VolumeParameters {
@@ -343,10 +385,11 @@ struct VolumeParameters {
     std::optional<double> limit;
     std::optional<Fader> fader;
     QJsonObject toJson() const;
+    static VolumeParameters fromJson(const QJsonObject& json);
 };
 
 struct FilterConfig {
-    FilterType type;
+    FilterType type = FilterType::Gain;
     GainParameters gainParams;
     VolumeParameters volumeParams;
     LoudnessParameters loudnessParams;
@@ -360,6 +403,7 @@ struct FilterConfig {
     LookaheadLimiterParameters lookaheadParams;
 
     QJsonObject toJson() const;
+    static FilterConfig fromJson(const QJsonObject& json);
 };
 
 struct MixerSource {
@@ -370,6 +414,7 @@ struct MixerSource {
     std::optional<GainScale> scale;
     double gainValue() const { return gain.value_or(0.0); }
     QJsonObject toJson() const;
+    static MixerSource fromJson(const QJsonObject& json);
 };
 
 struct MixerMapping {
@@ -377,6 +422,7 @@ struct MixerMapping {
     std::vector<MixerSource> sources;
     std::optional<bool> mute;
     QJsonObject toJson() const;
+    static MixerMapping fromJson(const QJsonObject& json);
 };
 
 struct MixerConfig {
@@ -384,11 +430,14 @@ struct MixerConfig {
     int channelsOut = 2;
     std::vector<MixerMapping> mapping;
     std::optional<std::string> description;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
+    static MixerConfig fromJson(const QJsonObject& json);
 };
 
 enum class ProcessorType { Compressor, NoiseGate, RACE };
 std::string processorTypeToString(ProcessorType t);
+ProcessorType stringToProcessorType(const std::string& str);
 
 struct CompressorParameters {
     int channels = 2;
@@ -402,6 +451,7 @@ struct CompressorParameters {
     std::optional<bool> softClip;
     std::optional<double> clipLimit;
     QJsonObject toJson() const;
+    static CompressorParameters fromJson(const QJsonObject& json);
 };
 
 struct NoiseGateParameters {
@@ -413,6 +463,7 @@ struct NoiseGateParameters {
     double threshold = -60.0;
     double attenuation = -40.0;
     QJsonObject toJson() const;
+    static NoiseGateParameters fromJson(const QJsonObject& json);
 };
 
 struct RACEParameters {
@@ -424,20 +475,22 @@ struct RACEParameters {
     std::optional<DelayUnit> delayUnit;
     double attenuation = 6.0;
     QJsonObject toJson() const;
+    static RACEParameters fromJson(const QJsonObject& json);
 };
 
 struct ProcessorConfig {
-    ProcessorType type;
+    ProcessorType type = ProcessorType::Compressor;
     CompressorParameters compressorParams;
     NoiseGateParameters noiseGateParams;
     RACEParameters raceParams;
     QJsonObject toJson() const;
+    static ProcessorConfig fromJson(const QJsonObject& json);
 };
 
 enum class PipelineStepType { Filter, Mixer, Processor };
 
 struct PipelineStep {
-    PipelineStepType type;
+    PipelineStepType type = PipelineStepType::Filter;
     std::optional<int> channel;
     std::vector<int> channels;
     std::optional<std::string> name;
@@ -445,6 +498,7 @@ struct PipelineStep {
     std::optional<bool> bypassed;
 
     QJsonObject toJson() const;
+    static PipelineStep fromJson(const QJsonObject& json);
 };
 
 struct DSPConfiguration {
@@ -456,6 +510,8 @@ struct DSPConfiguration {
 
     std::string toJsonString() const;
     QJsonObject toJsonObject() const;
+    static DSPConfiguration fromJsonObject(const QJsonObject& json);
+    static DSPConfiguration fromJsonString(const std::string& jsonStr);
     void validate() const;
 };
 

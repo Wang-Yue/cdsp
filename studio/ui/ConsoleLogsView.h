@@ -5,6 +5,7 @@
 #include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
@@ -25,6 +26,7 @@ private:
     QTableWidget* m_table;
     QLineEdit* m_searchEdit;
     QComboBox* m_levelFilterCombo;
+    QCheckBox* m_autoScrollCheck;
     QPushButton* m_copyBtn;
     QPushButton* m_clearBtn;
     QLabel* m_logCountLabel;

@@ -176,6 +176,20 @@ std::string filterTypeToString(FilterType t) {
     return "Gain";
 }
 
+FilterType stringToFilterType(const std::string& str) {
+    if (str == "Volume") return FilterType::Volume;
+    if (str == "Loudness") return FilterType::Loudness;
+    if (str == "Biquad") return FilterType::Biquad;
+    if (str == "Conv") return FilterType::Conv;
+    if (str == "Delay") return FilterType::Delay;
+    if (str == "BiquadCombo") return FilterType::BiquadCombo;
+    if (str == "DiffEq") return FilterType::DiffEq;
+    if (str == "Dither") return FilterType::Dither;
+    if (str == "Limiter") return FilterType::Limiter;
+    if (str == "LookaheadLimiter") return FilterType::LookaheadLimiter;
+    return FilterType::Gain;
+}
+
 std::string biquadComboTypeToString(BiquadComboType t) {
     switch (t) {
     case BiquadComboType::ButterworthHighpass: return "ButterworthHighpass";
@@ -187,6 +201,17 @@ std::string biquadComboTypeToString(BiquadComboType t) {
     case BiquadComboType::GraphicEqualizer: return "GraphicEqualizer";
     }
     return "ButterworthLowpass";
+}
+
+BiquadComboType stringToBiquadComboType(const std::string& str) {
+    if (str == "ButterworthHighpass") return BiquadComboType::ButterworthHighpass;
+    if (str == "ButterworthLowpass") return BiquadComboType::ButterworthLowpass;
+    if (str == "LinkwitzRileyHighpass") return BiquadComboType::LinkwitzRileyHighpass;
+    if (str == "LinkwitzRileyLowpass") return BiquadComboType::LinkwitzRileyLowpass;
+    if (str == "Tilt") return BiquadComboType::Tilt;
+    if (str == "FivePointPeq") return BiquadComboType::FivePointPeq;
+    if (str == "GraphicEqualizer") return BiquadComboType::GraphicEqualizer;
+    return BiquadComboType::ButterworthLowpass;
 }
 
 std::string ditherTypeToString(DitherType t) {
@@ -217,6 +242,31 @@ std::string ditherTypeToString(DitherType t) {
     return "Flat";
 }
 
+DitherType stringToDitherType(const std::string& str) {
+    if (str == "None") return DitherType::None;
+    if (str == "Highpass") return DitherType::Highpass;
+    if (str == "Fweighted441") return DitherType::Fweighted441;
+    if (str == "FweightedLong441") return DitherType::FweightedLong441;
+    if (str == "FweightedShort441") return DitherType::FweightedShort441;
+    if (str == "Gesemann441") return DitherType::Gesemann441;
+    if (str == "Gesemann48") return DitherType::Gesemann48;
+    if (str == "Lipshitz441") return DitherType::Lipshitz441;
+    if (str == "LipshitzLong441") return DitherType::LipshitzLong441;
+    if (str == "Shibata441") return DitherType::Shibata441;
+    if (str == "ShibataHigh441") return DitherType::ShibataHigh441;
+    if (str == "ShibataLow441") return DitherType::ShibataLow441;
+    if (str == "Shibata48") return DitherType::Shibata48;
+    if (str == "ShibataHigh48") return DitherType::ShibataHigh48;
+    if (str == "ShibataLow48") return DitherType::ShibataLow48;
+    if (str == "Shibata882") return DitherType::Shibata882;
+    if (str == "ShibataLow882") return DitherType::ShibataLow882;
+    if (str == "Shibata96") return DitherType::Shibata96;
+    if (str == "ShibataLow96") return DitherType::ShibataLow96;
+    if (str == "Shibata192") return DitherType::Shibata192;
+    if (str == "ShibataLow192") return DitherType::ShibataLow192;
+    return DitherType::Flat;
+}
+
 std::string processorTypeToString(ProcessorType t) {
     switch (t) {
     case ProcessorType::Compressor: return "Compressor";
@@ -226,7 +276,21 @@ std::string processorTypeToString(ProcessorType t) {
     return "Compressor";
 }
 
-// JSON Encoders
+ProcessorType stringToProcessorType(const std::string& str) {
+    if (str == "NoiseGate") return ProcessorType::NoiseGate;
+    if (str == "RACE") return ProcessorType::RACE;
+    return ProcessorType::Compressor;
+}
+
+// JSON Encoders & Decoders
+
+GeneratorConfig GeneratorConfig::fromJson(const QJsonObject& json) {
+    GeneratorConfig cfg;
+    if (json.contains("type")) cfg.type = json["type"].toString().toStdString();
+    if (json.contains("freq")) cfg.freq = json["freq"].toDouble();
+    if (json.contains("level")) cfg.level = json["level"].toDouble();
+    return cfg;
+}
 
 QJsonObject GeneratorConfig::toJson() const {
     QJsonObject obj;
@@ -234,6 +298,20 @@ QJsonObject GeneratorConfig::toJson() const {
     if (freq.has_value()) obj["freq"] = freq.value();
     obj["level"] = level;
     return obj;
+}
+
+CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json) {
+    CoreAudioCaptureConfig cfg;
+    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("device")) cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
+    if (json.contains("bypass_dop")) cfg.bypassDoP = json["bypass_dop"].toBool();
+    if (json.contains("dop_cutoff_hz")) cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject CoreAudioCaptureConfig::toJson() const {
@@ -244,7 +322,26 @@ QJsonObject CoreAudioCaptureConfig::toJson() const {
     if (format.has_value()) obj["format"] = QString::fromStdString(format.value());
     if (bypassDoP.has_value()) obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value()) obj["dop_cutoff_hz"] = dopCutoffHz.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+CoreAudioPlaybackConfig CoreAudioPlaybackConfig::fromJson(const QJsonObject& json) {
+    CoreAudioPlaybackConfig cfg;
+    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("device")) cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
+    if (json.contains("exclusive")) cfg.exclusive = json["exclusive"].toBool();
+    if (json.contains("output_dop")) cfg.outputDoP = json["output_dop"].toBool();
+    if (json.contains("dop_encoder_filter")) cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject CoreAudioPlaybackConfig::toJson() const {
@@ -256,7 +353,22 @@ QJsonObject CoreAudioPlaybackConfig::toJson() const {
     if (exclusive.has_value()) obj["exclusive"] = exclusive.value();
     if (outputDoP.has_value()) obj["output_dop"] = outputDoP.value();
     if (dopEncoderFilter.has_value()) obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+WavFileCaptureConfig WavFileCaptureConfig::fromJson(const QJsonObject& json) {
+    WavFileCaptureConfig cfg;
+    if (json.contains("filename")) cfg.filename = json["filename"].toString().toStdString();
+    if (json.contains("extra_samples")) cfg.extraSamples = json["extra_samples"].toInt();
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject WavFileCaptureConfig::toJson() const {
@@ -264,7 +376,26 @@ QJsonObject WavFileCaptureConfig::toJson() const {
     obj["type"] = "WavFile";
     obj["filename"] = QString::fromStdString(filename);
     if (extraSamples.has_value()) obj["extra_samples"] = extraSamples.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+RawFileCaptureConfig RawFileCaptureConfig::fromJson(const QJsonObject& json) {
+    RawFileCaptureConfig cfg;
+    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("filename")) cfg.filename = json["filename"].toString().toStdString();
+    if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
+    if (json.contains("skip_bytes")) cfg.skipBytes = json["skip_bytes"].toInt();
+    if (json.contains("read_bytes")) cfg.readBytes = json["read_bytes"].toInt();
+    if (json.contains("extra_samples")) cfg.extraSamples = json["extra_samples"].toInt();
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject RawFileCaptureConfig::toJson() const {
@@ -276,7 +407,24 @@ QJsonObject RawFileCaptureConfig::toJson() const {
     if (skipBytes.has_value()) obj["skip_bytes"] = skipBytes.value();
     if (readBytes.has_value()) obj["read_bytes"] = readBytes.value();
     if (extraSamples.has_value()) obj["extra_samples"] = extraSamples.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+RawFilePlaybackConfig RawFilePlaybackConfig::fromJson(const QJsonObject& json) {
+    RawFilePlaybackConfig cfg;
+    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("filename")) cfg.filename = json["filename"].toString().toStdString();
+    if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
+    if (json.contains("wav_header")) cfg.wavHeader = json["wav_header"].toBool();
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject RawFilePlaybackConfig::toJson() const {
@@ -286,7 +434,22 @@ QJsonObject RawFilePlaybackConfig::toJson() const {
     obj["filename"] = QString::fromStdString(filename);
     obj["format"] = QString::fromStdString(format);
     if (wavHeader.has_value()) obj["wav_header"] = wavHeader.value();
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+GeneratorCaptureConfig GeneratorCaptureConfig::fromJson(const QJsonObject& json) {
+    GeneratorCaptureConfig cfg;
+    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("signal")) cfg.signal = GeneratorConfig::fromJson(json["signal"].toObject());
+    if (json.contains("channel_labels")) {
+        QJsonArray arr = json["channel_labels"].toArray();
+        for (const auto& val : arr) cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
 }
 
 QJsonObject GeneratorCaptureConfig::toJson() const {
@@ -294,7 +457,24 @@ QJsonObject GeneratorCaptureConfig::toJson() const {
     obj["type"] = "SignalGenerator";
     obj["channels"] = channels;
     obj["signal"] = signal.toJson();
+    if (!channelLabels.empty()) {
+        QJsonArray arr; for (const auto& l : channelLabels) arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
     return obj;
+}
+
+CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
+    CaptureDeviceConfig cfg;
+    std::string typeStr = json["type"].toString().toStdString();
+    cfg.backend = stringToAudioBackendType(typeStr);
+    switch (cfg.backend) {
+    case AudioBackendType::CoreAudio: cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json); break;
+    case AudioBackendType::WavFile: cfg.wavFile = WavFileCaptureConfig::fromJson(json); break;
+    case AudioBackendType::RawFile: cfg.rawFile = RawFileCaptureConfig::fromJson(json); break;
+    case AudioBackendType::SignalGenerator: cfg.generator = GeneratorCaptureConfig::fromJson(json); break;
+    }
+    return cfg;
 }
 
 QJsonObject CaptureDeviceConfig::toJson() const {
@@ -307,6 +487,19 @@ QJsonObject CaptureDeviceConfig::toJson() const {
     return coreAudio.toJson();
 }
 
+PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
+    PlaybackDeviceConfig cfg;
+    std::string typeStr = json["type"].toString().toStdString();
+    cfg.backend = stringToAudioBackendType(typeStr);
+    switch (cfg.backend) {
+    case AudioBackendType::CoreAudio: cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json); break;
+    case AudioBackendType::RawFile:
+    case AudioBackendType::WavFile: cfg.rawFile = RawFilePlaybackConfig::fromJson(json); break;
+    case AudioBackendType::SignalGenerator: cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json); break;
+    }
+    return cfg;
+}
+
 QJsonObject PlaybackDeviceConfig::toJson() const {
     switch (backend) {
     case AudioBackendType::CoreAudio: return coreAudio.toJson();
@@ -315,6 +508,18 @@ QJsonObject PlaybackDeviceConfig::toJson() const {
     case AudioBackendType::SignalGenerator: return coreAudio.toJson();
     }
     return coreAudio.toJson();
+}
+
+ResamplerConfig ResamplerConfig::fromJson(const QJsonObject& json) {
+    ResamplerConfig cfg;
+    if (json.contains("type")) cfg.type = stringToResamplerType(json["type"].toString().toStdString());
+    if (json.contains("profile")) cfg.profile = json["profile"].toString().toStdString();
+    if (json.contains("interpolation")) cfg.interpolation = json["interpolation"].toString().toStdString();
+    if (json.contains("sinc_len")) cfg.sincLen = json["sinc_len"].toInt();
+    if (json.contains("oversampling_factor")) cfg.oversamplingFactor = json["oversampling_factor"].toInt();
+    if (json.contains("window")) cfg.window = json["window"].toString().toStdString();
+    if (json.contains("f_cutoff")) cfg.fCutoff = json["f_cutoff"].toDouble();
+    return cfg;
 }
 
 QJsonObject ResamplerConfig::toJson() const {
@@ -350,6 +555,28 @@ QJsonObject ResamplerConfig::toJson() const {
     return obj;
 }
 
+DevicesConfig DevicesConfig::fromJson(const QJsonObject& json) {
+    DevicesConfig cfg;
+    if (json.contains("samplerate")) cfg.samplerate = json["samplerate"].toInt();
+    if (json.contains("chunksize")) cfg.chunksize = json["chunksize"].toInt();
+    if (json.contains("capture")) cfg.capture = CaptureDeviceConfig::fromJson(json["capture"].toObject());
+    if (json.contains("playback")) cfg.playback = PlaybackDeviceConfig::fromJson(json["playback"].toObject());
+    if (json.contains("enable_rate_adjust")) cfg.enableRateAdjust = json["enable_rate_adjust"].toBool();
+    if (json.contains("target_level")) cfg.targetLevel = json["target_level"].toInt();
+    if (json.contains("adjust_period")) cfg.adjustPeriod = json["adjust_period"].toDouble();
+    if (json.contains("resampler")) cfg.resampler = ResamplerConfig::fromJson(json["resampler"].toObject());
+    if (json.contains("silence_threshold")) cfg.silenceThreshold = json["silence_threshold"].toDouble();
+    if (json.contains("silence_timeout")) cfg.silenceTimeout = json["silence_timeout"].toDouble();
+    if (json.contains("volume_ramp_time")) cfg.volumeRampTime = json["volume_ramp_time"].toDouble();
+    if (json.contains("volume_limit")) cfg.volumeLimit = json["volume_limit"].toDouble();
+    if (json.contains("queuelimit")) cfg.queuelimit = json["queuelimit"].toInt();
+    if (json.contains("stop_on_rate_change")) cfg.stopOnRateChange = json["stop_on_rate_change"].toBool();
+    if (json.contains("rate_measure_interval")) cfg.rateMeasureInterval = json["rate_measure_interval"].toDouble();
+    if (json.contains("multithreaded")) cfg.multithreaded = json["multithreaded"].toBool();
+    if (json.contains("worker_threads")) cfg.workerThreads = json["worker_threads"].toInt();
+    return cfg;
+}
+
 QJsonObject DevicesConfig::toJson() const {
     QJsonObject obj;
     obj["samplerate"] = samplerate;
@@ -375,6 +602,15 @@ QJsonObject DevicesConfig::toJson() const {
     return obj;
 }
 
+GainParameters GainParameters::fromJson(const QJsonObject& json) {
+    GainParameters p;
+    if (json.contains("gain")) p.gain = json["gain"].toDouble();
+    if (json.contains("scale")) p.scale = stringToGainScale(json["scale"].toString().toStdString());
+    if (json.contains("inverted")) p.inverted = json["inverted"].toBool();
+    if (json.contains("mute")) p.mute = json["mute"].toBool();
+    return p;
+}
+
 QJsonObject GainParameters::toJson() const {
     QJsonObject obj;
     if (gain.has_value()) obj["gain"] = gain.value();
@@ -382,6 +618,16 @@ QJsonObject GainParameters::toJson() const {
     if (inverted.has_value()) obj["inverted"] = inverted.value();
     if (mute.has_value()) obj["mute"] = mute.value();
     return obj;
+}
+
+LoudnessParameters LoudnessParameters::fromJson(const QJsonObject& json) {
+    LoudnessParameters p;
+    if (json.contains("reference_level")) p.referenceLevel = json["reference_level"].toDouble();
+    if (json.contains("high_boost")) p.highBoost = json["high_boost"].toDouble();
+    if (json.contains("low_boost")) p.lowBoost = json["low_boost"].toDouble();
+    if (json.contains("attenuate_mid")) p.attenuateMid = json["attenuate_mid"].toBool();
+    if (json.contains("fader")) p.fader = stringToFader(json["fader"].toString().toStdString());
+    return p;
 }
 
 QJsonObject LoudnessParameters::toJson() const {
@@ -392,6 +638,27 @@ QJsonObject LoudnessParameters::toJson() const {
     if (attenuateMid.has_value()) obj["attenuate_mid"] = attenuateMid.value();
     if (fader.has_value()) obj["fader"] = QString::fromStdString(faderToString(fader.value()));
     return obj;
+}
+
+ConvParameters ConvParameters::fromJson(const QJsonObject& json) {
+    ConvParameters p;
+    std::string typeStr = json["type"].toString().toStdString();
+    if (typeStr == "Values") p.type = ConvType::Values;
+    else if (typeStr == "Wav") p.type = ConvType::Wav;
+    else if (typeStr == "Dummy") p.type = ConvType::Dummy;
+    else p.type = ConvType::Raw;
+
+    if (json.contains("values")) {
+        QJsonArray arr = json["values"].toArray();
+        for (const auto& v : arr) p.values.push_back(v.toDouble());
+    }
+    if (json.contains("filename")) p.filename = json["filename"].toString().toStdString();
+    if (json.contains("format")) p.format = json["format"].toString().toStdString();
+    if (json.contains("channel")) p.channel = json["channel"].toInt();
+    if (json.contains("length")) p.length = json["length"].toInt();
+    if (json.contains("skip_bytes_lines")) p.skipBytesLines = json["skip_bytes_lines"].toInt();
+    if (json.contains("read_bytes_lines")) p.readBytesLines = json["read_bytes_lines"].toInt();
+    return p;
 }
 
 QJsonObject ConvParameters::toJson() const {
@@ -418,12 +685,33 @@ QJsonObject ConvParameters::toJson() const {
     return obj;
 }
 
+DelayParameters DelayParameters::fromJson(const QJsonObject& json) {
+    DelayParameters p;
+    if (json.contains("delay")) p.delay = json["delay"].toDouble();
+    if (json.contains("unit")) p.unit = stringToDelayUnit(json["unit"].toString().toStdString());
+    if (json.contains("subsample")) p.subsample = json["subsample"].toBool();
+    return p;
+}
+
 QJsonObject DelayParameters::toJson() const {
     QJsonObject obj;
     obj["delay"] = delay;
     if (unit.has_value()) obj["unit"] = QString::fromStdString(delayUnitToString(unit.value()));
     if (subsample.has_value()) obj["subsample"] = subsample.value();
     return obj;
+}
+
+BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
+    BiquadComboParameters p;
+    if (json.contains("type")) p.type = stringToBiquadComboType(json["type"].toString().toStdString());
+    if (json.contains("freq")) p.freq = json["freq"].toDouble();
+    if (json.contains("order")) p.order = json["order"].toInt();
+    if (json.contains("gain")) p.gain = json["gain"].toDouble();
+    if (json.contains("gains")) {
+        QJsonArray arr = json["gains"].toArray();
+        for (const auto& v : arr) p.gains.push_back(v.toDouble());
+    }
+    return p;
 }
 
 QJsonObject BiquadComboParameters::toJson() const {
@@ -457,6 +745,19 @@ QJsonObject BiquadComboParameters::toJson() const {
     return obj;
 }
 
+DiffEqParameters DiffEqParameters::fromJson(const QJsonObject& json) {
+    DiffEqParameters p;
+    if (json.contains("a")) {
+        QJsonArray arr = json["a"].toArray();
+        for (const auto& val : arr) p.a.push_back(val.toDouble());
+    }
+    if (json.contains("b")) {
+        QJsonArray arr = json["b"].toArray();
+        for (const auto& val : arr) p.b.push_back(val.toDouble());
+    }
+    return p;
+}
+
 QJsonObject DiffEqParameters::toJson() const {
     QJsonObject obj;
     if (!a.empty()) {
@@ -472,6 +773,14 @@ QJsonObject DiffEqParameters::toJson() const {
     return obj;
 }
 
+DitherParameters DitherParameters::fromJson(const QJsonObject& json) {
+    DitherParameters p;
+    if (json.contains("type")) p.type = stringToDitherType(json["type"].toString().toStdString());
+    if (json.contains("bits")) p.bits = json["bits"].toInt();
+    if (json.contains("amplitude")) p.amplitude = json["amplitude"].toDouble();
+    return p;
+}
+
 QJsonObject DitherParameters::toJson() const {
     QJsonObject obj;
     obj["type"] = QString::fromStdString(ditherTypeToString(type));
@@ -480,11 +789,27 @@ QJsonObject DitherParameters::toJson() const {
     return obj;
 }
 
+LimiterParameters LimiterParameters::fromJson(const QJsonObject& json) {
+    LimiterParameters p;
+    if (json.contains("clip_limit")) p.clipLimit = json["clip_limit"].toDouble();
+    if (json.contains("soft_clip")) p.softClip = json["soft_clip"].toBool();
+    return p;
+}
+
 QJsonObject LimiterParameters::toJson() const {
     QJsonObject obj;
     obj["clip_limit"] = clipLimit;
     if (softClip.has_value()) obj["soft_clip"] = softClip.value();
     return obj;
+}
+
+LookaheadLimiterParameters LookaheadLimiterParameters::fromJson(const QJsonObject& json) {
+    LookaheadLimiterParameters p;
+    if (json.contains("limit")) p.limit = json["limit"].toDouble();
+    if (json.contains("attack")) p.attack = json["attack"].toDouble();
+    if (json.contains("release")) p.release = json["release"].toDouble();
+    if (json.contains("unit")) p.unit = stringToDelayUnit(json["unit"].toString().toStdString());
+    return p;
 }
 
 QJsonObject LookaheadLimiterParameters::toJson() const {
@@ -496,12 +821,55 @@ QJsonObject LookaheadLimiterParameters::toJson() const {
     return obj;
 }
 
+VolumeParameters VolumeParameters::fromJson(const QJsonObject& json) {
+    VolumeParameters p;
+    if (json.contains("ramp_time")) p.rampTime = json["ramp_time"].toDouble();
+    if (json.contains("limit")) p.limit = json["limit"].toDouble();
+    if (json.contains("fader")) p.fader = stringToFader(json["fader"].toString().toStdString());
+    return p;
+}
+
 QJsonObject VolumeParameters::toJson() const {
     QJsonObject obj;
     if (rampTime.has_value()) obj["ramp_time"] = rampTime.value();
     if (limit.has_value()) obj["limit"] = limit.value();
     if (fader.has_value()) obj["fader"] = QString::fromStdString(faderToString(fader.value()));
     return obj;
+}
+
+FilterConfig FilterConfig::fromJson(const QJsonObject& json) {
+    FilterConfig f;
+    f.type = stringToFilterType(json["type"].toString().toStdString());
+    QJsonObject pObj = json["parameters"].toObject();
+    switch (f.type) {
+    case FilterType::Gain: f.gainParams = GainParameters::fromJson(pObj); break;
+    case FilterType::Volume: f.volumeParams = VolumeParameters::fromJson(pObj); break;
+    case FilterType::Loudness: f.loudnessParams = LoudnessParameters::fromJson(pObj); break;
+    case FilterType::Biquad: {
+        BiquadParameters b;
+        if (pObj.contains("type")) b.type = stringToBiquadType(pObj["type"].toString().toStdString());
+        if (pObj.contains("freq")) b.freq = pObj["freq"].toDouble();
+        if (pObj.contains("gain")) b.gain = pObj["gain"].toDouble();
+        if (pObj.contains("q")) b.q = pObj["q"].toDouble();
+        if (pObj.contains("bandwidth")) b.bandwidth = pObj["bandwidth"].toDouble();
+        if (pObj.contains("slope")) b.slope = pObj["slope"].toDouble();
+        if (pObj.contains("b0")) b.b0 = pObj["b0"].toDouble();
+        if (pObj.contains("b1")) b.b1 = pObj["b1"].toDouble();
+        if (pObj.contains("b2")) b.b2 = pObj["b2"].toDouble();
+        if (pObj.contains("a1")) b.a1 = pObj["a1"].toDouble();
+        if (pObj.contains("a2")) b.a2 = pObj["a2"].toDouble();
+        f.biquadParams = b;
+        break;
+    }
+    case FilterType::Conv: f.convParams = ConvParameters::fromJson(pObj); break;
+    case FilterType::Delay: f.delayParams = DelayParameters::fromJson(pObj); break;
+    case FilterType::BiquadCombo: f.comboParams = BiquadComboParameters::fromJson(pObj); break;
+    case FilterType::DiffEq: f.diffEqParams = DiffEqParameters::fromJson(pObj); break;
+    case FilterType::Dither: f.ditherParams = DitherParameters::fromJson(pObj); break;
+    case FilterType::Limiter: f.limiterParams = LimiterParameters::fromJson(pObj); break;
+    case FilterType::LookaheadLimiter: f.lookaheadParams = LookaheadLimiterParameters::fromJson(pObj); break;
+    }
+    return f;
 }
 
 QJsonObject FilterConfig::toJson() const {
@@ -548,6 +916,16 @@ QJsonObject FilterConfig::toJson() const {
     return obj;
 }
 
+MixerSource MixerSource::fromJson(const QJsonObject& json) {
+    MixerSource s;
+    if (json.contains("channel")) s.channel = json["channel"].toInt();
+    if (json.contains("gain")) s.gain = json["gain"].toDouble();
+    if (json.contains("inverted")) s.inverted = json["inverted"].toBool();
+    if (json.contains("mute")) s.mute = json["mute"].toBool();
+    if (json.contains("scale")) s.scale = stringToGainScale(json["scale"].toString().toStdString());
+    return s;
+}
+
 QJsonObject MixerSource::toJson() const {
     QJsonObject obj;
     obj["channel"] = channel;
@@ -558,6 +936,17 @@ QJsonObject MixerSource::toJson() const {
     return obj;
 }
 
+MixerMapping MixerMapping::fromJson(const QJsonObject& json) {
+    MixerMapping m;
+    if (json.contains("dest")) m.dest = json["dest"].toInt();
+    if (json.contains("sources")) {
+        QJsonArray arr = json["sources"].toArray();
+        for (const auto& val : arr) m.sources.push_back(MixerSource::fromJson(val.toObject()));
+    }
+    if (json.contains("mute")) m.mute = json["mute"].toBool();
+    return m;
+}
+
 QJsonObject MixerMapping::toJson() const {
     QJsonObject obj;
     obj["dest"] = dest;
@@ -566,6 +955,25 @@ QJsonObject MixerMapping::toJson() const {
     obj["sources"] = srcArr;
     if (mute.has_value()) obj["mute"] = mute.value();
     return obj;
+}
+
+MixerConfig MixerConfig::fromJson(const QJsonObject& json) {
+    MixerConfig mc;
+    if (json.contains("channels")) {
+        QJsonObject chObj = json["channels"].toObject();
+        if (chObj.contains("in")) mc.channelsIn = chObj["in"].toInt();
+        if (chObj.contains("out")) mc.channelsOut = chObj["out"].toInt();
+    }
+    if (json.contains("mapping")) {
+        QJsonArray arr = json["mapping"].toArray();
+        for (const auto& val : arr) mc.mapping.push_back(MixerMapping::fromJson(val.toObject()));
+    }
+    if (json.contains("description")) mc.description = json["description"].toString().toStdString();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
+        for (const auto& val : arr) mc.labels.push_back(val.toString().toStdString());
+    }
+    return mc;
 }
 
 QJsonObject MixerConfig::toJson() const {
@@ -582,7 +990,25 @@ QJsonObject MixerConfig::toJson() const {
     if (description.has_value() && !description.value().empty()) {
         obj["description"] = QString::fromStdString(description.value());
     }
+    if (!labels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : labels) arr.append(QString::fromStdString(l));
+        obj["labels"] = arr;
+    }
     return obj;
+}
+
+CompressorParameters CompressorParameters::fromJson(const QJsonObject& json) {
+    CompressorParameters p;
+    if (json.contains("channels")) p.channels = json["channels"].toInt();
+    if (json.contains("attack")) p.attack = json["attack"].toDouble();
+    if (json.contains("release")) p.release = json["release"].toDouble();
+    if (json.contains("threshold")) p.threshold = json["threshold"].toDouble();
+    if (json.contains("factor")) p.factor = json["factor"].toDouble();
+    if (json.contains("makeup_gain")) p.makeupGain = json["makeup_gain"].toDouble();
+    if (json.contains("soft_clip")) p.softClip = json["soft_clip"].toBool();
+    if (json.contains("clip_limit")) p.clipLimit = json["clip_limit"].toDouble();
+    return p;
 }
 
 QJsonObject CompressorParameters::toJson() const {
@@ -606,6 +1032,16 @@ QJsonObject CompressorParameters::toJson() const {
     return obj;
 }
 
+NoiseGateParameters NoiseGateParameters::fromJson(const QJsonObject& json) {
+    NoiseGateParameters p;
+    if (json.contains("channels")) p.channels = json["channels"].toInt();
+    if (json.contains("attack")) p.attack = json["attack"].toDouble();
+    if (json.contains("release")) p.release = json["release"].toDouble();
+    if (json.contains("threshold")) p.threshold = json["threshold"].toDouble();
+    if (json.contains("attenuation")) p.attenuation = json["attenuation"].toDouble();
+    return p;
+}
+
 QJsonObject NoiseGateParameters::toJson() const {
     QJsonObject obj;
     obj["channels"] = channels;
@@ -624,6 +1060,18 @@ QJsonObject NoiseGateParameters::toJson() const {
     return obj;
 }
 
+RACEParameters RACEParameters::fromJson(const QJsonObject& json) {
+    RACEParameters p;
+    if (json.contains("channels")) p.channels = json["channels"].toInt();
+    if (json.contains("channel_a")) p.channelA = json["channel_a"].toInt();
+    if (json.contains("channel_b")) p.channelB = json["channel_b"].toInt();
+    if (json.contains("delay")) p.delay = json["delay"].toDouble();
+    if (json.contains("subsample_delay")) p.subsampleDelay = json["subsample_delay"].toBool();
+    if (json.contains("delay_unit")) p.delayUnit = stringToDelayUnit(json["delay_unit"].toString().toStdString());
+    if (json.contains("attenuation")) p.attenuation = json["attenuation"].toDouble();
+    return p;
+}
+
 QJsonObject RACEParameters::toJson() const {
     QJsonObject obj;
     obj["channels"] = channels;
@@ -634,6 +1082,18 @@ QJsonObject RACEParameters::toJson() const {
     if (delayUnit.has_value()) obj["delay_unit"] = QString::fromStdString(delayUnitToString(delayUnit.value()));
     obj["attenuation"] = attenuation;
     return obj;
+}
+
+ProcessorConfig ProcessorConfig::fromJson(const QJsonObject& json) {
+    ProcessorConfig p;
+    p.type = stringToProcessorType(json["type"].toString().toStdString());
+    QJsonObject pObj = json["parameters"].toObject();
+    switch (p.type) {
+    case ProcessorType::Compressor: p.compressorParams = CompressorParameters::fromJson(pObj); break;
+    case ProcessorType::NoiseGate: p.noiseGateParams = NoiseGateParameters::fromJson(pObj); break;
+    case ProcessorType::RACE: p.raceParams = RACEParameters::fromJson(pObj); break;
+    }
+    return p;
 }
 
 QJsonObject ProcessorConfig::toJson() const {
@@ -647,6 +1107,27 @@ QJsonObject ProcessorConfig::toJson() const {
     }
     obj["parameters"] = pObj;
     return obj;
+}
+
+PipelineStep PipelineStep::fromJson(const QJsonObject& json) {
+    PipelineStep step;
+    std::string typeStr = json["type"].toString().toStdString();
+    if (typeStr == "Mixer") step.type = PipelineStepType::Mixer;
+    else if (typeStr == "Processor") step.type = PipelineStepType::Processor;
+    else step.type = PipelineStepType::Filter;
+
+    if (json.contains("channel")) step.channel = json["channel"].toInt();
+    if (json.contains("channels")) {
+        QJsonArray arr = json["channels"].toArray();
+        for (const auto& val : arr) step.channels.push_back(val.toInt());
+    }
+    if (json.contains("name")) step.name = json["name"].toString().toStdString();
+    if (json.contains("names")) {
+        QJsonArray arr = json["names"].toArray();
+        for (const auto& val : arr) step.names.push_back(val.toString().toStdString());
+    }
+    if (json.contains("bypassed")) step.bypassed = json["bypassed"].toBool();
+    return step;
 }
 
 QJsonObject PipelineStep::toJson() const {
@@ -680,6 +1161,45 @@ QJsonObject PipelineStep::toJson() const {
     }
     if (bypassed.has_value()) obj["bypassed"] = bypassed.value();
     return obj;
+}
+
+DSPConfiguration DSPConfiguration::fromJsonObject(const QJsonObject& json) {
+    DSPConfiguration config;
+    if (json.contains("devices")) config.devices = DevicesConfig::fromJson(json["devices"].toObject());
+
+    if (json.contains("filters")) {
+        QJsonObject fObj = json["filters"].toObject();
+        for (auto it = fObj.begin(); it != fObj.end(); ++it) {
+            config.filters[it.key().toStdString()] = FilterConfig::fromJson(it.value().toObject());
+        }
+    }
+
+    if (json.contains("mixers")) {
+        QJsonObject mObj = json["mixers"].toObject();
+        for (auto it = mObj.begin(); it != mObj.end(); ++it) {
+            config.mixers[it.key().toStdString()] = MixerConfig::fromJson(it.value().toObject());
+        }
+    }
+
+    if (json.contains("processors")) {
+        QJsonObject pObj = json["processors"].toObject();
+        for (auto it = pObj.begin(); it != pObj.end(); ++it) {
+            config.processors[it.key().toStdString()] = ProcessorConfig::fromJson(it.value().toObject());
+        }
+    }
+
+    if (json.contains("pipeline")) {
+        QJsonArray pipeArr = json["pipeline"].toArray();
+        for (const auto& val : pipeArr) {
+            config.pipeline.push_back(PipelineStep::fromJson(val.toObject()));
+        }
+    }
+    return config;
+}
+
+DSPConfiguration DSPConfiguration::fromJsonString(const std::string& jsonStr) {
+    QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(jsonStr));
+    return fromJsonObject(doc.object());
 }
 
 QJsonObject DSPConfiguration::toJsonObject() const {
@@ -732,5 +1252,41 @@ void DSPConfiguration::validate() const {
     }
     if (devices.chunksize < 1 || devices.chunksize > 1000000) {
         throw std::runtime_error("Chunk size must be between 1 and 1000000");
+    }
+
+    int currentChannels = 2;
+    if (devices.capture.backend == AudioBackendType::CoreAudio) {
+        currentChannels = devices.capture.coreAudio.channels;
+    } else if (devices.capture.backend == AudioBackendType::RawFile) {
+        currentChannels = devices.capture.rawFile.channels;
+    } else if (devices.capture.backend == AudioBackendType::SignalGenerator) {
+        currentChannels = devices.capture.generator.channels;
+    }
+
+    for (size_t i = 0; i < pipeline.size(); ++i) {
+        const auto& step = pipeline[i];
+        if (step.type == PipelineStepType::Mixer) {
+            std::string name = step.name.value_or("");
+            if (mixers.count(name)) {
+                const auto& mixer = mixers.at(name);
+                if (mixer.channelsIn != currentChannels) {
+                    throw std::runtime_error("Mixer " + name + " input channels mismatch");
+                }
+                currentChannels = mixer.channelsOut;
+            }
+        } else if (step.type == PipelineStepType::Filter) {
+            std::vector<std::string> names = step.names;
+            if (names.empty() && step.name.has_value()) names.push_back(step.name.value());
+            for (const auto& n : names) {
+                if (!filters.count(n)) {
+                    throw std::runtime_error("Pipeline references undefined filter: " + n);
+                }
+            }
+        } else if (step.type == PipelineStepType::Processor) {
+            std::string name = step.name.value_or("");
+            if (!processors.count(name)) {
+                throw std::runtime_error("Pipeline references undefined processor: " + name);
+            }
+        }
     }
 }

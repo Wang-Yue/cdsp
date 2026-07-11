@@ -115,6 +115,82 @@ std::vector<double> FIRDesign::minimumPhase(
     return minPhaseIR;
 }
 
+std::vector<double> FIRDesign::linearPhaseFromMagDB(
+    const std::vector<double>& magDB,
+    int sampleRate,
+    const FIRDesignOptions& options
+) {
+    int nFft = options.fftSize;
+    size_t bins = nFft / 2 + 1;
+
+    std::vector<double> hRe(bins), hIm(bins);
+    double preampLin = std::pow(10.0, options.preampDB / 20.0);
+
+    for (size_t k = 0; k < bins; ++k) {
+        double mag = std::pow(10.0, magDB[k] / 20.0) * preampLin;
+        double phase = -M_PI * static_cast<double>(k);
+        hRe[k] = mag * std::cos(phase);
+        hIm[k] = mag * std::sin(phase);
+    }
+
+    std::vector<double> rawIR;
+    MeasurementFFT::inverse(hRe, hIm, rawIR);
+
+    for (size_t i = 0; i < static_cast<size_t>(nFft); ++i) {
+        double w = 0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(nFft)));
+        rawIR[i] *= w;
+    }
+
+    rawIR.resize(options.outputLength);
+    return rawIR;
+}
+
+std::vector<double> FIRDesign::minimumPhaseFromMagDB(
+    const std::vector<double>& magDB,
+    int sampleRate,
+    const FIRDesignOptions& options
+) {
+    int nFft = options.fftSize;
+    size_t bins = nFft / 2 + 1;
+
+    double preampLin = std::pow(10.0, options.preampDB / 20.0);
+
+    std::vector<double> logMag(bins);
+    for (size_t k = 0; k < bins; ++k) {
+        double mag = std::pow(10.0, magDB[k] / 20.0) * preampLin;
+        logMag[k] = std::log(std::max(1e-12, mag));
+    }
+
+    std::vector<double> inImag(bins, 0.0);
+    std::vector<double> cepstrum;
+    MeasurementFFT::inverse(logMag, inImag, cepstrum);
+
+    size_t n = cepstrum.size();
+    std::vector<double> mpCepstrum(n, 0.0);
+    mpCepstrum[0] = cepstrum[0];
+    mpCepstrum[n / 2] = cepstrum[n / 2];
+
+    for (size_t i = 1; i < n / 2; ++i) {
+        mpCepstrum[i] = 2.0 * cepstrum[i];
+    }
+
+    std::vector<double> cReal, cImag;
+    MeasurementFFT::forward(mpCepstrum, cReal, cImag);
+
+    std::vector<double> hReal(bins), hImag(bins);
+    for (size_t k = 0; k < bins; ++k) {
+        double magExp = std::exp(cReal[k]);
+        hReal[k] = magExp * std::cos(cImag[k]);
+        hImag[k] = magExp * std::sin(cImag[k]);
+    }
+
+    std::vector<double> minPhaseIR;
+    MeasurementFFT::inverse(hReal, hImag, minPhaseIR);
+
+    minPhaseIR.resize(options.outputLength);
+    return minPhaseIR;
+}
+
 std::vector<double> FIRDesign::fromMeasurement(
     const FrequencyResponse& measured,
     const TargetCurve& target,
@@ -126,7 +202,6 @@ std::vector<double> FIRDesign::fromMeasurement(
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
 
     std::vector<double> targetMagDB(bins);
-    double preampLin = std::pow(10.0, options.preampDB / 20.0);
 
     for (size_t k = 0; k < bins; ++k) {
         double f = static_cast<double>(k) * binHz;
@@ -144,20 +219,19 @@ std::vector<double> FIRDesign::fromMeasurement(
         targetMagDB[k] = invDB;
     }
 
-    std::vector<BiquadParameters> dummyBands;
     FIRDesignOptions opt;
     opt.fftSize = options.fftSize;
     opt.outputLength = options.fftSize;
     opt.preampDB = options.preampDB;
 
     if (options.phaseBlend <= 0.05) {
-        return minimumPhase(dummyBands, sampleRate, opt);
+        return minimumPhaseFromMagDB(targetMagDB, sampleRate, opt);
     } else if (options.phaseBlend >= 0.95) {
-        return linearPhase(dummyBands, sampleRate, opt);
+        return linearPhaseFromMagDB(targetMagDB, sampleRate, opt);
     }
 
-    auto minP = minimumPhase(dummyBands, sampleRate, opt);
-    auto linP = linearPhase(dummyBands, sampleRate, opt);
+    auto minP = minimumPhaseFromMagDB(targetMagDB, sampleRate, opt);
+    auto linP = linearPhaseFromMagDB(targetMagDB, sampleRate, opt);
 
     std::vector<double> blended(nFft);
     double b = options.phaseBlend;

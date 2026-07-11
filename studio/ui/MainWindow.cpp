@@ -17,7 +17,9 @@
 #include "ui/SpectrogramView.h"
 #include "ui/VectorScopeView.h"
 #include "ui/AnalogVUMeterView.h"
+#include "ui/VisualizerDetailViews.h"
 
+#include <QApplication>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -44,25 +46,33 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
 
-    setStyleSheet(StyleTheme::lightStylesheet());
     resize(1280, 800);
     setWindowTitle("CamillaDSP Monitor - Qt Edition");
 
     setupUi();
+    setupStatusBar();
+    setupTrayIcon();
+    setupShortcuts();
+    updateTheme();
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
+    connect(m_settings.get(), &AudioSettings::settingsChanged, this, &MainWindow::updateTheme);
 
     m_monitoring->start();
+}
+
+void MainWindow::updateTheme() {
+    setStyleSheet(m_settings->darkMode ? StyleTheme::darkStylesheet() : StyleTheme::lightStylesheet());
 }
 
 void MainWindow::setupUi() {
     setupToolbar();
 
-    auto splitter = new QSplitter(Qt::Horizontal, this);
-    setCentralWidget(splitter);
+    m_splitter = new QSplitter(Qt::Horizontal, this);
+    setCentralWidget(m_splitter);
 
-    m_sidebarTree = new QTreeWidget(splitter);
+    m_sidebarTree = new QTreeWidget(m_splitter);
     m_sidebarTree->setHeaderHidden(true);
     m_sidebarTree->setMinimumWidth(240);
     m_sidebarTree->setMaximumWidth(320);
@@ -100,13 +110,106 @@ void MainWindow::setupUi() {
         }
     });
 
-    m_centralStack = new QStackedWidget(splitter);
+    m_centralStack = new QStackedWidget(m_splitter);
 
-    splitter->addWidget(m_sidebarTree);
-    splitter->addWidget(m_centralStack);
-    splitter->setSizes({260, 1020});
+    m_splitter->addWidget(m_sidebarTree);
+    m_splitter->addWidget(m_centralStack);
+    m_splitter->setSizes({260, 1020});
 
     setupSidebar();
+}
+
+void MainWindow::setupStatusBar() {
+    auto bar = statusBar();
+    m_statusStateLabel = new QLabel("State: Inactive", this);
+    m_statusBufferLabel = new QLabel("Buffer: 1024", this);
+    m_statusActivePresetLabel = new QLabel("Preset: Default", this);
+    m_statusMuteLabel = new QLabel("Unmuted", this);
+
+    m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusActivePresetLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
+
+    bar->addWidget(m_statusStateLabel);
+    bar->addWidget(m_statusBufferLabel);
+    bar->addWidget(m_statusActivePresetLabel);
+    bar->addPermanentWidget(m_statusMuteLabel);
+}
+
+void MainWindow::setupTrayIcon() {
+    m_trayIcon = new QSystemTrayIcon(this);
+    m_trayIcon->setIcon(QIcon::fromTheme("audio-card", QIcon(":/icons/app.png")));
+
+    m_trayMenu = new QMenu(this);
+
+    auto showAct = m_trayMenu->addAction("Show Main Window");
+    connect(showAct, &QAction::triggered, this, &MainWindow::showNormal);
+
+    auto miniPlayerAct = m_trayMenu->addAction("Toggle MiniPlayer");
+    connect(miniPlayerAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
+
+    m_trayMenu->addSeparator();
+
+    auto muteAct = m_trayMenu->addAction("Toggle Mute");
+    connect(muteAct, &QAction::triggered, this, &MainWindow::toggleMute);
+
+    m_trayMenu->addSeparator();
+
+    auto quitAct = m_trayMenu->addAction("Quit CamillaDSP Monitor");
+    connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
+
+    m_trayIcon->setContextMenu(m_trayMenu);
+    m_trayIcon->show();
+}
+
+void MainWindow::setupShortcuts() {
+    auto actDash = new QAction(this);
+    actDash->setShortcut(QKeySequence("Ctrl+1"));
+    connect(actDash, &QAction::triggered, [this]() { handleNavigationTag("dashboard"); });
+    addAction(actDash);
+
+    auto actDev = new QAction(this);
+    actDev->setShortcut(QKeySequence("Ctrl+2"));
+    connect(actDev, &QAction::triggered, [this]() { handleNavigationTag("devices"); });
+    addAction(actDev);
+
+    auto actLevels = new QAction(this);
+    actLevels->setShortcut(QKeySequence("Ctrl+3"));
+    connect(actLevels, &QAction::triggered, [this]() { handleNavigationTag("levels"); });
+    addAction(actLevels);
+
+    auto actSpec = new QAction(this);
+    actSpec->setShortcut(QKeySequence("Ctrl+4"));
+    connect(actSpec, &QAction::triggered, [this]() { handleNavigationTag("spectrum"); });
+    addAction(actSpec);
+
+    auto actSettings = new QAction(this);
+    actSettings->setShortcut(QKeySequence("Ctrl+5"));
+    connect(actSettings, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
+    addAction(actSettings);
+
+    auto actMini = new QAction(this);
+    actMini->setShortcut(QKeySequence("Ctrl+M"));
+    connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
+    addAction(actMini);
+
+    auto actMute = new QAction(this);
+    actMute->setShortcut(QKeySequence("Space"));
+    connect(actMute, &QAction::triggered, this, &MainWindow::toggleMute);
+    addAction(actMute);
+}
+
+void MainWindow::toggleMute() {
+    bool currentMute = m_settings->getMuted(Fader::Main);
+    m_dspController->setFaderMute(Fader::Main, !currentMute);
+    if (!currentMute) {
+        m_statusMuteLabel->setText("MUTED");
+        m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
+    } else {
+        m_statusMuteLabel->setText("Unmuted");
+        m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
+    }
 }
 
 void MainWindow::setupToolbar() {
@@ -325,20 +428,13 @@ void MainWindow::handleNavigationTag(const QString& tag) {
         });
         showCentralWidget(container);
     } else if (tag == "spectrum") {
-        showCentralWidget(new SpectrumView(m_spectrumEngine, this));
+        showCentralWidget(new SpectrumDetailView(m_spectrumEngine, m_devices, this));
     } else if (tag == "spectroscope") {
-        showCentralWidget(new SpectrogramView(m_spectrogramEngine, this));
+        showCentralWidget(new SpectrogramDetailView(m_spectrogramEngine, m_devices, this));
     } else if (tag == "vectorscope") {
-        showCentralWidget(new VectorScopeView(m_vectorScopeEngine, this));
+        showCentralWidget(new VectorScopeDetailView(m_vectorScopeEngine, this));
     } else if (tag == "analogVU") {
-        auto view = new AnalogVUMeterView(this);
-        connect(m_monitoring.get(), &MonitoringController::levelsUpdated, view, [this, view]() {
-            const auto& st = m_monitoring->levelState;
-            float l = !st.playbackRms.empty() ? st.playbackRms[0] : -60.0f;
-            float r = st.playbackRms.size() > 1 ? st.playbackRms[1] : l;
-            view->setLevelDB(l, r);
-        });
-        showCentralWidget(view);
+        showCentralWidget(new AnalogVUDetailView(m_monitoring, this));
     } else if (tag == "resampler") {
         showCentralWidget(new ResamplerDetailView(m_settings, this));
     } else if (tag == "general_settings") {

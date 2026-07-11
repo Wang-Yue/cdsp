@@ -28,11 +28,9 @@ void GeneralSettingsView::setupUi() {
     m_themeCombo->addItem("macOS Light Theme (Default)", 0);
     m_themeCombo->addItem("Dark Theme", 1);
     connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (idx == 0) {
-            qApp->setStyleSheet(StyleTheme::lightStylesheet());
-        } else {
-            qApp->setStyleSheet(StyleTheme::darkStylesheet());
-        }
+        m_settings->darkMode = (idx == 1);
+        m_settings->savePreferences();
+        qApp->setStyleSheet(m_settings->darkMode ? StyleTheme::darkStylesheet() : StyleTheme::lightStylesheet());
     });
     themeForm->addRow("UI Theme:", m_themeCombo);
     mainLayout->addWidget(themeGroup);

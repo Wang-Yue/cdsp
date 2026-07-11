@@ -36,6 +36,10 @@ public:
     std::string name;
     StageType type;
     bool isEnabled = true;
+    std::vector<int> channels;
+    std::vector<int> monitorChannels;
+    int leftChannel = 0;
+    int rightChannel = 1;
 
     // Stage-specific parameters
     double balanceOffset = 0.0; // [-1.0, 1.0]

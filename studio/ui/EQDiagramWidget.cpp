@@ -54,6 +54,40 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     // Background
     painter.fillRect(rect(), StyleTheme::cardBg());
 
+    // 1. Live Spectrum Analyzer Background Overlay
+    if (m_showAnalyzer && m_spectrum && !m_spectrum->data.magnitudes.empty()) {
+        const auto& specBands = m_spectrum->data.magnitudes;
+        const auto& specFreqs = m_spectrum->data.frequencies;
+        if (!specBands.empty() && specBands.size() == specFreqs.size()) {
+            QPainterPath fillPath, strokePath;
+            fillPath.moveTo(0, h);
+
+            for (size_t i = 0; i < specBands.size(); ++i) {
+                double f = specFreqs[i];
+                double db = std::max(-24.0, std::min(24.0, static_cast<double>(specBands[i])));
+                double x = freqToX(f, w);
+                double y = dbToY(db, h);
+
+                if (i == 0) {
+                    fillPath.lineTo(x, y);
+                    strokePath.moveTo(x, y);
+                } else {
+                    fillPath.lineTo(x, y);
+                    strokePath.lineTo(x, y);
+                }
+            }
+            fillPath.lineTo(w, h);
+            fillPath.closeSubpath();
+
+            QLinearGradient grad(0, 0, 0, h);
+            grad.setColorAt(0.0, QColor(0, 122, 255, 30));
+            grad.setColorAt(1.0, QColor(0, 122, 255, 2));
+            painter.fillPath(fillPath, grad);
+            painter.setPen(QPen(QColor(0, 122, 255, 90), 1.2));
+            painter.drawPath(strokePath);
+        }
+    }
+
     // Grid Lines
     painter.setPen(QPen(QColor("#d1d1d6"), 0.5, Qt::DashLine));
     for (double db = -18.0; db <= 18.0; db += 6.0) {
@@ -72,6 +106,22 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     painter.setPen(QPen(QColor("#8e8e93"), 1.0));
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
+
+    // Equal-Loudness Contour Curve Overlay
+    if (m_showLoudnessContour) {
+        QPainterPath loudnessPath;
+        for (int x = 0; x <= w; x += 2) {
+            double f = xToFreq(x, w);
+            double bassBoost = 6.0 * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
+            double trebleBoost = 4.0 * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
+            double db = std::max(-24.0, std::min(24.0, bassBoost + trebleBoost));
+            double y = dbToY(db, h);
+            if (x == 0) loudnessPath.moveTo(x, y);
+            else loudnessPath.lineTo(x, y);
+        }
+        painter.setPen(QPen(QColor("#ff9500"), 1.5, Qt::DashLine));
+        painter.drawPath(loudnessPath);
+    }
 
     // Individual Band Curves
     const QColor colors[] = { QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"), QColor("#34c759"), QColor("#007aff"), QColor("#af52de") };
