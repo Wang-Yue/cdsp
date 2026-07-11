@@ -3614,7 +3614,6 @@ static void* server_thread_func(void* arg) {
             }
           }
         }
-        free_vu_levels_arrays(&vu);
       }
 
       for (int i = 0; i < num_clients; i++) {
@@ -3860,10 +3859,7 @@ static void* server_thread_func(void* arg) {
         }
       }
 
-      if (current_cap_peak) free(current_cap_peak);
-      if (current_cap_rms) free(current_cap_rms);
-      if (current_pb_peak) free(current_pb_peak);
-      if (current_pb_rms) free(current_pb_rms);
+      free_vu_levels_arrays(&vu);
     }
     pthread_mutex_unlock(&server->sessions_mutex);
 
