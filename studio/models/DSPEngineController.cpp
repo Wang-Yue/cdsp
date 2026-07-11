@@ -25,23 +25,61 @@ DSPEngineController::DSPEngineController(
 DSPConfiguration DSPEngineController::buildConfiguration() const {
     DSPConfiguration config;
 
-    int sampleRate = m_devices->captureConfig.sampleRate;
+    int captureRate = m_devices->captureConfig.sampleRate;
+    int playbackRate = m_devices->playbackConfig.sampleRate;
     int channelCount = m_devices->captureConfig.channels;
 
-    config.devices.samplerate = sampleRate;
+    config.devices.samplerate = playbackRate;
     config.devices.chunksize = m_settings->chunkSize;
-    config.devices.enableRateAdjust = m_settings->enableRateAdjust;
+    if (m_settings->enableRateAdjust) {
+        config.devices.enableRateAdjust = true;
+    }
+
+    if (m_settings->queuelimit > 0) config.devices.queuelimit = m_settings->queuelimit;
+    if (m_settings->stopOnRateChange) config.devices.stopOnRateChange = m_settings->stopOnRateChange;
+    if (m_settings->rateMeasureInterval > 0) config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;
+    if (m_settings->multithreaded) config.devices.multithreaded = m_settings->multithreaded;
+    if (m_settings->multithreaded && m_settings->workerThreads > 0) config.devices.workerThreads = m_settings->workerThreads;
+    if (m_settings->silenceTimeout > 0) {
+        config.devices.silenceThreshold = static_cast<double>(m_settings->silenceThreshold);
+        config.devices.silenceTimeout = static_cast<double>(m_settings->silenceTimeout);
+    }
 
     if (m_settings->resamplerEnabled) {
+        config.devices.captureSamplerate = captureRate;
         ResamplerConfig resCfg;
         resCfg.type = m_settings->resamplerType;
-        if (m_settings->resamplerUseProfile) {
-            resCfg.profile = resamplerProfileToString(m_settings->resamplerProfile);
-        } else {
-            resCfg.sincLen = m_settings->resamplerSincLen;
-            resCfg.oversamplingFactor = m_settings->resamplerOversamplingFactor;
-            resCfg.window = m_settings->resamplerWindow;
-            resCfg.fCutoff = m_settings->resamplerFCutoff;
+        switch (m_settings->resamplerType) {
+        case ResamplerType::AsyncSinc:
+            if (m_settings->resamplerUseProfile) {
+                resCfg.profile = resamplerProfileToString(m_settings->resamplerProfile);
+            } else {
+                resCfg.sincLen = m_settings->resamplerSincLen;
+                resCfg.oversamplingFactor = m_settings->resamplerOversamplingFactor;
+                resCfg.window = m_settings->resamplerWindow;
+                resCfg.fCutoff = m_settings->resamplerFCutoff;
+                switch (m_settings->resamplerSincInterpolation) {
+                case SincInterpolation::Nearest: resCfg.interpolation = "Nearest"; break;
+                case SincInterpolation::Linear: resCfg.interpolation = "Linear"; break;
+                case SincInterpolation::Quadratic: resCfg.interpolation = "Quadratic"; break;
+                case SincInterpolation::Cubic: resCfg.interpolation = "Cubic"; break;
+                }
+            }
+            break;
+        case ResamplerType::AsyncPoly:
+            switch (m_settings->resamplerInterpolation) {
+            case ResamplerInterpolation::Linear: resCfg.interpolation = "Linear"; break;
+            case ResamplerInterpolation::Cubic: resCfg.interpolation = "Cubic"; break;
+            case ResamplerInterpolation::Quintic: resCfg.interpolation = "Quintic"; break;
+            case ResamplerInterpolation::Septic: resCfg.interpolation = "Septic"; break;
+            }
+            break;
+        case ResamplerType::Synchronous:
+            break;
+        case ResamplerType::Apple:
+            resCfg.appleQuality = m_settings->resamplerAppleQuality;
+            resCfg.appleComplexity = m_settings->resamplerAppleComplexity;
+            break;
         }
         config.devices.resampler = resCfg;
     }
@@ -49,7 +87,7 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     config.devices.capture = m_devices->captureConfig.toCaptureDeviceConfig();
     config.devices.playback = m_devices->playbackConfig.toPlaybackDeviceConfig();
 
-    auto buildRes = m_pipeline->buildPipeline(sampleRate, channelCount);
+    auto buildRes = m_pipeline->buildPipeline(captureRate, channelCount);
     config.filters = buildRes.filters;
     config.mixers = buildRes.mixers;
     config.processors = buildRes.processors;
