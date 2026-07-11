@@ -191,6 +191,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
   CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  audio_device_descriptor_t* desc = NULL;
 
   CLSID clsid;
   if (!find_asio_driver_caps_clsid(device_name, &clsid)) {
@@ -248,7 +249,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     goto error_cleanup;
   }
 
-  audio_device_descriptor_t* desc =
+  desc =
       (audio_device_descriptor_t*)calloc(1, sizeof(audio_device_descriptor_t));
   if (!desc) {
     if (err) {
