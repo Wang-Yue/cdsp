@@ -9,7 +9,14 @@
 
 std::vector<double> SweepGenerator::generate(double f1, double f2, double durationSeconds, int sampleRate,
                                              double fadeInSeconds, double fadeOutSeconds) {
+    if (f1 <= 0.0 || f2 <= f1 || durationSeconds <= 0.0 || sampleRate <= 0 ||
+        f2 > static_cast<double>(sampleRate) / 2.0) {
+        return {};
+    }
     size_t n = static_cast<size_t>(std::round(durationSeconds * static_cast<double>(sampleRate)));
+    if (n == 0)
+        return {};
+
     double actualT = static_cast<double>(n) / static_cast<double>(sampleRate);
     double r = std::log(f2 / f1) / actualT;
     double k = 2.0 * M_PI * f1 / r;
@@ -22,8 +29,8 @@ std::vector<double> SweepGenerator::generate(double f1, double f2, double durati
         sweep[i] = std::sin(k * (std::exp(r * t) - 1.0));
     }
 
-    size_t inSamples = static_cast<size_t>(fadeInSeconds * static_cast<double>(sampleRate));
-    size_t outSamples = static_cast<size_t>(fadeOutSeconds * static_cast<double>(sampleRate));
+    size_t inSamples = static_cast<size_t>(std::max(0.0, fadeInSeconds) * static_cast<double>(sampleRate));
+    size_t outSamples = static_cast<size_t>(std::max(0.0, fadeOutSeconds) * static_cast<double>(sampleRate));
     applyTapers(sweep, inSamples, outSamples);
 
     return sweep;
@@ -32,6 +39,8 @@ std::vector<double> SweepGenerator::generate(double f1, double f2, double durati
 std::vector<double> SweepGenerator::inverseFilter(double f1, double f2, double durationSeconds, int sampleRate) {
     std::vector<double> sweep = generate(f1, f2, durationSeconds, sampleRate, 0.0, 0.0);
     size_t n = sweep.size();
+    if (n == 0)
+        return {};
     double actualT = static_cast<double>(n) / static_cast<double>(sampleRate);
     double r = std::log(f2 / f1) / actualT;
     double invFs = 1.0 / static_cast<double>(sampleRate);

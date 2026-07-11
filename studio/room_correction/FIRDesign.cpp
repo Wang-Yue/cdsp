@@ -180,6 +180,8 @@ std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& 
 
 std::vector<double> FIRDesign::fromMeasurement(const FrequencyResponse& measured, const TargetCurve& target,
                                                int sampleRate, const FIRDesignMeasurementOptions& options) {
+    if (measured.bins() == 0)
+        return {};
     int n = options.fftSize;
     size_t bins = n / 2 + 1;
 

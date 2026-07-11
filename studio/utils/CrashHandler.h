@@ -133,14 +133,12 @@ inline void signalHandler(int sig) {
     crashLog.flush();
     crashLog.close();
 #else
-    std::ofstream crashLog("crash_log.txt", std::ios::out | std::ios::app);
-    crashLog << "========================================" << std::endl;
-    crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
-    crashLog << "========================================" << std::endl;
-    crashLog.flush();
-    crashLog.close();
+#include <unistd.h>
+    const char msg[] = "\n========================================\nFATAL SIGNAL RECEIVED IN "
+                       "MONITORQT!\n========================================\n";
+    (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    ::_exit(sig);
 #endif
-    std::exit(sig);
 }
 
 inline void customTerminateHandler() {

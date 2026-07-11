@@ -161,6 +161,13 @@ void StageDetailView::applyConfig() {
     m_dspController->applyConfig();
 }
 
+PipelineStage* StageDetailView::currentStage() const {
+    if (m_pipeline && m_stageIndex < m_pipeline->stages.size()) {
+        return &m_pipeline->stages[m_stageIndex];
+    }
+    return nullptr;
+}
+
 void StageDetailView::refreshUi() {
     m_isBuildingUi = true;
     if (m_stageIndex < m_pipeline->stages.size()) {

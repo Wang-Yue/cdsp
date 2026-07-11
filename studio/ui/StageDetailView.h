@@ -65,6 +65,7 @@ private:
 
     void setupUi();
     void buildStageOptionsUi();
+    PipelineStage* currentStage() const;
 };
 
 #endif // STAGE_DETAIL_VIEW_H

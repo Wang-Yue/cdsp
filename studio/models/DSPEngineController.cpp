@@ -125,6 +125,7 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
 
 void DSPEngineController::startEngine() {
     m_userStopped = false;
+    m_reconnectFailed = false;
     status = ProcessingState::Starting;
     emit statusChanged(status);
 
@@ -208,9 +209,10 @@ void DSPEngineController::toggleFaderMute(Fader fader) {
 }
 
 void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
-    if (m_userStopped || m_reconnectTimer.isActive())
+    if (m_userStopped || m_reconnectFailed || m_reconnectTimer.isActive())
         return;
     if (m_retryCount >= m_maxRetries) {
+        m_reconnectFailed = true;
         LogManager::instance()->appendLog(
             LogLevel::Error,
             QString("Engine auto-restart exceeded maximum retry count (%1 attempts). Giving up.").arg(m_maxRetries));

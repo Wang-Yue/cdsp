@@ -74,6 +74,8 @@ std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& p
 
         file.seekg(w.dataOffset);
 
+        if (w.bitsPerSample < 8)
+            return coeffs;
         int chs = std::max(1, w.channels);
         int selCh = std::min(chs - 1, std::max(0, targetChannel));
         size_t totalSamples = w.dataSize / (w.bitsPerSample / 8);

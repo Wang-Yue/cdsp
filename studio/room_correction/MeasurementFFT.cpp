@@ -101,6 +101,10 @@ void MeasurementFFT::forward(const std::vector<double>& realInput, std::vector<d
 
 void MeasurementFFT::inverse(const std::vector<double>& inReal, const std::vector<double>& inImag,
                              std::vector<double>& outReal) {
+    if (inReal.empty() || inImag.size() < inReal.size()) {
+        outReal.clear();
+        return;
+    }
     size_t bins = inReal.size();
     size_t n = (bins - 1) * 2;
 

@@ -147,7 +147,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
     }
 
-    size_t count = m_data.frequencies.size();
+    size_t count = std::min(m_data.frequencies.size(), m_data.magnitudes.size());
     float spacing = 2.0f;
 
     // 3. Dynamic gradient audio level bars (green -> yellow -> orange -> red)

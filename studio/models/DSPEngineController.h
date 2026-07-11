@@ -54,6 +54,7 @@ private:
     int m_retryCount = 0;
     const int m_maxRetries = 5;
     bool m_userStopped = true;
+    bool m_reconnectFailed = false;
     QDateTime m_lastStartTime;
 
     void scheduleAutoRestart(int delayMs);

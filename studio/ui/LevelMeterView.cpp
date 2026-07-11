@@ -258,6 +258,8 @@ void CompactLevelMeterBar::updateState() {
 
 void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
+    if (!m_monitoring)
+        return;
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 

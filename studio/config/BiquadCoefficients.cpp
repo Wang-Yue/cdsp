@@ -309,7 +309,10 @@ double BiquadCoefficients::gainDB(double f, int sampleRate) const {
     double numMagSq = numRe * numRe + numIm * numIm;
     double denMagSq = denRe * denRe + denIm * denIm;
 
-    return (denMagSq > 0.0) ? 10.0 * std::log10(numMagSq / denMagSq) : 0.0;
+    if (denMagSq <= 0.0)
+        return 0.0;
+    double ratio = std::max(1e-12, numMagSq / denMagSq);
+    return 10.0 * std::log10(ratio);
 }
 
 double BiquadCoefficients::phaseRad(double f, int sampleRate) const {

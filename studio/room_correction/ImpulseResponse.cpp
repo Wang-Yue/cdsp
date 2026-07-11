@@ -124,9 +124,11 @@ RT60Result ImpulseResponse::estimateRT60() const {
         if (dt <= 0.0)
             return 0.0;
 
-        double dbDiff = endDB - startDB;
-        double slope = dbDiff / dt;
-        return (slope < 0.0) ? (-60.0 / slope) : 0.0;
+        double dDb = decay[idxStart] - decay[idxEnd];
+        if (dDb <= 0.0)
+            return 0.0;
+
+        return dt * (60.0 / dDb);
     };
 
     res.edt = fitSlope(0.0, -10.0);

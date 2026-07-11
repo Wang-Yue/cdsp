@@ -1478,6 +1478,40 @@ BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
         p.order = json["order"].toInt();
     if (json.contains("gain"))
         p.gain = json["gain"].toDouble();
+    if (json.contains("fls"))
+        p.fls = json["fls"].toDouble();
+    if (json.contains("qls"))
+        p.qls = json["qls"].toDouble();
+    if (json.contains("gls"))
+        p.gls = json["gls"].toDouble();
+    if (json.contains("fp1"))
+        p.fp1 = json["fp1"].toDouble();
+    if (json.contains("qp1"))
+        p.qp1 = json["qp1"].toDouble();
+    if (json.contains("gp1"))
+        p.gp1 = json["gp1"].toDouble();
+    if (json.contains("fp2"))
+        p.fp2 = json["fp2"].toDouble();
+    if (json.contains("qp2"))
+        p.qp2 = json["qp2"].toDouble();
+    if (json.contains("gp2"))
+        p.gp2 = json["gp2"].toDouble();
+    if (json.contains("fp3"))
+        p.fp3 = json["fp3"].toDouble();
+    if (json.contains("qp3"))
+        p.qp3 = json["qp3"].toDouble();
+    if (json.contains("gp3"))
+        p.gp3 = json["gp3"].toDouble();
+    if (json.contains("fhs"))
+        p.fhs = json["fhs"].toDouble();
+    if (json.contains("qhs"))
+        p.qhs = json["qhs"].toDouble();
+    if (json.contains("ghs"))
+        p.ghs = json["ghs"].toDouble();
+    if (json.contains("freq_min"))
+        p.freqMin = json["freq_min"].toDouble();
+    if (json.contains("freq_max"))
+        p.freqMax = json["freq_max"].toDouble();
     if (json.contains("gains")) {
         QJsonArray arr = json["gains"].toArray();
         for (const auto& v : arr)
@@ -1929,6 +1963,16 @@ CompressorParameters CompressorParameters::fromJson(const QJsonObject& json) {
     CompressorParameters p;
     if (json.contains("channels"))
         p.channels = json["channels"].toInt();
+    if (json.contains("monitor_channels")) {
+        QJsonArray arr = json["monitor_channels"].toArray();
+        for (const auto& val : arr)
+            p.monitorChannels.push_back(val.toInt());
+    }
+    if (json.contains("process_channels")) {
+        QJsonArray arr = json["process_channels"].toArray();
+        for (const auto& val : arr)
+            p.processChannels.push_back(val.toInt());
+    }
     if (json.contains("attack"))
         p.attack = json["attack"].toDouble();
     if (json.contains("release"))
@@ -1978,6 +2022,16 @@ NoiseGateParameters NoiseGateParameters::fromJson(const QJsonObject& json) {
     NoiseGateParameters p;
     if (json.contains("channels"))
         p.channels = json["channels"].toInt();
+    if (json.contains("monitor_channels")) {
+        QJsonArray arr = json["monitor_channels"].toArray();
+        for (const auto& val : arr)
+            p.monitorChannels.push_back(val.toInt());
+    }
+    if (json.contains("process_channels")) {
+        QJsonArray arr = json["process_channels"].toArray();
+        for (const auto& val : arr)
+            p.processChannels.push_back(val.toInt());
+    }
     if (json.contains("attack"))
         p.attack = json["attack"].toDouble();
     if (json.contains("release"))
@@ -2141,7 +2195,9 @@ QJsonObject PipelineStep::toJson() const {
         } else if (name.has_value()) {
             arr.append(QString::fromStdString(name.value()));
         }
-        obj["names"] = arr;
+        if (!arr.isEmpty()) {
+            obj["names"] = arr;
+        }
     } else {
         if (name.has_value())
             obj["name"] = QString::fromStdString(name.value());
