@@ -261,7 +261,7 @@ void ResamplerDetailView::updateVisibility() {
 void ResamplerDetailView::refreshUi() {
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
     if (m_typeGroup)
-        m_typeGroup->setEnabled(m_settings->resamplerEnabled);
+        m_typeGroup->setEnabled(true);
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
