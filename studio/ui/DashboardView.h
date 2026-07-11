@@ -1,34 +1,31 @@
 #ifndef DASHBOARD_VIEW_H
 #define DASHBOARD_VIEW_H
 
-#include "models/MonitoringController.h"
 #include "models/DSPEngineController.h"
-#include "models/SpectrumEngine.h"
+#include "models/MonitoringController.h"
 #include "models/SpectrogramEngine.h"
+#include "models/SpectrumEngine.h"
 #include "models/VectorScopeEngine.h"
-#include "ui/LevelMeterView.h"
-#include "ui/SpectrumView.h"
-#include "ui/SpectrogramView.h"
-#include "ui/VectorScopeView.h"
 #include "ui/AnalogVUMeterView.h"
-#include <QWidget>
-#include <QSlider>
-#include <QPushButton>
+#include "ui/LevelMeterView.h"
+#include "ui/SpectrogramView.h"
+#include "ui/SpectrumView.h"
+#include "ui/VectorScopeView.h"
+
 #include <QGroupBox>
+#include <QPushButton>
+#include <QSlider>
+#include <QWidget>
 #include <vector>
 
 class DashboardView : public QWidget {
     Q_OBJECT
 
 public:
-    DashboardView(
-        std::shared_ptr<MonitoringController> monitoring,
-        std::shared_ptr<DSPEngineController> dspController,
-        std::shared_ptr<SpectrumEngine> spectrumEngine = nullptr,
-        std::shared_ptr<SpectrogramEngine> spectrogramEngine = nullptr,
-        std::shared_ptr<VectorScopeEngine> vectorScopeEngine = nullptr,
-        QWidget* parent = nullptr
-    );
+    DashboardView(std::shared_ptr<MonitoringController> monitoring, std::shared_ptr<DSPEngineController> dspController,
+                  std::shared_ptr<SpectrumEngine> spectrumEngine = nullptr,
+                  std::shared_ptr<SpectrogramEngine> spectrogramEngine = nullptr,
+                  std::shared_ptr<VectorScopeEngine> vectorScopeEngine = nullptr, QWidget* parent = nullptr);
 
 private slots:
     void refreshMeters();

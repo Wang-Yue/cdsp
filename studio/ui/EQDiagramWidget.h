@@ -2,15 +2,15 @@
 #define EQ_DIAGRAM_WIDGET_H
 
 #include "models/EQPreset.h"
-#include <QWidget>
-#include <QPainter>
-#include <QMouseEvent>
-#include <QWheelEvent>
-#include <functional>
-
-#include "models/SpectrumEngine.h"
 #include "models/PipelineStore.h"
+#include "models/SpectrumEngine.h"
+
 #include <QCheckBox>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QWheelEvent>
+#include <QWidget>
+#include <functional>
 
 class EQDiagramWidget : public QWidget {
     Q_OBJECT
@@ -21,9 +21,18 @@ public:
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
-    void setPipelineStore(std::shared_ptr<PipelineStore> store) { m_pipelineStore = store; update(); }
-    void setShowAnalyzer(bool show) { m_showAnalyzer = show; update(); }
-    void setShowLoudnessContour(bool show) { m_showLoudnessContour = show; update(); }
+    void setPipelineStore(std::shared_ptr<PipelineStore> store) {
+        m_pipelineStore = store;
+        update();
+    }
+    void setShowAnalyzer(bool show) {
+        m_showAnalyzer = show;
+        update();
+    }
+    void setShowLoudnessContour(bool show) {
+        m_showLoudnessContour = show;
+        update();
+    }
 
     static QColor bandColor(int index);
 

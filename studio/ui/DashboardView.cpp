@@ -1,41 +1,41 @@
 #include "ui/DashboardView.h"
-#include "ui/StyleTheme.h"
+
 #include "models/PipelineStage.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QScrollArea>
-#include <QPushButton>
-#include <QSlider>
+#include "ui/StyleTheme.h"
+
 #include <QFont>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSlider>
+#include <QVBoxLayout>
 #include <cmath>
 
-DashboardView::DashboardView(
-    std::shared_ptr<MonitoringController> monitoring,
-    std::shared_ptr<DSPEngineController> dspController,
-    std::shared_ptr<SpectrumEngine> spectrumEngine,
-    std::shared_ptr<SpectrogramEngine> spectrogramEngine,
-    std::shared_ptr<VectorScopeEngine> vectorScopeEngine,
-    QWidget* parent
-) : QWidget(parent),
-    m_monitoring(monitoring),
-    m_dspController(dspController),
-    m_spectrumEngine(spectrumEngine),
-    m_spectrogramEngine(spectrogramEngine),
-    m_vectorScopeEngine(vectorScopeEngine) {
+DashboardView::DashboardView(std::shared_ptr<MonitoringController> monitoring,
+                             std::shared_ptr<DSPEngineController> dspController,
+                             std::shared_ptr<SpectrumEngine> spectrumEngine,
+                             std::shared_ptr<SpectrogramEngine> spectrogramEngine,
+                             std::shared_ptr<VectorScopeEngine> vectorScopeEngine, QWidget* parent)
+    : QWidget(parent), m_monitoring(monitoring), m_dspController(dspController), m_spectrumEngine(spectrumEngine),
+      m_spectrogramEngine(spectrogramEngine), m_vectorScopeEngine(vectorScopeEngine) {
     setupUi();
 
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &DashboardView::refreshMeters);
 
     if (m_dspController) {
         if (m_dspController->settings()) {
-            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateVisibility);
-            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateFaderUi);
-            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateSignalChain);
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this,
+                    &DashboardView::updateVisibility);
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this,
+                    &DashboardView::updateFaderUi);
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this,
+                    &DashboardView::updateSignalChain);
         }
         if (m_dspController->pipelineStore()) {
-            connect(m_dspController->pipelineStore().get(), &PipelineStore::pipelineChanged, this, &DashboardView::updateSignalChain);
+            connect(m_dspController->pipelineStore().get(), &PipelineStore::pipelineChanged, this,
+                    &DashboardView::updateSignalChain);
         }
         connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &DashboardView::updateSignalChain);
     }
@@ -45,17 +45,24 @@ DashboardView::DashboardView(
 }
 
 void DashboardView::updateVisibility() {
-    if (!m_dspController || !m_dspController->settings()) return;
+    if (!m_dspController || !m_dspController->settings())
+        return;
     auto s = m_dspController->settings();
-    if (m_levelMetersGroup) m_levelMetersGroup->setVisible(s->showLevelMetersInDashboard);
-    if (m_analogVUGroup) m_analogVUGroup->setVisible(s->showAnalogVUInDashboard);
-    if (m_spectrumGroup) m_spectrumGroup->setVisible(s->showSpectrumInDashboard);
-    if (m_spectrogramGroup) m_spectrogramGroup->setVisible(s->showSpectrogramInDashboard);
-    if (m_vectorScopeGroup) m_vectorScopeGroup->setVisible(s->showVectorScopeInDashboard);
+    if (m_levelMetersGroup)
+        m_levelMetersGroup->setVisible(s->showLevelMetersInDashboard);
+    if (m_analogVUGroup)
+        m_analogVUGroup->setVisible(s->showAnalogVUInDashboard);
+    if (m_spectrumGroup)
+        m_spectrumGroup->setVisible(s->showSpectrumInDashboard);
+    if (m_spectrogramGroup)
+        m_spectrogramGroup->setVisible(s->showSpectrogramInDashboard);
+    if (m_vectorScopeGroup)
+        m_vectorScopeGroup->setVisible(s->showVectorScopeInDashboard);
 }
 
 void DashboardView::updateFaderUi() {
-    if (!m_dspController || !m_dspController->settings()) return;
+    if (!m_dspController || !m_dspController->settings())
+        return;
     auto s = m_dspController->settings();
 
     for (auto& row : m_faderRows) {
@@ -68,9 +75,11 @@ void DashboardView::updateFaderUi() {
 
         row.gainValueLabel->setText(QString::asprintf("%+.1f dB", vol));
         if (vol > 0.0f) {
-            row.gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 75px;");
+            row.gainValueLabel->setStyleSheet(
+                "font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 75px;");
         } else {
-            row.gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #34c759; min-width: 75px;");
+            row.gainValueLabel->setStyleSheet(
+                "font-family: monospace; font-weight: bold; color: #34c759; min-width: 75px;");
         }
 
         row.muteBtn->blockSignals(true);
@@ -79,19 +88,23 @@ void DashboardView::updateFaderUi() {
 
         if (muted) {
             row.muteBtn->setText("🔇 Muted");
-            row.muteBtn->setStyleSheet("background-color: #ff3b30; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;");
+            row.muteBtn->setStyleSheet(
+                "background-color: #ff3b30; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;");
         } else {
             row.muteBtn->setText("🔊 Mute");
-            row.muteBtn->setStyleSheet("background-color: #3a3a3c; color: white; padding: 4px 8px; border-radius: 4px;");
+            row.muteBtn->setStyleSheet(
+                "background-color: #3a3a3c; color: white; padding: 4px 8px; border-radius: 4px;");
         }
     }
 }
 
 void DashboardView::updateSignalChain() {
-    if (!m_chainLayout || !m_chainWidget) return;
+    if (!m_chainLayout || !m_chainWidget)
+        return;
     QLayoutItem* item;
     while ((item = m_chainLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) delete item->widget();
+        if (item->widget())
+            delete item->widget();
         delete item;
     }
 
@@ -116,9 +129,11 @@ void DashboardView::updateSignalChain() {
     auto capChip = new QPushButton(QString("🎤 %1").arg(capDevName), m_chainWidget);
     capChip->setFlat(true);
     if (isRunning) {
-        capChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+        capChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, "
+                               "122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
     } else {
-        capChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+        capChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
+                               "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
     }
     m_chainLayout->addWidget(capChip);
 
@@ -131,9 +146,11 @@ void DashboardView::updateSignalChain() {
     resampChip->setCheckable(true);
     resampChip->setChecked(resampEnabled);
     if (resampEnabled) {
-        resampChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+        resampChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, "
+                                  "122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
     } else {
-        resampChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+        resampChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
+                                  "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
     }
     connect(resampChip, &QPushButton::clicked, [this]() {
         if (m_dspController && m_dspController->settings()) {
@@ -153,19 +170,25 @@ void DashboardView::updateSignalChain() {
         for (size_t i = 0; i < pipe->stages.size(); ++i) {
             const auto& st = pipe->stages[i];
             std::string icon = stageTypeToIcon(st.type);
-            auto stChip = new QPushButton(QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), m_chainWidget);
+            auto stChip = new QPushButton(
+                QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), m_chainWidget);
             stChip->setCursor(Qt::PointingHandCursor);
             stChip->setCheckable(true);
             stChip->setChecked(st.isEnabled);
             if (st.isEnabled) {
-                stChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+                stChip->setStyleSheet(
+                    "background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, "
+                    "0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
             } else {
-                stChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+                stChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
+                                      "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
             }
 
             connect(stChip, &QPushButton::clicked, [this, i]() {
-                if (m_dspController && m_dspController->pipelineStore() && i < m_dspController->pipelineStore()->stages.size()) {
-                    m_dspController->pipelineStore()->stages[i].isEnabled = !m_dspController->pipelineStore()->stages[i].isEnabled;
+                if (m_dspController && m_dspController->pipelineStore() &&
+                    i < m_dspController->pipelineStore()->stages.size()) {
+                    m_dspController->pipelineStore()->stages[i].isEnabled =
+                        !m_dspController->pipelineStore()->stages[i].isEnabled;
                     m_dspController->pipelineStore()->save();
                     m_dspController->applyConfig();
                     updateSignalChain();
@@ -181,9 +204,11 @@ void DashboardView::updateSignalChain() {
     auto playChip = new QPushButton(QString("🔊 %1").arg(playDevName), m_chainWidget);
     playChip->setFlat(true);
     if (isRunning) {
-        playChip->setStyleSheet("background-color: rgba(52, 199, 89, 0.2); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+        playChip->setStyleSheet("background-color: rgba(52, 199, 89, 0.2); color: #34c759; border: 1px solid rgba(52, "
+                                "199, 89, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
     } else {
-        playChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+        playChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
+                                "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
     }
     m_chainLayout->addWidget(playChip);
 }
@@ -232,14 +257,15 @@ void DashboardView::setupUi() {
     auto faderVLayout = new QVBoxLayout(faderGroup);
     faderVLayout->setSpacing(12);
 
-    struct FaderInfo { Fader fader; QString name; };
-    std::vector<FaderInfo> faders = {
-        {Fader::Main, "Main"},
-        {Fader::Aux1, "Aux 1"},
-        {Fader::Aux2, "Aux 2"},
-        {Fader::Aux3, "Aux 3"},
-        {Fader::Aux4, "Aux 4"}
+    struct FaderInfo {
+        Fader fader;
+        QString name;
     };
+    std::vector<FaderInfo> faders = {{Fader::Main, "Main"},
+                                     {Fader::Aux1, "Aux 1"},
+                                     {Fader::Aux2, "Aux 2"},
+                                     {Fader::Aux3, "Aux 3"},
+                                     {Fader::Aux4, "Aux 4"}};
 
     m_faderRows.clear();
     for (const auto& info : faders) {
@@ -326,14 +352,20 @@ void DashboardView::setupUi() {
 
 void DashboardView::refreshMeters() {
     const auto& st = m_monitoring->levelState;
-    if (m_captureMeters) m_captureMeters->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
-    if (m_playbackMeters) m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
+    if (m_captureMeters)
+        m_captureMeters->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
+    if (m_playbackMeters)
+        m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
 
     float leftDB = !st.playbackRms.empty() ? st.playbackRms[0] : -60.0f;
     float rightDB = st.playbackRms.size() > 1 ? st.playbackRms[1] : leftDB;
-    if (m_analogVUView) m_analogVUView->setLevelDB(leftDB, rightDB);
+    if (m_analogVUView)
+        m_analogVUView->setLevelDB(leftDB, rightDB);
 
-    if (m_spectrumEngine && m_spectrumView) m_spectrumView->setSpectrum(m_spectrumEngine->data);
-    if (m_spectrogramEngine && m_spectrogramView) m_spectrogramView->setHistory(m_spectrogramEngine->history, m_spectrogramEngine->show3D);
-    if (m_vectorScopeEngine && m_vectorScopeView) m_vectorScopeView->setSamples(m_vectorScopeEngine->samples, m_vectorScopeEngine->showParticles);
+    if (m_spectrumEngine && m_spectrumView)
+        m_spectrumView->setSpectrum(m_spectrumEngine->data);
+    if (m_spectrogramEngine && m_spectrogramView)
+        m_spectrogramView->setHistory(m_spectrogramEngine->history, m_spectrogramEngine->show3D);
+    if (m_vectorScopeEngine && m_vectorScopeView)
+        m_vectorScopeView->setSamples(m_vectorScopeEngine->samples, m_vectorScopeEngine->showParticles);
 }

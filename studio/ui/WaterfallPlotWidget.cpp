@@ -1,8 +1,10 @@
 #include "ui/WaterfallPlotWidget.h"
+
 #include "ui/StyleTheme.h"
-#include <cmath>
-#include <algorithm>
+
 #include <QPainterPath>
+#include <algorithm>
+#include <cmath>
 
 WaterfallPlotWidget::WaterfallPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
@@ -19,7 +21,8 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     p.setRenderHint(QPainter::Antialiasing);
 
     p.fillRect(rect(), StyleTheme::cardBg());
-    if (m_slices.empty()) return;
+    if (m_slices.empty())
+        return;
 
     int w = width();
     int h = height();
@@ -48,7 +51,8 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     // Render back to front for isometric depth
     for (int idx = static_cast<int>(m_slices.size()) - 1; idx >= 0; --idx) {
         const auto& [timeSec, fr] = m_slices[idx];
-        double progress = static_cast<double>(idx) / static_cast<double>(std::max(1, static_cast<int>(m_slices.size()) - 1));
+        double progress =
+            static_cast<double>(idx) / static_cast<double>(std::max(1, static_cast<int>(m_slices.size()) - 1));
 
         double shiftX = totalShiftX * progress;
         double shiftY = totalDepthY * progress;
@@ -61,7 +65,8 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
 
         for (size_t bin = 0; bin < count; bin += binStride) {
             double f = fr.frequency(bin);
-            if (f < fMin || f > fMax) continue;
+            if (f < fMin || f > fMax)
+                continue;
 
             double mag = fr.magnitude(bin);
             double db = (mag > 0.0) ? 20.0 * std::log10(mag) - refDB : -100.0;
@@ -72,8 +77,12 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
             double x = shiftX + (logF - logMin) / (logMax - logMin) * plotW;
             double y = h - shiftY - yFrac * plotH;
 
-            if (isFirst) { path.moveTo(x, y); isFirst = false; }
-            else { path.lineTo(x, y); }
+            if (isFirst) {
+                path.moveTo(x, y);
+                isFirst = false;
+            } else {
+                path.lineTo(x, y);
+            }
         }
 
         if (!path.isEmpty()) {

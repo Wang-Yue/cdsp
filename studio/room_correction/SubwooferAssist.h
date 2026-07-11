@@ -1,8 +1,9 @@
 #ifndef SUBWOOFER_ASSIST_H
 #define SUBWOOFER_ASSIST_H
 
-#include "room_correction/ImpulseResponse.h"
 #include "config/BiquadCoefficients.h"
+#include "room_correction/ImpulseResponse.h"
+
 #include <string>
 
 struct SubwooferRecommendation {

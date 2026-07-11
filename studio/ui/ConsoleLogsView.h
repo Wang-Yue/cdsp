@@ -2,13 +2,14 @@
 #define CONSOLE_LOGS_VIEW_H
 
 #include "models/LogManager.h"
-#include <QWidget>
-#include <QTableWidget>
-#include <QLineEdit>
+
 #include <QCheckBox>
 #include <QComboBox>
-#include <QPushButton>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QWidget>
 
 class ConsoleLogsView : public QWidget {
     Q_OBJECT

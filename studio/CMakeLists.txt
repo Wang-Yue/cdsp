@@ -116,3 +116,22 @@ target_link_libraries(MonitorQt PRIVATE
     ${CDSP_LIB}
     ${PLATFORM_LIBS}
 )
+
+# Automatic Code Formatting with clang-format
+find_program(CLANG_FORMAT_BIN NAMES clang-format)
+if(CLANG_FORMAT_BIN)
+    file(GLOB_RECURSE ALL_PROJECT_SOURCES "src/*.cpp" "src/*.h")
+    add_custom_target(
+        format
+        COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ALL_PROJECT_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running clang-format on all C++ source and header files..."
+    )
+    add_custom_target(
+        format-check
+        COMMAND ${CLANG_FORMAT_BIN} --dry-run -Werror -style=file ${ALL_PROJECT_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Checking code formatting with clang-format..."
+    )
+endif()
+

@@ -1,17 +1,17 @@
 #include "models/DSPEngineController.h"
+
 #include "models/LogManager.h"
 
-DSPEngineController::DSPEngineController(
-    std::shared_ptr<CDSPEngine> engine,
-    std::shared_ptr<AudioDeviceManager> devices,
-    std::shared_ptr<AudioSettings> settings,
-    std::shared_ptr<PipelineStore> pipeline,
-    QObject* parent
-) : QObject(parent), m_engine(engine), m_devices(devices), m_settings(settings), m_pipeline(pipeline) {
+DSPEngineController::DSPEngineController(std::shared_ptr<CDSPEngine> engine,
+                                         std::shared_ptr<AudioDeviceManager> devices,
+                                         std::shared_ptr<AudioSettings> settings,
+                                         std::shared_ptr<PipelineStore> pipeline, QObject* parent)
+    : QObject(parent), m_engine(engine), m_devices(devices), m_settings(settings), m_pipeline(pipeline) {
 
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, [this]() {
-        LogManager::instance()->appendLog(LogLevel::Info, QString("Executing scheduled auto-restart attempt %1...").arg(m_retryCount));
+        LogManager::instance()->appendLog(LogLevel::Info,
+                                          QString("Executing scheduled auto-restart attempt %1...").arg(m_retryCount));
         startEngine();
     });
 
@@ -41,11 +41,16 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
         config.devices.enableRateAdjust = true;
     }
 
-    if (m_settings->queuelimit > 0) config.devices.queuelimit = m_settings->queuelimit;
-    if (m_settings->stopOnRateChange) config.devices.stopOnRateChange = m_settings->stopOnRateChange;
-    if (m_settings->rateMeasureInterval > 0) config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;
-    if (m_settings->multithreaded) config.devices.multithreaded = m_settings->multithreaded;
-    if (m_settings->multithreaded && m_settings->workerThreads > 0) config.devices.workerThreads = m_settings->workerThreads;
+    if (m_settings->queuelimit > 0)
+        config.devices.queuelimit = m_settings->queuelimit;
+    if (m_settings->stopOnRateChange)
+        config.devices.stopOnRateChange = m_settings->stopOnRateChange;
+    if (m_settings->rateMeasureInterval > 0)
+        config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;
+    if (m_settings->multithreaded)
+        config.devices.multithreaded = m_settings->multithreaded;
+    if (m_settings->multithreaded && m_settings->workerThreads > 0)
+        config.devices.workerThreads = m_settings->workerThreads;
     if (m_settings->silenceTimeout > 0) {
         config.devices.silenceThreshold = static_cast<double>(m_settings->silenceThreshold);
         config.devices.silenceTimeout = static_cast<double>(m_settings->silenceTimeout);
@@ -65,19 +70,35 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
                 resCfg.window = m_settings->resamplerWindow;
                 resCfg.fCutoff = m_settings->resamplerFCutoff;
                 switch (m_settings->resamplerSincInterpolation) {
-                case SincInterpolation::Nearest: resCfg.interpolation = "Nearest"; break;
-                case SincInterpolation::Linear: resCfg.interpolation = "Linear"; break;
-                case SincInterpolation::Quadratic: resCfg.interpolation = "Quadratic"; break;
-                case SincInterpolation::Cubic: resCfg.interpolation = "Cubic"; break;
+                case SincInterpolation::Nearest:
+                    resCfg.interpolation = "Nearest";
+                    break;
+                case SincInterpolation::Linear:
+                    resCfg.interpolation = "Linear";
+                    break;
+                case SincInterpolation::Quadratic:
+                    resCfg.interpolation = "Quadratic";
+                    break;
+                case SincInterpolation::Cubic:
+                    resCfg.interpolation = "Cubic";
+                    break;
                 }
             }
             break;
         case ResamplerType::AsyncPoly:
             switch (m_settings->resamplerInterpolation) {
-            case ResamplerInterpolation::Linear: resCfg.interpolation = "Linear"; break;
-            case ResamplerInterpolation::Cubic: resCfg.interpolation = "Cubic"; break;
-            case ResamplerInterpolation::Quintic: resCfg.interpolation = "Quintic"; break;
-            case ResamplerInterpolation::Septic: resCfg.interpolation = "Septic"; break;
+            case ResamplerInterpolation::Linear:
+                resCfg.interpolation = "Linear";
+                break;
+            case ResamplerInterpolation::Cubic:
+                resCfg.interpolation = "Cubic";
+                break;
+            case ResamplerInterpolation::Quintic:
+                resCfg.interpolation = "Quintic";
+                break;
+            case ResamplerInterpolation::Septic:
+                resCfg.interpolation = "Septic";
+                break;
             }
             break;
         case ResamplerType::Synchronous:
@@ -142,7 +163,8 @@ void DSPEngineController::stopEngine() {
 }
 
 void DSPEngineController::applyConfig() {
-    if (status != ProcessingState::Running) return;
+    if (status != ProcessingState::Running)
+        return;
     syncFaders();
     DSPConfiguration config = buildConfiguration();
     std::string jsonStr = config.toJsonString();
@@ -181,18 +203,25 @@ void DSPEngineController::syncFaders() {
 }
 
 void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
-    if (m_userStopped || m_reconnectTimer.isActive()) return;
+    if (m_userStopped || m_reconnectTimer.isActive())
+        return;
     if (m_retryCount >= m_maxRetries) {
-        LogManager::instance()->appendLog(LogLevel::Error, QString("Engine auto-restart exceeded maximum retry count (%1 attempts). Giving up.").arg(m_maxRetries));
+        LogManager::instance()->appendLog(
+            LogLevel::Error,
+            QString("Engine auto-restart exceeded maximum retry count (%1 attempts). Giving up.").arg(m_maxRetries));
         return;
     }
 
     int delayMs = baseDelayMs * (1 << m_retryCount);
-    if (delayMs > 16000) delayMs = 16000;
+    if (delayMs > 16000)
+        delayMs = 16000;
 
     m_retryCount++;
-    LogManager::instance()->appendLog(LogLevel::Warn, QString("Engine crash/stop detected. Scheduling auto-restart attempt %1/%2 in %3 ms...")
-        .arg(m_retryCount).arg(m_maxRetries).arg(delayMs));
+    LogManager::instance()->appendLog(
+        LogLevel::Warn, QString("Engine crash/stop detected. Scheduling auto-restart attempt %1/%2 in %3 ms...")
+                            .arg(m_retryCount)
+                            .arg(m_maxRetries)
+                            .arg(delayMs));
 
     m_reconnectTimer.start(delayMs);
 }
@@ -213,10 +242,13 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
         }
     }
 
-    if (update.stopReason.type == StopReasonType::CaptureFormatChange || update.stopReason.type == StopReasonType::PlaybackFormatChange) {
+    if (update.stopReason.type == StopReasonType::CaptureFormatChange ||
+        update.stopReason.type == StopReasonType::PlaybackFormatChange) {
         int newRate = update.stopReason.formatChangeRate;
         if (newRate > 0) {
-            LogManager::instance()->appendLog(LogLevel::Warn, QString("Format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
+            LogManager::instance()->appendLog(
+                LogLevel::Warn,
+                QString("Format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
             m_devices->captureConfig.sampleRate = newRate;
             m_devices->playbackConfig.sampleRate = newRate;
             m_devices->saveConfigs();
@@ -225,8 +257,7 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
     } else if (!m_userStopped && (update.stopReason.type == StopReasonType::CaptureError ||
                                   update.stopReason.type == StopReasonType::PlaybackError ||
                                   update.stopReason.type == StopReasonType::UnknownError ||
-                                  status == ProcessingState::Inactive ||
-                                  status == ProcessingState::Stalled)) {
+                                  status == ProcessingState::Inactive || status == ProcessingState::Stalled)) {
         scheduleAutoRestart(1000);
     }
 }

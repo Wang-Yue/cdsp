@@ -1,11 +1,13 @@
 #include "ui/RoomCorrectionDlg.h"
-#include "ui/StyleTheme.h"
+
 #include "room_correction/CalibrationCurve.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QFormLayout>
+#include "ui/StyleTheme.h"
+
 #include <QFileDialog>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QMessageBox>
+#include <QVBoxLayout>
 
 RoomCorrectionDlg::RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {
@@ -24,10 +26,18 @@ void RoomCorrectionDlg::setupUi() {
 
     m_tabWidget = new QTabWidget(this);
 
-    auto measTab = new QWidget(this); setupMeasurementTab(measTab); m_tabWidget->addTab(measTab, "Measurements & Analysis");
-    auto fitTab = new QWidget(this); setupFitTab(fitTab); m_tabWidget->addTab(fitTab, "PEQ Auto-Fit");
-    auto subTab = new QWidget(this); setupSubwooferTab(subTab); m_tabWidget->addTab(subTab, "Subwoofer Crossover Assist");
-    auto firTab = new QWidget(this); setupFIRTab(firTab); m_tabWidget->addTab(firTab, "FIR Export");
+    auto measTab = new QWidget(this);
+    setupMeasurementTab(measTab);
+    m_tabWidget->addTab(measTab, "Measurements & Analysis");
+    auto fitTab = new QWidget(this);
+    setupFitTab(fitTab);
+    m_tabWidget->addTab(fitTab, "PEQ Auto-Fit");
+    auto subTab = new QWidget(this);
+    setupSubwooferTab(subTab);
+    m_tabWidget->addTab(subTab, "Subwoofer Crossover Assist");
+    auto firTab = new QWidget(this);
+    setupFIRTab(firTab);
+    m_tabWidget->addTab(firTab, "FIR Export");
 
     mainLayout->addWidget(m_tabWidget);
 
@@ -100,18 +110,29 @@ void RoomCorrectionDlg::setupMeasurementTab(QWidget* tab) {
     m_fdwCombo->addItems({"Off", "1 Cycle", "5 Cycles", "10 Cycles", "15 Cycles"});
     connect(m_fdwCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         switch (idx) {
-        case 0: m_session.fdwCycles = FDWCycles::Off; break;
-        case 1: m_session.fdwCycles = FDWCycles::Cycles1; break;
-        case 2: m_session.fdwCycles = FDWCycles::Cycles5; break;
-        case 3: m_session.fdwCycles = FDWCycles::Cycles10; break;
-        case 4: m_session.fdwCycles = FDWCycles::Cycles15; break;
+        case 0:
+            m_session.fdwCycles = FDWCycles::Off;
+            break;
+        case 1:
+            m_session.fdwCycles = FDWCycles::Cycles1;
+            break;
+        case 2:
+            m_session.fdwCycles = FDWCycles::Cycles5;
+            break;
+        case 3:
+            m_session.fdwCycles = FDWCycles::Cycles10;
+            break;
+        case 4:
+            m_session.fdwCycles = FDWCycles::Cycles15;
+            break;
         }
         m_session.recomputeAverage();
     });
     fdwForm->addRow("FDW Window:", m_fdwCombo);
 
     m_smoothingCombo = new QComboBox(tab);
-    m_smoothingCombo->addItems({"No Smoothing", "1/1 Octave", "1/3 Octave", "1/6 Octave", "1/12 Octave", "1/24 Octave", "1/48 Octave", "Var (ERB)"});
+    m_smoothingCombo->addItems({"No Smoothing", "1/1 Octave", "1/3 Octave", "1/6 Octave", "1/12 Octave", "1/24 Octave",
+                                "1/48 Octave", "Var (ERB)"});
     m_smoothingCombo->setCurrentIndex(3); // Default 1/6 oct
     connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.displaySmoothing = static_cast<DisplaySmoothing>(idx);
@@ -159,18 +180,21 @@ void RoomCorrectionDlg::setupFitTab(QWidget* tab) {
     auto form = new QFormLayout();
 
     m_bandCountSpin = new QSpinBox(tab);
-    m_bandCountSpin->setRange(1, 20); m_bandCountSpin->setValue(8);
+    m_bandCountSpin->setRange(1, 20);
+    m_bandCountSpin->setValue(8);
     form->addRow("Band Count:", m_bandCountSpin);
 
     m_maxGainSpin = new QDoubleSpinBox(tab);
-    m_maxGainSpin->setRange(1.0, 24.0); m_maxGainSpin->setValue(12.0);
+    m_maxGainSpin->setRange(1.0, 24.0);
+    m_maxGainSpin->setValue(12.0);
     form->addRow("Max Gain Cap (dB):", m_maxGainSpin);
 
     m_modalCheck = new QCheckBox("Modal Region Optimization (Cuts Only below Schroeder)", tab);
     form->addRow("", m_modalCheck);
 
     m_schroederSpin = new QDoubleSpinBox(tab);
-    m_schroederSpin->setRange(50.0, 500.0); m_schroederSpin->setValue(200.0);
+    m_schroederSpin->setRange(50.0, 500.0);
+    m_schroederSpin->setValue(200.0);
     form->addRow("Schroeder Frequency (Hz):", m_schroederSpin);
 
     m_targetPresetCombo = new QComboBox(tab);
@@ -218,7 +242,9 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
     form->addRow("FIR Filter Kind:", m_firKindCombo);
 
     m_firTapSpin = new QSpinBox(tab);
-    m_firTapSpin->setRange(1024, 65536); m_firTapSpin->setValue(8192); m_firTapSpin->setSingleStep(1024);
+    m_firTapSpin->setRange(1024, 65536);
+    m_firTapSpin->setValue(8192);
+    m_firTapSpin->setSingleStep(1024);
     form->addRow("FIR Tap Count (FFT Size):", m_firTapSpin);
 
     auto blendLayout = new QHBoxLayout();
@@ -234,9 +260,12 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
     connect(m_firPhaseBlendSlider, &QSlider::valueChanged, [this](int val) {
         double blend = val / 100.0;
         m_session.firPhaseBlend = blend;
-        if (val == 0) m_firPhaseBlendLabel->setText("Min-phase (0%)");
-        else if (val == 100) m_firPhaseBlendLabel->setText("Linear-phase (100%)");
-        else m_firPhaseBlendLabel->setText(QString("%1% Blend").arg(val));
+        if (val == 0)
+            m_firPhaseBlendLabel->setText("Min-phase (0%)");
+        else if (val == 100)
+            m_firPhaseBlendLabel->setText("Linear-phase (100%)");
+        else
+            m_firPhaseBlendLabel->setText(QString("%1% Blend").arg(val));
     });
     form->addRow("Phase Blend (Measurement):", blendLayout);
 
@@ -303,7 +332,8 @@ void RoomCorrectionDlg::onExportFRD() {
 }
 
 void RoomCorrectionDlg::onLoadCalibration() {
-    QString path = QFileDialog::getOpenFileName(this, "Load Microphone Calibration File", "", "Calibration Files (*.frd *.txt *.cal)");
+    QString path = QFileDialog::getOpenFileName(this, "Load Microphone Calibration File", "",
+                                                "Calibration Files (*.frd *.txt *.cal)");
     if (!path.isEmpty()) {
         m_session.loadCalibration(path.toStdString());
     }
@@ -314,7 +344,8 @@ void RoomCorrectionDlg::onClearCalibration() {
 }
 
 void RoomCorrectionDlg::onLoadTargetCurve() {
-    QString path = QFileDialog::getOpenFileName(this, "Load Target Curve File", "", "Target Curve Files (*.frd *.txt *.csv)");
+    QString path =
+        QFileDialog::getOpenFileName(this, "Load Target Curve File", "", "Target Curve Files (*.frd *.txt *.csv)");
     if (!path.isEmpty()) {
         auto cal = CalibrationCurve::load(path.toStdString());
         if (cal.has_value()) {
@@ -338,9 +369,15 @@ void RoomCorrectionDlg::onRunFit() {
     m_session.schroederHz = m_schroederSpin->value();
 
     switch (m_targetPresetCombo->currentIndex()) {
-    case 0: m_session.targetPreset = TargetPreset::Flat; break;
-    case 1: m_session.targetPreset = TargetPreset::BruelKjaer; break;
-    case 2: m_session.targetPreset = TargetPreset::Harman; break;
+    case 0:
+        m_session.targetPreset = TargetPreset::Flat;
+        break;
+    case 1:
+        m_session.targetPreset = TargetPreset::BruelKjaer;
+        break;
+    case 2:
+        m_session.targetPreset = TargetPreset::Harman;
+        break;
     }
 
     m_session.runFit();
@@ -356,13 +393,20 @@ void RoomCorrectionDlg::onApplyEQToPipeline() {
 void RoomCorrectionDlg::onGenerateFIR() {
     m_session.firTapCount = m_firTapSpin->value();
     switch (m_firKindCombo->currentIndex()) {
-    case 0: m_session.firKind = FIRKind::MinimumPhase; break;
-    case 1: m_session.firKind = FIRKind::LinearPhase; break;
-    case 2: m_session.firKind = FIRKind::MeasurementDriven; break;
+    case 0:
+        m_session.firKind = FIRKind::MinimumPhase;
+        break;
+    case 1:
+        m_session.firKind = FIRKind::LinearPhase;
+        break;
+    case 2:
+        m_session.firKind = FIRKind::MeasurementDriven;
+        break;
     }
 
     std::vector<std::string> names;
-    for (const auto& p : m_pipeline->convPresets) names.push_back(p.name);
+    for (const auto& p : m_pipeline->convPresets)
+        names.push_back(p.name);
 
     auto preset = m_session.generateFIR(names);
     if (preset.has_value()) {
@@ -374,13 +418,15 @@ void RoomCorrectionDlg::onGenerateFIR() {
 void RoomCorrectionDlg::onComputeSubwoofer() {
     auto rec = m_session.computeSubwooferRecommendation();
     if (rec.has_value()) {
-        m_subResultLabel->setText(QString("Subwoofer Recommendation:\n• Sub Delay Offset: %1 ms (%2 samples)\n• Recommended Crossover: %3 Hz\n• Confidence: %4%\n\nRationale:\n%5")
-            .arg(rec->subDelayMs, 0, 'f', 2)
-            .arg(rec->delaySamples)
-            .arg(rec->crossoverHz, 0, 'f', 0)
-            .arg(rec->confidence * 100.0, 0, 'f', 0)
-            .arg(QString::fromStdString(rec->summary)));
+        m_subResultLabel->setText(QString("Subwoofer Recommendation:\n• Sub Delay Offset: %1 ms (%2 samples)\n• "
+                                          "Recommended Crossover: %3 Hz\n• Confidence: %4%\n\nRationale:\n%5")
+                                      .arg(rec->subDelayMs, 0, 'f', 2)
+                                      .arg(rec->delaySamples)
+                                      .arg(rec->crossoverHz, 0, 'f', 0)
+                                      .arg(rec->confidence * 100.0, 0, 'f', 0)
+                                      .arg(QString::fromStdString(rec->summary)));
     } else {
-        m_subResultLabel->setText("Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
+        m_subResultLabel->setText(
+            "Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
     }
 }

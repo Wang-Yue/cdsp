@@ -1,6 +1,8 @@
 #include "ui/ConvolutionIRPlot.h"
-#include "ui/StyleTheme.h"
+
 #include "models/ConvCoefficientLoader.h"
+#include "ui/StyleTheme.h"
+
 #include <QPainterPath>
 #include <algorithm>
 #include <cmath>
@@ -60,7 +62,8 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
         return;
     }
 
-    if (m_samples.empty()) return;
+    if (m_samples.empty())
+        return;
 
     int plotTop = m_title.empty() ? 4 : 22;
     int plotH = h - plotTop - 4;
@@ -83,8 +86,10 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
         double x = (static_cast<double>(i) / static_cast<double>(std::max<size_t>(1, count - 1))) * w;
         double y = midY - norm * (plotH / 2.0 * 0.9);
 
-        if (i == 0) path.moveTo(x, y);
-        else path.lineTo(x, y);
+        if (i == 0)
+            path.moveTo(x, y);
+        else
+            path.lineTo(x, y);
     }
 
     p.setPen(QPen(QColor("#007af5"), 1.2));

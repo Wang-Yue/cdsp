@@ -1,13 +1,16 @@
 #include "room_correction/FrequencyResponse.h"
+
 #include "room_correction/MeasurementFFT.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-FrequencyResponse::FrequencyResponse(const std::vector<double>& real, const std::vector<double>& imag, int sampleRate, int fftSize)
+FrequencyResponse::FrequencyResponse(const std::vector<double>& real, const std::vector<double>& imag, int sampleRate,
+                                     int fftSize)
     : real(real), imag(imag), sampleRate(sampleRate), fftSize(fftSize) {}
 
 double FrequencyResponse::frequency(size_t bin) const {
@@ -16,7 +19,8 @@ double FrequencyResponse::frequency(size_t bin) const {
 }
 
 double FrequencyResponse::magnitude(size_t bin) const {
-    if (bin >= real.size()) return 0.0;
+    if (bin >= real.size())
+        return 0.0;
     double r = real[bin];
     double i = imag[bin];
     return std::sqrt(r * r + i * i);
@@ -28,14 +32,16 @@ double FrequencyResponse::magnitudeDB(size_t bin) const {
 }
 
 double FrequencyResponse::phase(size_t bin) const {
-    if (bin >= real.size()) return 0.0;
+    if (bin >= real.size())
+        return 0.0;
     return std::atan2(imag[bin], real[bin]);
 }
 
 std::vector<double> FrequencyResponse::unwrappedPhase() const {
     size_t count = bins();
     std::vector<double> unwrap(count);
-    if (count == 0) return unwrap;
+    if (count == 0)
+        return unwrap;
 
     unwrap[0] = phase(0);
     double cumulativePhase = unwrap[0];
@@ -45,8 +51,10 @@ std::vector<double> FrequencyResponse::unwrappedPhase() const {
         double pCurr = phase(i);
         double diff = pCurr - pPrev;
 
-        while (diff > M_PI) diff -= 2.0 * M_PI;
-        while (diff < -M_PI) diff += 2.0 * M_PI;
+        while (diff > M_PI)
+            diff -= 2.0 * M_PI;
+        while (diff < -M_PI)
+            diff += 2.0 * M_PI;
 
         cumulativePhase += diff;
         unwrap[i] = cumulativePhase;
@@ -57,7 +65,8 @@ std::vector<double> FrequencyResponse::unwrappedPhase() const {
 std::vector<double> FrequencyResponse::groupDelay() const {
     size_t count = bins();
     std::vector<double> gd(count, 0.0);
-    if (count < 2) return gd;
+    if (count < 2)
+        return gd;
 
     auto unwrap = unwrappedPhase();
     double df = static_cast<double>(sampleRate) / static_cast<double>(fftSize);
@@ -77,7 +86,8 @@ FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetF
     int nFft = targetFftSize;
     if (ir.samples.size() > static_cast<size_t>(nFft)) {
         size_t p = 1;
-        while (p < ir.samples.size()) p <<= 1;
+        while (p < ir.samples.size())
+            p <<= 1;
         nFft = static_cast<int>(p);
     }
 
@@ -92,8 +102,10 @@ FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetF
 
 FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycles, int targetFftSize) {
     int n = targetFftSize;
-    if (n <= 0) n = static_cast<int>(ir.samples.size());
-    if (n % 2 != 0) n += 1;
+    if (n <= 0)
+        n = static_cast<int>(ir.samples.size());
+    if (n % 2 != 0)
+        n += 1;
     size_t bins = n / 2 + 1;
 
     std::vector<double> re(bins, 0.0);
@@ -131,15 +143,12 @@ FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycle
     return FrequencyResponse(re, im, ir.sampleRate, n);
 }
 
-std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(
-    const ImpulseResponse& ir,
-    int sliceCount,
-    double maxTimeSeconds,
-    int windowLength,
-    int targetFftSize
-) {
+std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(const ImpulseResponse& ir, int sliceCount,
+                                                                          double maxTimeSeconds, int windowLength,
+                                                                          int targetFftSize) {
     std::vector<std::pair<double, FrequencyResponse>> slices;
-    if (ir.samples.empty()) return slices;
+    if (ir.samples.empty())
+        return slices;
 
     size_t peak = ir.peakIndex();
     double fs = static_cast<double>(ir.sampleRate);
@@ -150,20 +159,22 @@ std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(
         size_t offsetSamples = static_cast<size_t>(timeSec * fs);
         size_t startIdx = peak + offsetSamples;
 
-        if (startIdx >= ir.samples.size()) break;
+        if (startIdx >= ir.samples.size())
+            break;
 
         std::vector<double> sliceSamples(windowLength, 0.0);
         for (int i = 0; i < windowLength; ++i) {
             size_t idx = startIdx + i;
             if (idx < ir.samples.size()) {
-                double w = 0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength)));
+                double w =
+                    0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength)));
                 sliceSamples[i] = ir.samples[idx] * w;
             }
         }
 
         ImpulseResponse sliceIR(sliceSamples, ir.sampleRate);
         FrequencyResponse fr = from(sliceIR, targetFftSize);
-        slices.push_back({ timeSec, fr });
+        slices.push_back({timeSec, fr});
     }
 
     return slices;

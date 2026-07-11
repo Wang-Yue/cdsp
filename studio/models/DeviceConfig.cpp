@@ -1,10 +1,12 @@
 #include "models/DeviceConfig.h"
+
 #include <algorithm>
-#include <set>
 #include <cmath>
+#include <set>
 
 std::vector<int> DeviceConfig::supportedChannels() const {
-    if (capabilities.capability_sets.empty()) return {};
+    if (capabilities.capability_sets.empty())
+        return {};
     std::set<int> chs;
     for (const auto& cap : capabilities.capability_sets[0].capabilities) {
         chs.insert(cap.channels);
@@ -13,7 +15,8 @@ std::vector<int> DeviceConfig::supportedChannels() const {
 }
 
 std::vector<int> DeviceConfig::supportedRates() const {
-    if (capabilities.capability_sets.empty()) return {};
+    if (capabilities.capability_sets.empty())
+        return {};
     const auto& set = capabilities.capability_sets[0];
 
     const ChannelCapability* selectedCap = nullptr;
@@ -43,16 +46,22 @@ std::vector<int> DeviceConfig::supportedRates() const {
 }
 
 static int formatPriority(const std::string& fmt) {
-    if (fmt == "S32") return 4;
-    if (fmt == "S24") return 3;
-    if (fmt == "S16") return 2;
-    if (fmt == "F32") return 1;
-    if (fmt == "F64") return 0;
+    if (fmt == "S32")
+        return 4;
+    if (fmt == "S24")
+        return 3;
+    if (fmt == "S16")
+        return 2;
+    if (fmt == "F32")
+        return 1;
+    if (fmt == "F64")
+        return 0;
     return -1;
 }
 
 std::vector<std::string> DeviceConfig::supportedFormats() const {
-    if (capabilities.capability_sets.empty()) return {};
+    if (capabilities.capability_sets.empty())
+        return {};
     const auto& set = capabilities.capability_sets[0];
 
     const ChannelCapability* selectedCap = nullptr;
@@ -75,9 +84,8 @@ std::vector<std::string> DeviceConfig::supportedFormats() const {
             }
         }
     }
-    std::sort(fmts.begin(), fmts.end(), [](const std::string& a, const std::string& b) {
-        return formatPriority(a) > formatPriority(b);
-    });
+    std::sort(fmts.begin(), fmts.end(),
+              [](const std::string& a, const std::string& b) { return formatPriority(a) > formatPriority(b); });
     return fmts;
 }
 
@@ -114,10 +122,13 @@ DeviceConfig DeviceConfig::enforced() const {
 }
 
 int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
-    if (rates.empty()) return 48000;
-    if (std::find(rates.begin(), rates.end(), currentRate) != rates.end()) return currentRate;
+    if (rates.empty())
+        return 48000;
+    if (std::find(rates.begin(), rates.end(), currentRate) != rates.end())
+        return currentRate;
     for (int preferred : {48000, 44100, 96000, 192000}) {
-        if (std::find(rates.begin(), rates.end(), preferred) != rates.end()) return preferred;
+        if (std::find(rates.begin(), rates.end(), preferred) != rates.end())
+            return preferred;
     }
     int best = rates[0];
     int minDiff = std::abs(best - currentRate);
@@ -193,50 +204,56 @@ QJsonObject DeviceConfig::toJson() const {
 
 DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
     DeviceConfig cfg;
-    if (json.contains("backend")) cfg.backend = stringToAudioBackendType(json["backend"].toString().toStdString());
-    if (json.contains("channels")) cfg.channels = json["channels"].toInt();
+    if (json.contains("backend"))
+        cfg.backend = stringToAudioBackendType(json["backend"].toString().toStdString());
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
     if (json.contains("deviceChannels")) {
         cfg.deviceChannels = json["deviceChannels"].toInt();
     } else {
         cfg.deviceChannels = cfg.channels;
     }
-    if (json.contains("sampleRate")) cfg.sampleRate = json["sampleRate"].toInt();
-    if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
-    if (json.contains("bypassDoP")) cfg.bypassDoP = json["bypassDoP"].toBool();
-    if (json.contains("dopCutoffHz")) cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
-    if (json.contains("outputDoP")) cfg.outputDoP = json["outputDoP"].toBool();
-    if (json.contains("dopEncoderFilter")) cfg.dopEncoderFilter = stringToSDMFilter(json["dopEncoderFilter"].toString().toStdString());
-    if (json.contains("filename")) cfg.filename = json["filename"].toString().toStdString();
-    if (json.contains("fileFormat")) cfg.fileFormat = json["fileFormat"].toString().toStdString();
-    if (json.contains("isWav")) cfg.isWav = json["isWav"].toBool();
-    if (json.contains("skipBytes")) cfg.skipBytes = json["skipBytes"].toInt();
-    if (json.contains("readBytes")) cfg.readBytes = json["readBytes"].toInt();
-    if (json.contains("extraSamples")) cfg.extraSamples = json["extraSamples"].toInt();
-    if (json.contains("generatorType")) cfg.generatorType = json["generatorType"].toString().toStdString();
-    if (json.contains("generatorFreq")) cfg.generatorFreq = json["generatorFreq"].toDouble();
-    if (json.contains("generatorLevel")) cfg.generatorLevel = json["generatorLevel"].toDouble();
-    if (json.contains("deviceName")) cfg.capabilities.name = json["deviceName"].toString().toStdString();
+    if (json.contains("sampleRate"))
+        cfg.sampleRate = json["sampleRate"].toInt();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("bypassDoP"))
+        cfg.bypassDoP = json["bypassDoP"].toBool();
+    if (json.contains("dopCutoffHz"))
+        cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
+    if (json.contains("outputDoP"))
+        cfg.outputDoP = json["outputDoP"].toBool();
+    if (json.contains("dopEncoderFilter"))
+        cfg.dopEncoderFilter = stringToSDMFilter(json["dopEncoderFilter"].toString().toStdString());
+    if (json.contains("filename"))
+        cfg.filename = json["filename"].toString().toStdString();
+    if (json.contains("fileFormat"))
+        cfg.fileFormat = json["fileFormat"].toString().toStdString();
+    if (json.contains("isWav"))
+        cfg.isWav = json["isWav"].toBool();
+    if (json.contains("skipBytes"))
+        cfg.skipBytes = json["skipBytes"].toInt();
+    if (json.contains("readBytes"))
+        cfg.readBytes = json["readBytes"].toInt();
+    if (json.contains("extraSamples"))
+        cfg.extraSamples = json["extraSamples"].toInt();
+    if (json.contains("generatorType"))
+        cfg.generatorType = json["generatorType"].toString().toStdString();
+    if (json.contains("generatorFreq"))
+        cfg.generatorFreq = json["generatorFreq"].toDouble();
+    if (json.contains("generatorLevel"))
+        cfg.generatorLevel = json["generatorLevel"].toDouble();
+    if (json.contains("deviceName"))
+        cfg.capabilities.name = json["deviceName"].toString().toStdString();
     return cfg;
 }
 
 bool DeviceConfig::operator==(const DeviceConfig& other) const {
-    return backend == other.backend
-        && capabilities.name == other.capabilities.name
-        && channels == other.channels
-        && deviceChannels == other.deviceChannels
-        && sampleRate == other.sampleRate
-        && format == other.format
-        && bypassDoP == other.bypassDoP
-        && dopCutoffHz == other.dopCutoffHz
-        && outputDoP == other.outputDoP
-        && dopEncoderFilter == other.dopEncoderFilter
-        && filename == other.filename
-        && fileFormat == other.fileFormat
-        && isWav == other.isWav
-        && skipBytes == other.skipBytes
-        && readBytes == other.readBytes
-        && extraSamples == other.extraSamples
-        && generatorType == other.generatorType
-        && generatorFreq == other.generatorFreq
-        && generatorLevel == other.generatorLevel;
+    return backend == other.backend && capabilities.name == other.capabilities.name && channels == other.channels &&
+           deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
+           bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
+           dopEncoderFilter == other.dopEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
+           isWav == other.isWav && skipBytes == other.skipBytes && readBytes == other.readBytes &&
+           extraSamples == other.extraSamples && generatorType == other.generatorType &&
+           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel;
 }

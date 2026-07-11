@@ -1,9 +1,11 @@
 #include "ui/ImpulseResponsePlotWidget.h"
+
 #include "ui/StyleTheme.h"
+
 #include <QPainter>
 #include <QPainterPath>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 ImpulseResponsePlotWidget::ImpulseResponsePlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);

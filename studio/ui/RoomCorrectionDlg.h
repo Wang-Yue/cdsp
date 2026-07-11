@@ -1,35 +1,33 @@
 #ifndef ROOM_CORRECTION_DLG_H
 #define ROOM_CORRECTION_DLG_H
 
-#include "room_correction/MeasurementSession.h"
 #include "models/PipelineStore.h"
+#include "room_correction/MeasurementSession.h"
 #include "ui/EQDiagramWidget.h"
-#include "ui/PhasePlotWidget.h"
-#include "ui/ImpulseResponsePlotWidget.h"
 #include "ui/GroupDelayPlotWidget.h"
-#include "ui/WaterfallPlotWidget.h"
+#include "ui/ImpulseResponsePlotWidget.h"
 #include "ui/MeasurementPositionRowWidget.h"
-#include <QDialog>
-#include <QTabWidget>
-#include <QStackedWidget>
-#include <QTabBar>
-#include <QListWidget>
-#include <QPushButton>
-#include <QDoubleSpinBox>
-#include <QSpinBox>
+#include "ui/PhasePlotWidget.h"
+#include "ui/WaterfallPlotWidget.h"
+
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDoubleSpinBox>
 #include <QLabel>
+#include <QListWidget>
+#include <QPushButton>
+#include <QSpinBox>
+#include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
 #include <memory>
 
 class RoomCorrectionDlg : public QDialog {
     Q_OBJECT
 
 public:
-    RoomCorrectionDlg(
-        std::shared_ptr<PipelineStore> pipeline,
-        QWidget* parent = nullptr
-    );
+    RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr);
 
 private slots:
     void refreshSessionUi();

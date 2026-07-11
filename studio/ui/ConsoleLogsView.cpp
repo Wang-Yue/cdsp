@@ -1,13 +1,15 @@
 #include "ui/ConsoleLogsView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
+
+#include <QAction>
+#include <QClipboard>
+#include <QCursor>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QMenu>
-#include <QAction>
-#include <QGuiApplication>
-#include <QClipboard>
-#include <QCursor>
+#include <QVBoxLayout>
 
 ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
     setupUi();
@@ -43,7 +45,8 @@ void ConsoleLogsView::setupUi() {
     m_levelFilterCombo->addItem("Warn & Above", static_cast<int>(LogLevel::Warn));
     m_levelFilterCombo->addItem("Error Only", static_cast<int>(LogLevel::Error));
     m_levelFilterCombo->setCurrentIndex(0);
-    connect(m_levelFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ConsoleLogsView::refreshLogs);
+    connect(m_levelFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &ConsoleLogsView::refreshLogs);
     topToolbar->addWidget(m_levelFilterCombo);
 
     m_searchEdit = new QLineEdit(this);
@@ -59,7 +62,8 @@ void ConsoleLogsView::setupUi() {
 
     m_clearBtn = new QPushButton("Clear Logs", this);
     connect(m_clearBtn, &QPushButton::clicked, [this]() {
-        if (LogManager::instance()) LogManager::instance()->clear();
+        if (LogManager::instance())
+            LogManager::instance()->clear();
     });
     topToolbar->addWidget(m_clearBtn);
 
@@ -93,7 +97,8 @@ void ConsoleLogsView::setupUi() {
         menu.addSeparator();
         auto clearAct = menu.addAction("Clear All Logs");
         connect(clearAct, &QAction::triggered, [this]() {
-            if (LogManager::instance()) LogManager::instance()->clear();
+            if (LogManager::instance())
+                LogManager::instance()->clear();
         });
 
         menu.exec(QCursor::pos());
@@ -104,7 +109,8 @@ void ConsoleLogsView::setupUi() {
 
 void ConsoleLogsView::refreshLogs() {
     m_table->setRowCount(0);
-    if (!LogManager::instance()) return;
+    if (!LogManager::instance())
+        return;
 
     LogLevel filterLevel = static_cast<LogLevel>(m_levelFilterCombo->currentData().toInt());
 
@@ -149,10 +155,12 @@ void ConsoleLogsView::refreshLogs() {
 
 void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
     LogLevel filterLevel = static_cast<LogLevel>(m_levelFilterCombo->currentData().toInt());
-    if (static_cast<int>(entry.level) < static_cast<int>(filterLevel)) return;
+    if (static_cast<int>(entry.level) < static_cast<int>(filterLevel))
+        return;
 
     QString search = m_searchEdit->text();
-    if (!search.isEmpty() && !entry.message.contains(search, Qt::CaseInsensitive)) return;
+    if (!search.isEmpty() && !entry.message.contains(search, Qt::CaseInsensitive))
+        return;
 
     int row = m_table->rowCount();
     m_table->insertRow(row);
@@ -193,7 +201,8 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
 
 void ConsoleLogsView::copySelectedLogs() {
     auto ranges = m_table->selectedRanges();
-    if (ranges.isEmpty()) return;
+    if (ranges.isEmpty())
+        return;
 
     QStringList textRows;
     for (const auto& range : ranges) {

@@ -2,18 +2,17 @@
 #define CONVOLUTION_IMPORT_DLG_H
 
 #include "models/PipelineStore.h"
-#include <QDialog>
-#include <QLineEdit>
-#include <QComboBox>
-#include <QPushButton>
-#include <QLabel>
-#include <memory>
-
-#include <QTableWidget>
-
 #include "ui/ConvolutionIRPlot.h"
+
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDialog>
 #include <QDoubleSpinBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QTableWidget>
+#include <memory>
 
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT

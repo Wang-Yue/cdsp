@@ -1,9 +1,9 @@
 #ifndef LOG_RANGE_SLIDER_H
 #define LOG_RANGE_SLIDER_H
 
-#include <QWidget>
-#include <QPainter>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QWidget>
 
 class LogRangeSlider : public QWidget {
     Q_OBJECT

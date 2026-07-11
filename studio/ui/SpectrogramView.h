@@ -2,8 +2,9 @@
 #define SPECTROGRAM_VIEW_H
 
 #include "models/SpectrogramEngine.h"
-#include <QWidget>
+
 #include <QPainter>
+#include <QWidget>
 #include <memory>
 
 class SpectrogramView : public QWidget {
@@ -14,7 +15,8 @@ public:
     explicit SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent = nullptr);
 
     void setEngine(std::shared_ptr<SpectrogramEngine> engine);
-    void setHistory(const std::deque<SpectrumData>& history, bool show3D = false, ColorPalette palette = ColorPalette::Default);
+    void setHistory(const std::deque<SpectrumData>& history, bool show3D = false,
+                    ColorPalette palette = ColorPalette::Default);
 
 protected:
     void showEvent(QShowEvent* event) override;

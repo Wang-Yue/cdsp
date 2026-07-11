@@ -1,27 +1,24 @@
 #ifndef CONVOLUTION_PRESET_DETAIL_VIEW_H
 #define CONVOLUTION_PRESET_DETAIL_VIEW_H
 
+#include "models/AudioDeviceManager.h"
 #include "models/ConvolutionPreset.h"
 #include "models/PipelineStore.h"
-#include "models/AudioDeviceManager.h"
 #include "ui/ConvolutionIRPlot.h"
-#include <QWidget>
-#include <QLineEdit>
+
 #include <QComboBox>
-#include <QPushButton>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QWidget>
 #include <memory>
 
 class ConvolutionPresetDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    ConvolutionPresetDetailView(
-        ConvolutionPreset preset,
-        std::shared_ptr<PipelineStore> pipeline,
-        std::shared_ptr<AudioDeviceManager> devices = nullptr,
-        QWidget* parent = nullptr
-    );
+    ConvolutionPresetDetailView(ConvolutionPreset preset, std::shared_ptr<PipelineStore> pipeline,
+                                std::shared_ptr<AudioDeviceManager> devices = nullptr, QWidget* parent = nullptr);
 
 private slots:
     void refreshUi();

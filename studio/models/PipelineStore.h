@@ -1,13 +1,14 @@
 #ifndef PIPELINE_STORE_H
 #define PIPELINE_STORE_H
 
-#include "models/PipelineStage.h"
-#include "models/EQPreset.h"
 #include "models/ConvolutionPreset.h"
+#include "models/EQPreset.h"
+#include "models/PipelineStage.h"
+
 #include <QObject>
-#include <vector>
-#include <map>
 #include <QUuid>
+#include <map>
+#include <vector>
 
 class PipelineStore : public QObject {
     Q_OBJECT

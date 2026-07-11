@@ -1,13 +1,10 @@
 #ifndef STYLE_THEME_H
 #define STYLE_THEME_H
 
-#include <QString>
 #include <QColor>
+#include <QString>
 
-enum class AppTheme {
-    Light,
-    Dark
-};
+enum class AppTheme { Light, Dark };
 
 class StyleTheme {
 public:
@@ -440,21 +437,13 @@ public:
 
     inline static AppTheme s_theme = AppTheme::Light;
 
-    static void setTheme(AppTheme theme) {
-        s_theme = theme;
-    }
+    static void setTheme(AppTheme theme) { s_theme = theme; }
 
-    static AppTheme theme() {
-        return s_theme;
-    }
+    static AppTheme theme() { return s_theme; }
 
-    static bool isDark() {
-        return s_theme == AppTheme::Dark;
-    }
+    static bool isDark() { return s_theme == AppTheme::Dark; }
 
-    static QString currentStylesheet() {
-        return (s_theme == AppTheme::Dark) ? darkStylesheet() : lightStylesheet();
-    }
+    static QString currentStylesheet() { return (s_theme == AppTheme::Dark) ? darkStylesheet() : lightStylesheet(); }
 
     static QColor windowBg() { return isDark() ? QColor("#121318") : QColor("#ffffff"); }
     static QColor cardBg() { return isDark() ? QColor("#1a1b22") : QColor("#f5f5f7"); }

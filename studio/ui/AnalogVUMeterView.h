@@ -1,15 +1,12 @@
 #ifndef ANALOG_VU_METER_VIEW_H
 #define ANALOG_VU_METER_VIEW_H
 
-#include <QWidget>
-#include <QPainter>
-
-#include <QWidget>
-#include <QPainter>
-#include <QTimer>
-
 #include "models/LevelState.h"
 #include "ui/VUSettings.h"
+
+#include <QPainter>
+#include <QTimer>
+#include <QWidget>
 
 class AnalogVUMeterView : public QWidget {
     Q_OBJECT
@@ -22,7 +19,10 @@ public:
     void setVUSettings(const VUSettings& settings);
     VUSettings vuSettings() const { return m_settings; }
 
-    void setGainCalibration(float gainDb) { m_gainCalibrationDb = gainDb; update(); }
+    void setGainCalibration(float gainDb) {
+        m_gainCalibrationDb = gainDb;
+        update();
+    }
     float gainCalibration() const { return m_gainCalibrationDb; }
 
 protected:

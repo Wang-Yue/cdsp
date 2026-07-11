@@ -1,7 +1,9 @@
 #include "room_correction/FIRDesign.h"
+
 #include "room_correction/MeasurementFFT.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -9,8 +11,10 @@
 
 static double wrappedNear(double phi, double reference) {
     double p = phi;
-    while (p - reference > M_PI) p -= 2.0 * M_PI;
-    while (p - reference < -M_PI) p += 2.0 * M_PI;
+    while (p - reference > M_PI)
+        p -= 2.0 * M_PI;
+    while (p - reference < -M_PI)
+        p += 2.0 * M_PI;
     return p;
 }
 
@@ -27,14 +31,16 @@ static size_t peakIndex(const std::vector<double>& ir) {
     return idx;
 }
 
-static std::vector<double> computeMinimumPhaseAngle(const std::vector<double>& magnitude, int fftSize, double floorLin) {
+static std::vector<double> computeMinimumPhaseAngle(const std::vector<double>& magnitude, int fftSize,
+                                                    double floorLin) {
     size_t bins = magnitude.size();
     int n = fftSize;
     double logFloor = std::log(floorLin);
     std::vector<double> logMag(bins);
     for (size_t k = 0; k < bins; ++k) {
         logMag[k] = std::log(std::max(magnitude[k], floorLin));
-        if (!std::isfinite(logMag[k])) logMag[k] = logFloor;
+        if (!std::isfinite(logMag[k]))
+            logMag[k] = logFloor;
     }
 
     std::vector<double> inImag(bins, 0.0);
@@ -55,11 +61,8 @@ static std::vector<double> computeMinimumPhaseAngle(const std::vector<double>& m
     return im;
 }
 
-std::vector<double> FIRDesign::linearPhase(
-    const std::vector<BiquadParameters>& bands,
-    int sampleRate,
-    const FIRDesignOptions& options
-) {
+std::vector<double> FIRDesign::linearPhase(const std::vector<BiquadParameters>& bands, int sampleRate,
+                                           const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
@@ -72,7 +75,8 @@ std::vector<double> FIRDesign::linearPhase(
         double gainDB = 0.0;
         for (const auto& b : bands) {
             auto coeffs = BiquadCoefficients::compute(b, sampleRate);
-            if (coeffs.has_value()) gainDB += coeffs.value().gainDB(f, sampleRate);
+            if (coeffs.has_value())
+                gainDB += coeffs.value().gainDB(f, sampleRate);
         }
         double mag = std::pow(10.0, gainDB / 20.0) * preampLin;
         double phase = -M_PI * static_cast<double>(k);
@@ -86,11 +90,8 @@ std::vector<double> FIRDesign::linearPhase(
     return ir;
 }
 
-std::vector<double> FIRDesign::minimumPhase(
-    const std::vector<BiquadParameters>& bands,
-    int sampleRate,
-    const FIRDesignOptions& options
-) {
+std::vector<double> FIRDesign::minimumPhase(const std::vector<BiquadParameters>& bands, int sampleRate,
+                                            const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
@@ -101,7 +102,8 @@ std::vector<double> FIRDesign::minimumPhase(
         double gainDB = 0.0;
         for (const auto& b : bands) {
             auto coeffs = BiquadCoefficients::compute(b, sampleRate);
-            if (coeffs.has_value()) gainDB += coeffs.value().gainDB(f, sampleRate);
+            if (coeffs.has_value())
+                gainDB += coeffs.value().gainDB(f, sampleRate);
         }
         magDB[k] = gainDB;
     }
@@ -111,11 +113,8 @@ std::vector<double> FIRDesign::minimumPhase(
     return minimumPhaseFromMagDB(magDB, sampleRate, opt);
 }
 
-std::vector<double> FIRDesign::linearPhaseFromMagDB(
-    const std::vector<double>& magDB,
-    int sampleRate,
-    const FIRDesignOptions& options
-) {
+std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+                                                    const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;
 
@@ -135,11 +134,8 @@ std::vector<double> FIRDesign::linearPhaseFromMagDB(
     return rawIR;
 }
 
-std::vector<double> FIRDesign::minimumPhaseFromMagDB(
-    const std::vector<double>& magDB,
-    int sampleRate,
-    const FIRDesignOptions& options
-) {
+std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+                                                     const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;
 
@@ -181,12 +177,8 @@ std::vector<double> FIRDesign::minimumPhaseFromMagDB(
     return minPhaseIR;
 }
 
-std::vector<double> FIRDesign::fromMeasurement(
-    const FrequencyResponse& measured,
-    const TargetCurve& target,
-    int sampleRate,
-    const FIRDesignMeasurementOptions& options
-) {
+std::vector<double> FIRDesign::fromMeasurement(const FrequencyResponse& measured, const TargetCurve& target,
+                                               int sampleRate, const FIRDesignMeasurementOptions& options) {
     int n = options.fftSize;
     size_t bins = n / 2 + 1;
 

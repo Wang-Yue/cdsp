@@ -2,13 +2,14 @@
 #define AUTO_EQ_PICKER_DLG_H
 
 #include "models/AutoEqService.h"
-#include "models/PipelineStore.h"
 #include "models/DSPEngineController.h"
+#include "models/PipelineStore.h"
+
 #include <QDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
-#include <QLabel>
 #include <memory>
 
 class AutoEqPickerDlg : public QDialog {
@@ -18,7 +19,8 @@ public:
 public:
     AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr)
         : AutoEqPickerDlg(pipeline, nullptr, parent) {}
-    AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
+    AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController,
+                    QWidget* parent = nullptr);
 
 private slots:
     void onSearchTextChanged(const QString& text);

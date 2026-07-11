@@ -1,15 +1,17 @@
 #include "ui/StageDetailView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+
+#include <QButtonGroup>
 #include <QFormLayout>
 #include <QGroupBox>
-#include <QScrollArea>
-#include <QPushButton>
+#include <QHBoxLayout>
 #include <QHeaderView>
-#include <QPainter>
 #include <QMouseEvent>
-#include <QButtonGroup>
+#include <QPainter>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QVBoxLayout>
 #include <cmath>
 
 VSliderWidget::VSliderWidget(double value, double minVal, double maxVal, QWidget* parent)
@@ -94,12 +96,9 @@ void VSliderWidget::updateValueFromMouse(int y) {
     setValue(newVal);
 }
 
-StageDetailView::StageDetailView(
-    size_t stageIndex,
-    std::shared_ptr<PipelineStore> pipeline,
-    std::shared_ptr<DSPEngineController> dspController,
-    QWidget* parent
-) : QWidget(parent), m_stageIndex(stageIndex), m_pipeline(pipeline), m_dspController(dspController) {
+StageDetailView::StageDetailView(size_t stageIndex, std::shared_ptr<PipelineStore> pipeline,
+                                 std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+    : QWidget(parent), m_stageIndex(stageIndex), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
     refreshUi();
 }
@@ -155,7 +154,8 @@ void StageDetailView::setupUi() {
 }
 
 void StageDetailView::applyConfig() {
-    if (m_isBuildingUi) return;
+    if (m_isBuildingUi)
+        return;
     m_pipeline->save();
     emit m_pipeline->pipelineChanged();
     m_dspController->applyConfig();
@@ -184,17 +184,21 @@ void StageDetailView::buildStageOptionsUi() {
     auto containerLayout = qobject_cast<QVBoxLayout*>(m_optionsContainer->layout());
     QLayoutItem* item;
     while ((item = containerLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
+        if (item->widget())
+            item->widget()->deleteLater();
         delete item;
     }
 
-    if (m_stageIndex >= m_pipeline->stages.size()) return;
+    if (m_stageIndex >= m_pipeline->stages.size())
+        return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
     m_optionsContainer->setEnabled(stage.isEnabled);
 
-    int incomingChannels = (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
-    if (incomingChannels < 1) incomingChannels = 2;
+    int incomingChannels =
+        (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
+    if (incomingChannels < 1)
+        incomingChannels = 2;
 
     // 1. Channel Selector Card (Unified for all stages except Matrix Mixer)
     if (stage.type != StageType::MatrixMixer) {
@@ -202,7 +206,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto chanLayout = new QVBoxLayout(chanGroup);
 
         if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
-            stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
+            stage.type == StageType::Crossfeed || stage.type == StageType::RACE ||
+            stage.type == StageType::SplitWidth) {
             auto pairBox = new QHBoxLayout();
 
             auto leftBox = new QVBoxLayout();
@@ -226,17 +231,20 @@ void StageDetailView::buildStageOptionsUi() {
                 rightCombo->addItem(QString("Channel %1").arg(c + 1), c);
             }
             rightCombo->setCurrentIndex(std::min(stage.rightChannel, incomingChannels - 1));
-            connect(rightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, rightCombo](int idx) {
-                stage.rightChannel = rightCombo->itemData(idx).toInt();
-                applyConfig();
-            });
+            connect(rightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    [this, &stage, rightCombo](int idx) {
+                        stage.rightChannel = rightCombo->itemData(idx).toInt();
+                        applyConfig();
+                    });
             rightBox->addWidget(rightCombo);
             pairBox->addLayout(rightBox);
 
             pairBox->addStretch();
             chanLayout->addLayout(pairBox);
 
-            auto descLbl = new QLabel("This stereo stage will process the selected Left and Right channels. All other channels will pass through unaffected.", chanGroup);
+            auto descLbl = new QLabel("This stereo stage will process the selected Left and Right channels. All other "
+                                      "channels will pass through unaffected.",
+                                      chanGroup);
             descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
             chanLayout->addWidget(descLbl);
         } else {
@@ -250,7 +258,8 @@ void StageDetailView::buildStageOptionsUi() {
 
                 auto updateBtnStyle = [btn](bool checked) {
                     if (checked) {
-                        btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
+                        btn->setStyleSheet(
+                            "background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
                     } else {
                         btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
                     }
@@ -348,19 +357,25 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto btnNeg100 = new QPushButton("-100%", widthGroup);
         connect(btnNeg100, &QPushButton::clicked, [this, &stage]() {
-            stage.widthAmount = -1.0; applyConfig(); refreshUi();
+            stage.widthAmount = -1.0;
+            applyConfig();
+            refreshUi();
         });
         infoHBox->addWidget(btnNeg100);
 
         auto btnMono = new QPushButton("Mono", widthGroup);
         connect(btnMono, &QPushButton::clicked, [this, &stage]() {
-            stage.widthAmount = 0.0; applyConfig(); refreshUi();
+            stage.widthAmount = 0.0;
+            applyConfig();
+            refreshUi();
         });
         infoHBox->addWidget(btnMono);
 
         auto btn100 = new QPushButton("100%", widthGroup);
         connect(btn100, &QPushButton::clicked, [this, &stage]() {
-            stage.widthAmount = 1.0; applyConfig(); refreshUi();
+            stage.widthAmount = 1.0;
+            applyConfig();
+            refreshUi();
         });
         infoHBox->addWidget(btn100);
 
@@ -422,10 +437,24 @@ void StageDetailView::buildStageOptionsUi() {
         presetVBox->addLayout(levelHBox);
 
         auto cxParams = stage.activeCrossfeedParams();
-        auto detailLbl = new QLabel(QString("Fc = %1 Hz, Level = %2 dB — %3")
-            .arg(stage.cxCustomEnabled ? stage.cxFc : (stage.crossfeedLevel == CrossfeedLevel::L1 || stage.crossfeedLevel == CrossfeedLevel::L2 ? 650 : 700))
-            .arg(stage.cxCustomEnabled ? stage.cxDb : (stage.crossfeedLevel == CrossfeedLevel::L1 ? 13.5 : (stage.crossfeedLevel == CrossfeedLevel::L2 ? 9.5 : (stage.crossfeedLevel == CrossfeedLevel::L3 ? 6.0 : (stage.crossfeedLevel == CrossfeedLevel::L4 ? 4.5 : 3.0)))))
-            .arg(QString::fromStdString(crossfeedLevelDescription(stage.crossfeedLevel))), presetGroup);
+        auto detailLbl =
+            new QLabel(QString("Fc = %1 Hz, Level = %2 dB — %3")
+                           .arg(stage.cxCustomEnabled ? stage.cxFc
+                                                      : (stage.crossfeedLevel == CrossfeedLevel::L1 ||
+                                                                 stage.crossfeedLevel == CrossfeedLevel::L2
+                                                             ? 650
+                                                             : 700))
+                           .arg(stage.cxCustomEnabled
+                                    ? stage.cxDb
+                                    : (stage.crossfeedLevel == CrossfeedLevel::L1
+                                           ? 13.5
+                                           : (stage.crossfeedLevel == CrossfeedLevel::L2
+                                                  ? 9.5
+                                                  : (stage.crossfeedLevel == CrossfeedLevel::L3
+                                                         ? 6.0
+                                                         : (stage.crossfeedLevel == CrossfeedLevel::L4 ? 4.5 : 3.0)))))
+                           .arg(QString::fromStdString(crossfeedLevelDescription(stage.crossfeedLevel))),
+                       presetGroup);
         detailLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         presetVBox->addWidget(detailLbl);
 
@@ -442,12 +471,28 @@ void StageDetailView::buildStageOptionsUi() {
                 double fc = 700.0;
                 double db = 6.0;
                 switch (stage.crossfeedLevel) {
-                case CrossfeedLevel::L1: fc = 650.0; db = 13.5; break;
-                case CrossfeedLevel::L2: fc = 650.0; db = 9.5; break;
-                case CrossfeedLevel::L3: fc = 700.0; db = 6.0; break;
-                case CrossfeedLevel::L4: fc = 700.0; db = 4.5; break;
-                case CrossfeedLevel::L5: fc = 700.0; db = 3.0; break;
-                case CrossfeedLevel::Off: break;
+                case CrossfeedLevel::L1:
+                    fc = 650.0;
+                    db = 13.5;
+                    break;
+                case CrossfeedLevel::L2:
+                    fc = 650.0;
+                    db = 9.5;
+                    break;
+                case CrossfeedLevel::L3:
+                    fc = 700.0;
+                    db = 6.0;
+                    break;
+                case CrossfeedLevel::L4:
+                    fc = 700.0;
+                    db = 4.5;
+                    break;
+                case CrossfeedLevel::L5:
+                    fc = 700.0;
+                    db = 3.0;
+                    break;
+                case CrossfeedLevel::Off:
+                    break;
                 }
                 stage.cxFc = fc;
                 stage.cxDb = db;
@@ -461,21 +506,31 @@ void StageDetailView::buildStageOptionsUi() {
             auto formLayout = new QFormLayout();
 
             auto fcSlider = new QSlider(Qt::Horizontal, customGroup);
-            fcSlider->setRange(300, 1200); fcSlider->setValue(static_cast<int>(stage.cxFc));
+            fcSlider->setRange(300, 1200);
+            fcSlider->setValue(static_cast<int>(stage.cxFc));
             auto fcLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.cxFc)), customGroup);
             connect(fcSlider, &QSlider::valueChanged, [this, &stage, fcLbl](int val) {
-                stage.cxFc = val; fcLbl->setText(QString("%1 Hz").arg(val)); applyConfig();
+                stage.cxFc = val;
+                fcLbl->setText(QString("%1 Hz").arg(val));
+                applyConfig();
             });
-            auto fcBox = new QHBoxLayout(); fcBox->addWidget(fcSlider); fcBox->addWidget(fcLbl);
+            auto fcBox = new QHBoxLayout();
+            fcBox->addWidget(fcSlider);
+            fcBox->addWidget(fcLbl);
             formLayout->addRow("Fc (Hz):", fcBox);
 
             auto dbSlider = new QSlider(Qt::Horizontal, customGroup);
-            dbSlider->setRange(10, 200); dbSlider->setValue(static_cast<int>(stage.cxDb * 10.0));
+            dbSlider->setRange(10, 200);
+            dbSlider->setValue(static_cast<int>(stage.cxDb * 10.0));
             auto dbLbl = new QLabel(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1), customGroup);
             connect(dbSlider, &QSlider::valueChanged, [this, &stage, dbLbl](int val) {
-                stage.cxDb = val / 10.0; dbLbl->setText(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1)); applyConfig();
+                stage.cxDb = val / 10.0;
+                dbLbl->setText(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1));
+                applyConfig();
             });
-            auto dbBox = new QHBoxLayout(); dbBox->addWidget(dbSlider); dbBox->addWidget(dbLbl);
+            auto dbBox = new QHBoxLayout();
+            dbBox->addWidget(dbSlider);
+            dbBox->addWidget(dbLbl);
             formLayout->addRow("Level (dB):", dbBox);
 
             customVBox->addLayout(formLayout);
@@ -507,7 +562,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto crossHBox = new QHBoxLayout();
         crossHBox->addWidget(new QLabel("Crossover", crossGroup));
         auto crossSlider = new QSlider(Qt::Horizontal, crossGroup);
-        crossSlider->setRange(40, 1000); crossSlider->setSingleStep(5);
+        crossSlider->setRange(40, 1000);
+        crossSlider->setSingleStep(5);
         crossSlider->setValue(static_cast<int>(stage.splitWidthCrossover));
         crossHBox->addWidget(crossSlider);
 
@@ -516,12 +572,16 @@ void StageDetailView::buildStageOptionsUi() {
         crossHBox->addWidget(crossLbl);
         crossVBox->addLayout(crossHBox);
 
-        auto crossDesc = new QLabel("Frequencies below this crossover will remain centered (mono-summed), while frequencies above this point will be widened.", crossGroup);
+        auto crossDesc = new QLabel("Frequencies below this crossover will remain centered (mono-summed), while "
+                                    "frequencies above this point will be widened.",
+                                    crossGroup);
         crossDesc->setStyleSheet("color: #8e8e93; font-size: 11px;");
         crossVBox->addWidget(crossDesc);
 
         connect(crossSlider, &QSlider::valueChanged, [this, &stage, crossLbl](int val) {
-            stage.splitWidthCrossover = val; crossLbl->setText(QString("%1 Hz").arg(val)); applyConfig();
+            stage.splitWidthCrossover = val;
+            crossLbl->setText(QString("%1 Hz").arg(val));
+            applyConfig();
         });
         containerLayout->addWidget(crossGroup);
 
@@ -531,7 +591,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto highSliderHBox = new QHBoxLayout();
         highSliderHBox->addWidget(new QLabel("Mono", highGroup));
         auto highSlider = new QSlider(Qt::Horizontal, highGroup);
-        highSlider->setRange(0, 200); highSlider->setValue(static_cast<int>(stage.splitWidthAmount * 100.0));
+        highSlider->setRange(0, 200);
+        highSlider->setValue(static_cast<int>(stage.splitWidthAmount * 100.0));
         highSliderHBox->addWidget(highSlider);
         highSliderHBox->addWidget(new QLabel("Wide", highGroup));
         highVBox->addLayout(highSliderHBox);
@@ -544,25 +605,41 @@ void StageDetailView::buildStageOptionsUi() {
         highInfoHBox->addStretch();
 
         auto btnMono = new QPushButton("Mono", highGroup);
-        connect(btnMono, &QPushButton::clicked, [this, &stage]() { stage.splitWidthAmount = 0.0; applyConfig(); refreshUi(); });
+        connect(btnMono, &QPushButton::clicked, [this, &stage]() {
+            stage.splitWidthAmount = 0.0;
+            applyConfig();
+            refreshUi();
+        });
         highInfoHBox->addWidget(btnMono);
 
         auto btn100 = new QPushButton("100% (Normal)", highGroup);
-        connect(btn100, &QPushButton::clicked, [this, &stage]() { stage.splitWidthAmount = 1.0; applyConfig(); refreshUi(); });
+        connect(btn100, &QPushButton::clicked, [this, &stage]() {
+            stage.splitWidthAmount = 1.0;
+            applyConfig();
+            refreshUi();
+        });
         highInfoHBox->addWidget(btn100);
 
         auto btn150 = new QPushButton("150% (Wide)", highGroup);
-        connect(btn150, &QPushButton::clicked, [this, &stage]() { stage.splitWidthAmount = 1.5; applyConfig(); refreshUi(); });
+        connect(btn150, &QPushButton::clicked, [this, &stage]() {
+            stage.splitWidthAmount = 1.5;
+            applyConfig();
+            refreshUi();
+        });
         highInfoHBox->addWidget(btn150);
 
         highVBox->addLayout(highInfoHBox);
 
-        auto highDesc = new QLabel("Adjusts the stereo width of frequencies above the crossover point. 0% is full mono, 100% is normal stereo, and 150%+ is enhanced width.", highGroup);
+        auto highDesc = new QLabel("Adjusts the stereo width of frequencies above the crossover point. 0% is full "
+                                   "mono, 100% is normal stereo, and 150%+ is enhanced width.",
+                                   highGroup);
         highDesc->setStyleSheet("color: #8e8e93; font-size: 11px;");
         highVBox->addWidget(highDesc);
 
         connect(highSlider, &QSlider::valueChanged, [this, &stage, highPctLbl](int val) {
-            stage.splitWidthAmount = val / 100.0; highPctLbl->setText(QString("%1%").arg(val)); applyConfig();
+            stage.splitWidthAmount = val / 100.0;
+            highPctLbl->setText(QString("%1%").arg(val));
+            applyConfig();
         });
         containerLayout->addWidget(highGroup);
         break;
@@ -582,12 +659,15 @@ void StageDetailView::buildStageOptionsUi() {
         }
         if (stage.eqPresetId.has_value()) {
             int idx = eqCombo->findData(stage.eqPresetId->toString());
-            if (idx >= 0) eqCombo->setCurrentIndex(idx);
+            if (idx >= 0)
+                eqCombo->setCurrentIndex(idx);
         }
         connect(eqCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, eqCombo]() {
             QString idStr = eqCombo->currentData().toString();
-            if (idStr.isEmpty()) stage.eqPresetId = std::nullopt;
-            else stage.eqPresetId = QUuid::fromString(idStr);
+            if (idStr.isEmpty())
+                stage.eqPresetId = std::nullopt;
+            else
+                stage.eqPresetId = QUuid::fromString(idStr);
             applyConfig();
             refreshUi();
         });
@@ -596,11 +676,12 @@ void StageDetailView::buildStageOptionsUi() {
         eqVBox->addLayout(eqHBox);
 
         if (stage.eqPresetId.has_value()) {
-            auto it = std::find_if(m_pipeline->eqPresets.begin(), m_pipeline->eqPresets.end(), [&stage](const EQPreset& p) {
-                return p.id == stage.eqPresetId.value();
-            });
+            auto it = std::find_if(m_pipeline->eqPresets.begin(), m_pipeline->eqPresets.end(),
+                                   [&stage](const EQPreset& p) { return p.id == stage.eqPresetId.value(); });
             if (it != m_pipeline->eqPresets.end()) {
-                auto preampLbl = new QLabel(QString("Preamp Gain: %1%2 dB").arg(it->preampGain >= 0 ? "+" : "").arg(it->preampGain, 0, 'f', 1), eqGroup);
+                auto preampLbl = new QLabel(
+                    QString("Preamp Gain: %1%2 dB").arg(it->preampGain >= 0 ? "+" : "").arg(it->preampGain, 0, 'f', 1),
+                    eqGroup);
                 eqVBox->addWidget(preampLbl);
 
                 auto diagWidget = new EQDiagramWidget(eqGroup);
@@ -623,16 +704,23 @@ void StageDetailView::buildStageOptionsUi() {
         auto convCombo = new QComboBox(convGroup);
         convCombo->addItem("None", QString());
         for (const auto& preset : m_pipeline->convPresets) {
-            convCombo->addItem(QString("%1  %2 · %3 taps").arg(QString::fromStdString(preset.name)).arg(QString::fromStdString(preset.kindLabel())).arg(preset.taps), preset.id.toString());
+            convCombo->addItem(QString("%1  %2 · %3 taps")
+                                   .arg(QString::fromStdString(preset.name))
+                                   .arg(QString::fromStdString(preset.kindLabel()))
+                                   .arg(preset.taps),
+                               preset.id.toString());
         }
         if (stage.convPresetId.has_value()) {
             int idx = convCombo->findData(stage.convPresetId->toString());
-            if (idx >= 0) convCombo->setCurrentIndex(idx);
+            if (idx >= 0)
+                convCombo->setCurrentIndex(idx);
         }
         connect(convCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, convCombo]() {
             QString idStr = convCombo->currentData().toString();
-            if (idStr.isEmpty()) stage.convPresetId = std::nullopt;
-            else stage.convPresetId = QUuid::fromString(idStr);
+            if (idStr.isEmpty())
+                stage.convPresetId = std::nullopt;
+            else
+                stage.convPresetId = QUuid::fromString(idStr);
             applyConfig();
             refreshUi();
         });
@@ -641,16 +729,18 @@ void StageDetailView::buildStageOptionsUi() {
         convVBox->addLayout(convHBox);
 
         if (stage.convPresetId.has_value()) {
-            auto it = std::find_if(m_pipeline->convPresets.begin(), m_pipeline->convPresets.end(), [&stage](const ConvolutionPreset& p) {
-                return p.id == stage.convPresetId.value();
-            });
+            auto it = std::find_if(m_pipeline->convPresets.begin(), m_pipeline->convPresets.end(),
+                                   [&stage](const ConvolutionPreset& p) { return p.id == stage.convPresetId.value(); });
             if (it != m_pipeline->convPresets.end()) {
-                int sampleRate = (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.sampleRate : 48000;
+                int sampleRate = (m_dspController && m_dspController->devices())
+                                     ? m_dspController->devices()->captureConfig.sampleRate
+                                     : 48000;
                 auto metaLbl = new QLabel(QString("Kind: %1  |  Taps: %2  |  Rate: %3 Hz  |  Latency: %4 ms")
-                    .arg(QString::fromStdString(it->kindLabel()))
-                    .arg(it->taps)
-                    .arg(sampleRate)
-                    .arg(it->latencyMilliseconds(sampleRate), 0, 'f', 1), convGroup);
+                                              .arg(QString::fromStdString(it->kindLabel()))
+                                              .arg(it->taps)
+                                              .arg(sampleRate)
+                                              .arg(it->latencyMilliseconds(sampleRate), 0, 'f', 1),
+                                          convGroup);
                 metaLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
                 convVBox->addWidget(metaLbl);
 
@@ -672,43 +762,62 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(loudGroup);
 
         auto refSlider = new QSlider(Qt::Horizontal, loudGroup);
-        refSlider->setRange(-100, 20); refSlider->setValue(static_cast<int>(stage.loudnessReference));
+        refSlider->setRange(-100, 20);
+        refSlider->setValue(static_cast<int>(stage.loudnessReference));
         auto refLbl = new QLabel(QString("%1 dB").arg(static_cast<int>(stage.loudnessReference)), loudGroup);
         connect(refSlider, &QSlider::valueChanged, [this, &stage, refLbl](int val) {
-            stage.loudnessReference = val; refLbl->setText(QString("%1 dB").arg(val)); applyConfig();
+            stage.loudnessReference = val;
+            refLbl->setText(QString("%1 dB").arg(val));
+            applyConfig();
         });
-        auto refBox = new QHBoxLayout(); refBox->addWidget(refSlider); refBox->addWidget(refLbl);
+        auto refBox = new QHBoxLayout();
+        refBox->addWidget(refSlider);
+        refBox->addWidget(refLbl);
         formLayout->addRow("Reference Level:", refBox);
 
         auto lowSlider = new QSlider(Qt::Horizontal, loudGroup);
-        lowSlider->setRange(0, 40); lowSlider->setValue(static_cast<int>(stage.loudnessLowBoost * 2.0));
+        lowSlider->setRange(0, 40);
+        lowSlider->setValue(static_cast<int>(stage.loudnessLowBoost * 2.0));
         auto lowLbl = new QLabel(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1), loudGroup);
         connect(lowSlider, &QSlider::valueChanged, [this, &stage, lowLbl](int val) {
-            stage.loudnessLowBoost = val / 2.0; lowLbl->setText(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1)); applyConfig();
+            stage.loudnessLowBoost = val / 2.0;
+            lowLbl->setText(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1));
+            applyConfig();
         });
-        auto lowBox = new QHBoxLayout(); lowBox->addWidget(lowSlider); lowBox->addWidget(lowLbl);
+        auto lowBox = new QHBoxLayout();
+        lowBox->addWidget(lowSlider);
+        lowBox->addWidget(lowLbl);
         formLayout->addRow("Low Boost:", lowBox);
 
         auto highSlider = new QSlider(Qt::Horizontal, loudGroup);
-        highSlider->setRange(0, 40); highSlider->setValue(static_cast<int>(stage.loudnessHighBoost * 2.0));
+        highSlider->setRange(0, 40);
+        highSlider->setValue(static_cast<int>(stage.loudnessHighBoost * 2.0));
         auto highLbl = new QLabel(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1), loudGroup);
         connect(highSlider, &QSlider::valueChanged, [this, &stage, highLbl](int val) {
-            stage.loudnessHighBoost = val / 2.0; highLbl->setText(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1)); applyConfig();
+            stage.loudnessHighBoost = val / 2.0;
+            highLbl->setText(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1));
+            applyConfig();
         });
-        auto highBox = new QHBoxLayout(); highBox->addWidget(highSlider); highBox->addWidget(highLbl);
+        auto highBox = new QHBoxLayout();
+        highBox->addWidget(highSlider);
+        highBox->addWidget(highLbl);
         formLayout->addRow("High Boost:", highBox);
 
         auto faderCombo = new QComboBox(loudGroup);
         faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
         faderCombo->setCurrentIndex(static_cast<int>(stage.loudnessFader));
         connect(faderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.loudnessFader = static_cast<Fader>(idx); applyConfig();
+            stage.loudnessFader = static_cast<Fader>(idx);
+            applyConfig();
         });
         formLayout->addRow("Fader:", faderCombo);
 
         auto attChk = new QCheckBox("Attenuate Mid (instead of boosting extremes)", loudGroup);
         attChk->setChecked(stage.loudnessAttenuateMid);
-        connect(attChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.loudnessAttenuateMid = chk; applyConfig(); });
+        connect(attChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.loudnessAttenuateMid = chk;
+            applyConfig();
+        });
         formLayout->addRow("", attChk);
 
         containerLayout->addWidget(loudGroup);
@@ -745,7 +854,9 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::DCProtection: {
         auto dcpGroup = new QGroupBox("DC Protection", m_optionsContainer);
         auto dcpVBox = new QVBoxLayout(dcpGroup);
-        auto dcpLbl = new QLabel("First-order highpass at 7 Hz — removes DC offset and subsonic content on all selected channels.", dcpGroup);
+        auto dcpLbl = new QLabel(
+            "First-order highpass at 7 Hz — removes DC offset and subsonic content on all selected channels.",
+            dcpGroup);
         dcpLbl->setStyleSheet("color: #8e8e93; font-size: 12px;");
         dcpVBox->addWidget(dcpLbl);
         containerLayout->addWidget(dcpGroup);
@@ -760,14 +871,20 @@ void StageDetailView::buildStageOptionsUi() {
         sliderHBox->addWidget(new QLabel("Gain:", gainGroup));
 
         auto gainSlider = new QSlider(Qt::Horizontal, gainGroup);
-        gainSlider->setRange(-1500, 1500); gainSlider->setValue(static_cast<int>(stage.gainValue * 10.0));
+        gainSlider->setRange(-1500, 1500);
+        gainSlider->setValue(static_cast<int>(stage.gainValue * 10.0));
         sliderHBox->addWidget(gainSlider);
 
-        auto gainLbl = new QLabel(QString("%1%2 dB").arg(stage.gainValue >= 0 ? "+" : "").arg(stage.gainValue, 0, 'f', 1), gainGroup);
+        auto gainLbl = new QLabel(
+            QString("%1%2 dB").arg(stage.gainValue >= 0 ? "+" : "").arg(stage.gainValue, 0, 'f', 1), gainGroup);
         sliderHBox->addWidget(gainLbl);
 
         auto resetBtn = new QPushButton("Reset", gainGroup);
-        connect(resetBtn, &QPushButton::clicked, [this, &stage]() { stage.gainValue = 0.0; applyConfig(); refreshUi(); });
+        connect(resetBtn, &QPushButton::clicked, [this, &stage]() {
+            stage.gainValue = 0.0;
+            applyConfig();
+            refreshUi();
+        });
         sliderHBox->addWidget(resetBtn);
 
         gainVBox->addLayout(sliderHBox);
@@ -775,12 +892,18 @@ void StageDetailView::buildStageOptionsUi() {
         auto optionsHBox = new QHBoxLayout();
         auto invChk = new QCheckBox("Invert Polarity", gainGroup);
         invChk->setChecked(stage.gainInverted);
-        connect(invChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.gainInverted = chk; applyConfig(); });
+        connect(invChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.gainInverted = chk;
+            applyConfig();
+        });
         optionsHBox->addWidget(invChk);
 
         auto muteChk = new QCheckBox("Mute", gainGroup);
         muteChk->setChecked(stage.gainMuted);
-        connect(muteChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.gainMuted = chk; applyConfig(); });
+        connect(muteChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.gainMuted = chk;
+            applyConfig();
+        });
         optionsHBox->addWidget(muteChk);
 
         optionsHBox->addStretch();
@@ -804,11 +927,15 @@ void StageDetailView::buildStageOptionsUi() {
         unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
         unitCombo->setCurrentIndex(static_cast<int>(stage.delayUnit));
         connect(unitCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.delayUnit = static_cast<DelayUnit>(idx); applyConfig(); refreshUi();
+            stage.delayUnit = static_cast<DelayUnit>(idx);
+            applyConfig();
+            refreshUi();
         });
         formLayout->addRow("Unit:", unitCombo);
 
-        double maxVal = (stage.delayUnit == DelayUnit::samples) ? 96000.0 : ((stage.delayUnit == DelayUnit::us) ? 1000000.0 : 1000.0);
+        double maxVal = (stage.delayUnit == DelayUnit::samples)
+                            ? 96000.0
+                            : ((stage.delayUnit == DelayUnit::us) ? 1000000.0 : 1000.0);
         double stepVal = (stage.delayUnit == DelayUnit::samples) ? (stage.delaySubsample ? 0.01 : 1.0) : 0.1;
 
         auto delaySlider = new QSlider(Qt::Horizontal, delayGroup);
@@ -816,10 +943,17 @@ void StageDetailView::buildStageOptionsUi() {
         delaySlider->setRange(0, stepsCount);
         delaySlider->setValue(static_cast<int>(stage.delayValue / stepVal));
 
-        auto delayLbl = new QLabel(QString("%1 %2").arg(stage.delayValue, 0, 'f', 2).arg(QString::fromStdString(delayUnitToString(stage.delayUnit))), delayGroup);
+        auto delayLbl = new QLabel(QString("%1 %2")
+                                       .arg(stage.delayValue, 0, 'f', 2)
+                                       .arg(QString::fromStdString(delayUnitToString(stage.delayUnit))),
+                                   delayGroup);
 
         auto zeroBtn = new QPushButton("Zero", delayGroup);
-        connect(zeroBtn, &QPushButton::clicked, [this, &stage]() { stage.delayValue = 0.0; applyConfig(); refreshUi(); });
+        connect(zeroBtn, &QPushButton::clicked, [this, &stage]() {
+            stage.delayValue = 0.0;
+            applyConfig();
+            refreshUi();
+        });
 
         auto sliderHBox = new QHBoxLayout();
         sliderHBox->addWidget(delaySlider);
@@ -829,12 +963,17 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto subChk = new QCheckBox("Subsample Delay (uses IIR allpass filter)", delayGroup);
         subChk->setChecked(stage.delaySubsample);
-        connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.delaySubsample = chk; applyConfig(); });
+        connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.delaySubsample = chk;
+            applyConfig();
+        });
         formLayout->addRow("", subChk);
 
         connect(delaySlider, &QSlider::valueChanged, [this, &stage, delayLbl, stepVal](int val) {
             stage.delayValue = val * stepVal;
-            delayLbl->setText(QString("%1 %2").arg(stage.delayValue, 0, 'f', 2).arg(QString::fromStdString(delayUnitToString(stage.delayUnit))));
+            delayLbl->setText(QString("%1 %2")
+                                  .arg(stage.delayValue, 0, 'f', 2)
+                                  .arg(QString::fromStdString(delayUnitToString(stage.delayUnit))));
             applyConfig();
         });
 
@@ -850,26 +989,39 @@ void StageDetailView::buildStageOptionsUi() {
         faderCombo->addItems({"Aux 1", "Aux 2", "Aux 3", "Aux 4"});
         faderCombo->setCurrentIndex(std::max(0, static_cast<int>(stage.volumeFader) - 1));
         connect(faderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.volumeFader = static_cast<Fader>(idx + 1); applyConfig();
+            stage.volumeFader = static_cast<Fader>(idx + 1);
+            applyConfig();
         });
         formLayout->addRow("Fader:", faderCombo);
 
         auto rampSlider = new QSlider(Qt::Horizontal, volGroup);
-        rampSlider->setRange(0, 40); rampSlider->setValue(static_cast<int>(stage.volumeRampTime / 50.0));
+        rampSlider->setRange(0, 40);
+        rampSlider->setValue(static_cast<int>(stage.volumeRampTime / 50.0));
         auto rampLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.volumeRampTime)), volGroup);
         connect(rampSlider, &QSlider::valueChanged, [this, &stage, rampLbl](int val) {
-            stage.volumeRampTime = val * 50; rampLbl->setText(QString("%1 ms").arg(static_cast<int>(stage.volumeRampTime))); applyConfig();
+            stage.volumeRampTime = val * 50;
+            rampLbl->setText(QString("%1 ms").arg(static_cast<int>(stage.volumeRampTime)));
+            applyConfig();
         });
-        auto rampBox = new QHBoxLayout(); rampBox->addWidget(rampSlider); rampBox->addWidget(rampLbl);
+        auto rampBox = new QHBoxLayout();
+        rampBox->addWidget(rampSlider);
+        rampBox->addWidget(rampLbl);
         formLayout->addRow("Ramp Time:", rampBox);
 
         auto limitSlider = new QSlider(Qt::Horizontal, volGroup);
-        limitSlider->setRange(-500, 200); limitSlider->setValue(static_cast<int>(stage.volumeLimit * 10.0));
-        auto limitLbl = new QLabel(QString("%1%2 dB").arg(stage.volumeLimit >= 0 ? "+" : "").arg(stage.volumeLimit, 0, 'f', 1), volGroup);
+        limitSlider->setRange(-500, 200);
+        limitSlider->setValue(static_cast<int>(stage.volumeLimit * 10.0));
+        auto limitLbl = new QLabel(
+            QString("%1%2 dB").arg(stage.volumeLimit >= 0 ? "+" : "").arg(stage.volumeLimit, 0, 'f', 1), volGroup);
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
-            stage.volumeLimit = val / 10.0; limitLbl->setText(QString("%1%2 dB").arg(stage.volumeLimit >= 0 ? "+" : "").arg(stage.volumeLimit, 0, 'f', 1)); applyConfig();
+            stage.volumeLimit = val / 10.0;
+            limitLbl->setText(
+                QString("%1%2 dB").arg(stage.volumeLimit >= 0 ? "+" : "").arg(stage.volumeLimit, 0, 'f', 1));
+            applyConfig();
         });
-        auto limitBox = new QHBoxLayout(); limitBox->addWidget(limitSlider); limitBox->addWidget(limitLbl);
+        auto limitBox = new QHBoxLayout();
+        limitBox->addWidget(limitSlider);
+        limitBox->addWidget(limitLbl);
         formLayout->addRow("Limit:", limitBox);
 
         containerLayout->addWidget(volGroup);
@@ -881,30 +1033,45 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(limGroup);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
-        limitSlider->setRange(-300, 0); limitSlider->setValue(static_cast<int>(stage.lookaheadLimit * 10.0));
+        limitSlider->setRange(-300, 0);
+        limitSlider->setValue(static_cast<int>(stage.lookaheadLimit * 10.0));
         auto limitLbl = new QLabel(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1), limGroup);
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
-            stage.lookaheadLimit = val / 10.0; limitLbl->setText(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1)); applyConfig();
+            stage.lookaheadLimit = val / 10.0;
+            limitLbl->setText(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1));
+            applyConfig();
         });
-        auto limitBox = new QHBoxLayout(); limitBox->addWidget(limitSlider); limitBox->addWidget(limitLbl);
+        auto limitBox = new QHBoxLayout();
+        limitBox->addWidget(limitSlider);
+        limitBox->addWidget(limitLbl);
         formLayout->addRow("Limit:", limitBox);
 
         auto attSlider = new QSlider(Qt::Horizontal, limGroup);
-        attSlider->setRange(1, 10000); attSlider->setValue(static_cast<int>(stage.lookaheadAttack * 10.0));
+        attSlider->setRange(1, 10000);
+        attSlider->setValue(static_cast<int>(stage.lookaheadAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1), limGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
-            stage.lookaheadAttack = val / 10.0; attLbl->setText(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1)); applyConfig();
+            stage.lookaheadAttack = val / 10.0;
+            attLbl->setText(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1));
+            applyConfig();
         });
-        auto attBox = new QHBoxLayout(); attBox->addWidget(attSlider); attBox->addWidget(attLbl);
+        auto attBox = new QHBoxLayout();
+        attBox->addWidget(attSlider);
+        attBox->addWidget(attLbl);
         formLayout->addRow("Attack:", attBox);
 
         auto relSlider = new QSlider(Qt::Horizontal, limGroup);
-        relSlider->setRange(5, 1000); relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
+        relSlider->setRange(5, 1000);
+        relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.lookaheadRelease)), limGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
-            stage.lookaheadRelease = val; relLbl->setText(QString("%1 ms").arg(val)); applyConfig();
+            stage.lookaheadRelease = val;
+            relLbl->setText(QString("%1 ms").arg(val));
+            applyConfig();
         });
-        auto relBox = new QHBoxLayout(); relBox->addWidget(relSlider); relBox->addWidget(relLbl);
+        auto relBox = new QHBoxLayout();
+        relBox->addWidget(relSlider);
+        relBox->addWidget(relLbl);
         formLayout->addRow("Release:", relBox);
 
         containerLayout->addWidget(limGroup);
@@ -916,17 +1083,25 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(limGroup);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
-        limitSlider->setRange(-300, 0); limitSlider->setValue(static_cast<int>(stage.limiterLimit * 10.0));
+        limitSlider->setRange(-300, 0);
+        limitSlider->setValue(static_cast<int>(stage.limiterLimit * 10.0));
         auto limitLbl = new QLabel(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1), limGroup);
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
-            stage.limiterLimit = val / 10.0; limitLbl->setText(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1)); applyConfig();
+            stage.limiterLimit = val / 10.0;
+            limitLbl->setText(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1));
+            applyConfig();
         });
-        auto limitBox = new QHBoxLayout(); limitBox->addWidget(limitSlider); limitBox->addWidget(limitLbl);
+        auto limitBox = new QHBoxLayout();
+        limitBox->addWidget(limitSlider);
+        limitBox->addWidget(limitLbl);
         formLayout->addRow("Limit:", limitBox);
 
         auto softChk = new QCheckBox("Enable Soft Clipping", limGroup);
         softChk->setChecked(stage.limiterSoftClip);
-        connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.limiterSoftClip = chk; applyConfig(); });
+        connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.limiterSoftClip = chk;
+            applyConfig();
+        });
         formLayout->addRow("", softChk);
 
         containerLayout->addWidget(limGroup);
@@ -942,11 +1117,13 @@ void StageDetailView::buildStageOptionsUi() {
         auto inBox = new QVBoxLayout();
         inBox->addWidget(new QLabel("Input Channels", mmGroup));
         auto inCombo = new QComboBox(mmGroup);
-        for (int c = 1; c <= 16; ++c) inCombo->addItem(QString("%1 Channels").arg(c), c);
+        for (int c = 1; c <= 16; ++c)
+            inCombo->addItem(QString("%1 Channels").arg(c), c);
         inCombo->setCurrentIndex(stage.mixerChannelsIn - 1);
         connect(inCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, inCombo](int idx) {
             stage.mixerChannelsIn = inCombo->itemData(idx).toInt();
-            applyConfig(); refreshUi();
+            applyConfig();
+            refreshUi();
         });
         inBox->addWidget(inCombo);
         dimHBox->addLayout(inBox);
@@ -954,11 +1131,13 @@ void StageDetailView::buildStageOptionsUi() {
         auto outBox = new QVBoxLayout();
         outBox->addWidget(new QLabel("Output Channels", mmGroup));
         auto outCombo = new QComboBox(mmGroup);
-        for (int c = 1; c <= 16; ++c) outCombo->addItem(QString("%1 Channels").arg(c), c);
+        for (int c = 1; c <= 16; ++c)
+            outCombo->addItem(QString("%1 Channels").arg(c), c);
         outCombo->setCurrentIndex(stage.mixerChannelsOut - 1);
         connect(outCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, outCombo](int idx) {
             stage.mixerChannelsOut = outCombo->itemData(idx).toInt();
-            applyConfig(); refreshUi();
+            applyConfig();
+            refreshUi();
         });
         outBox->addWidget(outCombo);
         dimHBox->addLayout(outBox);
@@ -980,20 +1159,25 @@ void StageDetailView::buildStageOptionsUi() {
         table->setMinimumHeight(std::min(480, rows * 80 + 35));
 
         QStringList headers;
-        for (int c = 0; c < cols; ++c) headers << QString("Ch %1").arg(c + 1);
+        for (int c = 0; c < cols; ++c)
+            headers << QString("Ch %1").arg(c + 1);
         table->setHorizontalHeaderLabels(headers);
 
         QStringList rowLabels;
-        for (int r = 0; r < rows; ++r) rowLabels << QString("Ch %1").arg(r + 1);
+        for (int r = 0; r < rows; ++r)
+            rowLabels << QString("Ch %1").arg(r + 1);
         table->setVerticalHeaderLabels(rowLabels);
 
         for (int r = 0; r < rows; ++r) {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(), [r](const MixerMapping& m) { return m.dest == r; });
+            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                                      [r](const MixerMapping& m) { return m.dest == r; });
             for (int c = 0; c < cols; ++c) {
                 const MixerSource* srcPtr = nullptr;
                 if (mapIt != stage.mixerMappings.end()) {
-                    auto srcIt = std::find_if(mapIt->sources.begin(), mapIt->sources.end(), [c](const MixerSource& s) { return s.channel == c; });
-                    if (srcIt != mapIt->sources.end()) srcPtr = &(*srcIt);
+                    auto srcIt = std::find_if(mapIt->sources.begin(), mapIt->sources.end(),
+                                              [c](const MixerSource& s) { return s.channel == c; });
+                    if (srcIt != mapIt->sources.end())
+                        srcPtr = &(*srcIt);
                 }
 
                 auto cellWidget = new QWidget(table);
@@ -1007,60 +1191,91 @@ void StageDetailView::buildStageOptionsUi() {
 
                 if (srcPtr) {
                     auto spin = new QDoubleSpinBox(cellWidget);
-                    spin->setRange(-120.0, 30.0); spin->setSingleStep(0.5); spin->setValue(srcPtr->gainValue());
+                    spin->setRange(-120.0, 30.0);
+                    spin->setSingleStep(0.5);
+                    spin->setValue(srcPtr->gainValue());
                     spin->setStyleSheet("font-size: 10px;");
-                    connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage, r, c](double val) {
-                        auto& mapList = stage.mixerMappings;
-                        auto mapIt = std::find_if(mapList.begin(), mapList.end(), [r](const MixerMapping& m) { return m.dest == r; });
-                        if (mapIt != mapList.end()) {
-                            for (auto& s : mapIt->sources) { if (s.channel == c) { s.gain = val; break; } }
-                            applyConfig();
-                        }
-                    });
+                    connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                            [this, &stage, r, c](double val) {
+                                auto& mapList = stage.mixerMappings;
+                                auto mapIt = std::find_if(mapList.begin(), mapList.end(),
+                                                          [r](const MixerMapping& m) { return m.dest == r; });
+                                if (mapIt != mapList.end()) {
+                                    for (auto& s : mapIt->sources) {
+                                        if (s.channel == c) {
+                                            s.gain = val;
+                                            break;
+                                        }
+                                    }
+                                    applyConfig();
+                                }
+                            });
                     cellVBox->addWidget(spin);
 
                     auto btnHBox = new QHBoxLayout();
                     btnHBox->setSpacing(2);
 
                     auto invBtn = new QPushButton("Ø", cellWidget);
-                    invBtn->setFixedSize(22, 20); invBtn->setCheckable(true); invBtn->setChecked(srcPtr->inverted.value_or(false));
+                    invBtn->setFixedSize(22, 20);
+                    invBtn->setCheckable(true);
+                    invBtn->setChecked(srcPtr->inverted.value_or(false));
                     invBtn->setStyleSheet(invBtn->isChecked() ? "background: orange; color: white;" : "color: gray;");
                     connect(invBtn, &QPushButton::clicked, [this, &stage, r, c, invBtn]() {
                         auto& mapList = stage.mixerMappings;
-                        auto mapIt = std::find_if(mapList.begin(), mapList.end(), [r](const MixerMapping& m) { return m.dest == r; });
+                        auto mapIt = std::find_if(mapList.begin(), mapList.end(),
+                                                  [r](const MixerMapping& m) { return m.dest == r; });
                         if (mapIt != mapList.end()) {
-                            for (auto& s : mapIt->sources) { if (s.channel == c) { s.inverted = !s.inverted.value_or(false); break; } }
-                            applyConfig(); refreshUi();
+                            for (auto& s : mapIt->sources) {
+                                if (s.channel == c) {
+                                    s.inverted = !s.inverted.value_or(false);
+                                    break;
+                                }
+                            }
+                            applyConfig();
+                            refreshUi();
                         }
                     });
                     btnHBox->addWidget(invBtn);
 
                     auto muteBtn = new QPushButton("M", cellWidget);
-                    muteBtn->setFixedSize(22, 20); muteBtn->setCheckable(true); muteBtn->setChecked(srcPtr->mute.value_or(false));
+                    muteBtn->setFixedSize(22, 20);
+                    muteBtn->setCheckable(true);
+                    muteBtn->setChecked(srcPtr->mute.value_or(false));
                     muteBtn->setStyleSheet(muteBtn->isChecked() ? "background: red; color: white;" : "color: gray;");
                     connect(muteBtn, &QPushButton::clicked, [this, &stage, r, c, muteBtn]() {
                         auto& mapList = stage.mixerMappings;
-                        auto mapIt = std::find_if(mapList.begin(), mapList.end(), [r](const MixerMapping& m) { return m.dest == r; });
+                        auto mapIt = std::find_if(mapList.begin(), mapList.end(),
+                                                  [r](const MixerMapping& m) { return m.dest == r; });
                         if (mapIt != mapList.end()) {
-                            for (auto& s : mapIt->sources) { if (s.channel == c) { s.mute = !s.mute.value_or(false); break; } }
-                            applyConfig(); refreshUi();
+                            for (auto& s : mapIt->sources) {
+                                if (s.channel == c) {
+                                    s.mute = !s.mute.value_or(false);
+                                    break;
+                                }
+                            }
+                            applyConfig();
+                            refreshUi();
                         }
                     });
                     btnHBox->addWidget(muteBtn);
 
-                    auto scaleBtn = new QPushButton((srcPtr->scale.value_or(GainScale::dB) == GainScale::dB) ? "dB" : "lin", cellWidget);
+                    auto scaleBtn = new QPushButton(
+                        (srcPtr->scale.value_or(GainScale::dB) == GainScale::dB) ? "dB" : "lin", cellWidget);
                     scaleBtn->setFixedSize(26, 20);
                     connect(scaleBtn, &QPushButton::clicked, [this, &stage, r, c, srcPtr]() {
                         auto& mapList = stage.mixerMappings;
-                        auto mapIt = std::find_if(mapList.begin(), mapList.end(), [r](const MixerMapping& m) { return m.dest == r; });
+                        auto mapIt = std::find_if(mapList.begin(), mapList.end(),
+                                                  [r](const MixerMapping& m) { return m.dest == r; });
                         if (mapIt != mapList.end()) {
                             for (auto& s : mapIt->sources) {
                                 if (s.channel == c) {
-                                    s.scale = (s.scale.value_or(GainScale::dB) == GainScale::dB) ? GainScale::linear : GainScale::dB;
+                                    s.scale = (s.scale.value_or(GainScale::dB) == GainScale::dB) ? GainScale::linear
+                                                                                                 : GainScale::dB;
                                     break;
                                 }
                             }
-                            applyConfig(); refreshUi();
+                            applyConfig();
+                            refreshUi();
                         }
                     });
                     btnHBox->addWidget(scaleBtn);
@@ -1070,19 +1285,25 @@ void StageDetailView::buildStageOptionsUi() {
 
                 connect(checkBtn, &QCheckBox::toggled, [this, &stage, r, c](bool checked) {
                     auto& mapList = stage.mixerMappings;
-                    auto mapIt = std::find_if(mapList.begin(), mapList.end(), [r](const MixerMapping& m) { return m.dest == r; });
+                    auto mapIt = std::find_if(mapList.begin(), mapList.end(),
+                                              [r](const MixerMapping& m) { return m.dest == r; });
                     if (mapIt == mapList.end()) {
                         stage.mixerMappings.push_back(MixerMapping{r, {}, std::nullopt});
                         mapIt = std::prev(stage.mixerMappings.end());
                     }
                     if (checked) {
-                        if (std::find_if(mapIt->sources.begin(), mapIt->sources.end(), [c](const MixerSource& s) { return s.channel == c; }) == mapIt->sources.end()) {
+                        if (std::find_if(mapIt->sources.begin(), mapIt->sources.end(), [c](const MixerSource& s) {
+                                return s.channel == c;
+                            }) == mapIt->sources.end()) {
                             mapIt->sources.push_back(MixerSource{c, 0.0, false});
                         }
                     } else {
-                        mapIt->sources.erase(std::remove_if(mapIt->sources.begin(), mapIt->sources.end(), [c](const MixerSource& s) { return s.channel == c; }), mapIt->sources.end());
+                        mapIt->sources.erase(std::remove_if(mapIt->sources.begin(), mapIt->sources.end(),
+                                                            [c](const MixerSource& s) { return s.channel == c; }),
+                                             mapIt->sources.end());
                     }
-                    applyConfig(); refreshUi();
+                    applyConfig();
+                    refreshUi();
                 });
 
                 table->setCellWidget(r, c, cellWidget);
@@ -1098,7 +1319,8 @@ void StageDetailView::buildStageOptionsUi() {
                 int src = r < minCh ? r : 0;
                 stage.mixerMappings.push_back(MixerMapping{r, {MixerSource{src, 0.0, false}}, std::nullopt});
             }
-            applyConfig(); refreshUi();
+            applyConfig();
+            refreshUi();
         });
         matrixVBox->addWidget(resetBtn);
 
@@ -1112,65 +1334,100 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(compGroup);
 
         auto thSlider = new QSlider(Qt::Horizontal, compGroup);
-        thSlider->setRange(-600, 0); thSlider->setValue(static_cast<int>(stage.compressorThreshold * 10.0));
+        thSlider->setRange(-600, 0);
+        thSlider->setValue(static_cast<int>(stage.compressorThreshold * 10.0));
         auto thLbl = new QLabel(QString("%1 dB").arg(stage.compressorThreshold, 0, 'f', 1), compGroup);
         connect(thSlider, &QSlider::valueChanged, [this, &stage, thLbl](int val) {
-            stage.compressorThreshold = val / 10.0; thLbl->setText(QString("%1 dB").arg(stage.compressorThreshold, 0, 'f', 1)); applyConfig();
+            stage.compressorThreshold = val / 10.0;
+            thLbl->setText(QString("%1 dB").arg(stage.compressorThreshold, 0, 'f', 1));
+            applyConfig();
         });
-        auto thBox = new QHBoxLayout(); thBox->addWidget(thSlider); thBox->addWidget(thLbl);
+        auto thBox = new QHBoxLayout();
+        thBox->addWidget(thSlider);
+        thBox->addWidget(thLbl);
         formLayout->addRow("Threshold:", thBox);
 
         auto ratioSlider = new QSlider(Qt::Horizontal, compGroup);
-        ratioSlider->setRange(10, 200); ratioSlider->setValue(static_cast<int>(stage.compressorRatio * 10.0));
+        ratioSlider->setRange(10, 200);
+        ratioSlider->setValue(static_cast<int>(stage.compressorRatio * 10.0));
         auto ratioLbl = new QLabel(QString("%1:1").arg(stage.compressorRatio, 0, 'f', 1), compGroup);
         connect(ratioSlider, &QSlider::valueChanged, [this, &stage, ratioLbl](int val) {
-            stage.compressorRatio = val / 10.0; ratioLbl->setText(QString("%1:1").arg(stage.compressorRatio, 0, 'f', 1)); applyConfig();
+            stage.compressorRatio = val / 10.0;
+            ratioLbl->setText(QString("%1:1").arg(stage.compressorRatio, 0, 'f', 1));
+            applyConfig();
         });
-        auto ratioBox = new QHBoxLayout(); ratioBox->addWidget(ratioSlider); ratioBox->addWidget(ratioLbl);
+        auto ratioBox = new QHBoxLayout();
+        ratioBox->addWidget(ratioSlider);
+        ratioBox->addWidget(ratioLbl);
         formLayout->addRow("Ratio:", ratioBox);
 
         auto attSlider = new QSlider(Qt::Horizontal, compGroup);
-        attSlider->setRange(1, 1000); attSlider->setValue(static_cast<int>(stage.compressorAttack * 10.0));
+        attSlider->setRange(1, 1000);
+        attSlider->setValue(static_cast<int>(stage.compressorAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1), compGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
-            stage.compressorAttack = val / 10.0; attLbl->setText(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1)); applyConfig();
+            stage.compressorAttack = val / 10.0;
+            attLbl->setText(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1));
+            applyConfig();
         });
-        auto attBox = new QHBoxLayout(); attBox->addWidget(attSlider); attBox->addWidget(attLbl);
+        auto attBox = new QHBoxLayout();
+        attBox->addWidget(attSlider);
+        attBox->addWidget(attLbl);
         formLayout->addRow("Attack:", attBox);
 
         auto relSlider = new QSlider(Qt::Horizontal, compGroup);
-        relSlider->setRange(5, 1000); relSlider->setValue(static_cast<int>(stage.compressorRelease));
+        relSlider->setRange(5, 1000);
+        relSlider->setValue(static_cast<int>(stage.compressorRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.compressorRelease)), compGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
-            stage.compressorRelease = val; relLbl->setText(QString("%1 ms").arg(val)); applyConfig();
+            stage.compressorRelease = val;
+            relLbl->setText(QString("%1 ms").arg(val));
+            applyConfig();
         });
-        auto relBox = new QHBoxLayout(); relBox->addWidget(relSlider); relBox->addWidget(relLbl);
+        auto relBox = new QHBoxLayout();
+        relBox->addWidget(relSlider);
+        relBox->addWidget(relLbl);
         formLayout->addRow("Release:", relBox);
 
         auto mkSlider = new QSlider(Qt::Horizontal, compGroup);
-        mkSlider->setRange(0, 300); mkSlider->setValue(static_cast<int>(stage.compressorMakeupGain * 10.0));
-        auto mkLbl = new QLabel(QString("%1%2 dB").arg(stage.compressorMakeupGain >= 0 ? "+" : "").arg(stage.compressorMakeupGain, 0, 'f', 1), compGroup);
+        mkSlider->setRange(0, 300);
+        mkSlider->setValue(static_cast<int>(stage.compressorMakeupGain * 10.0));
+        auto mkLbl = new QLabel(QString("%1%2 dB")
+                                    .arg(stage.compressorMakeupGain >= 0 ? "+" : "")
+                                    .arg(stage.compressorMakeupGain, 0, 'f', 1),
+                                compGroup);
         connect(mkSlider, &QSlider::valueChanged, [this, &stage, mkLbl](int val) {
-            stage.compressorMakeupGain = val / 10.0; mkLbl->setText(QString("%1%2 dB").arg(stage.compressorMakeupGain >= 0 ? "+" : "").arg(stage.compressorMakeupGain, 0, 'f', 1)); applyConfig();
+            stage.compressorMakeupGain = val / 10.0;
+            mkLbl->setText(QString("%1%2 dB")
+                               .arg(stage.compressorMakeupGain >= 0 ? "+" : "")
+                               .arg(stage.compressorMakeupGain, 0, 'f', 1));
+            applyConfig();
         });
-        auto mkBox = new QHBoxLayout(); mkBox->addWidget(mkSlider); mkBox->addWidget(mkLbl);
+        auto mkBox = new QHBoxLayout();
+        mkBox->addWidget(mkSlider);
+        mkBox->addWidget(mkLbl);
         formLayout->addRow("Makeup Gain:", mkBox);
 
         auto monLayout = new QHBoxLayout();
         for (int c = 0; c < incomingChannels; ++c) {
             auto btn = new QPushButton(QString::number(c + 1), compGroup);
-            btn->setFixedWidth(32); btn->setCheckable(true);
-            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
+            btn->setFixedWidth(32);
+            btn->setCheckable(true);
+            bool isSelected =
+                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;" : "background: #e5e5ea; color: black;");
+            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;"
+                                          : "background: #e5e5ea; color: black;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) stage.monitorChannels.erase(it);
+                    if (stage.monitorChannels.size() > 1)
+                        stage.monitorChannels.erase(it);
                 } else {
                     stage.monitorChannels.push_back(c);
                 }
-                applyConfig(); refreshUi();
+                applyConfig();
+                refreshUi();
             });
             monLayout->addWidget(btn);
         }
@@ -1179,17 +1436,26 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto softChk = new QCheckBox("Enable Soft Clip", compGroup);
         softChk->setChecked(stage.compressorSoftClip);
-        connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.compressorSoftClip = chk; applyConfig(); refreshUi(); });
+        connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.compressorSoftClip = chk;
+            applyConfig();
+            refreshUi();
+        });
         formLayout->addRow("", softChk);
 
         if (stage.compressorSoftClip) {
             auto clipSlider = new QSlider(Qt::Horizontal, compGroup);
-            clipSlider->setRange(-100, 0); clipSlider->setValue(static_cast<int>(stage.compressorClipLimit * 10.0));
+            clipSlider->setRange(-100, 0);
+            clipSlider->setValue(static_cast<int>(stage.compressorClipLimit * 10.0));
             auto clipLbl = new QLabel(QString("%1 dB").arg(stage.compressorClipLimit, 0, 'f', 1), compGroup);
             connect(clipSlider, &QSlider::valueChanged, [this, &stage, clipLbl](int val) {
-                stage.compressorClipLimit = val / 10.0; clipLbl->setText(QString("%1 dB").arg(stage.compressorClipLimit, 0, 'f', 1)); applyConfig();
+                stage.compressorClipLimit = val / 10.0;
+                clipLbl->setText(QString("%1 dB").arg(stage.compressorClipLimit, 0, 'f', 1));
+                applyConfig();
             });
-            auto clipBox = new QHBoxLayout(); clipBox->addWidget(clipSlider); clipBox->addWidget(clipLbl);
+            auto clipBox = new QHBoxLayout();
+            clipBox->addWidget(clipSlider);
+            clipBox->addWidget(clipLbl);
             formLayout->addRow("Clip Limit:", clipBox);
         }
 
@@ -1202,56 +1468,81 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(gateGroup);
 
         auto thSlider = new QSlider(Qt::Horizontal, gateGroup);
-        thSlider->setRange(-1000, 0); thSlider->setValue(static_cast<int>(stage.gateThreshold * 10.0));
+        thSlider->setRange(-1000, 0);
+        thSlider->setValue(static_cast<int>(stage.gateThreshold * 10.0));
         auto thLbl = new QLabel(QString("%1 dB").arg(stage.gateThreshold, 0, 'f', 1), gateGroup);
         connect(thSlider, &QSlider::valueChanged, [this, &stage, thLbl](int val) {
-            stage.gateThreshold = val / 10.0; thLbl->setText(QString("%1 dB").arg(stage.gateThreshold, 0, 'f', 1)); applyConfig();
+            stage.gateThreshold = val / 10.0;
+            thLbl->setText(QString("%1 dB").arg(stage.gateThreshold, 0, 'f', 1));
+            applyConfig();
         });
-        auto thBox = new QHBoxLayout(); thBox->addWidget(thSlider); thBox->addWidget(thLbl);
+        auto thBox = new QHBoxLayout();
+        thBox->addWidget(thSlider);
+        thBox->addWidget(thLbl);
         formLayout->addRow("Threshold:", thBox);
 
         auto attenSlider = new QSlider(Qt::Horizontal, gateGroup);
-        attenSlider->setRange(-1000, 0); attenSlider->setValue(static_cast<int>(stage.gateAttenuation * 10.0));
+        attenSlider->setRange(-1000, 0);
+        attenSlider->setValue(static_cast<int>(stage.gateAttenuation * 10.0));
         auto attenLbl = new QLabel(QString("%1 dB").arg(stage.gateAttenuation, 0, 'f', 1), gateGroup);
         connect(attenSlider, &QSlider::valueChanged, [this, &stage, attenLbl](int val) {
-            stage.gateAttenuation = val / 10.0; attenLbl->setText(QString("%1 dB").arg(stage.gateAttenuation, 0, 'f', 1)); applyConfig();
+            stage.gateAttenuation = val / 10.0;
+            attenLbl->setText(QString("%1 dB").arg(stage.gateAttenuation, 0, 'f', 1));
+            applyConfig();
         });
-        auto attenBox = new QHBoxLayout(); attenBox->addWidget(attenSlider); attenBox->addWidget(attenLbl);
+        auto attenBox = new QHBoxLayout();
+        attenBox->addWidget(attenSlider);
+        attenBox->addWidget(attenLbl);
         formLayout->addRow("Attenuation:", attenBox);
 
         auto attSlider = new QSlider(Qt::Horizontal, gateGroup);
-        attSlider->setRange(1, 1000); attSlider->setValue(static_cast<int>(stage.gateAttack * 10.0));
+        attSlider->setRange(1, 1000);
+        attSlider->setValue(static_cast<int>(stage.gateAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1), gateGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
-            stage.gateAttack = val / 10.0; attLbl->setText(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1)); applyConfig();
+            stage.gateAttack = val / 10.0;
+            attLbl->setText(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1));
+            applyConfig();
         });
-        auto attBox = new QHBoxLayout(); attBox->addWidget(attSlider); attBox->addWidget(attLbl);
+        auto attBox = new QHBoxLayout();
+        attBox->addWidget(attSlider);
+        attBox->addWidget(attLbl);
         formLayout->addRow("Attack:", attBox);
 
         auto relSlider = new QSlider(Qt::Horizontal, gateGroup);
-        relSlider->setRange(5, 1000); relSlider->setValue(static_cast<int>(stage.gateRelease));
+        relSlider->setRange(5, 1000);
+        relSlider->setValue(static_cast<int>(stage.gateRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.gateRelease)), gateGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
-            stage.gateRelease = val; relLbl->setText(QString("%1 ms").arg(val)); applyConfig();
+            stage.gateRelease = val;
+            relLbl->setText(QString("%1 ms").arg(val));
+            applyConfig();
         });
-        auto relBox = new QHBoxLayout(); relBox->addWidget(relSlider); relBox->addWidget(relLbl);
+        auto relBox = new QHBoxLayout();
+        relBox->addWidget(relSlider);
+        relBox->addWidget(relLbl);
         formLayout->addRow("Release:", relBox);
 
         auto monLayout = new QHBoxLayout();
         for (int c = 0; c < incomingChannels; ++c) {
             auto btn = new QPushButton(QString::number(c + 1), gateGroup);
-            btn->setFixedWidth(32); btn->setCheckable(true);
-            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
+            btn->setFixedWidth(32);
+            btn->setCheckable(true);
+            bool isSelected =
+                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;" : "background: #e5e5ea; color: black;");
+            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;"
+                                          : "background: #e5e5ea; color: black;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) stage.monitorChannels.erase(it);
+                    if (stage.monitorChannels.size() > 1)
+                        stage.monitorChannels.erase(it);
                 } else {
                     stage.monitorChannels.push_back(c);
                 }
-                applyConfig(); refreshUi();
+                applyConfig();
+                refreshUi();
             });
             monLayout->addWidget(btn);
         }
@@ -1266,7 +1557,9 @@ void StageDetailView::buildStageOptionsUi() {
         auto raceGroup = new QGroupBox("RACE Crosstalk Cancellation", m_optionsContainer);
         auto raceVBox = new QVBoxLayout(raceGroup);
 
-        auto descLbl = new QLabel("Receiver Active Crosstalk Cancellation (RACE) implements a 3D audio effect for speaker playback by canceling acoustic crosstalk between two channels.", raceGroup);
+        auto descLbl = new QLabel("Receiver Active Crosstalk Cancellation (RACE) implements a 3D audio effect for "
+                                  "speaker playback by canceling acoustic crosstalk between two channels.",
+                                  raceGroup);
         descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         raceVBox->addWidget(descLbl);
 
@@ -1276,40 +1569,67 @@ void StageDetailView::buildStageOptionsUi() {
         unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
         unitCombo->setCurrentIndex(static_cast<int>(stage.raceDelayUnit));
         connect(unitCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.raceDelayUnit = static_cast<DelayUnit>(idx); applyConfig(); refreshUi();
+            stage.raceDelayUnit = static_cast<DelayUnit>(idx);
+            applyConfig();
+            refreshUi();
         });
         formLayout->addRow("Delay Unit:", unitCombo);
 
-        double minVal = (stage.raceDelayUnit == DelayUnit::samples) ? 1.0 : ((stage.raceDelayUnit == DelayUnit::us) ? 5.0 : ((stage.raceDelayUnit == DelayUnit::mm) ? 2.0 : 0.01));
-        double maxVal = (stage.raceDelayUnit == DelayUnit::samples) ? 100.0 : ((stage.raceDelayUnit == DelayUnit::us) ? 2000.0 : ((stage.raceDelayUnit == DelayUnit::mm) ? 700.0 : 2.0));
-        double stepVal = (stage.raceDelayUnit == DelayUnit::samples) ? (stage.raceSubsampleDelay ? 0.01 : 1.0) : ((stage.raceDelayUnit == DelayUnit::ms) ? 0.01 : 1.0);
+        double minVal =
+            (stage.raceDelayUnit == DelayUnit::samples)
+                ? 1.0
+                : ((stage.raceDelayUnit == DelayUnit::us) ? 5.0
+                                                          : ((stage.raceDelayUnit == DelayUnit::mm) ? 2.0 : 0.01));
+        double maxVal =
+            (stage.raceDelayUnit == DelayUnit::samples)
+                ? 100.0
+                : ((stage.raceDelayUnit == DelayUnit::us) ? 2000.0
+                                                          : ((stage.raceDelayUnit == DelayUnit::mm) ? 700.0 : 2.0));
+        double stepVal = (stage.raceDelayUnit == DelayUnit::samples)
+                             ? (stage.raceSubsampleDelay ? 0.01 : 1.0)
+                             : ((stage.raceDelayUnit == DelayUnit::ms) ? 0.01 : 1.0);
 
         int stepsCount = static_cast<int>((maxVal - minVal) / stepVal);
         auto delaySlider = new QSlider(Qt::Horizontal, raceGroup);
         delaySlider->setRange(0, stepsCount);
         delaySlider->setValue(static_cast<int>((stage.raceDelay - minVal) / stepVal));
 
-        auto delayLbl = new QLabel(QString("%1 %2").arg(stage.raceDelay, 0, 'f', 2).arg(QString::fromStdString(delayUnitToString(stage.raceDelayUnit))), raceGroup);
+        auto delayLbl = new QLabel(QString("%1 %2")
+                                       .arg(stage.raceDelay, 0, 'f', 2)
+                                       .arg(QString::fromStdString(delayUnitToString(stage.raceDelayUnit))),
+                                   raceGroup);
         connect(delaySlider, &QSlider::valueChanged, [this, &stage, delayLbl, minVal, stepVal](int val) {
             stage.raceDelay = minVal + val * stepVal;
-            delayLbl->setText(QString("%1 %2").arg(stage.raceDelay, 0, 'f', 2).arg(QString::fromStdString(delayUnitToString(stage.raceDelayUnit))));
+            delayLbl->setText(QString("%1 %2")
+                                  .arg(stage.raceDelay, 0, 'f', 2)
+                                  .arg(QString::fromStdString(delayUnitToString(stage.raceDelayUnit))));
             applyConfig();
         });
-        auto delayBox = new QHBoxLayout(); delayBox->addWidget(delaySlider); delayBox->addWidget(delayLbl);
+        auto delayBox = new QHBoxLayout();
+        delayBox->addWidget(delaySlider);
+        delayBox->addWidget(delayLbl);
         formLayout->addRow("Delay:", delayBox);
 
         auto attenSlider = new QSlider(Qt::Horizontal, raceGroup);
-        attenSlider->setRange(10, 200); attenSlider->setValue(static_cast<int>(stage.raceAttenuation * 10.0));
+        attenSlider->setRange(10, 200);
+        attenSlider->setValue(static_cast<int>(stage.raceAttenuation * 10.0));
         auto attenLbl = new QLabel(QString("%1 dB").arg(stage.raceAttenuation, 0, 'f', 1), raceGroup);
         connect(attenSlider, &QSlider::valueChanged, [this, &stage, attenLbl](int val) {
-            stage.raceAttenuation = val / 10.0; attenLbl->setText(QString("%1 dB").arg(stage.raceAttenuation, 0, 'f', 1)); applyConfig();
+            stage.raceAttenuation = val / 10.0;
+            attenLbl->setText(QString("%1 dB").arg(stage.raceAttenuation, 0, 'f', 1));
+            applyConfig();
         });
-        auto attenBox = new QHBoxLayout(); attenBox->addWidget(attenSlider); attenBox->addWidget(attenLbl);
+        auto attenBox = new QHBoxLayout();
+        attenBox->addWidget(attenSlider);
+        attenBox->addWidget(attenLbl);
         formLayout->addRow("Attenuation:", attenBox);
 
         auto subChk = new QCheckBox("Subsample Delay (uses IIR allpass filter)", raceGroup);
         subChk->setChecked(stage.raceSubsampleDelay);
-        connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) { stage.raceSubsampleDelay = chk; applyConfig(); });
+        connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.raceSubsampleDelay = chk;
+            applyConfig();
+        });
         formLayout->addRow("", subChk);
 
         raceVBox->addLayout(formLayout);
@@ -1322,44 +1642,72 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(ditherGroup);
 
         auto typeCombo = new QComboBox(ditherGroup);
-        static const std::vector<DitherType> types = {
-            DitherType::None, DitherType::Flat, DitherType::Highpass,
-            DitherType::Fweighted441, DitherType::FweightedLong441, DitherType::FweightedShort441,
-            DitherType::Gesemann441, DitherType::Gesemann48,
-            DitherType::Lipshitz441, DitherType::LipshitzLong441,
-            DitherType::Shibata441, DitherType::ShibataHigh441, DitherType::ShibataLow441,
-            DitherType::Shibata48, DitherType::ShibataHigh48, DitherType::ShibataLow48,
-            DitherType::Shibata96, DitherType::ShibataLow96
-        };
+        static const std::vector<DitherType> types = {DitherType::None,
+                                                      DitherType::Flat,
+                                                      DitherType::Highpass,
+                                                      DitherType::Fweighted441,
+                                                      DitherType::FweightedLong441,
+                                                      DitherType::FweightedShort441,
+                                                      DitherType::Gesemann441,
+                                                      DitherType::Gesemann48,
+                                                      DitherType::Lipshitz441,
+                                                      DitherType::LipshitzLong441,
+                                                      DitherType::Shibata441,
+                                                      DitherType::ShibataHigh441,
+                                                      DitherType::ShibataLow441,
+                                                      DitherType::Shibata48,
+                                                      DitherType::ShibataHigh48,
+                                                      DitherType::ShibataLow48,
+                                                      DitherType::Shibata96,
+                                                      DitherType::ShibataLow96};
         for (auto t : types) {
             typeCombo->addItem(QString::fromStdString(ditherTypeToString(t)), static_cast<int>(t));
         }
         int curIdx = 0;
-        for (size_t i = 0; i < types.size(); ++i) { if (types[i] == stage.ditherType) { curIdx = static_cast<int>(i); break; } }
+        for (size_t i = 0; i < types.size(); ++i) {
+            if (types[i] == stage.ditherType) {
+                curIdx = static_cast<int>(i);
+                break;
+            }
+        }
         typeCombo->setCurrentIndex(curIdx);
         connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            if (idx >= 0 && idx < static_cast<int>(types.size())) { stage.ditherType = types[idx]; applyConfig(); }
+            if (idx >= 0 && idx < static_cast<int>(types.size())) {
+                stage.ditherType = types[idx];
+                applyConfig();
+            }
         });
         formLayout->addRow("Type:", typeCombo);
 
         auto bitsCombo = new QComboBox(ditherGroup);
         bitsCombo->addItems({"16-bit", "24-bit", "32-bit", "8-bit (Lofi)"});
         int bIdx = 0;
-        if (stage.ditherBits == 24) bIdx = 1; else if (stage.ditherBits == 32) bIdx = 2; else if (stage.ditherBits == 8) bIdx = 3;
+        if (stage.ditherBits == 24)
+            bIdx = 1;
+        else if (stage.ditherBits == 32)
+            bIdx = 2;
+        else if (stage.ditherBits == 8)
+            bIdx = 3;
         bitsCombo->setCurrentIndex(bIdx);
         connect(bitsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
             static const int bVals[] = {16, 24, 32, 8};
-            stage.ditherBits = bVals[idx]; applyConfig();
+            stage.ditherBits = bVals[idx];
+            applyConfig();
         });
         formLayout->addRow("Bit Depth:", bitsCombo);
 
         auto ampSlider = new QSlider(Qt::Horizontal, ditherGroup);
-        ampSlider->setRange(0, 1000); ampSlider->setValue(static_cast<int>(stage.ditherAmplitude * 10.0));
+        ampSlider->setRange(0, 1000);
+        ampSlider->setValue(static_cast<int>(stage.ditherAmplitude * 10.0));
         auto ampLbl = new QLabel(QString("%1").arg(stage.ditherAmplitude, 0, 'f', 1), ditherGroup);
         connect(ampSlider, &QSlider::valueChanged, [this, &stage, ampLbl](int val) {
-            stage.ditherAmplitude = val / 10.0; ampLbl->setText(QString("%1").arg(stage.ditherAmplitude, 0, 'f', 1)); applyConfig();
+            stage.ditherAmplitude = val / 10.0;
+            ampLbl->setText(QString("%1").arg(stage.ditherAmplitude, 0, 'f', 1));
+            applyConfig();
         });
-        auto ampBox = new QHBoxLayout(); ampBox->addWidget(ampSlider); ampBox->addWidget(ampLbl);
+        auto ampBox = new QHBoxLayout();
+        ampBox->addWidget(ampSlider);
+        ampBox->addWidget(ampLbl);
         formLayout->addRow("Amplitude:", ampBox);
 
         containerLayout->addWidget(ditherGroup);
@@ -1370,7 +1718,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto deGroup = new QGroupBox("Differential Equation Filter", m_optionsContainer);
         auto deVBox = new QVBoxLayout(deGroup);
 
-        auto descLbl = new QLabel("Direct form II IIR filter coefficients. Specify as comma-separated lists of decimal numbers.", deGroup);
+        auto descLbl = new QLabel(
+            "Direct form II IIR filter coefficients. Specify as comma-separated lists of decimal numbers.", deGroup);
         descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         deVBox->addWidget(descLbl);
 
@@ -1379,14 +1728,16 @@ void StageDetailView::buildStageOptionsUi() {
         auto bEdit = new QLineEdit(QString::fromStdString(stage.diffEqB), deGroup);
         bEdit->setPlaceholderText("e.g. 1.0, 0.5, 0.25");
         connect(bEdit, &QLineEdit::editingFinished, [this, &stage, bEdit]() {
-            stage.diffEqB = bEdit->text().toStdString(); applyConfig();
+            stage.diffEqB = bEdit->text().toStdString();
+            applyConfig();
         });
         formLayout->addRow("Feedforward Coeffs (b):", bEdit);
 
         auto aEdit = new QLineEdit(QString::fromStdString(stage.diffEqA), deGroup);
         aEdit->setPlaceholderText("e.g. 1.0, -0.5, 0.1");
         connect(aEdit, &QLineEdit::editingFinished, [this, &stage, aEdit]() {
-            stage.diffEqA = aEdit->text().toStdString(); applyConfig();
+            stage.diffEqA = aEdit->text().toStdString();
+            applyConfig();
         });
         formLayout->addRow("Feedback Coeffs (a):", aEdit);
 
@@ -1400,39 +1751,51 @@ void StageDetailView::buildStageOptionsUi() {
         auto formLayout = new QFormLayout(comboGroup);
 
         auto typeCombo = new QComboBox(comboGroup);
-        typeCombo->addItems({"Butterworth Lowpass", "Butterworth Highpass", "Linkwitz-Riley Lowpass", "Linkwitz-Riley Highpass", "Tilt", "Five-Point PEQ"});
+        typeCombo->addItems({"Butterworth Lowpass", "Butterworth Highpass", "Linkwitz-Riley Lowpass",
+                             "Linkwitz-Riley Highpass", "Tilt", "Five-Point PEQ"});
         typeCombo->setCurrentIndex(static_cast<int>(stage.comboType));
         connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.comboType = static_cast<BiquadComboType>(idx); applyConfig(); refreshUi();
+            stage.comboType = static_cast<BiquadComboType>(idx);
+            applyConfig();
+            refreshUi();
         });
         formLayout->addRow("Combo Type:", typeCombo);
 
         if (stage.comboType != BiquadComboType::FivePointPeq) {
             auto freqSlider = new QSlider(Qt::Horizontal, comboGroup);
-            freqSlider->setRange(20, 20000); freqSlider->setValue(static_cast<int>(stage.comboFreq));
+            freqSlider->setRange(20, 20000);
+            freqSlider->setValue(static_cast<int>(stage.comboFreq));
             auto freqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)), comboGroup);
             connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl](int val) {
-                stage.comboFreq = val; freqLbl->setText(QString("%1 Hz").arg(val)); applyConfig();
+                stage.comboFreq = val;
+                freqLbl->setText(QString("%1 Hz").arg(val));
+                applyConfig();
             });
-            auto freqBox = new QHBoxLayout(); freqBox->addWidget(freqSlider); freqBox->addWidget(freqLbl);
+            auto freqBox = new QHBoxLayout();
+            freqBox->addWidget(freqSlider);
+            freqBox->addWidget(freqLbl);
             formLayout->addRow("Frequency:", freqBox);
         }
 
-        if (stage.comboType == BiquadComboType::ButterworthLowpass || stage.comboType == BiquadComboType::ButterworthHighpass) {
+        if (stage.comboType == BiquadComboType::ButterworthLowpass ||
+            stage.comboType == BiquadComboType::ButterworthHighpass) {
             auto orderSpin = new QSpinBox(comboGroup);
             orderSpin->setRange(1, 64);
             orderSpin->setSingleStep(1);
             orderSpin->setValue(std::clamp(stage.comboOrder, 1, 64));
             connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
-                stage.comboOrder = val; applyConfig();
+                stage.comboOrder = val;
+                applyConfig();
             });
             formLayout->addRow("Filter Order (1..64):", orderSpin);
-        } else if (stage.comboType == BiquadComboType::LinkwitzRileyLowpass || stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
+        } else if (stage.comboType == BiquadComboType::LinkwitzRileyLowpass ||
+                   stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
             auto orderSpin = new QSpinBox(comboGroup);
             orderSpin->setRange(2, 64);
             orderSpin->setSingleStep(2);
             int currentOrder = stage.comboOrder;
-            if (currentOrder % 2 != 0) currentOrder = std::max(2, currentOrder - 1);
+            if (currentOrder % 2 != 0)
+                currentOrder = std::max(2, currentOrder - 1);
             orderSpin->setValue(std::clamp(currentOrder, 2, 64));
             connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage, orderSpin](int val) {
                 if (val % 2 != 0) {
@@ -1440,19 +1803,27 @@ void StageDetailView::buildStageOptionsUi() {
                     orderSpin->setValue(val);
                     return;
                 }
-                stage.comboOrder = val; applyConfig();
+                stage.comboOrder = val;
+                applyConfig();
             });
             formLayout->addRow("Filter Order (even 2..64):", orderSpin);
         }
 
         if (stage.comboType == BiquadComboType::Tilt) {
             auto gainSlider = new QSlider(Qt::Horizontal, comboGroup);
-            gainSlider->setRange(-999, 999); gainSlider->setValue(static_cast<int>(stage.comboGain * 10.0));
-            auto gainLbl = new QLabel(QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1), comboGroup);
+            gainSlider->setRange(-999, 999);
+            gainSlider->setValue(static_cast<int>(stage.comboGain * 10.0));
+            auto gainLbl = new QLabel(
+                QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1), comboGroup);
             connect(gainSlider, &QSlider::valueChanged, [this, &stage, gainLbl](int val) {
-                stage.comboGain = val / 10.0; gainLbl->setText(QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1)); applyConfig();
+                stage.comboGain = val / 10.0;
+                gainLbl->setText(
+                    QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1));
+                applyConfig();
             });
-            auto gainBox = new QHBoxLayout(); gainBox->addWidget(gainSlider); gainBox->addWidget(gainLbl);
+            auto gainBox = new QHBoxLayout();
+            gainBox->addWidget(gainSlider);
+            gainBox->addWidget(gainLbl);
             formLayout->addRow("Gain:", gainBox);
         }
 
@@ -1468,18 +1839,39 @@ void StageDetailView::buildStageOptionsUi() {
                 peqGrid->addWidget(new QLabel(name, peqGroup), r, 0);
 
                 auto fSpin = new QDoubleSpinBox(peqGroup);
-                fSpin->setRange(20.0, 20000.0); fSpin->setSingleStep(10.0); fSpin->setDecimals(1); fSpin->setValue(*f); fSpin->setFixedWidth(90);
-                connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, f](double val) { *f = val; applyConfig(); });
+                fSpin->setRange(20.0, 20000.0);
+                fSpin->setSingleStep(10.0);
+                fSpin->setDecimals(1);
+                fSpin->setValue(*f);
+                fSpin->setFixedWidth(90);
+                connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, f](double val) {
+                    *f = val;
+                    applyConfig();
+                });
                 peqGrid->addWidget(fSpin, r, 1);
 
                 auto gSpin = new QDoubleSpinBox(peqGroup);
-                gSpin->setRange(-40.0, 40.0); gSpin->setSingleStep(0.5); gSpin->setDecimals(1); gSpin->setValue(*g); gSpin->setFixedWidth(80);
-                connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, g](double val) { *g = val; applyConfig(); });
+                gSpin->setRange(-40.0, 40.0);
+                gSpin->setSingleStep(0.5);
+                gSpin->setDecimals(1);
+                gSpin->setValue(*g);
+                gSpin->setFixedWidth(80);
+                connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, g](double val) {
+                    *g = val;
+                    applyConfig();
+                });
                 peqGrid->addWidget(gSpin, r, 2);
 
                 auto qSpin = new QDoubleSpinBox(peqGroup);
-                qSpin->setRange(0.05, 100.0); qSpin->setSingleStep(0.05); qSpin->setDecimals(3); qSpin->setValue(*q); qSpin->setFixedWidth(80);
-                connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, q](double val) { *q = val; applyConfig(); });
+                qSpin->setRange(0.05, 100.0);
+                qSpin->setSingleStep(0.05);
+                qSpin->setDecimals(3);
+                qSpin->setValue(*q);
+                qSpin->setFixedWidth(80);
+                connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, q](double val) {
+                    *q = val;
+                    applyConfig();
+                });
                 peqGrid->addWidget(qSpin, r, 3);
             };
 
@@ -1505,12 +1897,22 @@ void StageDetailView::buildStageOptionsUi() {
         auto rangeBox = new QVBoxLayout();
         rangeBox->addWidget(new QLabel("Frequency Range", geqGroup));
         auto rangeHBox = new QHBoxLayout();
-        auto minEdit = new QLineEdit(QString::number(stage.graphicEQFreqMin), geqGroup); minEdit->setFixedWidth(60);
-        connect(minEdit, &QLineEdit::editingFinished, [this, &stage, minEdit]() { stage.graphicEQFreqMin = minEdit->text().toDouble(); applyConfig(); refreshUi(); });
+        auto minEdit = new QLineEdit(QString::number(stage.graphicEQFreqMin), geqGroup);
+        minEdit->setFixedWidth(60);
+        connect(minEdit, &QLineEdit::editingFinished, [this, &stage, minEdit]() {
+            stage.graphicEQFreqMin = minEdit->text().toDouble();
+            applyConfig();
+            refreshUi();
+        });
         rangeHBox->addWidget(minEdit);
         rangeHBox->addWidget(new QLabel("to", geqGroup));
-        auto maxEdit = new QLineEdit(QString::number(stage.graphicEQFreqMax), geqGroup); maxEdit->setFixedWidth(70);
-        connect(maxEdit, &QLineEdit::editingFinished, [this, &stage, maxEdit]() { stage.graphicEQFreqMax = maxEdit->text().toDouble(); applyConfig(); refreshUi(); });
+        auto maxEdit = new QLineEdit(QString::number(stage.graphicEQFreqMax), geqGroup);
+        maxEdit->setFixedWidth(70);
+        connect(maxEdit, &QLineEdit::editingFinished, [this, &stage, maxEdit]() {
+            stage.graphicEQFreqMax = maxEdit->text().toDouble();
+            applyConfig();
+            refreshUi();
+        });
         rangeHBox->addWidget(maxEdit);
         rangeHBox->addWidget(new QLabel("Hz", geqGroup));
         rangeBox->addLayout(rangeHBox);
@@ -1519,13 +1921,15 @@ void StageDetailView::buildStageOptionsUi() {
         auto bandsBox = new QVBoxLayout();
         bandsBox->addWidget(new QLabel("Bands", geqGroup));
         auto spinBands = new QSpinBox(geqGroup);
-        spinBands->setRange(2, 64); spinBands->setValue(stage.graphicEQBandCount);
+        spinBands->setRange(2, 64);
+        spinBands->setValue(stage.graphicEQBandCount);
         connect(spinBands, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
             stage.graphicEQBandCount = val;
             if (static_cast<int>(stage.graphicEQGains.size()) != val) {
                 stage.graphicEQGains.resize(val, 0.0);
             }
-            applyConfig(); refreshUi();
+            applyConfig();
+            refreshUi();
         });
         bandsBox->addWidget(spinBands);
         topHBox->addLayout(bandsBox);
@@ -1549,7 +1953,8 @@ void StageDetailView::buildStageOptionsUi() {
         }
 
         auto bandFrequency = [](int index, int total, double fMin, double fMax) -> double {
-            if (total <= 1) return fMin;
+            if (total <= 1)
+                return fMin;
             double ratio = fMax / fMin;
             double exponent = static_cast<double>(index) / (total - 1);
             return fMin * std::pow(ratio, exponent);
@@ -1558,23 +1963,27 @@ void StageDetailView::buildStageOptionsUi() {
         auto freqLabelText = [](double hz) -> QString {
             if (hz >= 1000.0) {
                 double khz = hz / 1000.0;
-                if (khz == std::floor(khz)) return QString("%1k").arg(static_cast<int>(khz));
-                else return QString("%1k").arg(khz, 0, 'f', 1);
+                if (khz == std::floor(khz))
+                    return QString("%1k").arg(static_cast<int>(khz));
+                else
+                    return QString("%1k").arg(khz, 0, 'f', 1);
             } else {
-                if (hz == std::floor(hz)) return QString("%1").arg(static_cast<int>(hz));
-                else return QString("%1").arg(hz, 0, 'f', 1);
+                if (hz == std::floor(hz))
+                    return QString("%1").arg(static_cast<int>(hz));
+                else
+                    return QString("%1").arg(hz, 0, 'f', 1);
             }
         };
 
-        static const char* const iso31Labels[31] = {
-            "20", "25", "31.5", "40", "50", "63", "80", "100", "125", "160",
-            "200", "250", "315", "400", "500", "630", "800", "1k", "1.25k", "1.6k",
-            "2k", "2.5k", "3.15k", "4k", "5k", "6.3k", "8k", "10k", "12.5k", "16k", "20k"
-        };
+        static const char* const iso31Labels[31] = {"20",  "25",   "31.5",  "40",   "50",    "63",   "80",    "100",
+                                                    "125", "160",  "200",   "250",  "315",   "400",  "500",   "630",
+                                                    "800", "1k",   "1.25k", "1.6k", "2k",    "2.5k", "3.15k", "4k",
+                                                    "5k",  "6.3k", "8k",    "10k",  "12.5k", "16k",  "20k"};
 
         for (int b = 0; b < totalBands; ++b) {
             QString fText;
-            if (totalBands == 31 && std::abs(stage.graphicEQFreqMin - 20.0) < 1e-3 && std::abs(stage.graphicEQFreqMax - 20000.0) < 1e-3) {
+            if (totalBands == 31 && std::abs(stage.graphicEQFreqMin - 20.0) < 1e-3 &&
+                std::abs(stage.graphicEQFreqMax - 20000.0) < 1e-3) {
                 fText = QString(iso31Labels[b]);
             } else {
                 double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
@@ -1611,7 +2020,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto resetGainsBtn = new QPushButton("Reset All Bands to 0 dB", geqGroup);
         connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
             stage.graphicEQGains.assign(stage.graphicEQBandCount, 0.0);
-            applyConfig(); refreshUi();
+            applyConfig();
+            refreshUi();
         });
         geqVBox->addWidget(resetGainsBtn, 0, Qt::AlignLeft);
 
@@ -1619,6 +2029,7 @@ void StageDetailView::buildStageOptionsUi() {
         break;
     }
 
-    default: break;
+    default:
+        break;
     }
 }

@@ -2,8 +2,9 @@
 #define FIR_DESIGN_H
 
 #include "config/BiquadCoefficients.h"
-#include "room_correction/TargetCurve.h"
 #include "room_correction/FrequencyResponse.h"
+#include "room_correction/TargetCurve.h"
+
 #include <vector>
 
 struct FIRDesignOptions {
@@ -23,36 +24,21 @@ struct FIRDesignMeasurementOptions {
 
 class FIRDesign {
 public:
-    static std::vector<double> minimumPhase(
-        const std::vector<BiquadParameters>& bands,
-        int sampleRate,
-        const FIRDesignOptions& options = FIRDesignOptions()
-    );
+    static std::vector<double> minimumPhase(const std::vector<BiquadParameters>& bands, int sampleRate,
+                                            const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> linearPhase(
-        const std::vector<BiquadParameters>& bands,
-        int sampleRate,
-        const FIRDesignOptions& options = FIRDesignOptions()
-    );
+    static std::vector<double> linearPhase(const std::vector<BiquadParameters>& bands, int sampleRate,
+                                           const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> minimumPhaseFromMagDB(
-        const std::vector<double>& magDB,
-        int sampleRate,
-        const FIRDesignOptions& options = FIRDesignOptions()
-    );
+    static std::vector<double> minimumPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+                                                     const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> linearPhaseFromMagDB(
-        const std::vector<double>& magDB,
-        int sampleRate,
-        const FIRDesignOptions& options = FIRDesignOptions()
-    );
+    static std::vector<double> linearPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+                                                    const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> fromMeasurement(
-        const FrequencyResponse& measured,
-        const TargetCurve& target,
-        int sampleRate,
-        const FIRDesignMeasurementOptions& options = FIRDesignMeasurementOptions()
-    );
+    static std::vector<double>
+    fromMeasurement(const FrequencyResponse& measured, const TargetCurve& target, int sampleRate,
+                    const FIRDesignMeasurementOptions& options = FIRDesignMeasurementOptions());
 };
 
 #endif // FIR_DESIGN_H

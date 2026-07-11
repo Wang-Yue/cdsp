@@ -1,10 +1,14 @@
 #include "room_correction/SweepRecorder.h"
-#include "room_correction/SweepDeconvolver.h"
-#include <cmath>
-#include <algorithm>
 
-std::optional<int> SweepRecorder::locateSweepStart(const std::vector<double>& recording, const std::vector<double>& inverse) {
-    if (recording.empty() || inverse.empty()) return std::nullopt;
+#include "room_correction/SweepDeconvolver.h"
+
+#include <algorithm>
+#include <cmath>
+
+std::optional<int> SweepRecorder::locateSweepStart(const std::vector<double>& recording,
+                                                   const std::vector<double>& inverse) {
+    if (recording.empty() || inverse.empty())
+        return std::nullopt;
 
     std::vector<double> convolved = SweepDeconvolver::convolve(recording, inverse);
     size_t peakIdx = 0;
@@ -18,12 +22,14 @@ std::optional<int> SweepRecorder::locateSweepStart(const std::vector<double>& re
         }
     }
 
-    if (peakAbs <= 0.0) return std::nullopt;
+    if (peakAbs <= 0.0)
+        return std::nullopt;
     int startSample = static_cast<int>(peakIdx) - static_cast<int>(inverse.size() - 1);
     return startSample;
 }
 
-std::vector<double> SweepRecorder::trimAndAlign(const std::vector<double>& captured, int startSample, size_t sweepLength, size_t tailSamples) {
+std::vector<double> SweepRecorder::trimAndAlign(const std::vector<double>& captured, int startSample,
+                                                size_t sweepLength, size_t tailSamples) {
     size_t needed = sweepLength + tailSamples;
     std::vector<double> out(needed, 0.0);
 

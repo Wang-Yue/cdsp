@@ -1,9 +1,11 @@
 #include "ui/EQDiagramWidget.h"
+
 #include "ui/StyleTheme.h"
-#include <QPainterPath>
+
 #include <QLinearGradient>
-#include <cmath>
+#include <QPainterPath>
 #include <algorithm>
+#include <cmath>
 
 EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);
@@ -32,11 +34,9 @@ void EQDiagramWidget::setSelectedBandIndex(int index) {
 }
 
 QColor EQDiagramWidget::bandColor(int index) {
-    static const QColor colors[] = {
-        QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"),
-        QColor("#34c759"), QColor("#007aff"), QColor("#af52de"),
-        QColor("#5856d6"), QColor("#ff2d55"), QColor("#a2845e")
-    };
+    static const QColor colors[] = {QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"),
+                                    QColor("#34c759"), QColor("#007aff"), QColor("#af52de"),
+                                    QColor("#5856d6"), QColor("#ff2d55"), QColor("#a2845e")};
     return colors[std::abs(index) % 9];
 }
 
@@ -164,8 +164,10 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             double trebleBoost = highBoost * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
             double db = std::max(-24.0, std::min(24.0, bassBoost + trebleBoost));
             double y = dbToY(db, h);
-            if (x == 0) loudnessPath.moveTo(x, y);
-            else loudnessPath.lineTo(x, y);
+            if (x == 0)
+                loudnessPath.moveTo(x, y);
+            else
+                loudnessPath.lineTo(x, y);
         }
         painter.setPen(QPen(QColor("#ff9500"), 1.5, Qt::DashLine));
         painter.drawPath(loudnessPath);
@@ -174,15 +176,18 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     // Individual Band Curves
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& band = m_preset.bands[i];
-        if (!band.isEnabled) continue;
+        if (!band.isEnabled)
+            continue;
 
         QPainterPath path;
         for (int x = 0; x <= w; x += 2) {
             double f = xToFreq(x, w);
             double db = band.response(f, m_sampleRate);
             double y = dbToY(db, h);
-            if (x == 0) path.moveTo(x, y);
-            else path.lineTo(x, y);
+            if (x == 0)
+                path.moveTo(x, y);
+            else
+                path.lineTo(x, y);
         }
         QColor c = bandColor(static_cast<int>(i));
         bool isSelected = (static_cast<int>(i) == m_selectedIndex);
@@ -225,11 +230,14 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     // Draggable Band Handles & Highlight Rings
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& b = m_preset.bands[i];
-        if (!b.isEnabled || b.type == EQBandType::Free) continue;
+        if (!b.isEnabled || b.type == EQBandType::Free)
+            continue;
 
         double handleFreq = b.freq;
-        if (b.type == EQBandType::GeneralNotch) handleFreq = b.freqNotch;
-        else if (b.type == EQBandType::LinkwitzTransform) handleFreq = b.freqTarget;
+        if (b.type == EQBandType::GeneralNotch)
+            handleFreq = b.freqNotch;
+        else if (b.type == EQBandType::LinkwitzTransform)
+            handleFreq = b.freqTarget;
 
         double hx = freqToX(handleFreq, w);
         double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
@@ -262,8 +270,8 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
 void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
     Q_UNUSED(h);
-    int activeIndex = (m_draggingIndex >= 0) ? m_draggingIndex
-                    : ((m_hoveredIndex >= 0) ? m_hoveredIndex : m_selectedIndex);
+    int activeIndex =
+        (m_draggingIndex >= 0) ? m_draggingIndex : ((m_hoveredIndex >= 0) ? m_hoveredIndex : m_selectedIndex);
 
     QString text;
     if (activeIndex >= 0 && activeIndex < static_cast<int>(m_preset.bands.size())) {
@@ -301,18 +309,21 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
                        .arg(b.isEnabled ? "" : " (OFF)");
 
             if (eqBandTypeHasGain(b.type)) {
-                text += QString(" | Gain: %1%2 dB")
-                            .arg(b.gain >= 0 ? "+" : "")
-                            .arg(b.gain, 0, 'f', 1);
+                text += QString(" | Gain: %1%2 dB").arg(b.gain >= 0 ? "+" : "").arg(b.gain, 0, 'f', 1);
             }
 
             if (eqBandTypeHasQ(b.type)) {
                 if (b.type == EQBandType::Lowshelf || b.type == EQBandType::Highshelf) {
-                    if (b.useSlope) text += QString(" | Slope: %1 dB/oct").arg(b.slope, 0, 'f', 1);
-                    else text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
-                } else if (b.type == EQBandType::Notch || b.type == EQBandType::Bandpass || b.type == EQBandType::Allpass) {
-                    if (b.useBandwidth) text += QString(" | BW: %1 oct").arg(b.bandwidth, 0, 'f', 2);
-                    else text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
+                    if (b.useSlope)
+                        text += QString(" | Slope: %1 dB/oct").arg(b.slope, 0, 'f', 1);
+                    else
+                        text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
+                } else if (b.type == EQBandType::Notch || b.type == EQBandType::Bandpass ||
+                           b.type == EQBandType::Allpass) {
+                    if (b.useBandwidth)
+                        text += QString(" | BW: %1 oct").arg(b.bandwidth, 0, 'f', 2);
+                    else
+                        text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
                 } else {
                     text += QString(" | Q: %1").arg(b.q, 0, 'f', 2);
                 }
@@ -320,7 +331,9 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
         }
     } else {
         int activeBands = 0;
-        for (const auto& b : m_preset.bands) if (b.isEnabled) activeBands++;
+        for (const auto& b : m_preset.bands)
+            if (b.isEnabled)
+                activeBands++;
         text = QString("Preset: %1 | Preamp: %2%3 dB | Active Bands: %4/%5")
                    .arg(QString::fromStdString(m_preset.name))
                    .arg(m_preset.preampGain >= 0 ? "+" : "")
@@ -356,11 +369,14 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
 
         for (size_t i = 0; i < m_preset.bands.size(); ++i) {
             const auto& b = m_preset.bands[i];
-            if (!b.isEnabled || b.type == EQBandType::Free) continue;
+            if (!b.isEnabled || b.type == EQBandType::Free)
+                continue;
 
             double handleFreq = b.freq;
-            if (b.type == EQBandType::GeneralNotch) handleFreq = b.freqNotch;
-            else if (b.type == EQBandType::LinkwitzTransform) handleFreq = b.freqTarget;
+            if (b.type == EQBandType::GeneralNotch)
+                handleFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                handleFreq = b.freqTarget;
 
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
@@ -373,7 +389,8 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
 
         m_draggingIndex = hitIndex;
         m_selectedIndex = hitIndex;
-        if (onBandSelected) onBandSelected(hitIndex);
+        if (onBandSelected)
+            onBandSelected(hitIndex);
         update();
     }
 }
@@ -390,11 +407,15 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
         db = std::max(-36.0, std::min(36.0, db));
 
         auto& b = m_preset.bands[m_draggingIndex];
-        if (b.type == EQBandType::GeneralNotch) b.freqNotch = f;
-        else if (b.type == EQBandType::LinkwitzTransform) b.freqTarget = f;
-        else b.freq = f;
+        if (b.type == EQBandType::GeneralNotch)
+            b.freqNotch = f;
+        else if (b.type == EQBandType::LinkwitzTransform)
+            b.freqTarget = f;
+        else
+            b.freq = f;
 
-        if (eqBandTypeHasGain(b.type)) b.gain = std::round(db * 2.0) / 2.0;
+        if (eqBandTypeHasGain(b.type))
+            b.gain = std::round(db * 2.0) / 2.0;
 
         if (onBandDragged) {
             onBandDragged(m_draggingIndex, f, b.gain);
@@ -407,11 +428,14 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
 
         for (size_t i = 0; i < m_preset.bands.size(); ++i) {
             const auto& b = m_preset.bands[i];
-            if (!b.isEnabled || b.type == EQBandType::Free) continue;
+            if (!b.isEnabled || b.type == EQBandType::Free)
+                continue;
 
             double handleFreq = b.freq;
-            if (b.type == EQBandType::GeneralNotch) handleFreq = b.freqNotch;
-            else if (b.type == EQBandType::LinkwitzTransform) handleFreq = b.freqTarget;
+            if (b.type == EQBandType::GeneralNotch)
+                handleFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                handleFreq = b.freqTarget;
 
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
@@ -451,11 +475,14 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
         int h = height();
         for (size_t i = 0; i < m_preset.bands.size(); ++i) {
             const auto& b = m_preset.bands[i];
-            if (!b.isEnabled || b.type == EQBandType::Free) continue;
+            if (!b.isEnabled || b.type == EQBandType::Free)
+                continue;
 
             double handleFreq = b.freq;
-            if (b.type == EQBandType::GeneralNotch) handleFreq = b.freqNotch;
-            else if (b.type == EQBandType::LinkwitzTransform) handleFreq = b.freqTarget;
+            if (b.type == EQBandType::GeneralNotch)
+                handleFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                handleFreq = b.freqTarget;
 
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
@@ -475,17 +502,19 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
                 double factor = delta > 0 ? 1.05 : 0.95;
                 if (band.useSlope) {
                     band.slope = std::max(0.1, std::min(20.0, band.slope * factor));
-                    if (onBandQChanged) onBandQChanged(targetIdx, band.slope);
+                    if (onBandQChanged)
+                        onBandQChanged(targetIdx, band.slope);
                 } else if (band.useBandwidth) {
                     band.bandwidth = std::max(0.1, std::min(20.0, band.bandwidth * factor));
-                    if (onBandQChanged) onBandQChanged(targetIdx, band.bandwidth);
+                    if (onBandQChanged)
+                        onBandQChanged(targetIdx, band.bandwidth);
                 } else {
                     band.q = std::max(0.1, std::min(20.0, band.q * factor));
-                    if (onBandQChanged) onBandQChanged(targetIdx, band.q);
+                    if (onBandQChanged)
+                        onBandQChanged(targetIdx, band.q);
                 }
                 update();
             }
         }
     }
 }
-

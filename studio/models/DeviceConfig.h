@@ -2,10 +2,11 @@
 #define DEVICE_CONFIG_H
 
 #include "config/DSPConfigTypes.h"
+
+#include <QJsonObject>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
-#include <QJsonObject>
 
 struct DeviceConfig {
     AudioBackendType backend = AudioBackendType::CoreAudio;

@@ -2,8 +2,9 @@
 #define PHASE_PLOT_WIDGET_H
 
 #include "room_correction/MeasurementSession.h"
-#include <QWidget>
+
 #include <QPushButton>
+#include <QWidget>
 #include <memory>
 
 class PhasePlotWidget : public QWidget {
@@ -23,7 +24,8 @@ private:
     QPushButton* m_unwrapBtn = nullptr;
 
     double freqToX(double f, double width) const;
-    void phaseBounds(const FrequencyResponse& fr, const std::vector<double>& unwrapped, double& minDeg, double& maxDeg) const;
+    void phaseBounds(const FrequencyResponse& fr, const std::vector<double>& unwrapped, double& minDeg,
+                     double& maxDeg) const;
     double wrapToPi(double radians) const;
 };
 

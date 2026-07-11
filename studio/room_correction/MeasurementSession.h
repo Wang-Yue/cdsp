@@ -1,39 +1,32 @@
 #ifndef MEASUREMENT_SESSION_H
 #define MEASUREMENT_SESSION_H
 
-#include "room_correction/ImpulseResponse.h"
-#include "room_correction/FrequencyResponse.h"
-#include "room_correction/TargetCurve.h"
-#include "room_correction/CalibrationCurve.h"
-#include "room_correction/PEQAutoFit.h"
-#include "room_correction/FIRDesign.h"
-#include "room_correction/SubwooferAssist.h"
-#include "models/EQPreset.h"
 #include "models/ConvolutionPreset.h"
-#include <QObject>
-#include <vector>
-#include <string>
-#include <optional>
-#include <QUuid>
+#include "models/EQPreset.h"
+#include "room_correction/CalibrationCurve.h"
+#include "room_correction/FIRDesign.h"
+#include "room_correction/FrequencyResponse.h"
+#include "room_correction/ImpulseResponse.h"
+#include "room_correction/PEQAutoFit.h"
+#include "room_correction/SubwooferAssist.h"
+#include "room_correction/TargetCurve.h"
 
-enum class MeasurementChannelKind {
-    Full, Mains, Subwoofer
-};
+#include <QObject>
+#include <QUuid>
+#include <optional>
+#include <string>
+#include <vector>
+
+enum class MeasurementChannelKind { Full, Mains, Subwoofer };
 std::string channelKindToString(MeasurementChannelKind kind);
 
-enum class FIRKind {
-    MinimumPhase, LinearPhase, MeasurementDriven
-};
+enum class FIRKind { MinimumPhase, LinearPhase, MeasurementDriven };
 std::string firKindToString(FIRKind kind);
 
-enum class DisplaySmoothing {
-    Off, Oct1over1, Oct1over3, Oct1over6, Oct1over12, Oct1over24, Oct1over48, Variable
-};
+enum class DisplaySmoothing { Off, Oct1over1, Oct1over3, Oct1over6, Oct1over12, Oct1over24, Oct1over48, Variable };
 std::string displaySmoothingToString(DisplaySmoothing s);
 
-enum class FDWCycles {
-    Off, Cycles1, Cycles5, Cycles10, Cycles15
-};
+enum class FDWCycles { Off, Cycles1, Cycles5, Cycles10, Cycles15 };
 
 struct MeasurementPosition {
     QUuid id;
@@ -44,7 +37,9 @@ struct MeasurementPosition {
     MeasurementChannelKind kind = MeasurementChannelKind::Full;
 
     MeasurementPosition() : id(QUuid::createUuid()) {}
-    MeasurementPosition(const std::string& name, const FrequencyResponse& fr, const std::optional<ImpulseResponse>& ir = std::nullopt, bool enabled = true, MeasurementChannelKind kind = MeasurementChannelKind::Full)
+    MeasurementPosition(const std::string& name, const FrequencyResponse& fr,
+                        const std::optional<ImpulseResponse>& ir = std::nullopt, bool enabled = true,
+                        MeasurementChannelKind kind = MeasurementChannelKind::Full)
         : id(QUuid::createUuid()), name(name), fr(fr), ir(ir), isEnabled(enabled), kind(kind) {}
 };
 

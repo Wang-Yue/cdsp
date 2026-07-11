@@ -1,10 +1,12 @@
 #include "ui/PhasePlotWidget.h"
+
 #include "ui/StyleTheme.h"
+
+#include <QHBoxLayout>
 #include <QPainter>
 #include <QPainterPath>
-#include <QHBoxLayout>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
@@ -12,10 +14,9 @@ PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
     m_unwrapBtn = new QPushButton("Unwrap Phase", this);
     m_unwrapBtn->setCheckable(true);
     m_unwrapBtn->setFixedSize(110, 26);
-    m_unwrapBtn->setStyleSheet(
-        "QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid #555; border-radius: 4px; font-size: 11px; }"
-        "QPushButton:checked { background: #007acc; color: white; border-color: #0099ff; }"
-    );
+    m_unwrapBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
+                               "#555; border-radius: 4px; font-size: 11px; }"
+                               "QPushButton:checked { background: #007acc; color: white; border-color: #0099ff; }");
 
     connect(m_unwrapBtn, &QPushButton::toggled, [this](bool checked) {
         m_unwrapPhase = checked;
@@ -41,12 +42,15 @@ double PhasePlotWidget::freqToX(double f, double width) const {
 
 double PhasePlotWidget::wrapToPi(double radians) const {
     double r = radians;
-    while (r > M_PI) r -= 2.0 * M_PI;
-    while (r <= -M_PI) r += 2.0 * M_PI;
+    while (r > M_PI)
+        r -= 2.0 * M_PI;
+    while (r <= -M_PI)
+        r += 2.0 * M_PI;
     return r;
 }
 
-void PhasePlotWidget::phaseBounds(const FrequencyResponse& fr, const std::vector<double>& unwrapped, double& minDeg, double& maxDeg) const {
+void PhasePlotWidget::phaseBounds(const FrequencyResponse& fr, const std::vector<double>& unwrapped, double& minDeg,
+                                  double& maxDeg) const {
     if (!m_unwrapPhase || unwrapped.empty()) {
         minDeg = -180.0;
         maxDeg = 180.0;
@@ -57,7 +61,8 @@ void PhasePlotWidget::phaseBounds(const FrequencyResponse& fr, const std::vector
     size_t bins = fr.bins();
     for (size_t k = 1; k < bins; ++k) {
         double f = fr.frequency(k);
-        if (f < 20.0 || f > 20000.0) continue;
+        if (f < 20.0 || f > 20000.0)
+            continue;
         double deg = unwrapped[k] * 180.0 / M_PI;
         allDegs.push_back(deg);
 
@@ -130,7 +135,8 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     for (int deg = startDeg; deg <= endDeg; deg += static_cast<int>(degStep)) {
         double y = h * (1.0 - (static_cast<double>(deg) - minDeg) / spanDeg);
         if (y >= 0 && y <= h) {
-            painter.setPen(deg == 0 ? QPen(StyleTheme::axisLabelPenColor(), 1.0) : QPen(StyleTheme::gridPenColor(), 0.5));
+            painter.setPen(deg == 0 ? QPen(StyleTheme::axisLabelPenColor(), 1.0)
+                                    : QPen(StyleTheme::gridPenColor(), 0.5));
             painter.drawLine(QPointF(0, y), QPointF(w, y));
             painter.setPen(StyleTheme::textSecondary());
             painter.drawText(QRectF(8, y - 12, 60, 14), Qt::AlignLeft | Qt::AlignVCenter, QString::number(deg) + "°");
@@ -144,7 +150,8 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     for (size_t k = 1; k < bins; ++k) {
         double f = fr.frequency(k);
-        if (f < 20.0 || f > 20000.0) continue;
+        if (f < 20.0 || f > 20000.0)
+            continue;
         double phaseRads = unwrapped.empty() ? fr.phase(k) : unwrapped[k];
         double phaseDeg = phaseRads * 180.0 / M_PI;
         double x = freqToX(f, w);
@@ -169,7 +176,8 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
         for (size_t k = 1; k < bins; ++k) {
             double f = fr.frequency(k);
-            if (f < 20.0 || f > 20000.0) continue;
+            if (f < 20.0 || f > 20000.0)
+                continue;
             double baseRads = unwrapped.empty() ? fr.phase(k) : unwrapped[k];
             double eqRads = preset.combinedPhase(f, m_session->sampleRate);
             double totalRads = baseRads + eqRads;
@@ -191,7 +199,8 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
 
     // Legend
-    painter.fillRect(QRect(w - 200, 10, 190, 44), StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
+    painter.fillRect(QRect(w - 200, 10, 190, 44),
+                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
     painter.setPen(QPen(QColor(0, 150, 255), 2));
     painter.drawLine(w - 190, 24, w - 165, 24);
     painter.setPen(StyleTheme::textPrimary());

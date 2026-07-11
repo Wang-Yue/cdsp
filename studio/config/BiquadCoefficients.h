@@ -2,8 +2,8 @@
 #define BIQUAD_COEFFICIENTS_H
 
 #include <cmath>
-#include <string>
 #include <optional>
+#include <string>
 
 enum class BiquadType {
     Free,

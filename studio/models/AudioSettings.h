@@ -2,6 +2,7 @@
 #define AUDIO_SETTINGS_H
 
 #include "config/DSPConfigTypes.h"
+
 #include <QObject>
 #include <QSettings>
 #include <functional>

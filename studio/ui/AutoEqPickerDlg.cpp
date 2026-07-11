@@ -1,17 +1,14 @@
 #include "ui/AutoEqPickerDlg.h"
-#include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QMessageBox>
 
-#include "ui/AutoEqPickerDlg.h"
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
+
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QRegularExpression>
+#include <QVBoxLayout>
 
-AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline,
+                                 std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline), m_dspController(dspController) {
     setWindowTitle("AutoEQ Online Preset Explorer");
     resize(620, 520);
@@ -56,7 +53,8 @@ void AutoEqPickerDlg::setupUi() {
     btnLayout->addStretch();
 
     m_importBtn = new QPushButton("Import Selected Preset", this);
-    m_importBtn->setStyleSheet("background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
+    m_importBtn->setStyleSheet(
+        "background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
     m_importBtn->setEnabled(false);
     connect(m_importBtn, &QPushButton::clicked, this, &AutoEqPickerDlg::onImportClicked);
     btnLayout->addWidget(m_importBtn);
@@ -67,22 +65,23 @@ void AutoEqPickerDlg::setupUi() {
 
     mainLayout->addLayout(btnLayout);
 
-    connect(m_listWidget, &QListWidget::itemSelectionChanged, [this]() {
-        m_importBtn->setEnabled(!m_listWidget->selectedItems().isEmpty());
-    });
+    connect(m_listWidget, &QListWidget::itemSelectionChanged,
+            [this]() { m_importBtn->setEnabled(!m_listWidget->selectedItems().isEmpty()); });
 }
 
 void AutoEqPickerDlg::loadIndex(bool forceRefresh) {
-    m_service.fetchIndex([this](bool ok, const std::vector<AutoEqIndexEntry>& entries) {
-        if (ok) {
-            m_entries = entries;
-            m_statusLabel->setText(QString("Loaded %1 headphone presets.").arg(entries.size()));
-            m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
-            onSearchTextChanged(m_searchEdit->text());
-        } else {
-            m_statusLabel->setText("Failed to load AutoEQ index. Check internet connection.");
-        }
-    }, forceRefresh);
+    m_service.fetchIndex(
+        [this](bool ok, const std::vector<AutoEqIndexEntry>& entries) {
+            if (ok) {
+                m_entries = entries;
+                m_statusLabel->setText(QString("Loaded %1 headphone presets.").arg(entries.size()));
+                m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
+                onSearchTextChanged(m_searchEdit->text());
+            } else {
+                m_statusLabel->setText("Failed to load AutoEQ index. Check internet connection.");
+            }
+        },
+        forceRefresh);
 }
 
 void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
@@ -112,7 +111,8 @@ void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
     }
 
     if (tokens.isEmpty()) {
-        m_statusLabel->setText(QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
+        m_statusLabel->setText(
+            QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
     } else {
         m_statusLabel->setText(QString("Found %1 of %2 matching headphones.").arg(count).arg(m_entries.size()));
     }
@@ -120,7 +120,8 @@ void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
 
 void AutoEqPickerDlg::onImportClicked() {
     auto items = m_listWidget->selectedItems();
-    if (items.isEmpty()) return;
+    if (items.isEmpty())
+        return;
 
     int idx = items[0]->data(Qt::UserRole).toInt();
     const auto& entry = m_entries[idx];
@@ -174,11 +175,12 @@ void AutoEqPickerDlg::onImportClicked() {
                 m_dspController->applyConfig();
             }
 
-            QMessageBox::information(this, "Success", QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(entry.name)));
+            QMessageBox::information(
+                this, "Success",
+                QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(entry.name)));
             accept();
         } else {
             m_statusLabel->setText("Failed to download or parse preset file.");
         }
     });
 }
-

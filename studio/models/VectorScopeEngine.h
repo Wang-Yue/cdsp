@@ -2,6 +2,7 @@
 #define VECTOR_SCOPE_ENGINE_H
 
 #include "config/DSPConfigTypes.h"
+
 #include <QObject>
 #include <vector>
 

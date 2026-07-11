@@ -1,16 +1,21 @@
 #include "room_correction/CalibrationCurve.h"
+
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
-#include <cmath>
-#include <algorithm>
 
-CalibrationCurve::CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags, const std::vector<double>& phases)
+CalibrationCurve::CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags,
+                                   const std::vector<double>& phases)
     : frequencies(freqs), magnitudesDB(mags), phasesDeg(phases) {}
 
 double CalibrationCurve::magnitude(double freqHz) const {
-    if (frequencies.empty()) return 0.0;
-    if (freqHz <= frequencies.front()) return magnitudesDB.front();
-    if (freqHz >= frequencies.back()) return magnitudesDB.back();
+    if (frequencies.empty())
+        return 0.0;
+    if (freqHz <= frequencies.front())
+        return magnitudesDB.front();
+    if (freqHz >= frequencies.back())
+        return magnitudesDB.back();
 
     for (size_t i = 0; i < frequencies.size() - 1; ++i) {
         if (freqHz >= frequencies[i] && freqHz <= frequencies[i + 1]) {
@@ -25,9 +30,12 @@ double CalibrationCurve::magnitude(double freqHz) const {
 }
 
 double CalibrationCurve::phase(double freqHz) const {
-    if (phasesDeg.empty()) return 0.0;
-    if (freqHz <= frequencies.front()) return phasesDeg.front();
-    if (freqHz >= frequencies.back()) return phasesDeg.back();
+    if (phasesDeg.empty())
+        return 0.0;
+    if (freqHz <= frequencies.front())
+        return phasesDeg.front();
+    if (freqHz >= frequencies.back())
+        return phasesDeg.back();
 
     for (size_t i = 0; i < frequencies.size() - 1; ++i) {
         if (freqHz >= frequencies[i] && freqHz <= frequencies[i + 1]) {
@@ -43,32 +51,38 @@ double CalibrationCurve::phase(double freqHz) const {
 
 std::optional<CalibrationCurve> CalibrationCurve::load(const std::string& path) {
     std::ifstream file(path);
-    if (!file.is_open()) return std::nullopt;
+    if (!file.is_open())
+        return std::nullopt;
 
     std::vector<double> freqs, mags, phases;
     std::string line;
 
     while (std::getline(file, line)) {
         size_t first = line.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) continue;
-        if (line[first] == '*' || line[first] == '#' || line[first] == '/') continue;
+        if (first == std::string::npos)
+            continue;
+        if (line[first] == '*' || line[first] == '#' || line[first] == '/')
+            continue;
 
         std::stringstream ss(line.substr(first));
         double f, m, p;
         if (ss >> f >> m) {
             freqs.push_back(f);
             mags.push_back(m);
-            if (ss >> p) phases.push_back(p);
+            if (ss >> p)
+                phases.push_back(p);
         }
     }
 
-    if (freqs.empty()) return std::nullopt;
+    if (freqs.empty())
+        return std::nullopt;
     return CalibrationCurve(freqs, mags, phases);
 }
 
 bool CalibrationCurve::writeFRD(const std::string& path, const std::string& comment) const {
     std::ofstream file(path);
-    if (!file.is_open()) return false;
+    if (!file.is_open())
+        return false;
 
     if (!comment.empty()) {
         std::stringstream ss(comment);

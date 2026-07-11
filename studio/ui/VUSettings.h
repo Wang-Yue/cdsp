@@ -3,11 +3,7 @@
 
 #include <QSettings>
 
-enum class VUTheme {
-    VintageAmber = 0,
-    DarkStealth = 1,
-    WarmTube = 2
-};
+enum class VUTheme { VintageAmber = 0, DarkStealth = 1, WarmTube = 2 };
 
 struct VUSettings {
     double radiusScale = 1.20;

@@ -1,43 +1,59 @@
 #include "room_correction/MeasurementSession.h"
-#include "room_correction/SweepGenerator.h"
-#include "room_correction/SweepDeconvolver.h"
+
 #include "models/ConvCoefficientLoader.h"
-#include <QStandardPaths>
+#include "room_correction/SweepDeconvolver.h"
+#include "room_correction/SweepGenerator.h"
+
 #include <QDir>
-#include <QUuid>
 #include <QFileInfo>
+#include <QStandardPaths>
+#include <QUuid>
+#include <algorithm>
 #include <cmath>
 #include <random>
-#include <algorithm>
 
 std::string channelKindToString(MeasurementChannelKind kind) {
     switch (kind) {
-    case MeasurementChannelKind::Full: return "Full Range";
-    case MeasurementChannelKind::Mains: return "Mains Only";
-    case MeasurementChannelKind::Subwoofer: return "Subwoofer Only";
+    case MeasurementChannelKind::Full:
+        return "Full Range";
+    case MeasurementChannelKind::Mains:
+        return "Mains Only";
+    case MeasurementChannelKind::Subwoofer:
+        return "Subwoofer Only";
     }
     return "Full Range";
 }
 
 std::string firKindToString(FIRKind kind) {
     switch (kind) {
-    case FIRKind::MinimumPhase: return "Min-phase";
-    case FIRKind::LinearPhase: return "Linear-phase";
-    case FIRKind::MeasurementDriven: return "From measurement";
+    case FIRKind::MinimumPhase:
+        return "Min-phase";
+    case FIRKind::LinearPhase:
+        return "Linear-phase";
+    case FIRKind::MeasurementDriven:
+        return "From measurement";
     }
     return "Min-phase";
 }
 
 std::string displaySmoothingToString(DisplaySmoothing s) {
     switch (s) {
-    case DisplaySmoothing::Off: return "Off";
-    case DisplaySmoothing::Oct1over1: return "1/1 oct";
-    case DisplaySmoothing::Oct1over3: return "1/3 oct";
-    case DisplaySmoothing::Oct1over6: return "1/6 oct";
-    case DisplaySmoothing::Oct1over12: return "1/12 oct";
-    case DisplaySmoothing::Oct1over24: return "1/24 oct";
-    case DisplaySmoothing::Oct1over48: return "1/48 oct";
-    case DisplaySmoothing::Variable: return "Var (ERB)";
+    case DisplaySmoothing::Off:
+        return "Off";
+    case DisplaySmoothing::Oct1over1:
+        return "1/1 oct";
+    case DisplaySmoothing::Oct1over3:
+        return "1/3 oct";
+    case DisplaySmoothing::Oct1over6:
+        return "1/6 oct";
+    case DisplaySmoothing::Oct1over12:
+        return "1/12 oct";
+    case DisplaySmoothing::Oct1over24:
+        return "1/24 oct";
+    case DisplaySmoothing::Oct1over48:
+        return "1/48 oct";
+    case DisplaySmoothing::Variable:
+        return "Var (ERB)";
     }
     return "1/6 oct";
 }
@@ -56,17 +72,33 @@ void MeasurementSession::reset() {
 }
 
 std::vector<double> MeasurementSession::displayedMagDB() const {
-    if (measuredMagDB.empty()) return {};
+    if (measuredMagDB.empty())
+        return {};
     double octaves = 0.0;
     switch (displaySmoothing) {
-    case DisplaySmoothing::Off: return measuredMagDB;
-    case DisplaySmoothing::Oct1over1: octaves = 1.0; break;
-    case DisplaySmoothing::Oct1over3: octaves = 1.0 / 3.0; break;
-    case DisplaySmoothing::Oct1over6: octaves = 1.0 / 6.0; break;
-    case DisplaySmoothing::Oct1over12: octaves = 1.0 / 12.0; break;
-    case DisplaySmoothing::Oct1over24: octaves = 1.0 / 24.0; break;
-    case DisplaySmoothing::Oct1over48: octaves = 1.0 / 48.0; break;
-    case DisplaySmoothing::Variable: octaves = 1.0 / 12.0; break;
+    case DisplaySmoothing::Off:
+        return measuredMagDB;
+    case DisplaySmoothing::Oct1over1:
+        octaves = 1.0;
+        break;
+    case DisplaySmoothing::Oct1over3:
+        octaves = 1.0 / 3.0;
+        break;
+    case DisplaySmoothing::Oct1over6:
+        octaves = 1.0 / 6.0;
+        break;
+    case DisplaySmoothing::Oct1over12:
+        octaves = 1.0 / 12.0;
+        break;
+    case DisplaySmoothing::Oct1over24:
+        octaves = 1.0 / 24.0;
+        break;
+    case DisplaySmoothing::Oct1over48:
+        octaves = 1.0 / 48.0;
+        break;
+    case DisplaySmoothing::Variable:
+        octaves = 1.0 / 12.0;
+        break;
     }
     return PEQAutoFit::smoothLogOctave(measuredMagDB, grid, octaves);
 }
@@ -84,7 +116,9 @@ std::vector<BiquadParameters> MeasurementSession::randomMockSystem() {
     std::uniform_real_distribution<double> disLp(11000.0, 17000.0);
 
     BiquadParameters hp;
-    hp.type = BiquadType::Highpass; hp.freq = disHp(gen); hp.q = 0.707;
+    hp.type = BiquadType::Highpass;
+    hp.freq = disHp(gen);
+    hp.q = 0.707;
     chain.push_back(hp);
 
     int modeCount = disModes(gen);
@@ -98,7 +132,9 @@ std::vector<BiquadParameters> MeasurementSession::randomMockSystem() {
     }
 
     BiquadParameters lp;
-    lp.type = BiquadType::Lowpass; lp.freq = disLp(gen); lp.q = 0.707;
+    lp.type = BiquadType::Lowpass;
+    lp.freq = disLp(gen);
+    lp.q = 0.707;
     chain.push_back(lp);
 
     return chain;
@@ -106,7 +142,8 @@ std::vector<BiquadParameters> MeasurementSession::randomMockSystem() {
 
 void MeasurementSession::generateMockMeasurement(bool append) {
     status = "Generating mock measurement…";
-    if (!append) positions.clear();
+    if (!append)
+        positions.clear();
 
     auto mockChain = randomMockSystem();
     auto [sweep, inv] = SweepGenerator::sweepAndInverse(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, 0.02, 0.02);
@@ -120,7 +157,10 @@ void MeasurementSession::generateMockMeasurement(bool append) {
             for (size_t i = 0; i < captured.size(); ++i) {
                 double x = captured[i];
                 double y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
-                x2 = x1; x1 = x; y2 = y1; y1 = y;
+                x2 = x1;
+                x1 = x;
+                y2 = y1;
+                y1 = y;
                 captured[i] = y;
             }
         }
@@ -178,7 +218,9 @@ void MeasurementSession::importPositionFRD(const std::string& path) {
 
 void MeasurementSession::recomputeAverage() {
     std::vector<MeasurementPosition*> enabled;
-    for (auto& p : positions) if (p.isEnabled) enabled.push_back(&p);
+    for (auto& p : positions)
+        if (p.isEnabled)
+            enabled.push_back(&p);
 
     if (enabled.empty()) {
         measuredFR = std::nullopt;
@@ -196,11 +238,20 @@ void MeasurementSession::recomputeAverage() {
         if (fdwCycles != FDWCycles::Off && p.ir.has_value()) {
             double cycles = 1.0;
             switch (fdwCycles) {
-            case FDWCycles::Cycles1: cycles = 1.0; break;
-            case FDWCycles::Cycles5: cycles = 5.0; break;
-            case FDWCycles::Cycles10: cycles = 10.0; break;
-            case FDWCycles::Cycles15: cycles = 15.0; break;
-            default: break;
+            case FDWCycles::Cycles1:
+                cycles = 1.0;
+                break;
+            case FDWCycles::Cycles5:
+                cycles = 5.0;
+                break;
+            case FDWCycles::Cycles10:
+                cycles = 10.0;
+                break;
+            case FDWCycles::Cycles15:
+                cycles = 15.0;
+                break;
+            default:
+                break;
             }
             return FrequencyResponse::fdw(p.ir.value(), cycles);
         }
@@ -235,12 +286,14 @@ void MeasurementSession::recomputeAverage() {
     // Median level normalization
     std::vector<double> inBand;
     for (size_t i = 0; i < grid.size(); ++i) {
-        if (grid[i] >= 200.0 && grid[i] <= 5000.0) inBand.push_back(combinedDB[i]);
+        if (grid[i] >= 200.0 && grid[i] <= 5000.0)
+            inBand.push_back(combinedDB[i]);
     }
     if (!inBand.empty()) {
         std::sort(inBand.begin(), inBand.end());
         double median = inBand[inBand.size() / 2];
-        for (size_t i = 0; i < grid.size(); ++i) combinedDB[i] -= median;
+        for (size_t i = 0; i < grid.size(); ++i)
+            combinedDB[i] -= median;
     }
 
     measuredFR = getEffectiveFR(*enabled[0]);
@@ -261,12 +314,14 @@ void MeasurementSession::togglePosition(const QUuid& id) {
 }
 
 void MeasurementSession::removePosition(const QUuid& id) {
-    positions.erase(std::remove_if(positions.begin(), positions.end(), [&id](const MeasurementPosition& p) {
-        return p.id == id;
-    }), positions.end());
+    positions.erase(
+        std::remove_if(positions.begin(), positions.end(), [&id](const MeasurementPosition& p) { return p.id == id; }),
+        positions.end());
 
-    if (positions.empty()) reset();
-    else recomputeAverage();
+    if (positions.empty())
+        reset();
+    else
+        recomputeAverage();
 }
 
 void MeasurementSession::setPositionKind(const QUuid& id, MeasurementChannelKind kind) {
@@ -280,7 +335,8 @@ void MeasurementSession::setPositionKind(const QUuid& id, MeasurementChannelKind
 }
 
 void MeasurementSession::runFit() {
-    if (measuredMagDB.empty()) return;
+    if (measuredMagDB.empty())
+        return;
 
     PEQAutoFitOptions opts;
     opts.bandCount = bandCount;
@@ -303,7 +359,8 @@ void MeasurementSession::runFit() {
 }
 
 std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vector<std::string>& existingNames) {
-    if (firKind != FIRKind::MeasurementDriven && (!correctionPreset.has_value() || correctionPreset.value().bands.empty())) {
+    if (firKind != FIRKind::MeasurementDriven &&
+        (!correctionPreset.has_value() || correctionPreset.value().bands.empty())) {
         status = "Run PEQ fit before generating FIR.";
         emit sessionUpdated();
         return std::nullopt;
@@ -317,17 +374,21 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
     std::vector<BiquadParameters> bands;
     if (correctionPreset.has_value()) {
         for (const auto& b : correctionPreset.value().bands) {
-            if (!b.isEnabled) continue;
+            if (!b.isEnabled)
+                continue;
             BiquadParameters p;
             p.type = stringToBiquadType(eqBandTypeToString(b.type));
-            p.freq = b.freq; p.gain = b.gain; p.q = b.q;
+            p.freq = b.freq;
+            p.gain = b.gain;
+            p.q = b.q;
             bands.push_back(p);
         }
     }
 
     QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir irDir(appDataDir + "/IRs");
-    if (!irDir.exists()) irDir.mkpath(".");
+    if (!irDir.exists())
+        irDir.mkpath(".");
 
     std::map<int, std::string> irPaths;
     QUuid presetId = QUuid::createUuid();
@@ -358,9 +419,9 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         }
 
         QString fileName = QString("RoomCorrection-%1-%2-%3.f64")
-            .arg(QString::fromStdString(firKindToString(firKind)))
-            .arg(rate)
-            .arg(presetId.toString(QUuid::WithoutBraces).left(8));
+                               .arg(QString::fromStdString(firKindToString(firKind)))
+                               .arg(rate)
+                               .arg(presetId.toString(QUuid::WithoutBraces).left(8));
 
         QString fullPath = irDir.filePath(fileName);
         ConvCoefficientLoader::saveRawFloat64(irSamples, fullPath.toStdString());
@@ -371,7 +432,8 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
     std::string presetName = base;
     if (std::find(existingNames.begin(), existingNames.end(), base) != existingNames.end()) {
         int idx = 2;
-        while (std::find(existingNames.begin(), existingNames.end(), base + " " + std::to_string(idx)) != existingNames.end()) {
+        while (std::find(existingNames.begin(), existingNames.end(), base + " " + std::to_string(idx)) !=
+               existingNames.end()) {
             idx++;
         }
         presetName = base + " " + std::to_string(idx);
@@ -405,7 +467,8 @@ void MeasurementSession::clearCalibration() {
 }
 
 bool MeasurementSession::exportFRD(const std::string& path, bool includeCalibration) {
-    if (!measuredFR.has_value()) return false;
+    if (!measuredFR.has_value())
+        return false;
     const auto& fr = measuredFR.value();
 
     std::vector<double> freqs, mags, phases;
@@ -413,7 +476,8 @@ bool MeasurementSession::exportFRD(const std::string& path, bool includeCalibrat
 
     for (size_t k = 1; k < fr.bins(); ++k) {
         double f = static_cast<double>(k) * binHz;
-        if (f < 20.0 || f > 20000.0) continue;
+        if (f < 20.0 || f > 20000.0)
+            continue;
         freqs.push_back(f);
 
         double m = fr.magnitudeDB(k);
@@ -431,8 +495,10 @@ bool MeasurementSession::exportFRD(const std::string& path, bool includeCalibrat
 bool MeasurementSession::subwooferAssistAvailable() const {
     bool hasMains = false, hasSub = false;
     for (const auto& p : positions) {
-        if (p.kind == MeasurementChannelKind::Mains && p.ir.has_value()) hasMains = true;
-        if (p.kind == MeasurementChannelKind::Subwoofer && p.ir.has_value()) hasSub = true;
+        if (p.kind == MeasurementChannelKind::Mains && p.ir.has_value())
+            hasMains = true;
+        if (p.kind == MeasurementChannelKind::Subwoofer && p.ir.has_value())
+            hasSub = true;
     }
     return hasMains && hasSub;
 }
@@ -442,10 +508,13 @@ std::optional<SubwooferRecommendation> MeasurementSession::computeSubwooferRecom
     const ImpulseResponse* subIR = nullptr;
 
     for (const auto& p : positions) {
-        if (p.kind == MeasurementChannelKind::Mains && p.ir.has_value()) mainsIR = &p.ir.value();
-        if (p.kind == MeasurementChannelKind::Subwoofer && p.ir.has_value()) subIR = &p.ir.value();
+        if (p.kind == MeasurementChannelKind::Mains && p.ir.has_value())
+            mainsIR = &p.ir.value();
+        if (p.kind == MeasurementChannelKind::Subwoofer && p.ir.has_value())
+            subIR = &p.ir.value();
     }
 
-    if (!mainsIR || !subIR) return std::nullopt;
+    if (!mainsIR || !subIR)
+        return std::nullopt;
     return SubwooferAssist::recommend(*mainsIR, *subIR);
 }

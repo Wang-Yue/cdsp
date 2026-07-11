@@ -1,15 +1,16 @@
 #include "ui/ConvolutionImportDlg.h"
-#include "ui/StyleTheme.h"
-#include "models/ConvCoefficientLoader.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QFormLayout>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QFileInfo>
 
+#include "models/ConvCoefficientLoader.h"
+#include "ui/StyleTheme.h"
+
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QHeaderView>
+#include <QMessageBox>
 #include <QSpinBox>
+#include <QVBoxLayout>
 #include <set>
 
 ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
@@ -83,7 +84,9 @@ void ConvolutionImportDlg::setupUi() {
     m_warningLabel->setVisible(false);
     mainLayout->addWidget(m_warningLabel);
 
-    m_infoLabel = new QLabel("Add IR files to build a multi-rate convolution preset with peak normalization and latency compensation.", this);
+    m_infoLabel = new QLabel(
+        "Add IR files to build a multi-rate convolution preset with peak normalization and latency compensation.",
+        this);
     m_infoLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     mainLayout->addWidget(m_infoLabel);
 
@@ -104,12 +107,13 @@ void ConvolutionImportDlg::setupUi() {
 }
 
 void ConvolutionImportDlg::onAddFilesClicked() {
-    QStringList files = QFileDialog::getOpenFileNames(this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt)");
+    QStringList files =
+        QFileDialog::getOpenFileNames(this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt)");
     for (const auto& file : files) {
         ImportItem item;
         item.filePath = file;
         QFileInfo fi(file);
-        
+
         auto wavInfo = ConvCoefficientLoader::parseWavHeader(file.toStdString());
         if (wavInfo.has_value()) {
             item.sampleRate = wavInfo->sampleRate;
@@ -153,7 +157,8 @@ void ConvolutionImportDlg::updateTable() {
         });
         m_fileTable->setCellWidget(row, 1, rateCombo);
 
-        if (rates.count(item.sampleRate)) duplicate = true;
+        if (rates.count(item.sampleRate))
+            duplicate = true;
         rates.insert(item.sampleRate);
 
         auto fmtCombo = new QComboBox(this);
@@ -168,9 +173,7 @@ void ConvolutionImportDlg::updateTable() {
         auto chSpin = new QSpinBox(this);
         chSpin->setRange(0, 15);
         chSpin->setValue(item.channel);
-        connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, i](int val) {
-            m_items[i].channel = val;
-        });
+        connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, i](int val) { m_items[i].channel = val; });
         m_fileTable->setCellWidget(row, 3, chSpin);
 
         auto delBtn = new QPushButton("X", this);
@@ -190,7 +193,8 @@ void ConvolutionImportDlg::updateTable() {
     }
 
     if (duplicate) {
-        m_warningLabel->setText("⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
+        m_warningLabel->setText(
+            "⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
         m_warningLabel->setVisible(true);
     } else {
         m_warningLabel->setVisible(false);
@@ -199,16 +203,18 @@ void ConvolutionImportDlg::updateTable() {
     m_importBtn->setEnabled(!m_items.empty() && !duplicate && !m_nameEdit->text().trimmed().isEmpty());
 }
 
-#include <QStandardPaths>
 #include <QDir>
+#include <QStandardPaths>
 #include <QUuid>
 
 void ConvolutionImportDlg::onImportClicked() {
-    if (m_items.empty()) return;
+    if (m_items.empty())
+        return;
 
     QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir irDir(appDataDir + "/IRs");
-    if (!irDir.exists()) irDir.mkpath(".");
+    if (!irDir.exists())
+        irDir.mkpath(".");
 
     QUuid presetId = QUuid::createUuid();
     std::map<int, std::string> paths;
@@ -217,17 +223,20 @@ void ConvolutionImportDlg::onImportClicked() {
     double delayMs = m_delayCompSpin->value();
 
     for (const auto& item : m_items) {
-        auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
-        
+        auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(),
+                                                              item.channel, item.sampleRate);
+
         if (doNormalize && !coeffs.empty()) {
             double maxVal = 0.0;
             for (double c : coeffs) {
                 double absVal = std::abs(c);
-                if (absVal > maxVal) maxVal = absVal;
+                if (absVal > maxVal)
+                    maxVal = absVal;
             }
             double targetDb = 0.0;
             double scale = maxVal > 0.0 ? std::pow(10.0, targetDb / 20.0) / maxVal : 1.0;
-            for (double& c : coeffs) c *= scale;
+            for (double& c : coeffs)
+                c *= scale;
         }
 
         if (delayMs > 0.0) {
@@ -241,9 +250,8 @@ void ConvolutionImportDlg::onImportClicked() {
             firstCoeffCount = static_cast<int>(coeffs.size());
         }
 
-        QString destFileName = QString("Imported-%1-%2.f64")
-            .arg(presetId.toString(QUuid::WithoutBraces).left(8))
-            .arg(item.sampleRate);
+        QString destFileName =
+            QString("Imported-%1-%2.f64").arg(presetId.toString(QUuid::WithoutBraces).left(8)).arg(item.sampleRate);
         QString destPath = irDir.filePath(destFileName);
 
         ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString());
@@ -252,11 +260,15 @@ void ConvolutionImportDlg::onImportClicked() {
 
     std::string name = m_nameEdit->text().toStdString();
     std::string kind = m_kindEdit->text().toStdString();
-    if (kind.empty()) kind = "Imported";
+    if (kind.empty())
+        kind = "Imported";
 
     ConvolutionPreset preset(name, paths, firstCoeffCount, kind);
     m_pipeline->addConvPreset(preset);
 
-    QMessageBox::information(this, "Success", QString("Imported convolution preset '%1' with %2 rate file(s).").arg(QString::fromStdString(name)).arg(paths.size()));
+    QMessageBox::information(this, "Success",
+                             QString("Imported convolution preset '%1' with %2 rate file(s).")
+                                 .arg(QString::fromStdString(name))
+                                 .arg(paths.size()));
     accept();
 }

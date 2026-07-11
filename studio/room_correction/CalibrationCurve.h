@@ -1,9 +1,9 @@
 #ifndef CALIBRATION_CURVE_H
 #define CALIBRATION_CURVE_H
 
-#include <vector>
-#include <string>
 #include <optional>
+#include <string>
+#include <vector>
 
 class CalibrationCurve {
 public:
@@ -12,7 +12,8 @@ public:
     std::vector<double> phasesDeg;
 
     CalibrationCurve() = default;
-    CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags, const std::vector<double>& phases = {});
+    CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags,
+                     const std::vector<double>& phases = {});
 
     double magnitude(double freqHz) const;
     double phase(double freqHz) const;

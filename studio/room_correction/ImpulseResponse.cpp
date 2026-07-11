@@ -1,6 +1,7 @@
 #include "room_correction/ImpulseResponse.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -10,7 +11,8 @@ ImpulseResponse::ImpulseResponse(const std::vector<double>& samples, int sampleR
     : samples(samples), sampleRate(sampleRate), zeroIndex(zeroIndex) {}
 
 size_t ImpulseResponse::peakIndex() const {
-    if (samples.empty()) return 0;
+    if (samples.empty())
+        return 0;
     size_t idx = 0;
     double maxVal = -1.0;
     for (size_t i = 0; i < samples.size(); ++i) {
@@ -24,7 +26,8 @@ size_t ImpulseResponse::peakIndex() const {
 }
 
 double ImpulseResponse::peakValue() const {
-    if (samples.empty()) return 0.0;
+    if (samples.empty())
+        return 0.0;
     return samples[peakIndex()];
 }
 
@@ -63,10 +66,12 @@ ImpulseResponse ImpulseResponse::windowed(size_t leftSamples, size_t rightSample
 }
 
 std::vector<double> ImpulseResponse::schroederDecay() const {
-    if (samples.empty()) return {};
+    if (samples.empty())
+        return {};
 
     size_t p = zeroIndex;
-    if (p >= samples.size()) return {};
+    if (p >= samples.size())
+        return {};
 
     size_t n = samples.size() - p;
     std::vector<double> energy(n, 0.0);
@@ -78,7 +83,8 @@ std::vector<double> ImpulseResponse::schroederDecay() const {
         energy[i - 1] = sum;
     }
 
-    if (sum <= 0.0) return {};
+    if (sum <= 0.0)
+        return {};
     double invTotal = 1.0 / sum;
 
     std::vector<double> decayDB(n);
@@ -93,7 +99,8 @@ std::vector<double> ImpulseResponse::schroederDecay() const {
 RT60Result ImpulseResponse::estimateRT60() const {
     RT60Result res;
     auto decay = schroederDecay();
-    if (decay.size() < 100) return res;
+    if (decay.size() < 100)
+        return res;
 
     double fs = static_cast<double>(sampleRate);
 
@@ -102,16 +109,20 @@ RT60Result ImpulseResponse::estimateRT60() const {
         size_t idxEnd = decay.size();
 
         for (size_t i = 0; i < decay.size(); ++i) {
-            if (decay[i] <= startDB && idxStart == decay.size()) idxStart = i;
-            if (decay[i] <= endDB && idxEnd == decay.size()) idxEnd = i;
+            if (decay[i] <= startDB && idxStart == decay.size())
+                idxStart = i;
+            if (decay[i] <= endDB && idxEnd == decay.size())
+                idxEnd = i;
         }
 
-        if (idxStart >= idxEnd || idxEnd >= decay.size()) return 0.0;
+        if (idxStart >= idxEnd || idxEnd >= decay.size())
+            return 0.0;
 
         double tStart = static_cast<double>(idxStart) / fs;
         double tEnd = static_cast<double>(idxEnd) / fs;
         double dt = tEnd - tStart;
-        if (dt <= 0.0) return 0.0;
+        if (dt <= 0.0)
+            return 0.0;
 
         double dbDiff = endDB - startDB;
         double slope = dbDiff / dt;

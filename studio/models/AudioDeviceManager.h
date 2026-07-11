@@ -1,19 +1,21 @@
 #ifndef AUDIO_DEVICE_MANAGER_H
 #define AUDIO_DEVICE_MANAGER_H
 
-#include "models/DeviceConfig.h"
-#include "models/AudioSettings.h"
 #include "engine/CDSPEngine.h"
+#include "models/AudioSettings.h"
+#include "models/DeviceConfig.h"
+
 #include <QObject>
-#include <vector>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <vector>
 
 class AudioDeviceManager : public QObject {
     Q_OBJECT
 
 public:
-    AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings, QObject* parent = nullptr);
+    AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings,
+                       QObject* parent = nullptr);
     ~AudioDeviceManager();
 
     DeviceConfig captureConfig;

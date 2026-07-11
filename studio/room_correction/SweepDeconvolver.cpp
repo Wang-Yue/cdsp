@@ -1,18 +1,24 @@
 #include "room_correction/SweepDeconvolver.h"
-#include "room_correction/SweepGenerator.h"
+
 #include "room_correction/MeasurementFFT.h"
-#include <cmath>
+#include "room_correction/SweepGenerator.h"
+
 #include <algorithm>
+#include <cmath>
 
 std::vector<double> SweepDeconvolver::convolve(const std::vector<double>& a, const std::vector<double>& b) {
-    if (a.empty() || b.empty()) return {};
+    if (a.empty() || b.empty())
+        return {};
 
     size_t totalLen = a.size() + b.size() - 1;
     size_t nFft = 1;
-    while (nFft < totalLen) nFft <<= 1;
+    while (nFft < totalLen)
+        nFft <<= 1;
 
-    std::vector<double> paddedA = a; paddedA.resize(nFft, 0.0);
-    std::vector<double> paddedB = b; paddedB.resize(nFft, 0.0);
+    std::vector<double> paddedA = a;
+    paddedA.resize(nFft, 0.0);
+    std::vector<double> paddedB = b;
+    paddedB.resize(nFft, 0.0);
 
     std::vector<double> aReal, aImag, bReal, bImag;
     MeasurementFFT::forward(paddedA, aReal, aImag);
@@ -33,13 +39,8 @@ std::vector<double> SweepDeconvolver::convolve(const std::vector<double>& a, con
     return outReal;
 }
 
-ImpulseResponse SweepDeconvolver::deconvolve(
-    const std::vector<double>& captured,
-    double f1,
-    double f2,
-    double durationSeconds,
-    int sampleRate
-) {
+ImpulseResponse SweepDeconvolver::deconvolve(const std::vector<double>& captured, double f1, double f2,
+                                             double durationSeconds, int sampleRate) {
     std::vector<double> invFilter = SweepGenerator::inverseFilter(f1, f2, durationSeconds, sampleRate);
     std::vector<double> rawIR = convolve(captured, invFilter);
     return ImpulseResponse(rawIR, sampleRate).centeredOnPeak();

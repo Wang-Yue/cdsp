@@ -1,16 +1,16 @@
 #include "ui/GeneralSettingsView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+
+#include <QApplication>
 #include <QFormLayout>
 #include <QGroupBox>
-#include <QApplication>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
-GeneralSettingsView::GeneralSettingsView(
-    std::shared_ptr<AudioSettings> settings,
-    std::shared_ptr<MonitoringController> monitoring,
-    QWidget* parent
-) : QWidget(parent), m_settings(settings), m_monitoring(monitoring) {
+GeneralSettingsView::GeneralSettingsView(std::shared_ptr<AudioSettings> settings,
+                                         std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
+    : QWidget(parent), m_settings(settings), m_monitoring(monitoring) {
     setupUi();
     refreshUi();
 }
@@ -111,13 +111,16 @@ void GeneralSettingsView::setupUi() {
 
     connect(m_silenceTimeoutSlider, &QSlider::valueChanged, [this](int val) {
         m_settings->silenceTimeout = val;
-        if (val == 0) m_silenceTimeoutLabel->setText("Disabled");
-        else m_silenceTimeoutLabel->setText(QString("%1 s").arg(val));
+        if (val == 0)
+            m_silenceTimeoutLabel->setText("Disabled");
+        else
+            m_silenceTimeoutLabel->setText(QString("%1 s").arg(val));
         m_settings->savePreferences();
     });
     silenceForm->addRow("Silence Timeout:", timeoutBox);
 
-    auto silenceSubLbl = new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
+    auto silenceSubLbl =
+        new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
     silenceSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     silenceForm->addRow("", silenceSubLbl);
 
@@ -152,6 +155,8 @@ void GeneralSettingsView::refreshUi() {
     m_silenceTimeoutSlider->blockSignals(true);
     m_silenceTimeoutSlider->setValue(m_settings->silenceTimeout);
     m_silenceTimeoutSlider->blockSignals(false);
-    if (m_settings->silenceTimeout == 0) m_silenceTimeoutLabel->setText("Disabled");
-    else m_silenceTimeoutLabel->setText(QString("%1 s").arg(m_settings->silenceTimeout));
+    if (m_settings->silenceTimeout == 0)
+        m_silenceTimeoutLabel->setText("Disabled");
+    else
+        m_silenceTimeoutLabel->setText(QString("%1 s").arg(m_settings->silenceTimeout));
 }

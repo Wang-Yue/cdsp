@@ -1,9 +1,10 @@
 #include "ui/AnalogVUMeterView.h"
-#include <cmath>
-#include <algorithm>
-#include <QRadialGradient>
-#include <QLinearGradient>
+
 #include <QEvent>
+#include <QLinearGradient>
+#include <QRadialGradient>
+#include <algorithm>
+#include <cmath>
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -13,12 +14,14 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
 
 void AnalogVUMeterView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_levelState) m_levelState->visibilityCount++;
+    if (m_levelState)
+        m_levelState->visibilityCount++;
 }
 
 void AnalogVUMeterView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_levelState && m_levelState->visibilityCount > 0) m_levelState->visibilityCount--;
+    if (m_levelState && m_levelState->visibilityCount > 0)
+        m_levelState->visibilityCount--;
 }
 
 void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
@@ -47,8 +50,10 @@ void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
     m_leftDB = leftDB;
     m_rightDB = rightDB;
 
-    if (leftDB >= -0.1f) m_peakClipLHold = 1.0f;
-    if (rightDB >= -0.1f) m_peakClipRHold = 1.0f;
+    if (leftDB >= -0.1f)
+        m_peakClipLHold = 1.0f;
+    if (rightDB >= -0.1f)
+        m_peakClipRHold = 1.0f;
 
     m_targetAngleL = computeAngleForLevel(leftDB);
     m_targetAngleR = computeAngleForLevel(rightDB);
@@ -105,28 +110,42 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
     drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT", m_rightDB, m_peakClipRHold > 0.0f);
 }
 
-void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label, float levelDb, bool isClipped) {
-    if (rect.width() < 20 || rect.height() < 20) return;
+void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label,
+                                     float levelDb, bool isClipped) {
+    if (rect.width() < 20 || rect.height() < 20)
+        return;
 
     p.save();
     p.setClipRect(rect);
 
     QColor bgTop, bgBot, textColor, arcPenColor, redPenColor, needlePenColor, bulbAmberColor, bulbHotSpotColor;
     if (m_settings.theme == VUTheme::VintageAmber) {
-        bgTop = QColor("#f4ecd8"); bgBot = QColor("#dfd3b6");
-        textColor = QColor("#3d2f21"); arcPenColor = QColor(61, 47, 33, 150);
-        redPenColor = QColor(204, 41, 41, 204); needlePenColor = QColor(17, 17, 17, 230);
-        bulbAmberColor = QColor(255, 209, 102); bulbHotSpotColor = QColor(255, 250, 224);
+        bgTop = QColor("#f4ecd8");
+        bgBot = QColor("#dfd3b6");
+        textColor = QColor("#3d2f21");
+        arcPenColor = QColor(61, 47, 33, 150);
+        redPenColor = QColor(204, 41, 41, 204);
+        needlePenColor = QColor(17, 17, 17, 230);
+        bulbAmberColor = QColor(255, 209, 102);
+        bulbHotSpotColor = QColor(255, 250, 224);
     } else if (m_settings.theme == VUTheme::DarkStealth) {
-        bgTop = QColor("#1c1c1e"); bgBot = QColor("#0c0c0e");
-        textColor = QColor("#e5e5ea"); arcPenColor = QColor(255, 255, 255, 76);
-        redPenColor = QColor(255, 255, 255, 128); needlePenColor = QColor("#ffffff");
-        bulbAmberColor = QColor(0, 0, 0, 100); bulbHotSpotColor = QColor(255, 255, 255, 38);
+        bgTop = QColor("#1c1c1e");
+        bgBot = QColor("#0c0c0e");
+        textColor = QColor("#e5e5ea");
+        arcPenColor = QColor(255, 255, 255, 76);
+        redPenColor = QColor(255, 255, 255, 128);
+        needlePenColor = QColor("#ffffff");
+        bulbAmberColor = QColor(0, 0, 0, 100);
+        bulbHotSpotColor = QColor(255, 255, 255, 38);
     } else { // Warm Tube
-        bgTop = QColor("#2c1b12"); bgBot = QColor("#1a0e08");
-        textColor = QColor("#ff9f0a"); arcPenColor = QColor(255, 159, 10, 128);
-        redPenColor = QColor(217, 51, 26, 204); needlePenColor = QColor(38, 38, 38);
-        bulbAmberColor = QColor(242, 115, 26); bulbHotSpotColor = QColor(255, 204, 77);
+        bgTop = QColor("#2c1b12");
+        bgBot = QColor("#1a0e08");
+        textColor = QColor("#ff9f0a");
+        arcPenColor = QColor(255, 159, 10, 128);
+        redPenColor = QColor(217, 51, 26, 204);
+        needlePenColor = QColor(38, 38, 38);
+        bulbAmberColor = QColor(242, 115, 26);
+        bulbHotSpotColor = QColor(255, 204, 77);
     }
 
     // Dial face background
@@ -174,15 +193,17 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     double zeroVU_CCW = 90.0 - zeroVUAngle;
     double redSpan_CCW = zeroVU_CCW - 55.0; // from 0 VU to +3 VU (55 deg CCW)
     p.setPen(QPen(redPenColor, 4));
-    p.drawArc(QRectF(pivot.x() - radius - 2, pivot.y() - radius - 2, (radius + 2) * 2, (radius + 2) * 2), 55 * 16, static_cast<int>(redSpan_CCW * 16));
+    p.drawArc(QRectF(pivot.x() - radius - 2, pivot.y() - radius - 2, (radius + 2) * 2, (radius + 2) * 2), 55 * 16,
+              static_cast<int>(redSpan_CCW * 16));
 
     // Numeric Arc Markings & Ticks (-20 to +3 VU)
     p.setFont(QFont("sans-serif", 8, QFont::Bold));
-    struct VUMark { double vu; const char* text; };
-    static const VUMark marks[] = {
-        {-20, "20"}, {-10, "10"}, {-7, "7"}, {-5, "5"}, {-3, "3"},
-        {-2, "2"}, {-1, "1"}, {0, "0"}, {1, "1"}, {2, "2"}, {3, "3"}
+    struct VUMark {
+        double vu;
+        const char* text;
     };
+    static const VUMark marks[] = {{-20, "20"}, {-10, "10"}, {-7, "7"}, {-5, "5"}, {-3, "3"}, {-2, "2"},
+                                   {-1, "1"},   {0, "0"},    {1, "1"},  {2, "2"},  {3, "3"}};
 
     for (const auto& m : marks) {
         float angle = computeAngleForLevel(-18.0f + m_gainCalibrationDb + m.vu);
@@ -286,7 +307,8 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     if (std::abs(m_gainCalibrationDb) > 0.01f) {
         p.setFont(QFont("sans-serif", 7, QFont::Bold));
         p.setPen(QColor("#8e8e93"));
-        QString calText = QString("CAL %1%2dB").arg(m_gainCalibrationDb >= 0 ? "+" : "").arg(m_gainCalibrationDb, 0, 'f', 1);
+        QString calText =
+            QString("CAL %1%2dB").arg(m_gainCalibrationDb >= 0 ? "+" : "").arg(m_gainCalibrationDb, 0, 'f', 1);
         p.drawText(QRectF(rect.left() + 28, rect.top() + 14, 50, 12), Qt::AlignLeft | Qt::AlignVCenter, calText);
     }
 

@@ -1,12 +1,14 @@
 #include "ui/DevicePickerView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
-#include <QFileDialog>
+#include <QVBoxLayout>
 #include <algorithm>
 
 namespace {
@@ -42,11 +44,9 @@ public:
 
 } // namespace
 
-DevicePickerView::DevicePickerView(
-    std::shared_ptr<AudioDeviceManager> devices,
-    std::shared_ptr<AudioSettings> settings,
-    QWidget* parent
-) : QWidget(parent), m_devices(devices), m_settings(settings) {
+DevicePickerView::DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, std::shared_ptr<AudioSettings> settings,
+                                   QWidget* parent)
+    : QWidget(parent), m_devices(devices), m_settings(settings) {
     setupUi();
 
     connect(m_devices.get(), &AudioDeviceManager::devicesRefreshed, this, &DevicePickerView::refreshUi);
@@ -116,7 +116,8 @@ void DevicePickerView::setupUi() {
     };
 
     connect(m_capBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, getCapStackIndex](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         AudioBackendType b = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
         m_capStack->setCurrentIndex(getCapStackIndex(b));
         applySettings();
@@ -177,7 +178,8 @@ void DevicePickerView::setupUi() {
     };
 
     connect(m_pbBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, getPbStackIndex](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         AudioBackendType b = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
         m_pbStack->setCurrentIndex(getPbStackIndex(b));
         applySettings();
@@ -214,7 +216,8 @@ void DevicePickerView::setupUi() {
     m_latencyLabel = new QLabel(procGroup);
     m_latencyLabel->setStyleSheet("color: #8e8e93; font-style: italic;");
     connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         if (m_chunkSizeCombo && m_settings) {
             m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
         }
@@ -227,7 +230,8 @@ void DevicePickerView::setupUi() {
 
     m_enableRateAdjustCheck = new QCheckBox("Enable Rate Adjust", procGroup);
     connect(m_enableRateAdjustCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     procForm->addRow("", m_enableRateAdjustCheck);
@@ -240,14 +244,16 @@ void DevicePickerView::setupUi() {
     m_queueLimitSpin->setRange(1, 32);
     m_queueLimitSpin->setFixedWidth(100);
     connect(m_queueLimitSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     procForm->addRow("Queue Limit", m_queueLimitSpin);
 
     m_stopOnRateChangeCheck = new QCheckBox("Stop on Rate Change", procGroup);
     connect(m_stopOnRateChangeCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     procForm->addRow("", m_stopOnRateChangeCheck);
@@ -267,7 +273,8 @@ void DevicePickerView::setupUi() {
     m_measureIntervalValLabel->setStyleSheet("font-family: monospace; font-size: 13px;");
 
     connect(m_measureIntervalSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_measureIntervalSlider->blockSignals(true);
         m_measureIntervalSlider->setValue(static_cast<int>(val * 10.0));
         m_measureIntervalSlider->blockSignals(false);
@@ -275,7 +282,8 @@ void DevicePickerView::setupUi() {
         applySettings();
     });
     connect(m_measureIntervalSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         double dVal = val / 10.0;
         m_measureIntervalSpin->blockSignals(true);
         m_measureIntervalSpin->setValue(dVal);
@@ -291,7 +299,8 @@ void DevicePickerView::setupUi() {
 
     m_multithreadedCheck = new QCheckBox("Multithreaded", procGroup);
     connect(m_multithreadedCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_workerThreadsRow->setVisible(checked);
         applySettings();
     });
@@ -310,7 +319,8 @@ void DevicePickerView::setupUi() {
     m_workerThreadsSpin->setSpecialValueText("Auto");
     m_workerThreadsSpin->setFixedWidth(100);
     connect(m_workerThreadsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     wtLayout->addWidget(m_workerThreadsSpin);
@@ -323,15 +333,14 @@ void DevicePickerView::setupUi() {
     // Bottom Action Buttons
     auto btnBox = new QHBoxLayout();
     auto refreshBtn = new QPushButton("Refresh Devices", container);
-    connect(refreshBtn, &QPushButton::clicked, [this]() {
-        m_devices->fetchDevices();
-    });
+    connect(refreshBtn, &QPushButton::clicked, [this]() { m_devices->fetchDevices(); });
     btnBox->addWidget(refreshBtn);
 
     btnBox->addStretch();
 
     auto applyBtn = new QPushButton("Apply Hardware Settings", container);
-    applyBtn->setStyleSheet("background-color: #007af5; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;");
+    applyBtn->setStyleSheet(
+        "background-color: #007af5; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;");
     connect(applyBtn, &QPushButton::clicked, this, &DevicePickerView::applySettings);
     btnBox->addWidget(applyBtn);
 
@@ -350,12 +359,9 @@ QString DevicePickerView::formatSampleRate(int rate) {
     return QString("%1 Hz").arg(rate);
 }
 
-void DevicePickerView::populateDeviceCombo(
-    QComboBox* combo,
-    QWidget* warningWidget,
-    const std::vector<AudioDevice>& devices,
-    const std::optional<std::string>& selectedDeviceName
-) {
+void DevicePickerView::populateDeviceCombo(QComboBox* combo, QWidget* warningWidget,
+                                           const std::vector<AudioDevice>& devices,
+                                           const std::optional<std::string>& selectedDeviceName) {
     combo->blockSignals(true);
     combo->clear();
 
@@ -404,7 +410,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capDeviceCombo = new QComboBox(w);
     m_capDeviceCombo->setMinimumWidth(260);
     connect(m_capDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (m_isRefreshing || idx < 0) return;
+        if (m_isRefreshing || idx < 0)
+            return;
         std::string newDev = m_capDeviceCombo->currentData().toString().toStdString();
         m_devices->captureConfig.setDeviceName(newDev);
         m_devices->refreshDeviceCapabilities();
@@ -425,7 +432,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capDevChannelsSpin->setFixedWidth(100);
 
     auto onDevChChanged = [this](int ch) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_capStreamChannelsSpin->setMaximum(ch);
         if (m_capStreamChannelsSpin->value() > ch) {
             m_capStreamChannelsSpin->setValue(ch);
@@ -449,7 +457,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capStreamChannelsSpin->setRange(1, 32);
     m_capStreamChannelsSpin->setFixedWidth(100);
     connect(m_capStreamChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
 
@@ -467,7 +476,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 
     m_capRateCombo = new QComboBox(w);
     connect(m_capRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
 
@@ -486,7 +496,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 
     m_capFormatCombo = new QComboBox(w);
     connect(m_capFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
 
@@ -500,7 +511,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 
     m_bypassDoPCheck = new QCheckBox("Bypass DoP Detection", w);
     connect(m_bypassDoPCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_dopCutoffLabel->setEnabled(!checked);
         m_dopCutoffCombo->setEnabled(!checked);
         applySettings();
@@ -519,7 +531,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_dopCutoffCombo->addItem("40 kHz", 40000.0);
     m_dopCutoffCombo->addItem("50 kHz", 50000.0);
     connect(m_dopCutoffCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     cutoffBox->addWidget(m_dopCutoffCombo);
@@ -547,7 +560,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capWavFilePathEdit = new QLineEdit(w);
         m_capWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
         connect(m_capWavFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         fileBox->addWidget(m_capWavFilePathEdit);
@@ -555,7 +569,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         auto browseBtn = new QPushButton("Browse...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
             QString path = QFileDialog::getOpenFileName(w, "Select WAV File", "", "WAV Files (*.wav)");
-            if (!path.isEmpty()) m_capWavFilePathEdit->setText(path);
+            if (!path.isEmpty())
+                m_capWavFilePathEdit->setText(path);
         });
         fileBox->addWidget(browseBtn);
         form->addRow("", fileBox);
@@ -568,7 +583,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capWavSkipBytesSpin->setRange(0, 1000000);
         m_capWavSkipBytesSpin->setFixedWidth(100);
         connect(m_capWavSkipBytesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Skip Bytes", m_capWavSkipBytesSpin);
@@ -578,7 +594,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capWavReadBytesSpin->setSpecialValueText("0 (All)");
         m_capWavReadBytesSpin->setFixedWidth(100);
         connect(m_capWavReadBytesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Read Bytes", m_capWavReadBytesSpin);
@@ -587,7 +604,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capWavExtraSamplesSpin->setRange(0, 1000000);
         m_capWavExtraSamplesSpin->setFixedWidth(120);
         connect(m_capWavExtraSamplesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Extra Samples", m_capWavExtraSamplesSpin);
@@ -596,7 +614,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawFilePathEdit = new QLineEdit(w);
         m_capRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
         connect(m_capRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         fileBox->addWidget(m_capRawFilePathEdit);
@@ -604,15 +623,18 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         auto browseBtn = new QPushButton("Browse...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
             QString path = QFileDialog::getOpenFileName(w, "Select Raw File", "", "Raw Files (*.raw *.f64 *.f32)");
-            if (!path.isEmpty()) m_capRawFilePathEdit->setText(path);
+            if (!path.isEmpty())
+                m_capRawFilePathEdit->setText(path);
         });
         fileBox->addWidget(browseBtn);
         form->addRow("", fileBox);
 
         m_capRawFileFormatCombo = new QComboBox(w);
-        m_capRawFileFormatCombo->addItems({"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+        m_capRawFileFormatCombo->addItems(
+            {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
         connect(m_capRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Format", m_capRawFileFormatCombo);
@@ -621,7 +643,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawFileChannelsSpin->setRange(1, 32);
         m_capRawFileChannelsSpin->setFixedWidth(100);
         connect(m_capRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Channels", m_capRawFileChannelsSpin);
@@ -630,7 +653,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawSkipBytesSpin->setRange(0, 1000000);
         m_capRawSkipBytesSpin->setFixedWidth(100);
         connect(m_capRawSkipBytesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Skip Bytes", m_capRawSkipBytesSpin);
@@ -640,7 +664,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawReadBytesSpin->setSpecialValueText("0 (All)");
         m_capRawReadBytesSpin->setFixedWidth(100);
         connect(m_capRawReadBytesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Read Bytes", m_capRawReadBytesSpin);
@@ -649,7 +674,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawExtraSamplesSpin->setRange(0, 1000000);
         m_capRawExtraSamplesSpin->setFixedWidth(120);
         connect(m_capRawExtraSamplesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-            if (m_isRefreshing) return;
+            if (m_isRefreshing)
+                return;
             applySettings();
         });
         form->addRow("Extra Samples", m_capRawExtraSamplesSpin);
@@ -670,7 +696,8 @@ QWidget* DevicePickerView::createCapGeneratorView() {
         m_genFreqLabel->setEnabled(!isNoise);
         m_genFreqSpin->setEnabled(!isNoise);
         m_genFreqSlider->setEnabled(!isNoise);
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     form->addRow("Generator", m_genTypeCombo);
@@ -679,7 +706,8 @@ QWidget* DevicePickerView::createCapGeneratorView() {
     m_genChannelsSpin->setRange(1, 32);
     m_genChannelsSpin->setFixedWidth(100);
     connect(m_genChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     form->addRow("Channels", m_genChannelsSpin);
@@ -698,14 +726,16 @@ QWidget* DevicePickerView::createCapGeneratorView() {
     m_genFreqSlider->setRange(1, 20000);
 
     connect(m_genFreqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_genFreqSlider->blockSignals(true);
         m_genFreqSlider->setValue(static_cast<int>(val));
         m_genFreqSlider->blockSignals(false);
         applySettings();
     });
     connect(m_genFreqSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_genFreqSpin->blockSignals(true);
         m_genFreqSpin->setValue(val);
         m_genFreqSpin->blockSignals(false);
@@ -730,14 +760,16 @@ QWidget* DevicePickerView::createCapGeneratorView() {
     m_genLevelSlider->setRange(-200, 0); // maps -100.0 to 0.0 dB
 
     connect(m_genLevelSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_genLevelSlider->blockSignals(true);
         m_genLevelSlider->setValue(static_cast<int>(val * 2.0));
         m_genLevelSlider->blockSignals(false);
         applySettings();
     });
     connect(m_genLevelSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         double dbVal = val / 2.0;
         m_genLevelSpin->blockSignals(true);
         m_genLevelSpin->setValue(dbVal);
@@ -771,7 +803,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbDeviceCombo = new QComboBox(w);
     m_pbDeviceCombo->setMinimumWidth(260);
     connect(m_pbDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (m_isRefreshing || idx < 0) return;
+        if (m_isRefreshing || idx < 0)
+            return;
         std::string newDev = m_pbDeviceCombo->currentData().toString().toStdString();
         m_devices->playbackConfig.setDeviceName(newDev);
         m_devices->refreshDeviceCapabilities();
@@ -792,7 +825,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbDevChannelsSpin->setFixedWidth(100);
 
     auto onDevChChanged = [this](int ch) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         m_pbStreamChannelsSpin->setMaximum(ch);
         if (m_pbStreamChannelsSpin->value() > ch) {
             m_pbStreamChannelsSpin->setValue(ch);
@@ -816,7 +850,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbStreamChannelsSpin->setRange(1, 32);
     m_pbStreamChannelsSpin->setFixedWidth(100);
     connect(m_pbStreamChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
 
@@ -834,7 +869,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     m_pbRateCombo = new QComboBox(w);
     connect(m_pbRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
         updateDoPCapability();
     });
@@ -849,7 +885,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     m_pbFormatCombo = new QComboBox(w);
     connect(m_pbFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
 
@@ -863,18 +900,21 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     m_exclusiveModeCheck = new QCheckBox("Exclusive Mode (Hog)", w);
     connect(m_exclusiveModeCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     form->addRow("", m_exclusiveModeCheck);
 
-    m_exclusiveModeHint = new QLabel("Takes exclusive access to the output device, preventing other apps from using it", w);
+    m_exclusiveModeHint =
+        new QLabel("Takes exclusive access to the output device, preventing other apps from using it", w);
     m_exclusiveModeHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_exclusiveModeHint);
 
     m_outputDoPCheck = new QCheckBox("Output DoP (DSD-over-PCM)", w);
     connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
         updateDoPCapability();
     });
@@ -897,7 +937,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_sdmFilterCombo->addItem("clans-8", static_cast<int>(SDMFilter::Clans8));
     m_sdmFilterCombo->addItem("sdm-8", static_cast<int>(SDMFilter::SDM8));
     connect(m_sdmFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     sdmBox->addWidget(m_sdmFilterCombo);
@@ -912,7 +953,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 }
 
 void DevicePickerView::updateDoPCapability() {
-    if (!m_pbRateCombo || !m_outputDoPCheck || !m_sdmFilterCombo || !m_pbDopHintLabel) return;
+    if (!m_pbRateCombo || !m_outputDoPCheck || !m_sdmFilterCombo || !m_pbDopHintLabel)
+        return;
     int currentRate = m_pbRateCombo->currentData().toInt();
     bool isCapable = (currentRate == 176400 || currentRate == 192000 || currentRate == 352800 ||
                       currentRate == 384000 || currentRate == 705600 || currentRate == 768000);
@@ -936,7 +978,8 @@ QWidget* DevicePickerView::createPbFileView() {
     m_pbRawFilePathEdit = new QLineEdit(w);
     m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
     connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     fileBox->addWidget(m_pbRawFilePathEdit);
@@ -944,15 +987,18 @@ QWidget* DevicePickerView::createPbFileView() {
     auto browseBtn = new QPushButton("Browse...", w);
     connect(browseBtn, &QPushButton::clicked, [this, w]() {
         QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
-        if (!path.isEmpty()) m_pbRawFilePathEdit->setText(path);
+        if (!path.isEmpty())
+            m_pbRawFilePathEdit->setText(path);
     });
     fileBox->addWidget(browseBtn);
     form->addRow("", fileBox);
 
     m_pbRawFileFormatCombo = new QComboBox(w);
-    m_pbRawFileFormatCombo->addItems({"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+    m_pbRawFileFormatCombo->addItems(
+        {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
     connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     form->addRow("Format", m_pbRawFileFormatCombo);
@@ -961,7 +1007,8 @@ QWidget* DevicePickerView::createPbFileView() {
     m_pbRawFileChannelsSpin->setRange(1, 32);
     m_pbRawFileChannelsSpin->setFixedWidth(100);
     connect(m_pbRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         applySettings();
     });
     form->addRow("Channels", m_pbRawFileChannelsSpin);
@@ -973,12 +1020,8 @@ void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
     // 1. Refresh Capture Devices List & CoreAudio controls
-    populateDeviceCombo(
-        m_capDeviceCombo,
-        m_capWarningWidget,
-        m_devices->captureDevices,
-        m_devices->captureConfig.deviceName()
-    );
+    populateDeviceCombo(m_capDeviceCombo, m_capWarningWidget, m_devices->captureDevices,
+                        m_devices->captureConfig.deviceName());
 
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
     if (capBackendIdx >= 0) {
@@ -990,13 +1033,17 @@ void DevicePickerView::refreshUi() {
         case AudioBackendType::ASIO:
         case AudioBackendType::ALSA:
         case AudioBackendType::PulseAudio:
-            stackIdx = 0; break;
+            stackIdx = 0;
+            break;
         case AudioBackendType::RawFile:
-            stackIdx = 1; break;
+            stackIdx = 1;
+            break;
         case AudioBackendType::WavFile:
-            stackIdx = 2; break;
+            stackIdx = 2;
+            break;
         case AudioBackendType::SignalGenerator:
-            stackIdx = 3; break;
+            stackIdx = 3;
+            break;
         }
         m_capStack->setCurrentIndex(stackIdx);
     }
@@ -1012,7 +1059,8 @@ void DevicePickerView::refreshUi() {
             m_capDevChannelsCombo->addItem(QString::number(ch), ch);
         }
         int chIdx = m_capDevChannelsCombo->findData(m_devices->captureConfig.deviceChannels);
-        if (chIdx >= 0) m_capDevChannelsCombo->setCurrentIndex(chIdx);
+        if (chIdx >= 0)
+            m_capDevChannelsCombo->setCurrentIndex(chIdx);
         m_capDevChannelsCombo->blockSignals(false);
     } else {
         m_capDevChannelsCombo->hide();
@@ -1035,7 +1083,8 @@ void DevicePickerView::refreshUi() {
             m_capRateCombo->addItem(formatSampleRate(r), r);
         }
         int rIdx = m_capRateCombo->findData(m_devices->captureConfig.sampleRate);
-        if (rIdx >= 0) m_capRateCombo->setCurrentIndex(rIdx);
+        if (rIdx >= 0)
+            m_capRateCombo->setCurrentIndex(rIdx);
         m_capRateCombo->blockSignals(false);
     } else {
         m_capRateCombo->hide();
@@ -1066,7 +1115,8 @@ void DevicePickerView::refreshUi() {
     m_dopCutoffLabel->setEnabled(!m_devices->captureConfig.bypassDoP);
     m_dopCutoffCombo->setEnabled(!m_devices->captureConfig.bypassDoP);
     int cutoffIdx = m_dopCutoffCombo->findData(m_devices->captureConfig.dopCutoffHz);
-    if (cutoffIdx >= 0) m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
+    if (cutoffIdx >= 0)
+        m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
 
     // 2. Refresh Capture File & Generator Views
     m_capRawFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
@@ -1093,12 +1143,8 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    populateDeviceCombo(
-        m_pbDeviceCombo,
-        m_pbWarningWidget,
-        m_devices->playbackDevices,
-        m_devices->playbackConfig.deviceName()
-    );
+    populateDeviceCombo(m_pbDeviceCombo, m_pbWarningWidget, m_devices->playbackDevices,
+                        m_devices->playbackConfig.deviceName());
 
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
     if (pbBackendIdx >= 0) {
@@ -1110,11 +1156,13 @@ void DevicePickerView::refreshUi() {
         case AudioBackendType::ASIO:
         case AudioBackendType::ALSA:
         case AudioBackendType::PulseAudio:
-            stackIdx = 0; break;
+            stackIdx = 0;
+            break;
         case AudioBackendType::RawFile:
         case AudioBackendType::WavFile:
         case AudioBackendType::SignalGenerator:
-            stackIdx = 1; break;
+            stackIdx = 1;
+            break;
         }
         m_pbStack->setCurrentIndex(stackIdx);
     }
@@ -1130,7 +1178,8 @@ void DevicePickerView::refreshUi() {
             m_pbDevChannelsCombo->addItem(QString::number(ch), ch);
         }
         int chIdx = m_pbDevChannelsCombo->findData(m_devices->playbackConfig.deviceChannels);
-        if (chIdx >= 0) m_pbDevChannelsCombo->setCurrentIndex(chIdx);
+        if (chIdx >= 0)
+            m_pbDevChannelsCombo->setCurrentIndex(chIdx);
         m_pbDevChannelsCombo->blockSignals(false);
     } else {
         m_pbDevChannelsCombo->hide();
@@ -1150,7 +1199,8 @@ void DevicePickerView::refreshUi() {
         m_pbRateCombo->addItem(formatSampleRate(r), r);
     }
     int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
-    if (pbRateIdx >= 0) m_pbRateCombo->setCurrentIndex(pbRateIdx);
+    if (pbRateIdx >= 0)
+        m_pbRateCombo->setCurrentIndex(pbRateIdx);
     m_pbRateCombo->blockSignals(false);
 
     // Playback Sample Format
@@ -1175,7 +1225,8 @@ void DevicePickerView::refreshUi() {
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dopEncoderFilter));
-    if (filterIdx >= 0) m_sdmFilterCombo->setCurrentIndex(filterIdx);
+    if (filterIdx >= 0)
+        m_sdmFilterCombo->setCurrentIndex(filterIdx);
 
     updateDoPCapability();
 
@@ -1186,7 +1237,8 @@ void DevicePickerView::refreshUi() {
 
     // 5. Refresh Processing Settings
     int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
-    if (chunkIdx >= 0) m_chunkSizeCombo->setCurrentIndex(chunkIdx);
+    if (chunkIdx >= 0)
+        m_chunkSizeCombo->setCurrentIndex(chunkIdx);
     updateLatencyText();
 
     m_enableRateAdjustCheck->setChecked(m_settings->enableRateAdjust);
@@ -1205,22 +1257,31 @@ void DevicePickerView::refreshUi() {
 }
 
 void DevicePickerView::updateLatencyText() {
-    if (!m_latencyLabel || !m_devices) return;
+    if (!m_latencyLabel || !m_devices)
+        return;
     double ms = m_devices->latencyMs();
     m_latencyLabel->setText(QString("(%1 ms latency)").arg(ms, 0, 'f', 1));
 }
 
 void DevicePickerView::applySettings() {
-    if (m_isRefreshing) return;
+    if (m_isRefreshing)
+        return;
 
     // 1. Processing settings
-    if (m_chunkSizeCombo) m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
-    if (m_enableRateAdjustCheck) m_settings->enableRateAdjust = m_enableRateAdjustCheck->isChecked();
-    if (m_queueLimitSpin) m_settings->queuelimit = m_queueLimitSpin->value();
-    if (m_stopOnRateChangeCheck) m_settings->stopOnRateChange = m_stopOnRateChangeCheck->isChecked();
-    if (m_measureIntervalSpin) m_settings->rateMeasureInterval = m_measureIntervalSpin->value();
-    if (m_multithreadedCheck) m_settings->multithreaded = m_multithreadedCheck->isChecked();
-    if (m_workerThreadsSpin) m_settings->workerThreads = m_workerThreadsSpin->value();
+    if (m_chunkSizeCombo)
+        m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
+    if (m_enableRateAdjustCheck)
+        m_settings->enableRateAdjust = m_enableRateAdjustCheck->isChecked();
+    if (m_queueLimitSpin)
+        m_settings->queuelimit = m_queueLimitSpin->value();
+    if (m_stopOnRateChangeCheck)
+        m_settings->stopOnRateChange = m_stopOnRateChangeCheck->isChecked();
+    if (m_measureIntervalSpin)
+        m_settings->rateMeasureInterval = m_measureIntervalSpin->value();
+    if (m_multithreadedCheck)
+        m_settings->multithreaded = m_multithreadedCheck->isChecked();
+    if (m_workerThreadsSpin)
+        m_settings->workerThreads = m_workerThreadsSpin->value();
     m_settings->savePreferences();
 
     // 2. Capture settings

@@ -2,10 +2,11 @@
 #define SPECTROGRAM_ENGINE_H
 
 #include "config/DSPConfigTypes.h"
+
 #include <QObject>
-#include <vector>
 #include <deque>
 #include <optional>
+#include <vector>
 
 enum class ColorPalette { Default, Viridis, Magma, Plasma, Inferno, Jet };
 

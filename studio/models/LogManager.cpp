@@ -2,21 +2,30 @@
 
 QString logLevelToString(LogLevel level) {
     switch (level) {
-    case LogLevel::Error: return "ERROR";
-    case LogLevel::Warn: return "WARN";
-    case LogLevel::Info: return "INFO";
-    case LogLevel::Debug: return "DEBUG";
-    case LogLevel::Trace: return "TRACE";
+    case LogLevel::Error:
+        return "ERROR";
+    case LogLevel::Warn:
+        return "WARN";
+    case LogLevel::Info:
+        return "INFO";
+    case LogLevel::Debug:
+        return "DEBUG";
+    case LogLevel::Trace:
+        return "TRACE";
     }
     return "INFO";
 }
 
 LogLevel stringToLogLevel(const QString& str) {
     QString u = str.toUpper();
-    if (u == "ERROR") return LogLevel::Error;
-    if (u == "WARN") return LogLevel::Warn;
-    if (u == "DEBUG") return LogLevel::Debug;
-    if (u == "TRACE") return LogLevel::Trace;
+    if (u == "ERROR")
+        return LogLevel::Error;
+    if (u == "WARN")
+        return LogLevel::Warn;
+    if (u == "DEBUG")
+        return LogLevel::Debug;
+    if (u == "TRACE")
+        return LogLevel::Trace;
     return LogLevel::Info;
 }
 
@@ -28,7 +37,7 @@ LogManager* LogManager::instance() {
 }
 
 void LogManager::appendLog(LogLevel level, const QString& message) {
-    LogEntry entry{ QDateTime::currentDateTime(), level, message };
+    LogEntry entry{QDateTime::currentDateTime(), level, message};
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_entries.push_back(entry);

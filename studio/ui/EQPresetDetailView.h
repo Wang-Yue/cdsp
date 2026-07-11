@@ -1,35 +1,30 @@
 #ifndef EQ_PRESET_DETAIL_VIEW_H
 #define EQ_PRESET_DETAIL_VIEW_H
 
+#include "models/DSPEngineController.h"
 #include "models/EQPreset.h"
 #include "models/PipelineStore.h"
-#include "models/DSPEngineController.h"
 #include "ui/EQDiagramWidget.h"
 
-#include <QWidget>
-#include <QLineEdit>
-#include <QDoubleSpinBox>
-#include <QTableWidget>
-#include <QPushButton>
 #include <QComboBox>
-#include <QStackedWidget>
-#include <QTextEdit>
+#include <QDoubleSpinBox>
 #include <QLabel>
-#include <memory>
-
+#include <QLineEdit>
+#include <QPushButton>
 #include <QSlider>
+#include <QStackedWidget>
 #include <QTabBar>
+#include <QTableWidget>
+#include <QTextEdit>
+#include <QWidget>
+#include <memory>
 
 class EQPresetDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    EQPresetDetailView(
-        EQPreset preset,
-        std::shared_ptr<PipelineStore> pipeline,
-        std::shared_ptr<DSPEngineController> dspController = nullptr,
-        QWidget* parent = nullptr
-    );
+    EQPresetDetailView(EQPreset preset, std::shared_ptr<PipelineStore> pipeline,
+                       std::shared_ptr<DSPEngineController> dspController = nullptr, QWidget* parent = nullptr);
 
     void setPreset(const EQPreset& preset);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);

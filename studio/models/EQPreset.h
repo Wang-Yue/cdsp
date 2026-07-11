@@ -2,19 +2,32 @@
 #define EQ_PRESET_H
 
 #include "config/BiquadCoefficients.h"
-#include <string>
-#include <vector>
+
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUuid>
 #include <memory>
 #include <optional>
-#include <QUuid>
-#include <QJsonObject>
-#include <QJsonArray>
+#include <string>
+#include <vector>
 
 enum class EQBandType {
-    Peaking, Lowshelf, Highshelf, Lowpass, Highpass,
-    LowpassFO, HighpassFO, LowshelfFO, HighshelfFO,
-    Notch, Bandpass, Allpass, AllpassFO,
-    Free, GeneralNotch, LinkwitzTransform
+    Peaking,
+    Lowshelf,
+    Highshelf,
+    Lowpass,
+    Highpass,
+    LowpassFO,
+    HighpassFO,
+    LowshelfFO,
+    HighshelfFO,
+    Notch,
+    Bandpass,
+    Allpass,
+    AllpassFO,
+    Free,
+    GeneralNotch,
+    LinkwitzTransform
 };
 
 std::string eqBandTypeToString(EQBandType type);

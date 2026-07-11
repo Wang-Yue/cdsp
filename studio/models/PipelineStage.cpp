@@ -1,43 +1,72 @@
 #include "models/PipelineStage.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 std::string stageCategoryToString(StageCategory cat) {
     switch (cat) {
-    case StageCategory::Filters: return "Filters";
-    case StageCategory::Mixer: return "Mixer";
-    case StageCategory::Processors: return "Processors";
-    case StageCategory::Others: return "Others";
+    case StageCategory::Filters:
+        return "Filters";
+    case StageCategory::Mixer:
+        return "Mixer";
+    case StageCategory::Processors:
+        return "Processors";
+    case StageCategory::Others:
+        return "Others";
     }
     return "Filters";
 }
 
 std::string stageTypeToString(StageType type) {
     switch (type) {
-    case StageType::Balance: return "Balance";
-    case StageType::Width: return "Width";
-    case StageType::MSProc: return "M/S Proc";
-    case StageType::PhaseInvert: return "Phase Invert";
-    case StageType::Crossfeed: return "Crossfeed";
-    case StageType::SplitWidth: return "Split Width";
-    case StageType::EQ: return "EQ";
-    case StageType::GraphicEQ: return "Graphic EQ";
-    case StageType::Convolution: return "Convolution";
-    case StageType::Loudness: return "Loudness";
-    case StageType::Emphasis: return "Emphasis";
-    case StageType::DCProtection: return "DC Protection";
-    case StageType::Gain: return "Gain";
-    case StageType::Delay: return "Delay";
-    case StageType::LookaheadLimiter: return "Lookahead Limiter";
-    case StageType::Limiter: return "Limiter";
-    case StageType::Volume: return "Volume";
-    case StageType::MatrixMixer: return "Matrix Mixer";
-    case StageType::Compressor: return "Compressor";
-    case StageType::NoiseGate: return "Noise Gate";
-    case StageType::RACE: return "RACE";
-    case StageType::Dither: return "Dither";
-    case StageType::DiffEq: return "Differential Equation";
-    case StageType::BiquadCombo: return "Biquad Combo";
+    case StageType::Balance:
+        return "Balance";
+    case StageType::Width:
+        return "Width";
+    case StageType::MSProc:
+        return "M/S Proc";
+    case StageType::PhaseInvert:
+        return "Phase Invert";
+    case StageType::Crossfeed:
+        return "Crossfeed";
+    case StageType::SplitWidth:
+        return "Split Width";
+    case StageType::EQ:
+        return "EQ";
+    case StageType::GraphicEQ:
+        return "Graphic EQ";
+    case StageType::Convolution:
+        return "Convolution";
+    case StageType::Loudness:
+        return "Loudness";
+    case StageType::Emphasis:
+        return "Emphasis";
+    case StageType::DCProtection:
+        return "DC Protection";
+    case StageType::Gain:
+        return "Gain";
+    case StageType::Delay:
+        return "Delay";
+    case StageType::LookaheadLimiter:
+        return "Lookahead Limiter";
+    case StageType::Limiter:
+        return "Limiter";
+    case StageType::Volume:
+        return "Volume";
+    case StageType::MatrixMixer:
+        return "Matrix Mixer";
+    case StageType::Compressor:
+        return "Compressor";
+    case StageType::NoiseGate:
+        return "Noise Gate";
+    case StageType::RACE:
+        return "RACE";
+    case StageType::Dither:
+        return "Dither";
+    case StageType::DiffEq:
+        return "Differential Equation";
+    case StageType::BiquadCombo:
+        return "Biquad Combo";
     }
     return "Gain";
 }
@@ -78,87 +107,136 @@ StageCategory stageTypeToCategory(StageType type) {
 
 std::string stageTypeToIcon(StageType type) {
     switch (type) {
-    case StageType::Balance: return "🎛️";
-    case StageType::Width: return "↔️";
-    case StageType::MSProc: return "🌊";
-    case StageType::PhaseInvert: return "🔄";
-    case StageType::Crossfeed: return "🎧";
-    case StageType::SplitWidth: return "🔀";
-    case StageType::EQ: return "🎚️";
-    case StageType::GraphicEQ: return "🎛️";
-    case StageType::Convolution: return "🌊";
-    case StageType::Loudness: return "👂";
-    case StageType::Emphasis: return "📈";
-    case StageType::DCProtection: return "⚡";
-    case StageType::Gain: return "➕";
-    case StageType::Volume: return "🔊";
-    case StageType::Delay: return "⏱️";
-    case StageType::LookaheadLimiter: return "🧱";
-    case StageType::MatrixMixer: return "🔳";
-    case StageType::Compressor: return "🗜️";
-    case StageType::NoiseGate: return "🚪";
-    case StageType::RACE: return "🗣️";
-    case StageType::Dither: return "🎲";
-    case StageType::DiffEq: return "📐";
-    case StageType::BiquadCombo: return "🎚️";
-    case StageType::Limiter: return "✂️";
+    case StageType::Balance:
+        return "🎛️";
+    case StageType::Width:
+        return "↔️";
+    case StageType::MSProc:
+        return "🌊";
+    case StageType::PhaseInvert:
+        return "🔄";
+    case StageType::Crossfeed:
+        return "🎧";
+    case StageType::SplitWidth:
+        return "🔀";
+    case StageType::EQ:
+        return "🎚️";
+    case StageType::GraphicEQ:
+        return "🎛️";
+    case StageType::Convolution:
+        return "🌊";
+    case StageType::Loudness:
+        return "👂";
+    case StageType::Emphasis:
+        return "📈";
+    case StageType::DCProtection:
+        return "⚡";
+    case StageType::Gain:
+        return "➕";
+    case StageType::Volume:
+        return "🔊";
+    case StageType::Delay:
+        return "⏱️";
+    case StageType::LookaheadLimiter:
+        return "🧱";
+    case StageType::MatrixMixer:
+        return "🔳";
+    case StageType::Compressor:
+        return "🗜️";
+    case StageType::NoiseGate:
+        return "🚪";
+    case StageType::RACE:
+        return "🗣️";
+    case StageType::Dither:
+        return "🎲";
+    case StageType::DiffEq:
+        return "📐";
+    case StageType::BiquadCombo:
+        return "🎚️";
+    case StageType::Limiter:
+        return "✂️";
     }
     return "🎚️";
 }
 
 std::string crossfeedLevelToString(CrossfeedLevel l) {
     switch (l) {
-    case CrossfeedLevel::Off: return "Off";
-    case CrossfeedLevel::L1: return "L1";
-    case CrossfeedLevel::L2: return "L2";
-    case CrossfeedLevel::L3: return "L3";
-    case CrossfeedLevel::L4: return "L4";
-    case CrossfeedLevel::L5: return "L5";
+    case CrossfeedLevel::Off:
+        return "Off";
+    case CrossfeedLevel::L1:
+        return "L1";
+    case CrossfeedLevel::L2:
+        return "L2";
+    case CrossfeedLevel::L3:
+        return "L3";
+    case CrossfeedLevel::L4:
+        return "L4";
+    case CrossfeedLevel::L5:
+        return "L5";
     }
     return "Off";
 }
 
 CrossfeedLevel stringToCrossfeedLevel(const std::string& str) {
-    if (str == "L1") return CrossfeedLevel::L1;
-    if (str == "L2") return CrossfeedLevel::L2;
-    if (str == "L3") return CrossfeedLevel::L3;
-    if (str == "L4") return CrossfeedLevel::L4;
-    if (str == "L5") return CrossfeedLevel::L5;
+    if (str == "L1")
+        return CrossfeedLevel::L1;
+    if (str == "L2")
+        return CrossfeedLevel::L2;
+    if (str == "L3")
+        return CrossfeedLevel::L3;
+    if (str == "L4")
+        return CrossfeedLevel::L4;
+    if (str == "L5")
+        return CrossfeedLevel::L5;
     return CrossfeedLevel::Off;
 }
 
 std::string crossfeedLevelDescription(CrossfeedLevel l) {
     switch (l) {
-    case CrossfeedLevel::Off: return "";
-    case CrossfeedLevel::L1: return "Just a touch";
-    case CrossfeedLevel::L2: return "Jan Meier";
-    case CrossfeedLevel::L3: return "Chu Moy";
-    case CrossfeedLevel::L4: return "30° 3m";
-    case CrossfeedLevel::L5: return "Strong";
+    case CrossfeedLevel::Off:
+        return "";
+    case CrossfeedLevel::L1:
+        return "Just a touch";
+    case CrossfeedLevel::L2:
+        return "Jan Meier";
+    case CrossfeedLevel::L3:
+        return "Chu Moy";
+    case CrossfeedLevel::L4:
+        return "30° 3m";
+    case CrossfeedLevel::L5:
+        return "Strong";
     }
     return "";
 }
 
 std::string emphasisModeToString(EmphasisMode m) {
     switch (m) {
-    case EmphasisMode::Off: return "Off";
-    case EmphasisMode::DeEmphasis: return "De-Emphasis";
-    case EmphasisMode::PreEmphasis: return "Pre-Emphasis";
+    case EmphasisMode::Off:
+        return "Off";
+    case EmphasisMode::DeEmphasis:
+        return "De-Emphasis";
+    case EmphasisMode::PreEmphasis:
+        return "Pre-Emphasis";
     }
     return "Off";
 }
 
 EmphasisMode stringToEmphasisMode(const std::string& str) {
-    if (str == "De-Emphasis" || str == "deEmphasis") return EmphasisMode::DeEmphasis;
-    if (str == "Pre-Emphasis" || str == "preEmphasis") return EmphasisMode::PreEmphasis;
+    if (str == "De-Emphasis" || str == "deEmphasis")
+        return EmphasisMode::DeEmphasis;
+    if (str == "Pre-Emphasis" || str == "preEmphasis")
+        return EmphasisMode::PreEmphasis;
     return EmphasisMode::Off;
 }
 
 std::string emphasisModeDescription(EmphasisMode m) {
     switch (m) {
-    case EmphasisMode::Off: return "";
-    case EmphasisMode::DeEmphasis: return "Highshelf at 5200 Hz, -9.5 dB, Q 0.5 (undo pre-emphasis)";
-    case EmphasisMode::PreEmphasis: return "Highshelf at 5200 Hz, +9.5 dB, Q 0.5 (boost highs)";
+    case EmphasisMode::Off:
+        return "";
+    case EmphasisMode::DeEmphasis:
+        return "Highshelf at 5200 Hz, -9.5 dB, Q 0.5 (undo pre-emphasis)";
+    case EmphasisMode::PreEmphasis:
+        return "Highshelf at 5200 Hz, +9.5 dB, Q 0.5 (boost highs)";
     }
     return "";
 }
@@ -167,14 +245,8 @@ PipelineStage::PipelineStage()
     : id(QUuid::createUuid()), type(StageType::Gain), name("Gain"), isEnabled(false), graphicEQGains(31, 0.0) {}
 
 PipelineStage::PipelineStage(StageType type, const std::string& name, bool isEnabled, const std::vector<int>& channels)
-    : id(QUuid::createUuid()),
-      type(type),
-      name(name.empty() ? stageTypeToString(type) : name),
-      isEnabled(isEnabled),
-      channels(channels),
-      monitorChannels(channels),
-      graphicEQGains(31, 0.0)
-{
+    : id(QUuid::createUuid()), type(type), name(name.empty() ? stageTypeToString(type) : name), isEnabled(isEnabled),
+      channels(channels), monitorChannels(channels), graphicEQGains(31, 0.0) {
     if (type == StageType::Balance || type == StageType::Width || type == StageType::MSProc ||
         type == StageType::Crossfeed || type == StageType::RACE || type == StageType::SplitWidth) {
         leftChannel = 0;
@@ -184,8 +256,12 @@ PipelineStage::PipelineStage(StageType type, const std::string& name, bool isEna
     if (type == StageType::MatrixMixer) {
         mixerChannelsIn = 2;
         mixerChannelsOut = 2;
-        MixerMapping m0; m0.dest = 0; m0.sources.push_back(MixerSource{0, 0.0, false});
-        MixerMapping m1; m1.dest = 1; m1.sources.push_back(MixerSource{1, 0.0, false});
+        MixerMapping m0;
+        m0.dest = 0;
+        m0.sources.push_back(MixerSource{0, 0.0, false});
+        MixerMapping m1;
+        m1.dest = 1;
+        m1.sources.push_back(MixerSource{1, 0.0, false});
         mixerMappings = {m0, m1};
     }
 }
@@ -203,24 +279,37 @@ int PipelineStage::widthPercent() const {
 }
 
 std::string PipelineStage::widthDescription() const {
-    if (widthAmount == 1.0) return "Normal stereo (passthrough)";
-    if (widthAmount == 0.0) return "Mono — L and R summed equally";
-    if (widthAmount == -1.0) return "Fully swapped — L and R exchanged";
-    if (widthAmount < 0.0) return "Partially swapped with crossfeed";
-    if (widthAmount < 1.0) return "Narrowed stereo image";
+    if (widthAmount == 1.0)
+        return "Normal stereo (passthrough)";
+    if (widthAmount == 0.0)
+        return "Mono — L and R summed equally";
+    if (widthAmount == -1.0)
+        return "Fully swapped — L and R exchanged";
+    if (widthAmount < 0.0)
+        return "Partially swapped with crossfeed";
+    if (widthAmount < 1.0)
+        return "Narrowed stereo image";
     return "Enhanced stereo — wider than original";
 }
 
 bool PipelineStage::isActive() const {
-    if (!isEnabled) return false;
+    if (!isEnabled)
+        return false;
     switch (type) {
-    case StageType::Width: return widthAmount != 1.0;
-    case StageType::Balance: return balancePosition != 0.0;
-    case StageType::Crossfeed: return crossfeedLevel != CrossfeedLevel::Off;
-    case StageType::Emphasis: return emphasisMode != EmphasisMode::Off;
-    case StageType::Convolution: return convPresetId.has_value();
-    case StageType::EQ: return eqPresetId.has_value();
-    default: return true;
+    case StageType::Width:
+        return widthAmount != 1.0;
+    case StageType::Balance:
+        return balancePosition != 0.0;
+    case StageType::Crossfeed:
+        return crossfeedLevel != CrossfeedLevel::Off;
+    case StageType::Emphasis:
+        return emphasisMode != EmphasisMode::Off;
+    case StageType::Convolution:
+        return convPresetId.has_value();
+    case StageType::EQ:
+        return eqPresetId.has_value();
+    default:
+        return true;
     }
 }
 
@@ -235,16 +324,33 @@ CrossfeedParamsResult PipelineStage::computeCrossfeed(double fc, double db) {
 }
 
 CrossfeedParamsResult PipelineStage::activeCrossfeedParams() const {
-    if (cxCustomEnabled) return computeCrossfeed(cxFc, cxDb);
+    if (cxCustomEnabled)
+        return computeCrossfeed(cxFc, cxDb);
     double fc = 700.0;
     double db = 6.0;
     switch (crossfeedLevel) {
-    case CrossfeedLevel::L1: fc = 650.0; db = 13.5; break;
-    case CrossfeedLevel::L2: fc = 650.0; db = 9.5; break;
-    case CrossfeedLevel::L3: fc = 700.0; db = 6.0; break;
-    case CrossfeedLevel::L4: fc = 700.0; db = 4.5; break;
-    case CrossfeedLevel::L5: fc = 700.0; db = 3.0; break;
-    case CrossfeedLevel::Off: break;
+    case CrossfeedLevel::L1:
+        fc = 650.0;
+        db = 13.5;
+        break;
+    case CrossfeedLevel::L2:
+        fc = 650.0;
+        db = 9.5;
+        break;
+    case CrossfeedLevel::L3:
+        fc = 700.0;
+        db = 6.0;
+        break;
+    case CrossfeedLevel::L4:
+        fc = 700.0;
+        db = 4.5;
+        break;
+    case CrossfeedLevel::L5:
+        fc = 700.0;
+        db = 3.0;
+        break;
+    case CrossfeedLevel::Off:
+        break;
     }
     return computeCrossfeed(fc, db);
 }
@@ -256,10 +362,14 @@ QJsonObject PipelineStage::toJson() const {
     obj["type"] = QString::fromStdString(stageTypeToString(type));
     obj["isEnabled"] = isEnabled;
 
-    QJsonArray chArr; for (int c : channels) chArr.append(c);
+    QJsonArray chArr;
+    for (int c : channels)
+        chArr.append(c);
     obj["channels"] = chArr;
 
-    QJsonArray monArr; for (int c : monitorChannels) monArr.append(c);
+    QJsonArray monArr;
+    for (int c : monitorChannels)
+        monArr.append(c);
     obj["monitorChannels"] = monArr;
 
     obj["leftChannel"] = leftChannel;
@@ -271,8 +381,10 @@ QJsonObject PipelineStage::toJson() const {
     obj["cxFc"] = cxFc;
     obj["cxDb"] = cxDb;
 
-    if (eqPresetId.has_value()) obj["eqPresetID"] = eqPresetId.value().toString();
-    if (convPresetId.has_value()) obj["convPresetID"] = convPresetId.value().toString();
+    if (eqPresetId.has_value())
+        obj["eqPresetID"] = eqPresetId.value().toString();
+    if (convPresetId.has_value())
+        obj["convPresetID"] = convPresetId.value().toString();
 
     obj["emphasisMode"] = QString::fromStdString(emphasisModeToString(emphasisMode));
     obj["loudnessReference"] = loudnessReference;
@@ -300,7 +412,8 @@ QJsonObject PipelineStage::toJson() const {
     obj["mixerChannelsIn"] = mixerChannelsIn;
     obj["mixerChannelsOut"] = mixerChannelsOut;
     QJsonArray mapArr;
-    for (const auto& m : mixerMappings) mapArr.append(m.toJson());
+    for (const auto& m : mixerMappings)
+        mapArr.append(m.toJson());
     obj["mixerMappings"] = mapArr;
 
     obj["compressorAttack"] = compressorAttack;
@@ -336,11 +449,21 @@ QJsonObject PipelineStage::toJson() const {
     obj["comboFreqMin"] = comboFreqMin;
     obj["comboFreqMax"] = comboFreqMax;
 
-    obj["peqFls"] = peqFls; obj["peqGls"] = peqGls; obj["peqQls"] = peqQls;
-    obj["peqF1"] = peqF1;   obj["peqG1"] = peqG1;   obj["peqQ1"] = peqQ1;
-    obj["peqF2"] = peqF2;   obj["peqG2"] = peqG2;   obj["peqQ2"] = peqQ2;
-    obj["peqF3"] = peqF3;   obj["peqG3"] = peqG3;   obj["peqQ3"] = peqQ3;
-    obj["peqFhs"] = peqFhs; obj["peqGhs"] = peqGhs; obj["peqQhs"] = peqQhs;
+    obj["peqFls"] = peqFls;
+    obj["peqGls"] = peqGls;
+    obj["peqQls"] = peqQls;
+    obj["peqF1"] = peqF1;
+    obj["peqG1"] = peqG1;
+    obj["peqQ1"] = peqQ1;
+    obj["peqF2"] = peqF2;
+    obj["peqG2"] = peqG2;
+    obj["peqQ2"] = peqQ2;
+    obj["peqF3"] = peqF3;
+    obj["peqG3"] = peqG3;
+    obj["peqQ3"] = peqQ3;
+    obj["peqFhs"] = peqFhs;
+    obj["peqGhs"] = peqGhs;
+    obj["peqQhs"] = peqQhs;
 
     obj["limiterLimit"] = limiterLimit;
     obj["limiterSoftClip"] = limiterSoftClip;
@@ -352,7 +475,8 @@ QJsonObject PipelineStage::toJson() const {
     obj["graphicEQFreqMax"] = graphicEQFreqMax;
     obj["graphicEQBandCount"] = graphicEQBandCount;
     QJsonArray geqArr;
-    for (double g : graphicEQGains) geqArr.append(g);
+    for (double g : graphicEQGains)
+        geqArr.append(g);
     obj["graphicEQGains"] = geqArr;
 
     return obj;
@@ -360,68 +484,110 @@ QJsonObject PipelineStage::toJson() const {
 
 PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     PipelineStage s;
-    if (json.contains("id")) s.id = QUuid::fromString(json["id"].toString());
-    if (json.contains("name")) s.name = json["name"].toString().toStdString();
+    if (json.contains("id"))
+        s.id = QUuid::fromString(json["id"].toString());
+    if (json.contains("name"))
+        s.name = json["name"].toString().toStdString();
     if (json.contains("type")) {
         std::string typeStr = json["type"].toString().toStdString();
-        for (StageType st : {
-            StageType::Balance, StageType::Width, StageType::MSProc, StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
-            StageType::EQ, StageType::GraphicEQ, StageType::Convolution, StageType::Loudness, StageType::Emphasis, StageType::DCProtection,
-            StageType::Gain, StageType::Delay, StageType::LookaheadLimiter, StageType::Limiter, StageType::Volume, StageType::MatrixMixer,
-            StageType::Compressor, StageType::NoiseGate, StageType::RACE, StageType::Dither, StageType::DiffEq, StageType::BiquadCombo
-        }) {
-            if (stageTypeToString(st) == typeStr) { s.type = st; break; }
+        for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
+                             StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
+                             StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
+                             StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
+                             StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
+                             StageType::Limiter,     StageType::Volume,    StageType::MatrixMixer,
+                             StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
+                             StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
+            if (stageTypeToString(st) == typeStr) {
+                s.type = st;
+                break;
+            }
         }
     }
-    if (json.contains("isEnabled")) s.isEnabled = json["isEnabled"].toBool();
+    if (json.contains("isEnabled"))
+        s.isEnabled = json["isEnabled"].toBool();
     if (json.contains("channels")) {
         s.channels.clear();
-        for (const auto& c : json["channels"].toArray()) s.channels.push_back(c.toInt());
+        for (const auto& c : json["channels"].toArray())
+            s.channels.push_back(c.toInt());
     }
     if (json.contains("monitorChannels")) {
         s.monitorChannels.clear();
-        for (const auto& c : json["monitorChannels"].toArray()) s.monitorChannels.push_back(c.toInt());
+        for (const auto& c : json["monitorChannels"].toArray())
+            s.monitorChannels.push_back(c.toInt());
     }
-    if (json.contains("leftChannel")) s.leftChannel = json["leftChannel"].toInt();
-    if (json.contains("rightChannel")) s.rightChannel = json["rightChannel"].toInt();
-    if (json.contains("balancePosition")) s.balancePosition = json["balancePosition"].toDouble();
-    if (json.contains("widthAmount")) s.widthAmount = json["widthAmount"].toDouble();
-    if (json.contains("crossfeedLevel")) s.crossfeedLevel = stringToCrossfeedLevel(json["crossfeedLevel"].toString().toStdString());
-    if (json.contains("cxCustomEnabled")) s.cxCustomEnabled = json["cxCustomEnabled"].toBool();
-    if (json.contains("cxFc")) s.cxFc = json["cxFc"].toDouble();
-    if (json.contains("cxDb")) s.cxDb = json["cxDb"].toDouble();
+    if (json.contains("leftChannel"))
+        s.leftChannel = json["leftChannel"].toInt();
+    if (json.contains("rightChannel"))
+        s.rightChannel = json["rightChannel"].toInt();
+    if (json.contains("balancePosition"))
+        s.balancePosition = json["balancePosition"].toDouble();
+    if (json.contains("widthAmount"))
+        s.widthAmount = json["widthAmount"].toDouble();
+    if (json.contains("crossfeedLevel"))
+        s.crossfeedLevel = stringToCrossfeedLevel(json["crossfeedLevel"].toString().toStdString());
+    if (json.contains("cxCustomEnabled"))
+        s.cxCustomEnabled = json["cxCustomEnabled"].toBool();
+    if (json.contains("cxFc"))
+        s.cxFc = json["cxFc"].toDouble();
+    if (json.contains("cxDb"))
+        s.cxDb = json["cxDb"].toDouble();
 
-    if (json.contains("eqPresetID")) s.eqPresetId = QUuid::fromString(json["eqPresetID"].toString());
-    else if (json.contains("eqPresetId")) s.eqPresetId = QUuid::fromString(json["eqPresetId"].toString());
+    if (json.contains("eqPresetID"))
+        s.eqPresetId = QUuid::fromString(json["eqPresetID"].toString());
+    else if (json.contains("eqPresetId"))
+        s.eqPresetId = QUuid::fromString(json["eqPresetId"].toString());
 
-    if (json.contains("convPresetID")) s.convPresetId = QUuid::fromString(json["convPresetID"].toString());
-    else if (json.contains("convPresetId")) s.convPresetId = QUuid::fromString(json["convPresetId"].toString());
+    if (json.contains("convPresetID"))
+        s.convPresetId = QUuid::fromString(json["convPresetID"].toString());
+    else if (json.contains("convPresetId"))
+        s.convPresetId = QUuid::fromString(json["convPresetId"].toString());
 
-    if (json.contains("emphasisMode")) s.emphasisMode = stringToEmphasisMode(json["emphasisMode"].toString().toStdString());
-    if (json.contains("loudnessReference")) s.loudnessReference = json["loudnessReference"].toDouble();
-    if (json.contains("loudnessHighBoost")) s.loudnessHighBoost = json["loudnessHighBoost"].toDouble();
-    if (json.contains("loudnessLowBoost")) s.loudnessLowBoost = json["loudnessLowBoost"].toDouble();
-    if (json.contains("loudnessFader")) s.loudnessFader = static_cast<Fader>(json["loudnessFader"].toInt());
-    if (json.contains("loudnessAttenuateMid")) s.loudnessAttenuateMid = json["loudnessAttenuateMid"].toBool();
+    if (json.contains("emphasisMode"))
+        s.emphasisMode = stringToEmphasisMode(json["emphasisMode"].toString().toStdString());
+    if (json.contains("loudnessReference"))
+        s.loudnessReference = json["loudnessReference"].toDouble();
+    if (json.contains("loudnessHighBoost"))
+        s.loudnessHighBoost = json["loudnessHighBoost"].toDouble();
+    if (json.contains("loudnessLowBoost"))
+        s.loudnessLowBoost = json["loudnessLowBoost"].toDouble();
+    if (json.contains("loudnessFader"))
+        s.loudnessFader = static_cast<Fader>(json["loudnessFader"].toInt());
+    if (json.contains("loudnessAttenuateMid"))
+        s.loudnessAttenuateMid = json["loudnessAttenuateMid"].toBool();
 
-    if (json.contains("gainValue")) s.gainValue = json["gainValue"].toDouble();
-    if (json.contains("gainInverted")) s.gainInverted = json["gainInverted"].toBool();
-    if (json.contains("gainMuted")) s.gainMuted = json["gainMuted"].toBool();
+    if (json.contains("gainValue"))
+        s.gainValue = json["gainValue"].toDouble();
+    if (json.contains("gainInverted"))
+        s.gainInverted = json["gainInverted"].toBool();
+    if (json.contains("gainMuted"))
+        s.gainMuted = json["gainMuted"].toBool();
 
-    if (json.contains("volumeRampTime")) s.volumeRampTime = json["volumeRampTime"].toDouble();
-    if (json.contains("volumeLimit")) s.volumeLimit = json["volumeLimit"].toDouble();
-    if (json.contains("volumeFader")) s.volumeFader = static_cast<Fader>(json["volumeFader"].toInt());
+    if (json.contains("volumeRampTime"))
+        s.volumeRampTime = json["volumeRampTime"].toDouble();
+    if (json.contains("volumeLimit"))
+        s.volumeLimit = json["volumeLimit"].toDouble();
+    if (json.contains("volumeFader"))
+        s.volumeFader = static_cast<Fader>(json["volumeFader"].toInt());
 
-    if (json.contains("delayValue")) s.delayValue = json["delayValue"].toDouble();
-    if (json.contains("delayUnit")) s.delayUnit = stringToDelayUnit(json["delayUnit"].toString().toStdString());
-    if (json.contains("delaySubsample")) s.delaySubsample = json["delaySubsample"].toBool();
+    if (json.contains("delayValue"))
+        s.delayValue = json["delayValue"].toDouble();
+    if (json.contains("delayUnit"))
+        s.delayUnit = stringToDelayUnit(json["delayUnit"].toString().toStdString());
+    if (json.contains("delaySubsample"))
+        s.delaySubsample = json["delaySubsample"].toBool();
 
-    if (json.contains("lookaheadLimit")) s.lookaheadLimit = json["lookaheadLimit"].toDouble();
-    if (json.contains("lookaheadAttack")) s.lookaheadAttack = json["lookaheadAttack"].toDouble();
-    if (json.contains("lookaheadRelease")) s.lookaheadRelease = json["lookaheadRelease"].toDouble();
+    if (json.contains("lookaheadLimit"))
+        s.lookaheadLimit = json["lookaheadLimit"].toDouble();
+    if (json.contains("lookaheadAttack"))
+        s.lookaheadAttack = json["lookaheadAttack"].toDouble();
+    if (json.contains("lookaheadRelease"))
+        s.lookaheadRelease = json["lookaheadRelease"].toDouble();
 
-    if (json.contains("mixerChannelsIn")) s.mixerChannelsIn = json["mixerChannelsIn"].toInt();
-    if (json.contains("mixerChannelsOut")) s.mixerChannelsOut = json["mixerChannelsOut"].toInt();
+    if (json.contains("mixerChannelsIn"))
+        s.mixerChannelsIn = json["mixerChannelsIn"].toInt();
+    if (json.contains("mixerChannelsOut"))
+        s.mixerChannelsOut = json["mixerChannelsOut"].toInt();
     if (json.contains("mixerMappings")) {
         s.mixerMappings.clear();
         for (const auto& v : json["mixerMappings"].toArray()) {
@@ -429,67 +595,117 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         }
     }
 
-    if (json.contains("compressorAttack")) s.compressorAttack = json["compressorAttack"].toDouble();
-    if (json.contains("compressorRelease")) s.compressorRelease = json["compressorRelease"].toDouble();
-    if (json.contains("compressorThreshold")) s.compressorThreshold = json["compressorThreshold"].toDouble();
-    if (json.contains("compressorRatio")) s.compressorRatio = json["compressorRatio"].toDouble();
-    if (json.contains("compressorMakeupGain")) s.compressorMakeupGain = json["compressorMakeupGain"].toDouble();
-    if (json.contains("compressorSoftClip")) s.compressorSoftClip = json["compressorSoftClip"].toBool();
-    if (json.contains("compressorClipLimit")) s.compressorClipLimit = json["compressorClipLimit"].toDouble();
+    if (json.contains("compressorAttack"))
+        s.compressorAttack = json["compressorAttack"].toDouble();
+    if (json.contains("compressorRelease"))
+        s.compressorRelease = json["compressorRelease"].toDouble();
+    if (json.contains("compressorThreshold"))
+        s.compressorThreshold = json["compressorThreshold"].toDouble();
+    if (json.contains("compressorRatio"))
+        s.compressorRatio = json["compressorRatio"].toDouble();
+    if (json.contains("compressorMakeupGain"))
+        s.compressorMakeupGain = json["compressorMakeupGain"].toDouble();
+    if (json.contains("compressorSoftClip"))
+        s.compressorSoftClip = json["compressorSoftClip"].toBool();
+    if (json.contains("compressorClipLimit"))
+        s.compressorClipLimit = json["compressorClipLimit"].toDouble();
 
-    if (json.contains("gateAttack")) s.gateAttack = json["gateAttack"].toDouble();
-    if (json.contains("gateRelease")) s.gateRelease = json["gateRelease"].toDouble();
-    if (json.contains("gateThreshold")) s.gateThreshold = json["gateThreshold"].toDouble();
-    if (json.contains("gateAttenuation")) s.gateAttenuation = json["gateAttenuation"].toDouble();
+    if (json.contains("gateAttack"))
+        s.gateAttack = json["gateAttack"].toDouble();
+    if (json.contains("gateRelease"))
+        s.gateRelease = json["gateRelease"].toDouble();
+    if (json.contains("gateThreshold"))
+        s.gateThreshold = json["gateThreshold"].toDouble();
+    if (json.contains("gateAttenuation"))
+        s.gateAttenuation = json["gateAttenuation"].toDouble();
 
-    if (json.contains("raceDelay")) s.raceDelay = json["raceDelay"].toDouble();
-    if (json.contains("raceAttenuation")) s.raceAttenuation = json["raceAttenuation"].toDouble();
-    if (json.contains("raceSubsampleDelay")) s.raceSubsampleDelay = json["raceSubsampleDelay"].toBool();
-    if (json.contains("raceDelayUnit")) s.raceDelayUnit = stringToDelayUnit(json["raceDelayUnit"].toString().toStdString());
+    if (json.contains("raceDelay"))
+        s.raceDelay = json["raceDelay"].toDouble();
+    if (json.contains("raceAttenuation"))
+        s.raceAttenuation = json["raceAttenuation"].toDouble();
+    if (json.contains("raceSubsampleDelay"))
+        s.raceSubsampleDelay = json["raceSubsampleDelay"].toBool();
+    if (json.contains("raceDelayUnit"))
+        s.raceDelayUnit = stringToDelayUnit(json["raceDelayUnit"].toString().toStdString());
 
-    if (json.contains("ditherType")) s.ditherType = stringToDitherType(json["ditherType"].toString().toStdString());
-    if (json.contains("ditherBits")) s.ditherBits = json["ditherBits"].toInt();
-    if (json.contains("ditherAmplitude")) s.ditherAmplitude = json["ditherAmplitude"].toDouble();
+    if (json.contains("ditherType"))
+        s.ditherType = stringToDitherType(json["ditherType"].toString().toStdString());
+    if (json.contains("ditherBits"))
+        s.ditherBits = json["ditherBits"].toInt();
+    if (json.contains("ditherAmplitude"))
+        s.ditherAmplitude = json["ditherAmplitude"].toDouble();
 
-    if (json.contains("diffEqA")) s.diffEqA = json["diffEqA"].toString().toStdString();
-    if (json.contains("diffEqB")) s.diffEqB = json["diffEqB"].toString().toStdString();
+    if (json.contains("diffEqA"))
+        s.diffEqA = json["diffEqA"].toString().toStdString();
+    if (json.contains("diffEqB"))
+        s.diffEqB = json["diffEqB"].toString().toStdString();
 
-    if (json.contains("comboType")) s.comboType = stringToBiquadComboType(json["comboType"].toString().toStdString());
-    if (json.contains("comboFreq")) s.comboFreq = json["comboFreq"].toDouble();
-    if (json.contains("comboOrder")) s.comboOrder = json["comboOrder"].toInt();
-    if (json.contains("comboGain")) s.comboGain = json["comboGain"].toDouble();
-    if (json.contains("comboGains")) s.comboGains = json["comboGains"].toString().toStdString();
-    if (json.contains("comboFreqMin")) s.comboFreqMin = json["comboFreqMin"].toDouble();
-    if (json.contains("comboFreqMax")) s.comboFreqMax = json["comboFreqMax"].toDouble();
+    if (json.contains("comboType"))
+        s.comboType = stringToBiquadComboType(json["comboType"].toString().toStdString());
+    if (json.contains("comboFreq"))
+        s.comboFreq = json["comboFreq"].toDouble();
+    if (json.contains("comboOrder"))
+        s.comboOrder = json["comboOrder"].toInt();
+    if (json.contains("comboGain"))
+        s.comboGain = json["comboGain"].toDouble();
+    if (json.contains("comboGains"))
+        s.comboGains = json["comboGains"].toString().toStdString();
+    if (json.contains("comboFreqMin"))
+        s.comboFreqMin = json["comboFreqMin"].toDouble();
+    if (json.contains("comboFreqMax"))
+        s.comboFreqMax = json["comboFreqMax"].toDouble();
 
-    if (json.contains("peqFls")) s.peqFls = json["peqFls"].toDouble();
-    if (json.contains("peqGls")) s.peqGls = json["peqGls"].toDouble();
-    if (json.contains("peqQls")) s.peqQls = json["peqQls"].toDouble();
-    if (json.contains("peqF1"))  s.peqF1  = json["peqF1"].toDouble();
-    if (json.contains("peqG1"))  s.peqG1  = json["peqG1"].toDouble();
-    if (json.contains("peqQ1"))  s.peqQ1  = json["peqQ1"].toDouble();
-    if (json.contains("peqF2"))  s.peqF2  = json["peqF2"].toDouble();
-    if (json.contains("peqG2"))  s.peqG2  = json["peqG2"].toDouble();
-    if (json.contains("peqQ2"))  s.peqQ2  = json["peqQ2"].toDouble();
-    if (json.contains("peqF3"))  s.peqF3  = json["peqF3"].toDouble();
-    if (json.contains("peqG3"))  s.peqG3  = json["peqG3"].toDouble();
-    if (json.contains("peqQ3"))  s.peqQ3  = json["peqQ3"].toDouble();
-    if (json.contains("peqFhs")) s.peqFhs = json["peqFhs"].toDouble();
-    if (json.contains("peqGhs")) s.peqGhs = json["peqGhs"].toDouble();
-    if (json.contains("peqQhs")) s.peqQhs = json["peqQhs"].toDouble();
+    if (json.contains("peqFls"))
+        s.peqFls = json["peqFls"].toDouble();
+    if (json.contains("peqGls"))
+        s.peqGls = json["peqGls"].toDouble();
+    if (json.contains("peqQls"))
+        s.peqQls = json["peqQls"].toDouble();
+    if (json.contains("peqF1"))
+        s.peqF1 = json["peqF1"].toDouble();
+    if (json.contains("peqG1"))
+        s.peqG1 = json["peqG1"].toDouble();
+    if (json.contains("peqQ1"))
+        s.peqQ1 = json["peqQ1"].toDouble();
+    if (json.contains("peqF2"))
+        s.peqF2 = json["peqF2"].toDouble();
+    if (json.contains("peqG2"))
+        s.peqG2 = json["peqG2"].toDouble();
+    if (json.contains("peqQ2"))
+        s.peqQ2 = json["peqQ2"].toDouble();
+    if (json.contains("peqF3"))
+        s.peqF3 = json["peqF3"].toDouble();
+    if (json.contains("peqG3"))
+        s.peqG3 = json["peqG3"].toDouble();
+    if (json.contains("peqQ3"))
+        s.peqQ3 = json["peqQ3"].toDouble();
+    if (json.contains("peqFhs"))
+        s.peqFhs = json["peqFhs"].toDouble();
+    if (json.contains("peqGhs"))
+        s.peqGhs = json["peqGhs"].toDouble();
+    if (json.contains("peqQhs"))
+        s.peqQhs = json["peqQhs"].toDouble();
 
-    if (json.contains("limiterLimit")) s.limiterLimit = json["limiterLimit"].toDouble();
-    if (json.contains("limiterSoftClip")) s.limiterSoftClip = json["limiterSoftClip"].toBool();
+    if (json.contains("limiterLimit"))
+        s.limiterLimit = json["limiterLimit"].toDouble();
+    if (json.contains("limiterSoftClip"))
+        s.limiterSoftClip = json["limiterSoftClip"].toBool();
 
-    if (json.contains("splitWidthCrossover")) s.splitWidthCrossover = json["splitWidthCrossover"].toDouble();
-    if (json.contains("splitWidthAmount")) s.splitWidthAmount = json["splitWidthAmount"].toDouble();
+    if (json.contains("splitWidthCrossover"))
+        s.splitWidthCrossover = json["splitWidthCrossover"].toDouble();
+    if (json.contains("splitWidthAmount"))
+        s.splitWidthAmount = json["splitWidthAmount"].toDouble();
 
-    if (json.contains("graphicEQFreqMin")) s.graphicEQFreqMin = json["graphicEQFreqMin"].toDouble();
-    if (json.contains("graphicEQFreqMax")) s.graphicEQFreqMax = json["graphicEQFreqMax"].toDouble();
-    if (json.contains("graphicEQBandCount")) s.graphicEQBandCount = json["graphicEQBandCount"].toInt();
+    if (json.contains("graphicEQFreqMin"))
+        s.graphicEQFreqMin = json["graphicEQFreqMin"].toDouble();
+    if (json.contains("graphicEQFreqMax"))
+        s.graphicEQFreqMax = json["graphicEQFreqMax"].toDouble();
+    if (json.contains("graphicEQBandCount"))
+        s.graphicEQBandCount = json["graphicEQBandCount"].toInt();
     if (json.contains("graphicEQGains")) {
         s.graphicEQGains.clear();
-        for (const auto& g : json["graphicEQGains"].toArray()) s.graphicEQGains.push_back(g.toDouble());
+        for (const auto& g : json["graphicEQGains"].toArray())
+            s.graphicEQGains.push_back(g.toDouble());
     }
 
     return s;
@@ -499,15 +715,12 @@ bool PipelineStage::operator==(const PipelineStage& other) const {
     return id == other.id;
 }
 
-StageBuildResult StageBuilders::buildStage(
-    const PipelineStage& stage,
-    int sampleRate,
-    int channelCount,
-    const std::map<QUuid, EQPreset>& eqPresets,
-    const std::map<QUuid, ConvolutionPreset>& convPresets
-) {
+StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampleRate, int channelCount,
+                                           const std::map<QUuid, EQPreset>& eqPresets,
+                                           const std::map<QUuid, ConvolutionPreset>& convPresets) {
     StageBuildResult res;
-    if (!stage.isActive()) return res;
+    if (!stage.isActive())
+        return res;
 
     if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
         stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
@@ -516,7 +729,9 @@ StageBuildResult StageBuilders::buildStage(
         }
     }
 
-    std::string prefix = QString::fromStdString(stageTypeToString(stage.type)).toLower().replace(" ", "").toStdString() + "_" + stage.id.toString(QUuid::WithoutBraces).left(8).toStdString();
+    std::string prefix =
+        QString::fromStdString(stageTypeToString(stage.type)).toLower().replace(" ", "").toStdString() + "_" +
+        stage.id.toString(QUuid::WithoutBraces).left(8).toStdString();
     std::vector<int> chList = stage.channels;
     std::sort(chList.begin(), chList.end());
 
@@ -638,7 +853,8 @@ StageBuildResult StageBuilders::buildStage(
     }
 
     case StageType::Crossfeed: {
-        if (stage.crossfeedLevel == CrossfeedLevel::Off && !stage.cxCustomEnabled) break;
+        if (stage.crossfeedLevel == CrossfeedLevel::Off && !stage.cxCustomEnabled)
+            break;
         auto cx = stage.activeCrossfeedParams();
 
         FilterConfig fHi, fLo, fLoGain;
@@ -675,7 +891,8 @@ StageBuildResult StageBuilders::buildStage(
         m2to4.mapping.push_back(MixerMapping{2, {MixerSource{stage.rightChannel, 0.0, false}}});
         m2to4.mapping.push_back(MixerMapping{3, {MixerSource{stage.rightChannel, 0.0, false}}});
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
-            m2to4.mapping.push_back(MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
+            m2to4.mapping.push_back(
+                MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
         }
         res.mixers[prefix + "_2to4"] = m2to4;
 
@@ -683,18 +900,28 @@ StageBuildResult StageBuilders::buildStage(
         m4to2.channelsIn = channelCount + 2;
         m4to2.channelsOut = channelCount;
         m4to2.mapping.resize(channelCount);
-        m4to2.mapping[stage.leftChannel] = MixerMapping{stage.leftChannel, {MixerSource{0, 0.0, false}, MixerSource{2, 0.0, false}}};
-        m4to2.mapping[stage.rightChannel] = MixerMapping{stage.rightChannel, {MixerSource{1, 0.0, false}, MixerSource{3, 0.0, false}}};
+        m4to2.mapping[stage.leftChannel] =
+            MixerMapping{stage.leftChannel, {MixerSource{0, 0.0, false}, MixerSource{2, 0.0, false}}};
+        m4to2.mapping[stage.rightChannel] =
+            MixerMapping{stage.rightChannel, {MixerSource{1, 0.0, false}, MixerSource{3, 0.0, false}}};
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             int ch = otherChannels[idx];
             m4to2.mapping[ch] = MixerMapping{ch, {MixerSource{static_cast<int>(idx + 4), 0.0, false}}};
         }
         res.mixers[prefix + "_4to2"] = m4to2;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_2to4", {}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, {0, 3}, std::nullopt, {prefix + "_hi"}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, {1, 2}, std::nullopt, {prefix + "_lo", prefix + "_lo_gain"}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_4to2", {}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_2to4", {}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Filter, std::nullopt, {0, 3}, std::nullopt, {prefix + "_hi"}, std::nullopt});
+        res.steps.push_back(PipelineStep{PipelineStepType::Filter,
+                                         std::nullopt,
+                                         {1, 2},
+                                         std::nullopt,
+                                         {prefix + "_lo", prefix + "_lo_gain"},
+                                         std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_4to2", {}, std::nullopt});
         break;
     }
 
@@ -728,7 +955,8 @@ StageBuildResult StageBuilders::buildStage(
         m2to4.mapping.push_back(MixerMapping{2, {MixerSource{stage.leftChannel, 0.0, false}}});
         m2to4.mapping.push_back(MixerMapping{3, {MixerSource{stage.rightChannel, 0.0, false}}});
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
-            m2to4.mapping.push_back(MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
+            m2to4.mapping.push_back(
+                MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
         }
         res.mixers[prefix + "_2to4"] = m2to4;
 
@@ -746,23 +974,30 @@ StageBuildResult StageBuilders::buildStage(
         m4to2.channelsIn = channelCount + 2;
         m4to2.channelsOut = channelCount;
         m4to2.mapping.resize(channelCount);
-        m4to2.mapping[stage.leftChannel] = MixerMapping{stage.leftChannel, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
-        m4to2.mapping[stage.rightChannel] = MixerMapping{stage.rightChannel, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
+        m4to2.mapping[stage.leftChannel] = MixerMapping{
+            stage.leftChannel, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
+        m4to2.mapping[stage.rightChannel] = MixerMapping{
+            stage.rightChannel, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             int ch = otherChannels[idx];
             m4to2.mapping[ch] = MixerMapping{ch, {MixerSource{static_cast<int>(idx + 4), 0.0, false}}};
         }
         res.mixers[prefix + "_4to2"] = m4to2;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_2to4", {}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, {0, 1}, std::nullopt, {prefix + "_lp"}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, {2, 3}, std::nullopt, {prefix + "_hp"}, std::nullopt});
-        res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_4to2", {}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_2to4", {}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Filter, std::nullopt, {0, 1}, std::nullopt, {prefix + "_lp"}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Filter, std::nullopt, {2, 3}, std::nullopt, {prefix + "_hp"}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix + "_4to2", {}, std::nullopt});
         break;
     }
 
     case StageType::EQ: {
-        if (!stage.eqPresetId.has_value() || !eqPresets.count(stage.eqPresetId.value()) || chList.empty()) break;
+        if (!stage.eqPresetId.has_value() || !eqPresets.count(stage.eqPresetId.value()) || chList.empty())
+            break;
         const auto& preset = eqPresets.at(stage.eqPresetId.value());
 
         std::vector<std::string> names;
@@ -775,7 +1010,8 @@ StageBuildResult StageBuilders::buildStage(
 
         for (size_t i = 0; i < preset.bands.size(); ++i) {
             const auto& band = preset.bands[i];
-            if (!band.isEnabled) continue;
+            if (!band.isEnabled)
+                continue;
 
             FilterConfig f;
             f.type = FilterType::Biquad;
@@ -783,8 +1019,11 @@ StageBuildResult StageBuilders::buildStage(
 
             switch (band.type) {
             case EQBandType::Free:
-                f.biquadParams.b0 = band.b0; f.biquadParams.b1 = band.b1; f.biquadParams.b2 = band.b2;
-                f.biquadParams.a1 = band.a1; f.biquadParams.a2 = band.a2;
+                f.biquadParams.b0 = band.b0;
+                f.biquadParams.b1 = band.b1;
+                f.biquadParams.b2 = band.b2;
+                f.biquadParams.a1 = band.a1;
+                f.biquadParams.a2 = band.a2;
                 break;
             case EQBandType::GeneralNotch:
                 f.biquadParams.freqNotch = band.freqNotch;
@@ -802,20 +1041,26 @@ StageBuildResult StageBuilders::buildStage(
             case EQBandType::Highshelf:
                 f.biquadParams.freq = band.freq;
                 f.biquadParams.gain = band.gain;
-                if (band.useSlope) f.biquadParams.slope = band.slope;
-                else f.biquadParams.q = band.q;
+                if (band.useSlope)
+                    f.biquadParams.slope = band.slope;
+                else
+                    f.biquadParams.q = band.q;
                 break;
             case EQBandType::Notch:
             case EQBandType::Bandpass:
             case EQBandType::Allpass:
                 f.biquadParams.freq = band.freq;
-                if (band.useBandwidth) f.biquadParams.bandwidth = band.bandwidth;
-                else f.biquadParams.q = band.q;
+                if (band.useBandwidth)
+                    f.biquadParams.bandwidth = band.bandwidth;
+                else
+                    f.biquadParams.q = band.q;
                 break;
             default:
                 f.biquadParams.freq = band.freq;
-                if (eqBandTypeHasGain(band.type)) f.biquadParams.gain = band.gain;
-                if (eqBandTypeHasQ(band.type)) f.biquadParams.q = band.q;
+                if (eqBandTypeHasGain(band.type))
+                    f.biquadParams.gain = band.gain;
+                if (eqBandTypeHasQ(band.type))
+                    f.biquadParams.q = band.q;
                 break;
             }
 
@@ -824,15 +1069,18 @@ StageBuildResult StageBuilders::buildStage(
             names.push_back(bKey);
         }
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, names, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, names, std::nullopt});
         break;
     }
 
     case StageType::Convolution: {
-        if (!stage.convPresetId.has_value() || !convPresets.count(stage.convPresetId.value()) || chList.empty()) break;
+        if (!stage.convPresetId.has_value() || !convPresets.count(stage.convPresetId.value()) || chList.empty())
+            break;
         const auto& preset = convPresets.at(stage.convPresetId.value());
         std::string path = preset.irPath(sampleRate);
-        if (path.empty()) break;
+        if (path.empty())
+            break;
 
         FilterConfig f;
         f.type = FilterType::Conv;
@@ -841,12 +1089,14 @@ StageBuildResult StageBuilders::buildStage(
         f.convParams.format = "F64_LE";
         res.filters[prefix + "_conv"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_conv"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_conv"}, std::nullopt});
         break;
     }
 
     case StageType::Loudness: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Loudness;
         f.loudnessParams.referenceLevel = stage.loudnessReference;
@@ -856,12 +1106,14 @@ StageBuildResult StageBuilders::buildStage(
         f.loudnessParams.fader = stage.loudnessFader;
         res.filters[prefix + "_loudness"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_loudness"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_loudness"}, std::nullopt});
         break;
     }
 
     case StageType::Emphasis: {
-        if (chList.empty() || stage.emphasisMode == EmphasisMode::Off) break;
+        if (chList.empty() || stage.emphasisMode == EmphasisMode::Off)
+            break;
         FilterConfig f;
         f.type = FilterType::Biquad;
         f.biquadParams.type = BiquadType::Highshelf;
@@ -872,24 +1124,28 @@ StageBuildResult StageBuilders::buildStage(
         std::string fKey = prefix + ((stage.emphasisMode == EmphasisMode::DeEmphasis) ? "_deemphasis" : "_preemphasis");
         res.filters[fKey] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {fKey}, std::nullopt});
+        res.steps.push_back(
+            PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {fKey}, std::nullopt});
         break;
     }
 
     case StageType::DCProtection: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Biquad;
         f.biquadParams.type = BiquadType::HighpassFO;
         f.biquadParams.freq = 7.0;
         res.filters[prefix + "_dcp"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_dcp"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_dcp"}, std::nullopt});
         break;
     }
 
     case StageType::Gain: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Gain;
         f.gainParams.gain = stage.gainValue;
@@ -898,12 +1154,14 @@ StageBuildResult StageBuilders::buildStage(
         f.gainParams.mute = stage.gainMuted;
         res.filters[prefix + "_gain"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_gain"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_gain"}, std::nullopt});
         break;
     }
 
     case StageType::Delay: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Delay;
         f.delayParams.delay = stage.delayValue;
@@ -911,12 +1169,14 @@ StageBuildResult StageBuilders::buildStage(
         f.delayParams.subsample = stage.delaySubsample;
         res.filters[prefix + "_delay"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_delay"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_delay"}, std::nullopt});
         break;
     }
 
     case StageType::Volume: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Volume;
         f.volumeParams.rampTime = stage.volumeRampTime;
@@ -924,12 +1184,14 @@ StageBuildResult StageBuilders::buildStage(
         f.volumeParams.fader = stage.volumeFader;
         res.filters[prefix + "_volume"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_volume"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_volume"}, std::nullopt});
         break;
     }
 
     case StageType::LookaheadLimiter: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::LookaheadLimiter;
         f.lookaheadParams.limit = stage.lookaheadLimit;
@@ -938,16 +1200,20 @@ StageBuildResult StageBuilders::buildStage(
         f.lookaheadParams.unit = DelayUnit::ms;
         res.filters[prefix + "_lookahead_limiter"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_lookahead_limiter"}, std::nullopt});
+        res.steps.push_back(PipelineStep{PipelineStepType::Filter,
+                                         std::nullopt,
+                                         chList,
+                                         std::nullopt,
+                                         {prefix + "_lookahead_limiter"},
+                                         std::nullopt});
         break;
     }
 
     case StageType::MatrixMixer: {
         std::vector<MixerMapping> cleanedMapping;
         for (int dest = 0; dest < stage.mixerChannelsOut; ++dest) {
-            auto it = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(), [dest](const MixerMapping& m) {
-                return m.dest == dest;
-            });
+            auto it = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                                   [dest](const MixerMapping& m) { return m.dest == dest; });
             if (it != stage.mixerMappings.end()) {
                 std::vector<MixerSource> cleanedSources;
                 for (const auto& src : it->sources) {
@@ -962,7 +1228,8 @@ StageBuildResult StageBuilders::buildStage(
             }
         }
 
-        res.mixers[prefix] = MixerConfig{stage.mixerChannelsIn, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
+        res.mixers[prefix] =
+            MixerConfig{stage.mixerChannelsIn, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
         res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix, {}, std::nullopt});
         break;
     }
@@ -1019,7 +1286,8 @@ StageBuildResult StageBuilders::buildStage(
     }
 
     case StageType::Dither: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Dither;
         f.ditherParams.type = stage.ditherType;
@@ -1027,25 +1295,30 @@ StageBuildResult StageBuilders::buildStage(
         f.ditherParams.amplitude = stage.ditherAmplitude;
         res.filters[prefix + "_dither"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_dither"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_dither"}, std::nullopt});
         break;
     }
 
     case StageType::DiffEq: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         auto stringToDoubleVec = [](const std::string& str) {
             std::vector<double> resVec;
             size_t start = 0;
             while (start < str.size()) {
                 size_t end = str.find(',', start);
-                if (end == std::string::npos) end = str.size();
+                if (end == std::string::npos)
+                    end = str.size();
                 std::string token = str.substr(start, end - start);
                 token.erase(0, token.find_first_not_of(" \t\n\r"));
                 token.erase(token.find_last_not_of(" \t\n\r") + 1);
                 if (!token.empty()) {
                     bool ok = false;
                     double val = QString::fromStdString(token).toDouble(&ok);
-                    if (ok) { resVec.push_back(val); }
+                    if (ok) {
+                        resVec.push_back(val);
+                    }
                 }
                 start = end + 1;
             }
@@ -1058,12 +1331,14 @@ StageBuildResult StageBuilders::buildStage(
         f.diffEqParams.b = stringToDoubleVec(stage.diffEqB);
         res.filters[prefix + "_diffeq"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_diffeq"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_diffeq"}, std::nullopt});
         break;
     }
 
     case StageType::BiquadCombo: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::BiquadCombo;
         f.comboParams.type = stage.comboType;
@@ -1080,35 +1355,49 @@ StageBuildResult StageBuilders::buildStage(
             f.comboParams.gain = stage.comboGain;
             break;
         case BiquadComboType::FivePointPeq:
-            f.comboParams.fls = stage.peqFls; f.comboParams.gls = stage.peqGls; f.comboParams.qls = stage.peqQls;
-            f.comboParams.fp1 = stage.peqF1;  f.comboParams.gp1 = stage.peqG1;  f.comboParams.qp1 = stage.peqQ1;
-            f.comboParams.fp2 = stage.peqF2;  f.comboParams.gp2 = stage.peqG2;  f.comboParams.qp2 = stage.peqQ2;
-            f.comboParams.fp3 = stage.peqF3;  f.comboParams.gp3 = stage.peqG3;  f.comboParams.qp3 = stage.peqQ3;
-            f.comboParams.fhs = stage.peqFhs; f.comboParams.ghs = stage.peqGhs; f.comboParams.qhs = stage.peqQhs;
+            f.comboParams.fls = stage.peqFls;
+            f.comboParams.gls = stage.peqGls;
+            f.comboParams.qls = stage.peqQls;
+            f.comboParams.fp1 = stage.peqF1;
+            f.comboParams.gp1 = stage.peqG1;
+            f.comboParams.qp1 = stage.peqQ1;
+            f.comboParams.fp2 = stage.peqF2;
+            f.comboParams.gp2 = stage.peqG2;
+            f.comboParams.qp2 = stage.peqQ2;
+            f.comboParams.fp3 = stage.peqF3;
+            f.comboParams.gp3 = stage.peqG3;
+            f.comboParams.qp3 = stage.peqQ3;
+            f.comboParams.fhs = stage.peqFhs;
+            f.comboParams.ghs = stage.peqGhs;
+            f.comboParams.qhs = stage.peqQhs;
             break;
         default:
             break;
         }
         res.filters[prefix + "_combo"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_combo"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_combo"}, std::nullopt});
         break;
     }
 
     case StageType::Limiter: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::Limiter;
         f.limiterParams.clipLimit = stage.limiterLimit;
         f.limiterParams.softClip = stage.limiterSoftClip;
         res.filters[prefix + "_limiter"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_limiter"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_limiter"}, std::nullopt});
         break;
     }
 
     case StageType::GraphicEQ: {
-        if (chList.empty()) break;
+        if (chList.empty())
+            break;
         FilterConfig f;
         f.type = FilterType::BiquadCombo;
         f.comboParams.type = BiquadComboType::GraphicEqualizer;
@@ -1117,7 +1406,8 @@ StageBuildResult StageBuilders::buildStage(
         f.comboParams.gains = stage.graphicEQGains;
         res.filters[prefix + "_geq"] = f;
 
-        res.steps.push_back(PipelineStep{PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_geq"}, std::nullopt});
+        res.steps.push_back(PipelineStep{
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_geq"}, std::nullopt});
         break;
     }
     }

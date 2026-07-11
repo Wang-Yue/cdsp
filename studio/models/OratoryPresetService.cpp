@@ -1,12 +1,13 @@
 #include "models/OratoryPresetService.h"
-#include <QUrl>
-#include <QNetworkRequest>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QStandardPaths>
+
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkRequest>
+#include <QStandardPaths>
+#include <QUrl>
 
 OratoryPresetService::OratoryPresetService(QObject* parent) : QObject(parent) {}
 
@@ -26,7 +27,8 @@ bool OratoryPresetService::loadFromDiskCache(std::vector<OratoryIndexEntry>& ent
     file.close();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject()) return false;
+    if (!doc.isObject())
+        return false;
 
     QJsonObject root = doc.object();
     QJsonArray tree = root["tree"].toArray();
@@ -58,7 +60,8 @@ void OratoryPresetService::saveToDiskCache(const QByteArray& jsonBytes) {
     }
 }
 
-void OratoryPresetService::fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback, bool forceRefresh) {
+void OratoryPresetService::fetchIndex(
+    std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback, bool forceRefresh) {
     if (!forceRefresh && m_isLoaded) {
         callback(true, m_allEntries);
         return;
@@ -126,9 +129,11 @@ void OratoryPresetService::fetchIndex(std::function<void(bool success, const std
     });
 }
 
-void OratoryPresetService::fetchPreset(const OratoryIndexEntry& entry, std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
+void OratoryPresetService::fetchPreset(const OratoryIndexEntry& entry,
+                                       std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
     QString downloadPath = QString::fromStdString(entry.path).replace(" ", "%20");
-    QString rawUrlStr = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" + downloadPath;
+    QString rawUrlStr =
+        "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" + downloadPath;
 
     QUrl url(rawUrlStr);
     QNetworkRequest request(url);

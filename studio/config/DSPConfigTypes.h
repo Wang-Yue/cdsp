@@ -2,32 +2,21 @@
 #define DSP_CONFIG_TYPES_H
 
 #include "config/BiquadCoefficients.h"
-#include <string>
-#include <vector>
-#include <map>
-#include <optional>
-#include <QJsonObject>
+
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
 
-enum class Fader {
-    Main = 0,
-    Aux1 = 1,
-    Aux2 = 2,
-    Aux3 = 3,
-    Aux4 = 4
-};
+enum class Fader { Main = 0, Aux1 = 1, Aux2 = 2, Aux3 = 3, Aux4 = 4 };
 
 std::string faderToString(Fader fader);
 Fader stringToFader(const std::string& str);
 
-enum class ProcessingState {
-    Inactive,
-    Starting,
-    Running,
-    Paused,
-    Stalled
-};
+enum class ProcessingState { Inactive, Starting, Running, Paused, Stalled };
 
 std::string processingStateToString(ProcessingState state);
 ProcessingState uint8ToProcessingState(uint8_t rawByte);
@@ -94,23 +83,12 @@ struct AudioDeviceDescriptor {
     std::vector<DeviceCapabilitySet> capability_sets;
 };
 
-enum class AudioBackendType {
-    CoreAudio,
-    WASAPI,
-    ASIO,
-    ALSA,
-    PulseAudio,
-    RawFile,
-    WavFile,
-    SignalGenerator
-};
+enum class AudioBackendType { CoreAudio, WASAPI, ASIO, ALSA, PulseAudio, RawFile, WavFile, SignalGenerator };
 
 std::string audioBackendTypeToString(AudioBackendType type);
 AudioBackendType stringToAudioBackendType(const std::string& str);
 
-enum class SDMFilter {
-    Clans4, SDM4, Clans5, SDM5, Clans6, SDM6, Clans7, SDM7, Clans8, SDM8
-};
+enum class SDMFilter { Clans4, SDM4, Clans5, SDM5, Clans6, SDM6, Clans7, SDM7, Clans8, SDM8 };
 std::string sdmFilterToString(SDMFilter f);
 SDMFilter stringToSDMFilter(const std::string& str);
 
@@ -136,13 +114,7 @@ enum class SincInterpolation { Nearest, Linear, Quadratic, Cubic };
 enum class AppleResamplerQuality { Min, Low, Medium, High, Max };
 enum class AppleResamplerComplexity { Linear, Normal, Mastering, MinimumPhase };
 
-enum class ConfigErrorType {
-    ParseError,
-    ValidationError,
-    InvalidFilter,
-    InvalidMixer,
-    InvalidPipeline
-};
+enum class ConfigErrorType { ParseError, ValidationError, InvalidFilter, InvalidMixer, InvalidPipeline };
 
 struct ConfigError {
     ConfigErrorType type = ConfigErrorType::ValidationError;
@@ -278,7 +250,17 @@ struct DevicesConfig {
 };
 
 enum class FilterType {
-    Gain, Volume, Loudness, Biquad, Conv, Delay, BiquadCombo, DiffEq, Dither, Limiter, LookaheadLimiter
+    Gain,
+    Volume,
+    Loudness,
+    Biquad,
+    Conv,
+    Delay,
+    BiquadCombo,
+    DiffEq,
+    Dither,
+    Limiter,
+    LookaheadLimiter
 };
 std::string filterTypeToString(FilterType t);
 FilterType stringToFilterType(const std::string& str);
@@ -326,7 +308,13 @@ struct DelayParameters {
 };
 
 enum class BiquadComboType {
-    ButterworthHighpass, ButterworthLowpass, LinkwitzRileyHighpass, LinkwitzRileyLowpass, Tilt, FivePointPeq, GraphicEqualizer
+    ButterworthHighpass,
+    ButterworthLowpass,
+    LinkwitzRileyHighpass,
+    LinkwitzRileyLowpass,
+    Tilt,
+    FivePointPeq,
+    GraphicEqualizer
 };
 std::string biquadComboTypeToString(BiquadComboType t);
 BiquadComboType stringToBiquadComboType(const std::string& str);
@@ -355,7 +343,28 @@ struct DiffEqParameters {
 };
 
 enum class DitherType {
-    None, Flat, Highpass, Fweighted441, FweightedLong441, FweightedShort441, Gesemann441, Gesemann48, Lipshitz441, LipshitzLong441, Shibata441, ShibataHigh441, ShibataLow441, Shibata48, ShibataHigh48, ShibataLow48, Shibata882, ShibataLow882, Shibata96, ShibataLow96, Shibata192, ShibataLow192
+    None,
+    Flat,
+    Highpass,
+    Fweighted441,
+    FweightedLong441,
+    FweightedShort441,
+    Gesemann441,
+    Gesemann48,
+    Lipshitz441,
+    LipshitzLong441,
+    Shibata441,
+    ShibataHigh441,
+    ShibataLow441,
+    Shibata48,
+    ShibataHigh48,
+    ShibataLow48,
+    Shibata882,
+    ShibataLow882,
+    Shibata96,
+    ShibataLow96,
+    Shibata192,
+    ShibataLow192
 };
 std::string ditherTypeToString(DitherType t);
 DitherType stringToDitherType(const std::string& str);

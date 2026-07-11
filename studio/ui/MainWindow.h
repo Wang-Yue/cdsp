@@ -4,29 +4,28 @@
 #include "engine/CDSPEngine.h"
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
-#include "models/PipelineStore.h"
 #include "models/DSPEngineController.h"
 #include "models/MonitoringController.h"
-#include "models/SpectrumEngine.h"
+#include "models/PipelineStore.h"
 #include "models/SpectrogramEngine.h"
+#include "models/SpectrumEngine.h"
 #include "models/VectorScopeEngine.h"
-#include "ui/MiniPlayerView.h"
 #include "ui/LevelMeterView.h"
+#include "ui/MiniPlayerView.h"
 
-#include <QMainWindow>
-#include <QTreeWidget>
-#include <QStackedWidget>
-#include <QPushButton>
-#include <QLabel>
-#include <QSlider>
-#include <QSystemTrayIcon>
-#include <QSplitter>
-#include <QStatusBar>
 #include <QAction>
-#include <QKeySequence>
-
 #include <QElapsedTimer>
+#include <QKeySequence>
+#include <QLabel>
+#include <QMainWindow>
+#include <QPushButton>
+#include <QSlider>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QStatusBar>
+#include <QSystemTrayIcon>
 #include <QTimer>
+#include <QTreeWidget>
 
 class MainWindow : public QMainWindow {
     Q_OBJECT

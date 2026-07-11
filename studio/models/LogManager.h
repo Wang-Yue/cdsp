@@ -1,19 +1,13 @@
 #ifndef LOG_MANAGER_H
 #define LOG_MANAGER_H
 
+#include <QDateTime>
 #include <QObject>
 #include <QString>
-#include <QDateTime>
-#include <vector>
 #include <mutex>
+#include <vector>
 
-enum class LogLevel {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace
-};
+enum class LogLevel { Error, Warn, Info, Debug, Trace };
 
 QString logLevelToString(LogLevel level);
 LogLevel stringToLogLevel(const QString& str);

@@ -1,24 +1,22 @@
 #ifndef GENERAL_SETTINGS_VIEW_H
 #define GENERAL_SETTINGS_VIEW_H
 
-#include <QWidget>
 #include "models/AudioSettings.h"
 #include "models/MonitoringController.h"
-#include <QComboBox>
-#include <QSlider>
-#include <QLabel>
+
 #include <QCheckBox>
+#include <QComboBox>
+#include <QLabel>
+#include <QSlider>
+#include <QWidget>
 #include <memory>
 
 class GeneralSettingsView : public QWidget {
     Q_OBJECT
 
 public:
-    GeneralSettingsView(
-        std::shared_ptr<AudioSettings> settings,
-        std::shared_ptr<MonitoringController> monitoring,
-        QWidget* parent = nullptr
-    );
+    GeneralSettingsView(std::shared_ptr<AudioSettings> settings, std::shared_ptr<MonitoringController> monitoring,
+                        QWidget* parent = nullptr);
 
 private slots:
     void refreshUi();

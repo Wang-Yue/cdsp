@@ -4,9 +4,10 @@
 #include "engine/CDSPEngine.h"
 #include "models/DSPEngineController.h"
 #include "models/LevelState.h"
-#include "models/SpectrumEngine.h"
 #include "models/SpectrogramEngine.h"
+#include "models/SpectrumEngine.h"
 #include "models/VectorScopeEngine.h"
+
 #include <QObject>
 #include <QTimer>
 #include <memory>
@@ -15,14 +16,10 @@ class MonitoringController : public QObject {
     Q_OBJECT
 
 public:
-    MonitoringController(
-        std::shared_ptr<CDSPEngine> engine,
-        std::shared_ptr<DSPEngineController> dspController,
-        std::shared_ptr<SpectrumEngine> spectrumEngine,
-        std::shared_ptr<SpectrogramEngine> spectrogramEngine,
-        std::shared_ptr<VectorScopeEngine> vectorScopeEngine,
-        QObject* parent = nullptr
-    );
+    MonitoringController(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<DSPEngineController> dspController,
+                         std::shared_ptr<SpectrumEngine> spectrumEngine,
+                         std::shared_ptr<SpectrogramEngine> spectrogramEngine,
+                         std::shared_ptr<VectorScopeEngine> vectorScopeEngine, QObject* parent = nullptr);
 
     LevelState levelState;
 

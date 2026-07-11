@@ -1,25 +1,25 @@
 #ifndef VISUALIZER_DETAIL_VIEWS_H
 #define VISUALIZER_DETAIL_VIEWS_H
 
-#include "models/MonitoringController.h"
-#include "models/SpectrumEngine.h"
-#include "models/SpectrogramEngine.h"
-#include "models/VectorScopeEngine.h"
 #include "models/AudioDeviceManager.h"
+#include "models/MonitoringController.h"
+#include "models/SpectrogramEngine.h"
+#include "models/SpectrumEngine.h"
+#include "models/VectorScopeEngine.h"
 #include "ui/AnalogVUMeterView.h"
-#include "ui/SpectrumView.h"
-#include "ui/SpectrogramView.h"
-#include "ui/VectorScopeView.h"
 #include "ui/LogRangeSlider.h"
+#include "ui/SpectrogramView.h"
+#include "ui/SpectrumView.h"
+#include "ui/VectorScopeView.h"
 
-#include <QWidget>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QLabel>
+#include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
-#include <QDoubleSpinBox>
-#include <QCheckBox>
-#include <QPushButton>
-#include <QLabel>
+#include <QWidget>
 #include <memory>
 
 class AnalogVUDetailView : public QWidget {
@@ -58,7 +58,8 @@ class SpectrumDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    explicit SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent = nullptr);
+    explicit SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine, std::shared_ptr<AudioDeviceManager> devices,
+                                QWidget* parent = nullptr);
 
 private:
     std::shared_ptr<SpectrumEngine> m_engine;
@@ -78,7 +79,8 @@ class SpectrogramDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    explicit SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent = nullptr);
+    explicit SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> engine,
+                                   std::shared_ptr<AudioDeviceManager> devices, QWidget* parent = nullptr);
 
 private:
     std::shared_ptr<SpectrogramEngine> m_engine;

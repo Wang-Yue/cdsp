@@ -1,20 +1,20 @@
 #include "ui/ConvolutionPresetDetailView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+
+#include <QDesktopServices>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QScrollArea>
-#include <QDesktopServices>
 #include <QUrl>
-#include <QFileInfo>
+#include <QVBoxLayout>
 
-ConvolutionPresetDetailView::ConvolutionPresetDetailView(
-    ConvolutionPreset preset,
-    std::shared_ptr<PipelineStore> pipeline,
-    std::shared_ptr<AudioDeviceManager> devices,
-    QWidget* parent
-) : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_devices(devices) {
+ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset preset,
+                                                         std::shared_ptr<PipelineStore> pipeline,
+                                                         std::shared_ptr<AudioDeviceManager> devices, QWidget* parent)
+    : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_devices(devices) {
     setupUi();
     refreshUi();
 }
@@ -51,10 +51,14 @@ void ConvolutionPresetDetailView::setupUi() {
     auto detailsGroup = new QGroupBox("Preset Details", container);
     auto form = new QFormLayout(detailsGroup);
 
-    m_kindLabel = new QLabel(detailsGroup); form->addRow("Filter Kind:", m_kindLabel);
-    m_tapsLabel = new QLabel(detailsGroup); form->addRow("Tap Count:", m_tapsLabel);
-    m_ratesLabel = new QLabel(detailsGroup); form->addRow("Available Rates:", m_ratesLabel);
-    m_latencyLabel = new QLabel(detailsGroup); form->addRow("Latency:", m_latencyLabel);
+    m_kindLabel = new QLabel(detailsGroup);
+    form->addRow("Filter Kind:", m_kindLabel);
+    m_tapsLabel = new QLabel(detailsGroup);
+    form->addRow("Tap Count:", m_tapsLabel);
+    m_ratesLabel = new QLabel(detailsGroup);
+    form->addRow("Available Rates:", m_ratesLabel);
+    m_latencyLabel = new QLabel(detailsGroup);
+    form->addRow("Latency:", m_latencyLabel);
 
     mainLayout->addWidget(detailsGroup);
 
@@ -109,7 +113,8 @@ void ConvolutionPresetDetailView::refreshUi() {
 
     auto rates = m_preset.availableSampleRates();
     QStringList rateStrs;
-    for (int r : rates) rateStrs.append(QString("%1k").arg(r / 1000));
+    for (int r : rates)
+        rateStrs.append(QString("%1k").arg(r / 1000));
     m_ratesLabel->setText(rateStrs.join(" / "));
 
     m_ratePreviewCombo->clear();
@@ -123,14 +128,17 @@ void ConvolutionPresetDetailView::refreshUi() {
         } else {
             double targetLog = std::log(static_cast<double>(liveRate));
             m_previewRate = *std::min_element(rates.begin(), rates.end(), [targetLog](int a, int b) {
-                return std::abs(std::log(static_cast<double>(a)) - targetLog) < std::abs(std::log(static_cast<double>(b)) - targetLog);
+                return std::abs(std::log(static_cast<double>(a)) - targetLog) <
+                       std::abs(std::log(static_cast<double>(b)) - targetLog);
             });
         }
         int comboIdx = m_ratePreviewCombo->findData(m_previewRate);
-        if (comboIdx >= 0) m_ratePreviewCombo->setCurrentIndex(comboIdx);
+        if (comboIdx >= 0)
+            m_ratePreviewCombo->setCurrentIndex(comboIdx);
 
         std::string p = m_preset.irPath(m_previewRate);
-        if (!p.empty()) m_irPlot->setIRPath(p);
+        if (!p.empty())
+            m_irPlot->setIRPath(p);
         double ms = m_preset.latencyMilliseconds(m_previewRate);
         m_latencyLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     }
@@ -158,9 +166,8 @@ void ConvolutionPresetDetailView::refreshUi() {
             fileRow->addWidget(pathLbl, 1);
 
             auto openBtn = new QPushButton("Reveal", m_filesContainer);
-            connect(openBtn, &QPushButton::clicked, [p]() {
-                QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath()));
-            });
+            connect(openBtn, &QPushButton::clicked,
+                    [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
             fileRow->addWidget(openBtn);
 
             filesLayout->addLayout(fileRow);

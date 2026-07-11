@@ -1,17 +1,17 @@
 #include "ui/ResamplerDetailView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
+
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QVBoxLayout>
 
-ResamplerDetailView::ResamplerDetailView(
-    std::shared_ptr<AudioSettings> settings,
-    std::shared_ptr<AudioDeviceManager> devices,
-    std::shared_ptr<DSPEngineController> dspController,
-    QWidget* parent
-) : QWidget(parent), m_settings(settings), m_devices(devices), m_dspController(dspController) {
+ResamplerDetailView::ResamplerDetailView(std::shared_ptr<AudioSettings> settings,
+                                         std::shared_ptr<AudioDeviceManager> devices,
+                                         std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+    : QWidget(parent), m_settings(settings), m_devices(devices), m_dspController(dspController) {
     setupUi();
     refreshUi();
 }
@@ -124,7 +124,9 @@ void ResamplerDetailView::setupUi() {
 
     mainLayout->addWidget(ratesGroup);
 
-    auto footnoteLbl = new QLabel("Resamples audio between capture and playback sample rates. Configure sample rates in the Devices page.", container);
+    auto footnoteLbl = new QLabel(
+        "Resamples audio between capture and playback sample rates. Configure sample rates in the Devices page.",
+        container);
     footnoteLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     footnoteLbl->setWordWrap(true);
     mainLayout->addWidget(footnoteLbl);
@@ -133,7 +135,8 @@ void ResamplerDetailView::setupUi() {
 }
 
 void ResamplerDetailView::updateVisibility() {
-    if (!m_typeForm) return;
+    if (!m_typeForm)
+        return;
 
     std::string typeStr = m_typeCombo->currentText().toStdString();
     bool isAsyncSinc = (typeStr == "AsyncSinc");
@@ -159,7 +162,8 @@ void ResamplerDetailView::updateVisibility() {
 
 void ResamplerDetailView::refreshUi() {
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
-    if (m_typeGroup) m_typeGroup->setEnabled(m_settings->resamplerEnabled);
+    if (m_typeGroup)
+        m_typeGroup->setEnabled(m_settings->resamplerEnabled);
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
@@ -172,8 +176,10 @@ void ResamplerDetailView::refreshUi() {
     if (m_devices) {
         int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
         int pbRate = m_devices->playbackConfig.sampleRate > 0 ? m_devices->playbackConfig.sampleRate : 48000;
-        m_capRateLabel->setText(capRate >= 1000 ? QString("%1 kHz").arg(capRate / 1000.0, 0, 'f', 1) : QString("%1 Hz").arg(capRate));
-        m_pbRateLabel->setText(pbRate >= 1000 ? QString("%1 kHz").arg(pbRate / 1000.0, 0, 'f', 1) : QString("%1 Hz").arg(pbRate));
+        m_capRateLabel->setText(capRate >= 1000 ? QString("%1 kHz").arg(capRate / 1000.0, 0, 'f', 1)
+                                                : QString("%1 Hz").arg(capRate));
+        m_pbRateLabel->setText(pbRate >= 1000 ? QString("%1 kHz").arg(pbRate / 1000.0, 0, 'f', 1)
+                                              : QString("%1 Hz").arg(pbRate));
         double ratio = static_cast<double>(pbRate) / static_cast<double>(capRate);
         m_ratioLabel->setText(QString("Conversion Ratio: %1").arg(ratio, 0, 'f', 4));
     }

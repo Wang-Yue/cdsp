@@ -2,22 +2,20 @@
 #define MEASUREMENT_POSITION_ROW_WIDGET_H
 
 #include "room_correction/MeasurementSession.h"
-#include <QWidget>
+
 #include <QCheckBox>
-#include <QLineEdit>
 #include <QComboBox>
+#include <QLineEdit>
 #include <QToolButton>
 #include <QUuid>
+#include <QWidget>
 
 class MeasurementPositionRowWidget : public QWidget {
     Q_OBJECT
 
 public:
-    explicit MeasurementPositionRowWidget(
-        const MeasurementPosition& position,
-        MeasurementSession* session,
-        QWidget* parent = nullptr
-    );
+    explicit MeasurementPositionRowWidget(const MeasurementPosition& position, MeasurementSession* session,
+                                          QWidget* parent = nullptr);
 
 signals:
     void positionChanged();

@@ -1,27 +1,26 @@
 #include "ui/EQPresetDetailView.h"
-#include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QCheckBox>
-#include <QClipboard>
-#include <QApplication>
-#include <QScrollArea>
-#include <QMenu>
-#include <QAction>
+
 #include "ui/AutoEqPickerDlg.h"
 #include "ui/OratoryPresetPickerDlg.h"
+#include "ui/StyleTheme.h"
+
+#include <QAction>
+#include <QApplication>
+#include <QCheckBox>
+#include <QClipboard>
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QMenu>
+#include <QMessageBox>
+#include <QScrollArea>
+#include <QVBoxLayout>
 #include <fstream>
 #include <sstream>
 
-EQPresetDetailView::EQPresetDetailView(
-    EQPreset preset,
-    std::shared_ptr<PipelineStore> pipeline,
-    std::shared_ptr<DSPEngineController> dspController,
-    QWidget* parent
-) : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_dspController(dspController) {
+EQPresetDetailView::EQPresetDetailView(EQPreset preset, std::shared_ptr<PipelineStore> pipeline,
+                                       std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+    : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
     refreshUi();
 }
@@ -50,7 +49,8 @@ void EQPresetDetailView::setupUi() {
     m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
     m_nameEdit->setMaximumWidth(220);
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         if (m_preset.name != text.toStdString()) {
             m_preset.name = text.toStdString();
             m_pipeline->updateEQPreset(m_preset);
@@ -71,7 +71,8 @@ void EQPresetDetailView::setupUi() {
     m_preampSpin->setFixedWidth(80);
 
     connect(m_preampSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         double db = val / 10.0;
         if (std::abs(m_preampSpin->value() - db) > 0.05) {
             m_preampSpin->setValue(db);
@@ -82,7 +83,8 @@ void EQPresetDetailView::setupUi() {
     });
 
     connect(m_preampSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
-        if (m_isRefreshing) return;
+        if (m_isRefreshing)
+            return;
         int sliderVal = static_cast<int>(std::round(val * 10.0));
         if (m_preampSlider->value() != sliderVal) {
             m_preampSlider->setValue(sliderVal);
@@ -97,15 +99,13 @@ void EQPresetDetailView::setupUi() {
 
     auto showAnalyzerCheck = new QCheckBox("Analyzer", this);
     showAnalyzerCheck->setChecked(true);
-    connect(showAnalyzerCheck, &QCheckBox::toggled, [this](bool checked) {
-        m_diagramWidget->setShowAnalyzer(checked);
-    });
+    connect(showAnalyzerCheck, &QCheckBox::toggled,
+            [this](bool checked) { m_diagramWidget->setShowAnalyzer(checked); });
     headerLayout->addWidget(showAnalyzerCheck);
 
     auto showLoudnessCheck = new QCheckBox("Loudness Contour", this);
-    connect(showLoudnessCheck, &QCheckBox::toggled, [this](bool checked) {
-        m_diagramWidget->setShowLoudnessContour(checked);
-    });
+    connect(showLoudnessCheck, &QCheckBox::toggled,
+            [this](bool checked) { m_diagramWidget->setShowLoudnessContour(checked); });
     headerLayout->addWidget(showLoudnessCheck);
 
     headerLayout->addStretch();
@@ -116,13 +116,13 @@ void EQPresetDetailView::setupUi() {
     m_modeTabBar->addTab("🎛️ Form");
     m_modeTabBar->addTab("📄 CSV Syntax");
     m_modeTabBar->setDrawBase(false);
-    m_modeTabBar->setStyleSheet(
-        "QTabBar::tab { background: #2c2c2e; color: #8e8e93; padding: 6px 14px; border-radius: 6px; font-weight: bold; margin-right: 4px; }"
-        "QTabBar::tab:selected { background: #007af5; color: white; }"
-    );
+    m_modeTabBar->setStyleSheet("QTabBar::tab { background: #2c2c2e; color: #8e8e93; padding: 6px 14px; border-radius: "
+                                "6px; font-weight: bold; margin-right: 4px; }"
+                                "QTabBar::tab:selected { background: #007af5; color: white; }");
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_modeStack->setCurrentIndex(idx);
-        if (idx == 2) m_csvTextEdit->setText(QString::fromStdString(m_preset.toCSV()));
+        if (idx == 2)
+            m_csvTextEdit->setText(QString::fromStdString(m_preset.toCSV()));
     });
     headerLayout->addWidget(m_modeTabBar);
 
@@ -178,11 +178,15 @@ void EQPresetDetailView::setupUi() {
     m_diagramWidget->onBandDragged = [this](int idx, double f, double g) {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
             auto& b = m_preset.bands[idx];
-            if (b.type == EQBandType::GeneralNotch) b.freqNotch = f;
-            else if (b.type == EQBandType::LinkwitzTransform) b.freqTarget = f;
-            else b.freq = f;
+            if (b.type == EQBandType::GeneralNotch)
+                b.freqNotch = f;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                b.freqTarget = f;
+            else
+                b.freq = f;
 
-            if (eqBandTypeHasGain(b.type)) b.gain = g;
+            if (eqBandTypeHasGain(b.type))
+                b.gain = g;
 
             m_diagramWidget->setPreset(m_preset);
             m_pipeline->updateEQPreset(m_preset);
@@ -247,7 +251,8 @@ void EQPresetDetailView::setupUi() {
     // Mode 1: Bands Form Table
     m_bandsTable = new QTableWidget(this);
     m_bandsTable->setColumnCount(7);
-    m_bandsTable->setHorizontalHeaderLabels({"Enable", "#", "Type", "Frequency (Hz)", "Gain (dB)", "Q Factor / Slope", "Action"});
+    m_bandsTable->setHorizontalHeaderLabels(
+        {"Enable", "#", "Type", "Frequency (Hz)", "Gain (dB)", "Q Factor / Slope", "Action"});
     m_bandsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_bandsTable->verticalHeader()->setVisible(false);
     m_bandsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -285,7 +290,8 @@ void EQPresetDetailView::setupUi() {
     csvBtnRow->addWidget(copyBtn);
 
     auto applyCsvBtn = new QPushButton("Apply CSV Text", csvWidget);
-    applyCsvBtn->setStyleSheet("background-color: #007af5; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+    applyCsvBtn->setStyleSheet(
+        "background-color: #007af5; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
     connect(applyCsvBtn, &QPushButton::clicked, this, &EQPresetDetailView::onApplyCSV);
     csvBtnRow->addWidget(applyCsvBtn);
 
@@ -327,18 +333,16 @@ void EQPresetDetailView::refreshUi() {
         m_bandsTable->setItem(row, 1, itemIndex);
 
         auto typeCombo = new QComboBox(this);
-        for (EQBandType t : {
-            EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf,
-            EQBandType::Lowpass, EQBandType::Highpass, EQBandType::LowpassFO,
-            EQBandType::HighpassFO, EQBandType::LowshelfFO, EQBandType::HighshelfFO,
-            EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
-            EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch,
-            EQBandType::LinkwitzTransform
-        }) {
+        for (EQBandType t :
+             {EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf, EQBandType::Lowpass,
+              EQBandType::Highpass, EQBandType::LowpassFO, EQBandType::HighpassFO, EQBandType::LowshelfFO,
+              EQBandType::HighshelfFO, EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
+              EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch, EQBandType::LinkwitzTransform}) {
             typeCombo->addItem(QString::fromStdString(eqBandTypeToString(t)), static_cast<int>(t));
         }
         int typeIdx = typeCombo->findData(static_cast<int>(b.type));
-        if (typeIdx >= 0) typeCombo->setCurrentIndex(typeIdx);
+        if (typeIdx >= 0)
+            typeCombo->setCurrentIndex(typeIdx);
         connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, typeCombo]() {
             m_preset.bands[i].type = static_cast<EQBandType>(typeCombo->currentData().toInt());
             m_diagramWidget->setPreset(m_preset);
@@ -371,56 +375,113 @@ void EQPresetDetailView::refreshUi() {
                 l->addWidget(spin);
                 return container;
             };
-            freeBox->addWidget(makeCoeff("b0:", b.b0, [this, i](double v){ m_preset.bands[i].b0 = v; }));
-            freeBox->addWidget(makeCoeff("b1:", b.b1, [this, i](double v){ m_preset.bands[i].b1 = v; }));
-            freeBox->addWidget(makeCoeff("b2:", b.b2, [this, i](double v){ m_preset.bands[i].b2 = v; }));
-            freeBox->addWidget(makeCoeff("a1:", b.a1, [this, i](double v){ m_preset.bands[i].a1 = v; }));
-            freeBox->addWidget(makeCoeff("a2:", b.a2, [this, i](double v){ m_preset.bands[i].a2 = v; }));
-            auto w = new QWidget(this); w->setLayout(freeBox);
+            freeBox->addWidget(makeCoeff("b0:", b.b0, [this, i](double v) { m_preset.bands[i].b0 = v; }));
+            freeBox->addWidget(makeCoeff("b1:", b.b1, [this, i](double v) { m_preset.bands[i].b1 = v; }));
+            freeBox->addWidget(makeCoeff("b2:", b.b2, [this, i](double v) { m_preset.bands[i].b2 = v; }));
+            freeBox->addWidget(makeCoeff("a1:", b.a1, [this, i](double v) { m_preset.bands[i].a1 = v; }));
+            freeBox->addWidget(makeCoeff("a2:", b.a2, [this, i](double v) { m_preset.bands[i].a2 = v; }));
+            auto w = new QWidget(this);
+            w->setLayout(freeBox);
             m_bandsTable->setCellWidget(row, 3, w);
         } else if (b.type == EQBandType::GeneralNotch) {
             auto notchBox = new QHBoxLayout();
             notchBox->setContentsMargins(2, 2, 2, 2);
             notchBox->setSpacing(4);
-            auto fcSpin = new QDoubleSpinBox(this); fcSpin->setRange(10, 24000); fcSpin->setValue(b.freqNotch);
-            connect(fcSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].freqNotch = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            notchBox->addWidget(new QLabel("Fc:")); notchBox->addWidget(fcSpin);
+            auto fcSpin = new QDoubleSpinBox(this);
+            fcSpin->setRange(10, 24000);
+            fcSpin->setValue(b.freqNotch);
+            connect(fcSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].freqNotch = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            notchBox->addWidget(new QLabel("Fc:"));
+            notchBox->addWidget(fcSpin);
 
-            auto fpSpin = new QDoubleSpinBox(this); fpSpin->setRange(10, 24000); fpSpin->setValue(b.freqPole);
-            connect(fpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].freqPole = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            notchBox->addWidget(new QLabel("Fp:")); notchBox->addWidget(fpSpin);
+            auto fpSpin = new QDoubleSpinBox(this);
+            fpSpin->setRange(10, 24000);
+            fpSpin->setValue(b.freqPole);
+            connect(fpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].freqPole = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            notchBox->addWidget(new QLabel("Fp:"));
+            notchBox->addWidget(fpSpin);
 
-            auto qpSpin = new QDoubleSpinBox(this); qpSpin->setRange(0.01, 100.0); qpSpin->setValue(b.qPole);
-            connect(qpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].qPole = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            notchBox->addWidget(new QLabel("Qp:")); notchBox->addWidget(qpSpin);
+            auto qpSpin = new QDoubleSpinBox(this);
+            qpSpin->setRange(0.01, 100.0);
+            qpSpin->setValue(b.qPole);
+            connect(qpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].qPole = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            notchBox->addWidget(new QLabel("Qp:"));
+            notchBox->addWidget(qpSpin);
 
-            auto normCheck = new QCheckBox("Norm", this); normCheck->setChecked(b.normalizeAtDc);
-            connect(normCheck, &QCheckBox::toggled, [this, i](bool chk){ m_preset.bands[i].normalizeAtDc = chk; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
+            auto normCheck = new QCheckBox("Norm", this);
+            normCheck->setChecked(b.normalizeAtDc);
+            connect(normCheck, &QCheckBox::toggled, [this, i](bool chk) {
+                m_preset.bands[i].normalizeAtDc = chk;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
             notchBox->addWidget(normCheck);
 
-            auto w = new QWidget(this); w->setLayout(notchBox);
+            auto w = new QWidget(this);
+            w->setLayout(notchBox);
             m_bandsTable->setCellWidget(row, 3, w);
         } else if (b.type == EQBandType::LinkwitzTransform) {
             auto ltBox = new QHBoxLayout();
             ltBox->setContentsMargins(2, 2, 2, 2);
             ltBox->setSpacing(4);
-            auto faSpin = new QDoubleSpinBox(this); faSpin->setRange(1, 1000); faSpin->setValue(b.freqAct);
-            connect(faSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].freqAct = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            ltBox->addWidget(new QLabel("Fa:")); ltBox->addWidget(faSpin);
+            auto faSpin = new QDoubleSpinBox(this);
+            faSpin->setRange(1, 1000);
+            faSpin->setValue(b.freqAct);
+            connect(faSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].freqAct = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            ltBox->addWidget(new QLabel("Fa:"));
+            ltBox->addWidget(faSpin);
 
-            auto qaSpin = new QDoubleSpinBox(this); qaSpin->setRange(0.1, 10); qaSpin->setValue(b.qAct);
-            connect(qaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].qAct = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            ltBox->addWidget(new QLabel("Qa:")); ltBox->addWidget(qaSpin);
+            auto qaSpin = new QDoubleSpinBox(this);
+            qaSpin->setRange(0.1, 10);
+            qaSpin->setValue(b.qAct);
+            connect(qaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].qAct = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            ltBox->addWidget(new QLabel("Qa:"));
+            ltBox->addWidget(qaSpin);
 
-            auto ftSpin = new QDoubleSpinBox(this); ftSpin->setRange(1, 1000); ftSpin->setValue(b.freqTarget);
-            connect(ftSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].freqTarget = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            ltBox->addWidget(new QLabel("Ft:")); ltBox->addWidget(ftSpin);
+            auto ftSpin = new QDoubleSpinBox(this);
+            ftSpin->setRange(1, 1000);
+            ftSpin->setValue(b.freqTarget);
+            connect(ftSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].freqTarget = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            ltBox->addWidget(new QLabel("Ft:"));
+            ltBox->addWidget(ftSpin);
 
-            auto qtSpin = new QDoubleSpinBox(this); qtSpin->setRange(0.1, 10); qtSpin->setValue(b.qTarget);
-            connect(qtSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v){ m_preset.bands[i].qTarget = v; m_diagramWidget->setPreset(m_preset); m_pipeline->updateEQPreset(m_preset); });
-            ltBox->addWidget(new QLabel("Qt:")); ltBox->addWidget(qtSpin);
+            auto qtSpin = new QDoubleSpinBox(this);
+            qtSpin->setRange(0.1, 10);
+            qtSpin->setValue(b.qTarget);
+            connect(qtSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
+                m_preset.bands[i].qTarget = v;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+            });
+            ltBox->addWidget(new QLabel("Qt:"));
+            ltBox->addWidget(qtSpin);
 
-            auto w = new QWidget(this); w->setLayout(ltBox);
+            auto w = new QWidget(this);
+            w->setLayout(ltBox);
             m_bandsTable->setCellWidget(row, 3, w);
         } else {
             auto freqSpin = new QDoubleSpinBox(this);
@@ -465,9 +526,12 @@ void EQPresetDetailView::refreshUi() {
 
             connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double val) {
                 auto& band = m_preset.bands[i];
-                if (band.useSlope) band.slope = val;
-                else if (band.useBandwidth) band.bandwidth = val;
-                else band.q = val;
+                if (band.useSlope)
+                    band.slope = val;
+                else if (band.useBandwidth)
+                    band.bandwidth = val;
+                else
+                    band.q = val;
                 m_diagramWidget->setPreset(m_preset);
                 m_pipeline->updateEQPreset(m_preset);
             });
@@ -495,7 +559,8 @@ void EQPresetDetailView::refreshUi() {
                 qBox->addWidget(toggleBtn);
             }
 
-            auto w = new QWidget(this); w->setLayout(qBox);
+            auto w = new QWidget(this);
+            w->setLayout(qBox);
             m_bandsTable->setCellWidget(row, 5, w);
         } else {
             auto naLabel = new QLabel("N/A", this);
@@ -504,9 +569,7 @@ void EQPresetDetailView::refreshUi() {
         }
 
         auto delBtn = new QPushButton("Delete", this);
-        connect(delBtn, &QPushButton::clicked, [this, row]() {
-            onDeleteBand(row);
-        });
+        connect(delBtn, &QPushButton::clicked, [this, row]() { onDeleteBand(row); });
         m_bandsTable->setCellWidget(row, 6, delBtn);
     }
     updateBandChipsBar();
@@ -533,12 +596,14 @@ bool EQPresetDetailView::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void EQPresetDetailView::updateBandChipsBar() {
-    if (!m_chipLayout) return;
+    if (!m_chipLayout)
+        return;
 
     // Clear existing chips
     QLayoutItem* item;
     while ((item = m_chipLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
+        if (item->widget())
+            item->widget()->deleteLater();
         delete item;
     }
 
@@ -556,8 +621,12 @@ void EQPresetDetailView::updateBandChipsBar() {
 
         QString bgStyle;
         if (isSelected) {
-            bgStyle = QString("background-color: rgba(%1, %2, %3, 50); border: 1.5px solid rgb(%1, %2, %3); border-radius: 6px;")
-                          .arg(color.red()).arg(color.green()).arg(color.blue());
+            bgStyle =
+                QString(
+                    "background-color: rgba(%1, %2, %3, 50); border: 1.5px solid rgb(%1, %2, %3); border-radius: 6px;")
+                    .arg(color.red())
+                    .arg(color.green())
+                    .arg(color.blue());
         } else {
             bgStyle = QString("background-color: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 6px;");
         }
@@ -581,27 +650,35 @@ void EQPresetDetailView::updateBandChipsBar() {
         QString textCol = b.isEnabled ? "#ffffff" : "#8e8e93";
 
         // Line 1: #Index Type
-        auto titleLbl = new QLabel(QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToShortName(b.type))), chip);
-        titleLbl->setStyleSheet(QString("color: %1; font-weight: %2; font-size: 11px;")
-                                    .arg(textCol).arg(isSelected ? "bold" : "normal"));
+        auto titleLbl = new QLabel(
+            QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToShortName(b.type))), chip);
+        titleLbl->setStyleSheet(
+            QString("color: %1; font-weight: %2; font-size: 11px;").arg(textCol).arg(isSelected ? "bold" : "normal"));
         textVBox->addWidget(titleLbl);
 
         // Line 2: Freq & Gain / Q
         if (b.type != EQBandType::Free) {
             double displayFreq = b.freq;
-            if (b.type == EQBandType::GeneralNotch) displayFreq = b.freqNotch;
-            else if (b.type == EQBandType::LinkwitzTransform) displayFreq = b.freqTarget;
+            if (b.type == EQBandType::GeneralNotch)
+                displayFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                displayFreq = b.freqTarget;
 
             QString valText = QString("%1Hz").arg(static_cast<int>(std::round(displayFreq)));
             if (eqBandTypeHasGain(b.type)) {
                 valText += QString(" %1%2dB").arg(b.gain >= 0 ? "+" : "").arg(b.gain, 0, 'f', 1);
             }
             if (eqBandTypeHasQ(b.type)) {
-                if (b.type == EQBandType::GeneralNotch) valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
-                else if (b.type == EQBandType::LinkwitzTransform) valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
-                else if (b.useSlope) valText += QString(" S:%1").arg(b.slope, 0, 'f', 1);
-                else if (b.useBandwidth) valText += QString(" BW:%1").arg(b.bandwidth, 0, 'f', 2);
-                else valText += QString(" Q:%1").arg(b.q, 0, 'f', 2);
+                if (b.type == EQBandType::GeneralNotch)
+                    valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
+                else if (b.type == EQBandType::LinkwitzTransform)
+                    valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
+                else if (b.useSlope)
+                    valText += QString(" S:%1").arg(b.slope, 0, 'f', 1);
+                else if (b.useBandwidth)
+                    valText += QString(" BW:%1").arg(b.bandwidth, 0, 'f', 2);
+                else
+                    valText += QString(" Q:%1").arg(b.q, 0, 'f', 2);
             }
 
             auto valLbl = new QLabel(valText, chip);
@@ -629,14 +706,11 @@ void EQPresetDetailView::updateBandChipsBar() {
             });
 
             auto typeMenu = menu.addMenu("Change Type");
-            for (EQBandType t : {
-                EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf,
-                EQBandType::Lowpass, EQBandType::Highpass, EQBandType::LowpassFO,
-                EQBandType::HighpassFO, EQBandType::LowshelfFO, EQBandType::HighshelfFO,
-                EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
-                EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch,
-                EQBandType::LinkwitzTransform
-            }) {
+            for (EQBandType t :
+                 {EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf, EQBandType::Lowpass,
+                  EQBandType::Highpass, EQBandType::LowpassFO, EQBandType::HighpassFO, EQBandType::LowshelfFO,
+                  EQBandType::HighshelfFO, EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
+                  EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch, EQBandType::LinkwitzTransform}) {
                 auto act = typeMenu->addAction(QString::fromStdString(eqBandTypeToString(t)));
                 connect(act, &QAction::triggered, [this, bandIdx, t]() {
                     m_preset.bands[bandIdx].type = t;
@@ -648,9 +722,7 @@ void EQPresetDetailView::updateBandChipsBar() {
 
             menu.addSeparator();
             auto delAction = menu.addAction("Delete");
-            connect(delAction, &QAction::triggered, [this, bandIdx]() {
-                onDeleteBand(bandIdx);
-            });
+            connect(delAction, &QAction::triggered, [this, bandIdx]() { onDeleteBand(bandIdx); });
 
             menu.exec(sourceWidget ? sourceWidget->mapToGlobal(pos) : QCursor::pos());
         });
@@ -721,4 +793,3 @@ void EQPresetDetailView::onCopyCSV() {
     QApplication::clipboard()->setText(m_csvTextEdit->toPlainText());
     m_csvStatusLabel->setText("Copied to clipboard!");
 }
-

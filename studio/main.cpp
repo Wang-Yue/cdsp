@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+
 #include <QApplication>
 #include <QSurfaceFormat>
 

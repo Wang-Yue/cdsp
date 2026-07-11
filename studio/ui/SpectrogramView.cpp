@@ -1,14 +1,15 @@
 #include "ui/SpectrogramView.h"
+
 #include "ui/StyleTheme.h"
-#include <cmath>
+
 #include <QPainterPath>
+#include <cmath>
 
 SpectrogramView::SpectrogramView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
 }
 
-SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent)
-    : QWidget(parent) {
+SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
     setEngine(engine);
 }
@@ -17,7 +18,8 @@ void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &SpectrogramEngine::updated, this, [this]() {
-            if (m_engine) setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+            if (m_engine)
+                setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
         });
         setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     }
@@ -25,12 +27,14 @@ void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
 
 void SpectrogramView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_engine) m_engine->visibilityCount++;
+    if (m_engine)
+        m_engine->visibilityCount++;
 }
 
 void SpectrogramView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_engine && m_engine->visibilityCount > 0) m_engine->visibilityCount--;
+    if (m_engine && m_engine->visibilityCount > 0)
+        m_engine->visibilityCount--;
 }
 
 void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool show3D, ColorPalette palette) {
@@ -41,9 +45,12 @@ void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool s
 }
 
 static QColor interpColors(float t, const std::vector<QColor>& stops) {
-    if (stops.empty()) return QColor(0, 0, 0);
-    if (stops.size() == 1 || t <= 0.0f) return stops.front();
-    if (t >= 1.0f) return stops.back();
+    if (stops.empty())
+        return QColor(0, 0, 0);
+    if (stops.size() == 1 || t <= 0.0f)
+        return stops.front();
+    if (t >= 1.0f)
+        return stops.back();
 
     float scaled = t * (stops.size() - 1);
     size_t idx = static_cast<size_t>(scaled);
@@ -64,53 +71,28 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
 
     switch (palette) {
     case ColorPalette::Viridis: {
-        static const std::vector<QColor> viridisStops = {
-            QColor(68, 1, 84),
-            QColor(59, 82, 139),
-            QColor(33, 145, 140),
-            QColor(94, 201, 98),
-            QColor(253, 231, 37)
-        };
+        static const std::vector<QColor> viridisStops = {QColor(68, 1, 84), QColor(59, 82, 139), QColor(33, 145, 140),
+                                                         QColor(94, 201, 98), QColor(253, 231, 37)};
         return interpColors(norm, viridisStops);
     }
     case ColorPalette::Magma: {
-        static const std::vector<QColor> magmaStops = {
-            QColor(0, 0, 4),
-            QColor(81, 18, 124),
-            QColor(182, 54, 121),
-            QColor(251, 136, 97),
-            QColor(252, 253, 191)
-        };
+        static const std::vector<QColor> magmaStops = {QColor(0, 0, 4), QColor(81, 18, 124), QColor(182, 54, 121),
+                                                       QColor(251, 136, 97), QColor(252, 253, 191)};
         return interpColors(norm, magmaStops);
     }
     case ColorPalette::Plasma: {
-        static const std::vector<QColor> plasmaStops = {
-            QColor(13, 8, 135),
-            QColor(126, 3, 168),
-            QColor(204, 71, 120),
-            QColor(248, 149, 64),
-            QColor(240, 249, 33)
-        };
+        static const std::vector<QColor> plasmaStops = {QColor(13, 8, 135), QColor(126, 3, 168), QColor(204, 71, 120),
+                                                        QColor(248, 149, 64), QColor(240, 249, 33)};
         return interpColors(norm, plasmaStops);
     }
     case ColorPalette::Inferno: {
-        static const std::vector<QColor> infernoStops = {
-            QColor(0, 0, 4),
-            QColor(87, 16, 110),
-            QColor(187, 55, 84),
-            QColor(249, 142, 9),
-            QColor(252, 255, 164)
-        };
+        static const std::vector<QColor> infernoStops = {QColor(0, 0, 4), QColor(87, 16, 110), QColor(187, 55, 84),
+                                                         QColor(249, 142, 9), QColor(252, 255, 164)};
         return interpColors(norm, infernoStops);
     }
     case ColorPalette::Jet: {
-        static const std::vector<QColor> jetStops = {
-            QColor(0, 0, 143),
-            QColor(0, 222, 255),
-            QColor(163, 255, 87),
-            QColor(255, 153, 0),
-            QColor(128, 0, 0)
-        };
+        static const std::vector<QColor> jetStops = {QColor(0, 0, 143), QColor(0, 222, 255), QColor(163, 255, 87),
+                                                     QColor(255, 153, 0), QColor(128, 0, 0)};
         return interpColors(norm, jetStops);
     }
     case ColorPalette::Default:
@@ -138,7 +120,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
 
     p.fillRect(rect(), StyleTheme::cardBg());
 
-    if (m_history.empty()) return;
+    if (m_history.empty())
+        return;
 
     int w = width();
     int h = height();
@@ -158,13 +141,20 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         for (size_t col = 0; col < colCount; ++col) {
             const auto& spec = m_history[col];
             size_t binCount = spec.magnitudes.size();
-            if (binCount == 0) continue;
+            if (binCount == 0)
+                continue;
 
             int x = marginL + plotW - static_cast<int>(col + 1) * colW;
 
             for (size_t bin = 0; bin < binCount; ++bin) {
-                float freqLower = (bin < spec.frequencies.size()) ? spec.frequencies[bin] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
-                float freqUpper = (bin + 1 < spec.frequencies.size()) ? spec.frequencies[bin + 1] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
+                float freqLower =
+                    (bin < spec.frequencies.size())
+                        ? spec.frequencies[bin]
+                        : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
+                float freqUpper =
+                    (bin + 1 < spec.frequencies.size())
+                        ? spec.frequencies[bin + 1]
+                        : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
 
                 freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
                 freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));
@@ -207,7 +197,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
     } else {
         // 3D CSD Waterfall Landscape matching SwiftUI CSDWaterfallView
         size_t count = m_history.size();
-        if (count < 2) return;
+        if (count < 2)
+            return;
 
         double maxShiftX = w * 0.12;
         double maxShiftY = -h * 0.18;
@@ -254,7 +245,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         for (size_t i = 0; i < count; ++i) {
             const auto& frame = m_history[i];
             size_t nBins = frame.magnitudes.size();
-            if (nBins < 2) continue;
+            if (nBins < 2)
+                continue;
 
             double t = static_cast<double>(i) / static_cast<double>(count - 1);
             QPointF startPt = project(leftPadding, baselineY, t);
@@ -267,13 +259,19 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             bool firstEdge = true;
 
             size_t drawBins = std::min(nBins, static_cast<size_t>(100));
-            if (drawBins < 2) continue;
+            if (drawBins < 2)
+                continue;
 
             float maxDbInFrame = -60.0f;
 
             for (size_t k = 0; k < drawBins; ++k) {
-                size_t j = std::min(nBins - 1, static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1))));
-                float freq = (j < frame.frequencies.size()) ? frame.frequencies[j] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(j) / std::max(1.0, static_cast<double>(nBins - 1))));
+                size_t j = std::min(
+                    nBins - 1, static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1))));
+                float freq = (j < frame.frequencies.size())
+                                 ? frame.frequencies[j]
+                                 : static_cast<float>(
+                                       20.0 * std::pow(1000.0, static_cast<double>(j) /
+                                                                   std::max(1.0, static_cast<double>(nBins - 1))));
                 freq = std::max(20.0f, std::min(20000.0f, freq));
 
                 double binFrac = (std::log10(freq) - logMin) / (logMax - logMin);
@@ -287,7 +285,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
                 double yFlat = baselineY - normMag * drawHeight;
 
                 QPointF projPt = project(xFlat, yFlat, t);
-                if (!std::isfinite(projPt.x()) || !std::isfinite(projPt.y())) continue;
+                if (!std::isfinite(projPt.x()) || !std::isfinite(projPt.y()))
+                    continue;
 
                 fillPath.lineTo(projPt);
 
@@ -300,7 +299,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             }
 
             QPointF endPt = project(leftPadding + drawWidth, baselineY, t);
-            if (std::isfinite(endPt.x()) && std::isfinite(endPt.y()) && std::isfinite(startPt.x()) && std::isfinite(startPt.y())) {
+            if (std::isfinite(endPt.x()) && std::isfinite(endPt.y()) && std::isfinite(startPt.x()) &&
+                std::isfinite(startPt.y())) {
                 fillPath.lineTo(endPt);
                 fillPath.lineTo(startPt);
             }
@@ -313,12 +313,10 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             QColor sliceDepthColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
             QColor magColor = colorForDB(maxDbInFrame, m_palette);
 
-            QColor sliceColor = QColor::fromRgbF(
-                0.4f * sliceDepthColor.redF() + 0.6f * magColor.redF(),
-                0.4f * sliceDepthColor.greenF() + 0.6f * magColor.greenF(),
-                0.4f * sliceDepthColor.blueF() + 0.6f * magColor.blueF(),
-                sliceDepthColor.alphaF()
-            );
+            QColor sliceColor =
+                QColor::fromRgbF(0.4f * sliceDepthColor.redF() + 0.6f * magColor.redF(),
+                                 0.4f * sliceDepthColor.greenF() + 0.6f * magColor.greenF(),
+                                 0.4f * sliceDepthColor.blueF() + 0.6f * magColor.blueF(), sliceDepthColor.alphaF());
 
             p.setPen(QPen(sliceColor, 1.5));
             p.drawPath(edgePath);

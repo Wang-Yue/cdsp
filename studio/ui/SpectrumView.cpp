@@ -1,17 +1,18 @@
 #include "ui/SpectrumView.h"
+
 #include "ui/StyleTheme.h"
+
 #include <QMouseEvent>
 #include <QPainterPath>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 SpectrumView::SpectrumView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
     setMouseTracking(true);
 }
 
-SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* parent)
-    : QWidget(parent) {
+SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
     setMouseTracking(true);
     setEngine(engine);
@@ -21,7 +22,8 @@ void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &SpectrumEngine::updated, this, [this]() {
-            if (m_engine) setSpectrum(m_engine->data);
+            if (m_engine)
+                setSpectrum(m_engine->data);
         });
         setSpectrum(m_engine->data);
     }
@@ -29,17 +31,21 @@ void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
 
 void SpectrumView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_engine) m_engine->visibilityCount++;
+    if (m_engine)
+        m_engine->visibilityCount++;
 }
 
 void SpectrumView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_engine && m_engine->visibilityCount > 0) m_engine->visibilityCount--;
+    if (m_engine && m_engine->visibilityCount > 0)
+        m_engine->visibilityCount--;
 }
 
 static float normDB60(float db) {
-    if (db < -60.0f) return 0.0f;
-    if (db > 0.0f) return 1.0f;
+    if (db < -60.0f)
+        return 0.0f;
+    if (db > 0.0f)
+        return 1.0f;
     return (db + 60.0f) / 60.0f;
 }
 
@@ -87,7 +93,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     int plotW = w - marginL;
     int plotH = h - marginB - marginT;
 
-    if (plotW < 20 || plotH < 20) return;
+    if (plotW < 20 || plotH < 20)
+        return;
 
     // 1. dB Grid lines & labels [-60, -48, -36, -24, -12, 0] dB
     p.setFont(QFont("sans-serif", 8));
@@ -99,7 +106,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawLine(marginL, y, w, y);
 
         p.setPen(StyleTheme::textSecondary());
-        p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter, QString("%1 dB").arg(static_cast<int>(db)));
+        p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter,
+                   QString("%1 dB").arg(static_cast<int>(db)));
     }
 
     // 2. Freq Grid lines & log-frequency ticks (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
@@ -108,7 +116,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     double logMin = std::log10(minF), logMax = std::log10(maxF);
 
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
-        if (f < minF || f > maxF) continue;
+        if (f < minF || f > maxF)
+            continue;
         double fracX = (std::log10(f) - logMin) / (logMax - logMin);
         double x = marginL + fracX * plotW;
 
@@ -141,14 +150,18 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     QPainterPath curvePath;
     for (size_t i = 0; i < count; ++i) {
         float freq = m_data.frequencies[i];
-        if (freq < minF || freq > maxF) continue;
+        if (freq < minF || freq > maxF)
+            continue;
 
         double fracX = (std::log10(freq) - logMin) / (logMax - logMin);
         double x = marginL + fracX * plotW;
 
         // Dynamic bar width
-        double xPrev = (i > 0) ? marginL + (std::log10(m_data.frequencies[i - 1]) - logMin) / (logMax - logMin) * plotW : x - 10.0;
-        double xNext = (i + 1 < count) ? marginL + (std::log10(m_data.frequencies[i + 1]) - logMin) / (logMax - logMin) * plotW : x + 10.0;
+        double xPrev =
+            (i > 0) ? marginL + (std::log10(m_data.frequencies[i - 1]) - logMin) / (logMax - logMin) * plotW : x - 10.0;
+        double xNext = (i + 1 < count)
+                           ? marginL + (std::log10(m_data.frequencies[i + 1]) - logMin) / (logMax - logMin) * plotW
+                           : x + 10.0;
         double barW = std::max(2.0, (xNext - xPrev) / 2.0 - spacing);
 
         float db = m_data.magnitudes[i];
@@ -165,15 +178,18 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
         }
 
-        if (i == 0) curvePath.moveTo(x, marginT + plotH - barHeight);
-        else curvePath.lineTo(x, marginT + plotH - barHeight);
+        if (i == 0)
+            curvePath.moveTo(x, marginT + plotH - barHeight);
+        else
+            curvePath.lineTo(x, marginT + plotH - barHeight);
     }
 
     p.setPen(QPen(StyleTheme::gridPenColor(), 1.0));
     p.drawPath(curvePath);
 
     // 4. Hover Crosshair & Tooltip Readout Formatting
-    if (m_isHovered && m_hoverPos.x() >= marginL && m_hoverPos.x() <= w && m_hoverPos.y() >= marginT && m_hoverPos.y() <= marginT + plotH) {
+    if (m_isHovered && m_hoverPos.x() >= marginL && m_hoverPos.x() <= w && m_hoverPos.y() >= marginT &&
+        m_hoverPos.y() <= marginT + plotH) {
         double mouseNormX = static_cast<double>(m_hoverPos.x() - marginL) / plotW;
         double targetFreq = std::pow(10.0, logMin + mouseNormX * (logMax - logMin));
 
@@ -211,8 +227,10 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         int ttX = m_hoverPos.x() + 10;
         int ttY = m_hoverPos.y() - 30;
 
-        if (ttX + ttW > w - 4) ttX = m_hoverPos.x() - ttW - 10;
-        if (ttY < marginT + 4) ttY = m_hoverPos.y() + 10;
+        if (ttX + ttW > w - 4)
+            ttX = m_hoverPos.x() - ttW - 10;
+        if (ttY < marginT + 4)
+            ttY = m_hoverPos.y() + 10;
 
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(15, 20, 30, 230));

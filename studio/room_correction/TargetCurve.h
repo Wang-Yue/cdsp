@@ -1,10 +1,10 @@
 #ifndef TARGET_CURVE_H
 #define TARGET_CURVE_H
 
-#include <vector>
-#include <string>
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 
 struct TargetBreakpoint {
     double freqHz = 1000.0;
@@ -13,31 +13,22 @@ struct TargetBreakpoint {
     TargetBreakpoint() = default;
     TargetBreakpoint(double f, double g) : freqHz(f), gainDB(g) {}
 
-    bool operator==(const TargetBreakpoint& other) const {
-        return freqHz == other.freqHz && gainDB == other.gainDB;
-    }
+    bool operator==(const TargetBreakpoint& other) const { return freqHz == other.freqHz && gainDB == other.gainDB; }
 };
 
-enum class TargetPreset {
-    Flat,
-    BruelKjaer,
-    Harman
-};
+enum class TargetPreset { Flat, BruelKjaer, Harman };
 
 class TargetCurve {
 public:
     std::vector<TargetBreakpoint> breakpoints;
 
     TargetCurve() = default;
-    explicit TargetCurve(const std::vector<TargetBreakpoint>& bps) {
-        setBreakpoints(bps);
-    }
+    explicit TargetCurve(const std::vector<TargetBreakpoint>& bps) { setBreakpoints(bps); }
 
     void setBreakpoints(const std::vector<TargetBreakpoint>& bps) {
         breakpoints = bps;
-        std::sort(breakpoints.begin(), breakpoints.end(), [](const TargetBreakpoint& a, const TargetBreakpoint& b) {
-            return a.freqHz < b.freqHz;
-        });
+        std::sort(breakpoints.begin(), breakpoints.end(),
+                  [](const TargetBreakpoint& a, const TargetBreakpoint& b) { return a.freqHz < b.freqHz; });
     }
 
     void upsert(const TargetBreakpoint& bp, double mergeToleranceHz = 1.0) {
@@ -56,9 +47,12 @@ public:
     }
 
     double evaluate(double freqHz) const {
-        if (breakpoints.empty()) return 0.0;
-        if (freqHz <= breakpoints.front().freqHz) return breakpoints.front().gainDB;
-        if (freqHz >= breakpoints.back().freqHz) return breakpoints.back().gainDB;
+        if (breakpoints.empty())
+            return 0.0;
+        if (freqHz <= breakpoints.front().freqHz)
+            return breakpoints.front().gainDB;
+        if (freqHz >= breakpoints.back().freqHz)
+            return breakpoints.back().gainDB;
 
         for (size_t i = 0; i < breakpoints.size() - 1; ++i) {
             const auto& lo = breakpoints[i];
@@ -74,40 +68,28 @@ public:
         return breakpoints.back().gainDB;
     }
 
-    static TargetCurve flat() {
-        return TargetCurve({
-            TargetBreakpoint(20.0, 0.0),
-            TargetBreakpoint(20000.0, 0.0)
-        });
-    }
+    static TargetCurve flat() { return TargetCurve({TargetBreakpoint(20.0, 0.0), TargetBreakpoint(20000.0, 0.0)}); }
 
     static TargetCurve bruelKjaer() {
-        return TargetCurve({
-            TargetBreakpoint(20.0, 3.0),
-            TargetBreakpoint(50.0, 3.0),
-            TargetBreakpoint(1000.0, 0.0),
-            TargetBreakpoint(4000.0, -2.0),
-            TargetBreakpoint(16000.0, -4.0),
-            TargetBreakpoint(20000.0, -4.0)
-        });
+        return TargetCurve({TargetBreakpoint(20.0, 3.0), TargetBreakpoint(50.0, 3.0), TargetBreakpoint(1000.0, 0.0),
+                            TargetBreakpoint(4000.0, -2.0), TargetBreakpoint(16000.0, -4.0),
+                            TargetBreakpoint(20000.0, -4.0)});
     }
 
     static TargetCurve harman() {
-        return TargetCurve({
-            TargetBreakpoint(20.0, 4.5),
-            TargetBreakpoint(80.0, 4.5),
-            TargetBreakpoint(200.0, 1.5),
-            TargetBreakpoint(1000.0, 0.0),
-            TargetBreakpoint(10000.0, -3.0),
-            TargetBreakpoint(20000.0, -5.5)
-        });
+        return TargetCurve({TargetBreakpoint(20.0, 4.5), TargetBreakpoint(80.0, 4.5), TargetBreakpoint(200.0, 1.5),
+                            TargetBreakpoint(1000.0, 0.0), TargetBreakpoint(10000.0, -3.0),
+                            TargetBreakpoint(20000.0, -5.5)});
     }
 
     static TargetCurve getPreset(TargetPreset preset) {
         switch (preset) {
-        case TargetPreset::Flat: return flat();
-        case TargetPreset::BruelKjaer: return bruelKjaer();
-        case TargetPreset::Harman: return harman();
+        case TargetPreset::Flat:
+            return flat();
+        case TargetPreset::BruelKjaer:
+            return bruelKjaer();
+        case TargetPreset::Harman:
+            return harman();
         }
         return flat();
     }

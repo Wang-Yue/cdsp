@@ -1,4 +1,5 @@
 #include "config/BiquadCoefficients.h"
+
 #include <cmath>
 
 #ifndef M_PI
@@ -9,48 +10,81 @@ const BiquadCoefficients BiquadCoefficients::passthrough(1.0, 0.0, 0.0, 0.0, 0.0
 
 std::string biquadTypeToString(BiquadType type) {
     switch (type) {
-    case BiquadType::Free: return "Free";
-    case BiquadType::Highpass: return "Highpass";
-    case BiquadType::Lowpass: return "Lowpass";
-    case BiquadType::HighpassFO: return "HighpassFO";
-    case BiquadType::LowpassFO: return "LowpassFO";
-    case BiquadType::Highshelf: return "Highshelf";
-    case BiquadType::Lowshelf: return "Lowshelf";
-    case BiquadType::HighshelfFO: return "HighshelfFO";
-    case BiquadType::LowshelfFO: return "LowshelfFO";
-    case BiquadType::Peaking: return "Peaking";
-    case BiquadType::Notch: return "Notch";
-    case BiquadType::Bandpass: return "Bandpass";
-    case BiquadType::Allpass: return "Allpass";
-    case BiquadType::AllpassFO: return "AllpassFO";
-    case BiquadType::GeneralNotch: return "GeneralNotch";
-    case BiquadType::LinkwitzTransform: return "LinkwitzTransform";
+    case BiquadType::Free:
+        return "Free";
+    case BiquadType::Highpass:
+        return "Highpass";
+    case BiquadType::Lowpass:
+        return "Lowpass";
+    case BiquadType::HighpassFO:
+        return "HighpassFO";
+    case BiquadType::LowpassFO:
+        return "LowpassFO";
+    case BiquadType::Highshelf:
+        return "Highshelf";
+    case BiquadType::Lowshelf:
+        return "Lowshelf";
+    case BiquadType::HighshelfFO:
+        return "HighshelfFO";
+    case BiquadType::LowshelfFO:
+        return "LowshelfFO";
+    case BiquadType::Peaking:
+        return "Peaking";
+    case BiquadType::Notch:
+        return "Notch";
+    case BiquadType::Bandpass:
+        return "Bandpass";
+    case BiquadType::Allpass:
+        return "Allpass";
+    case BiquadType::AllpassFO:
+        return "AllpassFO";
+    case BiquadType::GeneralNotch:
+        return "GeneralNotch";
+    case BiquadType::LinkwitzTransform:
+        return "LinkwitzTransform";
     }
     return "Peaking";
 }
 
 std::optional<BiquadType> stringToBiquadType(const std::string& str) {
-    if (str == "Free") return BiquadType::Free;
-    if (str == "Highpass") return BiquadType::Highpass;
-    if (str == "Lowpass") return BiquadType::Lowpass;
-    if (str == "HighpassFO") return BiquadType::HighpassFO;
-    if (str == "LowpassFO") return BiquadType::LowpassFO;
-    if (str == "Highshelf") return BiquadType::Highshelf;
-    if (str == "Lowshelf") return BiquadType::Lowshelf;
-    if (str == "HighshelfFO") return BiquadType::HighshelfFO;
-    if (str == "LowshelfFO") return BiquadType::LowshelfFO;
-    if (str == "Peaking") return BiquadType::Peaking;
-    if (str == "Notch") return BiquadType::Notch;
-    if (str == "Bandpass") return BiquadType::Bandpass;
-    if (str == "Allpass") return BiquadType::Allpass;
-    if (str == "AllpassFO") return BiquadType::AllpassFO;
-    if (str == "GeneralNotch") return BiquadType::GeneralNotch;
-    if (str == "LinkwitzTransform") return BiquadType::LinkwitzTransform;
+    if (str == "Free")
+        return BiquadType::Free;
+    if (str == "Highpass")
+        return BiquadType::Highpass;
+    if (str == "Lowpass")
+        return BiquadType::Lowpass;
+    if (str == "HighpassFO")
+        return BiquadType::HighpassFO;
+    if (str == "LowpassFO")
+        return BiquadType::LowpassFO;
+    if (str == "Highshelf")
+        return BiquadType::Highshelf;
+    if (str == "Lowshelf")
+        return BiquadType::Lowshelf;
+    if (str == "HighshelfFO")
+        return BiquadType::HighshelfFO;
+    if (str == "LowshelfFO")
+        return BiquadType::LowshelfFO;
+    if (str == "Peaking")
+        return BiquadType::Peaking;
+    if (str == "Notch")
+        return BiquadType::Notch;
+    if (str == "Bandpass")
+        return BiquadType::Bandpass;
+    if (str == "Allpass")
+        return BiquadType::Allpass;
+    if (str == "AllpassFO")
+        return BiquadType::AllpassFO;
+    if (str == "GeneralNotch")
+        return BiquadType::GeneralNotch;
+    if (str == "LinkwitzTransform")
+        return BiquadType::LinkwitzTransform;
     return std::nullopt;
 }
 
 std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParameters& params, int sampleRate) {
-    if (!params.type.has_value()) return std::nullopt;
+    if (!params.type.has_value())
+        return std::nullopt;
 
     BiquadType type = params.type.value();
     double fs = static_cast<double>(sampleRate);
@@ -64,7 +98,8 @@ std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParame
     double A = 1.0;
     double alpha = 0.0;
 
-    bool needsW0 = (type != BiquadType::Free && type != BiquadType::GeneralNotch && type != BiquadType::LinkwitzTransform);
+    bool needsW0 =
+        (type != BiquadType::Free && type != BiquadType::GeneralNotch && type != BiquadType::LinkwitzTransform);
 
     if (needsW0) {
         w0 = 2.0 * M_PI * freq / fs;
@@ -290,7 +325,8 @@ double BiquadCoefficients::phaseRad(double f, int sampleRate) const {
     double denIm = -a1 * sinW - a2 * sin2W;
 
     double denMagSq = denRe * denRe + denIm * denIm;
-    if (denMagSq <= 0.0) return 0.0;
+    if (denMagSq <= 0.0)
+        return 0.0;
 
     double hRe = (numRe * denRe + numIm * denIm) / denMagSq;
     double hIm = (numIm * denRe - numRe * denIm) / denMagSq;

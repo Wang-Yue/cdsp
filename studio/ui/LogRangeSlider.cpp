@@ -1,7 +1,9 @@
 #include "ui/LogRangeSlider.h"
+
 #include "ui/StyleTheme.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 LogRangeSlider::LogRangeSlider(QWidget* parent) : QWidget(parent) {
     setFixedHeight(28);
@@ -17,7 +19,8 @@ void LogRangeSlider::setRange(double minFreq, double maxFreq) {
 double LogRangeSlider::posToFreq(int x) const {
     int margin = 10;
     int w = width() - 2 * margin;
-    if (w <= 0) return 20.0;
+    if (w <= 0)
+        return 20.0;
 
     double frac = std::max(0.0, std::min(1.0, static_cast<double>(x - margin) / w));
     double logMin = std::log10(20.0);

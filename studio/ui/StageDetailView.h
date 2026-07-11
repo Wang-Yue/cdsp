@@ -1,21 +1,21 @@
 #ifndef STAGE_DETAIL_VIEW_H
 #define STAGE_DETAIL_VIEW_H
 
+#include "models/DSPEngineController.h"
 #include "models/PipelineStage.h"
 #include "models/PipelineStore.h"
-#include "models/DSPEngineController.h"
-#include "ui/EQDiagramWidget.h"
 #include "ui/ConvolutionIRPlot.h"
+#include "ui/EQDiagramWidget.h"
 
-#include <QWidget>
-#include <QLineEdit>
-#include <QDoubleSpinBox>
-#include <QSpinBox>
-#include <QComboBox>
 #include <QCheckBox>
-#include <QSlider>
-#include <QTableWidget>
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QLabel>
+#include <QLineEdit>
+#include <QSlider>
+#include <QSpinBox>
+#include <QTableWidget>
+#include <QWidget>
 #include <memory>
 
 class VSliderWidget : public QWidget {
@@ -46,12 +46,8 @@ class StageDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    StageDetailView(
-        size_t stageIndex,
-        std::shared_ptr<PipelineStore> pipeline,
-        std::shared_ptr<DSPEngineController> dspController,
-        QWidget* parent = nullptr
-    );
+    StageDetailView(size_t stageIndex, std::shared_ptr<PipelineStore> pipeline,
+                    std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
 
 private slots:
     void refreshUi();

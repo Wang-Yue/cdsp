@@ -1,12 +1,11 @@
 #include "ui/MeasurementPositionRowWidget.h"
+
 #include <QHBoxLayout>
 #include <QStyle>
 
-MeasurementPositionRowWidget::MeasurementPositionRowWidget(
-    const MeasurementPosition& position,
-    MeasurementSession* session,
-    QWidget* parent
-) : QWidget(parent), m_id(position.id), m_session(session) {
+MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosition& position,
+                                                           MeasurementSession* session, QWidget* parent)
+    : QWidget(parent), m_id(position.id), m_session(session) {
 
     auto layout = new QHBoxLayout(this);
     layout->setContentsMargins(4, 2, 4, 2);
@@ -36,12 +35,14 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(
     m_deleteBtn = new QToolButton(this);
     m_deleteBtn->setText("✕");
     m_deleteBtn->setToolTip("Delete this position");
-    m_deleteBtn->setStyleSheet("QToolButton { color: #ff5555; border: none; font-weight: bold; } QToolButton:hover { color: #ff0000; }");
+    m_deleteBtn->setStyleSheet(
+        "QToolButton { color: #ff5555; border: none; font-weight: bold; } QToolButton:hover { color: #ff0000; }");
     layout->addWidget(m_deleteBtn);
 
     // Signal connections
     connect(m_enableCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_session) m_session->togglePosition(m_id);
+        if (m_session)
+            m_session->togglePosition(m_id);
     });
 
     connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {

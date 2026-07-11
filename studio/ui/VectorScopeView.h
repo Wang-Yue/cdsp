@@ -3,8 +3,9 @@
 
 #include "config/DSPConfigTypes.h"
 #include "models/VectorScopeEngine.h"
-#include <QWidget>
+
 #include <QPainter>
+#include <QWidget>
 #include <memory>
 
 class VectorScopeView : public QWidget {

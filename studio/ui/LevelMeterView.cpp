@@ -1,10 +1,12 @@
 #include "ui/LevelMeterView.h"
-#include "ui/StyleTheme.h"
+
 #include "models/MonitoringController.h"
-#include <cmath>
-#include <algorithm>
+#include "ui/StyleTheme.h"
+
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <cmath>
 
 LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(160);
@@ -12,17 +14,21 @@ LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {
 
 void LevelMeterView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_levelState) m_levelState->visibilityCount++;
+    if (m_levelState)
+        m_levelState->visibilityCount++;
 }
 
 void LevelMeterView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_levelState && m_levelState->visibilityCount > 0) m_levelState->visibilityCount--;
+    if (m_levelState && m_levelState->visibilityCount > 0)
+        m_levelState->visibilityCount--;
 }
 
 static float normDB(float db) {
-    if (db < -60.0f) return 0.0f;
-    if (db > 0.0f) return 1.0f;
+    if (db < -60.0f)
+        return 0.0f;
+    if (db > 0.0f)
+        return 1.0f;
     return (db + 60.0f) / 60.0f;
 }
 
@@ -65,7 +71,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     p.drawText(16, 24, m_title);
 
     size_t chCount = std::max(m_rms.size(), m_peak.size());
-    if (chCount == 0) chCount = 2; // Default 2 channels
+    if (chCount == 0)
+        chCount = 2; // Default 2 channels
 
     int barAreaTop = 40;
     int barAreaHeight = h - 60;
@@ -130,11 +137,9 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
 
 // MARK: - CompactLevelMeterBar Implementation
 
-CompactLevelMeterBar::CompactLevelMeterBar(
-    std::shared_ptr<MonitoringController> monitoring,
-    std::shared_ptr<DSPEngineController> dsp,
-    QWidget* parent
-) : QWidget(parent), m_monitoring(monitoring), m_dsp(dsp) {
+CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
+                                           std::shared_ptr<DSPEngineController> dsp, QWidget* parent)
+    : QWidget(parent), m_monitoring(monitoring), m_dsp(dsp) {
     setFixedHeight(36);
     setStyleSheet("background-color: transparent;");
 
@@ -153,23 +158,21 @@ CompactLevelMeterBar::CompactLevelMeterBar(
     layout->addWidget(m_statusDot);
     layout->addWidget(m_statusLabel);
 
-    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
-        update();
-    });
-    connect(m_dsp.get(), &DSPEngineController::statusChanged, this, [this](ProcessingState) {
-        updateState();
-    });
+    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() { update(); });
+    connect(m_dsp.get(), &DSPEngineController::statusChanged, this, [this](ProcessingState) { updateState(); });
     updateState();
 }
 
 void CompactLevelMeterBar::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_monitoring) m_monitoring->levelState.visibilityCount++;
+    if (m_monitoring)
+        m_monitoring->levelState.visibilityCount++;
 }
 
 void CompactLevelMeterBar::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0) m_monitoring->levelState.visibilityCount--;
+    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
+        m_monitoring->levelState.visibilityCount--;
 }
 
 void CompactLevelMeterBar::updateState() {

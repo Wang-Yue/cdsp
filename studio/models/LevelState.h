@@ -2,6 +2,7 @@
 #define LEVEL_STATE_H
 
 #include "config/DSPConfigTypes.h"
+
 #include <vector>
 
 struct LevelState {

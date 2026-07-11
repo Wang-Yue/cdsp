@@ -1,13 +1,14 @@
 #include "models/AutoEqService.h"
-#include <QUrl>
-#include <QNetworkRequest>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QUrlQuery>
-#include <QStandardPaths>
+
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkRequest>
+#include <QStandardPaths>
+#include <QUrl>
+#include <QUrlQuery>
 
 AutoEqService::AutoEqService(QObject* parent) : QObject(parent) {}
 
@@ -27,7 +28,8 @@ bool AutoEqService::loadFromDiskCache(std::vector<AutoEqIndexEntry>& entries) {
     file.close();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject()) return false;
+    if (!doc.isObject())
+        return false;
 
     QJsonObject root = doc.object();
     QJsonArray tree = root["tree"].toArray();
@@ -59,7 +61,8 @@ void AutoEqService::saveToDiskCache(const QByteArray& jsonBytes) {
     }
 }
 
-void AutoEqService::fetchIndex(std::function<void(bool success, const std::vector<AutoEqIndexEntry>& entries)> callback, bool forceRefresh) {
+void AutoEqService::fetchIndex(std::function<void(bool success, const std::vector<AutoEqIndexEntry>& entries)> callback,
+                               bool forceRefresh) {
     if (!forceRefresh && m_isLoaded) {
         callback(true, m_allEntries);
         return;
@@ -127,7 +130,8 @@ void AutoEqService::fetchIndex(std::function<void(bool success, const std::vecto
     });
 }
 
-void AutoEqService::fetchPreset(const AutoEqIndexEntry& entry, std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
+void AutoEqService::fetchPreset(const AutoEqIndexEntry& entry,
+                                std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
     QString downloadPath = QString::fromStdString(entry.path).replace(" ", "%20");
     QString rawUrlStr = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/" + downloadPath;
 

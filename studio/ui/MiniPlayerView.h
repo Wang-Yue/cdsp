@@ -1,34 +1,30 @@
 #ifndef MINI_PLAYER_VIEW_H
 #define MINI_PLAYER_VIEW_H
 
-#include "models/DSPEngineController.h"
 #include "models/AudioSettings.h"
+#include "models/DSPEngineController.h"
 #include "models/MonitoringController.h"
-#include "ui/LevelMeterView.h"
-#include "ui/SpectrumView.h"
-#include "ui/SpectrogramView.h"
-#include "ui/VectorScopeView.h"
 #include "ui/AnalogVUMeterView.h"
+#include "ui/LevelMeterView.h"
+#include "ui/SpectrogramView.h"
+#include "ui/SpectrumView.h"
+#include "ui/VectorScopeView.h"
 
-#include <QWidget>
-#include <QSlider>
-#include <QPushButton>
-#include <QStackedWidget>
 #include <QComboBox>
 #include <QLabel>
 #include <QPoint>
+#include <QPushButton>
+#include <QSlider>
+#include <QStackedWidget>
+#include <QWidget>
 #include <memory>
 
 class MiniPlayerView : public QWidget {
     Q_OBJECT
 
 public:
-    MiniPlayerView(
-        std::shared_ptr<DSPEngineController> dsp,
-        std::shared_ptr<AudioSettings> settings,
-        std::shared_ptr<MonitoringController> monitoring,
-        QWidget* parent = nullptr
-    );
+    MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
+                   std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;

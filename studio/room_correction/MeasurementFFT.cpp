@@ -1,4 +1,5 @@
 #include "room_correction/MeasurementFFT.h"
+
 #include <cmath>
 #include <stdexcept>
 
@@ -16,11 +17,13 @@ bool MeasurementFFT::isPowerOfTwo(size_t n) {
 
 size_t MeasurementFFT::nextPowerOfTwo(size_t n) {
     size_t p = 1;
-    while (p < n) p <<= 1;
+    while (p < n)
+        p <<= 1;
     return p;
 }
 
-void MeasurementFFT::fftComplex(const std::vector<std::complex<double>>& input, std::vector<std::complex<double>>& output, bool isInverse) {
+void MeasurementFFT::fftComplex(const std::vector<std::complex<double>>& input,
+                                std::vector<std::complex<double>>& output, bool isInverse) {
     size_t n = input.size();
     if (!isPowerOfTwo(n)) {
         size_t p = nextPowerOfTwo(n);
@@ -35,7 +38,8 @@ void MeasurementFFT::fftComplex(const std::vector<std::complex<double>>& input, 
     // Bit reversal permutation
     size_t j = 0;
     for (size_t i = 0; i < n - 1; ++i) {
-        if (i < j) std::swap(output[i], output[j]);
+        if (i < j)
+            std::swap(output[i], output[j]);
         size_t k = n >> 1;
         while (k <= j) {
             j -= k;
@@ -67,7 +71,8 @@ void MeasurementFFT::fftComplex(const std::vector<std::complex<double>>& input, 
     }
 }
 
-void MeasurementFFT::forward(const std::vector<double>& realInput, std::vector<double>& outReal, std::vector<double>& outImag) {
+void MeasurementFFT::forward(const std::vector<double>& realInput, std::vector<double>& outReal,
+                             std::vector<double>& outImag) {
     size_t n = realInput.size();
     if (!isPowerOfTwo(n)) {
         size_t p = nextPowerOfTwo(n);
@@ -78,7 +83,8 @@ void MeasurementFFT::forward(const std::vector<double>& realInput, std::vector<d
     }
 
     std::vector<std::complex<double>> cIn(n);
-    for (size_t i = 0; i < n; ++i) cIn[i] = realInput[i];
+    for (size_t i = 0; i < n; ++i)
+        cIn[i] = realInput[i];
 
     std::vector<std::complex<double>> cOut;
     fftComplex(cIn, cOut, false);
@@ -93,7 +99,8 @@ void MeasurementFFT::forward(const std::vector<double>& realInput, std::vector<d
     }
 }
 
-void MeasurementFFT::inverse(const std::vector<double>& inReal, const std::vector<double>& inImag, std::vector<double>& outReal) {
+void MeasurementFFT::inverse(const std::vector<double>& inReal, const std::vector<double>& inImag,
+                             std::vector<double>& outReal) {
     size_t bins = inReal.size();
     size_t n = (bins - 1) * 2;
 

@@ -1,17 +1,14 @@
 #include "ui/OratoryPresetPickerDlg.h"
-#include "ui/StyleTheme.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QMessageBox>
 
-#include "ui/OratoryPresetPickerDlg.h"
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
+
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QRegularExpression>
+#include <QVBoxLayout>
 
-OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline,
+                                               std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline), m_dspController(dspController) {
     setWindowTitle("Oratory1990 Headphone EQ Explorer");
     resize(620, 520);
@@ -60,7 +57,8 @@ void OratoryPresetPickerDlg::setupUi() {
     btnLayout->addStretch();
 
     m_importBtn = new QPushButton("Import Selected Preset", this);
-    m_importBtn->setStyleSheet("background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
+    m_importBtn->setStyleSheet(
+        "background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
     m_importBtn->setEnabled(false);
     connect(m_importBtn, &QPushButton::clicked, this, &OratoryPresetPickerDlg::onImportClicked);
     btnLayout->addWidget(m_importBtn);
@@ -71,22 +69,23 @@ void OratoryPresetPickerDlg::setupUi() {
 
     mainLayout->addLayout(btnLayout);
 
-    connect(m_listWidget, &QListWidget::itemSelectionChanged, [this]() {
-        m_importBtn->setEnabled(!m_listWidget->selectedItems().isEmpty());
-    });
+    connect(m_listWidget, &QListWidget::itemSelectionChanged,
+            [this]() { m_importBtn->setEnabled(!m_listWidget->selectedItems().isEmpty()); });
 }
 
 void OratoryPresetPickerDlg::loadIndex(bool forceRefresh) {
-    m_service.fetchIndex([this](bool ok, const std::vector<OratoryIndexEntry>& entries) {
-        if (ok) {
-            m_entries = entries;
-            m_statusLabel->setText(QString("Loaded %1 Oratory presets.").arg(entries.size()));
-            m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
-            onSearchTextChanged(m_searchEdit->text());
-        } else {
-            m_statusLabel->setText("Failed to load Oratory1990 index.");
-        }
-    }, forceRefresh);
+    m_service.fetchIndex(
+        [this](bool ok, const std::vector<OratoryIndexEntry>& entries) {
+            if (ok) {
+                m_entries = entries;
+                m_statusLabel->setText(QString("Loaded %1 Oratory presets.").arg(entries.size()));
+                m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
+                onSearchTextChanged(m_searchEdit->text());
+            } else {
+                m_statusLabel->setText("Failed to load Oratory1990 index.");
+            }
+        },
+        forceRefresh);
 }
 
 void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
@@ -116,7 +115,8 @@ void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
     }
 
     if (tokens.isEmpty()) {
-        m_statusLabel->setText(QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
+        m_statusLabel->setText(
+            QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
     } else {
         m_statusLabel->setText(QString("Found %1 of %2 matching headphones.").arg(count).arg(m_entries.size()));
     }
@@ -124,7 +124,8 @@ void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
 
 void OratoryPresetPickerDlg::onImportClicked() {
     auto items = m_listWidget->selectedItems();
-    if (items.isEmpty()) return;
+    if (items.isEmpty())
+        return;
 
     int idx = items[0]->data(Qt::UserRole).toInt();
     const auto& entry = m_entries[idx];
@@ -178,11 +179,12 @@ void OratoryPresetPickerDlg::onImportClicked() {
                 m_dspController->applyConfig();
             }
 
-            QMessageBox::information(this, "Success", QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(p.name)));
+            QMessageBox::information(
+                this, "Success",
+                QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(p.name)));
             accept();
         } else {
             m_statusLabel->setText("Failed to download preset.");
         }
     });
 }
-

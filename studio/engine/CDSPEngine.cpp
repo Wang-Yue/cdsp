@@ -1,6 +1,7 @@
 #include "engine/CDSPEngine.h"
-#include <iostream>
+
 #include <cstring>
+#include <iostream>
 
 CDSPEngine::CDSPEngine() {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -17,18 +18,24 @@ CDSPEngine::~CDSPEngine() {
 
 fader_t CDSPEngine::faderToCFader(Fader fader) {
     switch (fader) {
-    case Fader::Main: return FADER_MAIN;
-    case Fader::Aux1: return FADER_AUX1;
-    case Fader::Aux2: return FADER_AUX2;
-    case Fader::Aux3: return FADER_AUX3;
-    case Fader::Aux4: return FADER_AUX4;
+    case Fader::Main:
+        return FADER_MAIN;
+    case Fader::Aux1:
+        return FADER_AUX1;
+    case Fader::Aux2:
+        return FADER_AUX2;
+    case Fader::Aux3:
+        return FADER_AUX3;
+    case Fader::Aux4:
+        return FADER_AUX4;
     }
     return FADER_MAIN;
 }
 
 bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_engine) return false;
+    if (!m_engine)
+        return false;
 
     audio_backend_error_t err;
     memset(&err, 0, sizeof(err));
@@ -79,21 +86,38 @@ bool CDSPEngine::isFaderMuted(Fader fader) const {
 StateUpdate CDSPEngine::getStatus() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     StateUpdate res;
-    if (!m_engine) return res;
+    if (!m_engine)
+        return res;
 
     state_update_t st = dsp_engine_get_status(m_engine);
     switch (st.state) {
-    case PROCESSING_STATE_RUNNING: res.state = ProcessingState::Running; break;
-    case PROCESSING_STATE_PAUSED: res.state = ProcessingState::Paused; break;
-    case PROCESSING_STATE_INACTIVE: res.state = ProcessingState::Inactive; break;
-    case PROCESSING_STATE_STARTING: res.state = ProcessingState::Starting; break;
-    case PROCESSING_STATE_STALLED: res.state = ProcessingState::Stalled; break;
-    default: res.state = ProcessingState::Inactive; break;
+    case PROCESSING_STATE_RUNNING:
+        res.state = ProcessingState::Running;
+        break;
+    case PROCESSING_STATE_PAUSED:
+        res.state = ProcessingState::Paused;
+        break;
+    case PROCESSING_STATE_INACTIVE:
+        res.state = ProcessingState::Inactive;
+        break;
+    case PROCESSING_STATE_STARTING:
+        res.state = ProcessingState::Starting;
+        break;
+    case PROCESSING_STATE_STALLED:
+        res.state = ProcessingState::Stalled;
+        break;
+    default:
+        res.state = ProcessingState::Inactive;
+        break;
     }
 
     switch (st.stop_reason.type) {
-    case STOP_REASON_NONE: res.stopReason.type = StopReasonType::None; break;
-    case STOP_REASON_DONE: res.stopReason.type = StopReasonType::Done; break;
+    case STOP_REASON_NONE:
+        res.stopReason.type = StopReasonType::None;
+        break;
+    case STOP_REASON_DONE:
+        res.stopReason.type = StopReasonType::Done;
+        break;
     case STOP_REASON_CAPTURE_ERROR:
         res.stopReason.type = StopReasonType::CaptureError;
         res.stopReason.message = st.stop_reason.message;
@@ -125,7 +149,8 @@ StateUpdate CDSPEngine::getStatus() const {
 VuLevels CDSPEngine::getVuLevels() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     VuLevels res;
-    if (!m_engine) return res;
+    if (!m_engine)
+        return res;
 
     vu_levels_t levels = dsp_engine_get_vu_levels(m_engine);
     for (size_t i = 0; i < levels.playback_channels; ++i) {
@@ -141,9 +166,11 @@ VuLevels CDSPEngine::getVuLevels() const {
     return res;
 }
 
-bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins, SpectrumData& outSpectrum) const {
+bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins,
+                             SpectrumData& outSpectrum) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_engine) return false;
+    if (!m_engine)
+        return false;
 
     spectrum_result_t res;
     memset(&res, 0, sizeof(res));
@@ -159,12 +186,14 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
 
 bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& outSamples) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_engine) return false;
+    if (!m_engine)
+        return false;
 
     audio_backend_error_t err;
     memset(&err, 0, sizeof(err));
     audio_samples_t* res = dsp_engine_get_samples(m_engine, isCapture, nFrames, &err);
-    if (!res) return false;
+    if (!res)
+        return false;
 
     outSamples.channels.clear();
     for (size_t ch = 0; ch < res->channels_count; ++ch) {
@@ -184,7 +213,8 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
 std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& backend, bool input) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<AudioDevice> result;
-    if (!m_engine) return result;
+    if (!m_engine)
+        return result;
 
     audio_device_t devs[32];
     memset(devs, 0, sizeof(devs));
@@ -197,14 +227,18 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
     return result;
 }
 
-std::optional<AudioDeviceDescriptor> CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
+std::optional<AudioDeviceDescriptor>
+CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_engine) return std::nullopt;
+    if (!m_engine)
+        return std::nullopt;
 
     device_error_t devErr;
     memset(&devErr, 0, sizeof(devErr));
-    audio_device_descriptor_t* desc = dsp_engine_get_device_capabilities(backend.c_str(), device.c_str(), isCapture, &devErr);
-    if (!desc) return std::nullopt;
+    audio_device_descriptor_t* desc =
+        dsp_engine_get_device_capabilities(backend.c_str(), device.c_str(), isCapture, &devErr);
+    if (!desc)
+        return std::nullopt;
 
     AudioDeviceDescriptor res;
     res.name = desc->name;

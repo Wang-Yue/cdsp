@@ -1,10 +1,11 @@
 #include "ui/VisualizerDetailViews.h"
+
 #include "ui/StyleTheme.h"
 
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
 // ==================== AnalogVUDetailView ====================
 
@@ -49,7 +50,8 @@ void AnalogVUDetailView::setupUi() {
 
     // VU Meter Center Display
     m_vuMeter = new AnalogVUMeterView(this);
-    if (m_monitoring) m_vuMeter->setLevelState(&m_monitoring->levelState);
+    if (m_monitoring)
+        m_vuMeter->setLevelState(&m_monitoring->levelState);
     m_vuMeter->setVUSettings(m_settings);
     mainLayout->addWidget(m_vuMeter, 1);
 
@@ -208,7 +210,8 @@ void AnalogVUDetailView::refreshUi() {
 
 // ==================== SpectrumDetailView ====================
 
-SpectrumDetailView::SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent)
+SpectrumDetailView::SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine,
+                                       std::shared_ptr<AudioDeviceManager> devices, QWidget* parent)
     : QWidget(parent), m_engine(engine), m_devices(devices) {
     setupUi();
 }
@@ -233,7 +236,8 @@ void SpectrumDetailView::setupUi() {
         int count = 8;
         if (m_devices) {
             int ch = m_engine->isCapture ? m_devices->captureConfig.channels : m_devices->playbackConfig.channels;
-            if (ch > 0) count = std::max(2, ch);
+            if (ch > 0)
+                count = std::max(2, ch);
         }
         for (int i = 0; i < count; ++i) {
             m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
@@ -258,7 +262,9 @@ void SpectrumDetailView::setupUi() {
         updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
         m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
-        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)));
+        m_rangeLbl->setText(QString("Range: %1 - %2 Hz")
+                                .arg(static_cast<int>(m_engine->minFreq))
+                                .arg(static_cast<int>(m_engine->maxFreq)));
         m_spectrumView->update();
     });
     headerBox->addWidget(resetBtn);
@@ -280,8 +286,10 @@ void SpectrumDetailView::setupUi() {
     rowLayout->addWidget(new QLabel("Channel:", panelGroup));
     updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (idx == 0) m_engine->channel.reset();
-        else m_engine->channel = idx - 1;
+        if (idx == 0)
+            m_engine->channel.reset();
+        else
+            m_engine->channel = idx - 1;
         m_spectrumView->update();
     });
     rowLayout->addWidget(m_channelCombo);
@@ -296,7 +304,9 @@ void SpectrumDetailView::setupUi() {
     });
     rowLayout->addWidget(m_binsSpin);
 
-    m_rangeLbl = new QLabel(QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)), panelGroup);
+    m_rangeLbl = new QLabel(
+        QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)),
+        panelGroup);
     rowLayout->addWidget(m_rangeLbl);
 
     m_rangeSlider = new LogRangeSlider(panelGroup);
@@ -315,7 +325,8 @@ void SpectrumDetailView::setupUi() {
 
 // ==================== SpectrogramDetailView ====================
 
-SpectrogramDetailView::SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> engine, std::shared_ptr<AudioDeviceManager> devices, QWidget* parent)
+SpectrogramDetailView::SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> engine,
+                                             std::shared_ptr<AudioDeviceManager> devices, QWidget* parent)
     : QWidget(parent), m_engine(engine), m_devices(devices) {
     setupUi();
 }
@@ -340,7 +351,8 @@ void SpectrogramDetailView::setupUi() {
         int count = 8;
         if (m_devices) {
             int ch = m_engine->isCapture ? m_devices->captureConfig.channels : m_devices->playbackConfig.channels;
-            if (ch > 0) count = std::max(2, ch);
+            if (ch > 0)
+                count = std::max(2, ch);
         }
         for (int i = 0; i < count; ++i) {
             m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
@@ -386,8 +398,10 @@ void SpectrogramDetailView::setupUi() {
     rowLayout->addWidget(new QLabel("Channel:", panelGroup));
     updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (idx == 0) m_engine->channel.reset();
-        else m_engine->channel = idx - 1;
+        if (idx == 0)
+            m_engine->channel.reset();
+        else
+            m_engine->channel = idx - 1;
         m_spectrogramView->update();
     });
     rowLayout->addWidget(m_channelCombo);

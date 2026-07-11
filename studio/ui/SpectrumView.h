@@ -3,8 +3,9 @@
 
 #include "config/DSPConfigTypes.h"
 #include "models/SpectrumEngine.h"
-#include <QWidget>
+
 #include <QPainter>
+#include <QWidget>
 #include <memory>
 
 class SpectrumView : public QWidget {

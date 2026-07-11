@@ -1,19 +1,14 @@
 #include "room_correction/SweepGenerator.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-std::vector<double> SweepGenerator::generate(
-    double f1,
-    double f2,
-    double durationSeconds,
-    int sampleRate,
-    double fadeInSeconds,
-    double fadeOutSeconds
-) {
+std::vector<double> SweepGenerator::generate(double f1, double f2, double durationSeconds, int sampleRate,
+                                             double fadeInSeconds, double fadeOutSeconds) {
     size_t n = static_cast<size_t>(std::round(durationSeconds * static_cast<double>(sampleRate)));
     double actualT = static_cast<double>(n) / static_cast<double>(sampleRate);
     double r = std::log(f2 / f1) / actualT;
@@ -34,12 +29,7 @@ std::vector<double> SweepGenerator::generate(
     return sweep;
 }
 
-std::vector<double> SweepGenerator::inverseFilter(
-    double f1,
-    double f2,
-    double durationSeconds,
-    int sampleRate
-) {
+std::vector<double> SweepGenerator::inverseFilter(double f1, double f2, double durationSeconds, int sampleRate) {
     std::vector<double> sweep = generate(f1, f2, durationSeconds, sampleRate, 0.0, 0.0);
     size_t n = sweep.size();
     double actualT = static_cast<double>(n) / static_cast<double>(sampleRate);
@@ -54,17 +44,12 @@ std::vector<double> SweepGenerator::inverseFilter(
     return inv;
 }
 
-std::pair<std::vector<double>, std::vector<double>> SweepGenerator::sweepAndInverse(
-    double f1,
-    double f2,
-    double durationSeconds,
-    int sampleRate,
-    double fadeInSeconds,
-    double fadeOutSeconds
-) {
+std::pair<std::vector<double>, std::vector<double>>
+SweepGenerator::sweepAndInverse(double f1, double f2, double durationSeconds, int sampleRate, double fadeInSeconds,
+                                double fadeOutSeconds) {
     auto sw = generate(f1, f2, durationSeconds, sampleRate, fadeInSeconds, fadeOutSeconds);
     auto inv = inverseFilter(f1, f2, durationSeconds, sampleRate);
-    return { sw, inv };
+    return {sw, inv};
 }
 
 void SweepGenerator::applyTapers(std::vector<double>& buffer, size_t fadeInSamples, size_t fadeOutSamples) {

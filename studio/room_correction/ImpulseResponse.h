@@ -1,8 +1,8 @@
 #ifndef IMPULSE_RESPONSE_H
 #define IMPULSE_RESPONSE_H
 
-#include <vector>
 #include <cstddef>
+#include <vector>
 
 struct RT60Result {
     double t20 = 0.0;

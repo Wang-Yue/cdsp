@@ -1,12 +1,12 @@
 #ifndef CONVOLUTION_PRESET_H
 #define CONVOLUTION_PRESET_H
 
-#include <string>
-#include <map>
-#include <vector>
-#include <optional>
-#include <QUuid>
 #include <QJsonObject>
+#include <QUuid>
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
 
 class ConvolutionPreset {
 public:
@@ -17,7 +17,8 @@ public:
     std::string kindLabelStr = "User IR";
 
     ConvolutionPreset();
-    ConvolutionPreset(const std::string& name, const std::map<int, std::string>& irPaths, int taps, const std::string& kindLabel = "User IR");
+    ConvolutionPreset(const std::string& name, const std::map<int, std::string>& irPaths, int taps,
+                      const std::string& kindLabel = "User IR");
 
     std::string irPath(int sampleRate) const;
     std::vector<int> availableSampleRates() const;

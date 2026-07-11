@@ -2,6 +2,7 @@
 #define GROUP_DELAY_PLOT_WIDGET_H
 
 #include "room_correction/MeasurementSession.h"
+
 #include <QWidget>
 
 class GroupDelayPlotWidget : public QWidget {

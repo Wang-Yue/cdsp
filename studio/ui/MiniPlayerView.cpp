@@ -1,23 +1,23 @@
 #include "ui/MiniPlayerView.h"
+
 #include "ui/StyleTheme.h"
-#include <QVBoxLayout>
+
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QScrollArea>
 #include <QStyleOption>
-#include <QPainter>
+#include <QVBoxLayout>
 
-MiniPlayerView::MiniPlayerView(
-    std::shared_ptr<DSPEngineController> dsp,
-    std::shared_ptr<AudioSettings> settings,
-    std::shared_ptr<MonitoringController> monitoring,
-    QWidget* parent
-) : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint),
-    m_dsp(dsp), m_settings(settings), m_monitoring(monitoring) {
+MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
+                               std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
+    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), m_dsp(dsp),
+      m_settings(settings), m_monitoring(monitoring) {
 
     setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.15); }");
+    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; "
+                  "border: 1px solid rgba(255, 255, 255, 0.15); }");
     setObjectName("MiniPlayerViewWindow");
     resize(380, 130);
 
@@ -25,20 +25,23 @@ MiniPlayerView::MiniPlayerView(
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
     connect(m_dsp.get(), &DSPEngineController::statusChanged, this, &MiniPlayerView::updateEngineStatus);
     if (m_settings) {
-        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
-            onFaderChanged(0);
-        });
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() { onFaderChanged(0); });
     }
 }
 
 Fader MiniPlayerView::currentFader() const {
     int idx = m_faderCombo ? m_faderCombo->currentIndex() : 0;
     switch (idx) {
-    case 1: return Fader::Aux1;
-    case 2: return Fader::Aux2;
-    case 3: return Fader::Aux3;
-    case 4: return Fader::Aux4;
-    default: return Fader::Main;
+    case 1:
+        return Fader::Aux1;
+    case 2:
+        return Fader::Aux2;
+    case 3:
+        return Fader::Aux3;
+    case 4:
+        return Fader::Aux4;
+    default:
+        return Fader::Main;
     }
 }
 
@@ -65,7 +68,8 @@ void MiniPlayerView::onFaderChanged(int index) {
     m_volSlider->setValue(static_cast<int>(vol * 2.0f));
     m_volSlider->blockSignals(false);
     m_volValueLabel->setText(QString(vol > 0.0f ? "+%1 dB" : "%1 dB").arg(vol, 0, 'f', 1));
-    m_volValueLabel->setStyleSheet(vol > 0.0f ? "color: #ff3b30; font-weight: bold;" : "color: #8e8e93; font-weight: bold;");
+    m_volValueLabel->setStyleSheet(vol > 0.0f ? "color: #ff3b30; font-weight: bold;"
+                                              : "color: #8e8e93; font-weight: bold;");
     m_muteBtn->setText(muted ? "🔇" : "🔊");
 }
 
@@ -81,15 +85,18 @@ void MiniPlayerView::updateEngineStatus(ProcessingState state) {
 
 void MiniPlayerView::buildMiniPipelineUi() {
     auto layout = qobject_cast<QHBoxLayout*>(m_pipelineMiniCard->layout());
-    if (!layout) return;
+    if (!layout)
+        return;
 
     QLayoutItem* item;
     while ((item = layout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
+        if (item->widget())
+            item->widget()->deleteLater();
         delete item;
     }
 
-    if (!m_dsp || !m_dsp->pipelineStore()) return;
+    if (!m_dsp || !m_dsp->pipelineStore())
+        return;
 
     // Resampler chip button
     bool resampEnabled = m_settings ? m_settings->resamplerEnabled : false;
@@ -97,8 +104,12 @@ void MiniPlayerView::buildMiniPipelineUi() {
     resampChip->setCheckable(true);
     resampChip->setChecked(resampEnabled);
     auto updateResampStyle = [resampChip](bool chk) {
-        if (chk) resampChip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; padding: 2px 6px; font-weight: bold;");
-        else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
+        if (chk)
+            resampChip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; "
+                                      "padding: 2px 6px; font-weight: bold;");
+        else
+            resampChip->setStyleSheet(
+                "background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
     };
     updateResampStyle(resampEnabled);
     connect(resampChip, &QPushButton::clicked, [this, resampChip, updateResampStyle]() {
@@ -122,8 +133,12 @@ void MiniPlayerView::buildMiniPipelineUi() {
         chip->setChecked(stage.isEnabled);
 
         auto updateStyle = [chip](bool chk) {
-            if (chk) chip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; padding: 2px 6px; font-weight: bold;");
-            else chip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
+            if (chk)
+                chip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; "
+                                    "padding: 2px 6px; font-weight: bold;");
+            else
+                chip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; "
+                                    "padding: 2px 6px;");
         };
         updateStyle(stage.isEnabled);
 
@@ -156,8 +171,10 @@ void MiniPlayerView::setupUi() {
     m_playStopBtn = new QPushButton("▶", this);
     m_playStopBtn->setFixedSize(22, 22);
     connect(m_playStopBtn, &QPushButton::clicked, [this]() {
-        if (m_dsp->status == ProcessingState::Running) m_dsp->stopEngine();
-        else m_dsp->startEngine();
+        if (m_dsp->status == ProcessingState::Running)
+            m_dsp->stopEngine();
+        else
+            m_dsp->startEngine();
     });
     topBar->addWidget(m_playStopBtn);
 
@@ -185,7 +202,8 @@ void MiniPlayerView::setupUi() {
         float db = val / 2.0f;
         m_dsp->setFaderVolume(f, db);
         m_volValueLabel->setText(QString(db > 0.0f ? "+%1 dB" : "%1 dB").arg(db, 0, 'f', 1));
-        m_volValueLabel->setStyleSheet(db > 0.0f ? "color: #ff3b30; font-weight: bold;" : "color: #8e8e93; font-weight: bold;");
+        m_volValueLabel->setStyleSheet(db > 0.0f ? "color: #ff3b30; font-weight: bold;"
+                                                 : "color: #8e8e93; font-weight: bold;");
     });
 
     topBar->addWidget(m_volSlider);
@@ -195,7 +213,10 @@ void MiniPlayerView::setupUi() {
     auto pipeBtn = new QPushButton("🔄", this);
     pipeBtn->setToolTip("Pipeline Overview");
     pipeBtn->setFixedSize(24, 22);
-    connect(pipeBtn, &QPushButton::clicked, [this]() { buildMiniPipelineUi(); m_viewStack->setCurrentIndex(0); });
+    connect(pipeBtn, &QPushButton::clicked, [this]() {
+        buildMiniPipelineUi();
+        m_viewStack->setCurrentIndex(0);
+    });
     topBar->addWidget(pipeBtn);
 
     auto specBtn = new QPushButton("📈", this);
@@ -251,12 +272,14 @@ void MiniPlayerView::setupUi() {
 
     // Mode 2: Analog VU
     m_analogVUView = new AnalogVUMeterView(this);
-    if (m_monitoring) m_analogVUView->setLevelState(&m_monitoring->levelState);
+    if (m_monitoring)
+        m_analogVUView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_analogVUView);
 
     // Mode 3: Level Meters
     m_metersView = new LevelMeterView(this);
-    if (m_monitoring) m_metersView->setLevelState(&m_monitoring->levelState);
+    if (m_monitoring)
+        m_metersView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_metersView);
 
     // Mode 4: Spectrogram
@@ -286,7 +309,8 @@ void MiniPlayerView::paintEvent(QPaintEvent* event) {
 }
 
 void MiniPlayerView::refreshMeters() {
-    if (!m_monitoring) return;
+    if (!m_monitoring)
+        return;
     const auto& st = m_monitoring->levelState;
     if (m_metersView) {
         m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
@@ -300,9 +324,11 @@ void MiniPlayerView::refreshMeters() {
         m_spectrumView->setSpectrum(m_monitoring->spectrumEngine()->data);
     }
     if (m_spectrogramView && m_monitoring->spectrogramEngine()) {
-        m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history, m_monitoring->spectrogramEngine()->show3D);
+        m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history,
+                                      m_monitoring->spectrogramEngine()->show3D);
     }
     if (m_vectorScopeView && m_monitoring->vectorScopeEngine()) {
-        m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples, m_monitoring->vectorScopeEngine()->showParticles);
+        m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples,
+                                      m_monitoring->vectorScopeEngine()->showParticles);
     }
 }

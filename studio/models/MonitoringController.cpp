@@ -1,18 +1,12 @@
 #include "models/MonitoringController.h"
 
-MonitoringController::MonitoringController(
-    std::shared_ptr<CDSPEngine> engine,
-    std::shared_ptr<DSPEngineController> dspController,
-    std::shared_ptr<SpectrumEngine> spectrumEngine,
-    std::shared_ptr<SpectrogramEngine> spectrogramEngine,
-    std::shared_ptr<VectorScopeEngine> vectorScopeEngine,
-    QObject* parent
-) : QObject(parent),
-    m_engine(engine),
-    m_dspController(dspController),
-    m_spectrumEngine(spectrumEngine),
-    m_spectrogramEngine(spectrogramEngine),
-    m_vectorScopeEngine(vectorScopeEngine) {
+MonitoringController::MonitoringController(std::shared_ptr<CDSPEngine> engine,
+                                           std::shared_ptr<DSPEngineController> dspController,
+                                           std::shared_ptr<SpectrumEngine> spectrumEngine,
+                                           std::shared_ptr<SpectrogramEngine> spectrogramEngine,
+                                           std::shared_ptr<VectorScopeEngine> vectorScopeEngine, QObject* parent)
+    : QObject(parent), m_engine(engine), m_dspController(dspController), m_spectrumEngine(spectrumEngine),
+      m_spectrogramEngine(spectrogramEngine), m_vectorScopeEngine(vectorScopeEngine) {
 
     connect(&m_pollTimer, &QTimer::timeout, this, &MonitoringController::onPollTimer);
     m_pollTimer.setInterval(33); // ~30 FPS polling
@@ -34,9 +28,12 @@ void MonitoringController::onPollTimer() {
         size_t capCh = m_dspController->devices() ? m_dspController->devices()->captureConfig.channels : 2;
         size_t pbCh = m_dspController->devices() ? m_dspController->devices()->playbackConfig.channels : 2;
         levelState.reset(capCh, pbCh);
-        if (m_spectrumEngine) m_spectrumEngine->reset();
-        if (m_spectrogramEngine) m_spectrogramEngine->reset();
-        if (m_vectorScopeEngine) m_vectorScopeEngine->reset();
+        if (m_spectrumEngine)
+            m_spectrumEngine->reset();
+        if (m_spectrogramEngine)
+            m_spectrogramEngine->reset();
+        if (m_vectorScopeEngine)
+            m_vectorScopeEngine->reset();
         emit levelsUpdated();
         return;
     }
@@ -52,7 +49,8 @@ void MonitoringController::onPollTimer() {
     if (m_spectrumEngine && m_spectrumEngine->visibilityCount > 0) {
         SpectrumData specData;
         int specCh = m_spectrumEngine->channel.value_or(-1);
-        if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq, m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
+        if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq,
+                                  m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
             m_spectrumEngine->update(specData);
         } else {
             m_spectrumEngine->reset();
@@ -63,7 +61,8 @@ void MonitoringController::onPollTimer() {
     if (m_spectrogramEngine && m_spectrogramEngine->visibilityCount > 0) {
         SpectrumData spectroData;
         int spectroCh = m_spectrogramEngine->channel.value_or(-1);
-        if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq, m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
+        if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq,
+                                  m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
             m_spectrogramEngine->pushSpectrum(spectroData);
         } else {
             m_spectrogramEngine->reset();

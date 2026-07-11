@@ -2,9 +2,10 @@
 #define SPECTRUM_ENGINE_H
 
 #include "config/DSPConfigTypes.h"
+
 #include <QObject>
-#include <vector>
 #include <optional>
+#include <vector>
 
 class SpectrumEngine : public QObject {
     Q_OBJECT

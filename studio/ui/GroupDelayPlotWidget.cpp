@@ -1,9 +1,11 @@
 #include "ui/GroupDelayPlotWidget.h"
+
 #include "ui/StyleTheme.h"
+
 #include <QPainter>
 #include <QPainterPath>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 GroupDelayPlotWidget::GroupDelayPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
@@ -33,7 +35,8 @@ double GroupDelayPlotWidget::autoScaleMs(const FrequencyResponse& fr, const std:
             inBand.push_back(std::abs(gd[k]));
         }
     }
-    if (inBand.empty()) return 5.0;
+    if (inBand.empty())
+        return 5.0;
 
     std::sort(inBand.begin(), inBand.end());
     double p95 = inBand[static_cast<size_t>(static_cast<double>(inBand.size()) * 0.95)];
@@ -89,7 +92,8 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     for (size_t k = 1; k < bins; ++k) {
         double f = fr.frequency(k);
-        if (f < 20.0 || f > 20000.0 || k >= gd.size()) continue;
+        if (f < 20.0 || f > 20000.0 || k >= gd.size())
+            continue;
         double gdMs = gd[k] * 1000.0;
         double x = freqToX(f, w);
         double y = h * (0.5 - 0.5 * (gdMs / scaleMs));

@@ -1,29 +1,26 @@
 #ifndef RESAMPLER_DETAIL_VIEW_H
 #define RESAMPLER_DETAIL_VIEW_H
 
-#include "models/AudioSettings.h"
 #include "models/AudioDeviceManager.h"
+#include "models/AudioSettings.h"
 #include "models/DSPEngineController.h"
-#include <QWidget>
-#include <QComboBox>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
+
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
-#include <QFormLayout>
+#include <QSpinBox>
+#include <QWidget>
 #include <memory>
 
 class ResamplerDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    ResamplerDetailView(
-        std::shared_ptr<AudioSettings> settings,
-        std::shared_ptr<AudioDeviceManager> devices = nullptr,
-        std::shared_ptr<DSPEngineController> dspController = nullptr,
-        QWidget* parent = nullptr
-    );
+    ResamplerDetailView(std::shared_ptr<AudioSettings> settings, std::shared_ptr<AudioDeviceManager> devices = nullptr,
+                        std::shared_ptr<DSPEngineController> dspController = nullptr, QWidget* parent = nullptr);
 
 private slots:
     void refreshUi();

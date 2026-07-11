@@ -2,8 +2,9 @@
 #define WATERFALL_PLOT_WIDGET_H
 
 #include "room_correction/FrequencyResponse.h"
-#include <QWidget>
+
 #include <QPainter>
+#include <QWidget>
 #include <vector>
 
 class WaterfallPlotWidget : public QWidget {

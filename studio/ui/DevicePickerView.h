@@ -1,31 +1,29 @@
 #ifndef DEVICE_PICKER_VIEW_H
 #define DEVICE_PICKER_VIEW_H
 
-#include <QWidget>
-#include <QLabel>
-#include <QComboBox>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
-#include <QCheckBox>
-#include <QPushButton>
-#include <QLineEdit>
-#include <QListWidget>
-#include <QStackedWidget>
-#include <QSlider>
-#include <memory>
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QPushButton>
+#include <QSlider>
+#include <QSpinBox>
+#include <QStackedWidget>
+#include <QWidget>
+#include <memory>
 
 class DevicePickerView : public QWidget {
     Q_OBJECT
     Q_DISABLE_COPY(DevicePickerView)
 
 public:
-    DevicePickerView(
-        std::shared_ptr<AudioDeviceManager> devices,
-        std::shared_ptr<AudioSettings> settings,
-        QWidget* parent = nullptr
-    );
+    DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, std::shared_ptr<AudioSettings> settings,
+                     QWidget* parent = nullptr);
 
 private slots:
     void refreshUi();
@@ -127,12 +125,8 @@ private:
     static QString formatSampleRate(int rate);
     void updateDoPCapability();
     void updateLatencyText();
-    void populateDeviceCombo(
-        QComboBox* combo,
-        QWidget* warningWidget,
-        const std::vector<AudioDevice>& devices,
-        const std::optional<std::string>& selectedDeviceName
-    );
+    void populateDeviceCombo(QComboBox* combo, QWidget* warningWidget, const std::vector<AudioDevice>& devices,
+                             const std::optional<std::string>& selectedDeviceName);
 };
 
 #endif // DEVICE_PICKER_VIEW_H

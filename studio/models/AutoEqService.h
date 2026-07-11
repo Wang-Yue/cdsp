@@ -2,12 +2,13 @@
 #define AUTO_EQ_SERVICE_H
 
 #include "models/EQPreset.h"
-#include <QObject>
+
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
-#include <vector>
-#include <string>
+#include <QObject>
 #include <functional>
+#include <string>
+#include <vector>
 
 struct AutoEqIndexEntry {
     std::string name;
@@ -20,8 +21,10 @@ class AutoEqService : public QObject {
 public:
     explicit AutoEqService(QObject* parent = nullptr);
 
-    void fetchIndex(std::function<void(bool success, const std::vector<AutoEqIndexEntry>& entries)> callback, bool forceRefresh = false);
-    void fetchPreset(const AutoEqIndexEntry& entry, std::function<void(bool success, std::optional<EQPreset> preset)> callback);
+    void fetchIndex(std::function<void(bool success, const std::vector<AutoEqIndexEntry>& entries)> callback,
+                    bool forceRefresh = false);
+    void fetchPreset(const AutoEqIndexEntry& entry,
+                     std::function<void(bool success, std::optional<EQPreset> preset)> callback);
 
 private:
     QNetworkAccessManager m_networkManager;

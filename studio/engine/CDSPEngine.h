@@ -4,15 +4,15 @@
 #ifdef __APPLE__
 #include <Accelerate/Accelerate.h>
 #endif
-#include <complex>
-#include <bitset>
-#include <vector>
-#include <string>
-#include <mutex>
-#include <memory>
-#include <optional>
-
 #include "config/DSPConfigTypes.h"
+
+#include <bitset>
+#include <complex>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
 
 extern "C" {
 #include "Engine/dsp_engine.h"
@@ -38,11 +38,13 @@ public:
     StateUpdate getStatus() const;
     VuLevels getVuLevels() const;
 
-    bool getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins, SpectrumData& outSpectrum) const;
+    bool getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins,
+                     SpectrumData& outSpectrum) const;
     bool getSamples(bool isCapture, size_t nFrames, AudioSamplesData& outSamples) const;
 
     std::vector<AudioDevice> getAvailableDevices(const std::string& backend, bool input) const;
-    std::optional<AudioDeviceDescriptor> getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const;
+    std::optional<AudioDeviceDescriptor> getDeviceCapabilities(const std::string& backend, const std::string& device,
+                                                               bool isCapture) const;
 
     void setLogLevel(const std::string& levelStr);
 

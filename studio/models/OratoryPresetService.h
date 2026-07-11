@@ -2,12 +2,13 @@
 #define ORATORY_PRESET_SERVICE_H
 
 #include "models/EQPreset.h"
-#include <QObject>
+
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
-#include <vector>
-#include <string>
+#include <QObject>
 #include <functional>
+#include <string>
+#include <vector>
 
 struct OratoryIndexEntry {
     std::string name;
@@ -22,8 +23,10 @@ class OratoryPresetService : public QObject {
 public:
     explicit OratoryPresetService(QObject* parent = nullptr);
 
-    void fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback, bool forceRefresh = false);
-    void fetchPreset(const OratoryIndexEntry& entry, std::function<void(bool success, std::optional<EQPreset> preset)> callback);
+    void fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback,
+                    bool forceRefresh = false);
+    void fetchPreset(const OratoryIndexEntry& entry,
+                     std::function<void(bool success, std::optional<EQPreset> preset)> callback);
 
 private:
     QNetworkAccessManager m_networkManager;

@@ -1,49 +1,51 @@
 #include "ui/MainWindow.h"
-#include "ui/StyleTheme.h"
-#include <QMenuBar>
+
+#include "ui/AnalogVUMeterView.h"
+#include "ui/AutoEqPickerDlg.h"
+#include "ui/ConsoleLogsView.h"
+#include "ui/ConvolutionImportDlg.h"
+#include "ui/ConvolutionPresetDetailView.h"
 #include "ui/DashboardView.h"
 #include "ui/DevicePickerView.h"
 #include "ui/EQPresetDetailView.h"
-#include "ui/StageDetailView.h"
-#include "ui/ResamplerDetailView.h"
 #include "ui/GeneralSettingsView.h"
-#include "ui/ConvolutionPresetDetailView.h"
-#include "ui/ConsoleLogsView.h"
-#include "ui/AutoEqPickerDlg.h"
-#include "ui/OratoryPresetPickerDlg.h"
-#include "ui/ConvolutionImportDlg.h"
-#include "ui/RoomCorrectionDlg.h"
 #include "ui/LevelMeterView.h"
-#include "ui/SpectrumView.h"
+#include "ui/OratoryPresetPickerDlg.h"
+#include "ui/ResamplerDetailView.h"
+#include "ui/RoomCorrectionDlg.h"
 #include "ui/SpectrogramView.h"
+#include "ui/SpectrumView.h"
+#include "ui/StageDetailView.h"
+#include "ui/StyleTheme.h"
 #include "ui/VectorScopeView.h"
-#include "ui/AnalogVUMeterView.h"
 #include "ui/VisualizerDetailViews.h"
 
-#include <QApplication>
-#include <QSplitter>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QToolBar>
-#include <QMenuBar>
-#include <QMenu>
+#include <QAbstractSpinBox>
 #include <QAction>
+#include <QApplication>
+#include <QCheckBox>
+#include <QContextMenuEvent>
+#include <QCursor>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
+#include <QPlainTextEdit>
+#include <QSplitter>
+#include <QTextEdit>
+#include <QToolBar>
 #include <QTreeWidgetItem>
 #include <QUuid>
-#include <QCursor>
-#include <QCheckBox>
-#include <QFrame>
-#include <QLineEdit>
-#include <QTextEdit>
-#include <QPlainTextEdit>
-#include <QAbstractSpinBox>
-#include <QContextMenuEvent>
+#include <QVBoxLayout>
 #include <cmath>
 
 namespace {
 class SidebarToggleRowWidget : public QWidget {
 public:
-    SidebarToggleRowWidget(QTreeWidget* tree, QTreeWidgetItem* item, const QString& title, bool isChecked, std::function<void(bool)> onToggle, std::function<void()> onRowClick, QWidget* parent = nullptr)
+    SidebarToggleRowWidget(QTreeWidget* tree, QTreeWidgetItem* item, const QString& title, bool isChecked,
+                           std::function<void(bool)> onToggle, std::function<void()> onRowClick,
+                           QWidget* parent = nullptr)
         : QWidget(parent), m_tree(tree), m_item(item), m_onToggle(onToggle), m_onRowClick(onRowClick) {
         setAutoFillBackground(false);
         setAttribute(Qt::WA_StyledBackground, true);
@@ -62,11 +64,13 @@ public:
         m_checkbox = new QCheckBox(this);
         m_checkbox->setFocusPolicy(Qt::NoFocus);
         m_checkbox->setChecked(isChecked);
-        m_checkbox->setStyleSheet("QCheckBox { background: transparent; } QCheckBox::indicator { width: 14px; height: 14px; }");
+        m_checkbox->setStyleSheet(
+            "QCheckBox { background: transparent; } QCheckBox::indicator { width: 14px; height: 14px; }");
         layout->addWidget(m_checkbox);
 
         connect(m_checkbox, &QCheckBox::toggled, this, [this](bool checked) {
-            if (m_onToggle) m_onToggle(checked);
+            if (m_onToggle)
+                m_onToggle(checked);
         });
     }
 
@@ -75,7 +79,8 @@ protected:
         if (m_tree && m_item) {
             m_tree->setCurrentItem(m_item);
         }
-        if (m_onRowClick) m_onRowClick();
+        if (m_onRowClick)
+            m_onRowClick();
         event->accept();
     }
 
@@ -95,7 +100,7 @@ private:
     std::function<void(bool)> m_onToggle;
     std::function<void()> m_onRowClick;
 };
-}
+} // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_engine = std::make_shared<CDSPEngine>();
@@ -107,9 +112,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_spectrumEngine = std::make_shared<SpectrumEngine>();
     m_spectrogramEngine = std::make_shared<SpectrogramEngine>();
     m_vectorScopeEngine = std::make_shared<VectorScopeEngine>();
-    m_monitoring = std::make_shared<MonitoringController>(
-        m_engine, m_dspController, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine
-    );
+    m_monitoring = std::make_shared<MonitoringController>(m_engine, m_dspController, m_spectrumEngine,
+                                                          m_spectrogramEngine, m_vectorScopeEngine);
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
 
@@ -132,36 +136,39 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
-    connect(m_dspController.get(), &DSPEngineController::statusUpdated, this, [this](ProcessingState state, const ProcessingStopReason& stopReason) {
-        if (stopReason.type != StopReasonType::None && stopReason.type != StopReasonType::Done) {
-            QString msg;
-            switch (stopReason.type) {
-            case StopReasonType::CaptureFormatChange:
-                msg = QString("⚠️ Format Change: Capture sample rate changed to %1 Hz").arg(stopReason.formatChangeRate);
-                break;
-            case StopReasonType::PlaybackFormatChange:
-                msg = QString("⚠️ Format Change: Playback sample rate changed to %1 Hz").arg(stopReason.formatChangeRate);
-                break;
-            case StopReasonType::CaptureError:
-                msg = QString("⚠️ Capture Error: %1").arg(QString::fromStdString(stopReason.message));
-                break;
-            case StopReasonType::PlaybackError:
-                msg = QString("⚠️ Playback Error: %1").arg(QString::fromStdString(stopReason.message));
-                break;
-            case StopReasonType::UnknownError:
-                msg = QString("⚠️ Error: %1").arg(QString::fromStdString(stopReason.message));
-                break;
-            default:
-                break;
-            }
-            if (!msg.isEmpty() && m_stopReasonBanner) {
-                m_stopReasonBanner->setText(msg);
-                m_stopReasonBanner->show();
-            }
-        } else if (state == ProcessingState::Running && m_stopReasonBanner) {
-            m_stopReasonBanner->hide();
-        }
-    });
+    connect(m_dspController.get(), &DSPEngineController::statusUpdated, this,
+            [this](ProcessingState state, const ProcessingStopReason& stopReason) {
+                if (stopReason.type != StopReasonType::None && stopReason.type != StopReasonType::Done) {
+                    QString msg;
+                    switch (stopReason.type) {
+                    case StopReasonType::CaptureFormatChange:
+                        msg = QString("⚠️ Format Change: Capture sample rate changed to %1 Hz")
+                                  .arg(stopReason.formatChangeRate);
+                        break;
+                    case StopReasonType::PlaybackFormatChange:
+                        msg = QString("⚠️ Format Change: Playback sample rate changed to %1 Hz")
+                                  .arg(stopReason.formatChangeRate);
+                        break;
+                    case StopReasonType::CaptureError:
+                        msg = QString("⚠️ Capture Error: %1").arg(QString::fromStdString(stopReason.message));
+                        break;
+                    case StopReasonType::PlaybackError:
+                        msg = QString("⚠️ Playback Error: %1").arg(QString::fromStdString(stopReason.message));
+                        break;
+                    case StopReasonType::UnknownError:
+                        msg = QString("⚠️ Error: %1").arg(QString::fromStdString(stopReason.message));
+                        break;
+                    default:
+                        break;
+                    }
+                    if (!msg.isEmpty() && m_stopReasonBanner) {
+                        m_stopReasonBanner->setText(msg);
+                        m_stopReasonBanner->show();
+                    }
+                } else if (state == ProcessingState::Running && m_stopReasonBanner) {
+                    m_stopReasonBanner->hide();
+                }
+            });
 
     connect(m_devices.get(), &AudioDeviceManager::configChanged, this, [this]() {
         if (m_sampleRateBadge) {
@@ -202,7 +209,8 @@ void MainWindow::setupUi() {
     connect(m_sidebarTree, &QTreeWidget::itemClicked, this, &MainWindow::onSidebarItemClicked);
     connect(m_sidebarTree, &QTreeWidget::customContextMenuRequested, [this](const QPoint& pos) {
         auto item = m_sidebarTree->itemAt(pos);
-        if (!item) return;
+        if (!item)
+            return;
         QString tag = item->data(0, Qt::UserRole).toString();
 
         if (tag.startsWith("stage_")) {
@@ -210,15 +218,11 @@ void MainWindow::setupUi() {
             QMenu menu(this);
             auto moveUp = menu.addAction("Move Up");
             moveUp->setEnabled(idx > 0);
-            connect(moveUp, &QAction::triggered, [this, idx]() {
-                m_pipeline->moveStage(idx, idx - 1);
-            });
+            connect(moveUp, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx - 1); });
 
             auto moveDown = menu.addAction("Move Down");
             moveDown->setEnabled(idx < m_pipeline->stages.size() - 1);
-            connect(moveDown, &QAction::triggered, [this, idx]() {
-                m_pipeline->moveStage(idx, idx + 1);
-            });
+            connect(moveDown, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx + 1); });
 
             menu.addSeparator();
             auto del = menu.addAction("Delete Stage");
@@ -232,17 +236,13 @@ void MainWindow::setupUi() {
             QUuid id = QUuid::fromString(tag.mid(3));
             QMenu menu(this);
             auto del = menu.addAction("Delete EQ Preset");
-            connect(del, &QAction::triggered, [this, id]() {
-                m_pipeline->deleteEQPreset(id);
-            });
+            connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteEQPreset(id); });
             menu.exec(QCursor::pos());
         } else if (tag.startsWith("conv_")) {
             QUuid id = QUuid::fromString(tag.mid(5));
             QMenu menu(this);
             auto del = menu.addAction("Delete Convolution Preset");
-            connect(del, &QAction::triggered, [this, id]() {
-                m_pipeline->deleteConvPreset(id);
-            });
+            connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteConvPreset(id); });
             menu.exec(QCursor::pos());
         }
     });
@@ -287,11 +287,13 @@ void MainWindow::setupStatusBar() {
     m_statusMuteLabel = new QLabel("Unmuted", this);
 
     m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
-    m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, 0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
+    m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, "
+                                           "0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
     m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
     m_statusActivePresetLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
     m_statusRuntimeLabel->setStyleSheet("padding: 0 8px; color: #8e8e93; font-family: monospace;");
-    m_stopReasonBanner->setStyleSheet("padding: 2px 8px; color: #ffffff; background-color: #ff3b30; border-radius: 4px; font-weight: bold;");
+    m_stopReasonBanner->setStyleSheet(
+        "padding: 2px 8px; color: #ffffff; background-color: #ff3b30; border-radius: 4px; font-weight: bold;");
     m_stopReasonBanner->hide();
     m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
 
@@ -310,9 +312,9 @@ void MainWindow::setupStatusBar() {
             int m = static_cast<int>((secs % 3600) / 60);
             int s = static_cast<int>(secs % 60);
             m_statusRuntimeLabel->setText(QString("Run Time: %1:%2:%3")
-                .arg(h, 2, 10, QChar('0'))
-                .arg(m, 2, 10, QChar('0'))
-                .arg(s, 2, 10, QChar('0')));
+                                              .arg(h, 2, 10, QChar('0'))
+                                              .arg(m, 2, 10, QChar('0'))
+                                              .arg(s, 2, 10, QChar('0')));
         } else {
             m_statusRuntimeLabel->setText("Run Time: 00:00:00");
         }
@@ -390,12 +392,8 @@ void MainWindow::setupMenuBar() {
     connect(muteAct, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
         for (QWidget* w = focusW; w; w = w->parentWidget()) {
-            if (qobject_cast<QLineEdit*>(w) ||
-                qobject_cast<QAbstractSpinBox*>(w) ||
-                qobject_cast<QTextEdit*>(w) ||
-                qobject_cast<QPlainTextEdit*>(w) ||
-                qobject_cast<QAbstractButton*>(w) ||
-                qobject_cast<QComboBox*>(w)) {
+            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
+                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
                 return;
             }
         }
@@ -436,7 +434,8 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::updateTrayMenu() {
-    if (!m_trayMuteAction || !m_trayPresetSubMenu) return;
+    if (!m_trayMuteAction || !m_trayPresetSubMenu)
+        return;
 
     bool muted = m_settings->getMuted(Fader::Main);
     m_trayMuteAction->setChecked(muted);
@@ -466,9 +465,7 @@ void MainWindow::updateTrayMenu() {
             act->setChecked(isActive);
 
             QUuid id = preset.id;
-            connect(act, &QAction::triggered, [this, id]() {
-                selectActiveEQPreset(id);
-            });
+            connect(act, &QAction::triggered, [this, id]() { selectActiveEQPreset(id); });
         }
     }
 }
@@ -515,20 +512,18 @@ void MainWindow::setupShortcuts() {
     connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     addAction(actMini);
 
-    if (m_actImportConv) addAction(m_actImportConv);
-    if (m_actAddEqPreset) addAction(m_actAddEqPreset);
+    if (m_actImportConv)
+        addAction(m_actImportConv);
+    if (m_actAddEqPreset)
+        addAction(m_actAddEqPreset);
 
     auto actMute = new QAction(this);
     actMute->setShortcut(QKeySequence("Space"));
     connect(actMute, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
         for (QWidget* w = focusW; w; w = w->parentWidget()) {
-            if (qobject_cast<QLineEdit*>(w) ||
-                qobject_cast<QAbstractSpinBox*>(w) ||
-                qobject_cast<QTextEdit*>(w) ||
-                qobject_cast<QPlainTextEdit*>(w) ||
-                qobject_cast<QAbstractButton*>(w) ||
-                qobject_cast<QComboBox*>(w)) {
+            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
+                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
                 return;
             }
         }
@@ -563,12 +558,14 @@ void MainWindow::updateMuteDisplay() {
     bool muted = m_settings->getMuted(Fader::Main);
     if (muted) {
         m_toolbarMuteBtn->setText("🔇 Muted");
-        m_toolbarMuteBtn->setStyleSheet("background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px;");
+        m_toolbarMuteBtn->setStyleSheet(
+            "background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px;");
         m_statusMuteLabel->setText("MUTED");
         m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
     } else {
         m_toolbarMuteBtn->setText("🔊 Mute");
-        m_toolbarMuteBtn->setStyleSheet("background-color: #3a3a3c; color: white; font-weight: normal; padding: 4px 8px; border-radius: 4px;");
+        m_toolbarMuteBtn->setStyleSheet(
+            "background-color: #3a3a3c; color: white; font-weight: normal; padding: 4px 8px; border-radius: 4px;");
         m_statusMuteLabel->setText("Unmuted");
         m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
     }
@@ -596,11 +593,22 @@ void MainWindow::updateVolumeDisplay() {
 void MainWindow::updateStatusBar() {
     QString stateStr;
     switch (m_dspController->status) {
-    case ProcessingState::Running: stateStr = "Running"; break;
-    case ProcessingState::Starting: stateStr = "Starting"; break;
-    case ProcessingState::Paused: stateStr = "Paused"; break;
-    case ProcessingState::Stalled: stateStr = "Stalled"; break;
-    case ProcessingState::Inactive: default: stateStr = "Inactive"; break;
+    case ProcessingState::Running:
+        stateStr = "Running";
+        break;
+    case ProcessingState::Starting:
+        stateStr = "Starting";
+        break;
+    case ProcessingState::Paused:
+        stateStr = "Paused";
+        break;
+    case ProcessingState::Stalled:
+        stateStr = "Stalled";
+        break;
+    case ProcessingState::Inactive:
+    default:
+        stateStr = "Inactive";
+        break;
     }
     m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
     m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
@@ -634,7 +642,8 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     switch (state) {
     case ProcessingState::Running:
         m_startStopBtn->setText("Stop Engine");
-        m_startStopBtn->setStyleSheet("background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_startStopBtn->setStyleSheet(
+            "background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
         if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
             m_engineRunTimer.start();
         }
@@ -642,21 +651,25 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
         break;
     case ProcessingState::Starting:
         m_startStopBtn->setText("Starting...");
-        m_startStopBtn->setStyleSheet("background-color: #ffcc00; color: black; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_startStopBtn->setStyleSheet(
+            "background-color: #ffcc00; color: black; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
         break;
     case ProcessingState::Paused:
         m_startStopBtn->setText("Paused (Click to Resume)");
-        m_startStopBtn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_startStopBtn->setStyleSheet(
+            "background-color: #007aff; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
         break;
     case ProcessingState::Stalled:
         m_startStopBtn->setText("Stalled (Click to Restart)");
-        m_startStopBtn->setStyleSheet("background-color: #ff9500; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_startStopBtn->setStyleSheet(
+            "background-color: #ff9500; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
         m_runtimeUpdateTimer.stop();
         break;
     case ProcessingState::Inactive:
     default:
         m_startStopBtn->setText("Start Engine");
-        m_startStopBtn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_startStopBtn->setStyleSheet(
+            "background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
         m_runtimeUpdateTimer.stop();
         if (m_statusRuntimeLabel) {
             m_statusRuntimeLabel->setText("Run Time: 00:00:00");
@@ -675,7 +688,8 @@ void MainWindow::setupToolbar() {
     toolBar->setMovable(false);
 
     m_startStopBtn = new QPushButton("Start Engine", this);
-    m_startStopBtn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+    m_startStopBtn->setStyleSheet(
+        "background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
     connect(m_startStopBtn, &QPushButton::clicked, [this]() {
         if (m_dspController->status == ProcessingState::Running) {
             m_dspController->stopEngine();
@@ -760,42 +774,57 @@ void MainWindow::refreshSidebarItems() {
 
     auto levelsItem = new QTreeWidgetItem(monGroup);
     levelsItem->setData(0, Qt::UserRole, "levels");
-    auto levelsW = new SidebarToggleRowWidget(m_sidebarTree, levelsItem, "📊 Level Meters", m_settings->showLevelMetersInDashboard, [this](bool c) {
-        m_settings->showLevelMetersInDashboard = c;
-        m_settings->savePreferences();
-    }, [this, levelsItem]() { onSidebarItemClicked(levelsItem, 0); }, m_sidebarTree);
+    auto levelsW = new SidebarToggleRowWidget(
+        m_sidebarTree, levelsItem, "📊 Level Meters", m_settings->showLevelMetersInDashboard,
+        [this](bool c) {
+            m_settings->showLevelMetersInDashboard = c;
+            m_settings->savePreferences();
+        },
+        [this, levelsItem]() { onSidebarItemClicked(levelsItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(levelsItem, 0, levelsW);
 
     auto specItem = new QTreeWidgetItem(monGroup);
     specItem->setData(0, Qt::UserRole, "spectrum");
-    auto specW = new SidebarToggleRowWidget(m_sidebarTree, specItem, "📈 Spectrum", m_settings->showSpectrumInDashboard, [this](bool c) {
-        m_settings->showSpectrumInDashboard = c;
-        m_settings->savePreferences();
-    }, [this, specItem]() { onSidebarItemClicked(specItem, 0); }, m_sidebarTree);
+    auto specW = new SidebarToggleRowWidget(
+        m_sidebarTree, specItem, "📈 Spectrum", m_settings->showSpectrumInDashboard,
+        [this](bool c) {
+            m_settings->showSpectrumInDashboard = c;
+            m_settings->savePreferences();
+        },
+        [this, specItem]() { onSidebarItemClicked(specItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(specItem, 0, specW);
 
     auto spectroItem = new QTreeWidgetItem(monGroup);
     spectroItem->setData(0, Qt::UserRole, "spectroscope");
-    auto spectroW = new SidebarToggleRowWidget(m_sidebarTree, spectroItem, "🌌 Spectroscope", m_settings->showSpectrogramInDashboard, [this](bool c) {
-        m_settings->showSpectrogramInDashboard = c;
-        m_settings->savePreferences();
-    }, [this, spectroItem]() { onSidebarItemClicked(spectroItem, 0); }, m_sidebarTree);
+    auto spectroW = new SidebarToggleRowWidget(
+        m_sidebarTree, spectroItem, "🌌 Spectroscope", m_settings->showSpectrogramInDashboard,
+        [this](bool c) {
+            m_settings->showSpectrogramInDashboard = c;
+            m_settings->savePreferences();
+        },
+        [this, spectroItem]() { onSidebarItemClicked(spectroItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(spectroItem, 0, spectroW);
 
     auto vecItem = new QTreeWidgetItem(monGroup);
     vecItem->setData(0, Qt::UserRole, "vectorscope");
-    auto vecW = new SidebarToggleRowWidget(m_sidebarTree, vecItem, "🎯 Vector Scope", m_settings->showVectorScopeInDashboard, [this](bool c) {
-        m_settings->showVectorScopeInDashboard = c;
-        m_settings->savePreferences();
-    }, [this, vecItem]() { onSidebarItemClicked(vecItem, 0); }, m_sidebarTree);
+    auto vecW = new SidebarToggleRowWidget(
+        m_sidebarTree, vecItem, "🎯 Vector Scope", m_settings->showVectorScopeInDashboard,
+        [this](bool c) {
+            m_settings->showVectorScopeInDashboard = c;
+            m_settings->savePreferences();
+        },
+        [this, vecItem]() { onSidebarItemClicked(vecItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(vecItem, 0, vecW);
 
     auto vuItem = new QTreeWidgetItem(monGroup);
     vuItem->setData(0, Qt::UserRole, "analogVU");
-    auto vuW = new SidebarToggleRowWidget(m_sidebarTree, vuItem, "🎛️ Analog VU", m_settings->showAnalogVUInDashboard, [this](bool c) {
-        m_settings->showAnalogVUInDashboard = c;
-        m_settings->savePreferences();
-    }, [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
+    auto vuW = new SidebarToggleRowWidget(
+        m_sidebarTree, vuItem, "🎛️ Analog VU", m_settings->showAnalogVUInDashboard,
+        [this](bool c) {
+            m_settings->showAnalogVUInDashboard = c;
+            m_settings->savePreferences();
+        },
+        [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(vuItem, 0, vuW);
 
     auto logsItem = new QTreeWidgetItem(monGroup, {"💻  Console Logs"});
@@ -809,11 +838,14 @@ void MainWindow::refreshSidebarItems() {
 
     auto resItem = new QTreeWidgetItem(pipeGroup);
     resItem->setData(0, Qt::UserRole, "resampler");
-    auto resW = new SidebarToggleRowWidget(m_sidebarTree, resItem, "🔄 Resampler", m_settings->resamplerEnabled, [this](bool c) {
-        m_settings->resamplerEnabled = c;
-        m_settings->savePreferences();
-        m_dspController->applyConfig();
-    }, [this, resItem]() { onSidebarItemClicked(resItem, 0); }, m_sidebarTree);
+    auto resW = new SidebarToggleRowWidget(
+        m_sidebarTree, resItem, "🔄 Resampler", m_settings->resamplerEnabled,
+        [this](bool c) {
+            m_settings->resamplerEnabled = c;
+            m_settings->savePreferences();
+            m_dspController->applyConfig();
+        },
+        [this, resItem]() { onSidebarItemClicked(resItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(resItem, 0, resW);
 
     for (size_t i = 0; i < m_pipeline->stages.size(); ++i) {
@@ -823,14 +855,29 @@ void MainWindow::refreshSidebarItems() {
         std::string icon = stageTypeToIcon(stage.type);
 
         QString rawName = QString::fromStdString(stage.name);
-        static const QStringList legacySymbols = {
-            "speaker.wave.3", "arrow.left.and.right", "slider.vertical.3", "slider.horizontal.3",
-            "waveform.path.ecg", "waveform.path", "headphones", "arrow.left.and.right.circle",
-            "ear", "waveform", "bolt.shield", "plus.minus", "clock", "square.slash", "grid",
-            "arrow.up.right.and.arrow.down.left.rectangle", "waveform.badge.minus",
-            "speaker.wave.2.bubble", "square.grid.3x1.below.line.grid.1x2", "function",
-            "arrow.up.and.down.and.arrow.left.and.right", "scissors", "dial.low"
-        };
+        static const QStringList legacySymbols = {"speaker.wave.3",
+                                                  "arrow.left.and.right",
+                                                  "slider.vertical.3",
+                                                  "slider.horizontal.3",
+                                                  "waveform.path.ecg",
+                                                  "waveform.path",
+                                                  "headphones",
+                                                  "arrow.left.and.right.circle",
+                                                  "ear",
+                                                  "waveform",
+                                                  "bolt.shield",
+                                                  "plus.minus",
+                                                  "clock",
+                                                  "square.slash",
+                                                  "grid",
+                                                  "arrow.up.right.and.arrow.down.left.rectangle",
+                                                  "waveform.badge.minus",
+                                                  "speaker.wave.2.bubble",
+                                                  "square.grid.3x1.below.line.grid.1x2",
+                                                  "function",
+                                                  "arrow.up.and.down.and.arrow.left.and.right",
+                                                  "scissors",
+                                                  "dial.low"};
         for (const auto& sym : legacySymbols) {
             if (rawName.startsWith(sym)) {
                 rawName = rawName.mid(sym.length()).trimmed();
@@ -839,13 +886,16 @@ void MainWindow::refreshSidebarItems() {
         }
 
         QString stageTitle = QString("%1  %2").arg(QString::fromStdString(icon), rawName);
-        auto stageW = new SidebarToggleRowWidget(m_sidebarTree, sItem, stageTitle, stage.isEnabled, [this, i](bool c) {
-            if (i < m_pipeline->stages.size()) {
-                m_pipeline->stages[i].isEnabled = c;
-                m_pipeline->save();
-                m_dspController->applyConfig();
-            }
-        }, [this, sItem]() { onSidebarItemClicked(sItem, 0); }, m_sidebarTree);
+        auto stageW = new SidebarToggleRowWidget(
+            m_sidebarTree, sItem, stageTitle, stage.isEnabled,
+            [this, i](bool c) {
+                if (i < m_pipeline->stages.size()) {
+                    m_pipeline->stages[i].isEnabled = c;
+                    m_pipeline->save();
+                    m_dspController->applyConfig();
+                }
+            },
+            [this, sItem]() { onSidebarItemClicked(sItem, 0); }, m_sidebarTree);
         m_sidebarTree->setItemWidget(sItem, 0, stageW);
     }
 
@@ -883,7 +933,8 @@ void MainWindow::refreshSidebarItems() {
 }
 
 void MainWindow::showCentralWidget(QWidget* widget) {
-    if (!widget) return;
+    if (!widget)
+        return;
     if (m_centralStack->indexOf(widget) == -1) {
         m_centralStack->addWidget(widget);
     }
@@ -892,21 +943,26 @@ void MainWindow::showCentralWidget(QWidget* widget) {
 
 void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
     Q_UNUSED(column);
-    if (!item) return;
+    if (!item)
+        return;
 
     QString tag = item->data(0, Qt::UserRole).toString();
-    if (tag.isEmpty()) return;
+    if (tag.isEmpty())
+        return;
 
     if (tag == "add_stage") {
         QMenu menu(this);
-        for (StageCategory cat : {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
+        for (StageCategory cat :
+             {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
             QMenu* catMenu = menu.addMenu(QString::fromStdString(stageCategoryToString(cat)));
-            for (StageType st : {
-                StageType::Balance, StageType::Width, StageType::MSProc, StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
-                StageType::EQ, StageType::GraphicEQ, StageType::Convolution, StageType::Loudness, StageType::Emphasis, StageType::DCProtection,
-                StageType::Gain, StageType::Delay, StageType::LookaheadLimiter, StageType::Limiter, StageType::Volume, StageType::MatrixMixer,
-                StageType::Compressor, StageType::NoiseGate, StageType::RACE, StageType::Dither, StageType::DiffEq, StageType::BiquadCombo
-            }) {
+            for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
+                                 StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
+                                 StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
+                                 StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
+                                 StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
+                                 StageType::Limiter,     StageType::Volume,    StageType::MatrixMixer,
+                                 StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
+                                 StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
                 if (stageTypeToCategory(st) == cat) {
                     QAction* act = catMenu->addAction(QString::fromStdString(stageTypeToString(st)));
                     connect(act, &QAction::triggered, [this, st]() {
@@ -964,7 +1020,8 @@ void MainWindow::handleNavigationTag(const QString& tag) {
 
     QWidget* w = nullptr;
     if (tag == "dashboard") {
-        w = new DashboardView(m_monitoring, m_dspController, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine, this);
+        w = new DashboardView(m_monitoring, m_dspController, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine,
+                              this);
     } else if (tag == "devices") {
         w = new DevicePickerView(m_devices, m_settings, this);
     } else if (tag == "levels") {

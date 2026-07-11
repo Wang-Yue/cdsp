@@ -2,26 +2,45 @@
 #define PIPELINE_STAGE_H
 
 #include "config/DSPConfigTypes.h"
-#include "models/EQPreset.h"
-#include "models/ConvolutionPreset.h"
 #include "models/AudioSettings.h"
-#include <string>
-#include <vector>
+#include "models/ConvolutionPreset.h"
+#include "models/EQPreset.h"
+
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUuid>
 #include <map>
 #include <optional>
-#include <QUuid>
-#include <QJsonObject>
-#include <QJsonArray>
+#include <string>
+#include <vector>
 
-enum class StageCategory {
-    Filters, Mixer, Processors, Others
-};
+enum class StageCategory { Filters, Mixer, Processors, Others };
 
 enum class StageType {
-    Balance, Width, MSProc, PhaseInvert, Crossfeed, SplitWidth,
-    EQ, GraphicEQ, Convolution, Loudness, Emphasis, DCProtection,
-    Gain, Delay, LookaheadLimiter, Limiter, Volume, MatrixMixer,
-    Compressor, NoiseGate, RACE, Dither, DiffEq, BiquadCombo
+    Balance,
+    Width,
+    MSProc,
+    PhaseInvert,
+    Crossfeed,
+    SplitWidth,
+    EQ,
+    GraphicEQ,
+    Convolution,
+    Loudness,
+    Emphasis,
+    DCProtection,
+    Gain,
+    Delay,
+    LookaheadLimiter,
+    Limiter,
+    Volume,
+    MatrixMixer,
+    Compressor,
+    NoiseGate,
+    RACE,
+    Dither,
+    DiffEq,
+    BiquadCombo
 };
 
 std::string stageCategoryToString(StageCategory cat);
@@ -160,7 +179,8 @@ public:
     std::vector<double> graphicEQGains;
 
     PipelineStage();
-    explicit PipelineStage(StageType type, const std::string& name = "", bool isEnabled = false, const std::vector<int>& channels = {0, 1});
+    explicit PipelineStage(StageType type, const std::string& name = "", bool isEnabled = false,
+                           const std::vector<int>& channels = {0, 1});
 
     int balanceLeftPercent() const;
     int balanceRightPercent() const;
@@ -186,13 +206,9 @@ struct StageBuildResult {
 
 class StageBuilders {
 public:
-    static StageBuildResult buildStage(
-        const PipelineStage& stage,
-        int sampleRate,
-        int channelCount,
-        const std::map<QUuid, EQPreset>& eqPresets,
-        const std::map<QUuid, ConvolutionPreset>& convPresets
-    );
+    static StageBuildResult buildStage(const PipelineStage& stage, int sampleRate, int channelCount,
+                                       const std::map<QUuid, EQPreset>& eqPresets,
+                                       const std::map<QUuid, ConvolutionPreset>& convPresets);
 };
 
 #endif // PIPELINE_STAGE_H

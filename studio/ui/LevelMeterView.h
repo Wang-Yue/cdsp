@@ -1,12 +1,13 @@
 #ifndef LEVEL_METER_VIEW_H
 #define LEVEL_METER_VIEW_H
 
-#include "models/LevelState.h"
 #include "models/DSPEngineController.h"
-#include <QWidget>
-#include <QPainter>
-#include <QLabel>
+#include "models/LevelState.h"
+
 #include <QHBoxLayout>
+#include <QLabel>
+#include <QPainter>
+#include <QWidget>
 #include <memory>
 
 class MonitoringController;
@@ -38,8 +39,7 @@ class CompactLevelMeterBar : public QWidget {
 
 public:
     explicit CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
-                                 std::shared_ptr<DSPEngineController> dsp,
-                                 QWidget* parent = nullptr);
+                                  std::shared_ptr<DSPEngineController> dsp, QWidget* parent = nullptr);
     void updateState();
 
 protected:

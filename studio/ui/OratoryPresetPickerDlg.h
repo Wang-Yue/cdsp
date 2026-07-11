@@ -1,14 +1,15 @@
 #ifndef ORATORY_PRESET_PICKER_DLG_H
 #define ORATORY_PRESET_PICKER_DLG_H
 
+#include "models/DSPEngineController.h"
 #include "models/OratoryPresetService.h"
 #include "models/PipelineStore.h"
-#include "models/DSPEngineController.h"
+
 #include <QDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
-#include <QLabel>
 #include <memory>
 
 class OratoryPresetPickerDlg : public QDialog {
@@ -17,7 +18,8 @@ class OratoryPresetPickerDlg : public QDialog {
 public:
     OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
         : OratoryPresetPickerDlg(pipeline, nullptr, parent) {}
-    OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
+    OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController,
+                           QWidget* parent = nullptr);
 
 private slots:
     void onSearchTextChanged(const QString& text);

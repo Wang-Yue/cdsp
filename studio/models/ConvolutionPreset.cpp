@@ -1,17 +1,21 @@
 #include "models/ConvolutionPreset.h"
-#include <cmath>
-#include <algorithm>
+
 #include <QJsonArray>
+#include <algorithm>
+#include <cmath>
 
 ConvolutionPreset::ConvolutionPreset() : id(QUuid::createUuid()), name("Untitled IR") {}
 
-ConvolutionPreset::ConvolutionPreset(const std::string& name, const std::map<int, std::string>& irPaths, int taps, const std::string& kindLabel)
+ConvolutionPreset::ConvolutionPreset(const std::string& name, const std::map<int, std::string>& irPaths, int taps,
+                                     const std::string& kindLabel)
     : id(QUuid::createUuid()), name(name), irPaths(irPaths), taps(taps), kindLabelStr(kindLabel) {}
 
 std::string ConvolutionPreset::irPath(int sampleRate) const {
-    if (irPaths.empty()) return "";
+    if (irPaths.empty())
+        return "";
     auto it = irPaths.find(sampleRate);
-    if (it != irPaths.end()) return it->second;
+    if (it != irPaths.end())
+        return it->second;
 
     double targetLog = std::log(static_cast<double>(sampleRate));
     int bestRate = irPaths.begin()->first;
@@ -36,7 +40,8 @@ std::vector<int> ConvolutionPreset::availableSampleRates() const {
 }
 
 double ConvolutionPreset::latencyMilliseconds(int sampleRate) const {
-    if (sampleRate <= 0) return 0.0;
+    if (sampleRate <= 0)
+        return 0.0;
     return (static_cast<double>(taps) / 2.0 / static_cast<double>(sampleRate)) * 1000.0;
 }
 
@@ -58,10 +63,14 @@ QJsonObject ConvolutionPreset::toJson() const {
 
 ConvolutionPreset ConvolutionPreset::fromJson(const QJsonObject& json) {
     ConvolutionPreset preset;
-    if (json.contains("id")) preset.id = QUuid::fromString(json["id"].toString());
-    if (json.contains("name")) preset.name = json["name"].toString().toStdString();
-    if (json.contains("taps")) preset.taps = json["taps"].toInt();
-    if (json.contains("kindLabel")) preset.kindLabelStr = json["kindLabel"].toString().toStdString();
+    if (json.contains("id"))
+        preset.id = QUuid::fromString(json["id"].toString());
+    if (json.contains("name"))
+        preset.name = json["name"].toString().toStdString();
+    if (json.contains("taps"))
+        preset.taps = json["taps"].toInt();
+    if (json.contains("kindLabel"))
+        preset.kindLabelStr = json["kindLabel"].toString().toStdString();
 
     if (json.contains("irPaths")) {
         QJsonObject pathsObj = json["irPaths"].toObject();

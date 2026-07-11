@@ -6,44 +6,74 @@ AudioSettings::AudioSettings(QObject* parent) : QObject(parent) {
 
 float AudioSettings::getVolume(Fader fader) const {
     switch (fader) {
-    case Fader::Main: return volume;
-    case Fader::Aux1: return fader1Volume;
-    case Fader::Aux2: return fader2Volume;
-    case Fader::Aux3: return fader3Volume;
-    case Fader::Aux4: return fader4Volume;
+    case Fader::Main:
+        return volume;
+    case Fader::Aux1:
+        return fader1Volume;
+    case Fader::Aux2:
+        return fader2Volume;
+    case Fader::Aux3:
+        return fader3Volume;
+    case Fader::Aux4:
+        return fader4Volume;
     }
     return volume;
 }
 
 void AudioSettings::setVolume(float db, Fader fader) {
     switch (fader) {
-    case Fader::Main: volume = db; break;
-    case Fader::Aux1: fader1Volume = db; break;
-    case Fader::Aux2: fader2Volume = db; break;
-    case Fader::Aux3: fader3Volume = db; break;
-    case Fader::Aux4: fader4Volume = db; break;
+    case Fader::Main:
+        volume = db;
+        break;
+    case Fader::Aux1:
+        fader1Volume = db;
+        break;
+    case Fader::Aux2:
+        fader2Volume = db;
+        break;
+    case Fader::Aux3:
+        fader3Volume = db;
+        break;
+    case Fader::Aux4:
+        fader4Volume = db;
+        break;
     }
     savePreferences();
 }
 
 bool AudioSettings::getMuted(Fader fader) const {
     switch (fader) {
-    case Fader::Main: return isMuted;
-    case Fader::Aux1: return fader1Muted;
-    case Fader::Aux2: return fader2Muted;
-    case Fader::Aux3: return fader3Muted;
-    case Fader::Aux4: return fader4Muted;
+    case Fader::Main:
+        return isMuted;
+    case Fader::Aux1:
+        return fader1Muted;
+    case Fader::Aux2:
+        return fader2Muted;
+    case Fader::Aux3:
+        return fader3Muted;
+    case Fader::Aux4:
+        return fader4Muted;
     }
     return isMuted;
 }
 
 void AudioSettings::setMuted(bool muted, Fader fader) {
     switch (fader) {
-    case Fader::Main: isMuted = muted; break;
-    case Fader::Aux1: fader1Muted = muted; break;
-    case Fader::Aux2: fader2Muted = muted; break;
-    case Fader::Aux3: fader3Muted = muted; break;
-    case Fader::Aux4: fader4Muted = muted; break;
+    case Fader::Main:
+        isMuted = muted;
+        break;
+    case Fader::Aux1:
+        fader1Muted = muted;
+        break;
+    case Fader::Aux2:
+        fader2Muted = muted;
+        break;
+    case Fader::Aux3:
+        fader3Muted = muted;
+        break;
+    case Fader::Aux4:
+        fader4Muted = muted;
+        break;
     }
     savePreferences();
 }
@@ -52,7 +82,8 @@ void AudioSettings::notifyChange() {
     savePreferences();
     emit changed();
     emit settingsChanged();
-    if (onChanged) onChanged();
+    if (onChanged)
+        onChanged();
 }
 
 void AudioSettings::loadPreferences() {

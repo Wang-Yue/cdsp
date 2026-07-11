@@ -2,6 +2,7 @@
 #define IMPULSE_RESPONSE_PLOT_WIDGET_H
 
 #include "room_correction/MeasurementSession.h"
+
 #include <QWidget>
 
 class ImpulseResponsePlotWidget : public QWidget {

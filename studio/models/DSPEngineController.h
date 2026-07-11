@@ -5,9 +5,10 @@
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
 #include "models/PipelineStore.h"
+
+#include <QDateTime>
 #include <QObject>
 #include <QTimer>
-#include <QDateTime>
 #include <memory>
 #include <string>
 
@@ -15,13 +16,9 @@ class DSPEngineController : public QObject {
     Q_OBJECT
 
 public:
-    DSPEngineController(
-        std::shared_ptr<CDSPEngine> engine,
-        std::shared_ptr<AudioDeviceManager> devices,
-        std::shared_ptr<AudioSettings> settings,
-        std::shared_ptr<PipelineStore> pipeline,
-        QObject* parent = nullptr
-    );
+    DSPEngineController(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioDeviceManager> devices,
+                        std::shared_ptr<AudioSettings> settings, std::shared_ptr<PipelineStore> pipeline,
+                        QObject* parent = nullptr);
 
     ProcessingState status = ProcessingState::Inactive;
     ProcessingStopReason lastStopReason;
