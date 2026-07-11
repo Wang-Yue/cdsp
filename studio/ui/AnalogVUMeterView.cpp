@@ -174,7 +174,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
         textColor = QColor("#ff9f0a");
         arcPenColor = QColor(255, 159, 10, 128);
         redPenColor = QColor(217, 51, 26, 204);
-        needlePenColor = QColor(38, 38, 38);
+        needlePenColor = QColor("#ff9f0a");
         bulbAmberColor = QColor(242, 115, 26);
         bulbHotSpotColor = QColor(255, 204, 77);
     }

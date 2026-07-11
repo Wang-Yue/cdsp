@@ -93,7 +93,12 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     p.setPen(StyleTheme::textSecondary());
     p.drawText(16, 24, m_title);
 
-    size_t chCount = std::max(m_rms.size(), m_peak.size());
+    const std::vector<float>& rmsVec =
+        (!m_rms.empty()) ? m_rms : (m_levelState ? m_levelState->playbackRms : std::vector<float>{});
+    const std::vector<float>& peakVec =
+        (!m_peak.empty()) ? m_peak : (m_levelState ? m_levelState->playbackPeak : std::vector<float>{});
+
+    size_t chCount = std::max(rmsVec.size(), peakVec.size());
     if (chCount == 0)
         chCount = 2; // Default 2 channels
 
@@ -141,8 +146,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
             p.drawLine(pos, markY, pos, markY + markH);
         }
 
-        float rmsVal = (i < m_rms.size()) ? m_rms[i] : -100.0f;
-        float peakVal = (i < m_peak.size()) ? m_peak[i] : -100.0f;
+        float rmsVal = (i < rmsVec.size()) ? rmsVec[i] : -100.0f;
+        float peakVal = (i < peakVec.size()) ? peakVec[i] : -100.0f;
 
         float rmsFrac = normDB(rmsVal);
         float peakFrac = normDB(peakVal);

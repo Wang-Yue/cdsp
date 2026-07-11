@@ -25,6 +25,9 @@ public:
     }
     float gainCalibration() const { return m_gainCalibrationDb; }
 
+    QSize sizeHint() const override { return QSize(360, 220); }
+    QSize minimumSizeHint() const override { return QSize(200, 160); }
+
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;

@@ -21,6 +21,9 @@ public:
     void setLevelState(LevelState* levelState) { m_levelState = levelState; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");
 
+    QSize sizeHint() const override { return QSize(300, 120); }
+    QSize minimumSizeHint() const override { return QSize(180, 90); }
+
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
