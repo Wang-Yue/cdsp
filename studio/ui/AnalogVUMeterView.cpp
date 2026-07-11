@@ -122,9 +122,9 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     faceGrad.setColorAt(1.0, bgBot);
     p.fillRect(rect, faceGrad);
 
-    double effectiveRadiusScale = std::min(m_settings.radiusScale, 0.90);
-    double effectivePivotY = std::min(m_settings.pivotY, 1.35);
-    double effectiveNeedleExt = std::min(m_settings.needleExtension, 25.0);
+    double effectiveRadiusScale = m_settings.radiusScale;
+    double effectivePivotY = m_settings.pivotY;
+    double effectiveNeedleExt = m_settings.needleExtension;
 
     QPointF pivot(rect.center().x(), rect.bottom() * effectivePivotY - rect.height() * (effectivePivotY - 1.0));
     double radius = rect.height() * 0.85 * effectiveRadiusScale;

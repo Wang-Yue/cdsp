@@ -24,6 +24,11 @@ public:
         emit updated();
     }
 
+    void reset() {
+        samples = AudioSamplesData();
+        emit updated();
+    }
+
     void resetToDefaults() {
         isCapture = false;
         nFrames = 1024;

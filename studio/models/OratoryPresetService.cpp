@@ -4,26 +4,100 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFile>
 
 OratoryPresetService::OratoryPresetService(QObject* parent) : QObject(parent) {}
 
-void OratoryPresetService::fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback) {
+static QString getOratoryCacheFilePath() {
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(cacheDir);
+    return cacheDir + "/oratory_index.json";
+}
+
+bool OratoryPresetService::loadFromDiskCache(std::vector<OratoryIndexEntry>& entries) {
+    QFile file(getOratoryCacheFilePath());
+    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+
+    QByteArray data = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (!doc.isObject()) return false;
+
+    QJsonObject root = doc.object();
+    QJsonArray tree = root["tree"].toArray();
+    entries.clear();
+
+    for (const auto& item : tree) {
+        QJsonObject obj = item.toObject();
+        QString path = obj["path"].toString();
+
+        if (path.endsWith(" ParametricEQ.txt")) {
+            QString fileName = path.section('/', -1);
+            QString headphoneName = fileName;
+            headphoneName.replace(" ParametricEQ.txt", "");
+
+            OratoryIndexEntry entry;
+            entry.name = headphoneName.toStdString();
+            entry.path = path.toStdString();
+            entries.push_back(entry);
+        }
+    }
+    return !entries.empty();
+}
+
+void OratoryPresetService::saveToDiskCache(const QByteArray& jsonBytes) {
+    QFile file(getOratoryCacheFilePath());
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(jsonBytes);
+        file.close();
+    }
+}
+
+void OratoryPresetService::fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback, bool forceRefresh) {
+    if (!forceRefresh && m_isLoaded) {
+        callback(true, m_allEntries);
+        return;
+    }
+
+    if (!forceRefresh && loadFromDiskCache(m_allEntries)) {
+        m_isLoaded = true;
+        callback(true, m_allEntries);
+        return;
+    }
+
     QUrl url("https://api.github.com/repos/jaakkopasanen/AutoEq/git/trees/master:results/oratory1990?recursive=1");
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "DSPMonitor");
 
     QNetworkReply* reply = m_networkManager.get(request);
-    connect(reply, &QNetworkReply::finished, [reply, callback]() {
+    connect(reply, &QNetworkReply::finished, [this, reply, callback]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            callback(false, {});
+            if (loadFromDiskCache(m_allEntries)) {
+                m_isLoaded = true;
+                callback(true, m_allEntries);
+            } else {
+                callback(false, {});
+            }
             return;
         }
 
         QByteArray data = reply->readAll();
+        saveToDiskCache(data);
+
         QJsonDocument doc = QJsonDocument::fromJson(data);
         if (!doc.isObject()) {
-            callback(false, {});
+            if (loadFromDiskCache(m_allEntries)) {
+                m_isLoaded = true;
+                callback(true, m_allEntries);
+            } else {
+                callback(false, {});
+            }
             return;
         }
 
@@ -46,7 +120,9 @@ void OratoryPresetService::fetchIndex(std::function<void(bool success, const std
                 entries.push_back(entry);
             }
         }
-        callback(true, entries);
+        m_allEntries = entries;
+        m_isLoaded = true;
+        callback(true, m_allEntries);
     });
 }
 

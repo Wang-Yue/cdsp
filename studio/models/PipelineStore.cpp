@@ -125,13 +125,18 @@ StageBuildResult PipelineStore::buildPipeline(int sampleRate, int channelCount) 
     std::map<QUuid, ConvolutionPreset> convMap;
     for (const auto& p : convPresets) convMap[p.id] = p;
 
+    int currentChannels = channelCount;
     for (const auto& stage : stages) {
-        auto res = StageBuilders::buildStage(stage, sampleRate, channelCount, eqMap, convMap);
+        auto res = StageBuilders::buildStage(stage, sampleRate, currentChannels, eqMap, convMap);
 
         for (const auto& [k, v] : res.filters) totalResult.filters[k] = v;
         for (const auto& [k, v] : res.mixers) totalResult.mixers[k] = v;
         for (const auto& [k, v] : res.processors) totalResult.processors[k] = v;
         for (const auto& step : res.steps) totalResult.steps.push_back(step);
+
+        if (stage.isActive() && stage.type == StageType::MatrixMixer) {
+            currentChannels = stage.mixerChannelsOut;
+        }
     }
 
     return totalResult;

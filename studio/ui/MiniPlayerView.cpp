@@ -19,11 +19,16 @@ MiniPlayerView::MiniPlayerView(
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.15); }");
     setObjectName("MiniPlayerViewWindow");
-    resize(360, 120);
+    resize(380, 130);
 
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
     connect(m_dsp.get(), &DSPEngineController::statusChanged, this, &MiniPlayerView::updateEngineStatus);
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+            onFaderChanged(0);
+        });
+    }
 }
 
 Fader MiniPlayerView::currentFader() const {
@@ -56,8 +61,11 @@ void MiniPlayerView::onFaderChanged(int index) {
     Fader f = currentFader();
     float vol = m_settings->getVolume(f);
     bool muted = m_settings->getMuted(f);
+    m_volSlider->blockSignals(true);
     m_volSlider->setValue(static_cast<int>(vol * 2.0f));
-    m_volValueLabel->setText(QString("%1 dB").arg(vol, 4, 'f', 1));
+    m_volSlider->blockSignals(false);
+    m_volValueLabel->setText(QString(vol > 0.0f ? "+%1 dB" : "%1 dB").arg(vol, 0, 'f', 1));
+    m_volValueLabel->setStyleSheet(vol > 0.0f ? "color: #ff3b30; font-weight: bold;" : "color: #8e8e93; font-weight: bold;");
     m_muteBtn->setText(muted ? "🔇" : "🔊");
 }
 
@@ -83,13 +91,38 @@ void MiniPlayerView::buildMiniPipelineUi() {
 
     if (!m_dsp || !m_dsp->pipelineStore()) return;
 
+    // Resampler chip button
+    bool resampEnabled = m_settings ? m_settings->resamplerEnabled : false;
+    auto resampChip = new QPushButton("🔄 Resampler", m_pipelineMiniCard);
+    resampChip->setCheckable(true);
+    resampChip->setChecked(resampEnabled);
+    auto updateResampStyle = [resampChip](bool chk) {
+        if (chk) resampChip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; padding: 2px 6px; font-weight: bold;");
+        else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
+    };
+    updateResampStyle(resampEnabled);
+    connect(resampChip, &QPushButton::clicked, [this, resampChip, updateResampStyle]() {
+        if (m_settings) {
+            bool enabled = !m_settings->resamplerEnabled;
+            m_settings->resamplerEnabled = enabled;
+            m_settings->savePreferences();
+            resampChip->setChecked(enabled);
+            updateResampStyle(enabled);
+            m_dsp->applyConfig();
+        }
+    });
+    layout->addWidget(resampChip);
+
+    // Stage chips
     for (const auto& stage : m_dsp->pipelineStore()->stages) {
-        auto chip = new QPushButton(QString::fromStdString(stage.name), m_pipelineMiniCard);
+        std::string icon = stageTypeToIcon(stage.type);
+        QString stageTitle = QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(stage.name));
+        auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
         chip->setCheckable(true);
         chip->setChecked(stage.isEnabled);
 
         auto updateStyle = [chip](bool chk) {
-            if (chk) chip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
+            if (chk) chip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; padding: 2px 6px; font-weight: bold;");
             else chip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
         };
         updateStyle(stage.isEnabled);
@@ -151,40 +184,47 @@ void MiniPlayerView::setupUi() {
         Fader f = currentFader();
         float db = val / 2.0f;
         m_dsp->setFaderVolume(f, db);
-        m_volValueLabel->setText(QString("%1 dB").arg(db, 4, 'f', 1));
+        m_volValueLabel->setText(QString(db > 0.0f ? "+%1 dB" : "%1 dB").arg(db, 0, 'f', 1));
+        m_volValueLabel->setStyleSheet(db > 0.0f ? "color: #ff3b30; font-weight: bold;" : "color: #8e8e93; font-weight: bold;");
     });
 
     topBar->addWidget(m_volSlider);
     topBar->addWidget(m_volValueLabel);
 
-    // 6 Mode Buttons
-    auto pipeBtn = new QPushButton("Pipe", this);
-    pipeBtn->setFixedWidth(28);
+    // 6 Mode Icon Buttons matching SwiftUI icons
+    auto pipeBtn = new QPushButton("🔄", this);
+    pipeBtn->setToolTip("Pipeline Overview");
+    pipeBtn->setFixedSize(24, 22);
     connect(pipeBtn, &QPushButton::clicked, [this]() { buildMiniPipelineUi(); m_viewStack->setCurrentIndex(0); });
     topBar->addWidget(pipeBtn);
 
-    auto specBtn = new QPushButton("Spec", this);
-    specBtn->setFixedWidth(28);
+    auto specBtn = new QPushButton("📈", this);
+    specBtn->setToolTip("Spectrum Analyzer");
+    specBtn->setFixedSize(24, 22);
     connect(specBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(1); });
     topBar->addWidget(specBtn);
 
-    auto vuBtn = new QPushButton("VU", this);
-    vuBtn->setFixedWidth(26);
+    auto vuBtn = new QPushButton("🎛️", this);
+    vuBtn->setToolTip("Analog VU Meter");
+    vuBtn->setFixedSize(24, 22);
     connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
     topBar->addWidget(vuBtn);
 
-    auto mtrBtn = new QPushButton("Mtr", this);
-    mtrBtn->setFixedWidth(26);
+    auto mtrBtn = new QPushButton("📊", this);
+    mtrBtn->setToolTip("Level Meters");
+    mtrBtn->setFixedSize(24, 22);
     connect(mtrBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
     topBar->addWidget(mtrBtn);
 
-    auto sgBtn = new QPushButton("SG", this);
-    sgBtn->setFixedWidth(24);
+    auto sgBtn = new QPushButton("🌌", this);
+    sgBtn->setToolTip("Spectroscope Waterfall");
+    sgBtn->setFixedSize(24, 22);
     connect(sgBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(4); });
     topBar->addWidget(sgBtn);
 
-    auto vecBtn = new QPushButton("Vec", this);
-    vecBtn->setFixedWidth(26);
+    auto vecBtn = new QPushButton("🎯", this);
+    vecBtn->setToolTip("Vector Scope");
+    vecBtn->setFixedSize(24, 22);
     connect(vecBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(5); });
     topBar->addWidget(vecBtn);
 
@@ -246,9 +286,23 @@ void MiniPlayerView::paintEvent(QPaintEvent* event) {
 }
 
 void MiniPlayerView::refreshMeters() {
+    if (!m_monitoring) return;
     const auto& st = m_monitoring->levelState;
-    m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
-    float left = !st.playbackPeak.empty() ? st.playbackPeak[0] : -60.0f;
-    float right = st.playbackPeak.size() > 1 ? st.playbackPeak[1] : left;
-    m_analogVUView->setLevelDB(left, right);
+    if (m_metersView) {
+        m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
+    }
+    if (m_analogVUView) {
+        float left = !st.playbackPeak.empty() ? st.playbackPeak[0] : -60.0f;
+        float right = st.playbackPeak.size() > 1 ? st.playbackPeak[1] : left;
+        m_analogVUView->setLevelDB(left, right);
+    }
+    if (m_spectrumView && m_monitoring->spectrumEngine()) {
+        m_spectrumView->setSpectrum(m_monitoring->spectrumEngine()->data);
+    }
+    if (m_spectrogramView && m_monitoring->spectrogramEngine()) {
+        m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history, m_monitoring->spectrogramEngine()->show3D);
+    }
+    if (m_vectorScopeView && m_monitoring->vectorScopeEngine()) {
+        m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples, m_monitoring->vectorScopeEngine()->showParticles);
+    }
 }

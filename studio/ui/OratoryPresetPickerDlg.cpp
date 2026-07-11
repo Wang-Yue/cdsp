@@ -4,12 +4,19 @@
 #include <QHBoxLayout>
 #include <QMessageBox>
 
-OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
-    : QDialog(parent), m_pipeline(pipeline) {
+#include "ui/OratoryPresetPickerDlg.h"
+#include "ui/StyleTheme.h"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QMessageBox>
+#include <QRegularExpression>
+
+OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
+    : QDialog(parent), m_pipeline(pipeline), m_dspController(dspController) {
     setWindowTitle("Oratory1990 Headphone EQ Explorer");
     resize(620, 520);
     setupUi();
-    loadIndex();
+    loadIndex(false);
 }
 
 void OratoryPresetPickerDlg::setupUi() {
@@ -34,7 +41,7 @@ void OratoryPresetPickerDlg::setupUi() {
     auto refreshBtn = new QPushButton("🔄 Refresh Database", this);
     connect(refreshBtn, &QPushButton::clicked, [this]() {
         m_statusLabel->setText("Refreshing database from GitHub...");
-        loadIndex();
+        loadIndex(true);
     });
     searchLayout->addWidget(refreshBtn);
 
@@ -69,7 +76,7 @@ void OratoryPresetPickerDlg::setupUi() {
     });
 }
 
-void OratoryPresetPickerDlg::loadIndex() {
+void OratoryPresetPickerDlg::loadIndex(bool forceRefresh) {
     m_service.fetchIndex([this](bool ok, const std::vector<OratoryIndexEntry>& entries) {
         if (ok) {
             m_entries = entries;
@@ -79,22 +86,39 @@ void OratoryPresetPickerDlg::loadIndex() {
         } else {
             m_statusLabel->setText("Failed to load Oratory1990 index.");
         }
-    });
+    }, forceRefresh);
 }
 
 void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
     m_listWidget->clear();
+    QString trimmed = text.trimmed();
+    QStringList tokens = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
     int count = 0;
     for (size_t i = 0; i < m_entries.size(); ++i) {
         QString name = QString::fromStdString(m_entries[i].name);
         QString path = QString::fromStdString(m_entries[i].path);
-        if (text.isEmpty() || name.contains(text, Qt::CaseInsensitive) || path.contains(text, Qt::CaseInsensitive)) {
+
+        bool matches = true;
+        for (const auto& token : tokens) {
+            if (!name.contains(token, Qt::CaseInsensitive) && !path.contains(token, Qt::CaseInsensitive)) {
+                matches = false;
+                break;
+            }
+        }
+
+        if (matches) {
             auto item = new QListWidgetItem(m_listWidget);
             item->setText(QString("%1\n%2").arg(name, path));
             item->setData(Qt::UserRole, static_cast<int>(i));
             count++;
-            if (text.isEmpty() && count >= 100) break;
         }
+    }
+
+    if (tokens.isEmpty()) {
+        m_statusLabel->setText(QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
+    } else {
+        m_statusLabel->setText(QString("Found %1 of %2 matching headphones.").arg(count).arg(m_entries.size()));
     }
 }
 
@@ -113,8 +137,48 @@ void OratoryPresetPickerDlg::onImportClicked() {
         if (ok && preset.has_value()) {
             auto p = preset.value();
             p.name = "[Oratory] " + entry.name;
-            m_pipeline->addEQPreset(p);
-            QMessageBox::information(this, "Success", QString("Imported preset '%1' into Pipeline Store.").arg(QString::fromStdString(p.name)));
+
+            // Update existing or add new EQPreset
+            QUuid presetId;
+            bool foundExisting = false;
+            for (auto& existing : m_pipeline->eqPresets) {
+                if (existing.name == p.name) {
+                    p.id = existing.id;
+                    m_pipeline->updateEQPreset(p);
+                    presetId = p.id;
+                    foundExisting = true;
+                    break;
+                }
+            }
+            if (!foundExisting) {
+                presetId = m_pipeline->addEQPreset(p);
+            }
+
+            // Direct Stage Creation or Overwrite in PipelineStore
+            bool stageUpdated = false;
+            for (auto& stage : m_pipeline->stages) {
+                if (stage.type == StageType::EQ) {
+                    stage.eqPresetId = presetId;
+                    stage.name = p.name;
+                    stageUpdated = true;
+                    break;
+                }
+            }
+            if (!stageUpdated) {
+                PipelineStage newStage(StageType::EQ, p.name);
+                newStage.eqPresetId = presetId;
+                m_pipeline->stages.push_back(newStage);
+            }
+
+            m_pipeline->save();
+            emit m_pipeline->pipelineChanged();
+
+            // Direct call to DSPEngineController::applyConfig()
+            if (m_dspController) {
+                m_dspController->applyConfig();
+            }
+
+            QMessageBox::information(this, "Success", QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(p.name)));
             accept();
         } else {
             m_statusLabel->setText("Failed to download preset.");

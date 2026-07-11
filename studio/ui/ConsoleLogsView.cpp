@@ -148,8 +148,47 @@ void ConsoleLogsView::refreshLogs() {
 }
 
 void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
-    Q_UNUSED(entry);
-    refreshLogs();
+    LogLevel filterLevel = static_cast<LogLevel>(m_levelFilterCombo->currentData().toInt());
+    if (static_cast<int>(entry.level) < static_cast<int>(filterLevel)) return;
+
+    QString search = m_searchEdit->text();
+    if (!search.isEmpty() && !entry.message.contains(search, Qt::CaseInsensitive)) return;
+
+    int row = m_table->rowCount();
+    m_table->insertRow(row);
+
+    auto timeItem = new QTableWidgetItem(entry.timestamp.toString("HH:mm:ss.zzz"));
+    auto levelItem = new QTableWidgetItem(logLevelToString(entry.level));
+    auto msgItem = new QTableWidgetItem(entry.message);
+
+    switch (entry.level) {
+    case LogLevel::Error:
+        levelItem->setForeground(QColor("#ff3b30"));
+        break;
+    case LogLevel::Warn:
+        levelItem->setForeground(QColor("#ff9500"));
+        break;
+    case LogLevel::Info:
+        levelItem->setForeground(QColor("#34c759"));
+        break;
+    case LogLevel::Debug:
+        levelItem->setForeground(QColor("#007aff"));
+        break;
+    case LogLevel::Trace:
+    default:
+        levelItem->setForeground(QColor("#8e8e93"));
+        break;
+    }
+
+    m_table->setItem(row, 0, timeItem);
+    m_table->setItem(row, 1, levelItem);
+    m_table->setItem(row, 2, msgItem);
+
+    m_logCountLabel->setText(QString("%1 logs").arg(m_table->rowCount()));
+
+    if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
+        m_table->scrollToBottom();
+    }
 }
 
 void ConsoleLogsView::copySelectedLogs() {

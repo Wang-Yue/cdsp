@@ -3,6 +3,7 @@
 
 #include "models/AudioSettings.h"
 #include "models/AudioDeviceManager.h"
+#include "models/DSPEngineController.h"
 #include <QWidget>
 #include <QComboBox>
 #include <QSpinBox>
@@ -20,6 +21,7 @@ public:
     ResamplerDetailView(
         std::shared_ptr<AudioSettings> settings,
         std::shared_ptr<AudioDeviceManager> devices = nullptr,
+        std::shared_ptr<DSPEngineController> dspController = nullptr,
         QWidget* parent = nullptr
     );
 
@@ -30,6 +32,7 @@ private slots:
 private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<AudioDeviceManager> m_devices;
+    std::shared_ptr<DSPEngineController> m_dspController;
 
     QFormLayout* m_typeForm;
     QGroupBox* m_typeGroup;

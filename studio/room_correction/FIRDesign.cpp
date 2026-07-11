@@ -7,6 +7,54 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+static double wrappedNear(double phi, double reference) {
+    double p = phi;
+    while (p - reference > M_PI) p -= 2.0 * M_PI;
+    while (p - reference < -M_PI) p += 2.0 * M_PI;
+    return p;
+}
+
+static size_t peakIndex(const std::vector<double>& ir) {
+    size_t idx = 0;
+    double bestAbs = 0.0;
+    for (size_t i = 0; i < ir.size(); ++i) {
+        double v = std::abs(ir[i]);
+        if (v > bestAbs) {
+            bestAbs = v;
+            idx = i;
+        }
+    }
+    return idx;
+}
+
+static std::vector<double> computeMinimumPhaseAngle(const std::vector<double>& magnitude, int fftSize, double floorLin) {
+    size_t bins = magnitude.size();
+    int n = fftSize;
+    double logFloor = std::log(floorLin);
+    std::vector<double> logMag(bins);
+    for (size_t k = 0; k < bins; ++k) {
+        logMag[k] = std::log(std::max(magnitude[k], floorLin));
+        if (!std::isfinite(logMag[k])) logMag[k] = logFloor;
+    }
+
+    std::vector<double> inImag(bins, 0.0);
+    std::vector<double> cepstrum;
+    MeasurementFFT::inverse(logMag, inImag, cepstrum);
+
+    std::vector<double> causal(n, 0.0);
+    causal[0] = cepstrum[0];
+    if (n / 2 >= 1) {
+        for (size_t i = 1; i < static_cast<size_t>(n / 2); ++i) {
+            causal[i] = 2.0 * cepstrum[i];
+        }
+        causal[n / 2] = cepstrum[n / 2];
+    }
+
+    std::vector<double> re(bins), im(bins);
+    MeasurementFFT::forward(causal, re, im);
+    return im;
+}
+
 std::vector<double> FIRDesign::linearPhase(
     const std::vector<BiquadParameters>& bands,
     int sampleRate,
@@ -16,7 +64,7 @@ std::vector<double> FIRDesign::linearPhase(
     size_t bins = nFft / 2 + 1;
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
 
-    std::vector<double> inReal(bins), inImag(bins, 0.0);
+    std::vector<double> hRe(bins), hIm(bins);
     double preampLin = std::pow(10.0, options.preampDB / 20.0);
 
     for (size_t k = 0; k < bins; ++k) {
@@ -27,27 +75,15 @@ std::vector<double> FIRDesign::linearPhase(
             if (coeffs.has_value()) gainDB += coeffs.value().gainDB(f, sampleRate);
         }
         double mag = std::pow(10.0, gainDB / 20.0) * preampLin;
-        inReal[k] = mag;
+        double phase = -M_PI * static_cast<double>(k);
+        hRe[k] = mag * std::cos(phase);
+        hIm[k] = mag * std::sin(phase);
     }
 
-    std::vector<double> rawIR;
-    MeasurementFFT::inverse(inReal, inImag, rawIR);
-
-    // Circular shift by N/2 samples to make non-causal linear-phase impulse response centered
-    std::vector<double> centered(nFft);
-    size_t half = nFft / 2;
-    for (size_t i = 0; i < static_cast<size_t>(nFft); ++i) {
-        centered[i] = rawIR[(i + half) % nFft];
-    }
-
-    // Apply Hann window
-    for (size_t i = 0; i < static_cast<size_t>(nFft); ++i) {
-        double w = 0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(nFft)));
-        centered[i] *= w;
-    }
-
-    centered.resize(options.outputLength);
-    return centered;
+    std::vector<double> ir;
+    MeasurementFFT::inverse(hRe, hIm, ir);
+    ir.resize(options.outputLength);
+    return ir;
 }
 
 std::vector<double> FIRDesign::minimumPhase(
@@ -60,8 +96,6 @@ std::vector<double> FIRDesign::minimumPhase(
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
 
     std::vector<double> magDB(bins);
-    double preampLin = std::pow(10.0, options.preampDB / 20.0);
-
     for (size_t k = 0; k < bins; ++k) {
         double f = static_cast<double>(k) * binHz;
         double gainDB = 0.0;
@@ -72,47 +106,9 @@ std::vector<double> FIRDesign::minimumPhase(
         magDB[k] = gainDB;
     }
 
-    // Real cepstrum minimum-phase reconstruction
-    // 1. Log magnitude
-    std::vector<double> logMag(bins);
-    for (size_t k = 0; k < bins; ++k) {
-        double mag = std::pow(10.0, magDB[k] / 20.0) * preampLin;
-        logMag[k] = std::log(std::max(1e-12, mag));
-    }
-
-    // 2. IFFT log magnitude to get cepstrum
-    std::vector<double> inImag(bins, 0.0);
-    std::vector<double> cepstrum;
-    MeasurementFFT::inverse(logMag, inImag, cepstrum);
-
-    // 3. Fold minimum-phase cepstrum operator
-    size_t n = cepstrum.size();
-    std::vector<double> mpCepstrum(n, 0.0);
-    mpCepstrum[0] = cepstrum[0];
-    mpCepstrum[n / 2] = cepstrum[n / 2];
-
-    for (size_t i = 1; i < n / 2; ++i) {
-        mpCepstrum[i] = 2.0 * cepstrum[i];
-    }
-
-    // 4. FFT minimum-phase cepstrum
-    std::vector<double> cReal, cImag;
-    MeasurementFFT::forward(mpCepstrum, cReal, cImag);
-
-    // 5. Exponentiate complex cepstrum spectrum to yield minimum phase complex response
-    std::vector<double> hReal(bins), hImag(bins);
-    for (size_t k = 0; k < bins; ++k) {
-        double magExp = std::exp(cReal[k]);
-        hReal[k] = magExp * std::cos(cImag[k]);
-        hImag[k] = magExp * std::sin(cImag[k]);
-    }
-
-    // 6. IFFT complex spectrum to get final minimum-phase impulse response
-    std::vector<double> minPhaseIR;
-    MeasurementFFT::inverse(hReal, hImag, minPhaseIR);
-
-    minPhaseIR.resize(options.outputLength);
-    return minPhaseIR;
+    FIRDesignOptions opt = options;
+    opt.preampDB = options.preampDB;
+    return minimumPhaseFromMagDB(magDB, sampleRate, opt);
 }
 
 std::vector<double> FIRDesign::linearPhaseFromMagDB(
@@ -135,12 +131,6 @@ std::vector<double> FIRDesign::linearPhaseFromMagDB(
 
     std::vector<double> rawIR;
     MeasurementFFT::inverse(hRe, hIm, rawIR);
-
-    for (size_t i = 0; i < static_cast<size_t>(nFft); ++i) {
-        double w = 0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(nFft)));
-        rawIR[i] *= w;
-    }
-
     rawIR.resize(options.outputLength);
     return rawIR;
 }
@@ -197,47 +187,89 @@ std::vector<double> FIRDesign::fromMeasurement(
     int sampleRate,
     const FIRDesignMeasurementOptions& options
 ) {
-    int nFft = options.fftSize;
-    size_t bins = nFft / 2 + 1;
-    double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
+    int n = options.fftSize;
+    size_t bins = n / 2 + 1;
 
-    std::vector<double> targetMagDB(bins);
+    double measuredBinHz = static_cast<double>(measured.sampleRate) / static_cast<double>(measured.fftSize);
+    double designBinHz = static_cast<double>(sampleRate) / static_cast<double>(n);
+    double floorLin = std::pow(10.0, -60.0 / 20.0);
+    double preampLin = std::pow(10.0, options.preampDB / 20.0);
+    double maxBoostLin = std::pow(10.0, options.maxBoostDB / 20.0);
+    double taperOctaves = 0.5;
+    double lowEdgeLog = std::log10(options.minFreqHz);
+    double highEdgeLog = std::log10(options.maxFreqHz);
+    double blend = std::max(0.0, std::min(1.0, options.phaseBlend));
+
+    std::vector<double> corrMag(bins, preampLin);
+    std::vector<double> targetAngle(bins, 0.0);
 
     for (size_t k = 0; k < bins; ++k) {
-        double f = static_cast<double>(k) * binHz;
-        double targetDB = target.evaluate(f);
-        size_t srcBin = static_cast<size_t>(std::round(f / (static_cast<double>(measured.sampleRate) / static_cast<double>(measured.fftSize))));
-        double measDB = measured.magnitudeDB(srcBin);
+        double freq = static_cast<double>(k) * designBinHz;
+        double delayPhase = -M_PI * static_cast<double>(k);
+        double corr = preampLin;
+        double correction = 0.0;
 
-        double invDB = targetDB - measDB;
-        invDB = std::min(options.maxBoostDB, invDB);
+        if (freq >= options.minFreqHz && freq <= options.maxFreqHz) {
+            size_t mBin = static_cast<size_t>(std::round(freq / measuredBinHz));
+            size_t mb = std::min(measured.bins() - 1, mBin);
+            double mRe = measured.real[mb];
+            double mIm = measured.imag[mb];
+            double mMag = std::sqrt(mRe * mRe + mIm * mIm);
 
-        if (f < options.minFreqHz || f > options.maxFreqHz) {
-            invDB = 0.0;
+            if (mMag >= floorLin) {
+                double targetDB = target.evaluate(freq);
+                double targetMag = std::pow(10.0, targetDB / 20.0);
+                double c = targetMag / mMag;
+                c = std::min(c, maxBoostLin);
+                corr = c * preampLin;
+                correction = -std::atan2(mIm, mRe);
+
+                double logF = std::log10(freq);
+                double lowDist = (logF - lowEdgeLog) / taperOctaves;
+                double highDist = (highEdgeLog - logF) / taperOctaves;
+                double edge = std::min(lowDist, highDist);
+                if (edge < 1.0) {
+                    double w = 0.5 * (1.0 - std::cos(M_PI * std::max(0.0, edge)));
+                    corr = corr * w + preampLin * (1.0 - w);
+                    correction = correction * w;
+                }
+            }
         }
-
-        targetMagDB[k] = invDB;
+        corrMag[k] = corr;
+        targetAngle[k] = delayPhase + correction;
     }
 
-    FIRDesignOptions opt;
-    opt.fftSize = options.fftSize;
-    opt.outputLength = options.fftSize;
-    opt.preampDB = options.preampDB;
-
-    if (options.phaseBlend <= 0.05) {
-        return minimumPhaseFromMagDB(targetMagDB, sampleRate, opt);
-    } else if (options.phaseBlend >= 0.95) {
-        return linearPhaseFromMagDB(targetMagDB, sampleRate, opt);
+    std::vector<double> hRe(bins), hIm(bins);
+    if (blend >= 1.0 - 1e-9) {
+        for (size_t k = 0; k < bins; ++k) {
+            hRe[k] = corrMag[k] * std::cos(targetAngle[k]);
+            hIm[k] = corrMag[k] * std::sin(targetAngle[k]);
+        }
+    } else {
+        std::vector<double> minPhaseAngle = computeMinimumPhaseAngle(corrMag, n, floorLin);
+        for (size_t k = 0; k < bins; ++k) {
+            double phi = blend * wrappedNear(targetAngle[k], minPhaseAngle[k]) + (1.0 - blend) * minPhaseAngle[k];
+            hRe[k] = corrMag[k] * std::cos(phi);
+            hIm[k] = corrMag[k] * std::sin(phi);
+        }
     }
 
-    auto minP = minimumPhaseFromMagDB(targetMagDB, sampleRate, opt);
-    auto linP = linearPhaseFromMagDB(targetMagDB, sampleRate, opt);
+    std::vector<double> ir;
+    MeasurementFFT::inverse(hRe, hIm, ir);
 
-    std::vector<double> blended(nFft);
-    double b = options.phaseBlend;
-    for (size_t i = 0; i < static_cast<size_t>(nFft); ++i) {
-        blended[i] = (1.0 - b) * minP[i] + b * linP[i];
+    size_t centre = blend >= 0.99 ? static_cast<size_t>(n / 2) : peakIndex(ir);
+    size_t halfWin = std::min(centre, static_cast<size_t>(n) - centre - 1);
+    if (halfWin > 0) {
+        for (size_t i = 0; i < static_cast<size_t>(n); ++i) {
+            size_t dist = (i > centre) ? (i - centre) : (centre - i);
+            if (dist > halfWin) {
+                ir[i] = 0.0;
+            } else {
+                double w = 0.5 * (1.0 + std::cos(M_PI * static_cast<double>(dist) / static_cast<double>(halfWin)));
+                ir[i] *= w;
+            }
+        }
     }
 
-    return blended;
+    return ir;
 }

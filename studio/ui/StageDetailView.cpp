@@ -191,6 +191,8 @@ void StageDetailView::buildStageOptionsUi() {
     if (m_stageIndex >= m_pipeline->stages.size()) return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
+    m_optionsContainer->setEnabled(stage.isEnabled);
+
     int incomingChannels = (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
     if (incomingChannels < 1) incomingChannels = 2;
 

@@ -31,6 +31,10 @@ enum class DisplaySmoothing {
 };
 std::string displaySmoothingToString(DisplaySmoothing s);
 
+enum class FDWCycles {
+    Off, Cycles1, Cycles5, Cycles10, Cycles15
+};
+
 struct MeasurementPosition {
     QUuid id;
     std::string name;
@@ -70,6 +74,7 @@ public:
     double schroederHz = 200.0;
     double modalMinQ = 2.0;
 
+    FDWCycles fdwCycles = FDWCycles::Off;
     DisplaySmoothing displaySmoothing = DisplaySmoothing::Oct1over6;
 
     std::optional<CalibrationCurve> calibration;
@@ -111,6 +116,9 @@ public:
 
 signals:
     void sessionUpdated();
+
+private:
+    std::vector<BiquadParameters> randomMockSystem();
 };
 
 #endif // MEASUREMENT_SESSION_H

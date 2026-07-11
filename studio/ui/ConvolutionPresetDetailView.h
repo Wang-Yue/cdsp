@@ -3,6 +3,7 @@
 
 #include "models/ConvolutionPreset.h"
 #include "models/PipelineStore.h"
+#include "models/AudioDeviceManager.h"
 #include "ui/ConvolutionIRPlot.h"
 #include <QWidget>
 #include <QLineEdit>
@@ -18,6 +19,7 @@ public:
     ConvolutionPresetDetailView(
         ConvolutionPreset preset,
         std::shared_ptr<PipelineStore> pipeline,
+        std::shared_ptr<AudioDeviceManager> devices = nullptr,
         QWidget* parent = nullptr
     );
 
@@ -28,6 +30,7 @@ private slots:
 private:
     ConvolutionPreset m_preset;
     std::shared_ptr<PipelineStore> m_pipeline;
+    std::shared_ptr<AudioDeviceManager> m_devices;
     int m_previewRate = 48000;
 
     QLineEdit* m_nameEdit;

@@ -26,6 +26,11 @@ public:
         emit updated();
     }
 
+    void reset() {
+        data = SpectrumData();
+        emit updated();
+    }
+
     void resetToDefaults() {
         isCapture = false;
         channel = std::nullopt;

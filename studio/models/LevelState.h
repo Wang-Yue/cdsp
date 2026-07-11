@@ -17,6 +17,13 @@ struct LevelState {
         playbackRms = levels.playback_rms;
         playbackPeak = levels.playback_peak;
     }
+
+    void reset(size_t capChannels = 0, size_t pbChannels = 0) {
+        captureRms.assign(capChannels, -100.0f);
+        capturePeak.assign(capChannels, -100.0f);
+        playbackRms.assign(pbChannels, -100.0f);
+        playbackPeak.assign(pbChannels, -100.0f);
+    }
 };
 
 #endif // LEVEL_STATE_H

@@ -14,13 +14,15 @@ class ImpulseResponse {
 public:
     std::vector<double> samples;
     int sampleRate = 48000;
+    size_t zeroIndex = 0;
 
     ImpulseResponse() = default;
-    ImpulseResponse(const std::vector<double>& samples, int sampleRate = 48000);
+    ImpulseResponse(const std::vector<double>& samples, int sampleRate = 48000, size_t zeroIndex = 0);
 
     size_t peakIndex() const;
     double peakValue() const;
 
+    ImpulseResponse centeredOnPeak() const;
     ImpulseResponse windowed(size_t leftSamples, size_t rightSamples, double taperFraction = 0.1) const;
     std::vector<double> schroederDecay() const;
     RT60Result estimateRT60() const;

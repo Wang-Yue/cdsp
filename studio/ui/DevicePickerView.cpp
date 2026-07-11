@@ -97,9 +97,28 @@ void DevicePickerView::setupUi() {
     m_capBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
     m_capBackendCombo->addItem("SignalGenerator", static_cast<int>(AudioBackendType::SignalGenerator));
 
-    connect(m_capBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+    auto getCapStackIndex = [](AudioBackendType backend) {
+        switch (backend) {
+        case AudioBackendType::CoreAudio:
+        case AudioBackendType::WASAPI:
+        case AudioBackendType::ASIO:
+        case AudioBackendType::ALSA:
+        case AudioBackendType::PulseAudio:
+            return 0;
+        case AudioBackendType::RawFile:
+            return 1;
+        case AudioBackendType::WavFile:
+            return 2;
+        case AudioBackendType::SignalGenerator:
+            return 3;
+        }
+        return 0;
+    };
+
+    connect(m_capBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, getCapStackIndex](int) {
         if (m_isRefreshing) return;
-        m_capStack->setCurrentIndex(index);
+        AudioBackendType b = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
+        m_capStack->setCurrentIndex(getCapStackIndex(b));
         applySettings();
     });
     capBackendBox->addWidget(m_capBackendCombo);
@@ -141,9 +160,26 @@ void DevicePickerView::setupUi() {
 #endif
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
 
-    connect(m_pbBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+    auto getPbStackIndex = [](AudioBackendType backend) {
+        switch (backend) {
+        case AudioBackendType::CoreAudio:
+        case AudioBackendType::WASAPI:
+        case AudioBackendType::ASIO:
+        case AudioBackendType::ALSA:
+        case AudioBackendType::PulseAudio:
+            return 0;
+        case AudioBackendType::RawFile:
+        case AudioBackendType::WavFile:
+        case AudioBackendType::SignalGenerator:
+            return 1;
+        }
+        return 0;
+    };
+
+    connect(m_pbBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, getPbStackIndex](int) {
         if (m_isRefreshing) return;
-        m_pbStack->setCurrentIndex(index);
+        AudioBackendType b = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
+        m_pbStack->setCurrentIndex(getPbStackIndex(b));
         applySettings();
     });
     pbBackendBox->addWidget(m_pbBackendCombo);
@@ -947,7 +983,22 @@ void DevicePickerView::refreshUi() {
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
     if (capBackendIdx >= 0) {
         m_capBackendCombo->setCurrentIndex(capBackendIdx);
-        m_capStack->setCurrentIndex(capBackendIdx);
+        int stackIdx = 0;
+        switch (m_devices->captureConfig.backend) {
+        case AudioBackendType::CoreAudio:
+        case AudioBackendType::WASAPI:
+        case AudioBackendType::ASIO:
+        case AudioBackendType::ALSA:
+        case AudioBackendType::PulseAudio:
+            stackIdx = 0; break;
+        case AudioBackendType::RawFile:
+            stackIdx = 1; break;
+        case AudioBackendType::WavFile:
+            stackIdx = 2; break;
+        case AudioBackendType::SignalGenerator:
+            stackIdx = 3; break;
+        }
+        m_capStack->setCurrentIndex(stackIdx);
     }
 
     // Capture Channels (Device Channels combo vs spinbox)
@@ -1052,7 +1103,20 @@ void DevicePickerView::refreshUi() {
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
     if (pbBackendIdx >= 0) {
         m_pbBackendCombo->setCurrentIndex(pbBackendIdx);
-        m_pbStack->setCurrentIndex(pbBackendIdx);
+        int stackIdx = 0;
+        switch (m_devices->playbackConfig.backend) {
+        case AudioBackendType::CoreAudio:
+        case AudioBackendType::WASAPI:
+        case AudioBackendType::ASIO:
+        case AudioBackendType::ALSA:
+        case AudioBackendType::PulseAudio:
+            stackIdx = 0; break;
+        case AudioBackendType::RawFile:
+        case AudioBackendType::WavFile:
+        case AudioBackendType::SignalGenerator:
+            stackIdx = 1; break;
+        }
+        m_pbStack->setCurrentIndex(stackIdx);
     }
 
     // Playback Channels (Device Channels combo vs spinbox)

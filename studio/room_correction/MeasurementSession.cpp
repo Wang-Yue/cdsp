@@ -5,6 +5,7 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QUuid>
+#include <QFileInfo>
 #include <cmath>
 #include <random>
 #include <algorithm>
@@ -64,19 +65,48 @@ std::vector<double> MeasurementSession::displayedMagDB() const {
     return PEQAutoFit::smoothLogOctave(measuredMagDB, grid, octaves);
 }
 
+std::vector<BiquadParameters> MeasurementSession::randomMockSystem() {
+    std::vector<BiquadParameters> chain;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> disHp(25.0, 60.0);
+    std::uniform_int_distribution<int> disModes(2, 4);
+    std::uniform_real_distribution<double> disModeF(40.0, 300.0);
+    std::uniform_real_distribution<double> disModeG(4.0, 10.0);
+    std::uniform_real_distribution<double> disModeQ(3.0, 8.0);
+    std::uniform_int_distribution<int> disSign(0, 1);
+    std::uniform_real_distribution<double> disLp(11000.0, 17000.0);
+
+    BiquadParameters hp;
+    hp.type = BiquadType::Highpass; hp.freq = disHp(gen); hp.q = 0.707;
+    chain.push_back(hp);
+
+    int modeCount = disModes(gen);
+    for (int i = 0; i < modeCount; ++i) {
+        BiquadParameters mode;
+        mode.type = BiquadType::Peaking;
+        mode.freq = disModeF(gen);
+        mode.gain = disModeG(gen) * (disSign(gen) ? 1.0 : -1.0);
+        mode.q = disModeQ(gen);
+        chain.push_back(mode);
+    }
+
+    BiquadParameters lp;
+    lp.type = BiquadType::Lowpass; lp.freq = disLp(gen); lp.q = 0.707;
+    chain.push_back(lp);
+
+    return chain;
+}
+
 void MeasurementSession::generateMockMeasurement(bool append) {
     status = "Generating mock measurement…";
     if (!append) positions.clear();
 
-    auto [sweep, inv] = SweepGenerator::sweepAndInverse(sweepF1, sweepF2, sweepDurationSeconds, sampleRate);
+    auto mockChain = randomMockSystem();
+    auto [sweep, inv] = SweepGenerator::sweepAndInverse(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, 0.02, 0.02);
     std::vector<double> captured = sweep;
 
-    // Apply mock room biquads
-    BiquadParameters hp; hp.type = BiquadType::Highpass; hp.freq = 35.0; hp.q = 0.707;
-    BiquadParameters mode1; mode1.type = BiquadType::Peaking; mode1.freq = 60.0; mode1.gain = 6.0; mode1.q = 4.0;
-    BiquadParameters mode2; mode2.type = BiquadType::Peaking; mode2.freq = 120.0; mode2.gain = -8.0; mode2.q = 3.0;
-
-    for (const auto& p : {hp, mode1, mode2}) {
+    for (const auto& p : mockChain) {
         auto coeffs = BiquadCoefficients::compute(p, sampleRate);
         if (coeffs.has_value()) {
             double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
@@ -156,12 +186,27 @@ void MeasurementSession::recomputeAverage() {
     grid = PEQAutoFit::logFrequencyGrid(20.0, 20000.0, 256);
     std::vector<double> combinedDB(grid.size(), 0.0);
 
+    auto getEffectiveFR = [this](const MeasurementPosition& p) -> FrequencyResponse {
+        if (fdwCycles != FDWCycles::Off && p.ir.has_value()) {
+            double cycles = 1.0;
+            switch (fdwCycles) {
+            case FDWCycles::Cycles1: cycles = 1.0; break;
+            case FDWCycles::Cycles5: cycles = 5.0; break;
+            case FDWCycles::Cycles10: cycles = 10.0; break;
+            case FDWCycles::Cycles15: cycles = 15.0; break;
+            default: break;
+            }
+            return FrequencyResponse::fdw(p.ir.value(), cycles);
+        }
+        return p.fr;
+    };
+
     if (enabled.size() == 1) {
-        combinedDB = PEQAutoFit::sampleMagnitudeDB(enabled[0]->fr, grid);
+        combinedDB = PEQAutoFit::sampleMagnitudeDB(getEffectiveFR(*enabled[0]), grid);
     } else {
         std::vector<double> sumPow(grid.size(), 0.0);
         for (const auto* p : enabled) {
-            auto dB = PEQAutoFit::sampleMagnitudeDB(p->fr, grid);
+            auto dB = PEQAutoFit::sampleMagnitudeDB(getEffectiveFR(*p), grid);
             for (size_t i = 0; i < grid.size(); ++i) {
                 double lin = std::pow(10.0, dB[i] / 20.0);
                 sumPow[i] += lin * lin;
@@ -192,7 +237,7 @@ void MeasurementSession::recomputeAverage() {
         for (size_t i = 0; i < grid.size(); ++i) combinedDB[i] -= median;
     }
 
-    measuredFR = enabled[0]->fr;
+    measuredFR = getEffectiveFR(*enabled[0]);
     measuredIR = enabled.back()->ir;
     measuredMagDB = combinedDB;
 
@@ -252,19 +297,26 @@ void MeasurementSession::runFit() {
 }
 
 std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vector<std::string>& existingNames) {
-    if (!correctionPreset.has_value() || correctionPreset.value().bands.empty()) {
+    if (firKind != FIRKind::MeasurementDriven && (!correctionPreset.has_value() || correctionPreset.value().bands.empty())) {
         status = "Run PEQ fit before generating FIR.";
+        emit sessionUpdated();
+        return std::nullopt;
+    }
+    if (firKind == FIRKind::MeasurementDriven && !measuredFR.has_value()) {
+        status = "Run a measurement before exporting measurement-driven FIR.";
         emit sessionUpdated();
         return std::nullopt;
     }
 
     std::vector<BiquadParameters> bands;
-    for (const auto& b : correctionPreset.value().bands) {
-        if (!b.isEnabled) continue;
-        BiquadParameters p;
-        p.type = stringToBiquadType(eqBandTypeToString(b.type));
-        p.freq = b.freq; p.gain = b.gain; p.q = b.q;
-        bands.push_back(p);
+    if (correctionPreset.has_value()) {
+        for (const auto& b : correctionPreset.value().bands) {
+            if (!b.isEnabled) continue;
+            BiquadParameters p;
+            p.type = stringToBiquadType(eqBandTypeToString(b.type));
+            p.freq = b.freq; p.gain = b.gain; p.q = b.q;
+            bands.push_back(p);
+        }
     }
 
     QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -274,16 +326,30 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
     std::map<int, std::string> irPaths;
     QUuid presetId = QUuid::createUuid();
 
-    std::vector<int> rates = {44100, 48000, 88200, 96000, 192000};
+    std::vector<int> rates = {32000, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
     for (int rate : rates) {
-        FIRDesignOptions opts;
-        opts.fftSize = firTapCount;
-        opts.outputLength = firTapCount;
-        opts.preampDB = 0.0;
+        std::vector<double> irSamples;
 
-        std::vector<double> irSamples = (firKind == FIRKind::MinimumPhase)
-            ? FIRDesign::minimumPhase(bands, rate, opts)
-            : FIRDesign::linearPhase(bands, rate, opts);
+        if (firKind == FIRKind::MinimumPhase) {
+            FIRDesignOptions opts;
+            opts.fftSize = firTapCount;
+            opts.outputLength = firTapCount;
+            opts.preampDB = 0.0;
+            irSamples = FIRDesign::minimumPhase(bands, rate, opts);
+        } else if (firKind == FIRKind::LinearPhase) {
+            FIRDesignOptions opts;
+            opts.fftSize = firTapCount;
+            opts.outputLength = firTapCount;
+            opts.preampDB = 0.0;
+            irSamples = FIRDesign::linearPhase(bands, rate, opts);
+        } else if (firKind == FIRKind::MeasurementDriven) {
+            FIRDesignMeasurementOptions opts;
+            opts.fftSize = firTapCount;
+            opts.preampDB = -6.0;
+            opts.maxBoostDB = maxGainDB;
+            opts.phaseBlend = firPhaseBlend;
+            irSamples = FIRDesign::fromMeasurement(measuredFR.value(), targetCurve(), rate, opts);
+        }
 
         QString fileName = QString("RoomCorrection-%1-%2-%3.f64")
             .arg(QString::fromStdString(firKindToString(firKind)))
@@ -295,9 +361,17 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         irPaths[rate] = fullPath.toStdString();
     }
 
-    std::string presetName = "Room Correction (" + firKindToString(firKind) + ")";
-    ConvolutionPreset preset(presetName, irPaths, firTapCount, firKindToString(firKind));
+    std::string base = "Room Correction (" + firKindToString(firKind) + ")";
+    std::string presetName = base;
+    if (std::find(existingNames.begin(), existingNames.end(), base) != existingNames.end()) {
+        int idx = 2;
+        while (std::find(existingNames.begin(), existingNames.end(), base + " " + std::to_string(idx)) != existingNames.end()) {
+            idx++;
+        }
+        presetName = base + " " + std::to_string(idx);
+    }
 
+    ConvolutionPreset preset(presetName, irPaths, firTapCount, firKindToString(firKind));
     status = "Generated FIR preset: " + presetName;
     emit sessionUpdated();
     return preset;

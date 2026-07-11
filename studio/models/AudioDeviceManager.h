@@ -14,6 +14,7 @@ class AudioDeviceManager : public QObject {
 
 public:
     AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings, QObject* parent = nullptr);
+    ~AudioDeviceManager();
 
     DeviceConfig captureConfig;
     DeviceConfig playbackConfig;
@@ -25,6 +26,8 @@ public:
     void fetchDevices();
     void refreshDeviceCapabilities();
     void validateSampleRates();
+    void startDeviceChangeListener();
+    void stopDeviceChangeListener();
 
     std::vector<int> captureRateOptions() const;
     std::vector<int> playbackRateOptions() const;

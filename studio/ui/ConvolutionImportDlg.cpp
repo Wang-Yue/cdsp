@@ -199,16 +199,24 @@ void ConvolutionImportDlg::updateTable() {
     m_importBtn->setEnabled(!m_items.empty() && !duplicate && !m_nameEdit->text().trimmed().isEmpty());
 }
 
+#include <QStandardPaths>
+#include <QDir>
+#include <QUuid>
+
 void ConvolutionImportDlg::onImportClicked() {
     if (m_items.empty()) return;
 
+    QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir irDir(appDataDir + "/IRs");
+    if (!irDir.exists()) irDir.mkpath(".");
+
+    QUuid presetId = QUuid::createUuid();
     std::map<int, std::string> paths;
     int firstCoeffCount = 0;
     bool doNormalize = m_normalizeCheck->isChecked();
     double delayMs = m_delayCompSpin->value();
 
     for (const auto& item : m_items) {
-        paths[item.sampleRate] = item.filePath.toStdString();
         auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
         
         if (doNormalize && !coeffs.empty()) {
@@ -232,6 +240,14 @@ void ConvolutionImportDlg::onImportClicked() {
         if (firstCoeffCount == 0) {
             firstCoeffCount = static_cast<int>(coeffs.size());
         }
+
+        QString destFileName = QString("Imported-%1-%2.f64")
+            .arg(presetId.toString(QUuid::WithoutBraces).left(8))
+            .arg(item.sampleRate);
+        QString destPath = irDir.filePath(destFileName);
+
+        ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString());
+        paths[item.sampleRate] = destPath.toStdString();
     }
 
     std::string name = m_nameEdit->text().toStdString();

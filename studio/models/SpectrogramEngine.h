@@ -7,6 +7,8 @@
 #include <deque>
 #include <optional>
 
+enum class ColorPalette { Default, Viridis, Magma, Plasma, Inferno, Jet };
+
 class SpectrogramEngine : public QObject {
     Q_OBJECT
 
@@ -20,6 +22,7 @@ public:
     double minFreq = 20.0;
     double maxFreq = 20000.0;
     bool show3D = false;
+    ColorPalette colorPalette = ColorPalette::Default;
 
     std::deque<SpectrumData> history;
     size_t maxHistory = 300;
@@ -29,6 +32,11 @@ public:
         if (history.size() > maxHistory) {
             history.pop_back();
         }
+        emit updated();
+    }
+
+    void reset() {
+        history.clear();
         emit updated();
     }
 

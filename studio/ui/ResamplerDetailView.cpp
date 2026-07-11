@@ -9,8 +9,9 @@
 ResamplerDetailView::ResamplerDetailView(
     std::shared_ptr<AudioSettings> settings,
     std::shared_ptr<AudioDeviceManager> devices,
+    std::shared_ptr<DSPEngineController> dspController,
     QWidget* parent
-) : QWidget(parent), m_settings(settings), m_devices(devices) {
+) : QWidget(parent), m_settings(settings), m_devices(devices), m_dspController(dspController) {
     setupUi();
     refreshUi();
 }
@@ -135,7 +136,7 @@ void ResamplerDetailView::updateVisibility() {
     if (!m_typeForm) return;
 
     std::string typeStr = m_typeCombo->currentText().toStdString();
-    bool isAsyncSinc = (typeStr == "AsyncSinc" || typeStr == "Synchronous");
+    bool isAsyncSinc = (typeStr == "AsyncSinc");
     bool isAsyncPoly = (typeStr == "AsyncPoly");
     bool isApple = (typeStr == "Apple");
     bool useProfile = m_useProfileCheck->isChecked();
@@ -191,4 +192,8 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerWindow = m_windowCombo->currentText().toStdString();
     m_settings->resamplerFCutoff = m_fCutoffSpin->value();
     m_settings->savePreferences();
+
+    if (m_dspController) {
+        m_dspController->applyConfig();
+    }
 }

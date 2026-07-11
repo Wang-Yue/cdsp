@@ -16,8 +16,9 @@
 EQPresetDetailView::EQPresetDetailView(
     EQPreset preset,
     std::shared_ptr<PipelineStore> pipeline,
+    std::shared_ptr<DSPEngineController> dspController,
     QWidget* parent
-) : QWidget(parent), m_preset(preset), m_pipeline(pipeline) {
+) : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
     refreshUi();
 }
@@ -134,7 +135,7 @@ void EQPresetDetailView::setupUi() {
 
     auto autoEqBtn = new QPushButton("🔍 AutoEQ Database", this);
     connect(autoEqBtn, &QPushButton::clicked, [this]() {
-        AutoEqPickerDlg dlg(m_pipeline, this);
+        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
         refreshUi();
     });
@@ -142,7 +143,7 @@ void EQPresetDetailView::setupUi() {
 
     auto oratoryBtn = new QPushButton("🎧 Oratory1990", this);
     connect(oratoryBtn, &QPushButton::clicked, [this]() {
-        OratoryPresetPickerDlg dlg(m_pipeline, this);
+        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
         refreshUi();
     });

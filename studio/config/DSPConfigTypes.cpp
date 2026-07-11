@@ -882,6 +882,14 @@ FilterConfig FilterConfig::fromJson(const QJsonObject& json) {
         if (pObj.contains("b2")) b.b2 = pObj["b2"].toDouble();
         if (pObj.contains("a1")) b.a1 = pObj["a1"].toDouble();
         if (pObj.contains("a2")) b.a2 = pObj["a2"].toDouble();
+        if (pObj.contains("freq_z")) b.freqNotch = pObj["freq_z"].toDouble();
+        if (pObj.contains("freq_p")) b.freqPole = pObj["freq_p"].toDouble();
+        if (pObj.contains("q_p")) b.qP = pObj["q_p"].toDouble();
+        if (pObj.contains("normalize_at_dc")) b.normalizeAtDc = pObj["normalize_at_dc"].toBool();
+        if (pObj.contains("freq_act")) b.freqAct = pObj["freq_act"].toDouble();
+        if (pObj.contains("q_act")) b.qAct = pObj["q_act"].toDouble();
+        if (pObj.contains("freq_target")) b.freqTarget = pObj["freq_target"].toDouble();
+        if (pObj.contains("q_target")) b.qTarget = pObj["q_target"].toDouble();
         f.biquadParams = b;
         break;
     }
@@ -1278,6 +1286,36 @@ void DSPConfiguration::validate() const {
         throw std::runtime_error("Chunk size must be between 1 and 1000000");
     }
 
+    if (devices.silenceTimeout.has_value() && devices.silenceTimeout.value() < 0.0) {
+        throw std::runtime_error("silence_timeout cannot be negative");
+    }
+    if (devices.silenceThreshold.has_value() && devices.silenceThreshold.value() > 0.0) {
+        throw std::runtime_error("silence_threshold must be less than or equal to 0");
+    }
+    if (devices.volumeLimit.has_value()) {
+        double limit = devices.volumeLimit.value();
+        if (limit < -150.0 || limit > 50.0) {
+            throw std::runtime_error("Volume limit must be between -150 and +50 dB");
+        }
+    }
+    if (devices.targetLevel.has_value()) {
+        int target = devices.targetLevel.value();
+        if (target <= 0) throw std::runtime_error("Target level must be positive");
+        int qlim = devices.queuelimit.value_or(4);
+        int maxTarget = (2 + qlim) * devices.chunksize;
+        if (target > maxTarget) throw std::runtime_error("target_level cannot be larger than max limit");
+    }
+    if (devices.queuelimit.has_value()) {
+        int q = devices.queuelimit.value();
+        if (q < 0 || q > 1000) throw std::runtime_error("Queue limit must be between 0 and 1000");
+    }
+    if (devices.adjustPeriod.has_value() && devices.adjustPeriod.value() < 0.1) {
+        throw std::runtime_error("Adjust period must be at least 0.1");
+    }
+    if (devices.workerThreads.has_value() && devices.workerThreads.value() <= 0) {
+        throw std::runtime_error("worker_threads must be positive");
+    }
+
     int currentChannels = 2;
     if (devices.capture.backend == AudioBackendType::CoreAudio) {
         currentChannels = devices.capture.coreAudio.channels;
@@ -1289,6 +1327,8 @@ void DSPConfiguration::validate() const {
 
     for (size_t i = 0; i < pipeline.size(); ++i) {
         const auto& step = pipeline[i];
+        if (step.bypassed.value_or(false)) continue;
+
         if (step.type == PipelineStepType::Mixer) {
             std::string name = step.name.value_or("");
             if (mixers.count(name)) {
@@ -1312,5 +1352,15 @@ void DSPConfiguration::validate() const {
                 throw std::runtime_error("Pipeline references undefined processor: " + name);
             }
         }
+    }
+
+    int playbackChannels = 2;
+    if (devices.playback.backend == AudioBackendType::CoreAudio) {
+        playbackChannels = devices.playback.coreAudio.channels;
+    } else if (devices.playback.backend == AudioBackendType::RawFile) {
+        playbackChannels = devices.playback.rawFile.channels;
+    }
+    if (currentChannels != playbackChannels) {
+        throw std::runtime_error("Pipeline outputs " + std::to_string(currentChannels) + " channel(s) but playback device expects " + std::to_string(playbackChannels));
     }
 }

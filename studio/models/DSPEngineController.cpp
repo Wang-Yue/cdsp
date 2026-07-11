@@ -9,6 +9,12 @@ DSPEngineController::DSPEngineController(
     QObject* parent
 ) : QObject(parent), m_engine(engine), m_devices(devices), m_settings(settings), m_pipeline(pipeline) {
 
+    m_reconnectTimer.setSingleShot(true);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, [this]() {
+        LogManager::instance()->appendLog(LogLevel::Info, QString("Executing scheduled auto-restart attempt %1...").arg(m_retryCount));
+        startEngine();
+    });
+
     connect(m_devices.get(), &AudioDeviceManager::configChanged, this, [this]() {
         if (status == ProcessingState::Running) {
             applyConfig();
@@ -97,8 +103,12 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
 }
 
 void DSPEngineController::startEngine() {
+    m_userStopped = false;
     status = ProcessingState::Starting;
     emit statusChanged(status);
+
+    // Prime faders BEFORE starting config to prevent 0 dBFS jumps/pops
+    syncFaders();
 
     DSPConfiguration config = buildConfiguration();
     std::string jsonStr = config.toJsonString();
@@ -107,25 +117,33 @@ void DSPEngineController::startEngine() {
     bool ok = m_engine->start(jsonStr, err);
     if (ok) {
         status = ProcessingState::Running;
+        m_lastStartTime = QDateTime::currentDateTime();
         syncFaders();
         LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine started successfully.");
     } else {
         status = ProcessingState::Inactive;
         lastErrorMessage = err;
         LogManager::instance()->appendLog(LogLevel::Error, QString::fromStdString("Engine start failed: " + err));
+        if (!m_userStopped) {
+            scheduleAutoRestart(1000);
+        }
     }
     emit statusChanged(status);
 }
 
 void DSPEngineController::stopEngine() {
+    m_userStopped = true;
+    m_reconnectTimer.stop();
+    m_retryCount = 0;
     m_engine->stop();
     status = ProcessingState::Inactive;
     emit statusChanged(status);
-    LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine stopped.");
+    LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine stopped by user.");
 }
 
 void DSPEngineController::applyConfig() {
     if (status != ProcessingState::Running) return;
+    syncFaders();
     DSPConfiguration config = buildConfiguration();
     std::string jsonStr = config.toJsonString();
 
@@ -134,15 +152,19 @@ void DSPEngineController::applyConfig() {
     if (ok) {
         syncFaders();
         emit configApplied();
-        LogManager::instance()->appendLog(LogLevel::Info, "Dynamic configuration applied.");
+        LogManager::instance()->appendLog(LogLevel::Info, "Dynamic configuration applied successfully.");
     } else {
         lastErrorMessage = err;
         LogManager::instance()->appendLog(LogLevel::Error, QString::fromStdString("Apply config failed: " + err));
+        if (!m_userStopped) {
+            scheduleAutoRestart(1000);
+        }
     }
 }
 
 void DSPEngineController::setFaderVolume(Fader fader, float db, bool instant) {
     m_settings->setVolume(db, fader);
+    // instant = false activates smooth volume ramping to avoid clicks/pops
     m_engine->setFaderVolume(fader, db, instant);
 }
 
@@ -158,6 +180,23 @@ void DSPEngineController::syncFaders() {
     }
 }
 
+void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
+    if (m_userStopped || m_reconnectTimer.isActive()) return;
+    if (m_retryCount >= m_maxRetries) {
+        LogManager::instance()->appendLog(LogLevel::Error, QString("Engine auto-restart exceeded maximum retry count (%1 attempts). Giving up.").arg(m_maxRetries));
+        return;
+    }
+
+    int delayMs = baseDelayMs * (1 << m_retryCount);
+    if (delayMs > 16000) delayMs = 16000;
+
+    m_retryCount++;
+    LogManager::instance()->appendLog(LogLevel::Warn, QString("Engine crash/stop detected. Scheduling auto-restart attempt %1/%2 in %3 ms...")
+        .arg(m_retryCount).arg(m_maxRetries).arg(delayMs));
+
+    m_reconnectTimer.start(delayMs);
+}
+
 void DSPEngineController::updateStatus(const StateUpdate& update) {
     bool stateChanged = (status != update.state);
     status = update.state;
@@ -168,13 +207,26 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
     }
     emit statusUpdated(status, lastStopReason);
 
+    if (status == ProcessingState::Running) {
+        if (m_lastStartTime.isValid() && m_lastStartTime.secsTo(QDateTime::currentDateTime()) > 5) {
+            m_retryCount = 0; // Reset retry counter after stable execution
+        }
+    }
+
     if (update.stopReason.type == StopReasonType::CaptureFormatChange || update.stopReason.type == StopReasonType::PlaybackFormatChange) {
         int newRate = update.stopReason.formatChangeRate;
         if (newRate > 0) {
-            LogManager::instance()->appendLog(LogLevel::Warn, QString("Format change detected (%1 Hz), restarting engine...").arg(newRate));
+            LogManager::instance()->appendLog(LogLevel::Warn, QString("Format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
             m_devices->captureConfig.sampleRate = newRate;
             m_devices->playbackConfig.sampleRate = newRate;
-            startEngine();
+            m_devices->saveConfigs();
+            scheduleAutoRestart(0);
         }
+    } else if (!m_userStopped && (update.stopReason.type == StopReasonType::CaptureError ||
+                                  update.stopReason.type == StopReasonType::PlaybackError ||
+                                  update.stopReason.type == StopReasonType::UnknownError ||
+                                  status == ProcessingState::Inactive ||
+                                  status == ProcessingState::Stalled)) {
+        scheduleAutoRestart(1000);
     }
 }

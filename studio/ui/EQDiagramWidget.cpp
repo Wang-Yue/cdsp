@@ -71,14 +71,25 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         const auto& specBands = m_spectrum->data.magnitudes;
         const auto& specFreqs = m_spectrum->data.frequencies;
         if (!specBands.empty() && specBands.size() == specFreqs.size()) {
+            double peakDB = -120.0;
+            double sumDB = 0.0;
+            for (float val : specBands) {
+                double v = static_cast<double>(val);
+                peakDB = std::max(peakDB, v);
+                sumDB += v;
+            }
+            double offset = (peakDB < -95.0) ? 0.0 : (sumDB / specBands.size());
+
             QPainterPath fillPath, strokePath;
             fillPath.moveTo(0, h);
 
             for (size_t i = 0; i < specBands.size(); ++i) {
                 double f = specFreqs[i];
-                double db = std::max(-24.0, std::min(24.0, static_cast<double>(specBands[i])));
+                double rawDb = static_cast<double>(specBands[i]);
+                double dbVal = (peakDB < -95.0) ? rawDb : (rawDb - offset);
+                double dbClamped = std::max(-24.0, std::min(24.0, dbVal));
                 double x = freqToX(f, w);
-                double y = dbToY(db, h);
+                double y = dbToY(dbClamped, h);
 
                 if (i == 0) {
                     fillPath.lineTo(x, y);

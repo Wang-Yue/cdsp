@@ -100,7 +100,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             if (i == 0) path.moveTo(x, y);
             else path.lineTo(x, y);
         }
-        p.setPen(QPen(QColor("#34c759"), 1.5));
+        double lineWidth = std::max(1.0, static_cast<double>(std::min(w, h)) / 150.0);
+        p.setPen(QPen(QColor(0, 122, 255, 178), lineWidth));
         p.drawPath(path);
     } else {
         // Particle Mode matching SwiftUI: Indigo to Cyan HSV gradient, head halo, particle radius decay

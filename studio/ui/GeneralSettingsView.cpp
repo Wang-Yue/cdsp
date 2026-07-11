@@ -70,6 +70,10 @@ void GeneralSettingsView::setupUi() {
     });
     pollForm->addRow("Monitoring Polling Rate:", pollBox);
 
+    auto pollSubLbl = new QLabel("Adjust the frequency of UI updates for meters and spectrum.", pollGroup);
+    pollSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    pollForm->addRow("", pollSubLbl);
+
     mainLayout->addWidget(pollGroup);
 
     // Silence Detection Group
@@ -108,6 +112,10 @@ void GeneralSettingsView::setupUi() {
         m_settings->savePreferences();
     });
     silenceForm->addRow("Silence Timeout:", timeoutBox);
+
+    auto silenceSubLbl = new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
+    silenceSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    silenceForm->addRow("", silenceSubLbl);
 
     mainLayout->addWidget(silenceGroup);
     mainLayout->addStretch();

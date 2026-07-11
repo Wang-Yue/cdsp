@@ -6,8 +6,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-ImpulseResponse::ImpulseResponse(const std::vector<double>& samples, int sampleRate)
-    : samples(samples), sampleRate(sampleRate) {}
+ImpulseResponse::ImpulseResponse(const std::vector<double>& samples, int sampleRate, size_t zeroIndex)
+    : samples(samples), sampleRate(sampleRate), zeroIndex(zeroIndex) {}
 
 size_t ImpulseResponse::peakIndex() const {
     if (samples.empty()) return 0;
@@ -28,55 +28,63 @@ double ImpulseResponse::peakValue() const {
     return samples[peakIndex()];
 }
 
+ImpulseResponse ImpulseResponse::centeredOnPeak() const {
+    ImpulseResponse out = *this;
+    out.zeroIndex = peakIndex();
+    return out;
+}
+
 ImpulseResponse ImpulseResponse::windowed(size_t leftSamples, size_t rightSamples, double taperFraction) const {
-    if (samples.empty()) return *this;
+    size_t n = leftSamples + rightSamples;
+    std::vector<double> out(n, 0.0);
 
-    size_t peak = peakIndex();
-    size_t start = (peak > leftSamples) ? (peak - leftSamples) : 0;
-    size_t end = std::min(samples.size(), peak + rightSamples);
-    size_t winLen = end - start;
+    int srcStart = static_cast<int>(zeroIndex) - static_cast<int>(leftSamples);
+    for (size_t i = 0; i < n; ++i) {
+        int src = srcStart + static_cast<int>(i);
+        if (src >= 0 && static_cast<size_t>(src) < samples.size()) {
+            out[i] = samples[src];
+        }
+    }
 
-    std::vector<double> winSamples(winLen);
     size_t leftTaper = static_cast<size_t>(leftSamples * taperFraction);
     size_t rightTaper = static_cast<size_t>(rightSamples * taperFraction);
 
-    for (size_t i = 0; i < winLen; ++i) {
-        size_t srcIdx = start + i;
-        double w = 1.0;
-
-        if (i < leftTaper && leftTaper > 0) {
-            w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(leftTaper)));
-        } else if (i >= winLen - rightTaper && rightTaper > 0) {
-            size_t dist = winLen - 1 - i;
-            w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(dist) / static_cast<double>(rightTaper)));
-        }
-
-        winSamples[i] = samples[srcIdx] * w;
+    for (size_t i = 0; i < std::min(leftTaper, n); ++i) {
+        double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(leftTaper)));
+        out[i] *= w;
     }
 
-    return ImpulseResponse(winSamples, sampleRate);
+    for (size_t i = 0; i < std::min(rightTaper, n); ++i) {
+        double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(rightTaper)));
+        out[n - 1 - i] *= w;
+    }
+
+    return ImpulseResponse(out, sampleRate, leftSamples);
 }
 
 std::vector<double> ImpulseResponse::schroederDecay() const {
     if (samples.empty()) return {};
 
-    size_t n = samples.size();
-    std::vector<double> decay(n);
-    double sumPow = 0.0;
+    size_t p = zeroIndex;
+    if (p >= samples.size()) return {};
+
+    size_t n = samples.size() - p;
+    std::vector<double> energy(n, 0.0);
+    double sum = 0.0;
 
     for (size_t i = n; i > 0; --i) {
-        double v = samples[i - 1];
-        sumPow += v * v;
-        decay[i - 1] = sumPow;
+        double s = samples[p + i - 1];
+        sum += s * s;
+        energy[i - 1] = sum;
     }
 
-    double total = decay[0];
-    if (total <= 0.0) return std::vector<double>(n, -100.0);
+    if (sum <= 0.0) return {};
+    double invTotal = 1.0 / sum;
 
     std::vector<double> decayDB(n);
     for (size_t i = 0; i < n; ++i) {
-        double norm = decay[i] / total;
-        decayDB[i] = (norm > 0.0) ? 10.0 * std::log10(norm) : -100.0;
+        double ratio = std::max(energy[i] * invTotal, 1e-12);
+        decayDB[i] = 10.0 * std::log10(ratio);
     }
 
     return decayDB;
@@ -89,7 +97,6 @@ RT60Result ImpulseResponse::estimateRT60() const {
 
     double fs = static_cast<double>(sampleRate);
 
-    // Linear regression helper
     auto fitSlope = [&decay, fs](double startDB, double endDB) -> double {
         size_t idxStart = decay.size();
         size_t idxEnd = decay.size();
@@ -107,7 +114,7 @@ RT60Result ImpulseResponse::estimateRT60() const {
         if (dt <= 0.0) return 0.0;
 
         double dbDiff = endDB - startDB;
-        double slope = dbDiff / dt; // dB / sec
+        double slope = dbDiff / dt;
         return (slope < 0.0) ? (-60.0 / slope) : 0.0;
     };
 

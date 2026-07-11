@@ -4,12 +4,58 @@
 #include <QtConcurrent>
 #include <set>
 #include <algorithm>
+#include <QDebug>
+
+#ifdef __APPLE__
+#include <CoreAudio/CoreAudio.h>
+
+static OSStatus audioDeviceChangeListenerCallback(AudioObjectID inObjectID,
+                                                   UInt32 inNumberAddresses,
+                                                   const AudioObjectPropertyAddress inAddresses[],
+                                                   void* inClientData) {
+    AudioDeviceManager* manager = static_cast<AudioDeviceManager*>(inClientData);
+    if (manager) {
+        qDebug() << "[AudioDeviceManager] CoreAudio device change detected, refreshing devices...";
+        QMetaObject::invokeMethod(manager, [manager]() {
+            manager->fetchDevices();
+        });
+    }
+    return noErr;
+}
+#endif
 
 AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings, QObject* parent)
     : QObject(parent), m_engine(engine), m_settings(settings) {
     loadSavedConfigs();
     m_isInitializing = false;
+    startDeviceChangeListener();
     fetchDevices();
+}
+
+AudioDeviceManager::~AudioDeviceManager() {
+    stopDeviceChangeListener();
+}
+
+void AudioDeviceManager::startDeviceChangeListener() {
+#ifdef __APPLE__
+    AudioObjectPropertyAddress address = {
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, audioDeviceChangeListenerCallback, this);
+#endif
+}
+
+void AudioDeviceManager::stopDeviceChangeListener() {
+#ifdef __APPLE__
+    AudioObjectPropertyAddress address = {
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address, audioDeviceChangeListenerCallback, this);
+#endif
 }
 
 void AudioDeviceManager::loadSavedConfigs() {
@@ -41,7 +87,7 @@ void AudioDeviceManager::saveConfigs() {
 void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     if (m_isInitializing) return;
     DeviceConfig enforced = config.enforced();
-    bool devChanged = (enforced.capabilities.name != captureConfig.capabilities.name || enforced.backend != captureConfig.backend);
+    bool devChanged = (enforced.deviceName() != captureConfig.deviceName() || enforced.backend != captureConfig.backend);
     captureConfig = enforced;
     saveConfigs();
 
@@ -57,7 +103,7 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
 void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
     if (m_isInitializing) return;
     DeviceConfig enforced = config.enforced();
-    bool devChanged = (enforced.capabilities.name != playbackConfig.capabilities.name || enforced.backend != playbackConfig.backend);
+    bool devChanged = (enforced.deviceName() != playbackConfig.deviceName() || enforced.backend != playbackConfig.backend);
     playbackConfig = enforced;
     saveConfigs();
 

@@ -3,6 +3,7 @@
 
 #include "models/EQPreset.h"
 #include "models/PipelineStore.h"
+#include "models/DSPEngineController.h"
 #include "ui/EQDiagramWidget.h"
 
 #include <QWidget>
@@ -26,6 +27,7 @@ public:
     EQPresetDetailView(
         EQPreset preset,
         std::shared_ptr<PipelineStore> pipeline,
+        std::shared_ptr<DSPEngineController> dspController = nullptr,
         QWidget* parent = nullptr
     );
 
@@ -44,6 +46,7 @@ private slots:
 private:
     EQPreset m_preset;
     std::shared_ptr<PipelineStore> m_pipeline;
+    std::shared_ptr<DSPEngineController> m_dspController;
 
     QLineEdit* m_nameEdit;
     QSlider* m_preampSlider;

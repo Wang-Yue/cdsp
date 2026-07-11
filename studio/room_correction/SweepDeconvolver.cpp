@@ -42,16 +42,5 @@ ImpulseResponse SweepDeconvolver::deconvolve(
 ) {
     std::vector<double> invFilter = SweepGenerator::inverseFilter(f1, f2, durationSeconds, sampleRate);
     std::vector<double> rawIR = convolve(captured, invFilter);
-
-    // The Farina deconvolution peak lands at (inverse.size() - 1 + sweepStart)
-    // Align impulse response peak
-    size_t alignShift = invFilter.size() - 1;
-    std::vector<double> aligned;
-    if (rawIR.size() > alignShift) {
-        aligned.assign(rawIR.begin() + alignShift, rawIR.end());
-    } else {
-        aligned = rawIR;
-    }
-
-    return ImpulseResponse(aligned, sampleRate);
+    return ImpulseResponse(rawIR, sampleRate).centeredOnPeak();
 }

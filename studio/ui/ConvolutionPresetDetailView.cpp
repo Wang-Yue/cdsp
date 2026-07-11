@@ -12,8 +12,9 @@
 ConvolutionPresetDetailView::ConvolutionPresetDetailView(
     ConvolutionPreset preset,
     std::shared_ptr<PipelineStore> pipeline,
+    std::shared_ptr<AudioDeviceManager> devices,
     QWidget* parent
-) : QWidget(parent), m_preset(preset), m_pipeline(pipeline) {
+) : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_devices(devices) {
     setupUi();
     refreshUi();
 }
@@ -116,7 +117,18 @@ void ConvolutionPresetDetailView::refreshUi() {
         m_ratePreviewCombo->addItem(QString("%1 Hz").arg(r), r);
     }
     if (!rates.empty()) {
-        m_previewRate = rates[0];
+        int liveRate = m_devices ? m_devices->captureConfig.sampleRate : 48000;
+        if (std::find(rates.begin(), rates.end(), liveRate) != rates.end()) {
+            m_previewRate = liveRate;
+        } else {
+            double targetLog = std::log(static_cast<double>(liveRate));
+            m_previewRate = *std::min_element(rates.begin(), rates.end(), [targetLog](int a, int b) {
+                return std::abs(std::log(static_cast<double>(a)) - targetLog) < std::abs(std::log(static_cast<double>(b)) - targetLog);
+            });
+        }
+        int comboIdx = m_ratePreviewCombo->findData(m_previewRate);
+        if (comboIdx >= 0) m_ratePreviewCombo->setCurrentIndex(comboIdx);
+
         std::string p = m_preset.irPath(m_previewRate);
         if (!p.empty()) m_irPlot->setIRPath(p);
         double ms = m_preset.latencyMilliseconds(m_previewRate);

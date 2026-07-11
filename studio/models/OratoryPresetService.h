@@ -22,11 +22,16 @@ class OratoryPresetService : public QObject {
 public:
     explicit OratoryPresetService(QObject* parent = nullptr);
 
-    void fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback);
+    void fetchIndex(std::function<void(bool success, const std::vector<OratoryIndexEntry>& entries)> callback, bool forceRefresh = false);
     void fetchPreset(const OratoryIndexEntry& entry, std::function<void(bool success, std::optional<EQPreset> preset)> callback);
 
 private:
     QNetworkAccessManager m_networkManager;
+    std::vector<OratoryIndexEntry> m_allEntries;
+    bool m_isLoaded = false;
+
+    bool loadFromDiskCache(std::vector<OratoryIndexEntry>& entries);
+    void saveToDiskCache(const QByteArray& jsonBytes);
 };
 
 #endif // ORATORY_PRESET_SERVICE_H

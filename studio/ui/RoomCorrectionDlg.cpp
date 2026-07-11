@@ -257,11 +257,12 @@ void RoomCorrectionDlg::onGenerateFIR() {
 void RoomCorrectionDlg::onComputeSubwoofer() {
     auto rec = m_session.computeSubwooferRecommendation();
     if (rec.has_value()) {
-        m_subResultLabel->setText(QString("Subwoofer Recommendation:\n• Delay Offset: %1 ms (%2 samples)\n• Recommended Crossover: %3 Hz\n• Invert Sub Phase: %4")
-            .arg(rec->delayMs, 0, 'f', 2)
+        m_subResultLabel->setText(QString("Subwoofer Recommendation:\n• Sub Delay Offset: %1 ms (%2 samples)\n• Recommended Crossover: %3 Hz\n• Confidence: %4%\n\nRationale:\n%5")
+            .arg(rec->subDelayMs, 0, 'f', 2)
             .arg(rec->delaySamples)
-            .arg(rec->recommendedCrossoverHz, 0, 'f', 0)
-            .arg(rec->invertSubPhase ? "YES" : "NO"));
+            .arg(rec->crossoverHz, 0, 'f', 0)
+            .arg(rec->confidence * 100.0, 0, 'f', 0)
+            .arg(QString::fromStdString(rec->summary)));
     } else {
         m_subResultLabel->setText("Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
     }

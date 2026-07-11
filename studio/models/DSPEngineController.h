@@ -6,6 +6,8 @@
 #include "models/AudioSettings.h"
 #include "models/PipelineStore.h"
 #include <QObject>
+#include <QTimer>
+#include <QDateTime>
 #include <memory>
 #include <string>
 
@@ -50,6 +52,13 @@ private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<PipelineStore> m_pipeline;
 
+    QTimer m_reconnectTimer;
+    int m_retryCount = 0;
+    const int m_maxRetries = 5;
+    bool m_userStopped = true;
+    QDateTime m_lastStartTime;
+
+    void scheduleAutoRestart(int delayMs);
     void syncFaders();
 };
 
