@@ -94,19 +94,24 @@ lookahead_limiter_filter_t* lookahead_limiter_filter_create(
   double release_coeff;
   configure(params, sample_rate, &limit, &attack_samples, &release_coeff);
 
-  if (limit <= 0.0 || !isfinite(limit)) {
+  if (limit <= 0.0 || !isfinite(limit) || attack_samples < 0) {
     lookahead_limiter_filter_free(filter);
     return NULL;
   }
+
+  size_t lookahead_len =
+      (size_t)sample_rate > chunk_size ? (size_t)sample_rate : chunk_size;
+  if (lookahead_len < 1024) lookahead_len = 1024;
+
+  if ((size_t)attack_samples >= lookahead_len) {
+    lookahead_limiter_filter_free(filter);
+    return NULL;
+  }
+
   filter->limit = limit;
   filter->attack_samples = attack_samples;
   filter->release_coeff = release_coeff;
   filter->release_gain = 1.0;
-
-  // Inlined LookaheadBuffer
-  size_t lookahead_len =
-      (size_t)sample_rate > chunk_size ? (size_t)sample_rate : chunk_size;
-  if (lookahead_len < 1024) lookahead_len = 1024;
   filter->lookahead_capacity = lookahead_len;
   filter->lookahead_data = (double*)calloc(lookahead_len, sizeof(double));
   if (!filter->lookahead_data) {

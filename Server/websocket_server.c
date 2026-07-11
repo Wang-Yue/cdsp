@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdarg.h>
 
 void dyn_string_init(dyn_string_t* ds, size_t initial_cap) {
@@ -57,6 +58,13 @@ static void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   va_end(args);
 }
 
+static void free_vu_levels_arrays(vu_levels_t* vu) {
+  if (vu->playback_rms) free(vu->playback_rms);
+  if (vu->playback_peak) free(vu->playback_peak);
+  if (vu->capture_rms) free(vu->capture_rms);
+  if (vu->capture_peak) free(vu->capture_peak);
+  memset(vu, 0, sizeof(vu_levels_t));
+}
 
 #include <pthread.h>
 #include <stdatomic.h>
@@ -1043,23 +1051,24 @@ static void format_spectrum(const spectrum_t* spec, char* out, size_t max_len) {
 static bool server_handle_adjust_volume_fader(
     websocket_server_t* server, fader_t fader, double delta, double min_vol,
     double max_vol, dyn_string_t* ds, const char* cmd_name) {
-  processing_parameters_t* params = NULL;
-  if (!server || !server->engine ||
-      !server->engine->get_processing_parameters ||
-      !server->engine->get_processing_parameters(server->engine->ctx,
-                                                 (void**)&params) ||
-      !params) {
+  state_update_t status;
+  if (!server || !server->engine || !server->engine->get_status ||
+      !server->engine->get_status(server->engine->ctx, &status) ||
+      status.state != PROCESSING_STATE_RUNNING) {
     json_reply(cmd_name, "\"ProcessingNotRunningError\"", NULL, ds);
     return true;
   }
+  if (!server->engine->get_fader_volume) {
+    json_reply(cmd_name, "\"UnknownError\"", NULL, ds);
+    return true;
+  }
 
-  double current =
-      processing_parameters_get_target_volume_for_fader(params, fader);
+  double current = server->engine->get_fader_volume(server->engine->ctx, fader);
   double new_vol = current + delta;
   if (new_vol < min_vol) new_vol = min_vol;
   if (new_vol > max_vol) new_vol = max_vol;
 
-  if (server && server->engine && server->engine->set_fader_volume) {
+  if (server->engine->set_fader_volume) {
     server->engine->set_fader_volume(server->engine->ctx, fader, (float)new_vol,
                                      false);
   }
@@ -1130,13 +1139,13 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     }
     json_reply("GetStopReason", "\"Ok\"", reason_str, ds);
   } else if (strcmp(simple, "GetVolume") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      double vol =
-          processing_parameters_get_target_volume_for_fader(params, FADER_MAIN);
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      double vol = (server->engine->get_fader_volume)
+                       ? server->engine->get_fader_volume(server->engine->ctx, FADER_MAIN)
+                       : 0.0;
       char val[64];
       snprintf(val, sizeof(val), "%.17g", vol);
       json_reply("GetVolume", "\"Ok\"", val, ds);
@@ -1144,46 +1153,47 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       json_reply("GetVolume", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetMute") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      bool muted = processing_parameters_is_muted_for_fader(params, FADER_MAIN);
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      bool muted = (server->engine->is_fader_muted)
+                       ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
+                       : false;
       json_reply("GetMute", "\"Ok\"", muted ? "true" : "false", ds);
     } else {
       json_reply("GetMute", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "ToggleMute") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      bool was_muted =
-          processing_parameters_is_muted_for_fader(params, FADER_MAIN);
-      if (server && server->engine && server->engine->set_fader_mute) {
-        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN,
-                                       !was_muted);
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      bool was_muted = (server->engine->is_fader_muted)
+                           ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
+                           : false;
+      if (server->engine->set_fader_mute) {
+        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN, !was_muted);
       }
       json_reply("ToggleMute", "\"Ok\"", !was_muted ? "true" : "false", ds);
     } else {
       json_reply("ToggleMute", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetFaders") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       char faders_val[1024];
       int offset = 0;
       offset += snprintf(faders_val + offset, sizeof(faders_val) - offset, "[");
       for (int i = 0; i < FADER_COUNT; i++) {
-        double vol = processing_parameters_get_target_volume_for_fader(
-            params, (fader_t)i);
-        bool muted =
-            processing_parameters_is_muted_for_fader(params, (fader_t)i);
+        double vol = (server->engine->get_fader_volume)
+                         ? server->engine->get_fader_volume(server->engine->ctx, (fader_t)i)
+                         : 0.0;
+        bool muted = (server->engine->is_fader_muted)
+                         ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)i)
+                         : false;
         offset += snprintf(faders_val + offset, sizeof(faders_val) - offset,
                            "{\"volume\":%.17g,\"mute\":%s}%s", vol,
                            muted ? "true" : "false",
@@ -1195,82 +1205,50 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       json_reply("GetFaders", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetCaptureSignalRms") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t count = params->capture_channels;
-      double* levels = (double*)calloc(count, sizeof(double));
-      if (levels) {
-        processing_parameters_get_capture_signal_rms(params, levels, count);
-        char val[1024];
-        format_double_array(levels, count, val, sizeof(val));
-        free(levels);
-        json_reply("GetCaptureSignalRms", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetCaptureSignalRms", "\"Ok\"", "[]", ds);
-      }
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      char val[1024];
+      format_double_array(vu.capture_rms, vu.capture_channels, val, sizeof(val));
+      free_vu_levels_arrays(&vu);
+      json_reply("GetCaptureSignalRms", "\"Ok\"", val, ds);
     } else {
       json_reply("GetCaptureSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetCaptureSignalPeak") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t count = params->capture_channels;
-      double* levels = (double*)calloc(count, sizeof(double));
-      if (levels) {
-        processing_parameters_get_capture_signal_peak(params, levels, count);
-        char val[1024];
-        format_double_array(levels, count, val, sizeof(val));
-        free(levels);
-        json_reply("GetCaptureSignalPeak", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetCaptureSignalPeak", "\"Ok\"", "[]", ds);
-      }
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      char val[1024];
+      format_double_array(vu.capture_peak, vu.capture_channels, val, sizeof(val));
+      free_vu_levels_arrays(&vu);
+      json_reply("GetCaptureSignalPeak", "\"Ok\"", val, ds);
     } else {
       json_reply("GetCaptureSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetPlaybackSignalRms") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t count = params->playback_channels;
-      double* levels = (double*)calloc(count, sizeof(double));
-      if (levels) {
-        processing_parameters_get_playback_signal_rms(params, levels, count);
-        char val[1024];
-        format_double_array(levels, count, val, sizeof(val));
-        free(levels);
-        json_reply("GetPlaybackSignalRms", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetPlaybackSignalRms", "\"Ok\"", "[]", ds);
-      }
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      char val[1024];
+      format_double_array(vu.playback_rms, vu.playback_channels, val, sizeof(val));
+      free_vu_levels_arrays(&vu);
+      json_reply("GetPlaybackSignalRms", "\"Ok\"", val, ds);
     } else {
       json_reply("GetPlaybackSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetPlaybackSignalPeak") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t count = params->playback_channels;
-      double* levels = (double*)calloc(count, sizeof(double));
-      if (levels) {
-        processing_parameters_get_playback_signal_peak(params, levels, count);
-        char val[1024];
-        format_double_array(levels, count, val, sizeof(val));
-        free(levels);
-        json_reply("GetPlaybackSignalPeak", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetPlaybackSignalPeak", "\"Ok\"", "[]", ds);
-      }
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      char val[1024];
+      format_double_array(vu.playback_peak, vu.playback_channels, val, sizeof(val));
+      free_vu_levels_arrays(&vu);
+      json_reply("GetPlaybackSignalPeak", "\"Ok\"", val, ds);
     } else {
       json_reply("GetPlaybackSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -1280,11 +1258,9 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     bool has_status = server && server->engine && server->engine->get_status &&
                       server->engine->get_status(server->engine->ctx, &status);
     if (has_status && status.state == PROCESSING_STATE_RUNNING) {
-      const dsp_config_t* config =
-          (server && server->engine && server->engine->get_active_config)
-              ? server->engine->get_active_config(server->engine->ctx)
-              : NULL;
-      int sr = config ? config->devices.samplerate : 0;
+      int sr = (server && server->engine && server->engine->get_active_samplerate)
+                   ? server->engine->get_active_samplerate(server->engine->ctx)
+                   : 0;
       char val[32];
       snprintf(val, sizeof(val), "%d", sr);
       json_reply("GetCaptureRate", "\"Ok\"", val, ds);
@@ -1292,81 +1268,50 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       json_reply("GetCaptureRate", "\"Ok\"", "0", ds);
     }
   } else if (strcmp(simple, "GetRateAdjust") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      double rate = atomic_double_get(&params->rate_adjust);
-      char val[32];
-      snprintf(val, sizeof(val), "%.17g", rate);
-      json_reply("GetRateAdjust", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetRateAdjust", "\"Ok\"", "1.0", ds);
+    double rate = 1.0;
+    if (server && server->engine && server->engine->get_processing_status) {
+      server->engine->get_processing_status(server->engine->ctx, &rate, NULL, NULL, NULL, NULL);
     }
+    char val[32];
+    snprintf(val, sizeof(val), "%.17g", rate);
+    json_reply("GetRateAdjust", "\"Ok\"", val, ds);
   } else if (strcmp(simple, "GetBufferLevel") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      double lvl = atomic_double_get(&params->buffer_level);
-      char val[32];
-      snprintf(val, sizeof(val), "%d", (int)lvl);
-      json_reply("GetBufferLevel", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetBufferLevel", "\"Ok\"", "0", ds);
+    double lvl = 0.0;
+    if (server && server->engine && server->engine->get_processing_status) {
+      server->engine->get_processing_status(server->engine->ctx, NULL, &lvl, NULL, NULL, NULL);
     }
+    char val[32];
+    snprintf(val, sizeof(val), "%d", (int)lvl);
+    json_reply("GetBufferLevel", "\"Ok\"", val, ds);
   } else if (strcmp(simple, "GetClippedSamples") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      uint64_t clips =
-          atomic_load_explicit(&params->clipped_samples, memory_order_relaxed);
-      char val[32];
-      snprintf(val, sizeof(val), "%llu", (unsigned long long)clips);
-      json_reply("GetClippedSamples", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetClippedSamples", "\"Ok\"", "0", ds);
+    uint64_t clips = 0;
+    if (server && server->engine && server->engine->get_processing_status) {
+      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, &clips, NULL, NULL);
     }
+    char val[32];
+    snprintf(val, sizeof(val), "%llu", (unsigned long long)clips);
+    json_reply("GetClippedSamples", "\"Ok\"", val, ds);
   } else if (strcmp(simple, "ResetClippedSamples") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      atomic_store_explicit(&params->clipped_samples, 0ULL,
-                            memory_order_relaxed);
+    if (server && server->engine && server->engine->reset_clipped_samples) {
+      server->engine->reset_clipped_samples(server->engine->ctx);
     }
     json_reply("ResetClippedSamples", "\"Ok\"", NULL, ds);
   } else if (strcmp(simple, "GetProcessingLoad") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      double load = atomic_double_get(&params->processing_load);
-      char val[32];
-      snprintf(val, sizeof(val), "%.17g", load);
-      json_reply("GetProcessingLoad", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetProcessingLoad", "\"Ok\"", "0.0", ds);
+    double load = 0.0;
+    if (server && server->engine && server->engine->get_processing_status) {
+      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL, &load, NULL);
     }
+    char val[32];
+    snprintf(val, sizeof(val), "%.17g", load);
+    json_reply("GetProcessingLoad", "\"Ok\"", val, ds);
   } else if (strcmp(simple, "GetResamplerLoad") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      double load = atomic_double_get(&params->resampler_load);
-      char val[32];
-      snprintf(val, sizeof(val), "%.17g", load);
-      json_reply("GetResamplerLoad", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetResamplerLoad", "\"Ok\"", "0.0", ds);
+    double load = 0.0;
+    if (server && server->engine && server->engine->get_processing_status) {
+      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL, NULL, &load);
     }
+    char val[32];
+    snprintf(val, sizeof(val), "%.17g", load);
+    json_reply("GetResamplerLoad", "\"Ok\"", val, ds);
   } else if (strcmp(simple, "GetSupportedDeviceTypes") == 0) {
     json_reply("GetSupportedDeviceTypes", "\"Ok\"",
                "[[\"CoreAudio\"],[\"CoreAudio\"]]", ds);
@@ -1510,11 +1455,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                  "{\"InvalidRequestError\":\"No active subscription\"}", NULL, ds);
     }
   } else if (strcmp(simple, "GetCaptureSignalRmsSinceLast") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       uint64_t since = server->client_sessions[client_idx].last_cap_rms_time;
       server->client_sessions[client_idx].last_cap_rms_time = get_time_ms();
       size_t ch = server->capture_rms_history.channels;
@@ -1530,11 +1474,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                  "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetCaptureSignalPeakSinceLast") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       uint64_t since = server->client_sessions[client_idx].last_cap_peak_time;
       server->client_sessions[client_idx].last_cap_peak_time = get_time_ms();
       size_t ch = server->capture_peak_history.channels;
@@ -1550,11 +1493,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                  "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetPlaybackSignalRmsSinceLast") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       uint64_t since = server->client_sessions[client_idx].last_pb_rms_time;
       server->client_sessions[client_idx].last_pb_rms_time = get_time_ms();
       size_t ch = server->playback_rms_history.channels;
@@ -1570,11 +1512,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                  "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetPlaybackSignalPeakSinceLast") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       uint64_t since = server->client_sessions[client_idx].last_pb_peak_time;
       server->client_sessions[client_idx].last_pb_peak_time = get_time_ms();
       size_t ch = server->playback_peak_history.channels;
@@ -1593,12 +1534,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     double secs = 0;
     if (arg && cJSON_IsNumber(arg)) {
       secs = arg->valuedouble;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         uint64_t now = get_time_ms();
         uint64_t since = now - (uint64_t)(secs * 1000.0);
         size_t ch = server->capture_rms_history.channels;
@@ -1621,12 +1560,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     double secs = 0;
     if (arg && cJSON_IsNumber(arg)) {
       secs = arg->valuedouble;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         uint64_t now = get_time_ms();
         uint64_t since = now - (uint64_t)(secs * 1000.0);
         size_t ch = server->capture_peak_history.channels;
@@ -1649,12 +1586,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     double secs = 0;
     if (arg && cJSON_IsNumber(arg)) {
       secs = arg->valuedouble;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         uint64_t now = get_time_ms();
         uint64_t since = now - (uint64_t)(secs * 1000.0);
         size_t ch = server->playback_rms_history.channels;
@@ -1677,12 +1612,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     double secs = 0;
     if (arg && cJSON_IsNumber(arg)) {
       secs = arg->valuedouble;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         uint64_t now = get_time_ms();
         uint64_t since = now - (uint64_t)(secs * 1000.0);
         size_t ch = server->playback_peak_history.channels;
@@ -1702,59 +1635,44 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                  "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
     }
   } else if (strcmp(simple, "GetSignalLevels") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t p_ch = params->playback_channels;
-      size_t c_ch = params->capture_channels;
-      double* p_rms = (double*)calloc(p_ch, sizeof(double));
-      double* p_pk = (double*)calloc(p_ch, sizeof(double));
-      double* c_rms = (double*)calloc(c_ch, sizeof(double));
-      double* c_pk = (double*)calloc(c_ch, sizeof(double));
-      if (p_rms && p_pk && c_rms && c_pk) {
-        processing_parameters_get_playback_signal_rms(params, p_rms, p_ch);
-        processing_parameters_get_playback_signal_peak(params, p_pk, p_ch);
-        processing_parameters_get_capture_signal_rms(params, c_rms, c_ch);
-        processing_parameters_get_capture_signal_peak(params, c_pk, c_ch);
-        char* p_rms_str = (char*)malloc(p_ch * 30 + 10);
-        char* p_pk_str = (char*)malloc(p_ch * 30 + 10);
-        char* c_rms_str = (char*)malloc(c_ch * 30 + 10);
-        char* c_pk_str = (char*)malloc(c_ch * 30 + 10);
-        if (p_rms_str && p_pk_str && c_rms_str && c_pk_str) {
-          format_double_array(p_rms, p_ch, p_rms_str, p_ch * 30 + 10);
-          format_double_array(p_pk, p_ch, p_pk_str, p_ch * 30 + 10);
-          format_double_array(c_rms, c_ch, c_rms_str, c_ch * 30 + 10);
-          format_double_array(c_pk, c_ch, c_pk_str, c_ch * 30 + 10);
-          char* val = (char*)malloc((p_ch + c_ch) * 120 + 200);
-          if (val) {
-            sprintf(val,
-                    "{\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":"
-                    "%s,\"capture_peak\":%s}",
-                    p_rms_str, p_pk_str, c_rms_str, c_pk_str);
-            json_reply("GetSignalLevels", "\"Ok\"", val, ds);
-            free(val);
-          }
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      size_t p_ch = vu.playback_channels;
+      size_t c_ch = vu.capture_channels;
+      char* p_rms_str = (char*)malloc(p_ch * 30 + 10);
+      char* p_pk_str = (char*)malloc(p_ch * 30 + 10);
+      char* c_rms_str = (char*)malloc(c_ch * 30 + 10);
+      char* c_pk_str = (char*)malloc(c_ch * 30 + 10);
+      if (p_rms_str && p_pk_str && c_rms_str && c_pk_str) {
+        format_double_array(vu.playback_rms, p_ch, p_rms_str, p_ch * 30 + 10);
+        format_double_array(vu.playback_peak, p_ch, p_pk_str, p_ch * 30 + 10);
+        format_double_array(vu.capture_rms, c_ch, c_rms_str, c_ch * 30 + 10);
+        format_double_array(vu.capture_peak, c_ch, c_pk_str, c_ch * 30 + 10);
+        char* val = (char*)malloc((p_ch + c_ch) * 120 + 200);
+        if (val) {
+          sprintf(val,
+                  "{\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":"
+                  "%s,\"capture_peak\":%s}",
+                  p_rms_str, p_pk_str, c_rms_str, c_pk_str);
+          json_reply("GetSignalLevels", "\"Ok\"", val, ds);
+          free(val);
         }
-        if (p_rms_str) free(p_rms_str);
-        if (p_pk_str) free(p_pk_str);
-        if (c_rms_str) free(c_rms_str);
-        if (c_pk_str) free(c_pk_str);
       }
-      if (p_rms) free(p_rms);
-      if (p_pk) free(p_pk);
-      if (c_rms) free(c_rms);
-      if (c_pk) free(c_pk);
+      if (p_rms_str) free(p_rms_str);
+      if (p_pk_str) free(p_pk_str);
+      if (c_rms_str) free(c_rms_str);
+      if (c_pk_str) free(c_pk_str);
+      free_vu_levels_arrays(&vu);
     } else {
       json_reply("GetSignalLevels", "\"ProcessingNotRunningError\"", NULL, ds);
     }
   } else if (strcmp(simple, "GetSignalLevelsSinceLast") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
       uint64_t cap_rms_since =
           server->client_sessions[client_idx].last_cap_rms_time;
       uint64_t cap_pk_since =
@@ -1813,12 +1731,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     double secs = 0;
     if (arg && cJSON_IsNumber(arg)) {
       secs = arg->valuedouble;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         uint64_t now = get_time_ms();
         uint64_t since = now - (uint64_t)(secs * 1000.0);
         size_t c_ch = server->capture_rms_history.channels;
@@ -1920,21 +1836,21 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     json_reply("GetChannelLabels", "\"Ok\"", val, ds);
     if (json) free(json);
   } else if (strcmp(simple, "GetSignalRange") == 0) {
-    processing_parameters_t* params = NULL;
-    if (server && server->engine && server->engine->get_processing_parameters &&
-        server->engine->get_processing_parameters(server->engine->ctx,
-                                                  (void**)&params) &&
-        params) {
-      size_t count = params->playback_channels;
+    vu_levels_t vu;
+    memset(&vu, 0, sizeof(vu));
+    if (server && server->engine && server->engine->get_vu_levels &&
+        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      size_t count = vu.playback_channels;
       double max_peak = -1000.0;
       for (size_t i = 0; i < count; i++) {
-        double pk = atomic_double_get(&params->playback_signal_peak[i]);
+        double pk = vu.playback_peak[i];
         if (pk > max_peak) max_peak = pk;
       }
       double range = 2.0 * db_to_amplitude(max_peak);
       char val[64];
       snprintf(val, sizeof(val), "%.17g", range);
       json_reply("GetSignalRange", "\"Ok\"", val, ds);
+      free_vu_levels_arrays(&vu);
     } else {
       json_reply("GetSignalRange", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -2324,15 +2240,14 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
   } else if (strcmp(simple, "GetFaderVolume") == 0) {
     if (arg && cJSON_IsNumber(arg)) {
       int idx = arg->valueint;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         if (idx >= 0 && idx < FADER_COUNT) {
-          double vol = processing_parameters_get_target_volume_for_fader(
-              params, (fader_t)idx);
+          double vol = (server->engine->get_fader_volume)
+                           ? server->engine->get_fader_volume(server->engine->ctx, (fader_t)idx)
+                           : 0.0;
           char val[64];
           snprintf(val, sizeof(val), "[%d,%.17g]", idx, vol);
           json_reply("GetFaderVolume", "\"Ok\"", val, ds);
@@ -2385,15 +2300,14 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
   } else if (strcmp(simple, "GetFaderMute") == 0) {
     if (arg && cJSON_IsNumber(arg)) {
       int idx = arg->valueint;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         if (idx >= 0 && idx < FADER_COUNT) {
-          bool muted =
-              processing_parameters_is_muted_for_fader(params, (fader_t)idx);
+          bool muted = (server->engine->is_fader_muted)
+                           ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)idx)
+                           : false;
           char val[64];
           snprintf(val, sizeof(val), "[%d,%s]", idx, muted ? "true" : "false");
           json_reply("GetFaderMute", "\"Ok\"", val, ds);
@@ -2443,15 +2357,14 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
   } else if (strcmp(simple, "ToggleFaderMute") == 0) {
     if (arg && cJSON_IsNumber(arg)) {
       int idx = arg->valueint;
-      processing_parameters_t* params = NULL;
-      if (server && server->engine &&
-          server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
+      state_update_t status;
+      if (server && server->engine && server->engine->get_status &&
+          server->engine->get_status(server->engine->ctx, &status) &&
+          status.state == PROCESSING_STATE_RUNNING) {
         if (idx >= 0 && idx < FADER_COUNT) {
-          bool was_muted =
-              processing_parameters_is_muted_for_fader(params, (fader_t)idx);
+          bool was_muted = (server->engine->is_fader_muted)
+                               ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)idx)
+                               : false;
           if (server->engine->set_fader_mute) {
             server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
                                            !was_muted);
@@ -2857,89 +2770,75 @@ static void* server_thread_func(void* arg) {
       size_t cap_channels = 0;
       size_t pb_channels = 0;
 
-      processing_parameters_t* params = NULL;
-      if (server->engine && server->engine->get_processing_parameters &&
-          server->engine->get_processing_parameters(server->engine->ctx,
-                                                    (void**)&params) &&
-          params) {
-        cap_channels = params->capture_channels;
-        pb_channels = params->playback_channels;
+      vu_levels_t vu;
+      memset(&vu, 0, sizeof(vu));
+      if (server->engine && server->engine->get_vu_levels &&
+          server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+        cap_channels = vu.capture_channels;
+        pb_channels = vu.playback_channels;
+        current_cap_peak = vu.capture_peak;
+        current_cap_rms = vu.capture_rms;
+        current_pb_peak = vu.playback_peak;
+        current_pb_rms = vu.playback_rms;
 
-        if (cap_channels > 0) {
-          current_cap_peak = (double*)malloc(cap_channels * sizeof(double));
-          current_cap_rms = (double*)malloc(cap_channels * sizeof(double));
-          if (current_cap_peak && current_cap_rms) {
-            processing_parameters_get_capture_signal_peak(
-                params, current_cap_peak, cap_channels);
-            processing_parameters_get_capture_signal_rms(params, current_cap_rms,
-                                                         cap_channels);
+        if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
+          level_history_append(&server->capture_peak_history, current_cap_peak,
+                               cap_channels, now);
+          level_history_append(&server->capture_rms_history, current_cap_rms,
+                               cap_channels, now);
 
-            level_history_append(&server->capture_peak_history, current_cap_peak,
-                                 cap_channels, now);
-            level_history_append(&server->capture_rms_history, current_cap_rms,
-                                 cap_channels, now);
-
-            if (server->capture_global_peaks_count != cap_channels) {
-              double* new_peaks = (double*)realloc(
-                  server->capture_global_peaks, cap_channels * sizeof(double));
-              if (new_peaks) {
-                server->capture_global_peaks = new_peaks;
-                for (size_t k = server->capture_global_peaks_count;
-                     k < cap_channels; k++) {
-                  server->capture_global_peaks[k] = -1000.0;
-                }
-                server->capture_global_peaks_count = cap_channels;
+          if (server->capture_global_peaks_count != cap_channels) {
+            double* new_peaks = (double*)realloc(
+                server->capture_global_peaks, cap_channels * sizeof(double));
+            if (new_peaks) {
+              server->capture_global_peaks = new_peaks;
+              for (size_t k = server->capture_global_peaks_count;
+                   k < cap_channels; k++) {
+                server->capture_global_peaks[k] = -1000.0;
               }
+              server->capture_global_peaks_count = cap_channels;
             }
-            size_t limit = cap_channels < server->capture_global_peaks_count
-                               ? cap_channels
-                               : server->capture_global_peaks_count;
-            for (size_t k = 0; k < limit; k++) {
-              if (server->capture_global_peaks &&
-                  current_cap_peak[k] > server->capture_global_peaks[k]) {
-                server->capture_global_peaks[k] = current_cap_peak[k];
-              }
+          }
+          size_t limit = cap_channels < server->capture_global_peaks_count
+                             ? cap_channels
+                             : server->capture_global_peaks_count;
+          for (size_t k = 0; k < limit; k++) {
+            if (server->capture_global_peaks &&
+                current_cap_peak[k] > server->capture_global_peaks[k]) {
+              server->capture_global_peaks[k] = current_cap_peak[k];
             }
           }
         }
 
-        if (pb_channels > 0) {
-          current_pb_peak = (double*)malloc(pb_channels * sizeof(double));
-          current_pb_rms = (double*)malloc(pb_channels * sizeof(double));
-          if (current_pb_peak && current_pb_rms) {
-            processing_parameters_get_playback_signal_peak(
-                params, current_pb_peak, pb_channels);
-            processing_parameters_get_playback_signal_rms(params, current_pb_rms,
-                                                         pb_channels);
+        if (pb_channels > 0 && current_pb_peak && current_pb_rms) {
+          level_history_append(&server->playback_peak_history, current_pb_peak,
+                               pb_channels, now);
+          level_history_append(&server->playback_rms_history, current_pb_rms,
+                               pb_channels, now);
 
-            level_history_append(&server->playback_peak_history, current_pb_peak,
-                                 pb_channels, now);
-            level_history_append(&server->playback_rms_history, current_pb_rms,
-                                 pb_channels, now);
-
-            if (server->playback_global_peaks_count != pb_channels) {
-              double* new_peaks = (double*)realloc(
-                  server->playback_global_peaks, pb_channels * sizeof(double));
-              if (new_peaks) {
-                server->playback_global_peaks = new_peaks;
-                for (size_t k = server->playback_global_peaks_count;
-                     k < pb_channels; k++) {
-                  server->playback_global_peaks[k] = -1000.0;
-                }
-                server->playback_global_peaks_count = pb_channels;
+          if (server->playback_global_peaks_count != pb_channels) {
+            double* new_peaks = (double*)realloc(
+                server->playback_global_peaks, pb_channels * sizeof(double));
+            if (new_peaks) {
+              server->playback_global_peaks = new_peaks;
+              for (size_t k = server->playback_global_peaks_count;
+                   k < pb_channels; k++) {
+                server->playback_global_peaks[k] = -1000.0;
               }
+              server->playback_global_peaks_count = pb_channels;
             }
-            size_t limit = pb_channels < server->playback_global_peaks_count
-                               ? pb_channels
-                               : server->playback_global_peaks_count;
-            for (size_t k = 0; k < limit; k++) {
-              if (server->playback_global_peaks &&
-                  current_pb_peak[k] > server->playback_global_peaks[k]) {
-                server->playback_global_peaks[k] = current_pb_peak[k];
-              }
+          }
+          size_t limit = pb_channels < server->playback_global_peaks_count
+                             ? pb_channels
+                             : server->playback_global_peaks_count;
+          for (size_t k = 0; k < limit; k++) {
+            if (server->playback_global_peaks &&
+                current_pb_peak[k] > server->playback_global_peaks[k]) {
+              server->playback_global_peaks[k] = current_pb_peak[k];
             }
           }
         }
+        free_vu_levels_arrays(&vu);
       }
 
       for (int i = 0; i < num_clients; i++) {

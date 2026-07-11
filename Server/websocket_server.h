@@ -33,14 +33,20 @@ typedef struct {
   void* ctx;
   /** Gets the current state update/status. */
   bool (*get_status)(void* ctx, state_update_t* out_status);
-  /** Gets current processing parameters. */
-  bool (*get_processing_parameters)(void* ctx, void** out_params);
+  /** Gets the active sample rate. */
+  int (*get_active_samplerate)(void* ctx);
+  /** Gets various real-time processing status metrics. */
+  bool (*get_processing_status)(void* ctx, double* out_rate_adjust,
+                                double* out_buffer_level,
+                                uint64_t* out_clipped_samples,
+                                double* out_processing_load,
+                                double* out_resampler_load);
+  /** Resets the clipped samples counter. */
+  void (*reset_clipped_samples)(void* ctx);
   /** Gets the active configuration as a JSON string. */
   bool (*get_active_config_json)(void* ctx, char** out_json);
   /** Gets the previous configuration as a JSON string. */
   bool (*get_previous_config_json)(void* ctx, char** out_json);
-  /** Gets the active DSP configuration struct. */
-  const dsp_config_t* (*get_active_config)(void* ctx);
   /** Gets the current VU levels. */
   bool (*get_vu_levels)(void* ctx, vu_levels_t* out_vu);
   /** Gets available audio devices. */
@@ -61,6 +67,10 @@ typedef struct {
                           audio_backend_error_t* out_err);
   /** Stops the DSP engine. */
   void (*stop)(void* ctx);
+  /** Gets volume of a fader. */
+  float (*get_fader_volume)(void* ctx, fader_t fader);
+  /** Checks if fader is muted. */
+  bool (*is_fader_muted)(void* ctx, fader_t fader);
   /** Sets volume of a fader. */
   void (*set_fader_volume)(void* ctx, fader_t fader, float db, bool instant);
   /** Mutes or unmutes a fader. */

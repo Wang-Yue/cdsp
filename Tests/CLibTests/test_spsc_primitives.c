@@ -355,6 +355,7 @@ static void* spmc_producer_thread(void* arg) {
 
 TEST(ConcurrentProducerConsumerSeesMonotonicSequence) {
   spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(4096);
+  spsc_audio_ring_buffer_set_overwrite_on_overflow(ring, true);
   int total_to_write = 200000;
   int chunk_size = 256;
   int read_size = 64;

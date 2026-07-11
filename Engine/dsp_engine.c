@@ -730,10 +730,47 @@ static bool iface_get_status(void* ctx, state_update_t* out_status) {
   *out_status = dsp_engine_get_status((dsp_engine_t*)ctx);
   return true;
 }
-static bool iface_get_processing_parameters(void* ctx, void** out_params) {
-  if (!ctx || !out_params) return false;
-  *out_params = (void*)dsp_engine_get_processing_parameters((dsp_engine_t*)ctx);
-  return *out_params != NULL;
+static int iface_get_active_samplerate(void* ctx) {
+  if (!ctx) return 0;
+  dsp_engine_t* engine = (dsp_engine_t*)ctx;
+  pthread_mutex_lock(&engine->state_mutex);
+  int rate = (engine->core && engine->core->current_config)
+                 ? engine->core->current_config->devices.samplerate
+                 : 0;
+  pthread_mutex_unlock(&engine->state_mutex);
+  return rate;
+}
+
+static bool iface_get_processing_status(void* ctx, double* out_rate_adjust,
+                                        double* out_buffer_level,
+                                        uint64_t* out_clipped_samples,
+                                        double* out_processing_load,
+                                        double* out_resampler_load) {
+  if (!ctx) return false;
+  dsp_engine_t* engine = (dsp_engine_t*)ctx;
+  pthread_mutex_lock(&engine->state_mutex);
+  if (!engine->core || !engine->core->processing_params) {
+    pthread_mutex_unlock(&engine->state_mutex);
+    return false;
+  }
+  processing_parameters_t* p = engine->core->processing_params;
+  if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&p->rate_adjust);
+  if (out_buffer_level) *out_buffer_level = atomic_double_get(&p->buffer_level);
+  if (out_clipped_samples) *out_clipped_samples = atomic_load_explicit(&p->clipped_samples, memory_order_relaxed);
+  if (out_processing_load) *out_processing_load = atomic_double_get(&p->processing_load);
+  if (out_resampler_load) *out_resampler_load = atomic_double_get(&p->resampler_load);
+  pthread_mutex_unlock(&engine->state_mutex);
+  return true;
+}
+
+static void iface_reset_clipped_samples(void* ctx) {
+  if (!ctx) return;
+  dsp_engine_t* engine = (dsp_engine_t*)ctx;
+  pthread_mutex_lock(&engine->state_mutex);
+  if (engine->core && engine->core->processing_params) {
+    atomic_store_explicit(&engine->core->processing_params->clipped_samples, 0ULL, memory_order_relaxed);
+  }
+  pthread_mutex_unlock(&engine->state_mutex);
 }
 static bool iface_get_active_config_json(void* ctx, char** out_json) {
   if (!ctx || !out_json) return false;
@@ -819,9 +856,12 @@ static bool iface_set_config_json(void* ctx, const char* json_str,
 static void iface_stop(void* ctx) {
   if (ctx) dsp_engine_stop((dsp_engine_t*)ctx);
 }
-static const dsp_config_t* iface_get_active_config(void* ctx) {
-  if (!ctx) return NULL;
-  return dsp_engine_get_active_config((dsp_engine_t*)ctx);
+
+static float iface_get_fader_volume(void* ctx, fader_t fader) {
+  return ctx ? dsp_engine_get_fader_volume((dsp_engine_t*)ctx, fader) : 0.0f;
+}
+static bool iface_is_fader_muted(void* ctx, fader_t fader) {
+  return ctx ? dsp_engine_is_fader_muted((dsp_engine_t*)ctx, fader) : false;
 }
 static void iface_set_fader_volume(void* ctx, fader_t fader, float db,
                                    bool instant) {
@@ -1016,16 +1056,19 @@ dsp_engine_interface_t* dsp_engine_get_interface(dsp_engine_t* engine) {
   if (!engine) return NULL;
   engine->iface.ctx = engine;
   engine->iface.get_status = iface_get_status;
-  engine->iface.get_processing_parameters = iface_get_processing_parameters;
+  engine->iface.get_active_samplerate = iface_get_active_samplerate;
+  engine->iface.get_processing_status = iface_get_processing_status;
+  engine->iface.reset_clipped_samples = iface_reset_clipped_samples;
   engine->iface.get_active_config_json = iface_get_active_config_json;
   engine->iface.get_previous_config_json = iface_get_previous_config_json;
-  engine->iface.get_active_config = iface_get_active_config;
   engine->iface.get_vu_levels = iface_get_vu_levels;
   engine->iface.get_available_devices = iface_get_available_devices;
   engine->iface.get_device_capabilities = iface_get_device_capabilities;
   engine->iface.get_spectrum = iface_get_spectrum;
   engine->iface.set_config_json = iface_set_config_json;
   engine->iface.stop = iface_stop;
+  engine->iface.get_fader_volume = iface_get_fader_volume;
+  engine->iface.is_fader_muted = iface_is_fader_muted;
   engine->iface.set_fader_volume = iface_set_fader_volume;
   engine->iface.set_fader_mute = iface_set_fader_mute;
   engine->iface.get_state_file = iface_get_state_file;

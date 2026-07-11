@@ -10,6 +10,7 @@ struct spsc_audio_ring_buffer {
   float* storage;
   _Atomic uint64_t write_index;
   _Atomic uint64_t read_index;
+  bool overwrite_on_overflow;
 };
 
 struct spsc_queue {
@@ -91,7 +92,15 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   }
   atomic_init(&ring->write_index, 0);
   atomic_init(&ring->read_index, 0);
+  ring->overwrite_on_overflow = false;
   return ring;
+}
+
+void spsc_audio_ring_buffer_set_overwrite_on_overflow(
+    spsc_audio_ring_buffer_t* ring, bool overwrite) {
+  if (ring) {
+    ring->overwrite_on_overflow = overwrite;
+  }
 }
 
 void spsc_audio_ring_buffer_free(spsc_audio_ring_buffer_t* ring) {
@@ -106,12 +115,14 @@ void spsc_audio_ring_buffer_write(spsc_audio_ring_buffer_t* ring,
   if (count == 0 || !ring || !source) return;
   const float* src = source;
   size_t cnt = count;
-  // If count exceeds capacity, only write the most recent 'capacity' elements.
-  if (cnt > ring->capacity) {
-    size_t skip = cnt - ring->capacity;
+  size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
+  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
+  if (cnt > limit) {
+    size_t skip = cnt - limit;
     src += skip * stride;
-    cnt = ring->capacity;
+    cnt = limit;
   }
+  if (cnt == 0) return;
   // Relaxed load: we are the only writer.
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
   size_t write_offset = (size_t)(w & ring->mask);
@@ -161,11 +172,14 @@ void spsc_audio_ring_buffer_append_converting_double_to_float(
   if (count == 0 || !ring || !source) return;
   const double* src = source;
   size_t cnt = count;
-  if (cnt > ring->capacity) {
-    size_t skip = cnt - ring->capacity;
+  size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
+  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
+  if (cnt > limit) {
+    size_t skip = cnt - limit;
     src += skip;
-    cnt = ring->capacity;
+    cnt = limit;
   }
+  if (cnt == 0) return;
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
   size_t write_offset = (size_t)(w & ring->mask);
   size_t first_chunk = ring->capacity - write_offset;
@@ -194,9 +208,12 @@ void spsc_audio_ring_buffer_write_silence(spsc_audio_ring_buffer_t* ring,
                                           size_t count) {
   if (count == 0 || !ring) return;
   size_t cnt = count;
-  if (cnt > ring->capacity) {
-    cnt = ring->capacity;
+  size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
+  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
+  if (cnt > limit) {
+    cnt = limit;
   }
+  if (cnt == 0) return;
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
   size_t write_offset = (size_t)(w & ring->mask);
   size_t first_chunk = ring->capacity - write_offset;

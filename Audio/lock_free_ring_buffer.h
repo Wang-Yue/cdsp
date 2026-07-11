@@ -59,6 +59,16 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
     size_t minimum_capacity);
 
 /**
+ * @brief Set whether the ring buffer should overwrite the oldest unread data
+ * when capacity is exceeded. Default is false (which caps writes to prevent races).
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param overwrite True to overwrite on overflow, false to drop/cap writes.
+ */
+void spsc_audio_ring_buffer_set_overwrite_on_overflow(
+    spsc_audio_ring_buffer_t* ring, bool overwrite);
+
+/**
  * @brief Free the SPSC audio ring buffer.
  *
  * @param ring Pointer to the ring buffer to free.

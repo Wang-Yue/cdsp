@@ -62,6 +62,7 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
         audio_history_buffer_clear_internal(history);
         return;
       }
+      spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch], true);
     }
     history->averaging_scratch =
         (float*)calloc(AUDIO_HISTORY_BUFFER_CAPACITY, sizeof(float));

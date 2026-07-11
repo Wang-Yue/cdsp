@@ -42,23 +42,79 @@ static void test_handle_command(websocket_server_t* server, int client_idx,
 
 #include "test_support.h"
 
+static processing_parameters_t* mock_params = NULL;
+
 static bool mock_get_status(void* ctx, state_update_t* out_status) {
   (void)ctx;
   if (out_status) {
-    out_status->state = PROCESSING_STATE_INACTIVE;
+    out_status->state = mock_params ? PROCESSING_STATE_RUNNING : PROCESSING_STATE_INACTIVE;
     out_status->stop_reason.type = STOP_REASON_NONE;
   }
   return true;
 }
 
-static processing_parameters_t* mock_params = NULL;
-
-static bool mock_get_processing_parameters(void* ctx, void** out_params) {
+static int mock_get_active_samplerate(void* ctx) {
   (void)ctx;
-  if (out_params) {
-    *out_params = mock_params;
+  return 44100;
+}
+
+static bool mock_get_processing_status(void* ctx, double* out_rate_adjust,
+                                       double* out_buffer_level,
+                                       uint64_t* out_clipped_samples,
+                                       double* out_processing_load,
+                                       double* out_resampler_load) {
+  (void)ctx;
+  if (!mock_params) return false;
+  if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&mock_params->rate_adjust);
+  if (out_buffer_level) *out_buffer_level = atomic_double_get(&mock_params->buffer_level);
+  if (out_clipped_samples) *out_clipped_samples = atomic_load_explicit(&mock_params->clipped_samples, memory_order_relaxed);
+  if (out_processing_load) *out_processing_load = atomic_double_get(&mock_params->processing_load);
+  if (out_resampler_load) *out_resampler_load = atomic_double_get(&mock_params->resampler_load);
+  return true;
+}
+
+static void mock_reset_clipped_samples(void* ctx) {
+  (void)ctx;
+  if (mock_params) {
+    atomic_store_explicit(&mock_params->clipped_samples, 0ULL, memory_order_relaxed);
+  }
+}
+
+static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
+  (void)ctx;
+  if (!mock_params || !out_vu) return false;
+  out_vu->playback_channels = mock_params->playback_channels;
+  out_vu->capture_channels = mock_params->capture_channels;
+
+  if (out_vu->playback_channels > 0) {
+    out_vu->playback_rms = (double*)calloc(out_vu->playback_channels, sizeof(double));
+    out_vu->playback_peak = (double*)calloc(out_vu->playback_channels, sizeof(double));
+    processing_parameters_get_playback_signal_rms(mock_params, out_vu->playback_rms, out_vu->playback_channels);
+    processing_parameters_get_playback_signal_peak(mock_params, out_vu->playback_peak, out_vu->playback_channels);
+  }
+  if (out_vu->capture_channels > 0) {
+    out_vu->capture_rms = (double*)calloc(out_vu->capture_channels, sizeof(double));
+    out_vu->capture_peak = (double*)calloc(out_vu->capture_channels, sizeof(double));
+    processing_parameters_get_capture_signal_rms(mock_params, out_vu->capture_rms, out_vu->capture_channels);
+    processing_parameters_get_capture_signal_peak(mock_params, out_vu->capture_peak, out_vu->capture_channels);
   }
   return true;
+}
+
+static float mock_get_fader_volume(void* ctx, fader_t fader) {
+  (void)ctx;
+  if (mock_params) {
+    return (float)processing_parameters_get_target_volume_for_fader(mock_params, fader);
+  }
+  return 0.0f;
+}
+
+static bool mock_is_fader_muted(void* ctx, fader_t fader) {
+  (void)ctx;
+  if (mock_params) {
+    return processing_parameters_is_muted_for_fader(mock_params, fader);
+  }
+  return false;
 }
 
 static audio_backend_error_type_t simulated_error_type =
@@ -173,7 +229,12 @@ static bool mock_get_previous_config_json(void* ctx, char** out_json) {
 static dsp_engine_interface_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
-    .get_processing_parameters = mock_get_processing_parameters,
+    .get_active_samplerate = mock_get_active_samplerate,
+    .get_processing_status = mock_get_processing_status,
+    .reset_clipped_samples = mock_reset_clipped_samples,
+    .get_vu_levels = mock_get_vu_levels,
+    .get_fader_volume = mock_get_fader_volume,
+    .is_fader_muted = mock_is_fader_muted,
     .set_config_json = mock_set_config_json,
     .get_device_capabilities = mock_get_device_capabilities,
     .set_fader_volume = mock_set_fader_volume,
