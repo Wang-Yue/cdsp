@@ -14,8 +14,8 @@ let package = Package(
       exclude: [
         "main.c",
         "Makefile",
-        ".build-make",
         "libdsp.a",
+        "Server",
         "Tests",
         "LICENSE",
         "README.md",
@@ -35,7 +35,6 @@ let package = Package(
         .headerSearchPath("Pipeline"),
         .headerSearchPath("Processors"),
         .headerSearchPath("Resampler"),
-        .headerSearchPath("Server"),
         .define("ENABLE_COREAUDIO"),
         .define("ENABLE_ACCELERATE"),
       ],
