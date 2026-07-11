@@ -32,6 +32,10 @@ AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::
 
 AudioDeviceManager::~AudioDeviceManager() {
     stopDeviceChangeListener();
+    m_devicesWatcher.cancel();
+    m_devicesWatcher.waitForFinished();
+    m_capabilitiesWatcher.cancel();
+    m_capabilitiesWatcher.waitForFinished();
 }
 
 void AudioDeviceManager::startDeviceChangeListener() {
@@ -187,6 +191,12 @@ bool AudioDeviceManager::devicesAvailable() const {
 
 void AudioDeviceManager::fetchDevices() {
     auto engine = m_engine;
+    if (!engine)
+        return;
+
+    m_devicesWatcher.cancel();
+    m_devicesWatcher.waitForFinished();
+
     auto toLowerStr = [](std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
@@ -194,7 +204,7 @@ void AudioDeviceManager::fetchDevices() {
     std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
     std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
 
-    (void)QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
+    m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
         auto cap = engine->getAvailableDevices(capBackendLower, true);
         auto pb = engine->getAvailableDevices(pbBackendLower, false);
         QMetaObject::invokeMethod(this, [this, cap, pb]() {
@@ -203,11 +213,17 @@ void AudioDeviceManager::fetchDevices() {
             refreshDeviceCapabilities();
             emit devicesRefreshed();
         });
-    });
+    }));
 }
 
 void AudioDeviceManager::refreshDeviceCapabilities() {
     auto engine = m_engine;
+    if (!engine)
+        return;
+
+    m_capabilitiesWatcher.cancel();
+    m_capabilitiesWatcher.waitForFinished();
+
     std::string capName = captureConfig.deviceName().value_or("");
     std::string pbName = playbackConfig.deviceName().value_or("");
     auto toLowerStr = [](std::string str) {
@@ -226,39 +242,40 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
          playbackConfig.backend == AudioBackendType::ASIO || playbackConfig.backend == AudioBackendType::ALSA ||
          playbackConfig.backend == AudioBackendType::PulseAudio);
 
-    (void)QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
-        std::optional<AudioDeviceDescriptor> capDesc;
-        std::optional<AudioDeviceDescriptor> pbDesc;
+    m_capabilitiesWatcher.setFuture(
+        QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
+            std::optional<AudioDeviceDescriptor> capDesc;
+            std::optional<AudioDeviceDescriptor> pbDesc;
 
-        if (isCapHw) {
-            capDesc = engine->getDeviceCapabilities(capBackendLower, capName, true);
-        }
-        if (isPbHw) {
-            pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
-        }
-
-        QMetaObject::invokeMethod(this, [this, capDesc, pbDesc, isCapHw, isPbHw]() {
-            if (isCapHw && capDesc.has_value()) {
-                captureConfig.capabilities = capDesc.value();
-            } else if (!isCapHw) {
-                captureConfig.capabilities = AudioDeviceDescriptor();
+            if (isCapHw) {
+                capDesc = engine->getDeviceCapabilities(capBackendLower, capName, true);
             }
-            if (isPbHw && pbDesc.has_value()) {
-                playbackConfig.capabilities = pbDesc.value();
-            } else if (!isPbHw) {
-                playbackConfig.capabilities = AudioDeviceDescriptor();
+            if (isPbHw) {
+                pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
             }
 
-            captureConfig = captureConfig.enforced();
-            playbackConfig = playbackConfig.enforced();
-            validateSampleRates();
-            saveConfigs();
+            QMetaObject::invokeMethod(this, [this, capDesc, pbDesc, isCapHw, isPbHw]() {
+                if (isCapHw && capDesc.has_value()) {
+                    captureConfig.capabilities = capDesc.value();
+                } else if (!isCapHw) {
+                    captureConfig.capabilities = AudioDeviceDescriptor();
+                }
+                if (isPbHw && pbDesc.has_value()) {
+                    playbackConfig.capabilities = pbDesc.value();
+                } else if (!isPbHw) {
+                    playbackConfig.capabilities = AudioDeviceDescriptor();
+                }
 
-            emit configChanged();
-            if (onConfigChanged)
-                onConfigChanged();
-        });
-    });
+                captureConfig = captureConfig.enforced();
+                playbackConfig = playbackConfig.enforced();
+                validateSampleRates();
+                saveConfigs();
+
+                emit configChanged();
+                if (onConfigChanged)
+                    onConfigChanged();
+            });
+        }));
 }
 
 void AudioDeviceManager::validateSampleRates() {

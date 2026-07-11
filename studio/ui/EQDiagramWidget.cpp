@@ -698,7 +698,7 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
                     if (onBandQChanged)
                         onBandQChanged(targetIdx, band.slope);
                 } else if (band.useBandwidth) {
-                    band.bandwidth = std::max(0.1, std::min(20.0, band.bandwidth * factor));
+                    band.bandwidth = std::max(0.1, std::min(20.0, band.bandwidth / factor));
                     if (onBandQChanged)
                         onBandQChanged(targetIdx, band.bandwidth);
                 } else {

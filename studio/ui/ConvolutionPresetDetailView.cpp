@@ -147,7 +147,17 @@ void ConvolutionPresetDetailView::refreshUi() {
     auto filesLayout = qobject_cast<QVBoxLayout*>(m_filesContainer->layout());
     QLayoutItem* item;
     while ((item = filesLayout->takeAt(0)) != nullptr) {
-        delete item->widget();
+        if (item->layout()) {
+            QLayoutItem* childItem;
+            while ((childItem = item->layout()->takeAt(0)) != nullptr) {
+                if (childItem->widget())
+                    delete childItem->widget();
+                delete childItem;
+            }
+            delete item->layout();
+        } else if (item->widget()) {
+            delete item->widget();
+        }
         delete item;
     }
 

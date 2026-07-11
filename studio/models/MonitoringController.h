@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <QTimer>
+#include <algorithm>
 #include <memory>
 
 class MonitoringController : public QObject {

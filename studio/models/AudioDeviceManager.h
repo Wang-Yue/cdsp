@@ -5,8 +5,8 @@
 #include "models/AudioSettings.h"
 #include "models/DeviceConfig.h"
 
+#include <QFutureWatcher>
 #include <QObject>
-#include <functional>
 #include <memory>
 #include <vector>
 
@@ -53,6 +53,9 @@ private:
     std::shared_ptr<AudioSettings> m_settings;
     bool m_isInitializing = true;
     bool m_isValidating = false;
+
+    QFutureWatcher<void> m_devicesWatcher;
+    QFutureWatcher<void> m_capabilitiesWatcher;
 
     void loadSavedConfigs();
 };

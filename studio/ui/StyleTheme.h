@@ -16,12 +16,21 @@ public:
                 color: #000000;
             }
             QWidget {
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                 font-size: 13px;
                 color: #000000;
             }
             QLabel {
                 color: #000000;
+            }
+
+            /* Tooltips */
+            QToolTip {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #d1d1d6;
+                border-radius: 6px;
+                padding: 4px 8px;
             }
 
             /* Sidebar, Trees, Lists, Tables */
@@ -235,12 +244,21 @@ public:
                 color: #ffffff;
             }
             QWidget {
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                 font-size: 13px;
                 color: #ffffff;
             }
             QLabel {
                 color: #ffffff;
+            }
+
+            /* Tooltips */
+            QToolTip {
+                background-color: #1e2029;
+                color: #ffffff;
+                border: 1px solid #343746;
+                border-radius: 6px;
+                padding: 4px 8px;
             }
 
             QTreeWidget, QListWidget, QTableWidget {

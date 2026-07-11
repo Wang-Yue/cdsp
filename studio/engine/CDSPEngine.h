@@ -14,19 +14,6 @@
 #include <string>
 #include <vector>
 
-#if defined(__GNUC__) && !defined(__clang__) && defined(__cplusplus)
-#include <atomic>
-#ifndef _Atomic
-#define _Atomic(T) std::atomic<T>
-#endif
-using std::atomic_init;
-using std::atomic_load_explicit;
-using std::atomic_store_explicit;
-using std::memory_order;
-using std::memory_order_acquire;
-using std::memory_order_release;
-#endif
-
 extern "C" {
 #include "Engine/dsp_engine.h"
 }

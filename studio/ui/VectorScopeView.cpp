@@ -16,6 +16,9 @@ VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWid
 }
 
 void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
+    if (m_engine) {
+        disconnect(m_engine.get(), &VectorScopeEngine::updated, this, nullptr);
+    }
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &VectorScopeEngine::updated, this, [this]() {

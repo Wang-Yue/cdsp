@@ -20,6 +20,9 @@ SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* pare
 }
 
 void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
+    if (m_engine) {
+        disconnect(m_engine.get(), &SpectrumEngine::updated, this, nullptr);
+    }
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &SpectrumEngine::updated, this, [this]() {

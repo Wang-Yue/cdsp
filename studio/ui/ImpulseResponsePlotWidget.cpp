@@ -12,6 +12,9 @@ ImpulseResponsePlotWidget::ImpulseResponsePlotWidget(QWidget* parent) : QWidget(
 }
 
 void ImpulseResponsePlotWidget::setSession(MeasurementSession* session) {
+    if (m_session) {
+        disconnect(m_session, &MeasurementSession::sessionUpdated, this, nullptr);
+    }
     m_session = session;
     if (m_session) {
         connect(m_session, &MeasurementSession::sessionUpdated, this, QOverload<>::of(&QWidget::update));

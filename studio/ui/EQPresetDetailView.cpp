@@ -120,6 +120,9 @@ void EQPresetDetailView::setupUi() {
                                 "6px; font-weight: bold; margin-right: 4px; }"
                                 "QTabBar::tab:selected { background: #007af5; color: white; }");
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
+        if (m_modeStack->currentIndex() == 2 && idx != 2) {
+            onApplyCSV();
+        }
         m_modeStack->setCurrentIndex(idx);
         if (idx == 2)
             m_csvTextEdit->setText(QString::fromStdString(m_preset.toCSV()));

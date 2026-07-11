@@ -16,6 +16,9 @@ SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWid
 }
 
 void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
+    if (m_engine) {
+        disconnect(m_engine.get(), &SpectrogramEngine::updated, this, nullptr);
+    }
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &SpectrogramEngine::updated, this, [this]() {

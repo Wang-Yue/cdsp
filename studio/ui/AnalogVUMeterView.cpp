@@ -324,11 +324,11 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.setPen(QPen(QColor("#111111"), 1));
     if (isClipped) {
         QRadialGradient clipGlow(clipLedPos, 12);
-        clipGlow.setColorAt(0.0, QColor(255, 50, 50, 255));
-        clipGlow.setColorAt(0.5, QColor(255, 0, 0, 200));
-        clipGlow.setColorAt(1.0, QColor(255, 0, 0, 0));
+        clipGlow.setColorAt(0.0, QColor("#ff3b30"));
+        clipGlow.setColorAt(0.5, QColor(255, 59, 48, 200));
+        clipGlow.setColorAt(1.0, QColor(255, 59, 48, 0));
         p.fillRect(QRectF(clipLedPos.x() - 12, clipLedPos.y() - 12, 24, 24), clipGlow);
-        p.setBrush(QColor("#ff0000"));
+        p.setBrush(QColor("#ff3b30"));
     } else {
         p.setBrush(QColor("#4a1111"));
     }
