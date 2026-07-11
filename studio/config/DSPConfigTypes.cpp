@@ -100,7 +100,13 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
         return AudioBackendType::WavFile;
     if (str == "SignalGenerator")
         return AudioBackendType::SignalGenerator;
+#if defined(_WIN32) || defined(Q_OS_WIN)
+    return AudioBackendType::WASAPI;
+#elif defined(__APPLE__) || defined(Q_OS_MAC)
     return AudioBackendType::CoreAudio;
+#else
+    return AudioBackendType::ALSA;
+#endif
 }
 
 std::string sdmFilterToString(SDMFilter f) {

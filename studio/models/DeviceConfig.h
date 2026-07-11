@@ -9,7 +9,13 @@
 #include <vector>
 
 struct DeviceConfig {
+#if defined(__APPLE__) || defined(Q_OS_MAC)
     AudioBackendType backend = AudioBackendType::CoreAudio;
+#elif defined(_WIN32) || defined(Q_OS_WIN)
+    AudioBackendType backend = AudioBackendType::WASAPI;
+#else
+    AudioBackendType backend = AudioBackendType::ALSA;
+#endif
     AudioDeviceDescriptor capabilities;
 
     int channels = 2;

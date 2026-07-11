@@ -213,8 +213,6 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
 std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& backend, bool input) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<AudioDevice> result;
-    if (!m_engine)
-        return result;
 
     audio_device_t devs[32];
     memset(devs, 0, sizeof(devs));
@@ -230,8 +228,6 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
 std::optional<AudioDeviceDescriptor>
 CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_engine)
-        return std::nullopt;
 
     device_error_t devErr;
     memset(&devErr, 0, sizeof(devErr));

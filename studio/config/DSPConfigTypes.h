@@ -85,6 +85,11 @@ struct AudioDeviceDescriptor {
 
 enum class AudioBackendType { CoreAudio, WASAPI, ASIO, ALSA, PulseAudio, RawFile, WavFile, SignalGenerator };
 
+inline bool isHardwareBackend(AudioBackendType type) {
+    return type == AudioBackendType::CoreAudio || type == AudioBackendType::WASAPI || type == AudioBackendType::ASIO ||
+           type == AudioBackendType::ALSA || type == AudioBackendType::PulseAudio;
+}
+
 std::string audioBackendTypeToString(AudioBackendType type);
 AudioBackendType stringToAudioBackendType(const std::string& str);
 

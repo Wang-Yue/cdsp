@@ -1290,7 +1290,7 @@ void DevicePickerView::applySettings() {
         capCfg.backend = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
     }
 
-    if (capCfg.backend == AudioBackendType::CoreAudio) {
+    if (isHardwareBackend(capCfg.backend)) {
         if (m_capDeviceCombo->currentIndex() >= 0) {
             std::string selectedDev = m_capDeviceCombo->currentData().toString().toStdString();
             capCfg.setDeviceName(selectedDev);
@@ -1347,7 +1347,7 @@ void DevicePickerView::applySettings() {
         pbCfg.backend = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
     }
 
-    if (pbCfg.backend == AudioBackendType::CoreAudio) {
+    if (isHardwareBackend(pbCfg.backend)) {
         if (m_pbDeviceCombo->currentIndex() >= 0) {
             std::string selectedDev = m_pbDeviceCombo->currentData().toString().toStdString();
             pbCfg.setDeviceName(selectedDev);
