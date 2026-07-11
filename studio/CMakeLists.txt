@@ -9,7 +9,6 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent)
-
 find_package(Threads REQUIRED)
 
 # Define system libraries based on platform
@@ -31,9 +30,60 @@ else()
     add_compile_definitions(ENABLE_ALSA ENABLE_PULSE _GNU_SOURCE)
 endif()
 
-# CDSP paths
+# CDSP FetchContent / Local Fallback (excluding Server directory)
+include(FetchContent)
 get_filename_component(USER_HOME "~" REALPATH)
-set(CDSP_DIR "${USER_HOME}/cdsp")
+set(LOCAL_CDSP_DIR "${USER_HOME}/cdsp")
+
+if(EXISTS "${LOCAL_CDSP_DIR}/libdsp.a")
+    message(STATUS "Using local CDSP library at ${LOCAL_CDSP_DIR}")
+    set(CDSP_DIR "${LOCAL_CDSP_DIR}")
+    set(CDSP_LIB "${LOCAL_CDSP_DIR}/libdsp.a")
+else()
+    message(STATUS "Local CDSP not found. Fetching Wang-Yue/cdsp from GitHub...")
+    FetchContent_Declare(
+        cdsp
+        GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
+        GIT_TAG        main
+    )
+    FetchContent_MakeAvailable(cdsp)
+    set(CDSP_DIR "${cdsp_SOURCE_DIR}")
+    if(EXISTS "${CDSP_DIR}/libdsp.a")
+        set(CDSP_LIB "${CDSP_DIR}/libdsp.a")
+    else()
+        file(GLOB_RECURSE CDSP_C_SOURCES
+            "${CDSP_DIR}/Engine/*.c"
+            "${CDSP_DIR}/Audio/*.c"
+            "${CDSP_DIR}/Backend/*.c"
+            "${CDSP_DIR}/Config/*.c"
+            "${CDSP_DIR}/FFT/*.c"
+            "${CDSP_DIR}/Filters/*.c"
+            "${CDSP_DIR}/Logging/*.c"
+            "${CDSP_DIR}/Mixer/*.c"
+            "${CDSP_DIR}/Pipeline/*.c"
+            "${CDSP_DIR}/Processors/*.c"
+            "${CDSP_DIR}/Resampler/*.c"
+            "${CDSP_DIR}/DoP/*.c"
+        )
+        add_library(cdsp_static STATIC ${CDSP_C_SOURCES})
+        target_include_directories(cdsp_static PUBLIC
+            ${CDSP_DIR}
+            ${CDSP_DIR}/Engine
+            ${CDSP_DIR}/Audio
+            ${CDSP_DIR}/Backend
+            ${CDSP_DIR}/Config
+            ${CDSP_DIR}/FFT
+            ${CDSP_DIR}/Filters
+            ${CDSP_DIR}/Logging
+            ${CDSP_DIR}/Mixer
+            ${CDSP_DIR}/Pipeline
+            ${CDSP_DIR}/Processors
+            ${CDSP_DIR}/Resampler
+            ${CDSP_DIR}/DoP
+        )
+        set(CDSP_LIB cdsp_static)
+    endif()
+endif()
 
 include_directories(
     src
@@ -49,7 +99,6 @@ include_directories(
     ${CDSP_DIR}/Pipeline
     ${CDSP_DIR}/Processors
     ${CDSP_DIR}/Resampler
-    ${CDSP_DIR}/Server
     ${CDSP_DIR}/DoP
 )
 
@@ -64,7 +113,6 @@ target_link_libraries(MonitorQt PRIVATE
     Qt6::Network
     Qt6::Concurrent
     Threads::Threads
-    "${CDSP_DIR}/libdsp.a"
+    ${CDSP_LIB}
     ${PLATFORM_LIBS}
 )
-
