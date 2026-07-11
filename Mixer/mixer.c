@@ -80,6 +80,9 @@ static void populate_mapping(audio_mixer_t* mixer,
     if (valid_count == 0) continue;
 
     // Allocate prepared source array for this destination channel
+    if (mixer->mapping[dest].sources) {
+      free(mixer->mapping[dest].sources);
+    }
     mixer->mapping[dest].sources =
         (prepared_source_t*)malloc(valid_count * sizeof(prepared_source_t));
     if (!mixer->mapping[dest].sources) continue;
