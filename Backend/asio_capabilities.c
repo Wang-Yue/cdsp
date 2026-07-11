@@ -200,9 +200,23 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     goto error_cleanup;
   }
 
+  static const GUID IID_IASIO_VAL = {
+      0x9333b620,
+      0x1f0b,
+      0x11d2,
+      {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
+
   IASIO* iasio = NULL;
   HRESULT hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
                                 (void**)&iasio);
+  if (FAILED(hr)) {
+    hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IASIO_VAL,
+                          (void**)&iasio);
+  }
+  if (FAILED(hr)) {
+    hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,
+                          (void**)&iasio);
+  }
   if (FAILED(hr)) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,

@@ -269,8 +269,28 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
       return false;
     }
 
-    HRESULT hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
-                                  (void**)&g_asio_shared.iasio);
+    static const GUID g_IID_IASIO_VAL = {
+        0x9333b620,
+        0x1f0b,
+        0x11d2,
+        {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
+
+    static HRESULT create_asio_com_instance(const CLSID* clsid,
+                                            IASIO** out_iasio) {
+      HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, clsid,
+                                    (void**)out_iasio);
+      if (FAILED(hr)) {
+        hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER,
+                              &g_IID_IASIO_VAL, (void**)out_iasio);
+      }
+      if (FAILED(hr)) {
+        hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,
+                              (void**)out_iasio);
+      }
+      return hr;
+    }
+
+    HRESULT hr = create_asio_com_instance(&clsid, &g_asio_shared.iasio);
     if (FAILED(hr)) {
       g_asio_shared.initialized = false;
       ReleaseSRWLockExclusive(&g_asio_shared.lock);
@@ -579,8 +599,7 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
     return false;
   }
 
-  HRESULT hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
-                                (void**)&iasio);
+  HRESULT hr = create_asio_com_instance(&clsid, &iasio);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(
@@ -906,8 +925,7 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
 
-    HRESULT hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
-                                  (void**)&capture->iasio);
+    HRESULT hr = create_asio_com_instance(&clsid, &capture->iasio);
     if (FAILED(hr)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -1216,8 +1234,7 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
 
-    HRESULT hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
-                                  (void**)&playback->iasio);
+    HRESULT hr = create_asio_com_instance(&clsid, &playback->iasio);
     if (FAILED(hr)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
