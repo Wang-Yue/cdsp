@@ -55,16 +55,28 @@ void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
 }
 
 void AnalogVUMeterView::onAnimTick() {
-    // 60 FPS Ballistic spring inertia physics update with damping coefficient tau = 0.3s
-    // dt = 1/60s (~0.01667s). alpha = 1 - exp(-dt / tau) = 1 - exp(-0.016667 / 0.3) ~= 0.05404f
     constexpr float alpha = 0.05404f;
-    m_currentAngleL += (m_targetAngleL - m_currentAngleL) * alpha;
-    m_currentAngleR += (m_targetAngleR - m_currentAngleR) * alpha;
+    float nextL = m_currentAngleL + (m_targetAngleL - m_currentAngleL) * alpha;
+    float nextR = m_currentAngleR + (m_targetAngleR - m_currentAngleR) * alpha;
 
-    if (m_peakClipLHold > 0.0f) m_peakClipLHold = std::max(0.0f, m_peakClipLHold - 0.02f);
-    if (m_peakClipRHold > 0.0f) m_peakClipRHold = std::max(0.0f, m_peakClipRHold - 0.02f);
+    bool needUpdate = false;
+    if (std::abs(nextL - m_currentAngleL) > 0.001f || std::abs(nextR - m_currentAngleR) > 0.001f) {
+        m_currentAngleL = nextL;
+        m_currentAngleR = nextR;
+        needUpdate = true;
+    }
+    if (m_peakClipLHold > 0.0f) {
+        m_peakClipLHold = std::max(0.0f, m_peakClipLHold - 0.02f);
+        needUpdate = true;
+    }
+    if (m_peakClipRHold > 0.0f) {
+        m_peakClipRHold = std::max(0.0f, m_peakClipRHold - 0.02f);
+        needUpdate = true;
+    }
 
-    update();
+    if (needUpdate) {
+        update();
+    }
 }
 
 void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
@@ -252,6 +264,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     glassGrad.setColorAt(0.0, QColor(255, 255, 255, 60));
     glassGrad.setColorAt(0.4, QColor(255, 255, 255, 10));
     glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));
+    glassGrad.setColorAt(1.0, QColor(255, 255, 255, 0));
     p.fillRect(rect, glassGrad);
 
     // Border
