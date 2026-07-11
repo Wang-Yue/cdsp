@@ -181,6 +181,48 @@ void MeasurementSession::generateMockMeasurement(bool append) {
     emit sessionUpdated();
 }
 
+#include "room_correction/SweepRecorder.h"
+
+void MeasurementSession::recordPosition(bool append, const std::string& inputDeviceName,
+                                        const std::string& outputDeviceName, int inputChannel, int outputChannel,
+                                        std::function<void(bool success, const std::string& message)> callback) {
+    status = "Recording hardware measurement sweep…";
+    emit sessionUpdated();
+
+    if (!append)
+        positions.clear();
+
+    SweepCaptureResult cap = SweepRecorder::capture(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, inputDeviceName,
+                                                    outputDeviceName, inputChannel, outputChannel, -12.0);
+
+    if (cap.captured.empty()) {
+        status = "Measurement failed: no microphone samples captured.";
+        emit sessionUpdated();
+        if (callback)
+            callback(false, "Microphone capture buffer empty.");
+        return;
+    }
+
+    ImpulseResponse rawIR(cap.captured);
+    ImpulseResponse windowed = rawIR.windowed(sampleRate / 200, sampleRate / 5, 0.1);
+    FrequencyResponse fr = FrequencyResponse::from(windowed);
+
+    std::string name = "Measured Pos " + std::to_string(positions.size() + 1);
+    positions.push_back(MeasurementPosition(name, fr, windowed));
+
+    recomputeAverage();
+    if (!append) {
+        correctionPreset = EQPreset("Room Correction", 0.0, {});
+    }
+
+    status = "Hardware measurement completed (" + std::to_string(positions.size()) + " positions). Peak: " +
+             std::to_string(static_cast<int>(20.0 * std::log10(std::max(1e-6, cap.peakAbsolute)))) + " dB";
+    emit sessionUpdated();
+
+    if (callback)
+        callback(true, status);
+}
+
 void MeasurementSession::importPositionFRD(const std::string& path) {
     auto cal = CalibrationCurve::load(path);
     if (!cal.has_value()) {

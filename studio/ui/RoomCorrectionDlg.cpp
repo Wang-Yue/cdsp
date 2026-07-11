@@ -103,19 +103,32 @@ void RoomCorrectionDlg::setupMeasurementTab(QWidget* tab) {
     leftBox->addLayout(calBtnLayout);
 
     // Hardware Measurement Sweep Capture Buttons
-    auto sweepLayout = new QHBoxLayout();
-    auto newSweepBtn = new QPushButton("🎤 New Measurement", tab);
-    connect(newSweepBtn, &QPushButton::clicked, [this]() {
+    auto sweepLayout = new QVBoxLayout();
+
+    auto hwSweepLayout = new QHBoxLayout();
+    auto newRealBtn = new QPushButton("🎤 Real Mic Measurement", tab);
+    connect(newRealBtn, &QPushButton::clicked, [this]() { onRecordHardwareMeasurement(false); });
+    auto addRealBtn = new QPushButton("➕ Add Real Pos", tab);
+    connect(addRealBtn, &QPushButton::clicked, [this]() { onRecordHardwareMeasurement(true); });
+    hwSweepLayout->addWidget(newRealBtn);
+    hwSweepLayout->addWidget(addRealBtn);
+    sweepLayout->addLayout(hwSweepLayout);
+
+    auto mockSweepLayout = new QHBoxLayout();
+    auto newMockBtn = new QPushButton("🎲 Mock Test", tab);
+    connect(newMockBtn, &QPushButton::clicked, [this]() {
         m_session.generateMockMeasurement(false);
         refreshSessionUi();
     });
-    auto addSweepBtn = new QPushButton("➕ Add Position", tab);
-    connect(addSweepBtn, &QPushButton::clicked, [this]() {
+    auto addMockBtn = new QPushButton("➕ Add Mock Pos", tab);
+    connect(addMockBtn, &QPushButton::clicked, [this]() {
         m_session.generateMockMeasurement(true);
         refreshSessionUi();
     });
-    sweepLayout->addWidget(newSweepBtn);
-    sweepLayout->addWidget(addSweepBtn);
+    mockSweepLayout->addWidget(newMockBtn);
+    mockSweepLayout->addWidget(addMockBtn);
+    sweepLayout->addLayout(mockSweepLayout);
+
     leftBox->addLayout(sweepLayout);
 
     // Analysis Settings (FDW & Smoothing)
@@ -448,4 +461,11 @@ void RoomCorrectionDlg::onComputeSubwoofer() {
         m_subResultLabel->setText(
             "Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
     }
+}
+
+void RoomCorrectionDlg::onRecordHardwareMeasurement(bool append) {
+    m_session.recordPosition(append, "", "", 0, -1, [this](bool success, const std::string& msg) {
+        m_statusLabel->setText(QString::fromStdString(msg));
+        refreshSessionUi();
+    });
 }

@@ -94,6 +94,9 @@ public:
     static std::vector<double> levelNormalize(const std::vector<double>& magDB, const std::vector<double>& grid);
 
     void generateMockMeasurement(bool append = false);
+    void recordPosition(bool append = false, const std::string& inputDeviceName = "",
+                        const std::string& outputDeviceName = "", int inputChannel = 0, int outputChannel = -1,
+                        std::function<void(bool success, const std::string& message)> callback = nullptr);
     void importPositionFRD(const std::string& path);
 
     void togglePosition(const QUuid& id);

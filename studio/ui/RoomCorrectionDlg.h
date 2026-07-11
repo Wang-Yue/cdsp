@@ -32,6 +32,7 @@ public:
 private slots:
     void refreshSessionUi();
     void onGenerateMock();
+    void onRecordHardwareMeasurement(bool append);
     void onImportFRD();
     void onExportFRD();
     void onLoadCalibration();
