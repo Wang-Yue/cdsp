@@ -615,25 +615,26 @@ void StageDetailView::buildStageOptionsUi() {
         int cols = inSpin->value();
 
         auto matrixTable = new QTableWidget(rows, cols, optsGroup);
-        matrixTable->horizontalHeader()->setDefaultSectionSize(120);
-        matrixTable->horizontalHeader()->setMinimumSectionSize(110);
-        matrixTable->verticalHeader()->setDefaultSectionSize(40);
-        matrixTable->setMinimumWidth(std::min(720, cols * 125 + 50));
-        matrixTable->setMinimumHeight(std::min(400, rows * 44 + 40));
+        matrixTable->horizontalHeader()->setDefaultSectionSize(180);
+        matrixTable->horizontalHeader()->setMinimumSectionSize(170);
+        matrixTable->verticalHeader()->setDefaultSectionSize(46);
+        matrixTable->setMinimumWidth(std::max(400, std::min(850, cols * 185 + 60)));
+        matrixTable->setMinimumHeight(std::max(130, std::min(450, rows * 46 + 45)));
 
         for (int r = 0; r < rows; ++r) {
-            matrixTable->setRowHeight(r, 40);
+            matrixTable->setRowHeight(r, 46);
             for (int c = 0; c < cols; ++c) {
                 auto cellWidget = new QWidget(matrixTable);
                 auto cellLayout = new QHBoxLayout(cellWidget);
-                cellLayout->setContentsMargins(4, 2, 4, 2);
-                cellLayout->setSpacing(2);
+                cellLayout->setContentsMargins(6, 4, 6, 4);
+                cellLayout->setSpacing(4);
 
                 auto spin = new QDoubleSpinBox(cellWidget);
                 spin->setRange(-120.0, 30.0);
                 spin->setSingleStep(0.5);
-                spin->setSuffix("dB");
-                spin->setMinimumWidth(70);
+                spin->setDecimals(1);
+                spin->setSuffix(" dB");
+                spin->setMinimumWidth(85);
 
                 double currentVal = 0.0;
                 bool isInverted = false;
@@ -653,17 +654,19 @@ void StageDetailView::buildStageOptionsUi() {
                 cellLayout->addWidget(spin, 1);
 
                 auto invBtn = new QPushButton("Ø", cellWidget);
-                invBtn->setFixedSize(22, 22);
+                invBtn->setFixedSize(26, 26);
+                invBtn->setToolTip("Invert Phase (Ø)");
                 invBtn->setCheckable(true);
                 invBtn->setChecked(isInverted);
-                invBtn->setStyleSheet(isInverted ? "background-color: #ff9500; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                invBtn->setStyleSheet(isInverted ? "background-color: #ff9500; color: #ffffff; font-weight: bold; font-size: 13px; border: none; border-radius: 4px;" : "background-color: #2c2c2e; color: #d1d1d6; font-weight: bold; font-size: 13px; border: 1px solid #48484a; border-radius: 4px;");
                 cellLayout->addWidget(invBtn);
 
                 auto muteBtn = new QPushButton("M", cellWidget);
-                muteBtn->setFixedSize(22, 22);
+                muteBtn->setFixedSize(26, 26);
+                muteBtn->setToolTip("Mute Source Channel (M)");
                 muteBtn->setCheckable(true);
                 muteBtn->setChecked(isMuted);
-                muteBtn->setStyleSheet(isMuted ? "background-color: #ff3b30; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                muteBtn->setStyleSheet(isMuted ? "background-color: #ff3b30; color: #ffffff; font-weight: bold; font-size: 12px; border: none; border-radius: 4px;" : "background-color: #2c2c2e; color: #d1d1d6; font-weight: bold; font-size: 12px; border: 1px solid #48484a; border-radius: 4px;");
                 cellLayout->addWidget(muteBtn);
 
                 auto syncCellModel = [this, &stage, r, c, spin, invBtn, muteBtn]() {
@@ -693,11 +696,11 @@ void StageDetailView::buildStageOptionsUi() {
 
                 connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), syncCellModel);
                 connect(invBtn, &QPushButton::toggled, [invBtn, syncCellModel](bool chk) {
-                    invBtn->setStyleSheet(chk ? "background-color: #ff9500; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                    invBtn->setStyleSheet(chk ? "background-color: #ff9500; color: #ffffff; font-weight: bold; font-size: 13px; border: none; border-radius: 4px;" : "background-color: #2c2c2e; color: #d1d1d6; font-weight: bold; font-size: 13px; border: 1px solid #48484a; border-radius: 4px;");
                     syncCellModel();
                 });
                 connect(muteBtn, &QPushButton::toggled, [muteBtn, syncCellModel](bool chk) {
-                    muteBtn->setStyleSheet(chk ? "background-color: #ff3b30; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                    muteBtn->setStyleSheet(chk ? "background-color: #ff3b30; color: #ffffff; font-weight: bold; font-size: 12px; border: none; border-radius: 4px;" : "background-color: #2c2c2e; color: #d1d1d6; font-weight: bold; font-size: 12px; border: 1px solid #48484a; border-radius: 4px;");
                     syncCellModel();
                 });
 
