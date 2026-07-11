@@ -345,8 +345,30 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
 
   cap->samplerates_count = valid_rates_count;
   if (valid_rates_count == 0) {
-    free_audio_device_descriptor(desc);
-    desc = NULL;
+    double current_rate = 0.0;
+    if (iasio->lpVtbl->getSampleRate(iasio, &current_rate) == 0 &&
+        current_rate > 0) {
+      samplerate_capability_t* rate_cap = &cap->samplerates[0];
+      rate_cap->samplerate = (int)current_rate;
+      rate_cap->formats = (char**)calloc(1, sizeof(char*));
+      if (rate_cap->formats) {
+        rate_cap->formats[0] = strdup(native_fmt_name);
+        rate_cap->formats_count = 1;
+      }
+      cap->samplerates_count = 1;
+    } else {
+      const int FALLBACK_RATES[] = {44100, 48000, 96000, 192000};
+      for (size_t dr = 0; dr < 4; dr++) {
+        samplerate_capability_t* rate_cap = &cap->samplerates[dr];
+        rate_cap->samplerate = FALLBACK_RATES[dr];
+        rate_cap->formats = (char**)calloc(1, sizeof(char*));
+        if (rate_cap->formats) {
+          rate_cap->formats[0] = strdup(native_fmt_name);
+          rate_cap->formats_count = 1;
+        }
+      }
+      cap->samplerates_count = 4;
+    }
   }
 
   SAFE_RELEASE(iasio);
