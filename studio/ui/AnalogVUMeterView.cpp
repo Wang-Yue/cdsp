@@ -93,6 +93,8 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
 }
 
 void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label, bool isClipped) {
+    if (rect.width() < 20 || rect.height() < 20) return;
+
     p.save();
     p.setClipRect(rect);
 
@@ -115,7 +117,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     }
 
     // Dial face background
-    QRadialGradient faceGrad(rect.center(), rect.width() / 2);
+    QRadialGradient faceGrad(rect.center(), std::max(1.0, rect.width() / 2.0));
     faceGrad.setColorAt(0.0, bgTop);
     faceGrad.setColorAt(1.0, bgBot);
     p.fillRect(rect, faceGrad);
