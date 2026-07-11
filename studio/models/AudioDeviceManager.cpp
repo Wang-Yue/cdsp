@@ -185,6 +185,7 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
             captureConfig = captureConfig.enforced();
             playbackConfig = playbackConfig.enforced();
             validateSampleRates();
+            saveConfigs();
 
             emit configChanged();
             if (onConfigChanged) onConfigChanged();

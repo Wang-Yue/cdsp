@@ -86,7 +86,7 @@ DeviceConfig DeviceConfig::enforced() const {
     if (res.backend == AudioBackendType::CoreAudio) {
         auto chs = res.supportedChannels();
         if (!chs.empty()) {
-            auto it = std::find_if(chs.begin(), chs.end(), [this](int c) { return c >= channels; });
+            auto it = std::find_if(chs.begin(), chs.end(), [&res](int c) { return c >= res.channels; });
             if (it != chs.end()) {
                 res.deviceChannels = *it;
             } else {
@@ -195,7 +195,11 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
     DeviceConfig cfg;
     if (json.contains("backend")) cfg.backend = stringToAudioBackendType(json["backend"].toString().toStdString());
     if (json.contains("channels")) cfg.channels = json["channels"].toInt();
-    if (json.contains("deviceChannels")) cfg.deviceChannels = json["deviceChannels"].toInt();
+    if (json.contains("deviceChannels")) {
+        cfg.deviceChannels = json["deviceChannels"].toInt();
+    } else {
+        cfg.deviceChannels = cfg.channels;
+    }
     if (json.contains("sampleRate")) cfg.sampleRate = json["sampleRate"].toInt();
     if (json.contains("format")) cfg.format = json["format"].toString().toStdString();
     if (json.contains("bypassDoP")) cfg.bypassDoP = json["bypassDoP"].toBool();
