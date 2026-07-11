@@ -5,6 +5,8 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QScrollArea>
+#include <QStyleOption>
+#include <QPainter>
 
 MiniPlayerView::MiniPlayerView(
     std::shared_ptr<DSPEngineController> dsp,
@@ -233,6 +235,14 @@ void MiniPlayerView::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         hide();
     }
+}
+
+void MiniPlayerView::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QStyleOption opt;
+    opt.initFrom(this);
+    QPainter p(this);
+    style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
 }
 
 void MiniPlayerView::refreshMeters() {

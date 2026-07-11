@@ -20,6 +20,7 @@ public:
     ResamplerType resamplerType = ResamplerType::Synchronous;
     ResamplerProfile resamplerProfile = ResamplerProfile::Balanced;
     bool resamplerUseProfile = true;
+    double resamplerAttenuation = 0.0;
     int resamplerSincLen = 256;
     int resamplerOversamplingFactor = 128;
     std::string resamplerWindow = "BlackmanHarris";

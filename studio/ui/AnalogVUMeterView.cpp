@@ -196,8 +196,21 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.translate(pivot);
     p.rotate(angleDeg);
 
-    p.setPen(QPen(needlePenColor, 1.2));
+    // Dynamic Needle Drop Shadow (offset for realistic depth according to theme)
+    QColor needleShadowColor;
+    if (m_settings.theme == VUTheme::VintageAmber) {
+        needleShadowColor = QColor(61, 47, 33, 75);
+    } else if (m_settings.theme == VUTheme::DarkStealth) {
+        needleShadowColor = QColor(0, 0, 0, 140);
+    } else { // Warm Tube
+        needleShadowColor = QColor(20, 10, 5, 120);
+    }
+
     double nLen = radius + m_settings.needleExtension;
+    p.setPen(QPen(needleShadowColor, 1.6));
+    p.drawLine(1.5, 1.5, 1.5, -nLen + 1.5);
+
+    p.setPen(QPen(needlePenColor, 1.2));
     p.drawLine(0, 0, 0, -nLen);
 
     // Pivot cap

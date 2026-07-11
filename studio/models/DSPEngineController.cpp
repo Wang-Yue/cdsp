@@ -159,10 +159,15 @@ void DSPEngineController::syncFaders() {
 }
 
 void DSPEngineController::updateStatus(const StateUpdate& update) {
-    if (status != update.state) {
-        status = update.state;
+    bool stateChanged = (status != update.state);
+    status = update.state;
+    lastStopReason = update.stopReason;
+
+    if (stateChanged) {
         emit statusChanged(status);
     }
+    emit statusUpdated(status, lastStopReason);
+
     if (update.stopReason.type == StopReasonType::CaptureFormatChange || update.stopReason.type == StopReasonType::PlaybackFormatChange) {
         int newRate = update.stopReason.formatChangeRate;
         if (newRate > 0) {

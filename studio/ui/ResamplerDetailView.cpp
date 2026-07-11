@@ -56,6 +56,13 @@ void ResamplerDetailView::setupUi() {
     connect(m_profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Quality Profile:", m_profileCombo);
 
+    m_attenuationSpin = new QDoubleSpinBox(m_typeGroup);
+    m_attenuationSpin->setRange(0.0, 60.0);
+    m_attenuationSpin->setSingleStep(0.5);
+    m_attenuationSpin->setSuffix(" dB");
+    connect(m_attenuationSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this]() { applySettings(); });
+    m_typeForm->addRow("Attenuation:", m_attenuationSpin);
+
     m_sincLenSpin = new QSpinBox(m_typeGroup);
     m_sincLenSpin->setRange(16, 4096);
     connect(m_sincLenSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
@@ -135,6 +142,7 @@ void ResamplerDetailView::updateVisibility() {
 
     m_typeForm->setRowVisible(m_useProfileCheck, isAsyncSinc);
     m_typeForm->setRowVisible(m_profileCombo, isAsyncSinc && useProfile);
+    m_typeForm->setRowVisible(m_attenuationSpin, isAsyncSinc || isAsyncPoly);
 
     m_typeForm->setRowVisible(m_sincLenSpin, isAsyncSinc && !useProfile);
     m_typeForm->setRowVisible(m_oversamplingSpin, isAsyncSinc && !useProfile);
@@ -154,6 +162,7 @@ void ResamplerDetailView::refreshUi() {
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
+    m_attenuationSpin->setValue(m_settings->resamplerAttenuation);
     m_sincLenSpin->setValue(m_settings->resamplerSincLen);
     m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
     m_windowCombo->setCurrentText(QString::fromStdString(m_settings->resamplerWindow));
@@ -176,6 +185,7 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerType = stringToResamplerType(m_typeCombo->currentText().toStdString());
     m_settings->resamplerUseProfile = m_useProfileCheck->isChecked();
     m_settings->resamplerProfile = stringToResamplerProfile(m_profileCombo->currentText().toStdString());
+    m_settings->resamplerAttenuation = m_attenuationSpin->value();
     m_settings->resamplerSincLen = m_sincLenSpin->value();
     m_settings->resamplerOversamplingFactor = m_oversamplingSpin->value();
     m_settings->resamplerWindow = m_windowCombo->currentText().toStdString();

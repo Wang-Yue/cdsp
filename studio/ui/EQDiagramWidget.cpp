@@ -121,11 +121,24 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
     // Equal-Loudness Contour (ISO 226) Reference Curve Overlay
     if (m_showLoudnessContour) {
+        double lowBoost = 6.0;
+        double highBoost = 4.0;
+
+        if (m_pipelineStore) {
+            for (const auto& stage : m_pipelineStore->stages) {
+                if (stage.type == StageType::Loudness && stage.isEnabled) {
+                    lowBoost = stage.loudnessLowBoost;
+                    highBoost = stage.loudnessHighBoost;
+                    break;
+                }
+            }
+        }
+
         QPainterPath loudnessPath;
         for (int x = 0; x <= w; x += 2) {
             double f = xToFreq(x, w);
-            double bassBoost = 6.0 * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
-            double trebleBoost = 4.0 * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
+            double bassBoost = lowBoost * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
+            double trebleBoost = highBoost * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
             double db = std::max(-24.0, std::min(24.0, bassBoost + trebleBoost));
             double y = dbToY(db, h);
             if (x == 0) loudnessPath.moveTo(x, y);
@@ -233,36 +246,43 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
 void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
     Q_UNUSED(h);
+    int activeIndex = (m_draggingIndex >= 0) ? m_draggingIndex
+                    : ((m_hoveredIndex >= 0) ? m_hoveredIndex : m_selectedIndex);
+
     QString text;
-    if (m_selectedIndex >= 0 && m_selectedIndex < static_cast<int>(m_preset.bands.size())) {
-        const auto& b = m_preset.bands[m_selectedIndex];
+    if (activeIndex >= 0 && activeIndex < static_cast<int>(m_preset.bands.size())) {
+        const auto& b = m_preset.bands[activeIndex];
         if (b.type == EQBandType::Free) {
-            text = QString("Band #%1 [Free] | b0: %2 | b1: %3 | b2: %4 | a1: %5 | a2: %6")
-                       .arg(m_selectedIndex + 1)
+            text = QString("Band #%1 [Free]%7 | b0: %2 | b1: %3 | b2: %4 | a1: %5 | a2: %6")
+                       .arg(activeIndex + 1)
                        .arg(b.b0, 0, 'f', 4)
                        .arg(b.b1, 0, 'f', 4)
                        .arg(b.b2, 0, 'f', 4)
                        .arg(b.a1, 0, 'f', 4)
-                       .arg(b.a2, 0, 'f', 4);
+                       .arg(b.a2, 0, 'f', 4)
+                       .arg(b.isEnabled ? "" : " (OFF)");
         } else if (b.type == EQBandType::GeneralNotch) {
-            text = QString("Band #%1 [GeneralNotch] | Fc: %2 Hz | Fp: %3 Hz | Qp: %4 | Norm: %5")
-                       .arg(m_selectedIndex + 1)
+            text = QString("Band #%1 [GeneralNotch]%6 | Fc: %2 Hz | Fp: %3 Hz | Qp: %4 | Norm: %5")
+                       .arg(activeIndex + 1)
                        .arg(static_cast<int>(std::round(b.freqNotch)))
                        .arg(static_cast<int>(std::round(b.freqPole)))
                        .arg(b.qPole, 0, 'f', 2)
-                       .arg(b.normalizeAtDc ? "ON" : "OFF");
+                       .arg(b.normalizeAtDc ? "ON" : "OFF")
+                       .arg(b.isEnabled ? "" : " (OFF)");
         } else if (b.type == EQBandType::LinkwitzTransform) {
-            text = QString("Band #%1 [LinkwitzTransform] | Fa: %2 Hz | Qa: %3 | Ft: %4 Hz | Qt: %5")
-                       .arg(m_selectedIndex + 1)
+            text = QString("Band #%1 [LinkwitzTransform]%6 | Fa: %2 Hz | Qa: %3 | Ft: %4 Hz | Qt: %5")
+                       .arg(activeIndex + 1)
                        .arg(b.freqAct, 0, 'f', 1)
                        .arg(b.qAct, 0, 'f', 2)
                        .arg(b.freqTarget, 0, 'f', 1)
-                       .arg(b.qTarget, 0, 'f', 2);
+                       .arg(b.qTarget, 0, 'f', 2)
+                       .arg(b.isEnabled ? "" : " (OFF)");
         } else {
-            text = QString("Band #%1 [%2] | Fc: %3 Hz")
-                       .arg(m_selectedIndex + 1)
+            text = QString("Band #%1 [%2]%4 | Fc: %3 Hz")
+                       .arg(activeIndex + 1)
                        .arg(QString::fromStdString(eqBandTypeToString(b.type)))
-                       .arg(static_cast<int>(std::round(b.freq)));
+                       .arg(static_cast<int>(std::round(b.freq)))
+                       .arg(b.isEnabled ? "" : " (OFF)");
 
             if (eqBandTypeHasGain(b.type)) {
                 text += QString(" | Gain: %1%2 dB")
@@ -298,7 +318,7 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
     QFontMetrics fm(font);
     int textW = fm.horizontalAdvance(text) + 20;
     int textH = 24;
-    int rectX = w - textW - 12;
+    int rectX = std::max(12, w - textW - 12);
     int rectY = 10;
 
     QRect bgRect(rectX, rectY, textW, textH);

@@ -22,6 +22,7 @@ public:
     );
 
     ProcessingState status = ProcessingState::Inactive;
+    ProcessingStopReason lastStopReason;
     std::string lastErrorMessage;
 
     DSPConfiguration buildConfiguration() const;
@@ -40,6 +41,7 @@ public:
 
 signals:
     void statusChanged(ProcessingState state);
+    void statusUpdated(ProcessingState state, const ProcessingStopReason& stopReason);
     void configApplied();
 
 private:

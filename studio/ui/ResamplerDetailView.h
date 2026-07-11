@@ -38,6 +38,7 @@ private:
     QComboBox* m_typeCombo;
     QCheckBox* m_useProfileCheck;
     QComboBox* m_profileCombo;
+    QDoubleSpinBox* m_attenuationSpin;
     QSpinBox* m_sincLenSpin;
     QSpinBox* m_oversamplingSpin;
     QComboBox* m_windowCombo;

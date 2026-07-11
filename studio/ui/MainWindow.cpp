@@ -127,6 +127,37 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
+    connect(m_dspController.get(), &DSPEngineController::statusUpdated, this, [this](ProcessingState state, const ProcessingStopReason& stopReason) {
+        if (stopReason.type != StopReasonType::None && stopReason.type != StopReasonType::Done) {
+            QString msg;
+            switch (stopReason.type) {
+            case StopReasonType::CaptureFormatChange:
+                msg = QString("⚠️ Format Change: Capture sample rate changed to %1 Hz").arg(stopReason.formatChangeRate);
+                break;
+            case StopReasonType::PlaybackFormatChange:
+                msg = QString("⚠️ Format Change: Playback sample rate changed to %1 Hz").arg(stopReason.formatChangeRate);
+                break;
+            case StopReasonType::CaptureError:
+                msg = QString("⚠️ Capture Error: %1").arg(QString::fromStdString(stopReason.message));
+                break;
+            case StopReasonType::PlaybackError:
+                msg = QString("⚠️ Playback Error: %1").arg(QString::fromStdString(stopReason.message));
+                break;
+            case StopReasonType::UnknownError:
+                msg = QString("⚠️ Error: %1").arg(QString::fromStdString(stopReason.message));
+                break;
+            default:
+                break;
+            }
+            if (!msg.isEmpty() && m_stopReasonBanner) {
+                m_stopReasonBanner->setText(msg);
+                m_stopReasonBanner->show();
+            }
+        } else if (state == ProcessingState::Running && m_stopReasonBanner) {
+            m_stopReasonBanner->hide();
+        }
+    });
+
     connect(m_devices.get(), &AudioDeviceManager::configChanged, this, [this]() {
         if (m_sampleRateBadge) {
             m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
@@ -239,19 +270,45 @@ void MainWindow::setupUi() {
 void MainWindow::setupStatusBar() {
     auto bar = statusBar();
     m_statusStateLabel = new QLabel("State: Inactive", this);
+    m_statusSampleRateBadge = new QLabel("48000 Hz", this);
     m_statusBufferLabel = new QLabel("Buffer: 1024", this);
     m_statusActivePresetLabel = new QLabel("Preset: Default", this);
+    m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
+    m_stopReasonBanner = new QLabel(this);
     m_statusMuteLabel = new QLabel("Unmuted", this);
 
     m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, 0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
     m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
     m_statusActivePresetLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusRuntimeLabel->setStyleSheet("padding: 0 8px; color: #8e8e93; font-family: monospace;");
+    m_stopReasonBanner->setStyleSheet("padding: 2px 8px; color: #ffffff; background-color: #ff3b30; border-radius: 4px; font-weight: bold;");
+    m_stopReasonBanner->hide();
     m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
 
     bar->addWidget(m_statusStateLabel);
+    bar->addWidget(m_statusSampleRateBadge);
     bar->addWidget(m_statusBufferLabel);
     bar->addWidget(m_statusActivePresetLabel);
+    bar->addWidget(m_statusRuntimeLabel);
+    bar->addWidget(m_stopReasonBanner);
     bar->addPermanentWidget(m_statusMuteLabel);
+
+    connect(&m_runtimeUpdateTimer, &QTimer::timeout, this, [this]() {
+        if (m_dspController && m_dspController->status == ProcessingState::Running) {
+            qint64 secs = m_engineRunTimer.elapsed() / 1000;
+            int h = static_cast<int>(secs / 3600);
+            int m = static_cast<int>((secs % 3600) / 60);
+            int s = static_cast<int>(secs % 60);
+            m_statusRuntimeLabel->setText(QString("Run Time: %1:%2:%3")
+                .arg(h, 2, 10, QChar('0'))
+                .arg(m, 2, 10, QChar('0'))
+                .arg(s, 2, 10, QChar('0')));
+        } else {
+            m_statusRuntimeLabel->setText("Run Time: 00:00:00");
+        }
+    });
+    m_runtimeUpdateTimer.setInterval(1000);
 }
 
 void MainWindow::setupTrayIcon() {
@@ -281,21 +338,21 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::setupShortcuts() {
-    auto setupNavAction = [this](const QKeySequence& seq, const QString& tag) {
+    auto setupNavAction = [this](const QList<QKeySequence>& seqs, const QString& tag) {
         auto act = new QAction(this);
-        act->setShortcut(seq);
+        act->setShortcuts(seqs);
         connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
         addAction(act);
     };
 
-    setupNavAction(QKeySequence("Ctrl+1"), "devices");
-    setupNavAction(QKeySequence("Ctrl+2"), "dashboard");
-    setupNavAction(QKeySequence("Ctrl+3"), "levels");
-    setupNavAction(QKeySequence("Ctrl+4"), "spectrum");
-    setupNavAction(QKeySequence("Ctrl+5"), "general_settings");
+    setupNavAction({QKeySequence("Cmd+1"), QKeySequence("Ctrl+1")}, "devices");
+    setupNavAction({QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
+    setupNavAction({QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
+    setupNavAction({QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
+    setupNavAction({QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "general_settings");
 
     auto actMini = new QAction(this);
-    actMini->setShortcut(QKeySequence("Ctrl+M"));
+    actMini->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
     connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     addAction(actMini);
 
@@ -303,11 +360,15 @@ void MainWindow::setupShortcuts() {
     actMute->setShortcut(QKeySequence("Space"));
     connect(actMute, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
-        if (focusW && (qobject_cast<QLineEdit*>(focusW) ||
-                       qobject_cast<QAbstractSpinBox*>(focusW) ||
-                       qobject_cast<QTextEdit*>(focusW) ||
-                       qobject_cast<QPlainTextEdit*>(focusW))) {
-            return;
+        for (QWidget* w = focusW; w; w = w->parentWidget()) {
+            if (qobject_cast<QLineEdit*>(w) ||
+                qobject_cast<QAbstractSpinBox*>(w) ||
+                qobject_cast<QTextEdit*>(w) ||
+                qobject_cast<QPlainTextEdit*>(w) ||
+                qobject_cast<QAbstractButton*>(w) ||
+                qobject_cast<QComboBox*>(w)) {
+                return;
+            }
         }
         toggleMute();
     });
@@ -360,6 +421,9 @@ void MainWindow::updateStatusBar() {
     }
     m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
     m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
+    if (m_statusSampleRateBadge) {
+        m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
+    }
 
     QString presetName = "Default";
     if (!m_pipeline->eqPresets.empty()) {
@@ -367,6 +431,46 @@ void MainWindow::updateStatusBar() {
     }
     m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
     updateMuteDisplay();
+}
+
+void MainWindow::onEngineStatusChanged(ProcessingState state) {
+    switch (state) {
+    case ProcessingState::Running:
+        m_startStopBtn->setText("Stop Engine");
+        m_startStopBtn->setStyleSheet("background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
+            m_engineRunTimer.start();
+        }
+        m_runtimeUpdateTimer.start();
+        break;
+    case ProcessingState::Starting:
+        m_startStopBtn->setText("Starting...");
+        m_startStopBtn->setStyleSheet("background-color: #ffcc00; color: black; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        break;
+    case ProcessingState::Paused:
+        m_startStopBtn->setText("Paused (Click to Resume)");
+        m_startStopBtn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        break;
+    case ProcessingState::Stalled:
+        m_startStopBtn->setText("Stalled (Click to Restart)");
+        m_startStopBtn->setStyleSheet("background-color: #ff9500; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_runtimeUpdateTimer.stop();
+        break;
+    case ProcessingState::Inactive:
+    default:
+        m_startStopBtn->setText("Start Engine");
+        m_startStopBtn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        m_runtimeUpdateTimer.stop();
+        if (m_statusRuntimeLabel) {
+            m_statusRuntimeLabel->setText("Run Time: 00:00:00");
+        }
+        m_engineRunTimer.invalidate();
+        break;
+    }
+    if (m_sampleRateBadge) {
+        m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
+    }
+    updateStatusBar();
 }
 
 void MainWindow::setupToolbar() {
@@ -724,32 +828,4 @@ void MainWindow::onPipelineChanged() {
     if (m_lastActiveTag.startsWith("stage_") || m_lastActiveTag.startsWith("eq_") || m_lastActiveTag.startsWith("conv_")) {
         handleNavigationTag("dashboard");
     }
-}
-
-void MainWindow::onEngineStatusChanged(ProcessingState state) {
-    switch (state) {
-    case ProcessingState::Running:
-        m_startStopBtn->setText("Stop Engine");
-        m_startStopBtn->setStyleSheet("background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Starting:
-        m_startStopBtn->setText("Starting...");
-        m_startStopBtn->setStyleSheet("background-color: #ffcc00; color: black; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Paused:
-        m_startStopBtn->setText("Paused (Click to Resume)");
-        m_startStopBtn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Stalled:
-        m_startStopBtn->setText("Stalled (Click to Restart)");
-        m_startStopBtn->setStyleSheet("background-color: #ff9500; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Inactive:
-    default:
-        m_startStopBtn->setText("Start Engine");
-        m_startStopBtn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    }
-    m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
-    updateStatusBar();
 }

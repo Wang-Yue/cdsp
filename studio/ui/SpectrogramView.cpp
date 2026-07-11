@@ -190,19 +190,28 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             bool firstEdge = true;
 
             size_t drawBins = std::min(nBins, static_cast<size_t>(100));
+            if (drawBins < 2) continue;
+
+            float maxDbInFrame = -60.0f;
+
             for (size_t k = 0; k < drawBins; ++k) {
-                size_t j = static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1)));
-                float freq = (j < frame.frequencies.size()) ? frame.frequencies[j] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(j) / (nBins - 1)));
+                size_t j = std::min(nBins - 1, static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1))));
+                float freq = (j < frame.frequencies.size()) ? frame.frequencies[j] : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(j) / std::max(1.0, static_cast<double>(nBins - 1))));
                 freq = std::max(20.0f, std::min(20000.0f, freq));
 
                 double binFrac = (std::log10(freq) - logMin) / (logMax - logMin);
+                binFrac = std::max(0.0, std::min(1.0, binFrac));
                 double xFlat = leftPadding + binFrac * drawWidth;
 
-                float db = frame.magnitudes[j];
+                float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -60.0f;
+                maxDbInFrame = std::max(maxDbInFrame, db);
+
                 float normMag = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
                 double yFlat = baselineY - normMag * drawHeight;
 
                 QPointF projPt = project(xFlat, yFlat, t);
+                if (!std::isfinite(projPt.x()) || !std::isfinite(projPt.y())) continue;
+
                 fillPath.lineTo(projPt);
 
                 if (firstEdge) {
@@ -214,15 +223,26 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             }
 
             QPointF endPt = project(leftPadding + drawWidth, baselineY, t);
-            fillPath.lineTo(endPt);
-            fillPath.lineTo(startPt);
+            if (std::isfinite(endPt.x()) && std::isfinite(endPt.y()) && std::isfinite(startPt.x()) && std::isfinite(startPt.y())) {
+                fillPath.lineTo(endPt);
+                fillPath.lineTo(startPt);
+            }
 
             // Occlusion fill
             p.fillPath(fillPath, StyleTheme::cardBg());
 
-            // Interpolated stroke color (blue at back -> bright accent cyan/orange at front)
+            // Smooth log-frequency & depth age combined color mapping
             float tf = static_cast<float>(t);
-            QColor sliceColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
+            QColor sliceDepthColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
+            QColor magColor = colorForDB(maxDbInFrame);
+
+            QColor sliceColor = QColor::fromRgbF(
+                0.4f * sliceDepthColor.redF() + 0.6f * magColor.redF(),
+                0.4f * sliceDepthColor.greenF() + 0.6f * magColor.greenF(),
+                0.4f * sliceDepthColor.blueF() + 0.6f * magColor.blueF(),
+                sliceDepthColor.alphaF()
+            );
+
             p.setPen(QPen(sliceColor, 1.5));
             p.drawPath(edgePath);
         }

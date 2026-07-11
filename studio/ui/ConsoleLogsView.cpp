@@ -37,13 +37,18 @@ void ConsoleLogsView::setupUi() {
     topToolbar->addStretch();
 
     m_levelFilterCombo = new QComboBox(this);
-    m_levelFilterCombo->addItems({"Trace & Above", "Debug & Above", "Info & Above", "Warn & Above", "Error Only"});
+    m_levelFilterCombo->addItem("Trace & Above", static_cast<int>(LogLevel::Trace));
+    m_levelFilterCombo->addItem("Debug & Above", static_cast<int>(LogLevel::Debug));
+    m_levelFilterCombo->addItem("Info & Above", static_cast<int>(LogLevel::Info));
+    m_levelFilterCombo->addItem("Warn & Above", static_cast<int>(LogLevel::Warn));
+    m_levelFilterCombo->addItem("Error Only", static_cast<int>(LogLevel::Error));
     m_levelFilterCombo->setCurrentIndex(0);
     connect(m_levelFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ConsoleLogsView::refreshLogs);
     topToolbar->addWidget(m_levelFilterCombo);
 
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Filter logs...");
+    m_searchEdit->setClearButtonEnabled(true);
     m_searchEdit->setFixedWidth(200);
     connect(m_searchEdit, &QLineEdit::textChanged, this, &ConsoleLogsView::refreshLogs);
     topToolbar->addWidget(m_searchEdit);
@@ -101,14 +106,7 @@ void ConsoleLogsView::refreshLogs() {
     m_table->setRowCount(0);
     if (!LogManager::instance()) return;
 
-    LogLevel filterLevel = LogLevel::Trace;
-    switch (m_levelFilterCombo->currentIndex()) {
-    case 0: filterLevel = LogLevel::Trace; break;
-    case 1: filterLevel = LogLevel::Debug; break;
-    case 2: filterLevel = LogLevel::Info; break;
-    case 3: filterLevel = LogLevel::Warn; break;
-    case 4: filterLevel = LogLevel::Error; break;
-    }
+    LogLevel filterLevel = static_cast<LogLevel>(m_levelFilterCombo->currentData().toInt());
 
     auto entries = LogManager::instance()->logs(filterLevel, m_searchEdit->text());
     m_logCountLabel->setText(QString("%1 logs").arg(entries.size()));

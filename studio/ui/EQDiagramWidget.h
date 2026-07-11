@@ -9,6 +9,7 @@
 #include <functional>
 
 #include "models/SpectrumEngine.h"
+#include "models/PipelineStore.h"
 #include <QCheckBox>
 
 class EQDiagramWidget : public QWidget {
@@ -20,6 +21,7 @@ public:
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
+    void setPipelineStore(std::shared_ptr<PipelineStore> store) { m_pipelineStore = store; update(); }
     void setShowAnalyzer(bool show) { m_showAnalyzer = show; update(); }
     void setShowLoudnessContour(bool show) { m_showLoudnessContour = show; update(); }
 
@@ -49,6 +51,7 @@ private:
     bool m_showAnalyzer = true;
     bool m_showLoudnessContour = false;
     std::shared_ptr<SpectrumEngine> m_spectrum;
+    std::shared_ptr<PipelineStore> m_pipelineStore;
 
     double fMin = 20.0;
     double fMax = 20000.0;

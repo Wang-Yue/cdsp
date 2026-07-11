@@ -107,7 +107,9 @@ void AutoEqPickerDlg::onImportClicked() {
     m_service.fetchPreset(entry, [this, entry](bool ok, std::optional<EQPreset> preset) {
         m_importBtn->setEnabled(true);
         if (ok && preset.has_value()) {
-            m_pipeline->addEQPreset(preset.value());
+            auto p = preset.value();
+            p.name = entry.name;
+            m_pipeline->addEQPreset(p);
             QMessageBox::information(this, "Success", QString("Imported preset '%1' into Pipeline Store.").arg(QString::fromStdString(entry.name)));
             accept();
         } else {

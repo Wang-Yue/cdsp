@@ -78,7 +78,11 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             float s = (left[i] - right[i]) * 0.7071f;
             maxVal = std::max(maxVal, std::max(std::abs(m), std::abs(s)));
         }
-        autoScaleFactor = (maxVal > 1e-4f) ? std::min(0.90f / maxVal, 32.0f) : 1.0f;
+        if (maxVal < 1e-6f || !std::isfinite(maxVal)) {
+            autoScaleFactor = 1.0f;
+        } else {
+            autoScaleFactor = std::min(0.90f / maxVal, 32.0f);
+        }
     }
 
     if (!m_showParticles) {

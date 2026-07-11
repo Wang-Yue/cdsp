@@ -162,6 +162,7 @@ void EQPresetDetailView::setupUi() {
 
     // Mode 0: Interactive Diagram
     m_diagramWidget = new EQDiagramWidget(this);
+    m_diagramWidget->setPipelineStore(m_pipeline);
     m_diagramWidget->onBandDragged = [this](int idx, double f, double g) {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
             auto& b = m_preset.bands[idx];

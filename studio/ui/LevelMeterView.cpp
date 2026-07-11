@@ -20,17 +20,34 @@ void LevelMeterView::hideEvent(QHideEvent* event) {
     if (m_levelState && m_levelState->visibilityCount > 0) m_levelState->visibilityCount--;
 }
 
-void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title) {
-    m_rms = rms;
-    m_peak = peak;
-    m_title = title;
-    update();
-}
-
 static float normDB(float db) {
     if (db < -60.0f) return 0.0f;
     if (db > 0.0f) return 1.0f;
     return (db + 60.0f) / 60.0f;
+}
+
+void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title) {
+    m_rms = rms;
+    m_peak = peak;
+    m_title = title;
+
+    if (m_peakHold.size() != m_peak.size()) {
+        m_peakHold.resize(m_peak.size(), 0.0f);
+        for (size_t i = 0; i < m_peak.size(); ++i) {
+            m_peakHold[i] = normDB(m_peak[i]);
+        }
+    } else {
+        for (size_t i = 0; i < m_peak.size(); ++i) {
+            float normP = normDB(m_peak[i]);
+            if (normP >= m_peakHold[i]) {
+                m_peakHold[i] = normP;
+            } else {
+                m_peakHold[i] = std::max(0.0f, m_peakHold[i] * 0.95f);
+            }
+        }
+    }
+
+    update();
 }
 
 void LevelMeterView::paintEvent(QPaintEvent* event) {
@@ -80,7 +97,7 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         float peakVal = (i < m_peak.size()) ? m_peak[i] : -100.0f;
 
         float rmsFrac = normDB(rmsVal);
-        float peakFrac = normDB(peakVal);
+        float peakFrac = (i < m_peakHold.size()) ? m_peakHold[i] : normDB(peakVal);
 
         int rmsW = static_cast<int>(rmsFrac * barW);
         int peakX = xStart + static_cast<int>(peakFrac * barW);

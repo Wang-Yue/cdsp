@@ -25,6 +25,9 @@
 #include <QAction>
 #include <QKeySequence>
 
+#include <QElapsedTimer>
+#include <QTimer>
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -70,9 +73,15 @@ private:
 
     // Status Bar Widgets
     QLabel* m_statusStateLabel;
+    QLabel* m_statusSampleRateBadge;
     QLabel* m_statusBufferLabel;
     QLabel* m_statusActivePresetLabel;
+    QLabel* m_statusRuntimeLabel;
     QLabel* m_statusMuteLabel;
+    QLabel* m_stopReasonBanner;
+
+    QElapsedTimer m_engineRunTimer;
+    QTimer m_runtimeUpdateTimer;
 
     // Tray Icon
     QSystemTrayIcon* m_trayIcon;

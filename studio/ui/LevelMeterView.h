@@ -29,6 +29,7 @@ private:
     LevelState* m_levelState = nullptr;
     std::vector<float> m_rms;
     std::vector<float> m_peak;
+    std::vector<float> m_peakHold;
     QString m_title;
 };
 

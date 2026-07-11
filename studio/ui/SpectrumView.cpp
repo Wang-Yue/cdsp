@@ -37,17 +37,27 @@ void SpectrumView::hideEvent(QHideEvent* event) {
     if (m_engine && m_engine->visibilityCount > 0) m_engine->visibilityCount--;
 }
 
+static float normDB60(float db) {
+    if (db < -60.0f) return 0.0f;
+    if (db > 0.0f) return 1.0f;
+    return (db + 60.0f) / 60.0f;
+}
+
 void SpectrumView::setSpectrum(const SpectrumData& data) {
     m_data = data;
 
     if (m_peakHold.size() != m_data.magnitudes.size()) {
-        m_peakHold = m_data.magnitudes;
+        m_peakHold.resize(m_data.magnitudes.size(), 0.0f);
+        for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
+            m_peakHold[i] = normDB60(m_data.magnitudes[i]);
+        }
     } else {
         for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
-            if (m_data.magnitudes[i] >= m_peakHold[i]) {
-                m_peakHold[i] = m_data.magnitudes[i];
+            float normVal = normDB60(m_data.magnitudes[i]);
+            if (normVal >= m_peakHold[i]) {
+                m_peakHold[i] = normVal;
             } else {
-                m_peakHold[i] = std::max(-60.0f, m_peakHold[i] - 0.6f);
+                m_peakHold[i] = std::max(0.0f, m_peakHold[i] * 0.95f);
             }
         }
     }
@@ -59,12 +69,6 @@ void SpectrumView::mouseMoveEvent(QMouseEvent* event) {
     m_hoverPos = event->pos();
     m_isHovered = rect().contains(m_hoverPos);
     update();
-}
-
-static float normDB60(float db) {
-    if (db < -60.0f) return 0.0f;
-    if (db > 0.0f) return 1.0f;
-    return (db + 60.0f) / 60.0f;
 }
 
 void SpectrumView::paintEvent(QPaintEvent* event) {
@@ -135,8 +139,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.fillRect(QRectF(x - barW / 2.0, plotH - barHeight, barW, barHeight), barGrad);
 
         // Draw Peak Hold Line Segment
-        if (i < m_peakHold.size()) {
-            float peakNormY = normDB60(m_peakHold[i]);
+        if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
+            float peakNormY = m_peakHold[i];
             double peakY = plotH - static_cast<double>(peakNormY * plotH);
             p.setPen(QPen(QColor(255, 255, 255, 220), 1.5));
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));

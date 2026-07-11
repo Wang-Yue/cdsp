@@ -217,9 +217,9 @@ void ConvolutionImportDlg::onImportClicked() {
                 double absVal = std::abs(c);
                 if (absVal > maxVal) maxVal = absVal;
             }
-            if (maxVal > 0.0) {
-                for (double& c : coeffs) c /= maxVal;
-            }
+            double targetDb = 0.0;
+            double scale = maxVal > 0.0 ? std::pow(10.0, targetDb / 20.0) / maxVal : 1.0;
+            for (double& c : coeffs) c *= scale;
         }
 
         if (delayMs > 0.0) {

@@ -270,7 +270,7 @@ void DashboardView::setupUi() {
 
         connect(slider, &QSlider::valueChanged, [this, f](int val) {
             float db = val / 2.0f;
-            m_dspController->setFaderVolume(f, db);
+            m_dspController->setFaderVolume(f, db, true);
             updateFaderUi();
         });
 

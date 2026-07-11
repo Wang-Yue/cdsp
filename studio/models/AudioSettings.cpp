@@ -64,6 +64,7 @@ void AudioSettings::loadPreferences() {
     resamplerType = stringToResamplerType(s.value("resamplerType", "Synchronous").toString().toStdString());
     resamplerProfile = stringToResamplerProfile(s.value("resamplerProfile", "Balanced").toString().toStdString());
     resamplerUseProfile = s.value("resamplerUseProfile", true).toBool();
+    resamplerAttenuation = s.value("resamplerAttenuation", 0.0).toDouble();
     resamplerSincLen = s.value("resamplerSincLen", 256).toInt();
     resamplerOversamplingFactor = s.value("resamplerOversamplingFactor", 128).toInt();
     resamplerWindow = s.value("resamplerWindow", "BlackmanHarris").toString().toStdString();
@@ -108,6 +109,7 @@ void AudioSettings::savePreferences() {
     s.setValue("resamplerType", QString::fromStdString(resamplerTypeToString(resamplerType)));
     s.setValue("resamplerProfile", QString::fromStdString(resamplerProfileToString(resamplerProfile)));
     s.setValue("resamplerUseProfile", resamplerUseProfile);
+    s.setValue("resamplerAttenuation", resamplerAttenuation);
     s.setValue("resamplerSincLen", resamplerSincLen);
     s.setValue("resamplerOversamplingFactor", resamplerOversamplingFactor);
     s.setValue("resamplerWindow", QString::fromStdString(resamplerWindow));
