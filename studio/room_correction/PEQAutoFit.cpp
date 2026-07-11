@@ -87,18 +87,9 @@ std::vector<double> PEQAutoFit::sampleMagnitudeDB(const FrequencyResponse& fr,
 
     for (size_t i = 0; i < atFrequencies.size(); ++i) {
         double f = atFrequencies[i];
-        double binFloat = f / binHz;
-        size_t bin0 = static_cast<size_t>(std::floor(binFloat));
-        size_t bin1 = std::min(fr.bins() - 1, bin0 + 1);
-
-        if (bin0 >= fr.bins()) {
-            result[i] = fr.magnitudeDB(fr.bins() - 1);
-        } else {
-            double t = binFloat - static_cast<double>(bin0);
-            double db0 = fr.magnitudeDB(bin0);
-            double db1 = fr.magnitudeDB(bin1);
-            result[i] = db0 + t * (db1 - db0);
-        }
+        int bin = static_cast<int>(std::round(f / binHz));
+        size_t clampedBin = static_cast<size_t>(std::clamp(bin, 0, static_cast<int>(fr.bins() - 1)));
+        result[i] = fr.magnitudeDB(clampedBin);
     }
     return result;
 }
@@ -191,7 +182,7 @@ static double cost(const BiquadParameters& band, const std::vector<double>& rwb,
                    int sampleRate) {
     auto coeffs = BiquadCoefficients::compute(band, sampleRate);
     if (!coeffs.has_value())
-        return 1e18;
+        return std::numeric_limits<double>::infinity();
     double total = 0.0;
     for (size_t i = 0; i < frequencies.size(); ++i) {
         double r = rwb[i] + coeffs.value().gainDB(frequencies[i], sampleRate);

@@ -31,7 +31,7 @@ public:
     static FrequencyResponse fdw(const ImpulseResponse& ir, double cycles, int fftSize = 4096);
 
     static std::vector<std::pair<double, FrequencyResponse>> stft(const ImpulseResponse& ir, int sliceCount = 30,
-                                                                  double maxTimeSeconds = 0.4, int windowLength = 2048,
+                                                                  double maxTimeSeconds = 0.5, int windowLength = 2048,
                                                                   int fftSize = 4096);
 };
 

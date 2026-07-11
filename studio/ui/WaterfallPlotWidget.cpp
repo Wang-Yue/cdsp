@@ -4,12 +4,28 @@
 
 #include <QFutureWatcher>
 #include <QPainterPath>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
 
 WaterfallPlotWidget::WaterfallPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
+
+    QPointer<WaterfallPlotWidget> safeThis(this);
+    connect(&m_watcher, &QFutureWatcher<std::vector<std::pair<double, FrequencyResponse>>>::finished, this,
+            [safeThis]() {
+                if (safeThis) {
+                    safeThis->setSlices(safeThis->m_watcher.result());
+                }
+            });
+}
+
+WaterfallPlotWidget::~WaterfallPlotWidget() {
+    if (m_watcher.isRunning()) {
+        m_watcher.cancel();
+        m_watcher.waitForFinished();
+    }
 }
 
 void WaterfallPlotWidget::setSlices(const std::vector<std::pair<double, FrequencyResponse>>& slices) {
@@ -19,20 +35,19 @@ void WaterfallPlotWidget::setSlices(const std::vector<std::pair<double, Frequenc
 
 void WaterfallPlotWidget::recomputeSTFTAsync(const ImpulseResponse& ir, int sliceCount, double maxTimeMs,
                                              int windowLength) {
+    if (m_watcher.isRunning()) {
+        m_watcher.cancel();
+        m_watcher.waitForFinished();
+    }
+
     double tMax = maxTimeMs / 1000.0;
     int nFft = windowLength * 2;
-
-    auto watcher = new QFutureWatcher<std::vector<std::pair<double, FrequencyResponse>>>(this);
-    connect(watcher, &QFutureWatcher<std::vector<std::pair<double, FrequencyResponse>>>::finished, [this, watcher]() {
-        setSlices(watcher->result());
-        watcher->deleteLater();
-    });
 
     QFuture<std::vector<std::pair<double, FrequencyResponse>>> future =
         QtConcurrent::run([ir, sliceCount, tMax, windowLength, nFft]() {
             return FrequencyResponse::stft(ir, sliceCount, tMax, windowLength, nFft);
         });
-    watcher->setFuture(future);
+    m_watcher.setFuture(future);
 }
 
 void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {

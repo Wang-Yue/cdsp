@@ -34,7 +34,7 @@ public:
     static std::vector<double> logFrequencyGrid(double fMin = 20.0, double fMax = 20000.0, size_t count = 256);
 
     static std::vector<double> smoothLogOctave(const std::vector<double>& magDB, const std::vector<double>& frequencies,
-                                               double octaves = 1.0 / 6.0);
+                                               double octaves = 1.0 / 12.0);
 
     static std::vector<double> smoothLogOctave(const std::vector<double>& magDB, const std::vector<double>& frequencies,
                                                double midOctaves, double trebleOctaves, double transitionLowHz,

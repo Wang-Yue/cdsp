@@ -16,6 +16,7 @@ struct FIRDesignOptions {
 
 struct FIRDesignMeasurementOptions {
     int fftSize = 8192;
+    double floorDB = -60.0;
     double preampDB = -6.0;
     double maxBoostDB = 12.0;
     double minFreqHz = 30.0;

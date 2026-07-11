@@ -28,7 +28,7 @@ double FrequencyResponse::magnitude(size_t bin) const {
 
 double FrequencyResponse::magnitudeDB(size_t bin) const {
     double mag = magnitude(bin);
-    return (mag > 0.0) ? 20.0 * std::log10(mag) : -100.0;
+    return (mag > 0.0) ? 20.0 * std::log10(mag) : -1000.0;
 }
 
 double FrequencyResponse::phase(size_t bin) const {
@@ -76,8 +76,8 @@ std::vector<double> FrequencyResponse::groupDelay() const {
         double dPhase = unwrap[i + 1] - unwrap[i - 1];
         gd[i] = -dPhase / (2.0 * dw);
     }
-    gd[0] = gd[1];
-    gd[count - 1] = gd[count - 2];
+    gd[0] = -(unwrap[1] - unwrap[0]) / dw;
+    gd[count - 1] = -(unwrap[count - 1] - unwrap[count - 2]) / dw;
 
     return gd;
 }
@@ -112,7 +112,7 @@ FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycle
     std::vector<double> im(bins, 0.0);
 
     double twoPi = 2.0 * M_PI;
-    size_t p = ir.peakIndex();
+    size_t p = ir.zeroIndex;
     size_t count = ir.samples.size();
 
     for (size_t k = 0; k < bins; ++k) {
@@ -147,20 +147,17 @@ std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(const 
                                                                           double maxTimeSeconds, int windowLength,
                                                                           int targetFftSize) {
     std::vector<std::pair<double, FrequencyResponse>> slices;
-    if (ir.samples.empty())
+    if (ir.samples.empty() || sliceCount <= 0)
         return slices;
 
-    size_t peak = ir.peakIndex();
+    size_t zeroIdx = ir.zeroIndex;
     double fs = static_cast<double>(ir.sampleRate);
     double dt = maxTimeSeconds / static_cast<double>(std::max(1, sliceCount - 1));
 
     for (int s = 0; s < sliceCount; ++s) {
         double timeSec = static_cast<double>(s) * dt;
         size_t offsetSamples = static_cast<size_t>(timeSec * fs);
-        size_t startIdx = peak + offsetSamples;
-
-        if (startIdx >= ir.samples.size())
-            break;
+        size_t startIdx = zeroIdx + offsetSamples;
 
         std::vector<double> sliceSamples(windowLength, 0.0);
         for (int i = 0; i < windowLength; ++i) {

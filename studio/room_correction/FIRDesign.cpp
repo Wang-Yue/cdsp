@@ -144,8 +144,8 @@ std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& 
 
     std::vector<double> logMag(bins);
     for (size_t k = 0; k < bins; ++k) {
-        double mag = std::pow(10.0, magDB[k] / 20.0) * preampLin;
-        logMag[k] = std::log(std::max(floorLin, mag));
+        double magLin = std::pow(10.0, magDB[k] / 20.0);
+        logMag[k] = std::log(std::max(floorLin, magLin) * preampLin);
     }
 
     std::vector<double> inImag(bins, 0.0);
@@ -185,7 +185,7 @@ std::vector<double> FIRDesign::fromMeasurement(const FrequencyResponse& measured
 
     double measuredBinHz = static_cast<double>(measured.sampleRate) / static_cast<double>(measured.fftSize);
     double designBinHz = static_cast<double>(sampleRate) / static_cast<double>(n);
-    double floorLin = std::pow(10.0, -60.0 / 20.0);
+    double floorLin = std::pow(10.0, options.floorDB / 20.0);
     double preampLin = std::pow(10.0, options.preampDB / 20.0);
     double maxBoostLin = std::pow(10.0, options.maxBoostDB / 20.0);
     double taperOctaves = 0.5;

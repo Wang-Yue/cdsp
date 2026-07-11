@@ -152,10 +152,14 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
                     (bin < spec.frequencies.size())
                         ? spec.frequencies[bin]
                         : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
-                float freqUpper =
-                    (bin + 1 < spec.frequencies.size())
-                        ? spec.frequencies[bin + 1]
-                        : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
+                float freqUpper;
+                if (bin + 1 < spec.frequencies.size()) {
+                    freqUpper = spec.frequencies[bin + 1];
+                } else if (bin < spec.frequencies.size() && bin > 0) {
+                    freqUpper = spec.frequencies[bin] + (spec.frequencies[bin] - spec.frequencies[bin - 1]);
+                } else {
+                    freqUpper = static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
+                }
 
                 freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
                 freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));

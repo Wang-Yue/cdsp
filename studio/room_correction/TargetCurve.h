@@ -61,6 +61,8 @@ public:
                 double logF = std::log10(freqHz);
                 double logLo = std::log10(lo.freqHz);
                 double logHi = std::log10(hi.freqHz);
+                if (logHi <= logLo)
+                    return lo.gainDB;
                 double t = (logF - logLo) / (logHi - logLo);
                 return lo.gainDB + t * (hi.gainDB - lo.gainDB);
             }

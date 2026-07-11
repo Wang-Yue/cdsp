@@ -175,7 +175,7 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
     spectrum_result_t res;
     memset(&res, 0, sizeof(res));
     spectrum_status_t st = dsp_engine_get_spectrum(m_engine, isCapture, channel, minFreq, maxFreq, nBins, &res);
-    if (st != SPECTRUM_OK) {
+    if (st != SPECTRUM_OK || !res.frequencies || !res.magnitudes || res.count == 0) {
         return false;
     }
 
@@ -198,7 +198,7 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
     outSamples.channels.clear();
     for (size_t ch = 0; ch < res->channels_count; ++ch) {
         std::vector<float> chSamples;
-        if (res->channels[ch]) {
+        if (res->channels && res->channels[ch]) {
             for (size_t f = 0; f < res->frames; ++f) {
                 chSamples.push_back(static_cast<float>(res->channels[ch][f]));
             }

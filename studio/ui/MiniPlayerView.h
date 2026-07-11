@@ -40,6 +40,7 @@ private slots:
     void refreshMeters();
     void onFaderChanged(int index);
     void updateEngineStatus(ProcessingState state);
+    void closeAndRestoreMain();
 
 private:
     std::shared_ptr<DSPEngineController> m_dsp;
