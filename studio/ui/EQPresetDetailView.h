@@ -62,6 +62,8 @@ private:
     QTextEdit* m_csvTextEdit;
     QLabel* m_csvStatusLabel;
 
+    bool m_isRefreshing = false;
+
     void setupUi();
 };
 

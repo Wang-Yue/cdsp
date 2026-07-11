@@ -46,6 +46,7 @@ void EQPresetDetailView::setupUi() {
     m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
     m_nameEdit->setMaximumWidth(220);
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
+        if (m_isRefreshing) return;
         if (m_preset.name != text.toStdString()) {
             m_preset.name = text.toStdString();
             m_pipeline->updateEQPreset(m_preset);
@@ -66,6 +67,7 @@ void EQPresetDetailView::setupUi() {
     m_preampSpin->setFixedWidth(80);
 
     connect(m_preampSlider, &QSlider::valueChanged, [this](int val) {
+        if (m_isRefreshing) return;
         double db = val / 10.0;
         if (std::abs(m_preampSpin->value() - db) > 0.05) {
             m_preampSpin->setValue(db);
@@ -76,6 +78,7 @@ void EQPresetDetailView::setupUi() {
     });
 
     connect(m_preampSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
+        if (m_isRefreshing) return;
         int sliderVal = static_cast<int>(std::round(val * 10.0));
         if (m_preampSlider->value() != sliderVal) {
             m_preampSlider->setValue(sliderVal);
@@ -253,6 +256,7 @@ void EQPresetDetailView::setupUi() {
 }
 
 void EQPresetDetailView::refreshUi() {
+    m_isRefreshing = true;
     m_nameEdit->setText(QString::fromStdString(m_preset.name));
     m_preampSpin->setValue(m_preset.preampGain);
     m_preampSlider->setValue(static_cast<int>(std::round(m_preset.preampGain * 10.0)));
@@ -465,6 +469,7 @@ void EQPresetDetailView::refreshUi() {
         });
         m_bandsTable->setCellWidget(row, 6, delBtn);
     }
+    m_isRefreshing = false;
 }
 
 void EQPresetDetailView::onAddBand() {

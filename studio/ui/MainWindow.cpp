@@ -121,9 +121,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         m_devices->validateSampleRates();
         m_dspController->applyConfig();
     };
-    connect(m_pipeline.get(), &PipelineStore::pipelineChanged, [this]() {
-        m_dspController->applyConfig();
-    });
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
