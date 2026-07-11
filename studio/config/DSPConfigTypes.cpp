@@ -46,6 +46,10 @@ ProcessingState uint8ToProcessingState(uint8_t rawByte) {
 std::string audioBackendTypeToString(AudioBackendType type) {
     switch (type) {
     case AudioBackendType::CoreAudio: return "CoreAudio";
+    case AudioBackendType::WASAPI: return "WASAPI";
+    case AudioBackendType::ASIO: return "ASIO";
+    case AudioBackendType::ALSA: return "ALSA";
+    case AudioBackendType::PulseAudio: return "PulseAudio";
     case AudioBackendType::RawFile: return "RawFile";
     case AudioBackendType::WavFile: return "WavFile";
     case AudioBackendType::SignalGenerator: return "SignalGenerator";
@@ -54,6 +58,10 @@ std::string audioBackendTypeToString(AudioBackendType type) {
 }
 
 AudioBackendType stringToAudioBackendType(const std::string& str) {
+    if (str == "WASAPI" || str == "wasapi") return AudioBackendType::WASAPI;
+    if (str == "ASIO" || str == "asio") return AudioBackendType::ASIO;
+    if (str == "ALSA" || str == "alsa") return AudioBackendType::ALSA;
+    if (str == "PulseAudio" || str == "Pulse" || str == "pulse") return AudioBackendType::PulseAudio;
     if (str == "RawFile" || str == "File") return AudioBackendType::RawFile;
     if (str == "WavFile") return AudioBackendType::WavFile;
     if (str == "SignalGenerator") return AudioBackendType::SignalGenerator;
@@ -469,7 +477,11 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
-    case AudioBackendType::CoreAudio: cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json); break;
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio: cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json); break;
     case AudioBackendType::WavFile: cfg.wavFile = WavFileCaptureConfig::fromJson(json); break;
     case AudioBackendType::RawFile: cfg.rawFile = RawFileCaptureConfig::fromJson(json); break;
     case AudioBackendType::SignalGenerator: cfg.generator = GeneratorCaptureConfig::fromJson(json); break;
@@ -479,7 +491,11 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject CaptureDeviceConfig::toJson() const {
     switch (backend) {
-    case AudioBackendType::CoreAudio: return coreAudio.toJson();
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio: return coreAudio.toJson();
     case AudioBackendType::WavFile: return wavFile.toJson();
     case AudioBackendType::RawFile: return rawFile.toJson();
     case AudioBackendType::SignalGenerator: return generator.toJson();
@@ -492,7 +508,11 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
-    case AudioBackendType::CoreAudio: cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json); break;
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio: cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json); break;
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile: cfg.rawFile = RawFilePlaybackConfig::fromJson(json); break;
     case AudioBackendType::SignalGenerator: cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json); break;
@@ -502,7 +522,11 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject PlaybackDeviceConfig::toJson() const {
     switch (backend) {
-    case AudioBackendType::CoreAudio: return coreAudio.toJson();
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio: return coreAudio.toJson();
     case AudioBackendType::RawFile: return rawFile.toJson();
     case AudioBackendType::WavFile: return rawFile.toJson();
     case AudioBackendType::SignalGenerator: return coreAudio.toJson();

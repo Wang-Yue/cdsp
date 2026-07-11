@@ -38,6 +38,7 @@ protected:
 private slots:
     void refreshMeters();
     void onFaderChanged(int index);
+    void updateEngineStatus(ProcessingState state);
 
 private:
     std::shared_ptr<DSPEngineController> m_dsp;
@@ -52,6 +53,7 @@ private:
     QLabel* m_volValueLabel;
 
     QStackedWidget* m_viewStack;
+    QWidget* m_pipelineMiniCard;
     LevelMeterView* m_metersView;
     SpectrumView* m_spectrumView;
     SpectrogramView* m_spectrogramView;
@@ -60,6 +62,7 @@ private:
 
     Fader currentFader() const;
     void setupUi();
+    void buildMiniPipelineUi();
 };
 
 #endif // MINI_PLAYER_VIEW_H

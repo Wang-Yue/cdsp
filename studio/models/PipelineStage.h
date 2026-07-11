@@ -4,6 +4,7 @@
 #include "config/DSPConfigTypes.h"
 #include "models/EQPreset.h"
 #include "models/ConvolutionPreset.h"
+#include "models/AudioSettings.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -50,7 +51,7 @@ public:
     // Crossfeed
     CrossfeedPreset crossfeedPreset = CrossfeedPreset::Bauer;
     double crossfeedCutoff = 700.0;
-    double crossfeedFeedDB = -4.5;
+    double crossfeedFeedDB = 4.5; // Upstream uses positive feed dB level
 
     // Split Width
     double splitFreq = 1000.0;
@@ -71,12 +72,18 @@ public:
     double loudnessHighBoost = 0.0;
     double loudnessLowBoost = 0.0;
     bool loudnessAttenuateMid = false;
+    Fader loudnessFader = Fader::Main;
+
+    // Volume Stage
+    Fader volumeFader = Fader::Main;
+    double volumeRampTime = 500.0;
+    double volumeLimit = 0.0;
 
     // Emphasis
     bool deEmphasis = false;
 
     // DC Protection
-    double dcCutoffFreq = 10.0;
+    double dcCutoffFreq = 7.0;
 
     // Gain
     double gainDB = 0.0;
@@ -86,6 +93,7 @@ public:
     // Delay
     double delayValue = 0.0;
     DelayUnit delayUnit = DelayUnit::ms;
+    bool delaySubsample = false;
 
     // Limiter
     double limiterThreshold = 0.0;
@@ -101,16 +109,24 @@ public:
 
     // Compressor
     CompressorParameters compressorParams;
+    double compressorMakeupGain = 0.0;
+    bool compressorSoftClip = false;
+    double compressorClipLimit = 0.0;
 
     // Noise Gate
     NoiseGateParameters noiseGateParams;
+    double gateAttack = 10.0;
+    double gateRelease = 100.0;
 
     // RACE
     RACEParameters raceParams;
+    DelayUnit raceDelayUnit = DelayUnit::mm;
+    bool raceSubsampleDelay = false;
 
     // Dither
     DitherType ditherType = DitherType::Flat;
     int ditherBits = 16;
+    double ditherAmplitude = 1.0;
 
     // DiffEq
     std::vector<double> diffEqA;

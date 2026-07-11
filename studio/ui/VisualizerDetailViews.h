@@ -10,6 +10,7 @@
 #include "ui/SpectrumView.h"
 #include "ui/SpectrogramView.h"
 #include "ui/VectorScopeView.h"
+#include "ui/LogRangeSlider.h"
 
 #include <QWidget>
 #include <QComboBox>
@@ -67,8 +68,7 @@ private:
     QComboBox* m_sourceCombo;
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
-    QSpinBox* m_minFreqSpin;
-    QSpinBox* m_maxFreqSpin;
+    LogRangeSlider* m_rangeSlider;
     QLabel* m_rangeLbl;
 
     void setupUi();

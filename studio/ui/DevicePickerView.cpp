@@ -42,7 +42,13 @@ void DevicePickerView::setupUi() {
     auto capBackendBox = new QHBoxLayout();
     capBackendBox->addWidget(new QLabel("Backend:", capGroup));
     m_capBackendCombo = new QComboBox(capGroup);
+#if defined(Q_OS_MAC)
     m_capBackendCombo->addItems({"CoreAudio", "RawFile", "WavFile", "SignalGenerator"});
+#elif defined(Q_OS_WIN)
+    m_capBackendCombo->addItems({"WASAPI", "ASIO", "RawFile", "WavFile", "SignalGenerator"});
+#else
+    m_capBackendCombo->addItems({"ALSA", "PulseAudio", "RawFile", "WavFile", "SignalGenerator"});
+#endif
     connect(m_capBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_capStack->setCurrentIndex(idx);
     });
@@ -66,7 +72,13 @@ void DevicePickerView::setupUi() {
     auto pbBackendBox = new QHBoxLayout();
     pbBackendBox->addWidget(new QLabel("Backend:", pbGroup));
     m_pbBackendCombo = new QComboBox(pbGroup);
-    m_pbBackendCombo->addItems({"CoreAudio", "RawFile"});
+#if defined(Q_OS_MAC)
+    m_pbBackendCombo->addItems({"CoreAudio", "RawFile", "WavFile"});
+#elif defined(Q_OS_WIN)
+    m_pbBackendCombo->addItems({"WASAPI", "ASIO", "RawFile", "WavFile"});
+#else
+    m_pbBackendCombo->addItems({"ALSA", "PulseAudio", "RawFile", "WavFile"});
+#endif
     connect(m_pbBackendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_pbStack->setCurrentIndex(idx);
     });
@@ -418,6 +430,12 @@ void DevicePickerView::refreshUi() {
     int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
     if (chunkIdx >= 0) m_chunkSizeCombo->setCurrentIndex(chunkIdx);
     m_enableRateAdjustCheck->setChecked(m_settings->enableRateAdjust);
+
+    m_queueLimitSpin->setValue(m_settings->queuelimit);
+    m_stopOnRateChangeCheck->setChecked(m_settings->stopOnRateChange);
+    m_measureIntervalSpin->setValue(m_settings->rateMeasureInterval);
+    m_multithreadedCheck->setChecked(m_settings->multithreaded);
+    m_workerThreadsSpin->setValue(m_settings->workerThreads);
 }
 
 void DevicePickerView::applySettings() {
@@ -426,10 +444,15 @@ void DevicePickerView::applySettings() {
 
     m_settings->chunkSize = chunkSize;
     m_settings->enableRateAdjust = m_enableRateAdjustCheck->isChecked();
+    m_settings->queuelimit = m_queueLimitSpin->value();
+    m_settings->stopOnRateChange = m_stopOnRateChangeCheck->isChecked();
+    m_settings->rateMeasureInterval = m_measureIntervalSpin->value();
+    m_settings->multithreaded = m_multithreadedCheck->isChecked();
+    m_settings->workerThreads = m_workerThreadsSpin->value();
     m_settings->savePreferences();
 
     DeviceConfig capCfg = m_devices->captureConfig;
-    capCfg.backend = static_cast<AudioBackendType>(m_capBackendCombo->currentIndex());
+    capCfg.backend = stringToAudioBackendType(m_capBackendCombo->currentText().toStdString());
     capCfg.setDeviceName(m_capDeviceCombo->currentData().toString().toStdString());
     capCfg.deviceChannels = m_capDevChannelsSpin->value();
     capCfg.channels = m_capStreamChannelsSpin->value();
@@ -443,7 +466,7 @@ void DevicePickerView::applySettings() {
     m_devices->setCaptureConfig(capCfg);
 
     DeviceConfig pbCfg = m_devices->playbackConfig;
-    pbCfg.backend = (m_pbBackendCombo->currentIndex() == 0) ? AudioBackendType::CoreAudio : AudioBackendType::RawFile;
+    pbCfg.backend = stringToAudioBackendType(m_pbBackendCombo->currentText().toStdString());
     pbCfg.setDeviceName(m_pbDeviceCombo->currentData().toString().toStdString());
     pbCfg.deviceChannels = m_pbDevChannelsSpin->value();
     pbCfg.channels = m_pbStreamChannelsSpin->value();
@@ -454,4 +477,5 @@ void DevicePickerView::applySettings() {
     m_devices->setPlaybackConfig(pbCfg);
 
     m_devices->setExclusiveMode(m_exclusiveModeCheck->isChecked());
+    m_devices->onConfigChanged();
 }

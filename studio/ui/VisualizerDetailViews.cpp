@@ -204,8 +204,8 @@ void SpectrumDetailView::setupUi() {
         m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
         m_channelCombo->setCurrentIndex(0);
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
-        m_minFreqSpin->setValue(static_cast<int>(m_engine->minFreq));
-        m_maxFreqSpin->setValue(static_cast<int>(m_engine->maxFreq));
+        m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
+        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)));
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -241,30 +241,19 @@ void SpectrumDetailView::setupUi() {
     });
     rowLayout->addWidget(m_binsSpin);
 
-    m_rangeLbl = new QLabel(QString("Range: %1 - %2 Hz").arg(m_engine->minFreq).arg(m_engine->maxFreq), panelGroup);
+    m_rangeLbl = new QLabel(QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)), panelGroup);
     rowLayout->addWidget(m_rangeLbl);
 
-    m_minFreqSpin = new QSpinBox(panelGroup);
-    m_minFreqSpin->setRange(20, 10000);
-    m_minFreqSpin->setValue(static_cast<int>(m_engine->minFreq));
-    m_minFreqSpin->setSuffix(" Hz");
-    connect(m_minFreqSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->minFreq = val;
-        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(m_engine->minFreq).arg(m_engine->maxFreq));
+    m_rangeSlider = new LogRangeSlider(panelGroup);
+    m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
+    connect(m_rangeSlider, &LogRangeSlider::rangeChanged, [this](double minF, double maxF) {
+        m_engine->minFreq = minF;
+        m_engine->maxFreq = maxF;
+        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(static_cast<int>(minF)).arg(static_cast<int>(maxF)));
+        m_spectrumView->update();
     });
-    rowLayout->addWidget(m_minFreqSpin);
+    rowLayout->addWidget(m_rangeSlider, 1);
 
-    m_maxFreqSpin = new QSpinBox(panelGroup);
-    m_maxFreqSpin->setRange(1000, 24000);
-    m_maxFreqSpin->setValue(static_cast<int>(m_engine->maxFreq));
-    m_maxFreqSpin->setSuffix(" Hz");
-    connect(m_maxFreqSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->maxFreq = val;
-        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(m_engine->minFreq).arg(m_engine->maxFreq));
-    });
-    rowLayout->addWidget(m_maxFreqSpin);
-
-    rowLayout->addStretch();
     panelLayout->addLayout(rowLayout);
     mainLayout->addWidget(panelGroup);
 }

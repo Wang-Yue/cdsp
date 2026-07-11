@@ -11,12 +11,14 @@
 #include "models/SpectrogramEngine.h"
 #include "models/VectorScopeEngine.h"
 #include "ui/MiniPlayerView.h"
+#include "ui/LevelMeterView.h"
 
 #include <QMainWindow>
 #include <QTreeWidget>
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QLabel>
+#include <QSlider>
 #include <QSystemTrayIcon>
 #include <QSplitter>
 #include <QStatusBar>
@@ -27,7 +29,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
 private slots:
@@ -55,10 +57,13 @@ private:
     QTreeWidget* m_sidebarTree;
     QStackedWidget* m_centralStack;
     QSplitter* m_splitter;
+    CompactLevelMeterBar* m_compactMeterBar;
 
     QPushButton* m_startStopBtn;
     QLabel* m_sampleRateBadge;
+    QPushButton* m_toolbarMuteBtn;
     QSlider* m_headerVolumeSlider;
+    QLabel* m_gainValueLabel;
 
     // Status Bar Widgets
     QLabel* m_statusStateLabel;
@@ -81,6 +86,7 @@ private:
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);
+    void updateVolumeDisplay();
 };
 
 #endif // MAIN_WINDOW_H

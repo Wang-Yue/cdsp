@@ -8,6 +8,8 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QApplication>
+#include "ui/AutoEqPickerDlg.h"
+#include "ui/OratoryPresetPickerDlg.h"
 #include <fstream>
 #include <sstream>
 
@@ -79,6 +81,22 @@ void EQPresetDetailView::setupUi() {
     auto addBtn = new QPushButton("Add Band", this);
     connect(addBtn, &QPushButton::clicked, this, &EQPresetDetailView::onAddBand);
     headerLayout->addWidget(addBtn);
+
+    auto autoEqBtn = new QPushButton("AutoEQ Database", this);
+    connect(autoEqBtn, &QPushButton::clicked, [this]() {
+        AutoEqPickerDlg dlg(m_pipeline, this);
+        dlg.exec();
+        refreshUi();
+    });
+    headerLayout->addWidget(autoEqBtn);
+
+    auto oratoryBtn = new QPushButton("Oratory1990", this);
+    connect(oratoryBtn, &QPushButton::clicked, [this]() {
+        OratoryPresetPickerDlg dlg(m_pipeline, this);
+        dlg.exec();
+        refreshUi();
+    });
+    headerLayout->addWidget(oratoryBtn);
 
     auto expBtn = new QPushButton("Export CSV", this);
     connect(expBtn, &QPushButton::clicked, this, &EQPresetDetailView::onExportCSV);

@@ -12,6 +12,7 @@ class AudioSettings : public QObject {
 public:
     explicit AudioSettings(QObject* parent = nullptr);
 
+    DevicesConfig deviceConfig;
     int chunkSize = 1024;
     bool enableRateAdjust = false;
 

@@ -51,10 +51,16 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     int center = std::min(w, h) / 2;
     QPoint centerPt(w / 2, h / 2);
 
-    // Reticle axes (+M, -M, +S, -S)
-    p.setPen(QPen(QColor("#2e2e38"), 1, Qt::DashLine));
+    // Reticle axes (+M, -M, +S, -S) & Diagonal Corner-to-Corner X grid lines
+    p.setPen(QPen(QColor(255, 255, 255, 25), 1, Qt::DashLine));
     p.drawLine(centerPt.x() - center, centerPt.y(), centerPt.x() + center, centerPt.y());
     p.drawLine(centerPt.x(), centerPt.y() - center, centerPt.x(), centerPt.y() + center);
+
+    // Diagonal X grid lines
+    int offset = static_cast<int>(center * 0.7071);
+    p.drawLine(centerPt.x() - offset, centerPt.y() - offset, centerPt.x() + offset, centerPt.y() + offset);
+    p.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
+
     p.drawEllipse(centerPt, center * 3 / 4, center * 3 / 4);
 
     const auto& left = m_samples.left();
@@ -76,7 +82,6 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             float l = left[i];
             float r = right[i];
 
-            // 45-degree rotation matrix for Mid/Side representation with auto-scaling
             float m = (l + r) * 0.7071f;
             float s = (l - r) * 0.7071f;
 
@@ -86,15 +91,16 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             if (i == 0) path.moveTo(x, y);
             else path.lineTo(x, y);
         }
-        p.setPen(QPen(QColor(44, 182, 125, 180), 1.5));
+        p.setPen(QPen(QColor("#34c759"), 1.5));
         p.drawPath(path);
     } else {
+        // Particle Mode with Indigo-Cyan gradient, tail age decay, and head glowing halo
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0, 122, 245, 160));
 
         for (size_t i = 0; i < count; ++i) {
             float l = left[i];
             float r = right[i];
+            float t = static_cast<float>(i) / static_cast<float>(count - 1);
 
             float m = (l + r) * 0.7071f;
             float s = (l - r) * 0.7071f;
@@ -102,7 +108,17 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             float x = centerPt.x() + s * (center * autoScaleFactor);
             float y = centerPt.y() - m * (center * autoScaleFactor);
 
-            p.drawEllipse(QPointF(x, y), 1.5, 1.5);
+            float radius = 1.0f + 3.5f * t;
+            QColor col = QColor::fromHsvF(0.65f - 0.2f * t, 0.8f, 0.9f, 0.05f + 0.85f * t);
+
+            p.setBrush(col);
+            p.drawEllipse(QPointF(x, y), radius, radius);
+
+            // Glowing head halo for recent samples
+            if (i + 10 >= count) {
+                p.setBrush(QColor(255, 255, 255, 120));
+                p.drawEllipse(QPointF(x, y), radius + 2.0, radius + 2.0);
+            }
         }
     }
 }

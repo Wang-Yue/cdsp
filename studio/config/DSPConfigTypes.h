@@ -96,6 +96,10 @@ struct AudioDeviceDescriptor {
 
 enum class AudioBackendType {
     CoreAudio,
+    WASAPI,
+    ASIO,
+    ALSA,
+    PulseAudio,
     RawFile,
     WavFile,
     SignalGenerator

@@ -40,25 +40,19 @@ void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool s
 }
 
 QColor SpectrogramView::colorForDB(float db) {
-    float norm = std::max(0.0f, std::min(1.0f, (db + 80.0f) / 80.0f));
-    int r = 0, g = 0, b = 0;
-    if (norm < 0.25f) {
-        float t = norm / 0.25f;
-        b = static_cast<int>(255 * t);
-    } else if (norm < 0.5f) {
-        float t = (norm - 0.25f) / 0.25f;
-        g = static_cast<int>(255 * t);
-        b = 255;
+    float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
+    if (norm < 0.35f) {
+        return QColor(52, 199, 89, static_cast<int>(255 * norm / 0.35f));
+    } else if (norm < 0.55f) {
+        float t = (norm - 0.35f) / 0.2f;
+        return QColor(static_cast<int>(255 * t), 204, 0);
     } else if (norm < 0.75f) {
-        float t = (norm - 0.5f) / 0.25f;
-        g = 255;
-        b = static_cast<int>(255 * (1.0f - t));
+        float t = (norm - 0.55f) / 0.2f;
+        return QColor(255, static_cast<int>(149 + 56 * (1.0f - t)), 0);
     } else {
         float t = (norm - 0.75f) / 0.25f;
-        r = static_cast<int>(255 * t);
-        g = static_cast<int>(255 * (1.0f - t));
+        return QColor(255, static_cast<int>(59 * (1.0f - t)), 50);
     }
-    return QColor(r, g, b);
 }
 
 void SpectrogramView::paintEvent(QPaintEvent* event) {
@@ -74,30 +68,66 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
     int h = height();
 
     if (!m_show3D) {
-        size_t rowCount = m_history.size();
-        int rowH = std::max(2, h / static_cast<int>(rowCount));
+        // 2D Mode: Vertical Y-axis log-frequency, horizontal X-axis rolling time (0s to -10s)
+        int marginL = 40;
+        int marginB = 20;
+        int plotW = w - marginL;
+        int plotH = h - marginB;
 
-        for (size_t r = 0; r < rowCount; ++r) {
-            const auto& spec = m_history[r];
+        size_t colCount = m_history.size();
+        int colW = std::max(2, plotW / static_cast<int>(colCount));
+
+        for (size_t col = 0; col < colCount; ++col) {
+            const auto& spec = m_history[col];
             size_t binCount = spec.magnitudes.size();
             if (binCount == 0) continue;
-            int colW = std::max(1, w / static_cast<int>(binCount));
 
-            int y = static_cast<int>(r) * rowH;
-            for (size_t c = 0; c < binCount; ++c) {
-                float db = spec.magnitudes[c];
+            int x = marginL + plotW - static_cast<int>(col + 1) * colW;
+            double logMin = std::log10(20.0), logMax = std::log10(20000.0);
 
-                int x = static_cast<int>(c) * colW;
-                p.fillRect(x, y, colW, rowH, colorForDB(db));
+            for (size_t bin = 0; bin < binCount; ++bin) {
+                float freq = (bin < spec.frequencies.size()) ? spec.frequencies[bin] : (20.0f + bin * 100.0f);
+                float db = spec.magnitudes[bin];
+
+                double fracY = (std::log10(std::max(20.0f, std::min(20000.0f, freq))) - logMin) / (logMax - logMin);
+                int y = plotH - static_cast<int>(fracY * plotH);
+                int binH = std::max(2, plotH / static_cast<int>(binCount));
+
+                p.fillRect(x, y - binH, colW, binH, colorForDB(db));
             }
         }
+
+        // Draw Frequency Y-axis labels
+        p.setFont(QFont("sans-serif", 9));
+        p.setPen(QColor("#8e8e93"));
+        p.drawText(4, 12, "20k");
+        p.drawText(4, plotH / 2, "1k");
+        p.drawText(4, plotH - 2, "20Hz");
+
+        // Draw Time X-axis labels (0s to -10s)
+        p.drawLine(marginL, plotH, w, plotH);
+        for (int sec : {0, -2, -4, -6, -8, -10}) {
+            int x = marginL + plotW - static_cast<int>((-sec / 10.0) * plotW);
+            p.drawText(x - 8, h - 4, QString("%1s").arg(sec));
+        }
+
     } else {
-        // 3D Isometric Landscape
+        // 3D Isometric CSD Landscape with solid background occlusion fill
         double totalDepthY = h * 0.35;
         double totalShiftX = w * 0.12;
         double plotW = w - totalShiftX;
         double plotH = h - totalDepthY;
 
+        // Draw floor depth grid lines
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1, Qt::DashLine));
+        for (int g = 0; g <= 5; ++g) {
+            double prog = g / 5.0;
+            double sx = totalShiftX * prog;
+            double sy = totalDepthY * prog;
+            p.drawLine(sx, h - sy, sx + plotW, h - sy);
+        }
+
+        // Draw depth slices back to front for proper solid occlusion
         for (int r = static_cast<int>(m_history.size()) - 1; r >= 0; --r) {
             const auto& spec = m_history[r];
             size_t count = spec.magnitudes.size();
@@ -119,7 +149,15 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
                 else path.lineTo(x, y);
             }
 
-            QColor sliceColor = QColor::fromHsvF(0.6f - 0.5f * (1.0f - progress), 0.8f, 0.9f);
+            // Closed fill path down to floor for solid background masking
+            QPainterPath fillPath = path;
+            fillPath.lineTo(shiftX + plotW, h - shiftY);
+            fillPath.lineTo(shiftX, h - shiftY);
+            fillPath.closeSubpath();
+
+            p.fillPath(fillPath, StyleTheme::cardBg()); // Solid background occlusion fill
+
+            QColor sliceColor = QColor::fromHsvF(0.6f - 0.5f * (1.0f - progress), 0.8f, 0.95f);
             p.setPen(QPen(sliceColor, 1.5));
             p.drawPath(path);
         }

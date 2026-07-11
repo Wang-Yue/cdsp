@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <QRadialGradient>
+#include <QLinearGradient>
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -91,27 +92,59 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     QPointF pivot(rect.center().x(), rect.bottom() * m_settings.pivotY - rect.height() * (m_settings.pivotY - 1.0));
     double radius = rect.height() * 0.85 * m_settings.radiusScale;
 
-    // Ambient Warm Bulb Glow Shading
+    // Focused Bulb Hot Spot Glow Shading
+    QRadialGradient bulbGrad(QPointF(rect.center().x(), rect.bottom() - 10), rect.height() * 0.6);
+    bulbGrad.setColorAt(0.0, QColor(255, 220, 120, static_cast<int>(255 * m_settings.hotSpotAlpha)));
+    bulbGrad.setColorAt(1.0, QColor(255, 180, 50, 0));
+    p.fillRect(rect, bulbGrad);
+
+    // Ambient Warm Glow
     QRadialGradient glowGrad(QPointF(rect.center().x(), rect.bottom()), rect.height() * 1.2);
     glowGrad.setColorAt(0.0, QColor(255, 180, 50, static_cast<int>(255 * m_settings.ambientGlow)));
     glowGrad.setColorAt(0.8, QColor(255, 180, 50, 0));
     p.fillRect(rect, glowGrad);
 
+    // Overall Light Wash
+    if (m_settings.lightWash > 0) {
+        p.fillRect(rect, QColor(255, 240, 200, static_cast<int>(255 * m_settings.lightWash)));
+    }
+
     // Scale Arc
     p.setPen(QPen(arcPenColor, 2));
     p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 45 * 16, 90 * 16);
 
-    // Red zone (> 0 dB)
+    // Red zone (> 0 dB / 0 VU)
     p.setPen(QPen(redPenColor, 3));
     p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 45 * 16, 20 * 16);
 
-    // Labels
-    p.setFont(QFont("sans-serif", 10, QFont::Bold));
-    p.setPen(textColor);
-    p.drawText(rect.center().x() - 20, rect.top() + 30, label);
-    p.drawText(rect.center().x() - 10, rect.top() + 50, "VU");
+    // Numeric Arc Markings & Ticks (-20 to +3 VU)
+    p.setFont(QFont("sans-serif", 8, QFont::Bold));
+    struct VUMark { double vu; const char* text; };
+    static const VUMark marks[] = {
+        {-20, "-20"}, {-10, "-10"}, {-7, "-7"}, {-5, "-5"}, {-3, "-3"},
+        {-2, "-2"}, {-1, "-1"}, {0, "0"}, {1, "+1"}, {2, "+2"}, {3, "+3"}
+    };
+
+    for (const auto& m : marks) {
+        float angle = computeAngleForLevel(-18.0f + m.vu);
+        double rad = (angle - 90.0) * M_PI / 180.0;
+
+        double xInner = pivot.x() + (radius - 6) * std::cos(rad);
+        double yInner = pivot.y() + (radius - 6) * std::sin(rad);
+        double xOuter = pivot.x() + (radius + 4) * std::cos(rad);
+        double yOuter = pivot.y() + (radius + 4) * std::sin(rad);
+
+        p.setPen(QPen(m.vu >= 0 ? redPenColor : arcPenColor, m.vu == 0 ? 2 : 1));
+        p.drawLine(QPointF(xInner, yInner), QPointF(xOuter, yOuter));
+
+        double xTxt = pivot.x() + (radius - 16) * std::cos(rad);
+        double yTxt = pivot.y() + (radius - 16) * std::sin(rad);
+        p.setPen(m.vu >= 0 ? redPenColor : textColor);
+        p.drawText(QRectF(xTxt - 12, yTxt - 6, 24, 12), Qt::AlignCenter, m.text);
+    }
 
     // Dynamic Needle
+    p.save();
     p.translate(pivot);
     p.rotate(angleDeg);
 
@@ -123,6 +156,21 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.setBrush(QColor("#2b2b2b"));
     p.setPen(Qt::NoPen);
     p.drawEllipse(QPointF(0, 0), 8, 8);
+
+    p.restore();
+
+    // Glass Surface Glare Reflection Overlay
+    QLinearGradient glassGrad(rect.topLeft(), rect.bottomRight());
+    glassGrad.setColorAt(0.0, QColor(255, 255, 255, 30));
+    glassGrad.setColorAt(0.4, QColor(255, 255, 255, 10));
+    glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));
+    p.fillRect(rect, glassGrad);
+
+    // Labels
+    p.setFont(QFont("sans-serif", 10, QFont::Bold));
+    p.setPen(textColor);
+    p.drawText(rect.center().x() - 20, rect.top() + 30, label);
+    p.drawText(rect.center().x() - 10, rect.top() + 50, "VU");
 
     p.restore();
 }

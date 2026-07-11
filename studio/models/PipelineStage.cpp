@@ -143,6 +143,10 @@ QJsonObject PipelineStage::toJson() const {
     obj["loudnessHighBoost"] = loudnessHighBoost;
     obj["loudnessLowBoost"] = loudnessLowBoost;
     obj["loudnessAttenuateMid"] = loudnessAttenuateMid;
+    obj["loudnessFader"] = static_cast<int>(loudnessFader);
+    obj["volumeFader"] = static_cast<int>(volumeFader);
+    obj["volumeRampTime"] = volumeRampTime;
+    obj["volumeLimit"] = volumeLimit;
     obj["deEmphasis"] = deEmphasis;
     obj["dcCutoffFreq"] = dcCutoffFreq;
     obj["gainDB"] = gainDB;
@@ -150,6 +154,7 @@ QJsonObject PipelineStage::toJson() const {
     obj["gainMuted"] = gainMuted;
     obj["delayValue"] = delayValue;
     obj["delayUnit"] = QString::fromStdString(delayUnitToString(delayUnit));
+    obj["delaySubsample"] = delaySubsample;
     obj["limiterThreshold"] = limiterThreshold;
     obj["limiterSoftClip"] = limiterSoftClip;
     obj["lookaheadLimit"] = lookaheadLimit;
@@ -157,6 +162,14 @@ QJsonObject PipelineStage::toJson() const {
     obj["lookaheadRelease"] = lookaheadRelease;
     obj["ditherType"] = QString::fromStdString(ditherTypeToString(ditherType));
     obj["ditherBits"] = ditherBits;
+    obj["ditherAmplitude"] = ditherAmplitude;
+    obj["compressorMakeupGain"] = compressorMakeupGain;
+    obj["compressorSoftClip"] = compressorSoftClip;
+    obj["compressorClipLimit"] = compressorClipLimit;
+    obj["gateAttack"] = gateAttack;
+    obj["gateRelease"] = gateRelease;
+    obj["raceDelayUnit"] = QString::fromStdString(delayUnitToString(raceDelayUnit));
+    obj["raceSubsampleDelay"] = raceSubsampleDelay;
     obj["mixerConfig"] = mixerConfig.toJson();
     obj["compressorParams"] = compressorParams.toJson();
     obj["noiseGateParams"] = noiseGateParams.toJson();
@@ -218,19 +231,32 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     if (json.contains("loudnessHighBoost")) s.loudnessHighBoost = json["loudnessHighBoost"].toDouble();
     if (json.contains("loudnessLowBoost")) s.loudnessLowBoost = json["loudnessLowBoost"].toDouble();
     if (json.contains("loudnessAttenuateMid")) s.loudnessAttenuateMid = json["loudnessAttenuateMid"].toBool();
-    if (json.contains("deEmphasis")) s.deEmphasis = json["deEmphasis"].toBool();
+    if (json.contains("loudnessFader")) s.loudnessFader = static_cast<Fader>(json["loudnessFader"].toInt());
+    if (json.contains("volumeFader")) s.volumeFader = static_cast<Fader>(json["volumeFader"].toInt());
+    if (json.contains("volumeRampTime")) s.volumeRampTime = json["volumeRampTime"].toDouble();
+    if (json.contains("volumeLimit")) s.volumeLimit = json["volumeLimit"].toDouble();
+    if (json.contains("deEmphasis")) s.deEmphasis = json["deEmphasis"].toDouble();
     if (json.contains("dcCutoffFreq")) s.dcCutoffFreq = json["dcCutoffFreq"].toDouble();
     if (json.contains("gainDB")) s.gainDB = json["gainDB"].toDouble();
     if (json.contains("gainInverted")) s.gainInverted = json["gainInverted"].toBool();
     if (json.contains("gainMuted")) s.gainMuted = json["gainMuted"].toBool();
     if (json.contains("delayValue")) s.delayValue = json["delayValue"].toDouble();
     if (json.contains("delayUnit")) s.delayUnit = stringToDelayUnit(json["delayUnit"].toString().toStdString());
+    if (json.contains("delaySubsample")) s.delaySubsample = json["delaySubsample"].toBool();
     if (json.contains("limiterThreshold")) s.limiterThreshold = json["limiterThreshold"].toDouble();
     if (json.contains("limiterSoftClip")) s.limiterSoftClip = json["limiterSoftClip"].toBool();
     if (json.contains("lookaheadLimit")) s.lookaheadLimit = json["lookaheadLimit"].toDouble();
     if (json.contains("lookaheadAttack")) s.lookaheadAttack = json["lookaheadAttack"].toDouble();
     if (json.contains("lookaheadRelease")) s.lookaheadRelease = json["lookaheadRelease"].toDouble();
     if (json.contains("ditherBits")) s.ditherBits = json["ditherBits"].toInt();
+    if (json.contains("ditherAmplitude")) s.ditherAmplitude = json["ditherAmplitude"].toDouble();
+    if (json.contains("compressorMakeupGain")) s.compressorMakeupGain = json["compressorMakeupGain"].toDouble();
+    if (json.contains("compressorSoftClip")) s.compressorSoftClip = json["compressorSoftClip"].toBool();
+    if (json.contains("compressorClipLimit")) s.compressorClipLimit = json["compressorClipLimit"].toDouble();
+    if (json.contains("gateAttack")) s.gateAttack = json["gateAttack"].toDouble();
+    if (json.contains("gateRelease")) s.gateRelease = json["gateRelease"].toDouble();
+    if (json.contains("raceDelayUnit")) s.raceDelayUnit = stringToDelayUnit(json["raceDelayUnit"].toString().toStdString());
+    if (json.contains("raceSubsampleDelay")) s.raceSubsampleDelay = json["raceSubsampleDelay"].toBool();
     if (json.contains("mixerConfig")) s.mixerConfig = MixerConfig::fromJson(json["mixerConfig"].toObject());
     if (json.contains("compressorParams")) s.compressorParams = CompressorParameters::fromJson(json["compressorParams"].toObject());
     if (json.contains("noiseGateParams")) s.noiseGateParams = NoiseGateParameters::fromJson(json["noiseGateParams"].toObject());
@@ -391,7 +417,6 @@ StageBuildResult StageBuilders::buildStage(
     case StageType::Crossfeed: {
         int lCh = stage.leftChannel;
         int rCh = stage.rightChannel;
-        // Step 1: 2->4 Split Mixer
         MixerConfig m1;
         m1.channelsIn = channelCount;
         m1.channelsOut = channelCount + 2;
@@ -419,14 +444,14 @@ StageBuildResult StageBuilders::buildStage(
         fHi.biquadParams.type = BiquadType::Lowshelf;
         fHi.biquadParams.freq = stage.crossfeedCutoff;
         fHi.biquadParams.gain = stage.crossfeedFeedDB;
-        fHi.biquadParams.q = 0.7071;
+        fHi.biquadParams.q = 0.5; // Upstream Q=0.5
 
         fLo.type = FilterType::Biquad;
         fLo.biquadParams.type = BiquadType::LowpassFO;
         fLo.biquadParams.freq = stage.crossfeedCutoff;
 
         fGain.type = FilterType::Gain;
-        fGain.gainParams.gain = stage.crossfeedFeedDB;
+        fGain.gainParams.gain = -stage.crossfeedFeedDB; // Negative gain attenuation for cross channel
 
         std::string fHiKey = baseKey + "_hi";
         std::string fLoKey = baseKey + "_lo";
@@ -670,7 +695,7 @@ StageBuildResult StageBuilders::buildStage(
     case StageType::Volume: {
         FilterConfig f;
         f.type = FilterType::Volume;
-        f.volumeParams.fader = Fader::Main;
+        f.volumeParams.fader = stage.volumeFader;
         std::string filterKey = baseKey + "_volume";
         res.filters[filterKey] = f;
 
@@ -838,7 +863,7 @@ StageBuildResult StageBuilders::buildStage(
         f.loudnessParams.highBoost = stage.loudnessHighBoost;
         f.loudnessParams.lowBoost = stage.loudnessLowBoost;
         f.loudnessParams.attenuateMid = stage.loudnessAttenuateMid;
-        f.loudnessParams.fader = Fader::Main;
+        f.loudnessParams.fader = stage.loudnessFader;
         std::string fKey = baseKey + "_loudness";
         res.filters[fKey] = f;
 

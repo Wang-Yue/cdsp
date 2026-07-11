@@ -1,5 +1,6 @@
 #include "ui/DashboardView.h"
 #include "ui/StyleTheme.h"
+#include "models/PipelineStage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -30,18 +31,18 @@ void DashboardView::updateFaderUi() {
     bool muted = m_dspController->settings()->getMuted(m_activeFader);
 
     m_mainFaderSlider->blockSignals(true);
-    m_mainFaderSlider->setValue(static_cast<int>(vol));
+    m_mainFaderSlider->setValue(static_cast<int>(vol * 2.0f));
     m_mainFaderSlider->blockSignals(false);
 
-    m_volValueLabel->setText(QString("%1 dB").arg(static_cast<int>(vol)));
+    m_volValueLabel->setText(QString("%1 dB").arg(vol, 4, 'f', 1));
     m_mainMuteBtn->setChecked(muted);
     m_mainMuteBtn->setText(muted ? "Unmute" : "Mute");
 
     auto updateBtnStyle = [this](QPushButton* btn, Fader f) {
         if (m_activeFader == f) {
-            btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold;");
+            btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
         } else {
-            btn->setStyleSheet("background-color: #e5e5ea; color: #000000;");
+            btn->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 4px;");
         }
     };
     updateBtnStyle(m_faderMainBtn, Fader::Main);
@@ -53,7 +54,7 @@ void DashboardView::updateFaderUi() {
 
 void DashboardView::setFaderVolumeStep(float step) {
     float cur = m_dspController->settings()->getVolume(m_activeFader);
-    float target = std::clamp(cur + step, -60.0f, 10.0f);
+    float target = std::clamp(cur + step, -60.0f, 20.0f);
     m_dspController->setFaderVolume(m_activeFader, target);
     updateFaderUi();
 }
@@ -65,57 +66,91 @@ void DashboardView::setupUi() {
 
     auto container = new QWidget(scroll);
     auto mainLayout = new QVBoxLayout(container);
-    // 1. Signal Chain Overview Card
+
+    // 1. Signal Chain Overview Card (Horizontal Scrollable)
     auto chainGroup = new QGroupBox("Signal Chain Overview", container);
-    auto chainLayout = new QHBoxLayout(chainGroup);
-    chainLayout->setContentsMargins(12, 12, 12, 12);
+    auto chainGroupLayout = new QVBoxLayout(chainGroup);
+    chainGroupLayout->setContentsMargins(4, 4, 4, 4);
+
+    auto chainScroll = new QScrollArea(chainGroup);
+    chainScroll->setWidgetResizable(true);
+    chainScroll->setFrameShape(QFrame::NoFrame);
+    chainScroll->setFixedHeight(60);
+
+    auto chainWidget = new QWidget(chainScroll);
+    auto chainLayout = new QHBoxLayout(chainWidget);
+    chainLayout->setContentsMargins(8, 8, 8, 8);
     chainLayout->setSpacing(8);
 
-    auto capChip = new QPushButton("🎤 Input: System Default", chainGroup);
-    capChip->setStyleSheet("background-color: #e5e5ea; color: #1c1c1e; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
+    const auto& devConf = m_dspController->settings()->deviceConfig;
+    QString capDevName = QString::fromStdString(devConf.capture.coreAudio.device.value_or("System Default"));
+    QString playDevName = QString::fromStdString(devConf.playback.coreAudio.device.value_or("System Default"));
+
+    auto capChip = new QPushButton(QString("🎤 Input: %1").arg(capDevName), chainWidget);
+    capChip->setStyleSheet("background-color: #3a3a3c; color: #ffffff; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
     chainLayout->addWidget(capChip);
 
-    auto arrow1 = new QLabel("➔", chainGroup); arrow1->setStyleSheet("color: #8e8e93; font-weight: bold;");
+    auto arrow1 = new QLabel("➔", chainWidget); arrow1->setStyleSheet("color: #8e8e93; font-weight: bold;");
     chainLayout->addWidget(arrow1);
 
-    auto resampChip = new QPushButton("🔄 Resampler (AsyncSinc)", chainGroup);
-    resampChip->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
+    bool resampEnabled = m_dspController->settings()->resamplerEnabled;
+    auto resampChip = new QPushButton(QString("🔄 Resampler (%1)").arg(resampEnabled ? "Active" : "Bypassed"), chainWidget);
+    resampChip->setCheckable(true);
+    resampChip->setChecked(resampEnabled);
+    if (resampEnabled) resampChip->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
+    else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 12px;");
+
+    connect(resampChip, &QPushButton::clicked, [this, resampChip]() {
+        bool enabled = !m_dspController->settings()->resamplerEnabled;
+        m_dspController->settings()->resamplerEnabled = enabled;
+        resampChip->setChecked(enabled);
+        resampChip->setText(QString("🔄 Resampler (%1)").arg(enabled ? "Active" : "Bypassed"));
+        if (enabled) resampChip->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
+        else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 12px;");
+        m_dspController->applyConfig();
+    });
     chainLayout->addWidget(resampChip);
 
-    auto arrow2 = new QLabel("➔", chainGroup); arrow2->setStyleSheet("color: #8e8e93; font-weight: bold;");
+    auto arrow2 = new QLabel("➔", chainWidget); arrow2->setStyleSheet("color: #8e8e93; font-weight: bold;");
     chainLayout->addWidget(arrow2);
 
     for (size_t i = 0; i < m_dspController->pipelineStore()->stages.size(); ++i) {
         const auto& st = m_dspController->pipelineStore()->stages[i];
-        auto stChip = new QPushButton(QString("⚙️ %1").arg(QString::fromStdString(st.name)), chainGroup);
+        std::string icon = stageTypeToIcon(st.type);
+        auto stChip = new QPushButton(QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), chainWidget);
         stChip->setCheckable(true);
         stChip->setChecked(st.isEnabled);
         if (st.isEnabled) stChip->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 6px; padding: 6px 10px;");
-        else stChip->setStyleSheet("background-color: #e5e5ea; color: #8e8e93; border-radius: 6px; padding: 6px 10px;");
+        else stChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 10px;");
 
-        connect(stChip, &QPushButton::clicked, [this, i]() {
+        connect(stChip, &QPushButton::clicked, [this, i, stChip]() {
             m_dspController->pipelineStore()->stages[i].isEnabled = !m_dspController->pipelineStore()->stages[i].isEnabled;
+            bool enabled = m_dspController->pipelineStore()->stages[i].isEnabled;
+            stChip->setChecked(enabled);
+            if (enabled) stChip->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 6px; padding: 6px 10px;");
+            else stChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 10px;");
             m_dspController->applyConfig();
         });
         chainLayout->addWidget(stChip);
 
         if (i + 1 < m_dspController->pipelineStore()->stages.size()) {
-            auto arr = new QLabel("➔", chainGroup); arr->setStyleSheet("color: #8e8e93;");
+            auto arr = new QLabel("➔", chainWidget); arr->setStyleSheet("color: #8e8e93;");
             chainLayout->addWidget(arr);
         }
     }
 
-    auto arrow3 = new QLabel("➔", chainGroup); arrow3->setStyleSheet("color: #8e8e93; font-weight: bold;");
+    auto arrow3 = new QLabel("➔", chainWidget); arrow3->setStyleSheet("color: #8e8e93; font-weight: bold;");
     chainLayout->addWidget(arrow3);
 
-    auto playChip = new QPushButton("🔊 Output: System Default", chainGroup);
-    playChip->setStyleSheet("background-color: #e5e5ea; color: #1c1c1e; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
+    auto playChip = new QPushButton(QString("🔊 Output: %1").arg(playDevName), chainWidget);
+    playChip->setStyleSheet("background-color: #3a3a3c; color: #ffffff; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
     chainLayout->addWidget(playChip);
-    chainLayout->addStretch();
 
+    chainScroll->setWidget(chainWidget);
+    chainGroupLayout->addWidget(chainScroll);
     mainLayout->addWidget(chainGroup);
 
-    // Header Fader Bar
+    // Master Controls & Output Faders Bar
     auto faderGroup = new QGroupBox("Master Controls & Output Faders", container);
     auto faderVLayout = new QVBoxLayout(faderGroup);
 
@@ -142,21 +177,23 @@ void DashboardView::setupUi() {
 
     faderVLayout->addLayout(selectorLayout);
 
-    // Slider & Controls Bar
+    // Slider & Controls Bar (-60 to +20 dB, step 0.5)
     auto controlsLayout = new QHBoxLayout();
     controlsLayout->addWidget(new QLabel("Fader Gain:", faderGroup));
 
     m_mainFaderSlider = new QSlider(Qt::Horizontal, faderGroup);
-    m_mainFaderSlider->setRange(-60, 10);
+    m_mainFaderSlider->setRange(-120, 40);
     m_mainFaderSlider->setValue(0);
     connect(m_mainFaderSlider, &QSlider::valueChanged, [this](int val) {
-        m_dspController->setFaderVolume(m_activeFader, static_cast<float>(val));
-        m_volValueLabel->setText(QString("%1 dB").arg(val));
+        float db = val / 2.0f;
+        m_dspController->setFaderVolume(m_activeFader, db);
+        m_volValueLabel->setText(QString("%1 dB").arg(db, 4, 'f', 1));
     });
-    controlsLayout->addWidget(m_mainFaderSlider);
+    controlsLayout->addWidget(m_mainFaderSlider, 1);
 
-    m_volValueLabel = new QLabel("0 dB", faderGroup);
-    m_volValueLabel->setFixedWidth(50);
+    m_volValueLabel = new QLabel(" 0.0 dB", faderGroup);
+    m_volValueLabel->setFont(QFont("monospace", 10, QFont::Bold));
+    m_volValueLabel->setFixedWidth(60);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     controlsLayout->addWidget(m_volValueLabel);
 

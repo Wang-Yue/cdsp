@@ -126,9 +126,16 @@ bool AudioDeviceManager::devicesAvailable() const {
 
 void AudioDeviceManager::fetchDevices() {
     auto engine = m_engine;
-    QtConcurrent::run([this, engine]() {
-        auto cap = engine->getAvailableDevices("coreaudio", true);
-        auto pb = engine->getAvailableDevices("coreaudio", false);
+    auto toLowerStr = [](std::string str) {
+        std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+        return str;
+    };
+    std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
+    std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+
+    QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
+        auto cap = engine->getAvailableDevices(capBackendLower, true);
+        auto pb = engine->getAvailableDevices(pbBackendLower, false);
         QMetaObject::invokeMethod(this, [this, cap, pb]() {
             captureDevices = cap;
             playbackDevices = pb;
@@ -142,29 +149,36 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     auto engine = m_engine;
     std::string capName = captureConfig.deviceName().value_or("");
     std::string pbName = playbackConfig.deviceName().value_or("");
-    bool isCapCore = (captureConfig.backend == AudioBackendType::CoreAudio);
-    bool isPbCore = (playbackConfig.backend == AudioBackendType::CoreAudio);
+    auto toLowerStr = [](std::string str) {
+        std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+        return str;
+    };
+    std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
+    std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
 
-    QtConcurrent::run([this, engine, capName, pbName, isCapCore, isPbCore]() {
+    bool isCapHw = (captureConfig.backend == AudioBackendType::CoreAudio || captureConfig.backend == AudioBackendType::WASAPI || captureConfig.backend == AudioBackendType::ASIO || captureConfig.backend == AudioBackendType::ALSA || captureConfig.backend == AudioBackendType::PulseAudio);
+    bool isPbHw = (playbackConfig.backend == AudioBackendType::CoreAudio || playbackConfig.backend == AudioBackendType::WASAPI || playbackConfig.backend == AudioBackendType::ASIO || playbackConfig.backend == AudioBackendType::ALSA || playbackConfig.backend == AudioBackendType::PulseAudio);
+
+    QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
         std::optional<AudioDeviceDescriptor> capDesc;
         std::optional<AudioDeviceDescriptor> pbDesc;
 
-        if (isCapCore) {
-            capDesc = engine->getDeviceCapabilities("coreaudio", capName, true);
+        if (isCapHw) {
+            capDesc = engine->getDeviceCapabilities(capBackendLower, capName, true);
         }
-        if (isPbCore) {
-            pbDesc = engine->getDeviceCapabilities("coreaudio", pbName, false);
+        if (isPbHw) {
+            pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
         }
 
-        QMetaObject::invokeMethod(this, [this, capDesc, pbDesc, isCapCore, isPbCore]() {
-            if (isCapCore && capDesc.has_value()) {
+        QMetaObject::invokeMethod(this, [this, capDesc, pbDesc, isCapHw, isPbHw]() {
+            if (isCapHw && capDesc.has_value()) {
                 captureConfig.capabilities = capDesc.value();
-            } else if (!isCapCore) {
+            } else if (!isCapHw) {
                 captureConfig.capabilities = AudioDeviceDescriptor();
             }
-            if (isPbCore && pbDesc.has_value()) {
+            if (isPbHw && pbDesc.has_value()) {
                 playbackConfig.capabilities = pbDesc.value();
-            } else if (!isPbCore) {
+            } else if (!isPbHw) {
                 playbackConfig.capabilities = AudioDeviceDescriptor();
             }
 

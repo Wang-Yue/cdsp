@@ -82,7 +82,6 @@ void StageDetailView::refreshUi() {
     m_nameEdit->setText(QString::fromStdString(stage.name));
     m_enabledCheck->setChecked(stage.isEnabled);
 
-    // Defer option container rebuild to prevent combobox destruction crash
     QMetaObject::invokeMethod(this, [this]() {
         buildStageOptionsUi();
     }, Qt::QueuedConnection);
@@ -101,14 +100,13 @@ void StageDetailView::buildStageOptionsUi() {
 
     int channelCount = 8; // Available system processing channels
 
-    // 1. Channel Selector Card (Unified for all stages except Matrix Mixer)
+    // 1. Channel Selector Card
     if (stage.type != StageType::MatrixMixer) {
         auto chanGroup = new QGroupBox("Target Channels", m_optionsContainer);
         auto chanLayout = new QVBoxLayout(chanGroup);
 
         if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
             stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
-            // Stereo channel pair picker
             auto pairBox = new QHBoxLayout();
 
             auto leftBox = new QVBoxLayout();
@@ -146,7 +144,6 @@ void StageDetailView::buildStageOptionsUi() {
             descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
             chanLayout->addWidget(descLbl);
         } else {
-            // Multi-channel pill buttons
             auto pillsLayout = new QHBoxLayout();
             for (int c = 0; c < channelCount; ++c) {
                 auto btn = new QPushButton(QString::number(c + 1), chanGroup);
@@ -171,7 +168,7 @@ void StageDetailView::buildStageOptionsUi() {
                             stage.channels.erase(it);
                             btn->setChecked(false);
                         } else {
-                            btn->setChecked(true); // Minimum 1 channel required
+                            btn->setChecked(true);
                         }
                     } else {
                         stage.channels.push_back(c);
@@ -294,6 +291,15 @@ void StageDetailView::buildStageOptionsUi() {
             });
             optsForm->addRow("Custom Feed DB:", dbSpin);
         }
+
+        // Live computed parameter derivation status
+        QString paramSummary = QString("Lowshelf Cutoff: %1 Hz | Lowpass Cutoff: %2 Hz | Feed: %3 dB (Q=0.5)")
+            .arg(stage.crossfeedCutoff)
+            .arg(stage.crossfeedCutoff)
+            .arg(stage.crossfeedFeedDB, 0, 'f', 1);
+        auto previewLbl = new QLabel(paramSummary, optsGroup);
+        previewLbl->setStyleSheet("color: #34c759; font-weight: bold; font-size: 11px;");
+        optsForm->addRow("Derived Filters:", previewLbl);
         break;
     }
 
@@ -322,36 +328,60 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::GraphicEQ: {
-        auto minFreqSpin = new QDoubleSpinBox(optsGroup);
-        minFreqSpin->setRange(10.0, 1000.0); minFreqSpin->setValue(stage.comboParams.freqMin.value_or(20.0)); minFreqSpin->setSuffix(" Hz");
-        connect(minFreqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
-            stage.comboParams.freqMin = val; applyConfig();
-        });
-        optsForm->addRow("Min Frequency:", minFreqSpin);
+        if (stage.graphicEqGains.size() != 10) {
+            stage.graphicEqGains.assign(10, 0.0);
+        }
+        static const char* bandLabels[] = {"31Hz", "63Hz", "125Hz", "250Hz", "500Hz", "1kHz", "2kHz", "4kHz", "8kHz", "16kHz"};
 
-        auto maxFreqSpin = new QDoubleSpinBox(optsGroup);
-        maxFreqSpin->setRange(1000.0, 24000.0); maxFreqSpin->setValue(stage.comboParams.freqMax.value_or(20000.0)); maxFreqSpin->setSuffix(" Hz");
-        connect(maxFreqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
-            stage.comboParams.freqMax = val; applyConfig();
-        });
-        optsForm->addRow("Max Frequency:", maxFreqSpin);
+        auto faderBankLayout = new QHBoxLayout();
+        for (int b = 0; b < 10; ++b) {
+            auto bLayout = new QVBoxLayout();
+            auto valLbl = new QLabel(QString("%1dB").arg(stage.graphicEqGains[b], 0, 'f', 1), optsGroup);
+            valLbl->setAlignment(Qt::AlignCenter);
+            valLbl->setFont(QFont("monospace", 8));
 
-        auto bandsSpin = new QSpinBox(optsGroup);
-        bandsSpin->setRange(2, 64); bandsSpin->setValue(stage.comboParams.gains.empty() ? 31 : static_cast<int>(stage.comboParams.gains.size()));
-        connect(bandsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
-            stage.comboParams.gains.resize(val, 0.0); applyConfig();
-        });
-        optsForm->addRow("Number of Bands:", bandsSpin);
+            auto slider = new QSlider(Qt::Vertical, optsGroup);
+            slider->setRange(-24, 24);
+            slider->setValue(static_cast<int>(stage.graphicEqGains[b] * 2.0));
+            slider->setFixedHeight(120);
 
-        auto resetGainsBtn = new QPushButton("Reset All Gains to 0 dB", optsGroup);
+            connect(slider, &QSlider::valueChanged, [this, &stage, b, valLbl](int val) {
+                double db = val / 2.0;
+                stage.graphicEqGains[b] = db;
+                valLbl->setText(QString("%1dB").arg(db, 0, 'f', 1));
+                applyConfig();
+            });
+
+            auto nameLbl = new QLabel(bandLabels[b], optsGroup);
+            nameLbl->setAlignment(Qt::AlignCenter);
+            nameLbl->setFont(QFont("sans-serif", 9, QFont::Bold));
+
+            bLayout->addWidget(valLbl);
+            bLayout->addWidget(slider, 0, Qt::AlignCenter);
+            bLayout->addWidget(nameLbl);
+            faderBankLayout->addLayout(bLayout);
+        }
+        optsForm->addRow("Band Gains:", faderBankLayout);
+
+        auto resetGainsBtn = new QPushButton("Reset All Bands to 0 dB", optsGroup);
         connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
-            stage.comboParams.gains.assign(stage.comboParams.gains.size(), 0.0); applyConfig();
+            stage.graphicEqGains.assign(10, 0.0);
+            applyConfig();
+            refreshUi();
         });
         optsForm->addRow("", resetGainsBtn);
         break;
     }
 
     case StageType::Loudness: {
+        auto faderCombo = new QComboBox(optsGroup);
+        faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
+        faderCombo->setCurrentIndex(static_cast<int>(stage.loudnessFader));
+        connect(faderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
+            stage.loudnessFader = static_cast<Fader>(idx); applyConfig();
+        });
+        optsForm->addRow("Target Fader:", faderCombo);
+
         auto refSpin = new QDoubleSpinBox(optsGroup);
         refSpin->setRange(40.0, 100.0); refSpin->setValue(stage.loudnessRefLevel); refSpin->setSuffix(" dB SPL");
         connect(refSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
@@ -451,6 +481,13 @@ void StageDetailView::buildStageOptionsUi() {
             stage.delayUnit = stringToDelayUnit(text.toStdString()); applyConfig();
         });
         optsForm->addRow("Delay Unit:", unitCombo);
+
+        auto subCheck = new QCheckBox("Enable Sub-sample Delay", optsGroup);
+        subCheck->setChecked(stage.delaySubsample);
+        connect(subCheck, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.delaySubsample = chk; applyConfig();
+        });
+        optsForm->addRow("", subCheck);
         break;
     }
 
@@ -536,14 +573,24 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Volume: {
         auto faderCombo = new QComboBox(optsGroup);
         faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
+        faderCombo->setCurrentIndex(static_cast<int>(stage.volumeFader));
+        connect(faderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
+            stage.volumeFader = static_cast<Fader>(idx); applyConfig();
+        });
         optsForm->addRow("Target Fader:", faderCombo);
 
         auto rampSpin = new QDoubleSpinBox(optsGroup);
-        rampSpin->setRange(0.0, 2000.0); rampSpin->setSingleStep(50.0); rampSpin->setValue(500.0); rampSpin->setSuffix(" ms");
+        rampSpin->setRange(0.0, 2000.0); rampSpin->setSingleStep(50.0); rampSpin->setValue(stage.volumeRampTime); rampSpin->setSuffix(" ms");
+        connect(rampSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.volumeRampTime = val; applyConfig();
+        });
         optsForm->addRow("Ramp Time:", rampSpin);
 
         auto limitSpin = new QDoubleSpinBox(optsGroup);
-        limitSpin->setRange(-50.0, 20.0); limitSpin->setSingleStep(0.5); limitSpin->setValue(0.0); limitSpin->setSuffix(" dB");
+        limitSpin->setRange(-50.0, 20.0); limitSpin->setSingleStep(0.5); limitSpin->setValue(stage.volumeLimit); limitSpin->setSuffix(" dB");
+        connect(limitSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.volumeLimit = val; applyConfig();
+        });
         optsForm->addRow("Volume Limit:", limitSpin);
         break;
     }
@@ -568,31 +615,93 @@ void StageDetailView::buildStageOptionsUi() {
         int cols = inSpin->value();
 
         auto matrixTable = new QTableWidget(rows, cols, optsGroup);
-        matrixTable->setMinimumHeight(200);
+        matrixTable->horizontalHeader()->setDefaultSectionSize(120);
+        matrixTable->horizontalHeader()->setMinimumSectionSize(110);
+        matrixTable->verticalHeader()->setDefaultSectionSize(40);
+        matrixTable->setMinimumWidth(std::min(720, cols * 125 + 50));
+        matrixTable->setMinimumHeight(std::min(400, rows * 44 + 40));
+
         for (int r = 0; r < rows; ++r) {
+            matrixTable->setRowHeight(r, 40);
             for (int c = 0; c < cols; ++c) {
-                auto spin = new QDoubleSpinBox(optsGroup);
+                auto cellWidget = new QWidget(matrixTable);
+                auto cellLayout = new QHBoxLayout(cellWidget);
+                cellLayout->setContentsMargins(4, 2, 4, 2);
+                cellLayout->setSpacing(2);
+
+                auto spin = new QDoubleSpinBox(cellWidget);
                 spin->setRange(-120.0, 30.0);
                 spin->setSingleStep(0.5);
+                spin->setSuffix("dB");
+                spin->setMinimumWidth(70);
+
                 double currentVal = 0.0;
+                bool isInverted = false;
+                bool isMuted = false;
+
                 if (r < static_cast<int>(stage.mixerConfig.mapping.size())) {
                     for (const auto& src : stage.mixerConfig.mapping[r].sources) {
-                        if (src.channel == c) { currentVal = src.gain.value_or(0.0); break; }
+                        if (src.channel == c) {
+                            currentVal = src.gain.value_or(0.0);
+                            isInverted = src.inverted.value_or(false);
+                            isMuted = src.mute.value_or(false);
+                            break;
+                        }
                     }
                 }
                 spin->setValue(currentVal);
-                connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage, r, c](double val) {
+                cellLayout->addWidget(spin, 1);
+
+                auto invBtn = new QPushButton("Ø", cellWidget);
+                invBtn->setFixedSize(22, 22);
+                invBtn->setCheckable(true);
+                invBtn->setChecked(isInverted);
+                invBtn->setStyleSheet(isInverted ? "background-color: #ff9500; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                cellLayout->addWidget(invBtn);
+
+                auto muteBtn = new QPushButton("M", cellWidget);
+                muteBtn->setFixedSize(22, 22);
+                muteBtn->setCheckable(true);
+                muteBtn->setChecked(isMuted);
+                muteBtn->setStyleSheet(isMuted ? "background-color: #ff3b30; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                cellLayout->addWidget(muteBtn);
+
+                auto syncCellModel = [this, &stage, r, c, spin, invBtn, muteBtn]() {
                     if (r >= static_cast<int>(stage.mixerConfig.mapping.size())) stage.mixerConfig.mapping.resize(r + 1);
                     auto& map = stage.mixerConfig.mapping[r];
                     map.dest = r;
                     bool found = false;
                     for (auto& src : map.sources) {
-                        if (src.channel == c) { src.gain = val; found = true; break; }
+                        if (src.channel == c) {
+                            src.gain = spin->value();
+                            src.inverted = invBtn->isChecked();
+                            src.mute = muteBtn->isChecked();
+                            found = true;
+                            break;
+                        }
                     }
-                    if (!found) map.sources.push_back(MixerSource{c, val, false});
+                    if (!found) {
+                        MixerSource s;
+                        s.channel = c;
+                        s.gain = spin->value();
+                        s.inverted = invBtn->isChecked();
+                        s.mute = muteBtn->isChecked();
+                        map.sources.push_back(s);
+                    }
                     applyConfig();
+                };
+
+                connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), syncCellModel);
+                connect(invBtn, &QPushButton::toggled, [invBtn, syncCellModel](bool chk) {
+                    invBtn->setStyleSheet(chk ? "background-color: #ff9500; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                    syncCellModel();
                 });
-                matrixTable->setCellWidget(r, c, spin);
+                connect(muteBtn, &QPushButton::toggled, [muteBtn, syncCellModel](bool chk) {
+                    muteBtn->setStyleSheet(chk ? "background-color: #ff3b30; color: white; font-weight: bold; border-radius: 3px;" : "background-color: #3a3a3c; color: #8e8e93; border-radius: 3px;");
+                    syncCellModel();
+                });
+
+                matrixTable->setCellWidget(r, c, cellWidget);
             }
         }
         optsForm->addRow("Matrix Mixer Map:", matrixTable);
@@ -656,41 +765,19 @@ void StageDetailView::buildStageOptionsUi() {
         });
         optsForm->addRow("Release:", relSpin);
 
-        // Sidechain Monitor Ch Row
-        auto monBox = new QHBoxLayout();
-        for (int c = 0; c < 8; ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), optsGroup);
-            btn->setFixedWidth(32);
-            btn->setCheckable(true);
-            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
-            btn->setChecked(isSelected);
+        auto mkSpin = new QDoubleSpinBox(optsGroup);
+        mkSpin->setRange(0.0, 30.0); mkSpin->setValue(stage.compressorMakeupGain); mkSpin->setSuffix(" dB");
+        connect(mkSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.compressorMakeupGain = val; applyConfig();
+        });
+        optsForm->addRow("Makeup Gain:", mkSpin);
 
-            auto updateStyle = [btn](bool chk) {
-                if (chk) btn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 4px;");
-                else btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
-            };
-            updateStyle(isSelected);
-
-            connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateStyle]() {
-                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
-                if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) {
-                        stage.monitorChannels.erase(it);
-                        btn->setChecked(false);
-                    } else {
-                        btn->setChecked(true);
-                    }
-                } else {
-                    stage.monitorChannels.push_back(c);
-                    btn->setChecked(true);
-                }
-                updateStyle(btn->isChecked());
-                applyConfig();
-            });
-            monBox->addWidget(btn);
-        }
-        monBox->addStretch();
-        optsForm->addRow("Monitor Ch:", monBox);
+        auto softCheck = new QCheckBox("Enable Soft Knee / Clip Curve", optsGroup);
+        softCheck->setChecked(stage.compressorSoftClip);
+        connect(softCheck, &QCheckBox::toggled, [this, &stage](bool chk) {
+            stage.compressorSoftClip = chk; applyConfig();
+        });
+        optsForm->addRow("", softCheck);
         break;
     }
 
@@ -709,41 +796,19 @@ void StageDetailView::buildStageOptionsUi() {
         });
         optsForm->addRow("Attenuation:", attenSpin);
 
-        // Sidechain Monitor Ch Row
-        auto monBox = new QHBoxLayout();
-        for (int c = 0; c < 8; ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), optsGroup);
-            btn->setFixedWidth(32);
-            btn->setCheckable(true);
-            bool isSelected = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
-            btn->setChecked(isSelected);
+        auto attSpin = new QDoubleSpinBox(optsGroup);
+        attSpin->setRange(0.1, 500.0); attSpin->setValue(stage.gateAttack); attSpin->setSuffix(" ms");
+        connect(attSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.gateAttack = val; applyConfig();
+        });
+        optsForm->addRow("Attack Time:", attSpin);
 
-            auto updateStyle = [btn](bool chk) {
-                if (chk) btn->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 4px;");
-                else btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
-            };
-            updateStyle(isSelected);
-
-            connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateStyle]() {
-                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
-                if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) {
-                        stage.monitorChannels.erase(it);
-                        btn->setChecked(false);
-                    } else {
-                        btn->setChecked(true);
-                    }
-                } else {
-                    stage.monitorChannels.push_back(c);
-                    btn->setChecked(true);
-                }
-                updateStyle(btn->isChecked());
-                applyConfig();
-            });
-            monBox->addWidget(btn);
-        }
-        monBox->addStretch();
-        optsForm->addRow("Monitor Ch:", monBox);
+        auto relSpin = new QDoubleSpinBox(optsGroup);
+        relSpin->setRange(1.0, 5000.0); relSpin->setValue(stage.gateRelease); relSpin->setSuffix(" ms");
+        connect(relSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.gateRelease = val; applyConfig();
+        });
+        optsForm->addRow("Release Time:", relSpin);
         break;
     }
 
