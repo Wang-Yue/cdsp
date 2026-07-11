@@ -131,6 +131,9 @@ void StageDetailView::setupUi() {
     connect(m_enabledCheck, &QCheckBox::toggled, [this](bool checked) {
         if (m_stageIndex < m_pipeline->stages.size()) {
             m_pipeline->stages[m_stageIndex].isEnabled = checked;
+            if (m_optionsContainer) {
+                m_optionsContainer->setEnabled(checked);
+            }
             applyConfig();
         }
     });
@@ -151,6 +154,14 @@ void StageDetailView::setupUi() {
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(scroll);
+
+    if (m_pipeline) {
+        connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, [this]() {
+            if (!m_isBuildingUi) {
+                refreshUi();
+            }
+        });
+    }
 }
 
 void StageDetailView::applyConfig() {

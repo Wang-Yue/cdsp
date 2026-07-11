@@ -56,6 +56,7 @@ public:
         layout->setSpacing(6);
 
         m_label = new QLabel(title, this);
+        m_label->setAttribute(Qt::WA_TransparentForMouseEvents, true);
         m_label->setStyleSheet("QLabel { background: transparent; color: inherit; }");
         layout->addWidget(m_label);
 
@@ -944,6 +945,7 @@ void MainWindow::refreshSidebarItems() {
                 if (i < m_pipeline->stages.size()) {
                     m_pipeline->stages[i].isEnabled = c;
                     m_pipeline->save();
+                    emit m_pipeline->pipelineChanged();
                     m_dspController->applyConfig();
                 }
             },
