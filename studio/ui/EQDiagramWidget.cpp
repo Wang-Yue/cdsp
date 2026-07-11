@@ -453,7 +453,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
         double hx = freqToX(handleFreq, w);
         double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
-        if (std::hypot(pos.x() - hx, pos.y() - hy) <= 12.0) {
+        if (std::hypot(pos.x() - hx, pos.y() - hy) <= 24.0) {
             hitIndex = static_cast<int>(i);
             break;
         }
@@ -550,7 +550,7 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
-            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 12.0) {
+            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 24.0) {
                 hitIndex = static_cast<int>(i);
                 break;
             }
@@ -633,7 +633,7 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
-            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 12.0) {
+            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 24.0) {
                 m_hoveredIndex = static_cast<int>(i);
                 break;
             }

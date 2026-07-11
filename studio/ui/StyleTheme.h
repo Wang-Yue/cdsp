@@ -182,21 +182,40 @@ public:
 
             /* Sliders */
             QSlider::groove:horizontal {
-                height: 4px;
+                height: 6px;
                 background: #e5e5ea;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QSlider::sub-page:horizontal {
                 background: #007aff;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QSlider::handle:horizontal {
                 background: #ffffff;
                 border: 1px solid #c6c6c8;
-                width: 14px;
-                margin-top: -5px;
-                margin-bottom: -5px;
-                border-radius: 7px;
+                width: 18px;
+                height: 18px;
+                margin-top: -6px;
+                margin-bottom: -6px;
+                border-radius: 9px;
+            }
+            QSlider::groove:vertical {
+                width: 6px;
+                background: #e5e5ea;
+                border-radius: 3px;
+            }
+            QSlider::add-page:vertical {
+                background: #007aff;
+                border-radius: 3px;
+            }
+            QSlider::handle:vertical {
+                background: #ffffff;
+                border: 1px solid #c6c6c8;
+                width: 18px;
+                height: 18px;
+                margin-left: -6px;
+                margin-right: -6px;
+                border-radius: 9px;
             }
 
             /* Tabs */
@@ -402,20 +421,38 @@ public:
             }
 
             QSlider::groove:horizontal {
-                height: 4px;
+                height: 6px;
                 background: #2c2d3a;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QSlider::sub-page:horizontal {
                 background: #007af5;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QSlider::handle:horizontal {
                 background: #ffffff;
-                width: 14px;
-                margin-top: -5px;
-                margin-bottom: -5px;
-                border-radius: 7px;
+                width: 18px;
+                height: 18px;
+                margin-top: -6px;
+                margin-bottom: -6px;
+                border-radius: 9px;
+            }
+            QSlider::groove:vertical {
+                width: 6px;
+                background: #2c2d3a;
+                border-radius: 3px;
+            }
+            QSlider::add-page:vertical {
+                background: #007af5;
+                border-radius: 3px;
+            }
+            QSlider::handle:vertical {
+                background: #ffffff;
+                width: 18px;
+                height: 18px;
+                margin-left: -6px;
+                margin-right: -6px;
+                border-radius: 9px;
             }
 
             QTabWidget::pane {

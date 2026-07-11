@@ -79,9 +79,9 @@ void LogRangeSlider::mousePressEvent(QMouseEvent* event) {
         int xMin = freqToPos(m_minFreq);
         int xMax = freqToPos(m_maxFreq);
 
-        if (std::abs(x - xMin) <= 12) {
+        if (std::abs(x - xMin) <= 20) {
             m_activeHandle = 1;
-        } else if (std::abs(x - xMax) <= 12) {
+        } else if (std::abs(x - xMax) <= 20) {
             m_activeHandle = 2;
         } else {
             // Pick closer handle
@@ -115,7 +115,7 @@ void LogRangeSlider::mouseMoveEvent(QMouseEvent* event) {
         update();
         event->accept();
     } else {
-        if (std::abs(x - xMin) <= 10 || std::abs(x - xMax) <= 10) {
+        if (std::abs(x - xMin) <= 20 || std::abs(x - xMax) <= 20) {
             setCursor(Qt::SizeHorCursor);
         } else {
             setCursor(Qt::ArrowCursor);
