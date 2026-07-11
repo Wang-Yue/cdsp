@@ -611,7 +611,7 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
   }
 
   capture->residual_chunk =
-      audio_chunk_create(capture->channels, capture->chunk_size * 4);
+      audio_chunk_create(capture->chunk_size * 4, capture->channels);
   if (!capture->residual_chunk) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,

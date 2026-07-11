@@ -728,8 +728,9 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
                                                     &num_in, &num_out);
 
       for (int c = 0; c < channels; c++) {
-        // Output channel indexes start after the input channels in ASIO.
-        int buf_idx = num_in + c;
+        // Output channel indexes start after the input channels in
+        // single-direction ASIO playback.
+        int buf_idx = g_active_playback->full_duplex ? c : (num_in + c);
         void* dst =
             g_active_playback->buffer_infos[buf_idx].buffers[doubleBufferIndex];
         int type = g_active_playback->channel_infos[buf_idx].type;
