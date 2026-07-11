@@ -310,15 +310,14 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
 
             // Smooth log-frequency & depth age combined color mapping
             float tf = static_cast<float>(t);
-            QColor sliceDepthColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
-            QColor magColor = colorForDB(maxDbInFrame, m_palette);
+            QColor startColor(0, 122, 255, 76); // Blue 30%
+            QColor endColor(0, 122, 255, 255);  // Accent Blue 100%
+            int r = std::lrint(startColor.red() + tf * (endColor.red() - startColor.red()));
+            int g = std::lrint(startColor.green() + tf * (endColor.green() - startColor.green()));
+            int b = std::lrint(startColor.blue() + tf * (endColor.blue() - startColor.blue()));
+            int a = std::lrint(startColor.alpha() + tf * (endColor.alpha() - startColor.alpha()));
 
-            QColor sliceColor =
-                QColor::fromRgbF(0.4f * sliceDepthColor.redF() + 0.6f * magColor.redF(),
-                                 0.4f * sliceDepthColor.greenF() + 0.6f * magColor.greenF(),
-                                 0.4f * sliceDepthColor.blueF() + 0.6f * magColor.blueF(), sliceDepthColor.alphaF());
-
-            p.setPen(QPen(sliceColor, 1.5));
+            p.setPen(QPen(QColor(r, g, b, a), 1.5));
             p.drawPath(edgePath);
         }
 

@@ -11,6 +11,7 @@ struct FIRDesignOptions {
     int fftSize = 8192;
     int outputLength = 8192;
     double preampDB = 0.0;
+    double floorDB = -80.0;
 };
 
 struct FIRDesignMeasurementOptions {

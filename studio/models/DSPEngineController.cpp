@@ -242,14 +242,27 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
         }
     }
 
-    if (update.stopReason.type == StopReasonType::CaptureFormatChange ||
-        update.stopReason.type == StopReasonType::PlaybackFormatChange) {
+    if (update.stopReason.type == StopReasonType::CaptureFormatChange) {
         int newRate = update.stopReason.formatChangeRate;
         if (newRate > 0) {
             LogManager::instance()->appendLog(
                 LogLevel::Warn,
-                QString("Format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
-            m_devices->captureConfig.sampleRate = newRate;
+                QString("Capture format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
+            if (m_settings && m_settings->resamplerEnabled) {
+                m_devices->captureConfig.sampleRate = newRate;
+            } else {
+                m_devices->captureConfig.sampleRate = newRate;
+                m_devices->playbackConfig.sampleRate = newRate;
+            }
+            m_devices->saveConfigs();
+            scheduleAutoRestart(0);
+        }
+    } else if (update.stopReason.type == StopReasonType::PlaybackFormatChange) {
+        int newRate = update.stopReason.formatChangeRate;
+        if (newRate > 0) {
+            LogManager::instance()->appendLog(
+                LogLevel::Warn,
+                QString("Playback format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
             m_devices->playbackConfig.sampleRate = newRate;
             m_devices->saveConfigs();
             scheduleAutoRestart(0);

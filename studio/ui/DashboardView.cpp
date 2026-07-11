@@ -3,6 +3,7 @@
 #include "models/PipelineStage.h"
 #include "ui/StyleTheme.h"
 
+#include <QComboBox>
 #include <QFont>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -79,7 +80,8 @@ void DashboardView::updateFaderUi() {
                 "font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 75px;");
         } else {
             row.gainValueLabel->setStyleSheet(
-                "font-family: monospace; font-weight: bold; color: #34c759; min-width: 75px;");
+                QString("font-family: monospace; font-weight: bold; color: %1; min-width: 75px;")
+                    .arg(StyleTheme::textPrimary().name()));
         }
 
         row.muteBtn->blockSignals(true);
@@ -312,8 +314,23 @@ void DashboardView::setupUi() {
     mainLayout->addWidget(faderGroup);
 
     // 4. Analog VU Card
-    m_analogVUGroup = new QGroupBox("Analog VU Meter", container);
+    m_analogVUGroup = new QGroupBox("Analog VU", container);
     auto vuLayout = new QVBoxLayout(m_analogVUGroup);
+
+    auto vuHeaderBox = new QHBoxLayout();
+    vuHeaderBox->addStretch();
+    auto themeCombo = new QComboBox(m_analogVUGroup);
+    themeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
+    themeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
+    themeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
+    connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, themeCombo](int idx) {
+        auto settings = m_analogVUView->vuSettings();
+        settings.theme = static_cast<VUTheme>(themeCombo->itemData(idx).toInt());
+        m_analogVUView->setVUSettings(settings);
+    });
+    vuHeaderBox->addWidget(themeCombo);
+    vuLayout->addLayout(vuHeaderBox);
+
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
     m_analogVUView->setLevelState(&m_monitoring->levelState);
     vuLayout->addWidget(m_analogVUView);

@@ -2,7 +2,9 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFutureWatcher>
 #include <QPainterPath>
+#include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
 
@@ -13,6 +15,24 @@ WaterfallPlotWidget::WaterfallPlotWidget(QWidget* parent) : QWidget(parent) {
 void WaterfallPlotWidget::setSlices(const std::vector<std::pair<double, FrequencyResponse>>& slices) {
     m_slices = slices;
     update();
+}
+
+void WaterfallPlotWidget::recomputeSTFTAsync(const ImpulseResponse& ir, int sliceCount, double maxTimeMs,
+                                             int windowLength) {
+    double tMax = maxTimeMs / 1000.0;
+    int nFft = windowLength * 2;
+
+    auto watcher = new QFutureWatcher<std::vector<std::pair<double, FrequencyResponse>>>(this);
+    connect(watcher, &QFutureWatcher<std::vector<std::pair<double, FrequencyResponse>>>::finished, [this, watcher]() {
+        setSlices(watcher->result());
+        watcher->deleteLater();
+    });
+
+    QFuture<std::vector<std::pair<double, FrequencyResponse>>> future =
+        QtConcurrent::run([ir, sliceCount, tMax, windowLength, nFft]() {
+            return FrequencyResponse::stft(ir, sliceCount, tMax, windowLength, nFft);
+        });
+    watcher->setFuture(future);
 }
 
 void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {

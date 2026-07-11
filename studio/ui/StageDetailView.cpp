@@ -735,16 +735,27 @@ void StageDetailView::buildStageOptionsUi() {
                 int sampleRate = (m_dspController && m_dspController->devices())
                                      ? m_dspController->devices()->captureConfig.sampleRate
                                      : 48000;
+                auto availableRates = it->availableSampleRates();
+                int effectiveRate = sampleRate;
+                if (!availableRates.empty() &&
+                    std::find(availableRates.begin(), availableRates.end(), sampleRate) == availableRates.end()) {
+                    double targetLog = std::log(static_cast<double>(sampleRate));
+                    effectiveRate =
+                        *std::min_element(availableRates.begin(), availableRates.end(), [targetLog](int a, int b) {
+                            return std::abs(std::log(static_cast<double>(a)) - targetLog) <
+                                   std::abs(std::log(static_cast<double>(b)) - targetLog);
+                        });
+                }
                 auto metaLbl = new QLabel(QString("Kind: %1  |  Taps: %2  |  Rate: %3 Hz  |  Latency: %4 ms")
                                               .arg(QString::fromStdString(it->kindLabel()))
                                               .arg(it->taps)
-                                              .arg(sampleRate)
-                                              .arg(it->latencyMilliseconds(sampleRate), 0, 'f', 1),
+                                              .arg(effectiveRate)
+                                              .arg(it->latencyMilliseconds(effectiveRate), 0, 'f', 1),
                                           convGroup);
                 metaLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
                 convVBox->addWidget(metaLbl);
 
-                std::string irPath = it->irPath(sampleRate);
+                std::string irPath = it->irPath(effectiveRate);
                 if (!irPath.empty()) {
                     auto plot = new ConvolutionIRPlot(convGroup);
                     plot->setIRPath(irPath);
@@ -966,6 +977,7 @@ void StageDetailView::buildStageOptionsUi() {
         connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) {
             stage.delaySubsample = chk;
             applyConfig();
+            refreshUi();
         });
         formLayout->addRow("", subChk);
 
@@ -1778,35 +1790,22 @@ void StageDetailView::buildStageOptionsUi() {
         }
 
         if (stage.comboType == BiquadComboType::ButterworthLowpass ||
-            stage.comboType == BiquadComboType::ButterworthHighpass) {
-            auto orderSpin = new QSpinBox(comboGroup);
-            orderSpin->setRange(1, 64);
-            orderSpin->setSingleStep(1);
-            orderSpin->setValue(std::clamp(stage.comboOrder, 1, 64));
-            connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
-                stage.comboOrder = val;
-                applyConfig();
-            });
-            formLayout->addRow("Filter Order (1..64):", orderSpin);
-        } else if (stage.comboType == BiquadComboType::LinkwitzRileyLowpass ||
-                   stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
-            auto orderSpin = new QSpinBox(comboGroup);
-            orderSpin->setRange(2, 64);
-            orderSpin->setSingleStep(2);
-            int currentOrder = stage.comboOrder;
-            if (currentOrder % 2 != 0)
-                currentOrder = std::max(2, currentOrder - 1);
-            orderSpin->setValue(std::clamp(currentOrder, 2, 64));
-            connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage, orderSpin](int val) {
-                if (val % 2 != 0) {
-                    val = (val > stage.comboOrder) ? val + 1 : val - 1;
-                    orderSpin->setValue(val);
-                    return;
-                }
-                stage.comboOrder = val;
-                applyConfig();
-            });
-            formLayout->addRow("Filter Order (even 2..64):", orderSpin);
+            stage.comboType == BiquadComboType::ButterworthHighpass ||
+            stage.comboType == BiquadComboType::LinkwitzRileyLowpass ||
+            stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
+            auto orderCombo = new QComboBox(comboGroup);
+            orderCombo->addItem("2nd Order (12 dB/oct)", 2);
+            orderCombo->addItem("4th Order (24 dB/oct)", 4);
+            orderCombo->addItem("6th Order (36 dB/oct)", 6);
+            orderCombo->addItem("8th Order (48 dB/oct)", 8);
+            int idx = orderCombo->findData(stage.comboOrder);
+            orderCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+            connect(orderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    [this, &stage, orderCombo](int index) {
+                        stage.comboOrder = orderCombo->itemData(index).toInt();
+                        applyConfig();
+                    });
+            formLayout->addRow("Filter Order:", orderCombo);
         }
 
         if (stage.comboType == BiquadComboType::Tilt) {

@@ -167,7 +167,7 @@ std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(const 
             size_t idx = startIdx + i;
             if (idx < ir.samples.size()) {
                 double w =
-                    0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength)));
+                    0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength - 1)));
                 sliceSamples[i] = ir.samples[idx] * w;
             }
         }

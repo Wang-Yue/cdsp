@@ -104,10 +104,41 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
 
     int w = width();
     int h = height();
-    int halfW = (w - 24) / 2;
 
-    drawSingleVU(p, QRect(8, 8, halfW, h - 16), m_currentAngleL, "LEFT", m_leftDB, m_peakClipLHold > 0.0f);
-    drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT", m_rightDB, m_peakClipRHold > 0.0f);
+    size_t chCount = 2;
+    if (m_levelState && !m_levelState->playbackRms.empty()) {
+        chCount = std::max((size_t)1, m_levelState->playbackRms.size());
+    }
+
+    int spacing = 8;
+    int meterWidth = (w - (static_cast<int>(chCount) + 1) * spacing) / static_cast<int>(chCount);
+    meterWidth = std::max(20, meterWidth);
+
+    for (size_t i = 0; i < chCount; ++i) {
+        float levelDb = -60.0f;
+        bool clipped = false;
+
+        if (m_levelState && i < m_levelState->playbackRms.size()) {
+            levelDb = m_levelState->playbackRms[i];
+            if (i < m_levelState->playbackPeak.size() && m_levelState->playbackPeak[i] >= -0.1f) {
+                clipped = true;
+            }
+        } else {
+            levelDb = (i == 0) ? m_leftDB : m_rightDB;
+            clipped = (i == 0) ? (m_peakClipLHold > 0.0f) : (m_peakClipRHold > 0.0f);
+        }
+
+        QString label;
+        if (chCount == 2) {
+            label = (i == 0) ? "LEFT" : "RIGHT";
+        } else {
+            label = QString("CH %1").arg(i + 1);
+        }
+
+        float angle = computeAngleForLevel(levelDb);
+        int xPos = spacing + static_cast<int>(i) * (meterWidth + spacing);
+        drawSingleVU(p, QRect(xPos, 8, meterWidth, h - 16), angle, label, levelDb, clipped);
+    }
 }
 
 void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label,

@@ -90,15 +90,19 @@ void PhasePlotWidget::phaseBounds(const FrequencyResponse& fr, const std::vector
     maxDeg = center + span / 2.0 + 45.0;
 }
 
+void PhasePlotWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (m_unwrapBtn) {
+        m_unwrapBtn->move(12, height() - 34);
+    }
+}
+
 void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
     int w = width();
     int h = height();
-
-    // Position unwrap button at bottom-left
-    m_unwrapBtn->move(12, h - 34);
 
     // Background
     painter.fillRect(rect(), StyleTheme::cardBg());
@@ -117,15 +121,15 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     phaseBounds(fr, unwrapped, minDeg, maxDeg);
     double spanDeg = maxDeg - minDeg;
 
-    // Draw Grid Lines (Frequency & Phase)
-    std::vector<double> gridFreqs = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+    // Draw Grid Lines (4 major frequency ticks matching SwiftUI)
+    std::vector<double> gridFreqs = {20, 100, 1000, 10000};
     for (double f : gridFreqs) {
         double x = freqToX(f, w);
         painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
         painter.setPen(StyleTheme::textSecondary());
         painter.drawText(QRectF(x + 2, h - 18, 50, 15), Qt::AlignLeft | Qt::AlignBottom,
-                         f >= 1000 ? QString::number(f / 1000.0, 'g', 2) + "k" : QString::number(f));
+                         f >= 1000 ? QString::number(f / 1000.0, 'g', 0) + "k" : QString::number(f));
     }
 
     double degStep = spanDeg > 2880 ? 1440 : (spanDeg > 1440 ? 720 : (spanDeg > 720 ? 360 : 90));

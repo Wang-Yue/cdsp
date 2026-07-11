@@ -69,6 +69,7 @@ private:
 
     void setupUi();
     void updateBandChipsBar();
+    void applyConfig();
 };
 
 #endif // EQ_PRESET_DETAIL_VIEW_H

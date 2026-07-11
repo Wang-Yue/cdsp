@@ -272,17 +272,17 @@ void MiniPlayerView::setupUi() {
     m_spectrumView = new SpectrumView(m_monitoring ? m_monitoring->spectrumEngine() : nullptr, this);
     m_viewStack->addWidget(m_spectrumView);
 
-    // Mode 2: Analog VU
-    m_analogVUView = new AnalogVUMeterView(this);
-    if (m_monitoring)
-        m_analogVUView->setLevelState(&m_monitoring->levelState);
-    m_viewStack->addWidget(m_analogVUView);
-
-    // Mode 3: Level Meters
+    // Mode 2: Level Meters
     m_metersView = new LevelMeterView(this);
     if (m_monitoring)
         m_metersView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_metersView);
+
+    // Mode 3: Analog VU
+    m_analogVUView = new AnalogVUMeterView(this);
+    if (m_monitoring)
+        m_analogVUView->setLevelState(&m_monitoring->levelState);
+    m_viewStack->addWidget(m_analogVUView);
 
     // Mode 4: Spectrogram
     m_spectrogramView = new SpectrogramView(m_monitoring ? m_monitoring->spectrogramEngine() : nullptr, this);
@@ -299,6 +299,11 @@ void MiniPlayerView::setupUi() {
 void MiniPlayerView::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         hide();
+        if (parentWidget()) {
+            parentWidget()->showNormal();
+            parentWidget()->raise();
+            parentWidget()->activateWindow();
+        }
     }
 }
 

@@ -173,6 +173,42 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         painter.drawPath(loudnessPath);
     }
 
+    // Reference Target & Measured Frequency Response Curves Overlay
+    if (m_overlay.active) {
+        // 1. Draw Target Curve (Dashed Amber)
+        if (!m_overlay.targetCurve.breakpoints.empty()) {
+            QPainterPath targetPath;
+            for (int x = 0; x <= w; x += 2) {
+                double f = xToFreq(x, w);
+                double db = m_overlay.targetCurve.evaluate(f);
+                double y = dbToY(db, h);
+                if (x == 0)
+                    targetPath.moveTo(x, y);
+                else
+                    targetPath.lineTo(x, y);
+            }
+            painter.setPen(QPen(QColor("#ffcc00"), 1.8, Qt::DashLine));
+            painter.drawPath(targetPath);
+        }
+
+        // 2. Draw Measured Response Curve (Cyan)
+        if (!m_overlay.measuredMagDB.empty() && m_overlay.measuredMagDB.size() == m_overlay.frequencies.size()) {
+            QPainterPath measuredPath;
+            for (size_t i = 0; i < m_overlay.measuredMagDB.size(); ++i) {
+                double f = m_overlay.frequencies[i];
+                double db = m_overlay.measuredMagDB[i];
+                double x = freqToX(f, w);
+                double y = dbToY(db, h);
+                if (i == 0)
+                    measuredPath.moveTo(x, y);
+                else
+                    measuredPath.lineTo(x, y);
+            }
+            painter.setPen(QPen(QColor(0, 198, 255, 180), 1.2));
+            painter.drawPath(measuredPath);
+        }
+    }
+
     // Individual Band Curves
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& band = m_preset.bands[i];

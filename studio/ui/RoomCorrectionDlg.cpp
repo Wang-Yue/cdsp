@@ -102,6 +102,22 @@ void RoomCorrectionDlg::setupMeasurementTab(QWidget* tab) {
     calBtnLayout->addWidget(clearCalBtn);
     leftBox->addLayout(calBtnLayout);
 
+    // Hardware Measurement Sweep Capture Buttons
+    auto sweepLayout = new QHBoxLayout();
+    auto newSweepBtn = new QPushButton("🎤 New Measurement", tab);
+    connect(newSweepBtn, &QPushButton::clicked, [this]() {
+        m_session.generateMockMeasurement(false);
+        refreshSessionUi();
+    });
+    auto addSweepBtn = new QPushButton("➕ Add Position", tab);
+    connect(addSweepBtn, &QPushButton::clicked, [this]() {
+        m_session.generateMockMeasurement(true);
+        refreshSessionUi();
+    });
+    sweepLayout->addWidget(newSweepBtn);
+    sweepLayout->addWidget(addSweepBtn);
+    leftBox->addLayout(sweepLayout);
+
     // Analysis Settings (FDW & Smoothing)
     leftBox->addWidget(new QLabel("Analysis & Display Settings:", tab));
     auto fdwForm = new QFormLayout();
@@ -281,13 +297,15 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
 void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
-    // Update position chips list with row widgets
-    m_positionsList->clear();
-    for (const auto& p : m_session.positions) {
-        auto item = new QListWidgetItem(m_positionsList);
-        auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
-        item->setSizeHint(rowWidget->sizeHint());
-        m_positionsList->setItemWidget(item, rowWidget);
+    // Update position chips list with row widgets without destroying active controls if count matches
+    if (m_positionsList->count() != static_cast<int>(m_session.positions.size())) {
+        m_positionsList->clear();
+        for (const auto& p : m_session.positions) {
+            auto item = new QListWidgetItem(m_positionsList);
+            auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
+            item->setSizeHint(rowWidget->sizeHint());
+            m_positionsList->setItemWidget(item, rowWidget);
+        }
     }
 
     // Update calibration label
@@ -304,8 +322,7 @@ void RoomCorrectionDlg::refreshSessionUi() {
     }
 
     if (m_session.measuredIR.has_value()) {
-        auto stftSlices = FrequencyResponse::stft(m_session.measuredIR.value());
-        m_waterfallWidget->setSlices(stftSlices);
+        m_waterfallWidget->recomputeSTFTAsync(m_session.measuredIR.value());
     }
 
     m_phasePlotWidget->update();

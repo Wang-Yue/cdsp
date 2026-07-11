@@ -4,6 +4,7 @@
 #include "models/EQPreset.h"
 #include "models/PipelineStore.h"
 #include "models/SpectrumEngine.h"
+#include "room_correction/TargetCurve.h"
 
 #include <QCheckBox>
 #include <QMouseEvent>
@@ -11,6 +12,14 @@
 #include <QWheelEvent>
 #include <QWidget>
 #include <functional>
+
+struct EQReferenceOverlayData {
+    std::vector<double> frequencies;
+    std::vector<double> measuredMagDB;
+    TargetCurve targetCurve;
+    bool showCorrected = true;
+    bool active = false;
+};
 
 class EQDiagramWidget : public QWidget {
     Q_OBJECT
@@ -21,6 +30,10 @@ public:
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
+    void setReferenceOverlay(const EQReferenceOverlayData& overlay) {
+        m_overlay = overlay;
+        update();
+    }
     void setPipelineStore(std::shared_ptr<PipelineStore> store) {
         m_pipelineStore = store;
         update();
@@ -63,6 +76,7 @@ private:
     bool m_showLoudnessContour = false;
     std::shared_ptr<SpectrumEngine> m_spectrum;
     std::shared_ptr<PipelineStore> m_pipelineStore;
+    EQReferenceOverlayData m_overlay;
 
     double fMin = 20.0;
     double fMax = 20000.0;

@@ -11,30 +11,36 @@ LogRangeSlider::LogRangeSlider(QWidget* parent) : QWidget(parent) {
 }
 
 void LogRangeSlider::setRange(double minFreq, double maxFreq) {
-    m_minFreq = std::max(20.0, std::min(20000.0, minFreq));
-    m_maxFreq = std::max(m_minFreq + 10.0, std::min(20000.0, maxFreq));
+    m_minFreq = std::max(m_minBound, std::min(m_maxBound, minFreq));
+    m_maxFreq = std::max(m_minFreq + 10.0, std::min(m_maxBound, maxFreq));
     update();
+}
+
+void LogRangeSlider::setMinMaxBounds(double minBound, double maxBound) {
+    m_minBound = std::max(1.0, minBound);
+    m_maxBound = std::max(m_minBound + 1.0, maxBound);
+    setRange(m_minFreq, m_maxFreq);
 }
 
 double LogRangeSlider::posToFreq(int x) const {
     int margin = 10;
     int w = width() - 2 * margin;
     if (w <= 0)
-        return 20.0;
+        return m_minBound;
 
     double frac = std::max(0.0, std::min(1.0, static_cast<double>(x - margin) / w));
-    double logMin = std::log10(20.0);
-    double logMax = std::log10(20000.0);
+    double logMin = std::log10(m_minBound);
+    double logMax = std::log10(m_maxBound);
     double logFreq = logMin + frac * (logMax - logMin);
-    return std::pow(10.0, logFreq);
+    return std::round(std::pow(10.0, logFreq));
 }
 
 int LogRangeSlider::freqToPos(double freq) const {
     int margin = 10;
     int w = width() - 2 * margin;
-    double logMin = std::log10(20.0);
-    double logMax = std::log10(20000.0);
-    double logFreq = std::log10(std::max(20.0, std::min(20000.0, freq)));
+    double logMin = std::log10(m_minBound);
+    double logMax = std::log10(m_maxBound);
+    double logFreq = std::log10(std::max(m_minBound, std::min(m_maxBound, freq)));
     double frac = (logFreq - logMin) / (logMax - logMin);
     return margin + static_cast<int>(frac * w);
 }

@@ -109,15 +109,20 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int rmsW = static_cast<int>(rmsFrac * barW);
         int peakX = xStart + static_cast<int>(peakFrac * barW);
 
-        // RMS fill (Gradient matching SwiftUI audioLevel)
+        int halfH = std::max(4, barHeight / 2);
+        // RMS fill (top half)
         QLinearGradient grad(xStart, y, xStart + barW, y);
-        grad.setColorAt(0.0, QColor("#34c759"));
-        grad.setColorAt(0.35, QColor("#34c759"));
-        grad.setColorAt(0.55, QColor("#ffcc00"));
-        grad.setColorAt(0.75, QColor("#ff9500"));
-        grad.setColorAt(0.95, QColor("#ff3b30"));
-        grad.setColorAt(1.0, QColor("#ff3b30"));
-        p.fillRect(xStart, y, rmsW, barHeight, grad);
+        grad.setColorAt(0.0, QColor(52, 199, 89, 230));
+        grad.setColorAt(0.35, QColor(52, 199, 89, 230));
+        grad.setColorAt(0.55, QColor(255, 204, 0, 230));
+        grad.setColorAt(0.75, QColor(255, 149, 0, 230));
+        grad.setColorAt(0.95, QColor(255, 59, 48, 230));
+        grad.setColorAt(1.0, QColor(255, 59, 48, 230));
+        p.fillRect(xStart, y, rmsW, halfH - 1, grad);
+
+        // Peak fill (bottom half)
+        int peakW = static_cast<int>(peakFrac * barW);
+        p.fillRect(xStart, y + halfH + 1, peakW, halfH - 1, grad);
 
         // Peak line indicator
         if (peakFrac > 0) {
@@ -180,31 +185,41 @@ void CompactLevelMeterBar::updateState() {
     switch (st) {
     case ProcessingState::Running:
         m_statusDot->setStyleSheet("background-color: #34c759; border-radius: 4px;");
-        m_statusLabel->setText("Engine Running");
+        m_statusLabel->setText("Running");
         m_statusLabel->setStyleSheet("color: #34c759;");
         break;
     case ProcessingState::Paused:
         m_statusDot->setStyleSheet("background-color: #007aff; border-radius: 4px;");
-        m_statusLabel->setText("Engine Paused");
+        m_statusLabel->setText("Paused");
         m_statusLabel->setStyleSheet("color: #007aff;");
         break;
     case ProcessingState::Stalled:
         m_statusDot->setStyleSheet("background-color: #ff9500; border-radius: 4px;");
-        m_statusLabel->setText("Engine Stalled");
+        m_statusLabel->setText("Stalled");
         m_statusLabel->setStyleSheet("color: #ff9500;");
         break;
     case ProcessingState::Starting:
         m_statusDot->setStyleSheet("background-color: #ffcc00; border-radius: 4px;");
-        m_statusLabel->setText("Starting Engine...");
+        m_statusLabel->setText("Starting...");
         m_statusLabel->setStyleSheet("color: #ffcc00;");
         break;
     case ProcessingState::Inactive:
     default:
         m_statusDot->setStyleSheet("background-color: #8e8e93; border-radius: 4px;");
-        m_statusLabel->setText("Engine Inactive");
+        m_statusLabel->setText("Inactive");
         m_statusLabel->setStyleSheet("color: #8e8e93;");
         break;
     }
+}
+
+static QColor getLevelColor(float normVal) {
+    if (normVal < 0.35f)
+        return QColor("#34c759"); // Green
+    if (normVal < 0.55f)
+        return QColor("#ffcc00"); // Yellow
+    if (normVal < 0.75f)
+        return QColor("#ff9500"); // Orange
+    return QColor("#ff3b30");     // Red
 }
 
 void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
@@ -247,7 +262,7 @@ void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
             float frac = normDB(val);
             int fillW = static_cast<int>(frac * barW);
             if (fillW > 0) {
-                p.fillRect(startX, yPos, fillW, barH, QColor("#34c759"));
+                p.fillRect(startX, yPos, fillW, barH, getLevelColor(frac));
             }
         }
         startX += barW + 4;
@@ -265,7 +280,7 @@ void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
             float frac = normDB(val);
             int fillW = static_cast<int>(frac * barW);
             if (fillW > 0) {
-                p.fillRect(startX, yPos, fillW, barH, QColor("#007aff"));
+                p.fillRect(startX, yPos, fillW, barH, getLevelColor(frac));
             }
         }
         startX += barW + 4;

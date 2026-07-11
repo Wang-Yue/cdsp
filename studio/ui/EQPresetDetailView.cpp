@@ -53,7 +53,7 @@ void EQPresetDetailView::setupUi() {
             return;
         if (m_preset.name != text.toStdString()) {
             m_preset.name = text.toStdString();
-            m_pipeline->updateEQPreset(m_preset);
+            applyConfig();
         }
     });
     headerLayout->addWidget(m_nameEdit);
@@ -189,7 +189,7 @@ void EQPresetDetailView::setupUi() {
                 b.gain = g;
 
             m_diagramWidget->setPreset(m_preset);
-            m_pipeline->updateEQPreset(m_preset);
+            applyConfig();
             refreshUi();
         }
     };
@@ -204,7 +204,7 @@ void EQPresetDetailView::setupUi() {
                 band.q = val;
             }
             m_diagramWidget->setPreset(m_preset);
-            m_pipeline->updateEQPreset(m_preset);
+            applyConfig();
             refreshUi();
         }
     };
@@ -323,7 +323,7 @@ void EQPresetDetailView::refreshUi() {
         connect(check, &QCheckBox::toggled, [this, i](bool checked) {
             m_preset.bands[i].isEnabled = checked;
             m_diagramWidget->setPreset(m_preset);
-            m_pipeline->updateEQPreset(m_preset);
+            applyConfig();
         });
         checkLayout->addWidget(check);
         m_bandsTable->setCellWidget(row, 0, checkWidget);
@@ -346,7 +346,7 @@ void EQPresetDetailView::refreshUi() {
         connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, typeCombo]() {
             m_preset.bands[i].type = static_cast<EQBandType>(typeCombo->currentData().toInt());
             m_diagramWidget->setPreset(m_preset);
-            m_pipeline->updateEQPreset(m_preset);
+            applyConfig();
             refreshUi();
         });
         m_bandsTable->setCellWidget(row, 2, typeCombo);
@@ -370,7 +370,7 @@ void EQPresetDetailView::refreshUi() {
                 connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, setter](double v) {
                     setter(v);
                     m_diagramWidget->setPreset(m_preset);
-                    m_pipeline->updateEQPreset(m_preset);
+                    applyConfig();
                 });
                 l->addWidget(spin);
                 return container;
@@ -393,7 +393,7 @@ void EQPresetDetailView::refreshUi() {
             connect(fcSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].freqNotch = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             notchBox->addWidget(new QLabel("Fc:"));
             notchBox->addWidget(fcSpin);
@@ -404,7 +404,7 @@ void EQPresetDetailView::refreshUi() {
             connect(fpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].freqPole = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             notchBox->addWidget(new QLabel("Fp:"));
             notchBox->addWidget(fpSpin);
@@ -415,7 +415,7 @@ void EQPresetDetailView::refreshUi() {
             connect(qpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].qPole = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             notchBox->addWidget(new QLabel("Qp:"));
             notchBox->addWidget(qpSpin);
@@ -425,7 +425,7 @@ void EQPresetDetailView::refreshUi() {
             connect(normCheck, &QCheckBox::toggled, [this, i](bool chk) {
                 m_preset.bands[i].normalizeAtDc = chk;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             notchBox->addWidget(normCheck);
 
@@ -442,7 +442,7 @@ void EQPresetDetailView::refreshUi() {
             connect(faSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].freqAct = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             ltBox->addWidget(new QLabel("Fa:"));
             ltBox->addWidget(faSpin);
@@ -453,7 +453,7 @@ void EQPresetDetailView::refreshUi() {
             connect(qaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].qAct = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             ltBox->addWidget(new QLabel("Qa:"));
             ltBox->addWidget(qaSpin);
@@ -464,7 +464,7 @@ void EQPresetDetailView::refreshUi() {
             connect(ftSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].freqTarget = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             ltBox->addWidget(new QLabel("Ft:"));
             ltBox->addWidget(ftSpin);
@@ -475,7 +475,7 @@ void EQPresetDetailView::refreshUi() {
             connect(qtSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
                 m_preset.bands[i].qTarget = v;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             ltBox->addWidget(new QLabel("Qt:"));
             ltBox->addWidget(qtSpin);
@@ -492,7 +492,7 @@ void EQPresetDetailView::refreshUi() {
             connect(freqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double val) {
                 m_preset.bands[i].freq = val;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             m_bandsTable->setCellWidget(row, 3, freqSpin);
         }
@@ -506,7 +506,7 @@ void EQPresetDetailView::refreshUi() {
             connect(gainSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double val) {
                 m_preset.bands[i].gain = val;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             m_bandsTable->setCellWidget(row, 4, gainSpin);
         } else {
@@ -533,7 +533,7 @@ void EQPresetDetailView::refreshUi() {
                 else
                     band.q = val;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
             });
             qBox->addWidget(qSpin);
 
@@ -543,7 +543,7 @@ void EQPresetDetailView::refreshUi() {
                 connect(toggleBtn, &QPushButton::clicked, [this, i]() {
                     m_preset.bands[i].useSlope = !m_preset.bands[i].useSlope;
                     m_diagramWidget->setPreset(m_preset);
-                    m_pipeline->updateEQPreset(m_preset);
+                    applyConfig();
                     refreshUi();
                 });
                 qBox->addWidget(toggleBtn);
@@ -553,7 +553,7 @@ void EQPresetDetailView::refreshUi() {
                 connect(toggleBtn, &QPushButton::clicked, [this, i]() {
                     m_preset.bands[i].useBandwidth = !m_preset.bands[i].useBandwidth;
                     m_diagramWidget->setPreset(m_preset);
-                    m_pipeline->updateEQPreset(m_preset);
+                    applyConfig();
                     refreshUi();
                 });
                 qBox->addWidget(toggleBtn);
@@ -701,7 +701,7 @@ void EQPresetDetailView::updateBandChipsBar() {
             connect(toggleAction, &QAction::triggered, [this, bandIdx]() {
                 m_preset.bands[bandIdx].isEnabled = !m_preset.bands[bandIdx].isEnabled;
                 m_diagramWidget->setPreset(m_preset);
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
                 refreshUi();
             });
 
@@ -715,7 +715,7 @@ void EQPresetDetailView::updateBandChipsBar() {
                 connect(act, &QAction::triggered, [this, bandIdx, t]() {
                     m_preset.bands[bandIdx].type = t;
                     m_diagramWidget->setPreset(m_preset);
-                    m_pipeline->updateEQPreset(m_preset);
+                    applyConfig();
                     refreshUi();
                 });
             }
@@ -767,7 +767,7 @@ void EQPresetDetailView::onImportCSV() {
             if (imported.has_value()) {
                 m_preset.preampGain = imported->preampGain;
                 m_preset.bands = imported->bands;
-                m_pipeline->updateEQPreset(m_preset);
+                applyConfig();
                 refreshUi();
             } else {
                 QMessageBox::warning(this, "Import Error", "Failed to parse CSV file format.");
@@ -792,4 +792,13 @@ void EQPresetDetailView::onApplyCSV() {
 void EQPresetDetailView::onCopyCSV() {
     QApplication::clipboard()->setText(m_csvTextEdit->toPlainText());
     m_csvStatusLabel->setText("Copied to clipboard!");
+}
+
+void EQPresetDetailView::applyConfig() {
+    if (m_pipeline) {
+        m_pipeline->updateEQPreset(m_preset);
+    }
+    if (m_dspController) {
+        m_dspController->applyConfig();
+    }
 }

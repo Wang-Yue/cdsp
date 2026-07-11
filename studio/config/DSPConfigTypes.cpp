@@ -1880,6 +1880,11 @@ MixerConfig MixerConfig::fromJson(const QJsonObject& json) {
             mc.channelsIn = chObj["in"].toInt();
         if (chObj.contains("out"))
             mc.channelsOut = chObj["out"].toInt();
+    } else {
+        if (json.contains("channels_in"))
+            mc.channelsIn = json["channels_in"].toInt();
+        if (json.contains("channels_out"))
+            mc.channelsOut = json["channels_out"].toInt();
     }
     if (json.contains("mapping")) {
         QJsonArray arr = json["mapping"].toArray();
@@ -2140,12 +2145,6 @@ QJsonObject PipelineStep::toJson() const {
     } else {
         if (name.has_value())
             obj["name"] = QString::fromStdString(name.value());
-        if (!names.empty()) {
-            QJsonArray arr;
-            for (const auto& n : names)
-                arr.append(QString::fromStdString(n));
-            obj["names"] = arr;
-        }
     }
     if (bypassed.has_value())
         obj["bypassed"] = bypassed.value();
