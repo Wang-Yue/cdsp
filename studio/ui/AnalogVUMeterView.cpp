@@ -359,6 +359,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.fillRect(rect, glassGrad);
 
     // Border
+    p.setBrush(Qt::NoBrush);
     p.setPen(QPen(QColor(textColor.red(), textColor.green(), textColor.blue(), 50), 1.2));
     p.drawRoundedRect(rect, 6, 6);
 
