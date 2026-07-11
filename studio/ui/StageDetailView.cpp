@@ -162,17 +162,25 @@ void StageDetailView::applyConfig() {
 }
 
 void StageDetailView::refreshUi() {
-    if (m_stageIndex >= m_pipeline->stages.size()) return;
-    const auto& stage = m_pipeline->stages[m_stageIndex];
+    m_isBuildingUi = true;
+    if (m_stageIndex < m_pipeline->stages.size()) {
+        const auto& stage = m_pipeline->stages[m_stageIndex];
 
-    m_nameEdit->setText(QString::fromStdString(stage.name));
-    m_enabledCheck->setChecked(stage.isEnabled);
+        m_nameEdit->blockSignals(true);
+        m_enabledCheck->blockSignals(true);
 
-    buildStageOptionsUi();
+        m_nameEdit->setText(QString::fromStdString(stage.name));
+        m_enabledCheck->setChecked(stage.isEnabled);
+
+        m_nameEdit->blockSignals(false);
+        m_enabledCheck->blockSignals(false);
+
+        buildStageOptionsUi();
+    }
+    m_isBuildingUi = false;
 }
 
 void StageDetailView::buildStageOptionsUi() {
-    m_isBuildingUi = true;
     auto containerLayout = qobject_cast<QVBoxLayout*>(m_optionsContainer->layout());
     QLayoutItem* item;
     while ((item = containerLayout->takeAt(0)) != nullptr) {
@@ -180,10 +188,7 @@ void StageDetailView::buildStageOptionsUi() {
         delete item;
     }
 
-    if (m_stageIndex >= m_pipeline->stages.size()) {
-        m_isBuildingUi = false;
-        return;
-    }
+    if (m_stageIndex >= m_pipeline->stages.size()) return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
     int incomingChannels = (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
@@ -1614,5 +1619,4 @@ void StageDetailView::buildStageOptionsUi() {
 
     default: break;
     }
-    m_isBuildingUi = false;
 }
