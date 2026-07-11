@@ -264,7 +264,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   desc->capability_sets =
       (device_capability_set_t*)calloc(1, sizeof(device_capability_set_t));
   if (!desc->capability_sets) {
-    free_audio_device_descriptor(desc);
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
@@ -274,7 +273,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   set->capabilities =
       (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
   if (!set->capabilities) {
-    free_audio_device_descriptor(desc);
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
@@ -282,7 +280,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   channel_capability_t* cap = &set->capabilities[0];
   cap->channels = (int)target_channels;
 
-  // Probe supported sample rates
   // Probe supported sample rates from a predefined list.
   // We use the ASIO driver's canSampleRate method to check each rate.
   const double PROBE_RATES[] = {
@@ -294,7 +291,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   cap->samplerates = (samplerate_capability_t*)calloc(
       PROBE_RATES_COUNT, sizeof(samplerate_capability_t));
   if (!cap->samplerates) {
-    free_audio_device_descriptor(desc);
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
@@ -335,13 +331,11 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
       rate_cap->samplerate = (int)rate;
       rate_cap->formats = (char**)calloc(1, sizeof(char*));
       if (!rate_cap->formats) {
-        free_audio_device_descriptor(desc);
         SAFE_RELEASE(iasio);
         goto error_cleanup;
       }
       rate_cap->formats[0] = strdup(native_fmt_name);
       if (!rate_cap->formats[0]) {
-        free_audio_device_descriptor(desc);
         SAFE_RELEASE(iasio);
         goto error_cleanup;
       }
@@ -362,6 +356,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
 error_cleanup:
   if (desc) {
     free_audio_device_descriptor(desc);
+    desc = NULL;
   }
   CoUninitialize();
   return NULL;
