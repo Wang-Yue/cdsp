@@ -27,7 +27,7 @@ void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
 
 float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
     double level = static_cast<double>(dbFS);
-    double refLevel = -18.0; // 0 VU = -18 dBFS
+    double refLevel = -18.0 + m_gainCalibrationDb; // 0 VU = -18.0 dBFS + Calibration Offset
     double vu = level - refLevel;
 
     double ratio = std::pow(10.0, vu / 20.0);
@@ -36,7 +36,6 @@ float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
     double norm = (ratio - minR) / (maxR - minR);
     double clippedNorm = std::min(std::max(norm, -0.076), 1.1);
 
-    // SwiftUI AnalogVUMeter uses startAngle = 235 deg, endAngle = 305 deg (70 deg total span)
     // Relative to top vertical (0 deg), needle ranges from -35.0 deg to +35.0 deg.
     double startAngle = -35.0;
     double totalSpan = 70.0;
@@ -55,9 +54,15 @@ void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
 }
 
 void AnalogVUMeterView::onAnimTick() {
-    constexpr float alpha = 0.05404f;
-    float nextL = m_currentAngleL + (m_targetAngleL - m_currentAngleL) * alpha;
-    float nextR = m_currentAngleR + (m_targetAngleR - m_currentAngleR) * alpha;
+    // Ballistic needle inertia/damping physics: y_next = y + (target - y) * 0.2 + momentum
+    constexpr float alpha = 0.20f;
+    float springForceL = (m_targetAngleL - m_currentAngleL) * alpha;
+    m_velocityL = m_velocityL * 0.72f + springForceL;
+    float nextL = m_currentAngleL + m_velocityL;
+
+    float springForceR = (m_targetAngleR - m_currentAngleR) * alpha;
+    m_velocityR = m_velocityR * 0.72f + springForceR;
+    float nextR = m_currentAngleR + m_velocityR;
 
     bool needUpdate = false;
     if (std::abs(nextL - m_currentAngleL) > 0.001f || std::abs(nextR - m_currentAngleR) > 0.001f) {
@@ -88,11 +93,11 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
     int h = height();
     int halfW = (w - 24) / 2;
 
-    drawSingleVU(p, QRect(8, 8, halfW, h - 16), m_currentAngleL, "LEFT", m_peakClipLHold > 0.0f);
-    drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT", m_peakClipRHold > 0.0f);
+    drawSingleVU(p, QRect(8, 8, halfW, h - 16), m_currentAngleL, "LEFT", m_leftDB, m_peakClipLHold > 0.0f);
+    drawSingleVU(p, QRect(16 + halfW, 8, halfW, h - 16), m_currentAngleR, "RIGHT", m_rightDB, m_peakClipRHold > 0.0f);
 }
 
-void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label, bool isClipped) {
+void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label, float levelDb, bool isClipped) {
     if (rect.width() < 20 || rect.height() < 20) return;
 
     p.save();
@@ -153,12 +158,11 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     }
 
     // Main Scale Arc (-35 deg to +35 deg from North, mapped to 55 deg .. 125 deg CCW in Qt)
-    // 90 deg North - 35 deg = 55 deg CCW; 90 deg + 35 deg = 125 deg CCW.
     p.setPen(QPen(arcPenColor, 1.8));
     p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 55 * 16, 70 * 16);
 
     // Red zone (> 0 VU / -18 dBFS)
-    float zeroVUAngle = computeAngleForLevel(-18.0f); // ~ +13.02 deg right of North => 76.98 deg CCW
+    float zeroVUAngle = computeAngleForLevel(-18.0f + m_gainCalibrationDb); // ~ +13.02 deg right of North
     double zeroVU_CCW = 90.0 - zeroVUAngle;
     double redSpan_CCW = zeroVU_CCW - 55.0; // from 0 VU to +3 VU (55 deg CCW)
     p.setPen(QPen(redPenColor, 4));
@@ -173,7 +177,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     };
 
     for (const auto& m : marks) {
-        float angle = computeAngleForLevel(-18.0f + m.vu);
+        float angle = computeAngleForLevel(-18.0f + m_gainCalibrationDb + m.vu);
         double rad = (angle - 90.0) * M_PI / 180.0;
 
         double xInner = pivot.x() + radius * std::cos(rad);
@@ -215,7 +219,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     p.translate(pivot);
     p.rotate(angleDeg);
 
-    // Dynamic Needle Drop Shadow (offset for realistic depth according to theme)
+    // Dynamic Needle Drop Shadow
     QColor needleShadowColor;
     if (m_settings.theme == VUTheme::VintageAmber) {
         needleShadowColor = QColor(61, 47, 33, 75);
@@ -239,20 +243,44 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
 
     p.restore();
 
-    // Peak Clip Indicator Lamp (Top Right)
-    QPointF ledPos(rect.right() - 20, rect.top() + 20);
+    // 1. Active Signal Indicator LED Lamp (Top Left)
+    QPointF signalLedPos(rect.left() + 20, rect.top() + 20);
+    p.setPen(QPen(QColor("#111111"), 1));
+    bool isSignalActive = (levelDb > -50.0f);
+    if (isSignalActive) {
+        QRadialGradient sigGlow(signalLedPos, 10);
+        sigGlow.setColorAt(0.0, QColor(52, 199, 89, 240));
+        sigGlow.setColorAt(0.7, QColor(52, 199, 89, 180));
+        sigGlow.setColorAt(1.0, QColor(52, 199, 89, 0));
+        p.fillRect(QRectF(signalLedPos.x() - 10, signalLedPos.y() - 10, 20, 20), sigGlow);
+        p.setBrush(QColor(52, 199, 89));
+    } else {
+        p.setBrush(QColor("#113a18"));
+    }
+    p.drawEllipse(signalLedPos, 4, 4);
+
+    // 2. Peak Clip Indicator Lamp LED (Top Right)
+    QPointF clipLedPos(rect.right() - 20, rect.top() + 20);
     p.setPen(QPen(QColor("#111111"), 1));
     if (isClipped) {
-        QRadialGradient clipGlow(ledPos, 12);
+        QRadialGradient clipGlow(clipLedPos, 12);
         clipGlow.setColorAt(0.0, QColor(255, 50, 50, 255));
         clipGlow.setColorAt(0.5, QColor(255, 0, 0, 200));
         clipGlow.setColorAt(1.0, QColor(255, 0, 0, 0));
-        p.fillRect(QRectF(ledPos.x() - 12, ledPos.y() - 12, 24, 24), clipGlow);
+        p.fillRect(QRectF(clipLedPos.x() - 12, clipLedPos.y() - 12, 24, 24), clipGlow);
         p.setBrush(QColor("#ff0000"));
     } else {
         p.setBrush(QColor("#4a1111"));
     }
-    p.drawEllipse(ledPos, 5, 5);
+    p.drawEllipse(clipLedPos, 5, 5);
+
+    // Calibration Knob readout badge if offset is non-zero
+    if (std::abs(m_gainCalibrationDb) > 0.01f) {
+        p.setFont(QFont("sans-serif", 7, QFont::Bold));
+        p.setPen(QColor("#8e8e93"));
+        QString calText = QString("CAL %1%2dB").arg(m_gainCalibrationDb >= 0 ? "+" : "").arg(m_gainCalibrationDb, 0, 'f', 1);
+        p.drawText(QRectF(rect.left() + 28, rect.top() + 14, 50, 12), Qt::AlignLeft | Qt::AlignVCenter, calText);
+    }
 
     // Additive Light Wash
     if (m_settings.lightWash > 0) {
@@ -276,7 +304,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     // Label
     p.setFont(QFont("sans-serif", 10, QFont::Bold));
     p.setPen(textColor);
-    p.drawText(rect.center().x() - 20, rect.bottom() - 15, label);
+    p.drawText(rect.center().x() - 25, rect.bottom() - 15, 50, 14, Qt::AlignCenter, label);
 
     p.restore();
 }

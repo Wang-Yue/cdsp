@@ -38,6 +38,7 @@ public:
     void setCaptureConfig(const DeviceConfig& config);
     void setPlaybackConfig(const DeviceConfig& config);
     void setExclusiveMode(bool exclusive);
+    void saveConfigs();
 
     std::function<void()> onConfigChanged;
 
@@ -52,7 +53,6 @@ private:
     bool m_isValidating = false;
 
     void loadSavedConfigs();
-    void saveConfigs();
 };
 
 #endif // AUDIO_DEVICE_MANAGER_H

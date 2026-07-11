@@ -43,6 +43,9 @@ private slots:
     void onApplyCSV();
     void onCopyCSV();
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     EQPreset m_preset;
     std::shared_ptr<PipelineStore> m_pipeline;
@@ -57,6 +60,8 @@ private:
 
     // Mode 0: Diagram
     EQDiagramWidget* m_diagramWidget;
+    QWidget* m_bandChipsWidget = nullptr;
+    class QHBoxLayout* m_chipLayout = nullptr;
 
     // Mode 1: Bands Table Form
     QTableWidget* m_bandsTable;
@@ -68,6 +73,7 @@ private:
     bool m_isRefreshing = false;
 
     void setupUi();
+    void updateBandChipsBar();
 };
 
 #endif // EQ_PRESET_DETAIL_VIEW_H

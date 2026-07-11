@@ -15,7 +15,10 @@ class AutoEqPickerDlg : public QDialog {
     Q_OBJECT
 
 public:
-    AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController = nullptr, QWidget* parent = nullptr);
+public:
+    AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr)
+        : AutoEqPickerDlg(pipeline, nullptr, parent) {}
+    AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
 
 private slots:
     void onSearchTextChanged(const QString& text);

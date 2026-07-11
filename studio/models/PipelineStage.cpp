@@ -78,32 +78,32 @@ StageCategory stageTypeToCategory(StageType type) {
 
 std::string stageTypeToIcon(StageType type) {
     switch (type) {
-    case StageType::Balance: return "dial.low";
-    case StageType::Width: return "arrow.left.and.right";
-    case StageType::MSProc: return "waveform.path";
-    case StageType::PhaseInvert: return "waveform.path.ecg";
-    case StageType::Crossfeed: return "headphones";
-    case StageType::SplitWidth: return "arrow.left.and.right.circle";
-    case StageType::EQ: return "slider.horizontal.3";
-    case StageType::GraphicEQ: return "slider.vertical.3";
-    case StageType::Convolution: return "waveform.badge.magnifyingglass";
-    case StageType::Loudness: return "ear";
-    case StageType::Emphasis: return "waveform";
-    case StageType::DCProtection: return "bolt.shield";
-    case StageType::Gain: return "plus.minus";
-    case StageType::Volume: return "speaker.wave.3";
-    case StageType::Delay: return "clock";
-    case StageType::LookaheadLimiter: return "square.slash";
-    case StageType::MatrixMixer: return "grid";
-    case StageType::Compressor: return "arrow.up.right.and.arrow.down.left.rectangle";
-    case StageType::NoiseGate: return "waveform.badge.minus";
-    case StageType::RACE: return "speaker.wave.2.bubble";
-    case StageType::Dither: return "square.grid.3x1.below.line.grid.1x2";
-    case StageType::DiffEq: return "function";
-    case StageType::BiquadCombo: return "arrow.up.and.down.and.arrow.left.and.right";
-    case StageType::Limiter: return "scissors";
+    case StageType::Balance: return "🎛️";
+    case StageType::Width: return "↔️";
+    case StageType::MSProc: return "🌊";
+    case StageType::PhaseInvert: return "🔄";
+    case StageType::Crossfeed: return "🎧";
+    case StageType::SplitWidth: return "🔀";
+    case StageType::EQ: return "🎚️";
+    case StageType::GraphicEQ: return "🎛️";
+    case StageType::Convolution: return "🌊";
+    case StageType::Loudness: return "👂";
+    case StageType::Emphasis: return "📈";
+    case StageType::DCProtection: return "⚡";
+    case StageType::Gain: return "➕";
+    case StageType::Volume: return "🔊";
+    case StageType::Delay: return "⏱️";
+    case StageType::LookaheadLimiter: return "🧱";
+    case StageType::MatrixMixer: return "🔳";
+    case StageType::Compressor: return "🗜️";
+    case StageType::NoiseGate: return "🚪";
+    case StageType::RACE: return "🗣️";
+    case StageType::Dither: return "🎲";
+    case StageType::DiffEq: return "📐";
+    case StageType::BiquadCombo: return "🎚️";
+    case StageType::Limiter: return "✂️";
     }
-    return "slider.horizontal.3";
+    return "🎚️";
 }
 
 std::string crossfeedLevelToString(CrossfeedLevel l) {

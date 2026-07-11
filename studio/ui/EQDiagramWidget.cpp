@@ -31,6 +31,15 @@ void EQDiagramWidget::setSelectedBandIndex(int index) {
     update();
 }
 
+QColor EQDiagramWidget::bandColor(int index) {
+    static const QColor colors[] = {
+        QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"),
+        QColor("#34c759"), QColor("#007aff"), QColor("#af52de"),
+        QColor("#5856d6"), QColor("#ff2d55"), QColor("#a2845e")
+    };
+    return colors[std::abs(index) % 9];
+}
+
 double EQDiagramWidget::freqToX(double f, double width) const {
     double minLog = std::log10(fMin);
     double maxLog = std::log10(fMax);
@@ -160,13 +169,6 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Individual Band Curves
-    const QColor colors[] = {
-        QColor("#ff3b30"), QColor("#ff9500"), QColor("#ffcc00"),
-        QColor("#34c759"), QColor("#007aff"), QColor("#af52de"),
-        QColor("#5856d6"), QColor("#ff2d55"), QColor("#a2845e")
-    };
-    int numColors = 9;
-
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {
         const auto& band = m_preset.bands[i];
         if (!band.isEnabled) continue;
@@ -179,7 +181,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             if (x == 0) path.moveTo(x, y);
             else path.lineTo(x, y);
         }
-        QColor c = colors[i % numColors];
+        QColor c = bandColor(static_cast<int>(i));
         bool isSelected = (static_cast<int>(i) == m_selectedIndex);
         bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
         c.setAlpha(isSelected ? 220 : (isHovered ? 140 : 70));
@@ -231,7 +233,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
         bool isSelected = (static_cast<int>(i) == m_selectedIndex);
         bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
-        QColor c = colors[i % numColors];
+        QColor c = bandColor(static_cast<int>(i));
 
         // Draw selection / hover outer glow ring
         if (isSelected) {

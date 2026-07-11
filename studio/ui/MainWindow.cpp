@@ -43,11 +43,16 @@ class SidebarToggleRowWidget : public QWidget {
 public:
     SidebarToggleRowWidget(QTreeWidget* tree, QTreeWidgetItem* item, const QString& title, bool isChecked, std::function<void(bool)> onToggle, std::function<void()> onRowClick, QWidget* parent = nullptr)
         : QWidget(parent), m_tree(tree), m_item(item), m_onToggle(onToggle), m_onRowClick(onRowClick) {
+        setAutoFillBackground(false);
+        setAttribute(Qt::WA_StyledBackground, true);
+        setStyleSheet("QWidget { background: transparent; }");
+
         auto layout = new QHBoxLayout(this);
-        layout->setContentsMargins(4, 1, 6, 1);
-        layout->setSpacing(4);
+        layout->setContentsMargins(4, 2, 8, 2);
+        layout->setSpacing(6);
 
         m_label = new QLabel(title, this);
+        m_label->setStyleSheet("QLabel { background: transparent; color: inherit; }");
         layout->addWidget(m_label);
 
         layout->addStretch();
@@ -55,7 +60,7 @@ public:
         m_checkbox = new QCheckBox(this);
         m_checkbox->setFocusPolicy(Qt::NoFocus);
         m_checkbox->setChecked(isChecked);
-        m_checkbox->setStyleSheet("QCheckBox::indicator { width: 14px; height: 14px; }");
+        m_checkbox->setStyleSheet("QCheckBox { background: transparent; } QCheckBox::indicator { width: 14px; height: 14px; }");
         layout->addWidget(m_checkbox);
 
         connect(m_checkbox, &QCheckBox::toggled, this, [this](bool checked) {
@@ -621,7 +626,24 @@ void MainWindow::refreshSidebarItems() {
         auto sItem = new QTreeWidgetItem(pipeGroup);
         sItem->setData(0, Qt::UserRole, QString("stage_%1").arg(i));
         std::string icon = stageTypeToIcon(stage.type);
-        QString stageTitle = QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(stage.name));
+
+        QString rawName = QString::fromStdString(stage.name);
+        static const QStringList legacySymbols = {
+            "speaker.wave.3", "arrow.left.and.right", "slider.vertical.3", "slider.horizontal.3",
+            "waveform.path.ecg", "waveform.path", "headphones", "arrow.left.and.right.circle",
+            "ear", "waveform", "bolt.shield", "plus.minus", "clock", "square.slash", "grid",
+            "arrow.up.right.and.arrow.down.left.rectangle", "waveform.badge.minus",
+            "speaker.wave.2.bubble", "square.grid.3x1.below.line.grid.1x2", "function",
+            "arrow.up.and.down.and.arrow.left.and.right", "scissors", "dial.low"
+        };
+        for (const auto& sym : legacySymbols) {
+            if (rawName.startsWith(sym)) {
+                rawName = rawName.mid(sym.length()).trimmed();
+                break;
+            }
+        }
+
+        QString stageTitle = QString("%1  %2").arg(QString::fromStdString(icon), rawName);
         auto stageW = new SidebarToggleRowWidget(m_sidebarTree, sItem, stageTitle, stage.isEnabled, [this, i](bool c) {
             if (i < m_pipeline->stages.size()) {
                 m_pipeline->stages[i].isEnabled = c;
@@ -709,10 +731,10 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
             handleNavigationTag(m_lastActiveTag);
         }
     } else if (tag == "auto_eq") {
-        AutoEqPickerDlg dlg(m_pipeline, this);
+        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
     } else if (tag == "oratory_eq") {
-        OratoryPresetPickerDlg dlg(m_pipeline, this);
+        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
     } else if (tag == "import_conv") {
         ConvolutionImportDlg dlg(m_pipeline, this);

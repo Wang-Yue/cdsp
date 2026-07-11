@@ -17,9 +17,9 @@ void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
     m_engine = engine;
     if (m_engine) {
         connect(m_engine.get(), &SpectrogramEngine::updated, this, [this]() {
-            if (m_engine) setHistory(m_engine->history, m_engine->show3D);
+            if (m_engine) setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
         });
-        setHistory(m_engine->history, m_engine->show3D);
+        setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     }
 }
 
@@ -33,25 +33,101 @@ void SpectrogramView::hideEvent(QHideEvent* event) {
     if (m_engine && m_engine->visibilityCount > 0) m_engine->visibilityCount--;
 }
 
-void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool show3D) {
+void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool show3D, ColorPalette palette) {
     m_history = history;
     m_show3D = show3D;
+    m_palette = palette;
     update();
 }
 
-QColor SpectrogramView::colorForDB(float db) {
+static QColor interpColors(float t, const std::vector<QColor>& stops) {
+    if (stops.empty()) return QColor(0, 0, 0);
+    if (stops.size() == 1 || t <= 0.0f) return stops.front();
+    if (t >= 1.0f) return stops.back();
+
+    float scaled = t * (stops.size() - 1);
+    size_t idx = static_cast<size_t>(scaled);
+    float frac = scaled - idx;
+
+    const QColor& c1 = stops[idx];
+    const QColor& c2 = stops[idx + 1];
+
+    int r = static_cast<int>(c1.red() + frac * (c2.red() - c1.red()));
+    int g = static_cast<int>(c1.green() + frac * (c2.green() - c1.green()));
+    int b = static_cast<int>(c1.blue() + frac * (c2.blue() - c1.blue()));
+    int a = static_cast<int>(c1.alpha() + frac * (c2.alpha() - c1.alpha()));
+    return QColor(r, g, b, a);
+}
+
+QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
-    if (norm < 0.35f) {
-        return QColor(52, 199, 89, static_cast<int>(255 * norm / 0.35f));
-    } else if (norm < 0.55f) {
-        float t = (norm - 0.35f) / 0.2f;
-        return QColor(static_cast<int>(255 * t), 204, 0);
-    } else if (norm < 0.75f) {
-        float t = (norm - 0.55f) / 0.2f;
-        return QColor(255, static_cast<int>(149 + 56 * (1.0f - t)), 0);
-    } else {
-        float t = (norm - 0.75f) / 0.25f;
-        return QColor(255, static_cast<int>(59 * (1.0f - t)), 50);
+
+    switch (palette) {
+    case ColorPalette::Viridis: {
+        static const std::vector<QColor> viridisStops = {
+            QColor(68, 1, 84),
+            QColor(59, 82, 139),
+            QColor(33, 145, 140),
+            QColor(94, 201, 98),
+            QColor(253, 231, 37)
+        };
+        return interpColors(norm, viridisStops);
+    }
+    case ColorPalette::Magma: {
+        static const std::vector<QColor> magmaStops = {
+            QColor(0, 0, 4),
+            QColor(81, 18, 124),
+            QColor(182, 54, 121),
+            QColor(251, 136, 97),
+            QColor(252, 253, 191)
+        };
+        return interpColors(norm, magmaStops);
+    }
+    case ColorPalette::Plasma: {
+        static const std::vector<QColor> plasmaStops = {
+            QColor(13, 8, 135),
+            QColor(126, 3, 168),
+            QColor(204, 71, 120),
+            QColor(248, 149, 64),
+            QColor(240, 249, 33)
+        };
+        return interpColors(norm, plasmaStops);
+    }
+    case ColorPalette::Inferno: {
+        static const std::vector<QColor> infernoStops = {
+            QColor(0, 0, 4),
+            QColor(87, 16, 110),
+            QColor(187, 55, 84),
+            QColor(249, 142, 9),
+            QColor(252, 255, 164)
+        };
+        return interpColors(norm, infernoStops);
+    }
+    case ColorPalette::Jet: {
+        static const std::vector<QColor> jetStops = {
+            QColor(0, 0, 143),
+            QColor(0, 222, 255),
+            QColor(163, 255, 87),
+            QColor(255, 153, 0),
+            QColor(128, 0, 0)
+        };
+        return interpColors(norm, jetStops);
+    }
+    case ColorPalette::Default:
+    default: {
+        if (norm < 0.35f) {
+            return QColor(52, 199, 89, static_cast<int>(255 * norm / 0.35f));
+        } else if (norm < 0.55f) {
+            float t = (norm - 0.35f) / 0.2f;
+            return QColor(static_cast<int>(255 * t), 204, 0);
+        } else if (norm < 0.75f) {
+            float t = (norm - 0.55f) / 0.2f;
+            return QColor(255, static_cast<int>(149 + 56 * (1.0f - t)), 0);
+        } else {
+            float t = (norm - 0.75f) / 0.25f;
+            return QColor(255, static_cast<int>(59 * (1.0f - t)), 50);
+        }
+    }
     }
 }
 
@@ -101,7 +177,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
                 int binH = std::max(1, yBottom - yTop);
 
                 float db = spec.magnitudes[bin];
-                p.fillRect(x, yTop, colW, binH, colorForDB(db));
+                p.fillRect(x, yTop, colW, binH, colorForDB(db, m_palette));
             }
         }
 
@@ -234,7 +310,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             // Smooth log-frequency & depth age combined color mapping
             float tf = static_cast<float>(t);
             QColor sliceDepthColor = QColor::fromHsvF(0.6f - 0.45f * tf, 0.85f, 0.95f, 0.3f + 0.7f * tf);
-            QColor magColor = colorForDB(maxDbInFrame);
+            QColor magColor = colorForDB(maxDbInFrame, m_palette);
 
             QColor sliceColor = QColor::fromRgbF(
                 0.4f * sliceDepthColor.redF() + 0.6f * magColor.redF(),

@@ -31,10 +31,13 @@ std::string firKindToString(FIRKind kind) {
 std::string displaySmoothingToString(DisplaySmoothing s) {
     switch (s) {
     case DisplaySmoothing::Off: return "Off";
+    case DisplaySmoothing::Oct1over1: return "1/1 oct";
     case DisplaySmoothing::Oct1over3: return "1/3 oct";
     case DisplaySmoothing::Oct1over6: return "1/6 oct";
     case DisplaySmoothing::Oct1over12: return "1/12 oct";
     case DisplaySmoothing::Oct1over24: return "1/24 oct";
+    case DisplaySmoothing::Oct1over48: return "1/48 oct";
+    case DisplaySmoothing::Variable: return "Var (ERB)";
     }
     return "1/6 oct";
 }
@@ -57,10 +60,13 @@ std::vector<double> MeasurementSession::displayedMagDB() const {
     double octaves = 0.0;
     switch (displaySmoothing) {
     case DisplaySmoothing::Off: return measuredMagDB;
+    case DisplaySmoothing::Oct1over1: octaves = 1.0; break;
     case DisplaySmoothing::Oct1over3: octaves = 1.0 / 3.0; break;
     case DisplaySmoothing::Oct1over6: octaves = 1.0 / 6.0; break;
     case DisplaySmoothing::Oct1over12: octaves = 1.0 / 12.0; break;
     case DisplaySmoothing::Oct1over24: octaves = 1.0 / 24.0; break;
+    case DisplaySmoothing::Oct1over48: octaves = 1.0 / 48.0; break;
+    case DisplaySmoothing::Variable: octaves = 1.0 / 12.0; break;
     }
     return PEQAutoFit::smoothLogOctave(measuredMagDB, grid, octaves);
 }

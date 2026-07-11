@@ -25,6 +25,8 @@ public:
     void setShowAnalyzer(bool show) { m_showAnalyzer = show; update(); }
     void setShowLoudnessContour(bool show) { m_showLoudnessContour = show; update(); }
 
+    static QColor bandColor(int index);
+
     bool showAnalyzer() const { return m_showAnalyzer; }
     bool showLoudnessContour() const { return m_showLoudnessContour; }
     int selectedBandIndex() const { return m_selectedIndex; }

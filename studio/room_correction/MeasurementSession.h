@@ -27,7 +27,7 @@ enum class FIRKind {
 std::string firKindToString(FIRKind kind);
 
 enum class DisplaySmoothing {
-    Off, Oct1over3, Oct1over6, Oct1over12, Oct1over24
+    Off, Oct1over1, Oct1over3, Oct1over6, Oct1over12, Oct1over24, Oct1over48, Variable
 };
 std::string displaySmoothingToString(DisplaySmoothing s);
 

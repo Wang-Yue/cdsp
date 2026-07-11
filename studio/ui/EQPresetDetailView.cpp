@@ -8,6 +8,9 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QApplication>
+#include <QScrollArea>
+#include <QMenu>
+#include <QAction>
 #include "ui/AutoEqPickerDlg.h"
 #include "ui/OratoryPresetPickerDlg.h"
 #include <fstream>
@@ -164,8 +167,13 @@ void EQPresetDetailView::setupUi() {
     // Mode Stack
     m_modeStack = new QStackedWidget(this);
 
-    // Mode 0: Interactive Diagram
-    m_diagramWidget = new EQDiagramWidget(this);
+    // Mode 0: Interactive Diagram with Bottom Horizontal Band Chips Bar
+    auto diagramModeWidget = new QWidget(this);
+    auto diagramModeLayout = new QVBoxLayout(diagramModeWidget);
+    diagramModeLayout->setContentsMargins(0, 0, 0, 0);
+    diagramModeLayout->setSpacing(8);
+
+    m_diagramWidget = new EQDiagramWidget(diagramModeWidget);
     m_diagramWidget->setPipelineStore(m_pipeline);
     m_diagramWidget->onBandDragged = [this](int idx, double f, double g) {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
@@ -202,8 +210,39 @@ void EQPresetDetailView::setupUi() {
         } else {
             m_bandsTable->clearSelection();
         }
+        updateBandChipsBar();
     };
-    m_modeStack->addWidget(m_diagramWidget);
+    diagramModeLayout->addWidget(m_diagramWidget, 1);
+
+    // Bottom Band Chips Bar
+    auto chipsBarLayout = new QHBoxLayout();
+    chipsBarLayout->setContentsMargins(0, 0, 0, 0);
+    chipsBarLayout->setSpacing(8);
+
+    auto chipsScroll = new QScrollArea(diagramModeWidget);
+    chipsScroll->setWidgetResizable(true);
+    chipsScroll->setFixedHeight(62);
+    chipsScroll->setFrameShape(QFrame::NoFrame);
+    chipsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    chipsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    m_bandChipsWidget = new QWidget(chipsScroll);
+    m_chipLayout = new QHBoxLayout(m_bandChipsWidget);
+    m_chipLayout->setContentsMargins(0, 0, 0, 0);
+    m_chipLayout->setSpacing(6);
+    chipsScroll->setWidget(m_bandChipsWidget);
+
+    chipsBarLayout->addWidget(chipsScroll, 1);
+
+    auto quickAddBtn = new QPushButton("➕ Add", diagramModeWidget);
+    quickAddBtn->setToolTip("Add new EQ filter band");
+    quickAddBtn->setFixedWidth(64);
+    connect(quickAddBtn, &QPushButton::clicked, this, &EQPresetDetailView::onAddBand);
+    chipsBarLayout->addWidget(quickAddBtn, 0, Qt::AlignVCenter);
+
+    diagramModeLayout->addLayout(chipsBarLayout);
+
+    m_modeStack->addWidget(diagramModeWidget);
 
     // Mode 1: Bands Form Table
     m_bandsTable = new QTableWidget(this);
@@ -470,7 +509,156 @@ void EQPresetDetailView::refreshUi() {
         });
         m_bandsTable->setCellWidget(row, 6, delBtn);
     }
+    updateBandChipsBar();
     m_isRefreshing = false;
+}
+
+bool EQPresetDetailView::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonPress) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            QVariant bandIdxVar = watched->property("bandIndex");
+            if (bandIdxVar.isValid()) {
+                int idx = bandIdxVar.toInt();
+                m_diagramWidget->setSelectedBandIndex(idx);
+                if (idx >= 0 && idx < m_bandsTable->rowCount()) {
+                    m_bandsTable->selectRow(idx);
+                }
+                updateBandChipsBar();
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void EQPresetDetailView::updateBandChipsBar() {
+    if (!m_chipLayout) return;
+
+    // Clear existing chips
+    QLayoutItem* item;
+    while ((item = m_chipLayout->takeAt(0)) != nullptr) {
+        if (item->widget()) item->widget()->deleteLater();
+        delete item;
+    }
+
+    int activeIdx = m_diagramWidget->selectedBandIndex();
+
+    for (size_t i = 0; i < m_preset.bands.size(); ++i) {
+        auto& b = m_preset.bands[i];
+        int bandIdx = static_cast<int>(i);
+        QColor color = EQDiagramWidget::bandColor(bandIdx);
+        bool isSelected = (bandIdx == activeIdx);
+
+        auto chip = new QWidget(m_bandChipsWidget);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setContextMenuPolicy(Qt::CustomContextMenu);
+
+        QString bgStyle;
+        if (isSelected) {
+            bgStyle = QString("background-color: rgba(%1, %2, %3, 50); border: 1.5px solid rgb(%1, %2, %3); border-radius: 6px;")
+                          .arg(color.red()).arg(color.green()).arg(color.blue());
+        } else {
+            bgStyle = QString("background-color: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 6px;");
+        }
+        chip->setStyleSheet(bgStyle);
+
+        auto chipHBox = new QHBoxLayout(chip);
+        chipHBox->setContentsMargins(8, 4, 8, 4);
+        chipHBox->setSpacing(6);
+
+        // Colored circle indicator
+        auto dot = new QWidget(chip);
+        dot->setFixedSize(8, 8);
+        dot->setStyleSheet(QString("background-color: %1; border-radius: 4px;").arg(color.name()));
+        chipHBox->addWidget(dot, 0, Qt::AlignVCenter);
+
+        // Text Content
+        auto textVBox = new QVBoxLayout();
+        textVBox->setContentsMargins(0, 0, 0, 0);
+        textVBox->setSpacing(1);
+
+        QString textCol = b.isEnabled ? "#ffffff" : "#8e8e93";
+
+        // Line 1: #Index Type
+        auto titleLbl = new QLabel(QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToShortName(b.type))), chip);
+        titleLbl->setStyleSheet(QString("color: %1; font-weight: %2; font-size: 11px;")
+                                    .arg(textCol).arg(isSelected ? "bold" : "normal"));
+        textVBox->addWidget(titleLbl);
+
+        // Line 2: Freq & Gain / Q
+        if (b.type != EQBandType::Free) {
+            double displayFreq = b.freq;
+            if (b.type == EQBandType::GeneralNotch) displayFreq = b.freqNotch;
+            else if (b.type == EQBandType::LinkwitzTransform) displayFreq = b.freqTarget;
+
+            QString valText = QString("%1Hz").arg(static_cast<int>(std::round(displayFreq)));
+            if (eqBandTypeHasGain(b.type)) {
+                valText += QString(" %1%2dB").arg(b.gain >= 0 ? "+" : "").arg(b.gain, 0, 'f', 1);
+            }
+            if (eqBandTypeHasQ(b.type)) {
+                if (b.type == EQBandType::GeneralNotch) valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
+                else if (b.type == EQBandType::LinkwitzTransform) valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
+                else if (b.useSlope) valText += QString(" S:%1").arg(b.slope, 0, 'f', 1);
+                else if (b.useBandwidth) valText += QString(" BW:%1").arg(b.bandwidth, 0, 'f', 2);
+                else valText += QString(" Q:%1").arg(b.q, 0, 'f', 2);
+            }
+
+            auto valLbl = new QLabel(valText, chip);
+            valLbl->setStyleSheet(QString("color: %1; font-family: monospace; font-size: 10px;").arg(textCol));
+            textVBox->addWidget(valLbl);
+        }
+
+        chipHBox->addLayout(textVBox);
+
+        chip->installEventFilter(this);
+        chip->setProperty("bandIndex", bandIdx);
+
+        // Context Menu
+        connect(chip, &QWidget::customContextMenuRequested, [this, bandIdx](const QPoint& pos) {
+            auto sourceWidget = qobject_cast<QWidget*>(sender());
+            QMenu menu(this);
+            auto& band = m_preset.bands[bandIdx];
+
+            auto toggleAction = menu.addAction(band.isEnabled ? "Disable Band" : "Enable Band");
+            connect(toggleAction, &QAction::triggered, [this, bandIdx]() {
+                m_preset.bands[bandIdx].isEnabled = !m_preset.bands[bandIdx].isEnabled;
+                m_diagramWidget->setPreset(m_preset);
+                m_pipeline->updateEQPreset(m_preset);
+                refreshUi();
+            });
+
+            auto typeMenu = menu.addMenu("Change Type");
+            for (EQBandType t : {
+                EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf,
+                EQBandType::Lowpass, EQBandType::Highpass, EQBandType::LowpassFO,
+                EQBandType::HighpassFO, EQBandType::LowshelfFO, EQBandType::HighshelfFO,
+                EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
+                EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch,
+                EQBandType::LinkwitzTransform
+            }) {
+                auto act = typeMenu->addAction(QString::fromStdString(eqBandTypeToString(t)));
+                connect(act, &QAction::triggered, [this, bandIdx, t]() {
+                    m_preset.bands[bandIdx].type = t;
+                    m_diagramWidget->setPreset(m_preset);
+                    m_pipeline->updateEQPreset(m_preset);
+                    refreshUi();
+                });
+            }
+
+            menu.addSeparator();
+            auto delAction = menu.addAction("Delete");
+            connect(delAction, &QAction::triggered, [this, bandIdx]() {
+                onDeleteBand(bandIdx);
+            });
+
+            menu.exec(sourceWidget ? sourceWidget->mapToGlobal(pos) : QCursor::pos());
+        });
+
+        m_chipLayout->addWidget(chip);
+    }
+
+    m_chipLayout->addStretch();
 }
 
 void EQPresetDetailView::onAddBand() {
@@ -505,7 +693,8 @@ void EQPresetDetailView::onImportCSV() {
             ss << file.rdbuf();
             auto imported = EQPreset::fromCSV(ss.str(), m_preset.name);
             if (imported.has_value()) {
-                m_preset = imported.value();
+                m_preset.preampGain = imported->preampGain;
+                m_preset.bands = imported->bands;
                 m_pipeline->updateEQPreset(m_preset);
                 refreshUi();
             } else {
@@ -518,7 +707,8 @@ void EQPresetDetailView::onImportCSV() {
 void EQPresetDetailView::onApplyCSV() {
     auto parsed = EQPreset::fromCSV(m_csvTextEdit->toPlainText().toStdString(), m_preset.name);
     if (parsed.has_value()) {
-        m_preset = parsed.value();
+        m_preset.preampGain = parsed->preampGain;
+        m_preset.bands = parsed->bands;
         m_pipeline->updateEQPreset(m_preset);
         m_csvStatusLabel->setText("Applied EqualizerAPO syntax successfully!");
         refreshUi();

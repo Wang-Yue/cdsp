@@ -15,7 +15,9 @@ class OratoryPresetPickerDlg : public QDialog {
     Q_OBJECT
 
 public:
-    OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController = nullptr, QWidget* parent = nullptr);
+    OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
+        : OratoryPresetPickerDlg(pipeline, nullptr, parent) {}
+    OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
 
 private slots:
     void onSearchTextChanged(const QString& text);

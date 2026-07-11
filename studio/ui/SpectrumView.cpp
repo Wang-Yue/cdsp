@@ -80,39 +80,57 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
 
     int w = width();
     int h = height();
+    int marginL = 45;
     int marginB = 24;
-    int plotH = h - marginB;
+    int marginT = 12;
 
-    // dB Grid lines & labels [-60, -48, -36, -24, -12, 0] dB
-    p.setFont(QFont("sans-serif", 9));
+    int plotW = w - marginL;
+    int plotH = h - marginB - marginT;
+
+    if (plotW < 20 || plotH < 20) return;
+
+    // 1. dB Grid lines & labels [-60, -48, -36, -24, -12, 0] dB
+    p.setFont(QFont("sans-serif", 8));
     for (double db : {0, -12, -24, -36, -48, -60}) {
-        double y = plotH - normDB60(static_cast<float>(db)) * plotH;
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1, Qt::DashLine));
-        p.drawLine(0, y, w, y);
+        double normY = normDB60(static_cast<float>(db));
+        double y = marginT + plotH * (1.0 - normY);
+
+        p.setPen(QPen(QColor(255, 255, 255, 25), 1, Qt::DashLine));
+        p.drawLine(marginL, y, w, y);
+
         p.setPen(QColor("#8e8e93"));
-        p.drawText(4, y - 2, QString("%1 dB").arg(static_cast<int>(db)));
+        p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter, QString("%1 dB").arg(static_cast<int>(db)));
     }
 
-    // Freq Grid lines & labels
+    // 2. Freq Grid lines & log-frequency ticks (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
     double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 20.0;
     double maxF = (m_engine && m_engine->maxFreq > 0) ? m_engine->maxFreq : 20000.0;
     double logMin = std::log10(minF), logMax = std::log10(maxF);
 
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         if (f < minF || f > maxF) continue;
-        double x = (std::log10(f) - logMin) / (logMax - logMin) * w;
+        double fracX = (std::log10(f) - logMin) / (logMax - logMin);
+        double x = marginL + fracX * plotW;
+
+        // Grid line
         p.setPen(QPen(QColor(255, 255, 255, 20), 1, Qt::DashLine));
-        p.drawLine(x, 0, x, plotH);
+        p.drawLine(x, marginT, x, marginT + plotH);
+
+        // Tick mark
+        p.setPen(QPen(QColor(255, 255, 255, 60), 1));
+        p.drawLine(x, marginT + plotH, x, marginT + plotH + 4);
+
+        // Label
         p.setPen(QColor("#8e8e93"));
         QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
-        p.drawText(x - 10, h - 4, label);
+        p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
     }
 
     size_t count = m_data.frequencies.size();
     float spacing = 2.0f;
 
-    // Dynamic gradient audio level bars (green -> yellow -> orange -> red)
-    QLinearGradient barGrad(0, plotH, 0, 0);
+    // 3. Dynamic gradient audio level bars (green -> yellow -> orange -> red)
+    QLinearGradient barGrad(0, marginT + plotH, 0, marginT);
     barGrad.setColorAt(0.0, QColor("#34c759"));
     barGrad.setColorAt(0.35, QColor("#34c759"));
     barGrad.setColorAt(0.55, QColor("#ffcc00"));
@@ -125,41 +143,39 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         float freq = m_data.frequencies[i];
         if (freq < minF || freq > maxF) continue;
 
-        double x = (std::log10(freq) - logMin) / (logMax - logMin) * w;
+        double fracX = (std::log10(freq) - logMin) / (logMax - logMin);
+        double x = marginL + fracX * plotW;
 
-        // Calculate dynamic bar width based on log spacing to neighboring frequency bins
-        double xPrev = (i > 0) ? (std::log10(m_data.frequencies[i - 1]) - logMin) / (logMax - logMin) * w : x - 10.0;
-        double xNext = (i + 1 < count) ? (std::log10(m_data.frequencies[i + 1]) - logMin) / (logMax - logMin) * w : x + 10.0;
+        // Dynamic bar width
+        double xPrev = (i > 0) ? marginL + (std::log10(m_data.frequencies[i - 1]) - logMin) / (logMax - logMin) * plotW : x - 10.0;
+        double xNext = (i + 1 < count) ? marginL + (std::log10(m_data.frequencies[i + 1]) - logMin) / (logMax - logMin) * plotW : x + 10.0;
         double barW = std::max(2.0, (xNext - xPrev) / 2.0 - spacing);
 
         float db = m_data.magnitudes[i];
         float normY = normDB60(db);
         double barHeight = std::max(2.0, static_cast<double>(normY * plotH));
 
-        p.fillRect(QRectF(x - barW / 2.0, plotH - barHeight, barW, barHeight), barGrad);
+        p.fillRect(QRectF(x - barW / 2.0, marginT + plotH - barHeight, barW, barHeight), barGrad);
 
         // Draw Peak Hold Line Segment
         if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
             float peakNormY = m_peakHold[i];
-            double peakY = plotH - static_cast<double>(peakNormY * plotH);
-            p.setPen(QPen(QColor(255, 255, 255, 220), 1.5));
+            double peakY = marginT + plotH - static_cast<double>(peakNormY * plotH);
+            p.setPen(QPen(QColor(255, 255, 255, 240), 1.8));
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
         }
 
-        if (i == 0) curvePath.moveTo(x, plotH - barHeight);
-        else curvePath.lineTo(x, plotH - barHeight);
+        if (i == 0) curvePath.moveTo(x, marginT + plotH - barHeight);
+        else curvePath.lineTo(x, marginT + plotH - barHeight);
     }
 
-    p.setPen(QPen(QColor(255, 255, 255, 140), 1.0));
+    p.setPen(QPen(QColor(255, 255, 255, 120), 1.0));
     p.drawPath(curvePath);
 
-    // Hover readout
-    if (m_isHovered && m_hoverPos.x() >= 0 && m_hoverPos.x() <= w) {
-        double mouseNormX = static_cast<double>(m_hoverPos.x()) / w;
+    // 4. Hover Crosshair & Tooltip Readout Formatting
+    if (m_isHovered && m_hoverPos.x() >= marginL && m_hoverPos.x() <= w && m_hoverPos.y() >= marginT && m_hoverPos.y() <= marginT + plotH) {
+        double mouseNormX = static_cast<double>(m_hoverPos.x() - marginL) / plotW;
         double targetFreq = std::pow(10.0, logMin + mouseNormX * (logMax - logMin));
-
-        p.setPen(QPen(QColor("#ff9500"), 1, Qt::SolidLine));
-        p.drawLine(m_hoverPos.x(), 0, m_hoverPos.x(), plotH);
 
         float nearestDB = -60.0f;
         double minDiff = 1e9;
@@ -171,11 +187,41 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
             }
         }
 
-        QString tooltip = QString("%1 Hz  |  %2 dB").arg(static_cast<int>(targetFreq)).arg(nearestDB, 0, 'f', 1);
+        // Draw vertical and horizontal crosshair lines
+        p.setPen(QPen(QColor(255, 149, 0, 200), 1, Qt::DashLine));
+        p.drawLine(m_hoverPos.x(), marginT, m_hoverPos.x(), marginT + plotH);
+        p.drawLine(marginL, m_hoverPos.y(), w, m_hoverPos.y());
+
+        // Hover intersection point dot
+        p.setBrush(QColor("#ff9500"));
+        p.setPen(QPen(QColor("#ffffff"), 1.5));
+        p.drawEllipse(QPointF(m_hoverPos.x(), m_hoverPos.y()), 4, 4);
+
+        // Tooltip formatting with formatted frequency and dB readout
+        QString freqStr;
+        if (targetFreq >= 1000.0) {
+            freqStr = QString("%1 kHz").arg(targetFreq / 1000.0, 0, 'f', 2);
+        } else {
+            freqStr = QString("%1 Hz").arg(static_cast<int>(targetFreq));
+        }
+        QString tooltip = QString("%1  |  %2 dB").arg(freqStr).arg(nearestDB, 0, 'f', 1);
+
+        int ttW = 150;
+        int ttH = 24;
+        int ttX = m_hoverPos.x() + 10;
+        int ttY = m_hoverPos.y() - 30;
+
+        if (ttX + ttW > w - 4) ttX = m_hoverPos.x() - ttW - 10;
+        if (ttY < marginT + 4) ttY = m_hoverPos.y() + 10;
+
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0, 0, 0, 220));
-        p.drawRoundedRect(m_hoverPos.x() + 8, m_hoverPos.y() - 25, 140, 22, 4, 4);
+        p.setBrush(QColor(15, 20, 30, 230));
+        p.drawRoundedRect(ttX, ttY, ttW, ttH, 5, 5);
+        p.setPen(QPen(QColor("#ff9500"), 1));
+        p.drawRoundedRect(ttX, ttY, ttW, ttH, 5, 5);
+
+        p.setFont(QFont("sans-serif", 8, QFont::Bold));
         p.setPen(QColor("#ffffff"));
-        p.drawText(m_hoverPos.x() + 14, m_hoverPos.y() - 10, tooltip);
+        p.drawText(QRectF(ttX, ttY, ttW, ttH), Qt::AlignCenter, tooltip);
     }
 }

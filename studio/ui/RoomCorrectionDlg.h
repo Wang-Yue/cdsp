@@ -4,9 +4,15 @@
 #include "room_correction/MeasurementSession.h"
 #include "models/PipelineStore.h"
 #include "ui/EQDiagramWidget.h"
+#include "ui/PhasePlotWidget.h"
+#include "ui/ImpulseResponsePlotWidget.h"
+#include "ui/GroupDelayPlotWidget.h"
 #include "ui/WaterfallPlotWidget.h"
+#include "ui/MeasurementPositionRowWidget.h"
 #include <QDialog>
 #include <QTabWidget>
+#include <QStackedWidget>
+#include <QTabBar>
 #include <QListWidget>
 #include <QPushButton>
 #include <QDoubleSpinBox>
@@ -30,6 +36,9 @@ private slots:
     void onGenerateMock();
     void onImportFRD();
     void onExportFRD();
+    void onLoadCalibration();
+    void onClearCalibration();
+    void onLoadTargetCurve();
     void onRunFit();
     void onApplyEQToPipeline();
     void onGenerateFIR();
@@ -41,9 +50,23 @@ private:
 
     QTabWidget* m_tabWidget;
 
-    // Measurement Tab Widgets
+    // Measurement & Multi-Plot Widgets
     QListWidget* m_positionsList;
+    QTabBar* m_plotTabBar;
+    QStackedWidget* m_plotStackedWidget;
+
     EQDiagramWidget* m_frDiagramWidget;
+    PhasePlotWidget* m_phasePlotWidget;
+    ImpulseResponsePlotWidget* m_impulsePlotWidget;
+    GroupDelayPlotWidget* m_groupDelayPlotWidget;
+    WaterfallPlotWidget* m_waterfallWidget;
+
+    // Calibration & Target Curve
+    QLabel* m_calStatusLabel;
+
+    // Analysis / Controls
+    QComboBox* m_fdwCombo;
+    QComboBox* m_smoothingCombo;
 
     // Fit Tab Widgets
     QSpinBox* m_bandCountSpin;
@@ -55,15 +78,11 @@ private:
     // Subwoofer Tab Widgets
     QLabel* m_subResultLabel;
 
-    // Waterfall Tab Widgets
-    WaterfallPlotWidget* m_waterfallWidget;
-
     // FIR Tab Widgets
     QComboBox* m_firKindCombo;
     QSpinBox* m_firTapSpin;
     QSlider* m_firPhaseBlendSlider;
     QLabel* m_firPhaseBlendLabel;
-    QComboBox* m_smoothingCombo;
 
     QLabel* m_statusLabel;
 
@@ -71,7 +90,6 @@ private:
     void setupMeasurementTab(QWidget* tab);
     void setupFitTab(QWidget* tab);
     void setupSubwooferTab(QWidget* tab);
-    void setupWaterfallTab(QWidget* tab);
     void setupFIRTab(QWidget* tab);
 };
 

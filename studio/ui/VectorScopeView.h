@@ -27,6 +27,10 @@ private:
     AudioSamplesData m_samples;
     bool m_showParticles = false;
     bool m_autoScale = true;
+
+    QImage m_persistenceBuffer;
+    float m_phaseCorrSmoothed = 1.0f;
+    float m_balanceSmoothed = 0.0f;
 };
 
 #endif // VECTOR_SCOPE_VIEW_H

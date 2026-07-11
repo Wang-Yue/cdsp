@@ -30,7 +30,16 @@ void MonitoringController::onPollTimer() {
     StateUpdate st = m_engine->getStatus();
     m_dspController->updateStatus(st);
 
-    if (st.state != ProcessingState::Running) return;
+    if (st.state != ProcessingState::Running) {
+        size_t capCh = m_dspController->devices() ? m_dspController->devices()->captureConfig.channels : 2;
+        size_t pbCh = m_dspController->devices() ? m_dspController->devices()->playbackConfig.channels : 2;
+        levelState.reset(capCh, pbCh);
+        if (m_spectrumEngine) m_spectrumEngine->reset();
+        if (m_spectrogramEngine) m_spectrogramEngine->reset();
+        if (m_vectorScopeEngine) m_vectorScopeEngine->reset();
+        emit levelsUpdated();
+        return;
+    }
 
     // Poll VU Levels
     if (levelState.visibilityCount > 0) {
@@ -45,6 +54,8 @@ void MonitoringController::onPollTimer() {
         int specCh = m_spectrumEngine->channel.value_or(-1);
         if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq, m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
             m_spectrumEngine->update(specData);
+        } else {
+            m_spectrumEngine->reset();
         }
     }
 
@@ -54,6 +65,8 @@ void MonitoringController::onPollTimer() {
         int spectroCh = m_spectrogramEngine->channel.value_or(-1);
         if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq, m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
             m_spectrogramEngine->pushSpectrum(spectroData);
+        } else {
+            m_spectrogramEngine->reset();
         }
     }
 
@@ -62,6 +75,8 @@ void MonitoringController::onPollTimer() {
         AudioSamplesData samples;
         if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
             m_vectorScopeEngine->update(samples);
+        } else {
+            m_vectorScopeEngine->reset();
         }
     }
 }
