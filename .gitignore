@@ -1,0 +1,8 @@
+.build/
+.build-make/
+bin/
+*.o
+*.a
+*.dSYM
+.DS_Store
+target/
