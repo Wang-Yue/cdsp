@@ -227,7 +227,6 @@ void ConsoleLogsView::copySelectedLogs() {
     }
     QGuiApplication::clipboard()->setText(textRows.join("\n"));
 }
-}
 
 void ConsoleLogsView::copyAllLogs() {
     QStringList textRows;
