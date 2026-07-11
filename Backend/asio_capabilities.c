@@ -242,7 +242,8 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
-  snprintf(desc->name, sizeof(desc->name), "%s", device_name);
+  snprintf(desc->name, sizeof(desc->name), "%s",
+           device_name ? device_name : "");
 
   desc->capability_sets_count = 1;
   desc->capability_sets =

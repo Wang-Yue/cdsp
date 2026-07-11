@@ -330,7 +330,8 @@ IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
   HRESULT hr;
   IMMDevice* device = NULL;
 
-  if (device_name[0] == '\0' || strcmp(device_name, "default") == 0) {
+  if (!device_name || device_name[0] == '\0' ||
+      strcmp(device_name, "default") == 0) {
     hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(
         enumerator, is_capture ? eCapture : eRender, eConsole, &device);
     if (SUCCEEDED(hr)) {
