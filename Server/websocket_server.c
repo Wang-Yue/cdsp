@@ -939,19 +939,13 @@ static void cjson_merge_patch(cJSON* target, const cJSON* patch) {
  * @param out Output buffer.
  * @param max_len Maximum length of the output buffer.
  */
-static void format_double_array(const double* arr, size_t count, char* out,
-                                size_t max_len) {
-  if (count == 0) {
-    snprintf(out, max_len, "[]");
-    return;
-  }
-  size_t offset = 0;
-  offset += snprintf(out + offset, max_len - offset, "[");
-  for (size_t i = 0; i < count; i++) {
-    offset += snprintf(out + offset, max_len - offset, "%.17g%s", arr[i],
-                       (i + 1 < count) ? "," : "");
-  }
-  snprintf(out + offset, max_len - offset, "]");
+static char* format_double_array(const double* arr, size_t count) {
+  if (count == 0) return strdup("[]");
+  cJSON* json_arr = cJSON_CreateDoubleArray(arr, (int)count);
+  if (!json_arr) return NULL;
+  char* str = cJSON_PrintUnformatted(json_arr);
+  cJSON_Delete(json_arr);
+  return str;
 }
 
 /**
@@ -965,41 +959,52 @@ static void format_double_array(const double* arr, size_t count, char* out,
  * @param out Output buffer.
  * @param max_len Maximum length of the output buffer.
  */
-static void format_device_descriptor(const audio_device_descriptor_t* desc,
-                                     char* out, size_t max_len) {
-  if (!desc) {
-    snprintf(out, max_len, "null");
-    return;
-  }
-  size_t offset = 0;
-  offset += snprintf(out + offset, max_len - offset,
-                     "{\"name\":\"%s\",\"capability_sets\":[", desc->name);
+static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
+  if (!desc) return strdup("null");
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "name", desc->name);
+
+  cJSON* cs_arr = cJSON_CreateArray();
+  cJSON_AddItemToObject(root, "capability_sets", cs_arr);
+
   for (size_t cs_idx = 0; cs_idx < desc->capability_sets_count; cs_idx++) {
     const device_capability_set_t* cs = &desc->capability_sets[cs_idx];
-    offset += snprintf(out + offset, max_len - offset, "{\"capabilities\":[");
+    cJSON* cs_obj = cJSON_CreateObject();
+    cJSON_AddItemToArray(cs_arr, cs_obj);
+
+    cJSON* caps_arr = cJSON_CreateArray();
+    cJSON_AddItemToObject(cs_obj, "capabilities", caps_arr);
+
     for (size_t c_idx = 0; c_idx < cs->capabilities_count; c_idx++) {
       const channel_capability_t* cap = &cs->capabilities[c_idx];
-      offset += snprintf(out + offset, max_len - offset,
-                         "{\"channels\":%d,\"samplerates\":[", cap->channels);
+      cJSON* cap_obj = cJSON_CreateObject();
+      cJSON_AddItemToArray(caps_arr, cap_obj);
+
+      cJSON_AddNumberToObject(cap_obj, "channels", cap->channels);
+
+      cJSON* sr_arr = cJSON_CreateArray();
+      cJSON_AddItemToObject(cap_obj, "samplerates", sr_arr);
+
       for (size_t s_idx = 0; s_idx < cap->samplerates_count; s_idx++) {
         const samplerate_capability_t* sr = &cap->samplerates[s_idx];
-        offset += snprintf(out + offset, max_len - offset,
-                           "{\"samplerate\":%d,\"formats\":[", sr->samplerate);
+        cJSON* sr_obj = cJSON_CreateObject();
+        cJSON_AddItemToArray(sr_arr, sr_obj);
+
+        cJSON_AddNumberToObject(sr_obj, "samplerate", sr->samplerate);
+
+        cJSON* formats_arr = cJSON_CreateArray();
+        cJSON_AddItemToObject(sr_obj, "formats", formats_arr);
+
         for (size_t f_idx = 0; f_idx < sr->formats_count; f_idx++) {
-          offset += snprintf(out + offset, max_len - offset, "\"%s\"%s",
-                             sr->formats[f_idx],
-                             (f_idx + 1 < sr->formats_count) ? "," : "");
+          cJSON_AddItemToArray(formats_arr,
+                               cJSON_CreateString(sr->formats[f_idx]));
         }
-        offset += snprintf(out + offset, max_len - offset, "]}%s",
-                           (s_idx + 1 < cap->samplerates_count) ? "," : "");
       }
-      offset += snprintf(out + offset, max_len - offset, "]}%s",
-                         (c_idx + 1 < cs->capabilities_count) ? "," : "");
     }
-    offset += snprintf(out + offset, max_len - offset, "]}%s",
-                       (cs_idx + 1 < desc->capability_sets_count) ? "," : "");
   }
-  snprintf(out + offset, max_len - offset, "]}");
+  char* str = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  return str;
 }
 
 /**
@@ -1011,23 +1016,19 @@ static void format_device_descriptor(const audio_device_descriptor_t* desc,
  * @param out Output buffer.
  * @param max_len Maximum length of the output buffer.
  */
-static void format_spectrum(const spectrum_t* spec, char* out, size_t max_len) {
-  if (!spec || spec->count == 0) {
-    snprintf(out, max_len, "null");
-    return;
-  }
-  size_t offset = 0;
-  offset += snprintf(out + offset, max_len - offset, "{\"frequencies\":[");
-  for (size_t i = 0; i < spec->count; i++) {
-    offset += snprintf(out + offset, max_len - offset, "%.17g%s",
-                       spec->frequencies[i], (i + 1 < spec->count) ? "," : "");
-  }
-  offset += snprintf(out + offset, max_len - offset, "],\"magnitudes\":[");
-  for (size_t i = 0; i < spec->count; i++) {
-    offset += snprintf(out + offset, max_len - offset, "%.17g%s",
-                       spec->magnitudes[i], (i + 1 < spec->count) ? "," : "");
-  }
-  snprintf(out + offset, max_len - offset, "]}");
+static char* format_spectrum(const spectrum_t* spec) {
+  if (!spec || spec->count == 0) return strdup("null");
+  cJSON* root = cJSON_CreateObject();
+
+  cJSON* freq_arr = cJSON_CreateDoubleArray(spec->frequencies, (int)spec->count);
+  cJSON_AddItemToObject(root, "frequencies", freq_arr);
+
+  cJSON* mag_arr = cJSON_CreateDoubleArray(spec->magnitudes, (int)spec->count);
+  cJSON_AddItemToObject(root, "magnitudes", mag_arr);
+
+  char* str = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  return str;
 }
 
 /**
@@ -1185,8 +1186,11 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         server->engine->get_status(server->engine->ctx, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       char faders_val[1024];
-      int offset = 0;
-      offset += snprintf(faders_val + offset, sizeof(faders_val) - offset, "[");
+      size_t offset = 0;
+      int written = snprintf(faders_val + offset, sizeof(faders_val) - offset, "[");
+      if (written > 0 && (size_t)written < sizeof(faders_val) - offset) {
+        offset += (size_t)written;
+      }
       for (int i = 0; i < FADER_COUNT; i++) {
         double vol = (server->engine->get_fader_volume)
                          ? server->engine->get_fader_volume(server->engine->ctx, (fader_t)i)
@@ -1194,10 +1198,15 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         bool muted = (server->engine->is_fader_muted)
                          ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)i)
                          : false;
-        offset += snprintf(faders_val + offset, sizeof(faders_val) - offset,
+        written = snprintf(faders_val + offset, sizeof(faders_val) - offset,
                            "{\"volume\":%.17g,\"mute\":%s}%s", vol,
                            muted ? "true" : "false",
                            (i < FADER_COUNT - 1) ? "," : "");
+        if (written > 0 && (size_t)written < sizeof(faders_val) - offset) {
+          offset += (size_t)written;
+        } else {
+          break;
+        }
       }
       snprintf(faders_val + offset, sizeof(faders_val) - offset, "]");
       json_reply("GetFaders", "\"Ok\"", faders_val, ds);
@@ -1209,10 +1218,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     memset(&vu, 0, sizeof(vu));
     if (server && server->engine && server->engine->get_vu_levels &&
         server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char val[1024];
-      format_double_array(vu.capture_rms, vu.capture_channels, val, sizeof(val));
+      char* val = format_double_array(vu.capture_rms, vu.capture_channels);
       free_vu_levels_arrays(&vu);
       json_reply("GetCaptureSignalRms", "\"Ok\"", val, ds);
+      free(val);
     } else {
       json_reply("GetCaptureSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -1221,10 +1230,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     memset(&vu, 0, sizeof(vu));
     if (server && server->engine && server->engine->get_vu_levels &&
         server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char val[1024];
-      format_double_array(vu.capture_peak, vu.capture_channels, val, sizeof(val));
+      char* val = format_double_array(vu.capture_peak, vu.capture_channels);
       free_vu_levels_arrays(&vu);
       json_reply("GetCaptureSignalPeak", "\"Ok\"", val, ds);
+      free(val);
     } else {
       json_reply("GetCaptureSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -1233,10 +1242,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     memset(&vu, 0, sizeof(vu));
     if (server && server->engine && server->engine->get_vu_levels &&
         server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char val[1024];
-      format_double_array(vu.playback_rms, vu.playback_channels, val, sizeof(val));
+      char* val = format_double_array(vu.playback_rms, vu.playback_channels);
       free_vu_levels_arrays(&vu);
       json_reply("GetPlaybackSignalRms", "\"Ok\"", val, ds);
+      free(val);
     } else {
       json_reply("GetPlaybackSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -1245,10 +1254,10 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     memset(&vu, 0, sizeof(vu));
     if (server && server->engine && server->engine->get_vu_levels &&
         server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char val[1024];
-      format_double_array(vu.playback_peak, vu.playback_channels, val, sizeof(val));
+      char* val = format_double_array(vu.playback_peak, vu.playback_channels);
       free_vu_levels_arrays(&vu);
       json_reply("GetPlaybackSignalPeak", "\"Ok\"", val, ds);
+      free(val);
     } else {
       json_reply("GetPlaybackSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
     }
@@ -1464,8 +1473,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       size_t ch = server->capture_rms_history.channels;
       double* rms = (double*)calloc(ch, sizeof(double));
       level_history_get_rms_since(&server->capture_rms_history, since, rms);
-      char* rms_str = (char*)malloc(ch * 30 + 10);
-      format_double_array(rms, ch, rms_str, ch * 30 + 10);
+      char* rms_str = format_double_array(rms, ch);
       json_reply("GetCaptureSignalRmsSinceLast", "\"Ok\"", rms_str, ds);
       free(rms_str);
       free(rms);
@@ -1483,8 +1491,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       size_t ch = server->capture_peak_history.channels;
       double* pk = (double*)calloc(ch, sizeof(double));
       level_history_get_max_since(&server->capture_peak_history, since, pk);
-      char* pk_str = (char*)malloc(ch * 30 + 10);
-      format_double_array(pk, ch, pk_str, ch * 30 + 10);
+      char* pk_str = format_double_array(pk, ch);
       json_reply("GetCaptureSignalPeakSinceLast", "\"Ok\"", pk_str, ds);
       free(pk_str);
       free(pk);
@@ -1502,8 +1509,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       size_t ch = server->playback_rms_history.channels;
       double* rms = (double*)calloc(ch, sizeof(double));
       level_history_get_rms_since(&server->playback_rms_history, since, rms);
-      char* rms_str = (char*)malloc(ch * 30 + 10);
-      format_double_array(rms, ch, rms_str, ch * 30 + 10);
+      char* rms_str = format_double_array(rms, ch);
       json_reply("GetPlaybackSignalRmsSinceLast", "\"Ok\"", rms_str, ds);
       free(rms_str);
       free(rms);
@@ -1521,8 +1527,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       size_t ch = server->playback_peak_history.channels;
       double* pk = (double*)calloc(ch, sizeof(double));
       level_history_get_max_since(&server->playback_peak_history, since, pk);
-      char* pk_str = (char*)malloc(ch * 30 + 10);
-      format_double_array(pk, ch, pk_str, ch * 30 + 10);
+      char* pk_str = format_double_array(pk, ch);
       json_reply("GetPlaybackSignalPeakSinceLast", "\"Ok\"", pk_str, ds);
       free(pk_str);
       free(pk);
@@ -1543,8 +1548,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         size_t ch = server->capture_rms_history.channels;
         double* rms = (double*)calloc(ch, sizeof(double));
         level_history_get_rms_since(&server->capture_rms_history, since, rms);
-        char* rms_str = (char*)malloc(ch * 30 + 10);
-        format_double_array(rms, ch, rms_str, ch * 30 + 10);
+        char* rms_str = format_double_array(rms, ch);
         json_reply("GetCaptureSignalRmsSince", "\"Ok\"", rms_str, ds);
         free(rms_str);
         free(rms);
@@ -1569,8 +1573,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         size_t ch = server->capture_peak_history.channels;
         double* pk = (double*)calloc(ch, sizeof(double));
         level_history_get_max_since(&server->capture_peak_history, since, pk);
-        char* pk_str = (char*)malloc(ch * 30 + 10);
-        format_double_array(pk, ch, pk_str, ch * 30 + 10);
+        char* pk_str = format_double_array(pk, ch);
         json_reply("GetCaptureSignalPeakSince", "\"Ok\"", pk_str, ds);
         free(pk_str);
         free(pk);
@@ -1595,8 +1598,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         size_t ch = server->playback_rms_history.channels;
         double* rms = (double*)calloc(ch, sizeof(double));
         level_history_get_rms_since(&server->playback_rms_history, since, rms);
-        char* rms_str = (char*)malloc(ch * 30 + 10);
-        format_double_array(rms, ch, rms_str, ch * 30 + 10);
+        char* rms_str = format_double_array(rms, ch);
         json_reply("GetPlaybackSignalRmsSince", "\"Ok\"", rms_str, ds);
         free(rms_str);
         free(rms);
@@ -1621,8 +1623,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
         size_t ch = server->playback_peak_history.channels;
         double* pk = (double*)calloc(ch, sizeof(double));
         level_history_get_max_since(&server->playback_peak_history, since, pk);
-        char* pk_str = (char*)malloc(ch * 30 + 10);
-        format_double_array(pk, ch, pk_str, ch * 30 + 10);
+        char* pk_str = format_double_array(pk, ch);
         json_reply("GetPlaybackSignalPeakSince", "\"Ok\"", pk_str, ds);
         free(pk_str);
         free(pk);
@@ -1639,31 +1640,23 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     memset(&vu, 0, sizeof(vu));
     if (server && server->engine && server->engine->get_vu_levels &&
         server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      size_t p_ch = vu.playback_channels;
-      size_t c_ch = vu.capture_channels;
-      char* p_rms_str = (char*)malloc(p_ch * 30 + 10);
-      char* p_pk_str = (char*)malloc(p_ch * 30 + 10);
-      char* c_rms_str = (char*)malloc(c_ch * 30 + 10);
-      char* c_pk_str = (char*)malloc(c_ch * 30 + 10);
-      if (p_rms_str && p_pk_str && c_rms_str && c_pk_str) {
-        format_double_array(vu.playback_rms, p_ch, p_rms_str, p_ch * 30 + 10);
-        format_double_array(vu.playback_peak, p_ch, p_pk_str, p_ch * 30 + 10);
-        format_double_array(vu.capture_rms, c_ch, c_rms_str, c_ch * 30 + 10);
-        format_double_array(vu.capture_peak, c_ch, c_pk_str, c_ch * 30 + 10);
-        char* val = (char*)malloc((p_ch + c_ch) * 120 + 200);
-        if (val) {
-          sprintf(val,
-                  "{\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":"
-                  "%s,\"capture_peak\":%s}",
-                  p_rms_str, p_pk_str, c_rms_str, c_pk_str);
-          json_reply("GetSignalLevels", "\"Ok\"", val, ds);
-          free(val);
-        }
-      }
-      if (p_rms_str) free(p_rms_str);
-      if (p_pk_str) free(p_pk_str);
-      if (c_rms_str) free(c_rms_str);
-      if (c_pk_str) free(c_pk_str);
+      cJSON* root = cJSON_CreateObject();
+      cJSON_AddItemToObject(root, "playback_rms",
+                            cJSON_CreateDoubleArray(vu.playback_rms,
+                                                    (int)vu.playback_channels));
+      cJSON_AddItemToObject(root, "playback_peak",
+                            cJSON_CreateDoubleArray(vu.playback_peak,
+                                                    (int)vu.playback_channels));
+      cJSON_AddItemToObject(root, "capture_rms",
+                            cJSON_CreateDoubleArray(vu.capture_rms,
+                                                    (int)vu.capture_channels));
+      cJSON_AddItemToObject(root, "capture_peak",
+                            cJSON_CreateDoubleArray(vu.capture_peak,
+                                                    (int)vu.capture_channels));
+      char* val = cJSON_PrintUnformatted(root);
+      json_reply("GetSignalLevels", "\"Ok\"", val, ds);
+      free(val);
+      cJSON_Delete(root);
       free_vu_levels_arrays(&vu);
     } else {
       json_reply("GetSignalLevels", "\"ProcessingNotRunningError\"", NULL, ds);
@@ -1700,25 +1693,23 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                                   p_rms);
       level_history_get_max_since(&server->playback_peak_history, pb_pk_since,
                                   p_pk);
-      char* c_rms_str = (char*)malloc(c_ch * 30 + 10);
-      char* c_pk_str = (char*)malloc(c_ch * 30 + 10);
-      char* p_rms_str = (char*)malloc(p_ch * 30 + 10);
-      char* p_pk_str = (char*)malloc(p_ch * 30 + 10);
-      format_double_array(c_rms, c_ch, c_rms_str, c_ch * 30 + 10);
-      format_double_array(c_pk, c_ch, c_pk_str, c_ch * 30 + 10);
-      format_double_array(p_rms, p_ch, p_rms_str, p_ch * 30 + 10);
-      format_double_array(p_pk, p_ch, p_pk_str, p_ch * 30 + 10);
-      char* val = (char*)malloc((c_ch + p_ch) * 120 + 200);
-      sprintf(val,
-              "{\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":%s,"
-              "\"capture_peak\":%s}",
-              p_rms_str, p_pk_str, c_rms_str, c_pk_str);
+      cJSON* root = cJSON_CreateObject();
+      cJSON_AddItemToObject(
+          root, "playback_rms",
+          cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+      cJSON_AddItemToObject(
+          root, "playback_peak",
+          cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+      cJSON_AddItemToObject(
+          root, "capture_rms",
+          cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+      cJSON_AddItemToObject(
+          root, "capture_peak",
+          cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+      char* val = cJSON_PrintUnformatted(root);
       json_reply("GetSignalLevelsSinceLast", "\"Ok\"", val, ds);
       free(val);
-      free(c_rms_str);
-      free(c_pk_str);
-      free(p_rms_str);
-      free(p_pk_str);
+      cJSON_Delete(root);
       free(c_rms);
       free(c_pk);
       free(p_rms);
@@ -1749,25 +1740,23 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                                     p_rms);
         level_history_get_max_since(&server->playback_peak_history, since,
                                     p_pk);
-        char* c_rms_str = (char*)malloc(c_ch * 30 + 10);
-        char* c_pk_str = (char*)malloc(c_ch * 30 + 10);
-        char* p_rms_str = (char*)malloc(p_ch * 30 + 10);
-        char* p_pk_str = (char*)malloc(p_ch * 30 + 10);
-        format_double_array(c_rms, c_ch, c_rms_str, c_ch * 30 + 10);
-        format_double_array(c_pk, c_ch, c_pk_str, c_ch * 30 + 10);
-        format_double_array(p_rms, p_ch, p_rms_str, p_ch * 30 + 10);
-        format_double_array(p_pk, p_ch, p_pk_str, p_ch * 30 + 10);
-        char* val = (char*)malloc((c_ch + p_ch) * 120 + 200);
-        sprintf(val,
-                "{\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":%s,"
-                "\"capture_peak\":%s}",
-                p_rms_str, p_pk_str, c_rms_str, c_pk_str);
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddItemToObject(
+            root, "playback_rms",
+            cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+        cJSON_AddItemToObject(
+            root, "playback_peak",
+            cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+        cJSON_AddItemToObject(
+            root, "capture_rms",
+            cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+        cJSON_AddItemToObject(
+            root, "capture_peak",
+            cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+        char* val = cJSON_PrintUnformatted(root);
         json_reply("GetSignalLevelsSince", "\"Ok\"", val, ds);
         free(val);
-        free(c_rms_str);
-        free(c_pk_str);
-        free(p_rms_str);
-        free(p_pk_str);
+        cJSON_Delete(root);
         free(c_rms);
         free(c_pk);
         free(p_rms);
@@ -1782,20 +1771,36 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     }
   } else if (strcmp(simple, "GetSignalPeaksSinceStart") == 0) {
     char val[2048];
-    int offset = 0;
-    offset += snprintf(val + offset, sizeof(val) - offset, "{\"capture\":[");
+    size_t offset = 0;
+    int written = snprintf(val + offset, sizeof(val) - offset, "{\"capture\":[");
+    if (written > 0 && (size_t)written < sizeof(val) - offset) {
+      offset += (size_t)written;
+    }
     for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-      offset +=
+      written =
           snprintf(val + offset, sizeof(val) - offset, "%.17g%s",
                    server->capture_global_peaks[i],
                    (i + 1 < server->capture_global_peaks_count) ? "," : "");
+      if (written > 0 && (size_t)written < sizeof(val) - offset) {
+        offset += (size_t)written;
+      } else {
+        break;
+      }
     }
-    offset += snprintf(val + offset, sizeof(val) - offset, "],\"playback\":[");
+    written = snprintf(val + offset, sizeof(val) - offset, "],\"playback\":[");
+    if (written > 0 && (size_t)written < sizeof(val) - offset) {
+      offset += (size_t)written;
+    }
     for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-      offset +=
+      written =
           snprintf(val + offset, sizeof(val) - offset, "%.17g%s",
                    server->playback_global_peaks[i],
                    (i + 1 < server->playback_global_peaks_count) ? "," : "");
+      if (written > 0 && (size_t)written < sizeof(val) - offset) {
+        offset += (size_t)written;
+      } else {
+        break;
+      }
     }
     snprintf(val + offset, sizeof(val) - offset, "]}");
     json_reply("GetSignalPeaksSinceStart", "\"Ok\"", val, ds);
@@ -2395,11 +2400,19 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                     server->engine->ctx, backend, true, &devs, &count);
       if (ok && devs) {
         char val[4096];
-        int offset = 0;
-        offset += snprintf(val + offset, sizeof(val) - offset, "[");
+        size_t offset = 0;
+        int written = snprintf(val + offset, sizeof(val) - offset, "[");
+        if (written > 0 && (size_t)written < sizeof(val) - offset) {
+          offset += (size_t)written;
+        }
         for (size_t i = 0; i < count; i++) {
-          offset += snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
+          written = snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
                              devs[i].name, (i + 1 < count) ? "," : "");
+          if (written > 0 && (size_t)written < sizeof(val) - offset) {
+            offset += (size_t)written;
+          } else {
+            break;
+          }
         }
         snprintf(val + offset, sizeof(val) - offset, "]");
         json_reply("GetAvailableCaptureDevices", "\"Ok\"", val, ds);
@@ -2421,11 +2434,19 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                     server->engine->ctx, backend, false, &devs, &count);
       if (ok && devs) {
         char val[4096];
-        int offset = 0;
-        offset += snprintf(val + offset, sizeof(val) - offset, "[");
+        size_t offset = 0;
+        int written = snprintf(val + offset, sizeof(val) - offset, "[");
+        if (written > 0 && (size_t)written < sizeof(val) - offset) {
+          offset += (size_t)written;
+        }
         for (size_t i = 0; i < count; i++) {
-          offset += snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
+          written = snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
                              devs[i].name, (i + 1 < count) ? "," : "");
+          if (written > 0 && (size_t)written < sizeof(val) - offset) {
+            offset += (size_t)written;
+          } else {
+            break;
+          }
         }
         snprintf(val + offset, sizeof(val) - offset, "]");
         json_reply("GetAvailablePlaybackDevices", "\"Ok\"", val, ds);
@@ -2542,9 +2563,13 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
           server->engine->get_device_capabilities(
               server->engine->ctx, backend, device, is_capture, &desc, &d_err);
       if (cap_ok && desc) {
-        char val[8192];
-        format_device_descriptor(desc, val, sizeof(val));
-        json_reply(simple, "\"Ok\"", val, ds);
+        char* val = format_device_descriptor(desc);
+        if (val) {
+          json_reply(simple, "\"Ok\"", val, ds);
+          free(val);
+        } else {
+          json_reply(simple, "{\"DeviceError\":\"Out of memory\"}", NULL, ds);
+        }
         extern void dsp_engine_free_device_capabilities(
             audio_device_descriptor_t * desc);
         dsp_engine_free_device_capabilities(desc);
@@ -2602,10 +2627,8 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
           server->engine->get_spectrum(server->engine->ctx, is_capture, channel,
                                        min_freq, max_freq, n_bins, &spec);
       if (spec_ok) {
-        size_t spec_buf_size = spec.count * 50 + 200;
-        char* spec_buf = (char*)malloc(spec_buf_size);
+        char* spec_buf = format_spectrum(&spec);
         if (spec_buf) {
-          format_spectrum(&spec, spec_buf, spec_buf_size);
           json_reply("GetSpectrum", "\"Ok\"", spec_buf, ds);
           free(spec_buf);
         } else {
@@ -2973,37 +2996,30 @@ static void* server_thread_func(void* arg) {
               }
             }
 
-            char* p_rms_str = (char*)malloc(pb_channels * 30 + 10);
-            char* p_pk_str = (char*)malloc(pb_channels * 30 + 10);
-            char* c_rms_str = (char*)malloc(cap_channels * 30 + 10);
-            char* c_pk_str = (char*)malloc(cap_channels * 30 + 10);
-
-            if (p_rms_str && p_pk_str && c_rms_str && c_pk_str) {
-              format_double_array(session->vu_pb_rms, pb_channels, p_rms_str,
-                                  pb_channels * 30 + 10);
-              format_double_array(session->vu_pb_peak, pb_channels, p_pk_str,
-                                  pb_channels * 30 + 10);
-              format_double_array(session->vu_cap_rms, cap_channels, c_rms_str,
-                                  cap_channels * 30 + 10);
-              format_double_array(session->vu_cap_peak, cap_channels, c_pk_str,
-                                  cap_channels * 30 + 10);
-
-              char* msg = (char*)malloc((pb_channels + cap_channels) * 120 + 200);
-              if (msg) {
-                sprintf(msg,
-                        "{\"VuLevelsEvent\":{\"result\":\"Ok\",\"value\":{"
-                        "\"playback_rms\":%s,\"playback_peak\":%s,\"capture_rms\":%"
-                        "s,\"capture_peak\":%s}}}",
-                        p_rms_str, p_pk_str, c_rms_str, c_pk_str);
-                send_websocket_frame(client_fds[i], msg);
-                free(msg);
-              }
+            cJSON* root = cJSON_CreateObject();
+            cJSON* val = cJSON_CreateObject();
+            cJSON_AddItemToObject(root, "VuLevelsEvent", val);
+            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON* val_value = cJSON_CreateObject();
+            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddItemToObject(
+                val_value, "playback_rms",
+                cJSON_CreateDoubleArray(session->vu_pb_rms, (int)pb_channels));
+            cJSON_AddItemToObject(
+                val_value, "playback_peak",
+                cJSON_CreateDoubleArray(session->vu_pb_peak, (int)pb_channels));
+            cJSON_AddItemToObject(
+                val_value, "capture_rms",
+                cJSON_CreateDoubleArray(session->vu_cap_rms, (int)cap_channels));
+            cJSON_AddItemToObject(
+                val_value, "capture_peak",
+                cJSON_CreateDoubleArray(session->vu_cap_peak, (int)cap_channels));
+            char* msg = cJSON_PrintUnformatted(root);
+            if (msg) {
+              send_websocket_frame(client_fds[i], msg);
+              free(msg);
             }
-
-            if (p_rms_str) free(p_rms_str);
-            if (p_pk_str) free(p_pk_str);
-            if (c_rms_str) free(c_rms_str);
-            if (c_pk_str) free(c_pk_str);
+            cJSON_Delete(root);
             session->last_vu_push_time = now;
           }
         }
@@ -3015,48 +3031,46 @@ static void* server_thread_func(void* arg) {
                           strcmp(session->signal_levels_side, "both") == 0;
 
           if (send_pb && pb_channels > 0) {
-            char* rms_str = (char*)malloc(pb_channels * 30 + 10);
-            char* pk_str = (char*)malloc(pb_channels * 30 + 10);
-            if (rms_str && pk_str) {
-              format_double_array(current_pb_rms, pb_channels, rms_str,
-                                  pb_channels * 30 + 10);
-              format_double_array(current_pb_peak, pb_channels, pk_str,
-                                  pb_channels * 30 + 10);
-
-              char* msg = (char*)malloc(pb_channels * 100 + 200);
-              if (msg) {
-                sprintf(msg,
-                        "{\"SignalLevelsEvent\":{\"result\":\"Ok\",\"value\":{"
-                        "\"side\":\"playback\",\"rms\":%s,\"peak\":%s}}}",
-                        rms_str, pk_str);
-                send_websocket_frame(client_fds[i], msg);
-                free(msg);
-              }
+            cJSON* root = cJSON_CreateObject();
+            cJSON* val = cJSON_CreateObject();
+            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
+            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON* val_value = cJSON_CreateObject();
+            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddStringToObject(val_value, "side", "playback");
+            cJSON_AddItemToObject(
+                val_value, "rms",
+                cJSON_CreateDoubleArray(current_pb_rms, (int)pb_channels));
+            cJSON_AddItemToObject(
+                val_value, "peak",
+                cJSON_CreateDoubleArray(current_pb_peak, (int)pb_channels));
+            char* msg = cJSON_PrintUnformatted(root);
+            if (msg) {
+              send_websocket_frame(client_fds[i], msg);
+              free(msg);
             }
-            if (rms_str) free(rms_str);
-            if (pk_str) free(pk_str);
+            cJSON_Delete(root);
           }
           if (send_cap && cap_channels > 0) {
-            char* rms_str = (char*)malloc(cap_channels * 30 + 10);
-            char* pk_str = (char*)malloc(cap_channels * 30 + 10);
-            if (rms_str && pk_str) {
-              format_double_array(current_cap_rms, cap_channels, rms_str,
-                                  cap_channels * 30 + 10);
-              format_double_array(current_cap_peak, cap_channels, pk_str,
-                                  cap_channels * 30 + 10);
-
-              char* msg = (char*)malloc(cap_channels * 100 + 200);
-              if (msg) {
-                sprintf(msg,
-                        "{\"SignalLevelsEvent\":{\"result\":\"Ok\",\"value\":{"
-                        "\"side\":\"capture\",\"rms\":%s,\"peak\":%s}}}",
-                        rms_str, pk_str);
-                send_websocket_frame(client_fds[i], msg);
-                free(msg);
-              }
+            cJSON* root = cJSON_CreateObject();
+            cJSON* val = cJSON_CreateObject();
+            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
+            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON* val_value = cJSON_CreateObject();
+            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddStringToObject(val_value, "side", "capture");
+            cJSON_AddItemToObject(
+                val_value, "rms",
+                cJSON_CreateDoubleArray(current_cap_rms, (int)cap_channels));
+            cJSON_AddItemToObject(
+                val_value, "peak",
+                cJSON_CreateDoubleArray(current_cap_peak, (int)cap_channels));
+            char* msg = cJSON_PrintUnformatted(root);
+            if (msg) {
+              send_websocket_frame(client_fds[i], msg);
+              free(msg);
             }
-            if (rms_str) free(rms_str);
-            if (pk_str) free(pk_str);
+            cJSON_Delete(root);
           }
         }
 
@@ -3075,11 +3089,9 @@ static void* server_thread_func(void* arg) {
                     session->spectrum_max_freq, session->spectrum_n_bins,
                     &spec);
             if (spec_ok) {
-              size_t spec_buf_size = spec.count * 50 + 200;
-              char* spec_buf = (char*)malloc(spec_buf_size);
+              char* spec_buf = format_spectrum(&spec);
               if (spec_buf) {
-                format_spectrum(&spec, spec_buf, spec_buf_size);
-                char* msg = (char*)malloc(spec_buf_size + 120);
+                char* msg = (char*)malloc(strlen(spec_buf) + 120);
                 if (msg) {
                   sprintf(msg,
                           "{\"SpectrumEvent\":{\"result\":\"Ok\",\"value\":%s}}",
