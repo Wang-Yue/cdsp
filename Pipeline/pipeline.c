@@ -145,7 +145,7 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
         const pipeline_exec_step_t* src_step = &src->steps[s];
         if (src_step->type == EXEC_STEP_PROCESSOR) {
           const char* src_name = dsp_processor_get_name(src_step->processor);
-          if (strcmp(src_name, dest_name) == 0) {
+          if (src_name && dest_name && strcmp(src_name, dest_name) == 0) {
             dsp_processor_transfer_state(dest_step->processor,
                                          src_step->processor);
             break;
@@ -594,7 +594,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
 
   // 1. Validate input and output buffer shapes/capacities against pipeline
   // configurations.
-  if (valid_frames > pipeline->frames_per_chunk) {
+  if (valid_frames != pipeline->frames_per_chunk) {
     pipeline->last_error_needed = pipeline->frames_per_chunk;
     pipeline->last_error_got = valid_frames;
     return PIPELINE_ERR_INPUT_SIZE_MISMATCH;

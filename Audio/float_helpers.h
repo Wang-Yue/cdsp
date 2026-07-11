@@ -129,15 +129,16 @@ static inline void dsp_ops_float_vthr(const float* vector, float threshold,
  */
 static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
                                         float* result, size_t count) {
+  float ref = reference > 0.0f ? reference : 1.0f;
 #if defined(ENABLE_ACCELERATE)
-  vDSP_vdbcon(vector, 1, &reference, result, 1, count, 1);
+  vDSP_vdbcon(vector, 1, &ref, result, 1, count, 1);
 #else
   for (size_t i = 0; i < count; i++) {
     float val = vector[i];
     if (val <= 0.0f) {
       result[i] = -200.0f;  // Limit minimum dB value to prevent log10(0) issues
     } else {
-      result[i] = 20.0f * log10f(val / reference);
+      result[i] = 20.0f * log10f(val / ref);
     }
   }
 #endif

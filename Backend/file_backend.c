@@ -1051,4 +1051,8 @@ void file_playback_set_is_paused(file_playback_t* playback, bool paused) {
   (void)paused;
 }
 
-void file_playback_destroy(file_playback_t* playback) { free(playback); }
+void file_playback_destroy(file_playback_t* playback) {
+  if (!playback) return;
+  file_playback_close(playback);
+  free(playback);
+}

@@ -87,6 +87,25 @@ static size_t get_raw_sample_size(binary_sample_format_t format) {
   }
 }
 
+static inline int16_t read_i16_le(const uint8_t* buf) {
+  int16_t v;
+  memcpy(&v, buf, sizeof(v));
+  return v;
+}
+
+static inline int32_t read_i32_le(const uint8_t* buf) {
+  int32_t v;
+  memcpy(&v, buf, sizeof(v));
+  return v;
+}
+
+static inline int32_t read_i24_3_le(const uint8_t* buf) {
+  uint32_t u =
+      (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16);
+  if (u & 0x800000) u |= 0xFF000000;
+  return (int32_t)u;
+}
+
 /**
  * @brief Loads a single channel from a WAV file and converts it to double.
  *
@@ -335,19 +354,15 @@ static double* load_raw_file(const char* path, const char* format_str,
     double val = 0.0;
     switch (format) {
       case BINARY_SAMPLE_FORMAT_S16_LE: {
-        int16_t v = buf[0] | (buf[1] << 8);
-        val = (double)v / 32768.0;
+        val = (double)read_i16_le(buf) / 32768.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_S24_3_LE: {
-        int32_t v = buf[0] | (buf[1] << 8) | (buf[2] << 16);
-        if (v & 0x800000) v |= ~0xFFFFFF;
-        val = (double)v / 8388608.0;
+        val = (double)read_i24_3_le(buf) / 8388608.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_S32_LE: {
-        int32_t v = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
-        val = (double)v / 2147483648.0;
+        val = (double)read_i32_le(buf) / 2147483648.0;
         break;
       }
       case BINARY_SAMPLE_FORMAT_F32_LE: {
@@ -659,30 +674,22 @@ void convolution_filter_process(convolution_filter_t* filter,
     process_chunk(filter, waveform + processed);
     processed += cs;
   }
-  if (processed < count) {
-    size_t rem = count - processed;
-    double scratch[cs];
-    memset(scratch, 0, cs * sizeof(double));
-    memcpy(scratch, waveform + processed, rem * sizeof(double));
-    process_chunk(filter, scratch);
-    memcpy(waveform + processed, scratch, rem * sizeof(double));
-  }
 }
 
 void convolution_filter_free(convolution_filter_t* filter) {
   if (!filter) return;
+  size_t num_seg = filter->num_segments;
+  for (size_t s = 0; s < num_seg; s++) {
+    if (filter->spec_re && filter->spec_re[s]) free(filter->spec_re[s]);
+    if (filter->spec_im && filter->spec_im[s]) free(filter->spec_im[s]);
+    if (filter->hist_re && filter->hist_re[s]) free(filter->hist_re[s]);
+    if (filter->hist_im && filter->hist_im[s]) free(filter->hist_im[s]);
+  }
+  if (filter->spec_re) free(filter->spec_re);
+  if (filter->spec_im) free(filter->spec_im);
+  if (filter->hist_re) free(filter->hist_re);
+  if (filter->hist_im) free(filter->hist_im);
   if (filter->fft) {
-    size_t num_seg = filter->num_segments;
-    for (size_t s = 0; s < num_seg; s++) {
-      if (filter->spec_re && filter->spec_re[s]) free(filter->spec_re[s]);
-      if (filter->spec_im && filter->spec_im[s]) free(filter->spec_im[s]);
-      if (filter->hist_re && filter->hist_re[s]) free(filter->hist_re[s]);
-      if (filter->hist_im && filter->hist_im[s]) free(filter->hist_im[s]);
-    }
-    if (filter->spec_re) free(filter->spec_re);
-    if (filter->spec_im) free(filter->spec_im);
-    if (filter->hist_re) free(filter->hist_re);
-    if (filter->hist_im) free(filter->hist_im);
     real_fft_free(filter->fft);
   }
   if (filter->overlap_buffer) free(filter->overlap_buffer);

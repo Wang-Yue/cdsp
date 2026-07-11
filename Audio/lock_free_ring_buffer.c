@@ -8,17 +8,17 @@ struct spsc_audio_ring_buffer {
   size_t capacity;
   size_t mask;
   float* storage;
-  _Atomic uint64_t write_index;
-  _Atomic uint64_t read_index;
   bool overwrite_on_overflow;
+  _Atomic uint64_t write_index __attribute__((aligned(64)));
+  _Atomic uint64_t read_index __attribute__((aligned(64)));
 };
 
 struct spsc_queue {
   size_t capacity;
   size_t mask;
   void** storage;
-  _Atomic uint64_t write_index;
-  _Atomic uint64_t read_index;
+  _Atomic uint64_t write_index __attribute__((aligned(64)));
+  _Atomic uint64_t read_index __attribute__((aligned(64)));
 };
 
 uint64_t spsc_audio_ring_buffer_get_total_samples_written(

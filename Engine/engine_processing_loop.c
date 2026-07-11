@@ -304,8 +304,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       // using a short sleep to avoid spinning and wasting CPU.
       while (!spsc_queue_enqueue(loop->shared->processed_queue, chunk)) {
         if (atomic_load_explicit(&loop->shared->should_stop,
-                                 memory_order_acquire) &&
-            loop->shared->stop_reason.type != STOP_REASON_DONE) {
+                                 memory_order_acquire)) {
           break;
         }
         engine_yield();

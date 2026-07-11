@@ -314,8 +314,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         PROCESSING_STATE_PAUSED) {
       while (!spsc_queue_enqueue(loop->shared->captured_queue, chunk)) {
         if (atomic_load_explicit(&loop->shared->should_stop,
-                                 memory_order_acquire) &&
-            loop->shared->stop_reason.type != STOP_REASON_DONE) {
+                                 memory_order_acquire)) {
           break;
         }
         engine_yield();
