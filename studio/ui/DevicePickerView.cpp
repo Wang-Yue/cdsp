@@ -477,5 +477,8 @@ void DevicePickerView::applySettings() {
     m_devices->setPlaybackConfig(pbCfg);
 
     m_devices->setExclusiveMode(m_exclusiveModeCheck->isChecked());
-    m_devices->onConfigChanged();
+    m_devices->refreshDeviceCapabilities();
+    if (m_devices->onConfigChanged) {
+        m_devices->onConfigChanged();
+    }
 }
