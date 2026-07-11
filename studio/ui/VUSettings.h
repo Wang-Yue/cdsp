@@ -10,9 +10,9 @@ enum class VUTheme {
 };
 
 struct VUSettings {
-    double radiusScale = 1.20;
-    double pivotY = 1.55;
-    double needleExtension = 45.0;
+    double radiusScale = 0.85;
+    double pivotY = 1.30;
+    double needleExtension = 15.0;
     double ambientGlow = 0.5;
     double hotSpotAlpha = 0.5;
     double lightWash = 0.2;

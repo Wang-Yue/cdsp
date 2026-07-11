@@ -6,9 +6,9 @@ VUSettings::VUSettings() {
 
 void VUSettings::load() {
     QSettings settings;
-    radiusScale = settings.value("vu_radius_scale", 1.20).toDouble();
-    pivotY = settings.value("vu_pivot_y", 1.55).toDouble();
-    needleExtension = settings.value("vu_needle_extension", 45.0).toDouble();
+    radiusScale = settings.value("vu_radius_scale", 0.85).toDouble();
+    pivotY = settings.value("vu_pivot_y", 1.30).toDouble();
+    needleExtension = settings.value("vu_needle_extension", 15.0).toDouble();
     ambientGlow = settings.value("vu_ambient_glow", 0.5).toDouble();
     hotSpotAlpha = settings.value("vu_hot_spot_alpha", 0.5).toDouble();
     lightWash = settings.value("vu_light_wash", 0.2).toDouble();
@@ -33,9 +33,9 @@ void VUSettings::save() const {
 }
 
 void VUSettings::reset() {
-    radiusScale = 1.20;
-    pivotY = 1.55;
-    needleExtension = 45.0;
+    radiusScale = 0.85;
+    pivotY = 1.30;
+    needleExtension = 15.0;
     ambientGlow = 0.5;
     hotSpotAlpha = 0.5;
     lightWash = 0.2;
