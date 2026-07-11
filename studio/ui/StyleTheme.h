@@ -1,7 +1,9 @@
 #ifndef STYLE_THEME_H
 #define STYLE_THEME_H
 
+#include <QApplication>
 #include <QColor>
+#include <QPalette>
 #include <QString>
 
 enum class AppTheme { Light, Dark };
@@ -252,6 +254,24 @@ public:
             QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
                 background: #8e8e93;
             }
+
+            QToolBar {
+                background-color: #f5f5f7;
+                border-bottom: 1px solid #d1d1d6;
+                spacing: 6px;
+                padding: 4px;
+            }
+            QToolBar QLabel {
+                color: #000000;
+            }
+            QStatusBar {
+                background-color: #f5f5f7;
+                color: #000000;
+                border-top: 1px solid #d1d1d6;
+            }
+            QStatusBar QLabel {
+                color: #000000;
+            }
         )";
     }
 
@@ -348,7 +368,7 @@ public:
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 8px;
-                color: #a0a5b5;
+                color: #ffffff;
             }
 
             QPushButton {
@@ -487,6 +507,24 @@ public:
             QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
                 background: #424659;
             }
+
+            QToolBar {
+                background-color: #1a1b22;
+                border-bottom: 1px solid #2c2d3a;
+                spacing: 6px;
+                padding: 4px;
+            }
+            QToolBar QLabel {
+                color: #ffffff;
+            }
+            QStatusBar {
+                background-color: #1a1b22;
+                color: #ffffff;
+                border-top: 1px solid #2c2d3a;
+            }
+            QStatusBar QLabel {
+                color: #ffffff;
+            }
         )";
     }
 
@@ -499,6 +537,54 @@ public:
     static bool isDark() { return s_theme == AppTheme::Dark; }
 
     static QString currentStylesheet() { return (s_theme == AppTheme::Dark) ? darkStylesheet() : lightStylesheet(); }
+
+    static QPalette darkPalette() {
+        QPalette p;
+        p.setColor(QPalette::Window, QColor("#121318"));
+        p.setColor(QPalette::WindowText, QColor("#ffffff"));
+        p.setColor(QPalette::Base, QColor("#1a1b22"));
+        p.setColor(QPalette::AlternateBase, QColor("#282a36"));
+        p.setColor(QPalette::ToolTipBase, QColor("#1e2029"));
+        p.setColor(QPalette::ToolTipText, QColor("#ffffff"));
+        p.setColor(QPalette::Text, QColor("#ffffff"));
+        p.setColor(QPalette::Button, QColor("#1f212a"));
+        p.setColor(QPalette::ButtonText, QColor("#ffffff"));
+        p.setColor(QPalette::BrightText, QColor("#ff3b30"));
+        p.setColor(QPalette::Link, QColor("#007af5"));
+        p.setColor(QPalette::Highlight, QColor("#007af5"));
+        p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+        p.setColor(QPalette::Disabled, QPalette::Text, QColor("#5a5f73"));
+        p.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#5a5f73"));
+        p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#5a5f73"));
+        return p;
+    }
+
+    static QPalette lightPalette() {
+        QPalette p;
+        p.setColor(QPalette::Window, QColor("#ffffff"));
+        p.setColor(QPalette::WindowText, QColor("#000000"));
+        p.setColor(QPalette::Base, QColor("#f5f5f7"));
+        p.setColor(QPalette::AlternateBase, QColor("#e5e5ea"));
+        p.setColor(QPalette::ToolTipBase, QColor("#ffffff"));
+        p.setColor(QPalette::ToolTipText, QColor("#000000"));
+        p.setColor(QPalette::Text, QColor("#000000"));
+        p.setColor(QPalette::Button, QColor("#f5f5f7"));
+        p.setColor(QPalette::ButtonText, QColor("#000000"));
+        p.setColor(QPalette::BrightText, QColor("#ff3b30"));
+        p.setColor(QPalette::Link, QColor("#007aff"));
+        p.setColor(QPalette::Highlight, QColor("#007aff"));
+        p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+        p.setColor(QPalette::Disabled, QPalette::Text, QColor("#8e8e93"));
+        p.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#8e8e93"));
+        p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#8e8e93"));
+        return p;
+    }
+
+    static void applyTheme(QApplication* app, AppTheme theme) {
+        setTheme(theme);
+        app->setPalette(isDark() ? darkPalette() : lightPalette());
+        app->setStyleSheet(currentStylesheet());
+    }
 
     static QColor windowBg() { return isDark() ? QColor("#121318") : QColor("#ffffff"); }
     static QColor cardBg() { return isDark() ? QColor("#1a1b22") : QColor("#f5f5f7"); }

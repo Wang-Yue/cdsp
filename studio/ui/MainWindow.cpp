@@ -57,7 +57,7 @@ public:
 
         m_label = new QLabel(title, this);
         m_label->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_label->setStyleSheet("QLabel { background: transparent; color: inherit; }");
+        m_label->setStyleSheet("QLabel { background: transparent; }");
         layout->addWidget(m_label);
 
         layout->addStretch();
@@ -193,8 +193,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 void MainWindow::updateTheme() {
-    StyleTheme::setTheme(m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
-    qApp->setStyleSheet(StyleTheme::currentStylesheet());
+    StyleTheme::applyTheme(qApp, m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
     for (QWidget* w : qApp->allWidgets()) {
         w->update();
     }
