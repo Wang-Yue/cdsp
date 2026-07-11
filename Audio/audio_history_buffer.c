@@ -168,7 +168,7 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
 
   // Step 2: Read subsequent channels into local stack scratch memory to prevent
   // data races on multi-threaded reads, then accumulate into dest.
-  float local_scratch[count];
+  float* local_scratch = history->averaging_scratch;
   for (size_t ch = 1; ch < history->channels; ch++) {
     ok = spsc_audio_ring_buffer_read_latest_at(
         history->buffers[ch], local_scratch, count, min_written);
