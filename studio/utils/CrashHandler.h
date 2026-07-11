@@ -11,6 +11,38 @@
 #include <tchar.h>
 #include <windows.h>
 
+inline void logCallstack(std::ofstream& crashLog) {
+    void* stack[64];
+    USHORT frames = RtlCaptureStackBackTrace(0, 64, stack, NULL);
+    HANDLE process = GetCurrentProcess();
+    SymInitialize(process, NULL, TRUE);
+
+    SYMBOL_INFO* symbol = (SYMBOL_INFO*)calloc(1, sizeof(SYMBOL_INFO) + 256 * sizeof(char));
+    if (symbol) {
+        symbol->MaxNameLen = 255;
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+
+        IMAGEHLP_LINE64 line;
+        line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+        DWORD displacement = 0;
+
+        crashLog << "Callstack (" << frames << " frames):" << std::endl;
+        for (USHORT i = 0; i < frames; i++) {
+            DWORD64 address = (DWORD64)(stack[i]);
+            if (SymFromAddr(process, address, 0, symbol)) {
+                crashLog << "  [" << i << "] " << symbol->Name;
+                if (SymGetLineFromAddr64(process, address, &displacement, &line)) {
+                    crashLog << " (" << line.FileName << ":" << line.LineNumber << ")";
+                }
+                crashLog << " [0x" << std::hex << address << "]" << std::endl;
+            } else {
+                crashLog << "  [" << i << "] 0x" << std::hex << address << std::endl;
+            }
+        }
+        free(symbol);
+    }
+}
+
 inline LONG WINAPI customUnhandledExceptionFilter(EXCEPTION_POINTERS* pExceptionInfo) {
     std::ofstream crashLog("crash_log.txt", std::ios::out | std::ios::app);
     crashLog << "========================================" << std::endl;
@@ -27,6 +59,8 @@ inline LONG WINAPI customUnhandledExceptionFilter(EXCEPTION_POINTERS* pException
                  << " memory address 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionInformation[1]
                  << std::endl;
     }
+
+    logCallstack(crashLog);
     crashLog << "========================================" << std::endl;
     crashLog.close();
 
@@ -50,6 +84,9 @@ inline void signalHandler(int sig) {
     std::ofstream crashLog("crash_log.txt", std::ios::out | std::ios::app);
     crashLog << "========================================" << std::endl;
     crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
+#if defined(_WIN32)
+    logCallstack(crashLog);
+#endif
     crashLog << "========================================" << std::endl;
     crashLog.close();
     std::exit(sig);
@@ -58,11 +95,12 @@ inline void signalHandler(int sig) {
 inline void installCrashHandler() {
 #if defined(_WIN32)
     SetUnhandledExceptionFilter(customUnhandledExceptionFilter);
-#endif
+#else
     std::signal(SIGSEGV, signalHandler);
     std::signal(SIGABRT, signalHandler);
     std::signal(SIGFPE, signalHandler);
     std::signal(SIGILL, signalHandler);
+#endif
 }
 
 #endif // CRASH_HANDLER_H
