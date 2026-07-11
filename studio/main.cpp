@@ -1,9 +1,11 @@
 #include "ui/MainWindow.h"
+#include "utils/CrashHandler.h"
 
 #include <QApplication>
 #include <QSurfaceFormat>
 
 int main(int argc, char* argv[]) {
+    installCrashHandler();
     QApplication app(argc, argv);
     app.setApplicationName("CamillaDSP Monitor - Qt");
     app.setOrganizationName("DSPMonitor");
