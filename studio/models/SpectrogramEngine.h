@@ -17,9 +17,9 @@ public:
     explicit SpectrogramEngine(QObject* parent = nullptr) : QObject(parent) {}
 
     int visibilityCount = 0;
-    bool isCapture = false;
+    bool isCapture = true;
     std::optional<int> channel = std::nullopt;
-    size_t nBins = 100;
+    size_t nBins = 200;
     double minFreq = 20.0;
     double maxFreq = 20000.0;
     bool show3D = false;
@@ -42,9 +42,9 @@ public:
     }
 
     void resetToDefaults() {
-        isCapture = false;
+        isCapture = true;
         channel = std::nullopt;
-        nBins = 100;
+        nBins = 200;
         minFreq = 20.0;
         maxFreq = 20000.0;
         show3D = false;

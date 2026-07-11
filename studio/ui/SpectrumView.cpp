@@ -2,6 +2,7 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFontDatabase>
 #include <QMouseEvent>
 #include <QPainterPath>
 #include <algorithm>

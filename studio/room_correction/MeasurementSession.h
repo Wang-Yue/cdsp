@@ -87,6 +87,11 @@ public:
 
     std::optional<EQPreset> correctionPreset;
     std::string status = "No measurement loaded.";
+    std::string generatedFIRPath;
+
+    static std::vector<double> applyCalibration(const std::vector<double>& raw, const std::vector<double>& grid,
+                                                const std::optional<CalibrationCurve>& cal);
+    static std::vector<double> levelNormalize(const std::vector<double>& magDB, const std::vector<double>& grid);
 
     void generateMockMeasurement(bool append = false);
     void importPositionFRD(const std::string& path);

@@ -358,6 +358,40 @@ void MeasurementSession::runFit() {
     emit sessionUpdated();
 }
 
+std::vector<double> MeasurementSession::applyCalibration(const std::vector<double>& raw,
+                                                         const std::vector<double>& grid,
+                                                         const std::optional<CalibrationCurve>& cal) {
+    if (!cal.has_value() || raw.size() != grid.size())
+        return raw;
+    std::vector<double> result = raw;
+    for (size_t i = 0; i < grid.size(); ++i) {
+        result[i] -= cal.value().magnitude(grid[i]);
+    }
+    return result;
+}
+
+std::vector<double> MeasurementSession::levelNormalize(const std::vector<double>& magDB,
+                                                       const std::vector<double>& grid) {
+    if (magDB.size() != grid.size() || magDB.empty())
+        return magDB;
+    std::vector<double> inBand;
+    for (size_t i = 0; i < magDB.size(); ++i) {
+        double v = magDB[i];
+        if (grid[i] >= 200.0 && grid[i] <= 5000.0 && std::isfinite(v) && v > -200.0) {
+            inBand.push_back(v);
+        }
+    }
+    if (inBand.empty())
+        return magDB;
+    std::sort(inBand.begin(), inBand.end());
+    double median = inBand[inBand.size() / 2];
+    std::vector<double> result = magDB;
+    for (size_t i = 0; i < magDB.size(); ++i) {
+        result[i] -= median;
+    }
+    return result;
+}
+
 std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vector<std::string>& existingNames) {
     if (firKind != FIRKind::MeasurementDriven &&
         (!correctionPreset.has_value() || correctionPreset.value().bands.empty())) {
@@ -369,6 +403,22 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         status = "Run a measurement before exporting measurement-driven FIR.";
         emit sessionUpdated();
         return std::nullopt;
+    }
+
+    std::string kindLabel, fileLabel;
+    switch (firKind) {
+    case FIRKind::MinimumPhase:
+        kindLabel = "Min-phase";
+        fileLabel = "minphase";
+        break;
+    case FIRKind::LinearPhase:
+        kindLabel = "Linear-phase";
+        fileLabel = "linphase";
+        break;
+    case FIRKind::MeasurementDriven:
+        kindLabel = "Measurement-driven";
+        fileLabel = "measdriven";
+        break;
     }
 
     std::vector<BiquadParameters> bands;
@@ -414,12 +464,14 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
             opts.fftSize = firTapCount;
             opts.preampDB = -6.0;
             opts.maxBoostDB = maxGainDB;
+            opts.minFreqHz = 30.0;
+            opts.maxFreqHz = 18000.0;
             opts.phaseBlend = firPhaseBlend;
             irSamples = FIRDesign::fromMeasurement(measuredFR.value(), targetCurve(), rate, opts);
         }
 
         QString fileName = QString("RoomCorrection-%1-%2-%3.f64")
-                               .arg(QString::fromStdString(firKindToString(firKind)))
+                               .arg(QString::fromStdString(fileLabel))
                                .arg(rate)
                                .arg(presetId.toString(QUuid::WithoutBraces).left(8));
 
@@ -428,7 +480,7 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         irPaths[rate] = fullPath.toStdString();
     }
 
-    std::string base = "Room Correction (" + firKindToString(firKind) + ")";
+    std::string base = "Room Correction (" + kindLabel + ")";
     std::string presetName = base;
     if (std::find(existingNames.begin(), existingNames.end(), base) != existingNames.end()) {
         int idx = 2;
@@ -439,8 +491,20 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         presetName = base + " " + std::to_string(idx);
     }
 
-    ConvolutionPreset preset(presetName, irPaths, firTapCount, firKindToString(firKind));
-    status = "Generated FIR preset: " + presetName;
+    ConvolutionPreset preset(presetName, irPaths, firTapCount, kindLabel);
+    auto it = irPaths.find(sampleRate);
+    if (it != irPaths.end()) {
+        generatedFIRPath = it->second;
+    }
+
+    std::string rateList;
+    for (size_t i = 0; i < rates.size(); ++i) {
+        if (i > 0)
+            rateList += " / ";
+        rateList += std::to_string(rates[i] / 1000) + "k";
+    }
+    status = "Saved “" + presetName + "” (" + std::to_string(firTapCount) + " taps × " + std::to_string(rates.size()) +
+             " rates: " + rateList + ").";
     emit sessionUpdated();
     return preset;
 }
@@ -451,7 +515,8 @@ void MeasurementSession::loadCalibration(const std::string& path) {
         calibration = cal;
         calibrationPath = path;
         recomputeAverage();
-        status = "Loaded calibration curve.";
+        QFileInfo fi(QString::fromStdString(path));
+        status = "Loaded calibration “" + fi.fileName().toStdString() + ".”";
     } else {
         status = "Calibration load failed.";
     }
@@ -467,8 +532,11 @@ void MeasurementSession::clearCalibration() {
 }
 
 bool MeasurementSession::exportFRD(const std::string& path, bool includeCalibration) {
-    if (!measuredFR.has_value())
+    if (!measuredFR.has_value()) {
+        status = "Run a measurement before exporting.";
+        emit sessionUpdated();
         return false;
+    }
     const auto& fr = measuredFR.value();
 
     std::vector<double> freqs, mags, phases;
@@ -489,7 +557,15 @@ bool MeasurementSession::exportFRD(const std::string& path, bool includeCalibrat
     }
 
     CalibrationCurve expCurve(freqs, mags, phases);
-    return expCurve.writeFRD(path, "Sample Rate: " + std::to_string(sampleRate));
+    bool ok = expCurve.writeFRD(path, "Sample Rate: " + std::to_string(sampleRate));
+    QFileInfo fi(QString::fromStdString(path));
+    if (ok) {
+        status = "Exported " + fi.fileName().toStdString() + " (" + std::to_string(freqs.size()) + " bins).";
+    } else {
+        status = "FRD export failed.";
+    }
+    emit sessionUpdated();
+    return ok;
 }
 
 bool MeasurementSession::subwooferAssistAvailable() const {

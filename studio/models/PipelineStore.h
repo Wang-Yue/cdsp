@@ -20,7 +20,9 @@ public:
     std::vector<EQPreset> eqPresets;
     std::vector<ConvolutionPreset> convPresets;
 
-    void addStage(StageType type);
+    QUuid addStage(StageType type);
+    QUuid duplicateStage(const QUuid& id);
+    int channelCountBeforeStage(size_t index, int captureChannels) const;
     void deleteStage(const QUuid& id);
     void moveStage(int from, int to);
 

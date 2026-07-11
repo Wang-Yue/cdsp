@@ -41,8 +41,10 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
 
     // Signal connections
     connect(m_enableCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_session)
+        if (m_session) {
             m_session->togglePosition(m_id);
+            emit positionChanged();
+        }
     });
 
     connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
@@ -54,18 +56,21 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
                 }
             }
             emit m_session->sessionUpdated();
+            emit positionChanged();
         }
     });
 
     connect(m_kindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (m_session) {
             m_session->setPositionKind(m_id, static_cast<MeasurementChannelKind>(idx));
+            emit positionChanged();
         }
     });
 
     connect(m_deleteBtn, &QToolButton::clicked, [this]() {
         if (m_session) {
             m_session->removePosition(m_id);
+            emit positionChanged();
         }
     });
 }

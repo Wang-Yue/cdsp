@@ -266,10 +266,10 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
     auto blendLayout = new QHBoxLayout();
     m_firPhaseBlendSlider = new QSlider(Qt::Horizontal, tab);
     m_firPhaseBlendSlider->setRange(0, 100);
-    m_firPhaseBlendSlider->setValue(0);
+    m_firPhaseBlendSlider->setValue(100);
     blendLayout->addWidget(m_firPhaseBlendSlider);
 
-    m_firPhaseBlendLabel = new QLabel("Min-phase (0%)", tab);
+    m_firPhaseBlendLabel = new QLabel("Linear-phase (100%)", tab);
     m_firPhaseBlendLabel->setFixedWidth(120);
     blendLayout->addWidget(m_firPhaseBlendLabel);
 
@@ -297,7 +297,7 @@ void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
 void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
-    // Update position chips list with row widgets without destroying active controls if count matches
+    // Update position chips list with row widgets
     if (m_positionsList->count() != static_cast<int>(m_session.positions.size())) {
         m_positionsList->clear();
         for (const auto& p : m_session.positions) {
@@ -305,6 +305,8 @@ void RoomCorrectionDlg::refreshSessionUi() {
             auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
             item->setSizeHint(rowWidget->sizeHint());
             m_positionsList->setItemWidget(item, rowWidget);
+            connect(rowWidget, &MeasurementPositionRowWidget::positionChanged, this,
+                    &RoomCorrectionDlg::refreshSessionUi);
         }
     }
 
@@ -402,7 +404,10 @@ void RoomCorrectionDlg::onRunFit() {
 
 void RoomCorrectionDlg::onApplyEQToPipeline() {
     if (m_session.correctionPreset.has_value()) {
-        m_pipeline->addEQPreset(m_session.correctionPreset.value());
+        const auto& preset = m_session.correctionPreset.value();
+        m_pipeline->addEQPreset(preset);
+        m_session.status = "Applied as EQ Preset “" + preset.name + ".” Open it from the sidebar to edit.";
+        emit m_session.sessionUpdated();
         QMessageBox::information(this, "Applied", "Fitted PEQ preset applied to pipeline!");
     }
 }

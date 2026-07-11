@@ -24,7 +24,7 @@ void PipelineStore::ensureDefaultPresets() {
     }
 }
 
-void PipelineStore::addStage(StageType type) {
+QUuid PipelineStore::addStage(StageType type) {
     PipelineStage stage(type);
     if (type == StageType::EQ && !eqPresets.empty()) {
         stage.eqPresetId = eqPresets[0].id;
@@ -35,6 +35,32 @@ void PipelineStore::addStage(StageType type) {
     stages.push_back(stage);
     save();
     emit pipelineChanged();
+    return stage.id;
+}
+
+QUuid PipelineStore::duplicateStage(const QUuid& id) {
+    auto it = std::find_if(stages.begin(), stages.end(), [&id](const PipelineStage& s) { return s.id == id; });
+    if (it != stages.end()) {
+        PipelineStage dup = *it;
+        dup.id = QUuid::createUuid();
+        dup.name = dup.name + " (Copy)";
+        stages.insert(it + 1, dup);
+        save();
+        emit pipelineChanged();
+        return dup.id;
+    }
+    return QUuid();
+}
+
+int PipelineStore::channelCountBeforeStage(size_t index, int captureChannels) const {
+    int current = captureChannels;
+    for (size_t i = 0; i < index && i < stages.size(); ++i) {
+        const auto& stage = stages[i];
+        if (stage.isEnabled && stage.type == StageType::MatrixMixer) {
+            current = stage.mixerChannelsOut;
+        }
+    }
+    return current;
 }
 
 void PipelineStore::deleteStage(const QUuid& id) {

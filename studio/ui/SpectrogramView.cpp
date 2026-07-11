@@ -2,6 +2,7 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFontDatabase>
 #include <QPainterPath>
 #include <cmath>
 

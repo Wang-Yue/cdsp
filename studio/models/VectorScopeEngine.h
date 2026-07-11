@@ -13,9 +13,9 @@ public:
     explicit VectorScopeEngine(QObject* parent = nullptr) : QObject(parent) {}
 
     int visibilityCount = 0;
-    bool isCapture = false;
-    size_t nFrames = 1024;
-    bool showParticles = false;
+    bool isCapture = true;
+    size_t nFrames = 512;
+    bool showParticles = true;
     bool autoScale = true;
 
     AudioSamplesData samples;
@@ -31,9 +31,9 @@ public:
     }
 
     void resetToDefaults() {
-        isCapture = false;
-        nFrames = 1024;
-        showParticles = false;
+        isCapture = true;
+        nFrames = 512;
+        showParticles = true;
         autoScale = true;
         samples = AudioSamplesData();
         emit updated();

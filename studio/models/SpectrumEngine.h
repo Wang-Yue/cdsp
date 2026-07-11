@@ -14,10 +14,10 @@ public:
     explicit SpectrumEngine(QObject* parent = nullptr) : QObject(parent) {}
 
     int visibilityCount = 0;
-    bool isCapture = false;
+    bool isCapture = true;
     std::optional<int> channel = std::nullopt;
-    size_t nBins = 60;
-    double minFreq = 20.0;
+    size_t nBins = 30;
+    double minFreq = 25.0;
     double maxFreq = 20000.0;
 
     SpectrumData data;
@@ -33,10 +33,10 @@ public:
     }
 
     void resetToDefaults() {
-        isCapture = false;
+        isCapture = true;
         channel = std::nullopt;
-        nBins = 60;
-        minFreq = 20.0;
+        nBins = 30;
+        minFreq = 25.0;
         maxFreq = 20000.0;
         data = SpectrumData();
         emit updated();

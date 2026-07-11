@@ -35,6 +35,7 @@ public:
 
     void setFaderVolume(Fader fader, float db, bool instant = false);
     void setFaderMute(Fader fader, bool mute);
+    void toggleFaderMute(Fader fader);
 
     void updateStatus(const StateUpdate& update);
 

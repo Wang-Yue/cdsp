@@ -43,37 +43,53 @@ void MonitoringController::onPollTimer() {
         VuLevels levels = m_engine->getVuLevels();
         levelState.update(levels);
         emit levelsUpdated();
+    } else {
+        size_t capCh = m_dspController->devices() ? m_dspController->devices()->captureConfig.channels : 2;
+        size_t pbCh = m_dspController->devices() ? m_dspController->devices()->playbackConfig.channels : 2;
+        levelState.reset(capCh, pbCh);
     }
 
     // Poll Spectrum Engine
-    if (m_spectrumEngine && m_spectrumEngine->visibilityCount > 0) {
-        SpectrumData specData;
-        int specCh = m_spectrumEngine->channel.value_or(-1);
-        if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq,
-                                  m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
-            m_spectrumEngine->update(specData);
+    if (m_spectrumEngine) {
+        if (m_spectrumEngine->visibilityCount > 0) {
+            SpectrumData specData;
+            int specCh = m_spectrumEngine->channel.value_or(-1);
+            if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq,
+                                      m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
+                m_spectrumEngine->update(specData);
+            } else {
+                m_spectrumEngine->reset();
+            }
         } else {
             m_spectrumEngine->reset();
         }
     }
 
     // Poll Spectrogram Engine
-    if (m_spectrogramEngine && m_spectrogramEngine->visibilityCount > 0) {
-        SpectrumData spectroData;
-        int spectroCh = m_spectrogramEngine->channel.value_or(-1);
-        if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq,
-                                  m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
-            m_spectrogramEngine->pushSpectrum(spectroData);
+    if (m_spectrogramEngine) {
+        if (m_spectrogramEngine->visibilityCount > 0) {
+            SpectrumData spectroData;
+            int spectroCh = m_spectrogramEngine->channel.value_or(-1);
+            if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq,
+                                      m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
+                m_spectrogramEngine->pushSpectrum(spectroData);
+            } else {
+                m_spectrogramEngine->reset();
+            }
         } else {
             m_spectrogramEngine->reset();
         }
     }
 
     // Poll Vector Scope Engine
-    if (m_vectorScopeEngine && m_vectorScopeEngine->visibilityCount > 0) {
-        AudioSamplesData samples;
-        if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
-            m_vectorScopeEngine->update(samples);
+    if (m_vectorScopeEngine) {
+        if (m_vectorScopeEngine->visibilityCount > 0) {
+            AudioSamplesData samples;
+            if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
+                m_vectorScopeEngine->update(samples);
+            } else {
+                m_vectorScopeEngine->reset();
+            }
         } else {
             m_vectorScopeEngine->reset();
         }

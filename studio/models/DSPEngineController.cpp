@@ -202,6 +202,11 @@ void DSPEngineController::syncFaders() {
     }
 }
 
+void DSPEngineController::toggleFaderMute(Fader fader) {
+    bool currentMute = m_settings->getMuted(fader);
+    setFaderMute(fader, !currentMute);
+}
+
 void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
     if (m_userStopped || m_reconnectTimer.isActive())
         return;
@@ -216,12 +221,14 @@ void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
     if (delayMs > 16000)
         delayMs = 16000;
 
-    m_retryCount++;
-    LogManager::instance()->appendLog(
-        LogLevel::Warn, QString("Engine crash/stop detected. Scheduling auto-restart attempt %1/%2 in %3 ms...")
-                            .arg(m_retryCount)
-                            .arg(m_maxRetries)
-                            .arg(delayMs));
+    if (baseDelayMs > 0) {
+        m_retryCount++;
+    }
+    LogManager::instance()->appendLog(LogLevel::Warn,
+                                      QString("Engine restart requested (attempt %1/%2). Scheduling in %3 ms...")
+                                          .arg(m_retryCount)
+                                          .arg(m_maxRetries)
+                                          .arg(delayMs));
 
     m_reconnectTimer.start(delayMs);
 }
@@ -237,9 +244,7 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
     emit statusUpdated(status, lastStopReason);
 
     if (status == ProcessingState::Running) {
-        if (m_lastStartTime.isValid() && m_lastStartTime.secsTo(QDateTime::currentDateTime()) > 5) {
-            m_retryCount = 0; // Reset retry counter after stable execution
-        }
+        m_retryCount = 0; // Reset retry counter immediately when running state is established
     }
 
     if (update.stopReason.type == StopReasonType::CaptureFormatChange) {
