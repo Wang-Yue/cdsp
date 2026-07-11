@@ -37,8 +37,10 @@ void AnalogVUDetailView::setupUi() {
     topLayout->addWidget(new QLabel("Theme:", topCard));
     m_themeCombo = new QComboBox(topCard);
     m_themeCombo->addItems({"Vintage Amber", "Dark Stealth", "Warm Tube"});
+    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
     connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_settings.theme = static_cast<VUTheme>(idx);
+        m_settings.save();
         m_vuMeter->setVUSettings(m_settings);
     });
     topLayout->addWidget(m_themeCombo);
@@ -77,6 +79,7 @@ void AnalogVUDetailView::setupUi() {
     m_radiusLbl->setFixedWidth(40);
     connect(m_radiusSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.radiusScale = val / 100.0;
+        m_settings.save();
         m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -92,6 +95,7 @@ void AnalogVUDetailView::setupUi() {
     m_pivotYLbl->setFixedWidth(40);
     connect(m_pivotYSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.pivotY = val / 100.0;
+        m_settings.save();
         m_pivotYLbl->setText(QString::number(m_settings.pivotY, 'f', 2));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -107,6 +111,7 @@ void AnalogVUDetailView::setupUi() {
     m_needleExtLbl->setFixedWidth(40);
     connect(m_needleExtSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.needleExtension = val;
+        m_settings.save();
         m_needleExtLbl->setText(QString::number(m_settings.needleExtension, 'f', 1));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -122,6 +127,7 @@ void AnalogVUDetailView::setupUi() {
     m_ambientGlowLbl->setFixedWidth(40);
     connect(m_ambientGlowSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.ambientGlow = val / 100.0;
+        m_settings.save();
         m_ambientGlowLbl->setText(QString::number(m_settings.ambientGlow, 'f', 2));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -137,6 +143,7 @@ void AnalogVUDetailView::setupUi() {
     m_hotSpotLbl->setFixedWidth(40);
     connect(m_hotSpotSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.hotSpotAlpha = val / 100.0;
+        m_settings.save();
         m_hotSpotLbl->setText(QString::number(m_settings.hotSpotAlpha, 'f', 2));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -152,6 +159,7 @@ void AnalogVUDetailView::setupUi() {
     m_lightWashLbl->setFixedWidth(40);
     connect(m_lightWashSlider, &QSlider::valueChanged, [this](int val) {
         m_settings.lightWash = val / 100.0;
+        m_settings.save();
         m_lightWashLbl->setText(QString::number(m_settings.lightWash, 'f', 2));
         m_vuMeter->setVUSettings(m_settings);
     });
@@ -164,17 +172,37 @@ void AnalogVUDetailView::setupUi() {
 
 void AnalogVUDetailView::resetDefaults() {
     m_settings.reset();
-    m_themeCombo->setCurrentIndex(0);
-    m_radiusSlider->setValue(120);
-    m_pivotYSlider->setValue(155);
-    m_needleExtSlider->setValue(45);
-    m_ambientGlowSlider->setValue(50);
-    m_hotSpotSlider->setValue(50);
-    m_lightWashSlider->setValue(20);
+    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
+    m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
+    m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
+    m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
+    m_pivotYLbl->setText(QString::number(m_settings.pivotY, 'f', 2));
+    m_needleExtSlider->setValue(static_cast<int>(m_settings.needleExtension));
+    m_needleExtLbl->setText(QString::number(m_settings.needleExtension, 'f', 1));
+    m_ambientGlowSlider->setValue(static_cast<int>(m_settings.ambientGlow * 100));
+    m_ambientGlowLbl->setText(QString::number(m_settings.ambientGlow, 'f', 2));
+    m_hotSpotSlider->setValue(static_cast<int>(m_settings.hotSpotAlpha * 100));
+    m_hotSpotLbl->setText(QString::number(m_settings.hotSpotAlpha, 'f', 2));
+    m_lightWashSlider->setValue(static_cast<int>(m_settings.lightWash * 100));
+    m_lightWashLbl->setText(QString::number(m_settings.lightWash, 'f', 2));
     m_vuMeter->setVUSettings(m_settings);
 }
 
 void AnalogVUDetailView::refreshUi() {
+    m_settings.load();
+    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
+    m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
+    m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
+    m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
+    m_pivotYLbl->setText(QString::number(m_settings.pivotY, 'f', 2));
+    m_needleExtSlider->setValue(static_cast<int>(m_settings.needleExtension));
+    m_needleExtLbl->setText(QString::number(m_settings.needleExtension, 'f', 1));
+    m_ambientGlowSlider->setValue(static_cast<int>(m_settings.ambientGlow * 100));
+    m_ambientGlowLbl->setText(QString::number(m_settings.ambientGlow, 'f', 2));
+    m_hotSpotSlider->setValue(static_cast<int>(m_settings.hotSpotAlpha * 100));
+    m_hotSpotLbl->setText(QString::number(m_settings.hotSpotAlpha, 'f', 2));
+    m_lightWashSlider->setValue(static_cast<int>(m_settings.lightWash * 100));
+    m_lightWashLbl->setText(QString::number(m_settings.lightWash, 'f', 2));
     m_vuMeter->setVUSettings(m_settings);
 }
 
@@ -196,17 +224,42 @@ void SpectrumDetailView::setupUi() {
     auto panelGroup = new QGroupBox("Spectrum Settings Controls", this);
     auto panelLayout = new QVBoxLayout(panelGroup);
 
+    m_channelCombo = new QComboBox(panelGroup);
+
+    auto updateChannelCombo = [this]() {
+        m_channelCombo->blockSignals(true);
+        m_channelCombo->clear();
+        m_channelCombo->addItem("Average");
+        int count = 8;
+        if (m_devices) {
+            int ch = m_engine->isCapture ? m_devices->captureConfig.channels : m_devices->playbackConfig.channels;
+            if (ch > 0) count = std::max(2, ch);
+        }
+        for (int i = 0; i < count; ++i) {
+            m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
+        }
+        int curIdx = m_engine->channel.value_or(-1) + 1;
+        if (curIdx < m_channelCombo->count()) {
+            m_channelCombo->setCurrentIndex(curIdx);
+        } else {
+            m_channelCombo->setCurrentIndex(0);
+            m_engine->channel.reset();
+        }
+        m_channelCombo->blockSignals(false);
+    };
+
     auto headerBox = new QHBoxLayout();
     headerBox->addWidget(new QLabel("🎛 Analyzer Configuration", panelGroup));
     headerBox->addStretch();
     auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
-    connect(resetBtn, &QPushButton::clicked, [this]() {
+    connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombo]() {
         m_engine->resetToDefaults();
         m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-        m_channelCombo->setCurrentIndex(0);
+        updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
         m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
         m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)));
+        m_spectrumView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -217,19 +270,19 @@ void SpectrumDetailView::setupUi() {
     m_sourceCombo = new QComboBox(panelGroup);
     m_sourceCombo->addItems({"Capture", "Playback"});
     m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
+        updateChannelCombo();
+        m_spectrumView->update();
     });
     rowLayout->addWidget(m_sourceCombo);
 
     rowLayout->addWidget(new QLabel("Channel:", panelGroup));
-    m_channelCombo = new QComboBox(panelGroup);
-    m_channelCombo->addItem("Average");
-    for (int i = 0; i < 8; ++i) m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
-    m_channelCombo->setCurrentIndex(m_engine->channel.value_or(-1) + 1);
+    updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (idx == 0) m_engine->channel.reset();
         else m_engine->channel = idx - 1;
+        m_spectrumView->update();
     });
     rowLayout->addWidget(m_channelCombo);
 
@@ -238,7 +291,8 @@ void SpectrumDetailView::setupUi() {
     m_binsSpin->setRange(2, 100);
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->nBins = val;
+        m_engine->nBins = static_cast<size_t>(val);
+        m_spectrumView->update();
     });
     rowLayout->addWidget(m_binsSpin);
 
@@ -277,16 +331,41 @@ void SpectrogramDetailView::setupUi() {
     auto panelGroup = new QGroupBox("Spectroscope Settings Controls", this);
     auto panelLayout = new QVBoxLayout(panelGroup);
 
+    m_channelCombo = new QComboBox(panelGroup);
+
+    auto updateChannelCombo = [this]() {
+        m_channelCombo->blockSignals(true);
+        m_channelCombo->clear();
+        m_channelCombo->addItem("Average");
+        int count = 8;
+        if (m_devices) {
+            int ch = m_engine->isCapture ? m_devices->captureConfig.channels : m_devices->playbackConfig.channels;
+            if (ch > 0) count = std::max(2, ch);
+        }
+        for (int i = 0; i < count; ++i) {
+            m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
+        }
+        int curIdx = m_engine->channel.value_or(-1) + 1;
+        if (curIdx < m_channelCombo->count()) {
+            m_channelCombo->setCurrentIndex(curIdx);
+        } else {
+            m_channelCombo->setCurrentIndex(0);
+            m_engine->channel.reset();
+        }
+        m_channelCombo->blockSignals(false);
+    };
+
     auto headerBox = new QHBoxLayout();
     headerBox->addWidget(new QLabel("🎛 Spectrogram Configuration", panelGroup));
     headerBox->addStretch();
     auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
-    connect(resetBtn, &QPushButton::clicked, [this]() {
+    connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombo]() {
         m_engine->resetToDefaults();
         m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-        m_channelCombo->setCurrentIndex(0);
+        updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
         m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
+        m_spectrogramView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -297,19 +376,19 @@ void SpectrogramDetailView::setupUi() {
     m_sourceCombo = new QComboBox(panelGroup);
     m_sourceCombo->addItems({"Capture", "Playback"});
     m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
+        updateChannelCombo();
+        m_spectrogramView->update();
     });
     rowLayout->addWidget(m_sourceCombo);
 
     rowLayout->addWidget(new QLabel("Channel:", panelGroup));
-    m_channelCombo = new QComboBox(panelGroup);
-    m_channelCombo->addItem("Average");
-    for (int i = 0; i < 8; ++i) m_channelCombo->addItem(QString("Channel %1").arg(i + 1));
-    m_channelCombo->setCurrentIndex(m_engine->channel.value_or(-1) + 1);
+    updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (idx == 0) m_engine->channel.reset();
         else m_engine->channel = idx - 1;
+        m_spectrogramView->update();
     });
     rowLayout->addWidget(m_channelCombo);
 
@@ -319,7 +398,8 @@ void SpectrogramDetailView::setupUi() {
     m_binsSpin->setSingleStep(20);
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->nBins = val;
+        m_engine->nBins = static_cast<size_t>(val);
+        m_spectrogramView->update();
     });
     rowLayout->addWidget(m_binsSpin);
 
@@ -329,6 +409,7 @@ void SpectrogramDetailView::setupUi() {
     m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
     connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->show3D = (idx == 1);
+        m_spectrogramView->update();
     });
     rowLayout->addWidget(m_modeCombo);
 
@@ -365,6 +446,7 @@ void VectorScopeDetailView::setupUi() {
         m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
         m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
         m_autoScaleCheck->setChecked(m_engine->autoScale);
+        m_vectorView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -377,6 +459,7 @@ void VectorScopeDetailView::setupUi() {
     m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->isCapture = (idx == 0);
+        m_vectorView->update();
     });
     rowLayout->addWidget(m_sourceCombo);
 
@@ -386,7 +469,8 @@ void VectorScopeDetailView::setupUi() {
     m_framesSpin->setSingleStep(128);
     m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
     connect(m_framesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->nFrames = val;
+        m_engine->nFrames = static_cast<size_t>(val);
+        m_vectorView->update();
     });
     rowLayout->addWidget(m_framesSpin);
 
@@ -396,6 +480,7 @@ void VectorScopeDetailView::setupUi() {
     m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
     connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->showParticles = (idx == 1);
+        m_vectorView->update();
     });
     rowLayout->addWidget(m_modeCombo);
 
@@ -403,6 +488,7 @@ void VectorScopeDetailView::setupUi() {
     m_autoScaleCheck->setChecked(m_engine->autoScale);
     connect(m_autoScaleCheck, &QCheckBox::toggled, [this](bool chk) {
         m_engine->autoScale = chk;
+        m_vectorView->update();
     });
     rowLayout->addWidget(m_autoScaleCheck);
 

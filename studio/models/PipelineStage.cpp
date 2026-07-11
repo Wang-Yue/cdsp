@@ -510,7 +510,7 @@ StageBuildResult StageBuilders::buildStage(
     if (!stage.isActive()) return res;
 
     if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
-        stage.type == StageType::Crossfeed || stage.type == StageType::RACE) {
+        stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
         if (stage.leftChannel >= channelCount || stage.rightChannel >= channelCount) {
             return res;
         }
@@ -1043,7 +1043,9 @@ StageBuildResult StageBuilders::buildStage(
                 token.erase(0, token.find_first_not_of(" \t\n\r"));
                 token.erase(token.find_last_not_of(" \t\n\r") + 1);
                 if (!token.empty()) {
-                    try { resVec.push_back(std::stod(token)); } catch (...) {}
+                    bool ok = false;
+                    double val = QString::fromStdString(token).toDouble(&ok);
+                    if (ok) { resVec.push_back(val); }
                 }
                 start = end + 1;
             }

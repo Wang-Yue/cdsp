@@ -104,17 +104,16 @@ void DevicePickerView::setupUi() {
     }
     chunkLayout->addWidget(m_chunkSizeCombo);
 
-    auto latencyLbl = new QLabel("(10.7 ms latency)", procGroup);
-    latencyLbl->setStyleSheet("color: #8e8e93; font-style: italic;");
-    auto updateLatencyText = [this, latencyLbl]() {
-        int chunkSize = m_chunkSizeCombo->currentData().toInt();
-        double sampleRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 48000.0;
-        double ms = (chunkSize * 1000.0) / sampleRate;
-        latencyLbl->setText(QString("(%1 ms latency)").arg(ms, 0, 'f', 1));
-    };
+    m_latencyLabel = new QLabel(procGroup);
+    m_latencyLabel->setStyleSheet("color: #8e8e93; font-style: italic;");
+    connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+        if (m_chunkSizeCombo && m_settings) {
+            m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
+        }
+        updateLatencyText();
+    });
     updateLatencyText();
-    connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), updateLatencyText);
-    chunkLayout->addWidget(latencyLbl);
+    chunkLayout->addWidget(m_latencyLabel);
     chunkLayout->addStretch();
     procForm->addRow("Chunk Size:", chunkLayout);
 
@@ -176,7 +175,7 @@ QString DevicePickerView::formatSampleRate(int rate) {
 }
 
 QWidget* DevicePickerView::createCapCoreAudioView() {
-    auto w = new QWidget(this);
+    auto w = new QWidget();
     auto form = new QFormLayout(w);
 
     m_capDeviceCombo = new QComboBox(w);
@@ -224,7 +223,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 }
 
 QWidget* DevicePickerView::createCapFileView(bool isWav) {
-    auto w = new QWidget(this);
+    auto w = new QWidget();
     auto form = new QFormLayout(w);
 
     auto fileBox = new QHBoxLayout();
@@ -269,7 +268,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 }
 
 QWidget* DevicePickerView::createCapGeneratorView() {
-    auto w = new QWidget(this);
+    auto w = new QWidget();
     auto form = new QFormLayout(w);
 
     m_genTypeCombo = new QComboBox(w);
@@ -298,7 +297,7 @@ QWidget* DevicePickerView::createCapGeneratorView() {
 }
 
 QWidget* DevicePickerView::createPbCoreAudioView() {
-    auto w = new QWidget(this);
+    auto w = new QWidget();
     auto form = new QFormLayout(w);
 
     m_pbDeviceCombo = new QComboBox(w);
@@ -362,7 +361,7 @@ void DevicePickerView::updateDoPCapability() {
 }
 
 QWidget* DevicePickerView::createPbFileView() {
-    auto w = new QWidget(this);
+    auto w = new QWidget();
     auto form = new QFormLayout(w);
 
     auto fileBox = new QHBoxLayout();
@@ -504,6 +503,7 @@ void DevicePickerView::refreshUi() {
 
     int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
     if (chunkIdx >= 0) m_chunkSizeCombo->setCurrentIndex(chunkIdx);
+    updateLatencyText();
     m_enableRateAdjustCheck->setChecked(m_settings->enableRateAdjust);
 
     m_queueLimitSpin->setValue(m_settings->queuelimit);
@@ -511,6 +511,12 @@ void DevicePickerView::refreshUi() {
     m_measureIntervalSpin->setValue(m_settings->rateMeasureInterval);
     m_multithreadedCheck->setChecked(m_settings->multithreaded);
     m_workerThreadsSpin->setValue(m_settings->workerThreads);
+}
+
+void DevicePickerView::updateLatencyText() {
+    if (!m_latencyLabel || !m_devices) return;
+    double ms = m_devices->latencyMs();
+    m_latencyLabel->setText(QString("(%1 ms latency)").arg(ms, 0, 'f', 1));
 }
 
 void DevicePickerView::applySettings() {

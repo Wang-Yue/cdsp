@@ -133,7 +133,7 @@ void AudioDeviceManager::fetchDevices() {
     std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
     std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
 
-    QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
+    (void)QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
         auto cap = engine->getAvailableDevices(capBackendLower, true);
         auto pb = engine->getAvailableDevices(pbBackendLower, false);
         QMetaObject::invokeMethod(this, [this, cap, pb]() {
@@ -159,7 +159,7 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     bool isCapHw = (captureConfig.backend == AudioBackendType::CoreAudio || captureConfig.backend == AudioBackendType::WASAPI || captureConfig.backend == AudioBackendType::ASIO || captureConfig.backend == AudioBackendType::ALSA || captureConfig.backend == AudioBackendType::PulseAudio);
     bool isPbHw = (playbackConfig.backend == AudioBackendType::CoreAudio || playbackConfig.backend == AudioBackendType::WASAPI || playbackConfig.backend == AudioBackendType::ASIO || playbackConfig.backend == AudioBackendType::ALSA || playbackConfig.backend == AudioBackendType::PulseAudio);
 
-    QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
+    (void)QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
         std::optional<AudioDeviceDescriptor> capDesc;
         std::optional<AudioDeviceDescriptor> pbDesc;
 
@@ -196,11 +196,14 @@ void AudioDeviceManager::validateSampleRates() {
     if (m_isValidating) return;
     m_isValidating = true;
 
+    bool changed = false;
+
     auto pbOptions = playbackRateOptions();
     if (!pbOptions.empty() && std::find(pbOptions.begin(), pbOptions.end(), playbackConfig.sampleRate) == pbOptions.end()) {
         int best = DeviceConfig::bestRate(pbOptions, playbackConfig.sampleRate);
         if (playbackConfig.sampleRate != best) {
             playbackConfig.sampleRate = best;
+            changed = true;
         }
     }
     auto capOptions = captureRateOptions();
@@ -208,10 +211,16 @@ void AudioDeviceManager::validateSampleRates() {
         int best = DeviceConfig::bestRate(capOptions, captureConfig.sampleRate);
         if (captureConfig.sampleRate != best) {
             captureConfig.sampleRate = best;
+            changed = true;
         }
     }
     if (!m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
         captureConfig.sampleRate = playbackConfig.sampleRate;
+        changed = true;
+    }
+
+    if (changed) {
+        saveConfigs();
     }
 
     m_isValidating = false;

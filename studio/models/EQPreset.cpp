@@ -265,25 +265,31 @@ std::string EQPreset::toCSV() const {
         std::string state = band.isEnabled ? "ON" : "OFF";
         std::string shortType = eqBandTypeToShortName(band.type);
 
-        ss << "Filter " << (i + 1) << ": " << state << " " << shortType << " ";
+        ss << "Filter " << (i + 1) << ": " << state << " " << shortType;
         if (band.type == EQBandType::Free) {
-            ss << "B0 " << band.b0 << " B1 " << band.b1 << " B2 " << band.b2 << " A1 " << band.a1 << " A2 " << band.a2;
+            ss << " B0 " << band.b0 << " B1 " << band.b1 << " B2 " << band.b2 << " A1 " << band.a1 << " A2 " << band.a2;
         } else if (band.type == EQBandType::GeneralNotch) {
-            ss << "Fc " << static_cast<int>(band.freqNotch) << " Hz Fp " << static_cast<int>(band.freqPole) << " Hz Qp " << std::setprecision(2) << band.qPole << " Norm " << (band.normalizeAtDc ? 1 : 0);
+            ss << " Fc " << static_cast<int>(std::round(band.freqNotch))
+               << " Hz Fp " << static_cast<int>(std::round(band.freqPole))
+               << " Hz Qp " << std::fixed << std::setprecision(2) << band.qPole
+               << " Norm " << (band.normalizeAtDc ? 1 : 0);
         } else if (band.type == EQBandType::LinkwitzTransform) {
-            ss << "Fa " << std::setprecision(1) << band.freqAct << " Hz Qa " << std::setprecision(3) << band.qAct << " Ft " << std::setprecision(1) << band.freqTarget << " Hz Qt " << std::setprecision(3) << band.qTarget;
+            ss << " Fa " << std::fixed << std::setprecision(1) << band.freqAct
+               << " Hz Qa " << std::fixed << std::setprecision(3) << band.qAct
+               << " Ft " << std::fixed << std::setprecision(1) << band.freqTarget
+               << " Hz Qt " << std::fixed << std::setprecision(3) << band.qTarget;
         } else {
-            ss << "Fc " << static_cast<int>(band.freq) << " Hz ";
+            ss << " Fc " << static_cast<int>(std::round(band.freq)) << " Hz";
             if (eqBandTypeHasGain(band.type)) {
-                ss << "Gain " << std::setprecision(1) << band.gain << " dB ";
+                ss << " Gain " << std::fixed << std::setprecision(1) << band.gain << " dB";
             }
             if (eqBandTypeHasQ(band.type)) {
                 if (band.useSlope) {
-                    ss << "S " << std::setprecision(1) << band.slope;
+                    ss << " S " << std::fixed << std::setprecision(1) << band.slope;
                 } else if (band.useBandwidth) {
-                    ss << "BW " << std::setprecision(2) << band.bandwidth;
+                    ss << " BW " << std::fixed << std::setprecision(2) << band.bandwidth;
                 } else {
-                    ss << "Q " << std::setprecision(2) << band.q;
+                    ss << " Q " << std::fixed << std::setprecision(2) << band.q;
                 }
             }
         }
@@ -382,6 +388,29 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                         parsedBands.push_back(band);
                     }
                 }
+            }
+        } else if (trimmed.find(',') != std::string::npos) {
+            std::stringstream csvSS(trimmed);
+            std::string item;
+            std::vector<std::string> parts;
+            while (std::getline(csvSS, item, ',')) {
+                size_t p1 = item.find_first_not_of(" \t\r\n");
+                if (p1 != std::string::npos) {
+                    size_t p2 = item.find_last_not_of(" \t\r\n");
+                    parts.push_back(item.substr(p1, p2 - p1 + 1));
+                } else {
+                    parts.push_back("");
+                }
+            }
+            if (parts.size() >= 2) {
+                EQBandType type = shortNameToEQBandType(parts[0]);
+                double freq = 1000.0;
+                double gain = 0.0;
+                double q = 0.707;
+                try { freq = std::stod(parts[1]); } catch (...) {}
+                if (parts.size() > 2) { try { gain = std::stod(parts[2]); } catch (...) {} }
+                if (parts.size() > 3) { try { q = std::stod(parts[3]); } catch (...) {} }
+                parsedBands.push_back(EQBand(type, freq, gain, q));
             }
         }
     }

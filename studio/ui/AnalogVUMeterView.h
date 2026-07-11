@@ -9,32 +9,7 @@
 #include <QTimer>
 
 #include "models/LevelState.h"
-
-enum class VUTheme {
-    VintageAmber,
-    DarkStealth,
-    WarmTube
-};
-
-struct VUSettings {
-    double radiusScale = 1.20;
-    double pivotY = 1.55;
-    double needleExtension = 45.0;
-    double ambientGlow = 0.5;
-    double hotSpotAlpha = 0.5;
-    double lightWash = 0.2;
-    VUTheme theme = VUTheme::VintageAmber;
-
-    void reset() {
-        radiusScale = 1.20;
-        pivotY = 1.55;
-        needleExtension = 45.0;
-        ambientGlow = 0.5;
-        hotSpotAlpha = 0.5;
-        lightWash = 0.2;
-        theme = VUTheme::VintageAmber;
-    }
-};
+#include "ui/VUSettings.h"
 
 class AnalogVUMeterView : public QWidget {
     Q_OBJECT

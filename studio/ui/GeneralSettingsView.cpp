@@ -114,18 +114,32 @@ void GeneralSettingsView::setupUi() {
 }
 
 void GeneralSettingsView::refreshUi() {
+    m_themeCombo->blockSignals(true);
     m_themeCombo->setCurrentIndex(m_settings->darkMode ? 1 : 0);
+    m_themeCombo->blockSignals(false);
+
+    m_logLevelCombo->blockSignals(true);
     m_logLevelCombo->setCurrentIndex(m_settings->logLevel);
+    m_logLevelCombo->blockSignals(false);
+
+    m_autoStartCheck->blockSignals(true);
     m_autoStartCheck->setChecked(m_settings->autoStartEngine);
+    m_autoStartCheck->blockSignals(false);
 
     int pollRate = static_cast<int>(m_monitoring->pollingRate());
+    m_pollingRateSlider->blockSignals(true);
     m_pollingRateSlider->setValue(pollRate);
+    m_pollingRateSlider->blockSignals(false);
     m_pollingRateLabel->setText(QString("%1 Hz").arg(pollRate));
 
+    m_silenceThresholdSlider->blockSignals(true);
     m_silenceThresholdSlider->setValue(m_settings->silenceThreshold);
+    m_silenceThresholdSlider->blockSignals(false);
     m_silenceThresholdLabel->setText(QString("%1 dB").arg(m_settings->silenceThreshold));
 
+    m_silenceTimeoutSlider->blockSignals(true);
     m_silenceTimeoutSlider->setValue(m_settings->silenceTimeout);
+    m_silenceTimeoutSlider->blockSignals(false);
     if (m_settings->silenceTimeout == 0) m_silenceTimeoutLabel->setText("Disabled");
     else m_silenceTimeoutLabel->setText(QString("%1 s").arg(m_settings->silenceTimeout));
 }

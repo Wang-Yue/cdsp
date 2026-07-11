@@ -34,6 +34,7 @@ private slots:
     void refreshMeters();
     void updateVisibility();
     void updateFaderUi();
+    void updateSignalChain();
 
 private:
     std::shared_ptr<MonitoringController> m_monitoring;
@@ -41,6 +42,9 @@ private:
     std::shared_ptr<SpectrumEngine> m_spectrumEngine;
     std::shared_ptr<SpectrogramEngine> m_spectrogramEngine;
     std::shared_ptr<VectorScopeEngine> m_vectorScopeEngine;
+
+    QWidget* m_chainWidget = nullptr;
+    QHBoxLayout* m_chainLayout = nullptr;
 
     QGroupBox* m_levelMetersGroup = nullptr;
     QGroupBox* m_analogVUGroup = nullptr;

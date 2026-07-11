@@ -28,12 +28,20 @@ DashboardView::DashboardView(
 
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &DashboardView::refreshMeters);
 
-    if (m_dspController && m_dspController->settings()) {
-        connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateVisibility);
-        connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateFaderUi);
+    if (m_dspController) {
+        if (m_dspController->settings()) {
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateVisibility);
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateFaderUi);
+            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, &DashboardView::updateSignalChain);
+        }
+        if (m_dspController->pipelineStore()) {
+            connect(m_dspController->pipelineStore().get(), &PipelineStore::pipelineChanged, this, &DashboardView::updateSignalChain);
+        }
+        connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &DashboardView::updateSignalChain);
     }
     updateVisibility();
     updateFaderUi();
+    updateSignalChain();
 }
 
 void DashboardView::updateVisibility() {
@@ -79,6 +87,107 @@ void DashboardView::updateFaderUi() {
     }
 }
 
+void DashboardView::updateSignalChain() {
+    if (!m_chainLayout || !m_chainWidget) return;
+    QLayoutItem* item;
+    while ((item = m_chainLayout->takeAt(0)) != nullptr) {
+        if (item->widget()) delete item->widget();
+        delete item;
+    }
+
+    bool isRunning = (m_dspController && m_dspController->status == ProcessingState::Running);
+    auto s = m_dspController ? m_dspController->settings() : nullptr;
+    auto pipe = m_dspController ? m_dspController->pipelineStore() : nullptr;
+
+    QString capDevName = "Input";
+    QString playDevName = "Output";
+    if (s) {
+        capDevName = QString::fromStdString(s->deviceConfig.capture.coreAudio.device.value_or("Input"));
+        playDevName = QString::fromStdString(s->deviceConfig.playback.coreAudio.device.value_or("Output"));
+    }
+
+    auto addChevron = [this]() {
+        auto chev = new QLabel("›", m_chainWidget);
+        chev->setStyleSheet("color: rgba(255, 255, 255, 0.4); font-size: 14px; font-weight: bold; padding: 0 4px;");
+        m_chainLayout->addWidget(chev);
+    };
+
+    // 1. Input Device Chip
+    auto capChip = new QPushButton(QString("🎤 %1").arg(capDevName), m_chainWidget);
+    capChip->setFlat(true);
+    if (isRunning) {
+        capChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+    } else {
+        capChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+    }
+    m_chainLayout->addWidget(capChip);
+
+    addChevron();
+
+    // 2. Resampler Chip (Clickable Toggle)
+    bool resampEnabled = s ? s->resamplerEnabled : false;
+    auto resampChip = new QPushButton("🔄 Resampler", m_chainWidget);
+    resampChip->setCursor(Qt::PointingHandCursor);
+    resampChip->setCheckable(true);
+    resampChip->setChecked(resampEnabled);
+    if (resampEnabled) {
+        resampChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+    } else {
+        resampChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+    }
+    connect(resampChip, &QPushButton::clicked, [this]() {
+        if (m_dspController && m_dspController->settings()) {
+            bool enabled = !m_dspController->settings()->resamplerEnabled;
+            m_dspController->settings()->resamplerEnabled = enabled;
+            m_dspController->settings()->savePreferences();
+            m_dspController->applyConfig();
+            updateSignalChain();
+        }
+    });
+    m_chainLayout->addWidget(resampChip);
+
+    addChevron();
+
+    // 3. Pipeline Stages Chips (Clickable Toggles)
+    if (pipe) {
+        for (size_t i = 0; i < pipe->stages.size(); ++i) {
+            const auto& st = pipe->stages[i];
+            std::string icon = stageTypeToIcon(st.type);
+            auto stChip = new QPushButton(QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), m_chainWidget);
+            stChip->setCursor(Qt::PointingHandCursor);
+            stChip->setCheckable(true);
+            stChip->setChecked(st.isEnabled);
+            if (st.isEnabled) {
+                stChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+            } else {
+                stChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+            }
+
+            connect(stChip, &QPushButton::clicked, [this, i]() {
+                if (m_dspController && m_dspController->pipelineStore() && i < m_dspController->pipelineStore()->stages.size()) {
+                    m_dspController->pipelineStore()->stages[i].isEnabled = !m_dspController->pipelineStore()->stages[i].isEnabled;
+                    m_dspController->pipelineStore()->save();
+                    m_dspController->applyConfig();
+                    updateSignalChain();
+                }
+            });
+            m_chainLayout->addWidget(stChip);
+
+            addChevron();
+        }
+    }
+
+    // 4. Output Device Chip
+    auto playChip = new QPushButton(QString("🔊 %1").arg(playDevName), m_chainWidget);
+    playChip->setFlat(true);
+    if (isRunning) {
+        playChip->setStyleSheet("background-color: rgba(52, 199, 89, 0.2); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
+    } else {
+        playChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
+    }
+    m_chainLayout->addWidget(playChip);
+}
+
 void DashboardView::setupUi() {
     auto scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
@@ -89,7 +198,7 @@ void DashboardView::setupUi() {
     mainLayout->setSpacing(16);
 
     // 1. Signal Chain Overview Card (Horizontal Scrollable)
-    auto chainGroup = new QGroupBox("Signal Chain Overview", container);
+    auto chainGroup = new QGroupBox("Signal Chain", container);
     auto chainGroupLayout = new QVBoxLayout(chainGroup);
     chainGroupLayout->setContentsMargins(4, 4, 4, 4);
 
@@ -98,76 +207,12 @@ void DashboardView::setupUi() {
     chainScroll->setFrameShape(QFrame::NoFrame);
     chainScroll->setFixedHeight(60);
 
-    auto chainWidget = new QWidget(chainScroll);
-    auto chainLayout = new QHBoxLayout(chainWidget);
-    chainLayout->setContentsMargins(8, 8, 8, 8);
-    chainLayout->setSpacing(8);
+    m_chainWidget = new QWidget(chainScroll);
+    m_chainLayout = new QHBoxLayout(m_chainWidget);
+    m_chainLayout->setContentsMargins(8, 8, 8, 8);
+    m_chainLayout->setSpacing(4);
 
-    const auto& devConf = m_dspController->settings()->deviceConfig;
-    QString capDevName = QString::fromStdString(devConf.capture.coreAudio.device.value_or("System Default"));
-    QString playDevName = QString::fromStdString(devConf.playback.coreAudio.device.value_or("System Default"));
-
-    auto capChip = new QPushButton(QString("🎤 Input: %1").arg(capDevName), chainWidget);
-    capChip->setStyleSheet("background-color: #3a3a3c; color: #ffffff; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
-    chainLayout->addWidget(capChip);
-
-    auto arrow1 = new QLabel("➔", chainWidget); arrow1->setStyleSheet("color: #8e8e93; font-weight: bold;");
-    chainLayout->addWidget(arrow1);
-
-    bool resampEnabled = m_dspController->settings()->resamplerEnabled;
-    auto resampChip = new QPushButton(QString("🔄 Resampler (%1)").arg(resampEnabled ? "Active" : "Bypassed"), chainWidget);
-    resampChip->setCheckable(true);
-    resampChip->setChecked(resampEnabled);
-    if (resampEnabled) resampChip->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
-    else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 12px;");
-
-    connect(resampChip, &QPushButton::clicked, [this, resampChip]() {
-        bool enabled = !m_dspController->settings()->resamplerEnabled;
-        m_dspController->settings()->resamplerEnabled = enabled;
-        resampChip->setChecked(enabled);
-        resampChip->setText(QString("🔄 Resampler (%1)").arg(enabled ? "Active" : "Bypassed"));
-        if (enabled) resampChip->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
-        else resampChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 12px;");
-        m_dspController->applyConfig();
-    });
-    chainLayout->addWidget(resampChip);
-
-    auto arrow2 = new QLabel("➔", chainWidget); arrow2->setStyleSheet("color: #8e8e93; font-weight: bold;");
-    chainLayout->addWidget(arrow2);
-
-    for (size_t i = 0; i < m_dspController->pipelineStore()->stages.size(); ++i) {
-        const auto& st = m_dspController->pipelineStore()->stages[i];
-        std::string icon = stageTypeToIcon(st.type);
-        auto stChip = new QPushButton(QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), chainWidget);
-        stChip->setCheckable(true);
-        stChip->setChecked(st.isEnabled);
-        if (st.isEnabled) stChip->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 6px; padding: 6px 10px;");
-        else stChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 10px;");
-
-        connect(stChip, &QPushButton::clicked, [this, i, stChip]() {
-            m_dspController->pipelineStore()->stages[i].isEnabled = !m_dspController->pipelineStore()->stages[i].isEnabled;
-            bool enabled = m_dspController->pipelineStore()->stages[i].isEnabled;
-            stChip->setChecked(enabled);
-            if (enabled) stChip->setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border-radius: 6px; padding: 6px 10px;");
-            else stChip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; border-radius: 6px; padding: 6px 10px;");
-            m_dspController->applyConfig();
-        });
-        chainLayout->addWidget(stChip);
-
-        if (i + 1 < m_dspController->pipelineStore()->stages.size()) {
-            auto arr = new QLabel("➔", chainWidget); arr->setStyleSheet("color: #8e8e93;");
-            chainLayout->addWidget(arr);
-        }
-    }
-
-    auto arrow3 = new QLabel("➔", chainWidget); arrow3->setStyleSheet("color: #8e8e93; font-weight: bold;");
-    chainLayout->addWidget(arrow3);
-
-    auto playChip = new QPushButton(QString("🔊 Output: %1").arg(playDevName), chainWidget);
-    playChip->setStyleSheet("background-color: #3a3a3c; color: #ffffff; font-weight: bold; border-radius: 6px; padding: 6px 12px;");
-    chainLayout->addWidget(playChip);
-
-    chainScroll->setWidget(chainWidget);
+    chainScroll->setWidget(m_chainWidget);
     chainGroupLayout->addWidget(chainScroll);
     mainLayout->addWidget(chainGroup);
 

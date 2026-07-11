@@ -117,18 +117,27 @@ void ConsoleLogsView::refreshLogs() {
         int row = m_table->rowCount();
         m_table->insertRow(row);
 
-        auto timeItem = new QTableWidgetItem(entry.timestamp.toString("hh:mm:ss.zzz"));
+        auto timeItem = new QTableWidgetItem(entry.timestamp.toString("HH:mm:ss.zzz"));
         auto levelItem = new QTableWidgetItem(logLevelToString(entry.level));
         auto msgItem = new QTableWidgetItem(entry.message);
 
-        if (entry.level == LogLevel::Error) {
-            levelItem->setForeground(QColor("#ff3b30"));
-        } else if (entry.level == LogLevel::Warn) {
-            levelItem->setForeground(QColor("#ff9500"));
-        } else if (entry.level == LogLevel::Info) {
-            levelItem->setForeground(QColor("#34c759"));
-        } else {
-            levelItem->setForeground(QColor("#8e8e93"));
+        switch (entry.level) {
+        case LogLevel::Error:
+            levelItem->setForeground(QColor("#ff3b30")); // Red
+            break;
+        case LogLevel::Warn:
+            levelItem->setForeground(QColor("#ff9500")); // Orange
+            break;
+        case LogLevel::Info:
+            levelItem->setForeground(QColor("#34c759")); // Green
+            break;
+        case LogLevel::Debug:
+            levelItem->setForeground(QColor("#007aff")); // Blue
+            break;
+        case LogLevel::Trace:
+        default:
+            levelItem->setForeground(QColor("#8e8e93")); // Gray
+            break;
         }
 
         m_table->setItem(row, 0, timeItem);

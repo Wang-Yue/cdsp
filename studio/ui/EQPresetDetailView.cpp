@@ -45,9 +45,11 @@ void EQPresetDetailView::setupUi() {
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
     m_nameEdit->setMaximumWidth(220);
-    connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
-        m_preset.name = m_nameEdit->text().toStdString();
-        m_pipeline->updateEQPreset(m_preset);
+    connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
+        if (m_preset.name != text.toStdString()) {
+            m_preset.name = text.toStdString();
+            m_pipeline->updateEQPreset(m_preset);
+        }
     });
     headerLayout->addWidget(m_nameEdit);
 
@@ -174,9 +176,16 @@ void EQPresetDetailView::setupUi() {
             refreshUi();
         }
     };
-    m_diagramWidget->onBandQChanged = [this](int idx, double q) {
+    m_diagramWidget->onBandQChanged = [this](int idx, double val) {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
-            m_preset.bands[idx].q = q;
+            auto& band = m_preset.bands[idx];
+            if (band.useSlope) {
+                band.slope = val;
+            } else if (band.useBandwidth) {
+                band.bandwidth = val;
+            } else {
+                band.q = val;
+            }
             m_diagramWidget->setPreset(m_preset);
             m_pipeline->updateEQPreset(m_preset);
             refreshUi();

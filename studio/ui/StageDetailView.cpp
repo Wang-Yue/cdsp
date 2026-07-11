@@ -1408,17 +1408,31 @@ void StageDetailView::buildStageOptionsUi() {
             formLayout->addRow("Frequency:", freqBox);
         }
 
-        if (stage.comboType == BiquadComboType::ButterworthLowpass || stage.comboType == BiquadComboType::ButterworthHighpass ||
-            stage.comboType == BiquadComboType::LinkwitzRileyLowpass || stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
-            auto orderCombo = new QComboBox(comboGroup);
-            orderCombo->addItems({"2nd Order (12 dB/oct)", "4th Order (24 dB/oct)", "6th Order (36 dB/oct)", "8th Order (48 dB/oct)"});
-            int oIdx = (stage.comboOrder / 2) - 1;
-            if (oIdx < 0 || oIdx > 3) oIdx = 0;
-            orderCombo->setCurrentIndex(oIdx);
-            connect(orderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-                stage.comboOrder = (idx + 1) * 2; applyConfig();
+        if (stage.comboType == BiquadComboType::ButterworthLowpass || stage.comboType == BiquadComboType::ButterworthHighpass) {
+            auto orderSpin = new QSpinBox(comboGroup);
+            orderSpin->setRange(1, 64);
+            orderSpin->setSingleStep(1);
+            orderSpin->setValue(std::clamp(stage.comboOrder, 1, 64));
+            connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+                stage.comboOrder = val; applyConfig();
             });
-            formLayout->addRow("Filter Order:", orderCombo);
+            formLayout->addRow("Filter Order (1..64):", orderSpin);
+        } else if (stage.comboType == BiquadComboType::LinkwitzRileyLowpass || stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
+            auto orderSpin = new QSpinBox(comboGroup);
+            orderSpin->setRange(2, 64);
+            orderSpin->setSingleStep(2);
+            int currentOrder = stage.comboOrder;
+            if (currentOrder % 2 != 0) currentOrder = std::max(2, currentOrder - 1);
+            orderSpin->setValue(std::clamp(currentOrder, 2, 64));
+            connect(orderSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage, orderSpin](int val) {
+                if (val % 2 != 0) {
+                    val = (val > stage.comboOrder) ? val + 1 : val - 1;
+                    orderSpin->setValue(val);
+                    return;
+                }
+                stage.comboOrder = val; applyConfig();
+            });
+            formLayout->addRow("Filter Order (even 2..64):", orderSpin);
         }
 
         if (stage.comboType == BiquadComboType::Tilt) {
@@ -1442,17 +1456,21 @@ void StageDetailView::buildStageOptionsUi() {
 
             auto addRow = [this, peqGroup, peqGrid](int r, const QString& name, double* f, double* g, double* q) {
                 peqGrid->addWidget(new QLabel(name, peqGroup), r, 0);
-                auto fEdit = new QLineEdit(QString::number(*f), peqGroup); fEdit->setFixedWidth(70);
-                connect(fEdit, &QLineEdit::editingFinished, [this, f, fEdit]() { *f = fEdit->text().toDouble(); applyConfig(); });
-                peqGrid->addWidget(fEdit, r, 1);
 
-                auto gEdit = new QLineEdit(QString::number(*g), peqGroup); gEdit->setFixedWidth(60);
-                connect(gEdit, &QLineEdit::editingFinished, [this, g, gEdit]() { *g = gEdit->text().toDouble(); applyConfig(); });
-                peqGrid->addWidget(gEdit, r, 2);
+                auto fSpin = new QDoubleSpinBox(peqGroup);
+                fSpin->setRange(20.0, 20000.0); fSpin->setSingleStep(10.0); fSpin->setDecimals(1); fSpin->setValue(*f); fSpin->setFixedWidth(90);
+                connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, f](double val) { *f = val; applyConfig(); });
+                peqGrid->addWidget(fSpin, r, 1);
 
-                auto qEdit = new QLineEdit(QString::number(*q), peqGroup); qEdit->setFixedWidth(60);
-                connect(qEdit, &QLineEdit::editingFinished, [this, q, qEdit]() { *q = qEdit->text().toDouble(); applyConfig(); });
-                peqGrid->addWidget(qEdit, r, 3);
+                auto gSpin = new QDoubleSpinBox(peqGroup);
+                gSpin->setRange(-40.0, 40.0); gSpin->setSingleStep(0.5); gSpin->setDecimals(1); gSpin->setValue(*g); gSpin->setFixedWidth(80);
+                connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, g](double val) { *g = val; applyConfig(); });
+                peqGrid->addWidget(gSpin, r, 2);
+
+                auto qSpin = new QDoubleSpinBox(peqGroup);
+                qSpin->setRange(0.05, 100.0); qSpin->setSingleStep(0.05); qSpin->setDecimals(3); qSpin->setValue(*q); qSpin->setFixedWidth(80);
+                connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, q](double val) { *q = val; applyConfig(); });
+                peqGrid->addWidget(qSpin, r, 3);
             };
 
             addRow(1, "Low Shelf", &stage.peqFls, &stage.peqGls, &stage.peqQls);
@@ -1538,8 +1556,20 @@ void StageDetailView::buildStageOptionsUi() {
             }
         };
 
+        static const char* const iso31Labels[31] = {
+            "20", "25", "31.5", "40", "50", "63", "80", "100", "125", "160",
+            "200", "250", "315", "400", "500", "630", "800", "1k", "1.25k", "1.6k",
+            "2k", "2.5k", "3.15k", "4k", "5k", "6.3k", "8k", "10k", "12.5k", "16k", "20k"
+        };
+
         for (int b = 0; b < totalBands; ++b) {
-            double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
+            QString fText;
+            if (totalBands == 31 && std::abs(stage.graphicEQFreqMin - 20.0) < 1e-3 && std::abs(stage.graphicEQFreqMax - 20000.0) < 1e-3) {
+                fText = QString(iso31Labels[b]);
+            } else {
+                double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
+                fText = freqLabelText(freq);
+            }
 
             auto bVBox = new QVBoxLayout();
             bVBox->setSpacing(4);
@@ -1557,7 +1587,7 @@ void StageDetailView::buildStageOptionsUi() {
             });
             bVBox->addWidget(slider, 0, Qt::AlignCenter);
 
-            auto fLbl = new QLabel(freqLabelText(freq), bankContainer);
+            auto fLbl = new QLabel(fText, bankContainer);
             fLbl->setFont(QFont("sans-serif", 8, QFont::Bold));
             fLbl->setAlignment(Qt::AlignCenter);
             bVBox->addWidget(fLbl);

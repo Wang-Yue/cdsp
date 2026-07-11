@@ -4,6 +4,7 @@
 #include <QWidget>
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
+#include <QLabel>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -76,6 +77,7 @@ private:
 
     // Processing Settings
     QComboBox* m_chunkSizeCombo;
+    QLabel* m_latencyLabel;
     QCheckBox* m_enableRateAdjustCheck;
     QSpinBox* m_queueLimitSpin;
     QCheckBox* m_stopOnRateChangeCheck;
@@ -94,6 +96,7 @@ private:
     static QString formatSampleRate(int rate);
     void updateCapFileVisibility();
     void updateDoPCapability();
+    void updateLatencyText();
 };
 
 #endif // DEVICE_PICKER_VIEW_H

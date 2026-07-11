@@ -107,6 +107,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
 
     resize(1280, 800);
+    setMinimumSize(1280, 800);
     setWindowTitle("CamillaDSP Monitor - Qt Edition");
 
     setupUi();
@@ -154,8 +155,8 @@ void MainWindow::setupUi() {
 
     m_sidebarTree = new QTreeWidget(m_splitter);
     m_sidebarTree->setHeaderHidden(true);
-    m_sidebarTree->setMinimumWidth(240);
-    m_sidebarTree->setMaximumWidth(320);
+    m_sidebarTree->setMinimumWidth(220);
+    m_sidebarTree->setMaximumWidth(360);
     m_sidebarTree->setContextMenuPolicy(Qt::CustomContextMenu);
 
     connect(m_sidebarTree, &QTreeWidget::itemClicked, this, &MainWindow::onSidebarItemClicked);
@@ -227,6 +228,10 @@ void MainWindow::setupUi() {
     m_splitter->addWidget(m_sidebarTree);
     m_splitter->addWidget(rightPanel);
     m_splitter->setSizes({260, 1020});
+    m_splitter->setStretchFactor(0, 0);
+    m_splitter->setStretchFactor(1, 1);
+    m_splitter->setCollapsible(0, false);
+    m_splitter->setCollapsible(1, false);
 
     setupSidebar();
 }
