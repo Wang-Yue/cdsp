@@ -86,6 +86,16 @@ inline void signalHandler(int sig) {
     crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
 #if defined(_WIN32)
     logCallstack(crashLog);
+    HANDLE hFile = CreateFileA("crash_dump.dmp", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        MINIDUMP_EXCEPTION_INFORMATION mdei;
+        mdei.ThreadId = GetCurrentThreadId();
+        mdei.ExceptionPointers = NULL;
+        mdei.ClientPointers = FALSE;
+
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &mdei, NULL, NULL);
+        CloseHandle(hFile);
+    }
 #endif
     crashLog << "========================================" << std::endl;
     crashLog.close();
@@ -95,12 +105,11 @@ inline void signalHandler(int sig) {
 inline void installCrashHandler() {
 #if defined(_WIN32)
     SetUnhandledExceptionFilter(customUnhandledExceptionFilter);
-#else
+#endif
     std::signal(SIGSEGV, signalHandler);
     std::signal(SIGABRT, signalHandler);
     std::signal(SIGFPE, signalHandler);
     std::signal(SIGILL, signalHandler);
-#endif
 }
 
 #endif // CRASH_HANDLER_H
