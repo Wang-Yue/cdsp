@@ -3230,8 +3230,9 @@ static void* server_thread_func(void* arg) {
                   }
                   mask_offset = 10;
                 }
-                if (payload_len > 4096 || offset + mask_offset + 4 + payload_len > (size_t)n) {
-                  // Payload size exceeds buffer limits or packet bounds. Close socket.
+
+                // Safety check: protect against large payloads (config should never exceed 128k)
+                if (payload_len > 128 * 1024) {
                   CLOSE_SOCKET(client_fds[i]);
                   pthread_mutex_lock(&server->sessions_mutex);
                   client_session_clear(&server->client_sessions[i]);
@@ -3249,13 +3250,67 @@ static void* server_thread_func(void* arg) {
                   break;
                 }
 
-                unsigned char* mask =
-                    (unsigned char*)&buf[offset + mask_offset];
-                char* payload = &buf[offset + mask_offset + 4];
+                size_t header_and_mask_len = mask_offset + 4;
+                if (offset + header_and_mask_len > (size_t)n) break;
+
+                unsigned char* mask = (unsigned char*)&buf[offset + mask_offset];
+
+                size_t bytes_in_buf = (size_t)n - (offset + header_and_mask_len);
+                size_t to_copy = bytes_in_buf < payload_len ? bytes_in_buf : payload_len;
+
+                char* payload = (char*)malloc(payload_len + 1);
+                if (!payload) {
+                  CLOSE_SOCKET(client_fds[i]);
+                  pthread_mutex_lock(&server->sessions_mutex);
+                  client_session_clear(&server->client_sessions[i]);
+
+                  for (int j = i; j < num_clients - 1; j++) {
+                    client_fds[j] = client_fds[j + 1];
+                    strcpy(last_state[j], last_state[j + 1]);
+                    server->client_sessions[j] = server->client_sessions[j + 1];
+                  }
+                  memset(&server->client_sessions[num_clients - 1], 0,
+                         sizeof(client_session_t));
+                  pthread_mutex_unlock(&server->sessions_mutex);
+                  num_clients--;
+                  i--;
+                  break;
+                }
+
+                memcpy(payload, &buf[offset + header_and_mask_len], to_copy);
+                size_t total_read = to_copy;
+                bool read_ok = true;
+                while (total_read < payload_len) {
+                  int r = recv(client_fds[i], payload + total_read, (int)(payload_len - total_read), 0);
+                  if (r <= 0) {
+                    read_ok = false;
+                    break;
+                  }
+                  total_read += (size_t)r;
+                }
+
+                if (!read_ok) {
+                  free(payload);
+                  CLOSE_SOCKET(client_fds[i]);
+                  pthread_mutex_lock(&server->sessions_mutex);
+                  client_session_clear(&server->client_sessions[i]);
+
+                  for (int j = i; j < num_clients - 1; j++) {
+                    client_fds[j] = client_fds[j + 1];
+                    strcpy(last_state[j], last_state[j + 1]);
+                    server->client_sessions[j] = server->client_sessions[j + 1];
+                  }
+                  memset(&server->client_sessions[num_clients - 1], 0,
+                         sizeof(client_session_t));
+                  pthread_mutex_unlock(&server->sessions_mutex);
+                  num_clients--;
+                  i--;
+                  break;
+                }
+
                 for (size_t p = 0; p < payload_len; p++) {
                   payload[p] ^= mask[p % 4];
                 }
-                char saved_char = payload[payload_len];
                 payload[payload_len] = '\0';
 
                 logger_debug(&server_logger, "Received WS frame: %s",
@@ -3266,8 +3321,6 @@ static void* server_thread_func(void* arg) {
                 dyn_string_init(&ds, 4096);
                 websocket_server_handle_command(server, i, payload, &ds);
 
-                payload[payload_len] = saved_char;
-
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending WS response: %s",
                                log_arg_string(ds.data), log_arg_none(),
@@ -3275,7 +3328,13 @@ static void* server_thread_func(void* arg) {
                   send_websocket_frame(client_fds[i], ds.data);
                 }
                 dyn_string_free(&ds);
-                offset += mask_offset + 4 + payload_len;
+                free(payload);
+
+                if (bytes_in_buf < payload_len) {
+                  break;
+                } else {
+                  offset += header_and_mask_len + payload_len;
+                }
               } else {
                 logger_debug(&server_logger, "Received raw TCP: %s",
                              log_arg_string(&buf[offset]), log_arg_none(),
