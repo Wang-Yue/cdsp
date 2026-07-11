@@ -122,7 +122,8 @@ static bool find_asio_driver_caps_clsid(const char* driver_name,
 
   while (RegEnumKeyA(hk, index++, subkey_name, sizeof(subkey_name)) ==
          ERROR_SUCCESS) {
-    if (driver_name[0] == '\0' || strcasecmp(subkey_name, driver_name) == 0 ||
+    if (!driver_name || driver_name[0] == '\0' ||
+        strcasecmp(subkey_name, driver_name) == 0 ||
         strstr(subkey_name, driver_name) != NULL) {
       HKEY hk_driver;
       if (RegOpenKeyExA(hk, subkey_name, 0, KEY_READ, &hk_driver) ==
