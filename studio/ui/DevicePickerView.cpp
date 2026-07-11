@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
 
@@ -122,7 +123,7 @@ void DevicePickerView::setupUi() {
             return;
         AudioBackendType b = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
         m_capStack->setCurrentIndex(getCapStackIndex(b));
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
     capBackendBox->addWidget(m_capBackendCombo);
     capBackendBox->addStretch();
@@ -184,7 +185,7 @@ void DevicePickerView::setupUi() {
             return;
         AudioBackendType b = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
         m_pbStack->setCurrentIndex(getPbStackIndex(b));
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
     pbBackendBox->addWidget(m_pbBackendCombo);
     pbBackendBox->addStretch();
@@ -414,12 +415,16 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (m_isRefreshing || idx < 0)
             return;
-        std::string newDev = m_capDeviceCombo->currentData().toString().toStdString();
-        m_devices->captureConfig.setDeviceName(newDev);
-        m_devices->refreshDeviceCapabilities();
-        m_devices->validateSampleRates();
-        applySettings();
-        refreshUi();
+        QTimer::singleShot(0, this, [this]() {
+            if (m_capDeviceCombo->currentIndex() < 0)
+                return;
+            std::string newDev = m_capDeviceCombo->currentData().toString().toStdString();
+            m_devices->captureConfig.setDeviceName(newDev);
+            m_devices->refreshDeviceCapabilities();
+            m_devices->validateSampleRates();
+            applySettings();
+            refreshUi();
+        });
     });
 
     auto devBox = new QVBoxLayout();
@@ -835,12 +840,16 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (m_isRefreshing || idx < 0)
             return;
-        std::string newDev = m_pbDeviceCombo->currentData().toString().toStdString();
-        m_devices->playbackConfig.setDeviceName(newDev);
-        m_devices->refreshDeviceCapabilities();
-        m_devices->validateSampleRates();
-        applySettings();
-        refreshUi();
+        QTimer::singleShot(0, this, [this]() {
+            if (m_pbDeviceCombo->currentIndex() < 0)
+                return;
+            std::string newDev = m_pbDeviceCombo->currentData().toString().toStdString();
+            m_devices->playbackConfig.setDeviceName(newDev);
+            m_devices->refreshDeviceCapabilities();
+            m_devices->validateSampleRates();
+            applySettings();
+            refreshUi();
+        });
     });
 
     auto devBox = new QVBoxLayout();
