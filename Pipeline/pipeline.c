@@ -320,7 +320,6 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             pipeline_free(pipeline);
             return NULL;
           }
-          bool is_bypassed = step->bypassed;
           int* channels_to_apply = NULL;
           size_t channels_count = 0;
           int single_ch = 0;

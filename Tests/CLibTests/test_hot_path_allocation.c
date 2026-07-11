@@ -48,7 +48,9 @@ typedef void (*malloc_logger_t)(uint32_t type, uintptr_t arg1, uintptr_t arg2,
                                 uintptr_t arg3, uintptr_t result,
                                 uint32_t num_hot_frames_to_skip);
 
+#if defined(__linux__) || defined(_WIN32)
 static malloc_logger_t g_custom_malloc_logger = NULL;
+#endif
 
 #ifdef __linux__
 #include <unistd.h>

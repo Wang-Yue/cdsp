@@ -243,7 +243,7 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
         /* Mixers change the channel layout. Verify that the mixer's input
          * channels match the current pipeline state, and then update the
          * tracked channel count. */
-        if (!step->has_name || !step->name || step->name[0] == '\0') {
+        if (!step->has_name || step->name[0] == '\0') {
           config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                            "Mixer step %zu must have 'name'", i);
           return -1;
@@ -268,7 +268,7 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
       case PIPELINE_STEP_TYPE_PROCESSOR: {
         /* Processors must match the channel count of the pipeline at the
          * insertion point. */
-        if (!step->has_name || !step->name || step->name[0] == '\0') {
+        if (!step->has_name || step->name[0] == '\0') {
           config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                            "Processor step %zu must have 'name'", i);
           return -1;

@@ -27,34 +27,6 @@
 #define NBR_FRAMES (16 * CHUNK_SIZE)
 
 typedef struct {
-  uint64_t state;
-} seeded_rng_t;
-
-static inline uint64_t seeded_rng_next(seeded_rng_t* rng) {
-  rng->state = rng->state * 6364136223846793005ULL + 1442695040888963407ULL;
-  return rng->state;
-}
-
-static inline double seeded_rng_random_double(seeded_rng_t* rng) {
-  uint64_t val = seeded_rng_next(rng);
-  double u = (double)(val >> 11) * (1.0 / 9007199254740992.0);  // 2^53
-  return u * 2.0 - 1.0;
-}
-
-static void make_test_signal(double* x) {
-  seeded_rng_t rng = {.state = 0xCDD5AA42DEADBEEFULL};
-  const double f1 = 200.0;
-  const double f2 = 1500.0;
-  const double f3 = 8000.0;
-  for (size_t i = 0; i < NBR_FRAMES; i++) {
-    double t = (double)i / (double)SAMPLE_RATE;
-    x[i] = 0.4 * sin(2.0 * M_PI * f1 * t) + 0.3 * sin(2.0 * M_PI * f2 * t) +
-           0.2 * sin(2.0 * M_PI * f3 * t) +
-           0.05 * seeded_rng_random_double(&rng);
-  }
-}
-
-typedef struct {
   char name[64];
   double ns_per_frame;
 } rust_bench_result_t;

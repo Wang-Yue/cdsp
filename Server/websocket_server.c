@@ -1184,25 +1184,6 @@ static void cjson_merge_patch(cJSON* target, const cJSON* patch) {
 }
 
 /**
- * @brief Formats an array of doubles as a JSON array string.
- *
- * Outputs a string like: `[-3.14, 0.0, 1.23]`.
- *
- * @param arr Array of doubles.
- * @param count Number of elements in the array.
- * @param out Output buffer.
- * @param max_len Maximum length of the output buffer.
- */
-static char* format_double_array(const double* arr, size_t count) {
-  if (count == 0) return strdup("[]");
-  cJSON* json_arr = cJSON_CreateDoubleArray(arr, (int)count);
-  if (!json_arr) return NULL;
-  char* str = cJSON_PrintUnformatted(json_arr);
-  cJSON_Delete(json_arr);
-  return str;
-}
-
-/**
  * @brief Serializes an audio device descriptor struct into its JSON
  * representation.
  *
