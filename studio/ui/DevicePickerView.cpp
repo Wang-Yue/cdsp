@@ -221,11 +221,13 @@ void DevicePickerView::setupUi() {
     connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        if (m_chunkSizeCombo && m_settings) {
-            m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
-        }
-        updateLatencyText();
-        applySettings();
+        QTimer::singleShot(0, this, [this]() {
+            if (m_chunkSizeCombo && m_settings) {
+                m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
+            }
+            updateLatencyText();
+            applySettings();
+        });
     });
     chunkLayout->addWidget(m_latencyLabel);
     chunkLayout->addStretch();
@@ -449,9 +451,13 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     };
     connect(m_capDevChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), onDevChChanged);
     connect(m_capDevChannelsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, onDevChChanged](int) {
-        if (!m_isRefreshing && m_capDevChannelsCombo->currentIndex() >= 0) {
-            onDevChChanged(m_capDevChannelsCombo->currentData().toInt());
-        }
+        if (m_isRefreshing)
+            return;
+        QTimer::singleShot(0, this, [this, onDevChChanged]() {
+            if (m_capDevChannelsCombo->currentIndex() >= 0) {
+                onDevChChanged(m_capDevChannelsCombo->currentData().toInt());
+            }
+        });
     });
 
     auto devChLbl = new QLabel("Device Channels", w);
@@ -485,7 +491,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
 
     m_capRateLabel = new QLabel(w);
@@ -505,7 +511,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
 
     m_capFormatLabel = new QLabel(w);
@@ -540,7 +546,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_dopCutoffCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
     cutoffBox->addWidget(m_dopCutoffCombo);
     cutoffBox->addStretch();
@@ -874,9 +880,13 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     };
     connect(m_pbDevChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), onDevChChanged);
     connect(m_pbDevChannelsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, onDevChChanged](int) {
-        if (!m_isRefreshing && m_pbDevChannelsCombo->currentIndex() >= 0) {
-            onDevChChanged(m_pbDevChannelsCombo->currentData().toInt());
-        }
+        if (m_isRefreshing)
+            return;
+        QTimer::singleShot(0, this, [this, onDevChChanged]() {
+            if (m_pbDevChannelsCombo->currentIndex() >= 0) {
+                onDevChChanged(m_pbDevChannelsCombo->currentData().toInt());
+            }
+        });
     });
 
     auto devChLbl = new QLabel("Device Channels", w);
@@ -910,8 +920,10 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
-        updateDoPCapability();
+        QTimer::singleShot(0, this, [this]() {
+            applySettings();
+            updateDoPCapability();
+        });
     });
     rateBox->addWidget(m_pbRateCombo);
     rateBox->addStretch();
@@ -926,7 +938,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
 
     m_pbFormatLabel = new QLabel(w);
@@ -985,7 +997,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_sdmFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
     sdmBox->addWidget(m_sdmFilterCombo);
     sdmBox->addStretch();
@@ -1045,7 +1057,7 @@ QWidget* DevicePickerView::createPbFileView() {
     connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        applySettings();
+        QTimer::singleShot(0, this, [this]() { applySettings(); });
     });
     form->addRow("Format", m_pbRawFileFormatCombo);
 
