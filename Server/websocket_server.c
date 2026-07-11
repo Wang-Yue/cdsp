@@ -639,6 +639,179 @@ static void format_state_event_payload(processing_state_t state,
            processing_state_to_string(state), reason_str);
 }
 
+typedef enum {
+  WS_CMD_UNKNOWN = 0,
+  WS_CMD_GET_VERSION,
+  WS_CMD_GET_STATE,
+  WS_CMD_GET_STOP_REASON,
+  WS_CMD_GET_CAPTURE_RATE,
+  WS_CMD_GET_RATE_ADJUST,
+  WS_CMD_GET_BUFFER_LEVEL,
+  WS_CMD_GET_CLIPPED_SAMPLES,
+  WS_CMD_RESET_CLIPPED_SAMPLES,
+  WS_CMD_GET_PROCESSING_LOAD,
+  WS_CMD_GET_RESAMPLER_LOAD,
+  WS_CMD_GET_SUPPORTED_DEVICE_TYPES,
+  WS_CMD_GET_UPDATE_INTERVAL,
+  WS_CMD_SET_UPDATE_INTERVAL,
+  WS_CMD_GET_VOLUME,
+  WS_CMD_SET_VOLUME,
+  WS_CMD_GET_MUTE,
+  WS_CMD_SET_MUTE,
+  WS_CMD_TOGGLE_MUTE,
+  WS_CMD_GET_FADERS,
+  WS_CMD_GET_FADER_VOLUME,
+  WS_CMD_SET_FADER_VOLUME,
+  WS_CMD_SET_FADER_EXTERNAL_VOLUME,
+  WS_CMD_GET_FADER_MUTE,
+  WS_CMD_SET_FADER_MUTE,
+  WS_CMD_TOGGLE_FADER_MUTE,
+  WS_CMD_ADJUST_VOLUME,
+  WS_CMD_ADJUST_FADER_VOLUME,
+  WS_CMD_GET_SPECTRUM,
+  WS_CMD_GET_AVAILABLE_CAPTURE_DEVICES,
+  WS_CMD_GET_AVAILABLE_PLAYBACK_DEVICES,
+  WS_CMD_GET_CAPTURE_DEVICE_CAPABILITIES,
+  WS_CMD_GET_PLAYBACK_DEVICE_CAPABILITIES,
+  WS_CMD_GET_CAPTURE_SIGNAL_RMS,
+  WS_CMD_GET_CAPTURE_SIGNAL_PEAK,
+  WS_CMD_GET_PLAYBACK_SIGNAL_RMS,
+  WS_CMD_GET_PLAYBACK_SIGNAL_PEAK,
+  WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE_LAST,
+  WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE_LAST,
+  WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE_LAST,
+  WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE_LAST,
+  WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE,
+  WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE,
+  WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE,
+  WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE,
+  WS_CMD_GET_SIGNAL_LEVELS,
+  WS_CMD_GET_SIGNAL_LEVELS_SINCE_LAST,
+  WS_CMD_GET_SIGNAL_LEVELS_SINCE,
+  WS_CMD_GET_SIGNAL_PEAKS_SINCE_START,
+  WS_CMD_RESET_SIGNAL_PEAKS_SINCE_START,
+  WS_CMD_GET_CHANNEL_LABELS,
+  WS_CMD_GET_SIGNAL_RANGE,
+  WS_CMD_GET_CONFIG_FILE_PATH,
+  WS_CMD_GET_PREVIOUS_CONFIG,
+  WS_CMD_GET_STATE_FILE_PATH,
+  WS_CMD_GET_STATE_FILE_UPDATED,
+  WS_CMD_GET_CONFIG,
+  WS_CMD_GET_CONFIG_JSON,
+  WS_CMD_GET_CONFIG_TITLE,
+  WS_CMD_GET_CONFIG_DESCRIPTION,
+  WS_CMD_RELOAD,
+  WS_CMD_STOP,
+  WS_CMD_EXIT,
+  WS_CMD_SET_CONFIG_FILE_PATH,
+  WS_CMD_SET_CONFIG_JSON,
+  WS_CMD_GET_CONFIG_VALUE,
+  WS_CMD_SET_CONFIG_VALUE,
+  WS_CMD_PATCH_CONFIG,
+  WS_CMD_READ_CONFIG_JSON,
+  WS_CMD_VALIDATE_CONFIG_JSON,
+  WS_CMD_SUBSCRIBE_STATE,
+  WS_CMD_SUBSCRIBE_VU_LEVELS,
+  WS_CMD_SUBSCRIBE_SIGNAL_LEVELS,
+  WS_CMD_SUBSCRIBE_SPECTRUM,
+  WS_CMD_STOP_SUBSCRIPTION
+} websocket_command_t;
+
+typedef struct {
+  const char* name;
+  websocket_command_t type;
+} command_map_t;
+
+static const command_map_t kCommandMap[] = {
+    {"GetVersion", WS_CMD_GET_VERSION},
+    {"GetState", WS_CMD_GET_STATE},
+    {"GetStopReason", WS_CMD_GET_STOP_REASON},
+    {"GetCaptureRate", WS_CMD_GET_CAPTURE_RATE},
+    {"GetRateAdjust", WS_CMD_GET_RATE_ADJUST},
+    {"GetBufferLevel", WS_CMD_GET_BUFFER_LEVEL},
+    {"GetClippedSamples", WS_CMD_GET_CLIPPED_SAMPLES},
+    {"ResetClippedSamples", WS_CMD_RESET_CLIPPED_SAMPLES},
+    {"GetProcessingLoad", WS_CMD_GET_PROCESSING_LOAD},
+    {"GetResamplerLoad", WS_CMD_GET_RESAMPLER_LOAD},
+    {"GetSupportedDeviceTypes", WS_CMD_GET_SUPPORTED_DEVICE_TYPES},
+    {"GetUpdateInterval", WS_CMD_GET_UPDATE_INTERVAL},
+    {"SetUpdateInterval", WS_CMD_SET_UPDATE_INTERVAL},
+    {"GetVolume", WS_CMD_GET_VOLUME},
+    {"SetVolume", WS_CMD_SET_VOLUME},
+    {"GetMute", WS_CMD_GET_MUTE},
+    {"SetMute", WS_CMD_SET_MUTE},
+    {"ToggleMute", WS_CMD_TOGGLE_MUTE},
+    {"GetFaders", WS_CMD_GET_FADERS},
+    {"GetFaderVolume", WS_CMD_GET_FADER_VOLUME},
+    {"SetFaderVolume", WS_CMD_SET_FADER_VOLUME},
+    {"SetFaderExternalVolume", WS_CMD_SET_FADER_EXTERNAL_VOLUME},
+    {"GetFaderMute", WS_CMD_GET_FADER_MUTE},
+    {"SetFaderMute", WS_CMD_SET_FADER_MUTE},
+    {"ToggleFaderMute", WS_CMD_TOGGLE_FADER_MUTE},
+    {"AdjustVolume", WS_CMD_ADJUST_VOLUME},
+    {"AdjustFaderVolume", WS_CMD_ADJUST_FADER_VOLUME},
+    {"GetSpectrum", WS_CMD_GET_SPECTRUM},
+    {"GetAvailableCaptureDevices", WS_CMD_GET_AVAILABLE_CAPTURE_DEVICES},
+    {"GetAvailablePlaybackDevices", WS_CMD_GET_AVAILABLE_PLAYBACK_DEVICES},
+    {"GetCaptureDeviceCapabilities", WS_CMD_GET_CAPTURE_DEVICE_CAPABILITIES},
+    {"GetPlaybackDeviceCapabilities", WS_CMD_GET_PLAYBACK_DEVICE_CAPABILITIES},
+    {"GetCaptureSignalRms", WS_CMD_GET_CAPTURE_SIGNAL_RMS},
+    {"GetCaptureSignalPeak", WS_CMD_GET_CAPTURE_SIGNAL_PEAK},
+    {"GetPlaybackSignalRms", WS_CMD_GET_PLAYBACK_SIGNAL_RMS},
+    {"GetPlaybackSignalPeak", WS_CMD_GET_PLAYBACK_SIGNAL_PEAK},
+    {"GetCaptureSignalRmsSinceLast", WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE_LAST},
+    {"GetCaptureSignalPeakSinceLast",
+     WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE_LAST},
+    {"GetPlaybackSignalRmsSinceLast",
+     WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE_LAST},
+    {"GetPlaybackSignalPeakSinceLast",
+     WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE_LAST},
+    {"GetCaptureSignalRmsSince", WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE},
+    {"GetCaptureSignalPeakSince", WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE},
+    {"GetPlaybackSignalRmsSince", WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE},
+    {"GetPlaybackSignalPeakSince", WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE},
+    {"GetSignalLevels", WS_CMD_GET_SIGNAL_LEVELS},
+    {"GetSignalLevelsSinceLast", WS_CMD_GET_SIGNAL_LEVELS_SINCE_LAST},
+    {"GetSignalLevelsSince", WS_CMD_GET_SIGNAL_LEVELS_SINCE},
+    {"GetSignalPeaksSinceStart", WS_CMD_GET_SIGNAL_PEAKS_SINCE_START},
+    {"ResetSignalPeaksSinceStart", WS_CMD_RESET_SIGNAL_PEAKS_SINCE_START},
+    {"GetChannelLabels", WS_CMD_GET_CHANNEL_LABELS},
+    {"GetSignalRange", WS_CMD_GET_SIGNAL_RANGE},
+    {"GetConfigFilePath", WS_CMD_GET_CONFIG_FILE_PATH},
+    {"GetPreviousConfig", WS_CMD_GET_PREVIOUS_CONFIG},
+    {"GetStateFilePath", WS_CMD_GET_STATE_FILE_PATH},
+    {"GetStateFileUpdated", WS_CMD_GET_STATE_FILE_UPDATED},
+    {"GetConfig", WS_CMD_GET_CONFIG},
+    {"GetConfigJson", WS_CMD_GET_CONFIG_JSON},
+    {"GetConfigTitle", WS_CMD_GET_CONFIG_TITLE},
+    {"GetConfigDescription", WS_CMD_GET_CONFIG_DESCRIPTION},
+    {"Reload", WS_CMD_RELOAD},
+    {"Stop", WS_CMD_STOP},
+    {"Exit", WS_CMD_EXIT},
+    {"SetConfigFilePath", WS_CMD_SET_CONFIG_FILE_PATH},
+    {"SetConfigJson", WS_CMD_SET_CONFIG_JSON},
+    {"GetConfigValue", WS_CMD_GET_CONFIG_VALUE},
+    {"SetConfigValue", WS_CMD_SET_CONFIG_VALUE},
+    {"PatchConfig", WS_CMD_PATCH_CONFIG},
+    {"ReadConfigJson", WS_CMD_READ_CONFIG_JSON},
+    {"ValidateConfigJson", WS_CMD_VALIDATE_CONFIG_JSON},
+    {"SubscribeState", WS_CMD_SUBSCRIBE_STATE},
+    {"SubscribeVuLevels", WS_CMD_SUBSCRIBE_VU_LEVELS},
+    {"SubscribeSignalLevels", WS_CMD_SUBSCRIBE_SIGNAL_LEVELS},
+    {"SubscribeSpectrum", WS_CMD_SUBSCRIBE_SPECTRUM},
+    {"StopSubscription", WS_CMD_STOP_SUBSCRIPTION}};
+
+static websocket_command_t lookup_command(const char* name) {
+  if (!name) return WS_CMD_UNKNOWN;
+  size_t count = sizeof(kCommandMap) / sizeof(kCommandMap[0]);
+  for (size_t i = 0; i < count; i++) {
+    if (strcmp(kCommandMap[i].name, name) == 0) {
+      return kCommandMap[i].type;
+    }
+  }
+  return WS_CMD_UNKNOWN;
+}
+
 /**
  * @brief Maps an audio backend error type to a WebSocket control protocol error
  * key.
@@ -653,6 +826,17 @@ static const char* get_websocket_error_key(audio_backend_error_type_t type) {
     case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
       return "DeviceNotFoundError";
     case AUDIO_BACKEND_ERR_DEVICE_BUSY:
+      return "DeviceBusyError";
+    default:
+      return "DeviceError";
+  }
+}
+
+static const char* get_websocket_device_error_key(device_error_type_t type) {
+  switch (type) {
+    case DEVICE_ERROR_NOT_FOUND:
+      return "DeviceNotFoundError";
+    case DEVICE_ERROR_BUSY:
       return "DeviceBusyError";
     default:
       return "DeviceError";
@@ -1016,19 +1200,16 @@ static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
  * @param out Output buffer.
  * @param max_len Maximum length of the output buffer.
  */
-static char* format_spectrum(const spectrum_t* spec) {
-  if (!spec || spec->count == 0) return strdup("null");
+static cJSON* serialize_spectrum(const spectrum_t* spec) {
+  if (!spec || spec->count == 0) return cJSON_CreateNull();
   cJSON* root = cJSON_CreateObject();
-
-  cJSON* freq_arr = cJSON_CreateDoubleArray(spec->frequencies, (int)spec->count);
-  cJSON_AddItemToObject(root, "frequencies", freq_arr);
-
-  cJSON* mag_arr = cJSON_CreateDoubleArray(spec->magnitudes, (int)spec->count);
-  cJSON_AddItemToObject(root, "magnitudes", mag_arr);
-
-  char* str = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  return str;
+  cJSON_AddItemToObject(
+      root, "frequencies",
+      cJSON_CreateDoubleArray(spec->frequencies, (int)spec->count));
+  cJSON_AddItemToObject(
+      root, "magnitudes",
+      cJSON_CreateDoubleArray(spec->magnitudes, (int)spec->count));
+  return root;
 }
 
 /**
@@ -1084,6 +1265,1939 @@ static bool server_handle_adjust_volume_fader(
   return true;
 }
 
+static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, cmd, inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+  if (value_json) {
+    cJSON_AddItemToObject(inner, "value", value_json);
+  }
+  char* str = cJSON_PrintUnformatted(root);
+  if (str) {
+    dyn_string_printf(ds, "%s", str);
+    free(str);
+  }
+  cJSON_Delete(root);
+}
+
+static void reply_error(const char* cmd, const char* error_name,
+                        cJSON* error_value, dyn_string_t* ds) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, cmd, inner);
+  if (error_value) {
+    cJSON_AddItemToObject(inner, "result", error_value);
+  } else {
+    cJSON_AddStringToObject(inner, "result", error_name);
+  }
+  char* str = cJSON_PrintUnformatted(root);
+  if (str) {
+    dyn_string_printf(ds, "%s", str);
+    free(str);
+  }
+  cJSON_Delete(root);
+}
+
+static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
+                                  const char* cmd_name, cJSON* arg,
+                                  dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    double vol = (server->engine->get_fader_volume)
+                     ? server->engine->get_fader_volume(server->engine->ctx,
+                                                        FADER_MAIN)
+                     : 0.0;
+    reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
+                                  const char* cmd_name, cJSON* arg,
+                                  dyn_string_t* ds) {
+  (void)client_idx;
+  double vol = 0.0;
+  if (arg && cJSON_IsNumber(arg)) {
+    vol = arg->valuedouble;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (server->engine->set_fader_volume) {
+        server->engine->set_fader_volume(server->engine->ctx, FADER_MAIN, vol, false);
+      }
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse volume");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
+                                const char* cmd_name, cJSON* arg,
+                                dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    bool mute = (server->engine->is_fader_muted)
+                    ? server->engine->is_fader_muted(server->engine->ctx,
+                                                     FADER_MAIN)
+                    : false;
+    reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
+                                const char* cmd_name, cJSON* arg,
+                                dyn_string_t* ds) {
+  (void)client_idx;
+  bool mute = false;
+  if (arg && cJSON_IsBool(arg)) {
+    mute = cJSON_IsTrue(arg);
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (server->engine->set_fader_mute) {
+        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN, mute);
+      }
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError", "Could not parse mute");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
+                                   const char* cmd_name, cJSON* arg,
+                                   dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    bool was_muted = (server->engine->is_fader_muted)
+                         ? server->engine->is_fader_muted(server->engine->ctx,
+                                                          FADER_MAIN)
+                         : false;
+    if (server->engine->set_fader_mute) {
+      server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN,
+                                     !was_muted);
+    }
+    reply_ok(cmd_name, cJSON_CreateBool(!was_muted), ds);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
+                                  const char* cmd_name, cJSON* arg,
+                                  dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    cJSON* arr = cJSON_CreateArray();
+    for (int i = 0; i < FADER_COUNT; i++) {
+      cJSON* obj = cJSON_CreateObject();
+      double vol = (server->engine->get_fader_volume)
+                       ? server->engine->get_fader_volume(server->engine->ctx,
+                                                          (fader_t)i)
+                       : 0.0;
+      bool mute = (server->engine->is_fader_muted)
+                      ? server->engine->is_fader_muted(server->engine->ctx,
+                                                       (fader_t)i)
+                      : false;
+      cJSON_AddNumberToObject(obj, "volume", vol);
+      cJSON_AddBoolToObject(obj, "mute", mute);
+      cJSON_AddItemToArray(arr, obj);
+    }
+    reply_ok(cmd_name, arr, ds);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_fader_volume(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsNumber(arg)) {
+    int idx = arg->valueint;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        double vol = (server->engine->get_fader_volume)
+                         ? server->engine->get_fader_volume(server->engine->ctx,
+                                                            (fader_t)idx)
+                         : 0.0;
+        reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse fader index");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_set_fader_volume(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  int idx = -1;
+  double vol = 0.0;
+  bool ok = false;
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
+    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* vol_node = cJSON_GetArrayItem(arg, 1);
+    if (idx_node && vol_node && cJSON_IsNumber(idx_node) &&
+        cJSON_IsNumber(vol_node)) {
+      idx = idx_node->valueint;
+      vol = vol_node->valuedouble;
+      ok = true;
+    }
+  }
+  if (ok) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        if (server->engine->set_fader_volume) {
+          server->engine->set_fader_volume(server->engine->ctx, (fader_t)idx,
+                                           vol, false);
+        }
+        reply_ok(cmd_name, NULL, ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse fader index/volume array");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
+                                                 int client_idx,
+                                                 const char* cmd_name,
+                                                 cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  int idx = -1;
+  double vol = 0.0;
+  bool ok = false;
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
+    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* vol_node = cJSON_GetArrayItem(arg, 1);
+    if (idx_node && vol_node && cJSON_IsNumber(idx_node) &&
+        cJSON_IsNumber(vol_node)) {
+      idx = idx_node->valueint;
+      vol = vol_node->valuedouble;
+      ok = true;
+    }
+  }
+  if (ok) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        if (server->engine->set_fader_volume) {
+          server->engine->set_fader_volume(server->engine->ctx,
+                                           (fader_t)idx, vol, true);
+        }
+        reply_ok(cmd_name, NULL, ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(
+        err, "InvalidRequestError",
+        "Could not parse fader index/external volume array");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_fader_mute(websocket_server_t* server,
+                                      int client_idx, const char* cmd_name,
+                                      cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsNumber(arg)) {
+    int idx = arg->valueint;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        bool mute = (server->engine->is_fader_muted)
+                        ? server->engine->is_fader_muted(server->engine->ctx,
+                                                         (fader_t)idx)
+                        : false;
+        reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse fader index");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_set_fader_mute(websocket_server_t* server,
+                                      int client_idx, const char* cmd_name,
+                                      cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  int idx = -1;
+  bool mute = false;
+  bool ok = false;
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
+    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* mute_node = cJSON_GetArrayItem(arg, 1);
+    if (idx_node && mute_node && cJSON_IsNumber(idx_node) &&
+        cJSON_IsBool(mute_node)) {
+      idx = idx_node->valueint;
+      mute = cJSON_IsTrue(mute_node);
+      ok = true;
+    }
+  }
+  if (ok) {
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        if (server->engine->set_fader_mute) {
+          server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
+                                         mute);
+        }
+        reply_ok(cmd_name, NULL, ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse fader index/mute array");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
+                                         int client_idx, const char* cmd_name,
+                                         cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsNumber(arg)) {
+    int idx = arg->valueint;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < FADER_COUNT) {
+        bool was_muted = (server->engine->is_fader_muted)
+                             ? server->engine->is_fader_muted(
+                                   server->engine->ctx, (fader_t)idx)
+                             : false;
+        if (server->engine->set_fader_mute) {
+          server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
+                                         !was_muted);
+        }
+        cJSON* arr = cJSON_CreateArray();
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
+        cJSON_AddItemToArray(arr, cJSON_CreateBool(!was_muted));
+        reply_ok(cmd_name, arr, ds);
+      } else {
+        reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+      }
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse fader index");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_adjust_volume(websocket_server_t* server, int client_idx,
+                                     const char* cmd_name, cJSON* arg,
+                                     dyn_string_t* ds) {
+  (void)client_idx;
+  double delta = 0.0;
+  double min_vol = -150.0;
+  double max_vol = 50.0;
+  bool ok = false;
+  if (arg && cJSON_IsNumber(arg)) {
+    delta = arg->valuedouble;
+    ok = true;
+  } else if (arg && cJSON_IsArray(arg)) {
+    int size = cJSON_GetArraySize(arg);
+    if (size >= 1) {
+      cJSON* d_node = cJSON_GetArrayItem(arg, 0);
+      if (d_node && cJSON_IsNumber(d_node)) {
+        delta = d_node->valuedouble;
+        ok = true;
+      }
+    }
+    if (size >= 2) {
+      cJSON* min_node = cJSON_GetArrayItem(arg, 1);
+      if (min_node && cJSON_IsNumber(min_node)) min_vol = min_node->valuedouble;
+    }
+    if (size >= 3) {
+      cJSON* max_node = cJSON_GetArrayItem(arg, 2);
+      if (max_node && cJSON_IsNumber(max_node)) max_vol = max_node->valuedouble;
+    }
+  }
+  if (ok) {
+    server_handle_adjust_volume_fader(server, FADER_MAIN, delta, min_vol,
+                                      max_vol, ds, cmd_name);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse AdjustVolume argument");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  int idx = -1;
+  double delta = 0.0;
+  double min_vol = -150.0;
+  double max_vol = 50.0;
+  bool ok = false;
+  if (arg && cJSON_IsArray(arg)) {
+    int size = cJSON_GetArraySize(arg);
+    if (size >= 2) {
+      cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
+      cJSON* d_node = cJSON_GetArrayItem(arg, 1);
+      if (idx_node && d_node && cJSON_IsNumber(idx_node) &&
+          cJSON_IsNumber(d_node)) {
+        idx = idx_node->valueint;
+        delta = d_node->valuedouble;
+        ok = true;
+      }
+    }
+    if (size >= 3) {
+      cJSON* min_node = cJSON_GetArrayItem(arg, 2);
+      if (min_node && cJSON_IsNumber(min_node)) min_vol = min_node->valuedouble;
+    }
+    if (size >= 4) {
+      cJSON* max_node = cJSON_GetArrayItem(arg, 3);
+      if (max_node && cJSON_IsNumber(max_node)) max_vol = max_node->valuedouble;
+    }
+  }
+  if (ok) {
+    if (idx >= 0 && idx < FADER_COUNT) {
+      server_handle_adjust_volume_fader(server, (fader_t)idx, delta, min_vol,
+                                        max_vol, ds, cmd_name);
+    } else {
+      reply_error(cmd_name, "InvalidFaderError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse AdjustFaderVolume array");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+
+
+
+
+
+
+
+static void handle_cmd_subscribe_state(websocket_server_t* server,
+                                       int client_idx, const char* cmd_name,
+                                       cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  if (server) {
+    server->client_sessions[client_idx].state_subscribed = true;
+  }
+  reply_ok(cmd_name, NULL, ds);
+}
+
+static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  double max_rate = 0.0;
+  double attack = 0.0;
+  double release = 0.0;
+  if (arg && cJSON_IsObject(arg)) {
+    cJSON* item;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
+    if (item && cJSON_IsNumber(item)) max_rate = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "attack");
+    if (item && cJSON_IsNumber(item)) attack = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "release");
+    if (item && cJSON_IsNumber(item)) release = item->valuedouble;
+  }
+  if (attack < 0.0 || attack > 60000.0 || release < 0.0 || release > 60000.0) {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(
+        err, "InvalidValueError",
+        "attack and release must be between 0 and 60000 ms");
+    reply_error(cmd_name, NULL, err, ds);
+  } else {
+    if (server) {
+      server->client_sessions[client_idx].vu_subscribed = true;
+      server->client_sessions[client_idx].vu_max_rate = max_rate;
+      server->client_sessions[client_idx].vu_attack = attack;
+      server->client_sessions[client_idx].vu_release = release;
+      server->client_sessions[client_idx].last_vu_push_time = 0;
+    }
+    reply_ok(cmd_name, NULL, ds);
+  }
+}
+
+static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
+  char side[16] = "";
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    strncpy(side, arg->valuestring, sizeof(side) - 1);
+  }
+  if (strcmp(side, "playback") == 0 || strcmp(side, "capture") == 0 ||
+      strcmp(side, "both") == 0) {
+    if (server) {
+      server->client_sessions[client_idx].signal_levels_subscribed = true;
+      snprintf(
+          server->client_sessions[client_idx].signal_levels_side,
+          sizeof(server->client_sessions[client_idx].signal_levels_side),
+          "%s", side);
+    }
+    reply_ok(cmd_name, NULL, ds);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "side must be playback, capture, or both");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
+                                          int client_idx, const char* cmd_name,
+                                          cJSON* arg, dyn_string_t* ds) {
+  bool is_capture = true;
+  uint32_t channel = 0;
+  double min_freq = 20.0;
+  double max_freq = 20000.0;
+  uint32_t n_bins = 1024;
+  double max_rate = 0.0;
+  bool ok = false;
+  if (arg && cJSON_IsObject(arg)) {
+    cJSON* item;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "is_capture");
+    if (item && cJSON_IsBool(item)) is_capture = cJSON_IsTrue(item);
+    item = cJSON_GetObjectItemCaseSensitive(arg, "channel");
+    if (item && cJSON_IsNumber(item)) channel = (uint32_t)item->valueint;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
+    if (item && cJSON_IsNumber(item)) min_freq = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
+    if (item && cJSON_IsNumber(item)) max_freq = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "n_bins");
+    if (item && cJSON_IsNumber(item)) n_bins = (uint32_t)item->valueint;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
+    if (item && cJSON_IsNumber(item)) max_rate = item->valuedouble;
+    ok = true;
+  }
+  if (ok) {
+    if (server) {
+      server->client_sessions[client_idx].spectrum_subscribed = true;
+      server->client_sessions[client_idx].spectrum_is_capture = is_capture;
+      server->client_sessions[client_idx].spectrum_channel = channel;
+      server->client_sessions[client_idx].spectrum_min_freq = min_freq;
+      server->client_sessions[client_idx].spectrum_max_freq = max_freq;
+      server->client_sessions[client_idx].spectrum_n_bins = n_bins;
+      server->client_sessions[client_idx].spectrum_max_rate = max_rate;
+      server->client_sessions[client_idx].last_spectrum_push_time = 0;
+    }
+    reply_ok(cmd_name, NULL, ds);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse SubscribeSpectrum arguments");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_stop_subscription(websocket_server_t* server,
+                                         int client_idx, const char* cmd_name,
+                                         cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  if (server) {
+    bool active =
+        server->client_sessions[client_idx].state_subscribed ||
+        server->client_sessions[client_idx].vu_subscribed ||
+        server->client_sessions[client_idx].signal_levels_subscribed ||
+        server->client_sessions[client_idx].spectrum_subscribed;
+    if (active) {
+      server->client_sessions[client_idx].state_subscribed = false;
+      server->client_sessions[client_idx].vu_subscribed = false;
+      server->client_sessions[client_idx].signal_levels_subscribed = false;
+      server->client_sessions[client_idx].spectrum_subscribed = false;
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "InvalidRequestError",
+                              "No active subscription");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "No active subscription");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+
+
+static void handle_cmd_get_config_file_path(websocket_server_t* server,
+                                            int client_idx,
+                                            const char* cmd_name, cJSON* arg,
+                                            dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char* path = NULL;
+  if (server && server->engine && server->engine->get_config_path) {
+    path = server->engine->get_config_path(server->engine->ctx);
+  }
+  if (path) {
+    reply_ok(cmd_name, cJSON_CreateString(path), ds);
+    free(path);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
+}
+
+static void handle_cmd_get_previous_config(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char* prev = NULL;
+  if (server && server->engine && server->engine->get_previous_config_json) {
+    server->engine->get_previous_config_json(server->engine->ctx, &prev);
+  }
+  if (prev) {
+    cJSON* prev_obj = cJSON_Parse(prev);
+    if (prev_obj) {
+      reply_ok(cmd_name, prev_obj, ds);
+    } else {
+      reply_ok(cmd_name, cJSON_CreateNull(), ds);
+    }
+    free(prev);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
+}
+
+static void handle_cmd_get_state_file_path(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  const char* path = NULL;
+  if (server && server->engine && server->engine->get_state_file) {
+    path = server->engine->get_state_file(server->engine->ctx);
+  }
+  if (path) {
+    reply_ok(cmd_name, cJSON_CreateString(path), ds);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
+}
+
+static void handle_cmd_get_state_file_updated(websocket_server_t* server,
+                                              int client_idx,
+                                              const char* cmd_name, cJSON* arg,
+                                              dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  bool updated = server && server->engine && server->engine->is_state_dirty
+                     ? !server->engine->is_state_dirty(server->engine->ctx)
+                     : true;
+  reply_ok(cmd_name, cJSON_CreateBool(updated), ds);
+}
+
+static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
+                                  const char* cmd_name, cJSON* arg,
+                                  dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char* json = NULL;
+  if (server && server->engine && server->engine->get_active_config_json) {
+    server->engine->get_active_config_json(server->engine->ctx, &json);
+  }
+  if (!json) {
+    char* path = NULL;
+    if (server && server->engine && server->engine->get_config_path) {
+      path = server->engine->get_config_path(server->engine->ctx);
+    }
+    if (path) {
+      json = server_read_file_to_string(path);
+      free(path);
+    }
+  }
+  if (json) {
+    cJSON* config_obj = cJSON_Parse(json);
+    if (config_obj) {
+      reply_ok(cmd_name, config_obj, ds);
+    } else {
+      reply_error(cmd_name, "UnknownError", NULL, ds);
+    }
+    free(json);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError", "No active config");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_get_config_metadata_helper(websocket_server_t* server,
+                                              const char* cmd_name,
+                                              const char* key,
+                                              dyn_string_t* ds) {
+  char* json = NULL;
+  if (server && server->engine && server->engine->get_active_config_json) {
+    server->engine->get_active_config_json(server->engine->ctx, &json);
+  }
+  if (!json) {
+    char* path = NULL;
+    if (server && server->engine && server->engine->get_config_path) {
+      path = server->engine->get_config_path(server->engine->ctx);
+    }
+    if (path) {
+      json = server_read_file_to_string(path);
+      free(path);
+    }
+  }
+  char val_str[1024] = "";
+  if (json && extract_json_string_value(json, key, val_str, sizeof(val_str))) {
+    reply_ok(cmd_name, cJSON_CreateString(val_str), ds);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
+  if (json) free(json);
+}
+
+static void handle_cmd_get_config_title(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_config_metadata_helper(server, cmd_name, "title", ds);
+}
+
+static void handle_cmd_get_config_description(websocket_server_t* server,
+                                              int client_idx,
+                                              const char* cmd_name, cJSON* arg,
+                                              dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_config_metadata_helper(server, cmd_name, "description", ds);
+}
+
+static void handle_cmd_reload(websocket_server_t* server, int client_idx,
+                              const char* cmd_name, cJSON* arg,
+                              dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char* path = NULL;
+  if (server && server->engine && server->engine->get_config_path) {
+    path = server->engine->get_config_path(server->engine->ctx);
+  }
+  if (path) {
+    char* json = server_read_file_to_string(path);
+    free(path);
+    if (json) {
+      audio_backend_error_t err;
+      memset(&err, 0, sizeof(err));
+      bool ok = server && server->engine && server->engine->set_config_json &&
+                server->engine->set_config_json(server->engine->ctx, json,
+                                                &err);
+      if (ok) {
+        reply_ok(cmd_name, NULL, ds);
+      } else {
+        cJSON* err_obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                                err.message);
+        reply_error(cmd_name, NULL, err_obj, ds);
+      }
+      free(json);
+    } else {
+      cJSON* err_obj = cJSON_CreateObject();
+      cJSON_AddStringToObject(err_obj, "ConfigReadError",
+                              "Could not read config file");
+      reply_error(cmd_name, NULL, err_obj, ds);
+    }
+  } else {
+    cJSON* err_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(err_obj, "InvalidRequestError",
+                            "No config file path set");
+    reply_error(cmd_name, NULL, err_obj, ds);
+  }
+}
+
+static void handle_cmd_stop(websocket_server_t* server, int client_idx,
+                            const char* cmd_name, cJSON* arg,
+                            dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  if (server && server->engine && server->engine->stop) {
+    server->engine->stop(server->engine->ctx);
+  }
+  reply_ok(cmd_name, NULL, ds);
+}
+
+static void handle_cmd_exit(websocket_server_t* server, int client_idx,
+                            const char* cmd_name, cJSON* arg,
+                            dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  if (server && server->engine && server->engine->stop) {
+    server->engine->stop(server->engine->ctx);
+  }
+  reply_ok(cmd_name, NULL, ds);
+}
+
+static void handle_cmd_set_config_file_path(websocket_server_t* server,
+                                            int client_idx,
+                                            const char* cmd_name, cJSON* arg,
+                                            dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* path = arg->valuestring;
+    if (server && server->engine && server->engine->set_config_path) {
+      server->engine->set_config_path(server->engine->ctx, path);
+    }
+    reply_ok(cmd_name, NULL, ds);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse Config File Path");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_set_config_json(websocket_server_t* server,
+                                       int client_idx, const char* cmd_name,
+                                       cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* new_json = arg->valuestring;
+    audio_backend_error_t err;
+    memset(&err, 0, sizeof(err));
+    bool ok = server && server->engine && server->engine->set_config_json &&
+              server->engine->set_config_json(server->engine->ctx, new_json,
+                                              &err);
+    if (ok) {
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      cJSON* err_obj = cJSON_CreateObject();
+      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                              err.message);
+      reply_error(cmd_name, NULL, err_obj, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse Config JSON");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_config_value(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* pointer = arg->valuestring;
+    char* json = NULL;
+    if (server && server->engine && server->engine->get_active_config_json) {
+      server->engine->get_active_config_json(server->engine->ctx, &json);
+    }
+    if (!json) {
+      char* path = NULL;
+      if (server && server->engine && server->engine->get_config_path) {
+        path = server->engine->get_config_path(server->engine->ctx);
+      }
+      if (path) {
+        json = server_read_file_to_string(path);
+        free(path);
+      }
+    }
+    char val_buf[2048] = "";
+    if (json && server_get_value_at_pointer(json, pointer, val_buf,
+                                            sizeof(val_buf))) {
+      cJSON* parsed_val = cJSON_Parse(val_buf);
+      if (parsed_val) {
+        reply_ok(cmd_name, parsed_val, ds);
+      } else {
+        reply_ok(cmd_name, cJSON_CreateString(val_buf), ds);
+      }
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      char msg[256];
+      snprintf(msg, sizeof(msg), "Path not found: %s", pointer);
+      cJSON_AddStringToObject(err, "InvalidRequestError", msg);
+      reply_error(cmd_name, NULL, err, ds);
+    }
+    if (json) free(json);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse pointer");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_set_config_value(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  char pointer[256] = "";
+  char* trimmed_val = NULL;
+  if (arg && cJSON_IsObject(arg)) {
+    cJSON* p_node = cJSON_GetObjectItemCaseSensitive(arg, "pointer");
+    cJSON* v_node = cJSON_GetObjectItemCaseSensitive(arg, "value");
+    if (p_node && cJSON_IsString(p_node)) {
+      strncpy(pointer, p_node->valuestring, sizeof(pointer) - 1);
+    }
+    if (v_node) {
+      trimmed_val = cJSON_PrintUnformatted(v_node);
+    }
+  }
+  if (pointer[0] != '\0' && trimmed_val) {
+    char* active_json = NULL;
+    if (server && server->engine && server->engine->get_active_config_json) {
+      server->engine->get_active_config_json(server->engine->ctx,
+                                             &active_json);
+    }
+    if (!active_json) {
+      char* path = NULL;
+      if (server && server->engine && server->engine->get_config_path) {
+        path = server->engine->get_config_path(server->engine->ctx);
+      }
+      if (path) {
+        active_json = server_read_file_to_string(path);
+        free(path);
+      }
+    }
+    if (active_json) {
+      char* updated_json = server_set_value_at_pointer_str(
+          active_json, pointer, trimmed_val);
+      if (updated_json) {
+        audio_backend_error_t err;
+        memset(&err, 0, sizeof(err));
+        bool ok = server && server->engine &&
+                  server->engine->set_config_json &&
+                  server->engine->set_config_json(server->engine->ctx,
+                                                  updated_json, &err);
+        if (ok) {
+          reply_ok(cmd_name, NULL, ds);
+        } else {
+          cJSON* err_obj = cJSON_CreateObject();
+          cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                                  err.message);
+          reply_error(cmd_name, NULL, err_obj, ds);
+        }
+        free(updated_json);
+      } else {
+        cJSON* err = cJSON_CreateObject();
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Path not found: %s", pointer);
+        cJSON_AddStringToObject(err, "InvalidRequestError", msg);
+        reply_error(cmd_name, NULL, err, ds);
+      }
+      free(active_json);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "InvalidRequestError",
+                              "No active config to modify");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+    free(trimmed_val);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse SetConfigValue command");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
+                                    const char* cmd_name, cJSON* arg,
+                                    dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsObject(arg)) {
+    char* active_json = NULL;
+    if (server && server->engine && server->engine->get_active_config_json) {
+      server->engine->get_active_config_json(server->engine->ctx,
+                                             &active_json);
+    }
+    if (!active_json) {
+      char* path = NULL;
+      if (server && server->engine && server->engine->get_config_path) {
+        path = server->engine->get_config_path(server->engine->ctx);
+      }
+      if (path) {
+        active_json = server_read_file_to_string(path);
+        free(path);
+      }
+    }
+    if (active_json) {
+      cJSON* target_root = cJSON_Parse(active_json);
+      if (target_root) {
+        cjson_merge_patch(target_root, arg);
+        char* target_json = cJSON_PrintUnformatted(target_root);
+        if (target_json) {
+          audio_backend_error_t err;
+          memset(&err, 0, sizeof(err));
+          bool ok = server && server->engine &&
+                    server->engine->set_config_json &&
+                    server->engine->set_config_json(server->engine->ctx,
+                                                    target_json, &err);
+          if (ok) {
+            reply_ok(cmd_name, NULL, ds);
+          } else {
+            cJSON* err_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_obj,
+                                    get_websocket_error_key(err.type),
+                                    err.message);
+            reply_error(cmd_name, NULL, err_obj, ds);
+          }
+          free(target_json);
+        } else {
+          cJSON* err = cJSON_CreateObject();
+          cJSON_AddStringToObject(err, "InvalidRequestError",
+                                  "Failed to format target JSON");
+          reply_error(cmd_name, NULL, err, ds);
+        }
+        cJSON_Delete(target_root);
+      } else {
+        cJSON* err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "InvalidRequestError",
+                                "Failed to parse target JSON");
+        reply_error(cmd_name, NULL, err, ds);
+      }
+      free(active_json);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "InvalidRequestError",
+                              "No active config to patch");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse PatchConfig command");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_read_config_json(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)server;
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* config_json = arg->valuestring;
+    dsp_config_t* parsed = NULL;
+    config_error_t cerr;
+    memset(&cerr, 0, sizeof(cerr));
+    if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
+      reply_ok(cmd_name, NULL, ds);
+      dsp_config_free(parsed);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "ConfigValidationError", cerr.message);
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse input config JSON");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+
+
+
+
+
+static void handle_get_signal_single_helper(websocket_server_t* server,
+                                           const char* cmd_name,
+                                           bool is_capture, bool is_rms,
+                                           dyn_string_t* ds) {
+  vu_levels_t vu;
+  memset(&vu, 0, sizeof(vu));
+  if (server && server->engine && server->engine->get_vu_levels &&
+      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+    double* arr = NULL;
+    size_t count = 0;
+    if (is_capture) {
+      arr = is_rms ? vu.capture_rms : vu.capture_peak;
+      count = vu.capture_channels;
+    } else {
+      arr = is_rms ? vu.playback_rms : vu.playback_peak;
+      count = vu.playback_channels;
+    }
+    reply_ok(cmd_name, cJSON_CreateDoubleArray(arr, (int)count), ds);
+    free_vu_levels_arrays(&vu);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_capture_signal_rms(websocket_server_t* server,
+                                              int client_idx,
+                                              const char* cmd_name, cJSON* arg,
+                                              dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_signal_single_helper(server, cmd_name, true, true, ds);
+}
+
+static void handle_cmd_get_capture_signal_peak(websocket_server_t* server,
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_signal_single_helper(server, cmd_name, true, false, ds);
+}
+
+static void handle_cmd_get_playback_signal_rms(websocket_server_t* server,
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_signal_single_helper(server, cmd_name, false, true, ds);
+}
+
+static void handle_cmd_get_playback_signal_peak(websocket_server_t* server,
+                                                int client_idx,
+                                                const char* cmd_name, cJSON* arg,
+                                                dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  handle_get_signal_single_helper(server, cmd_name, false, false, ds);
+}
+
+static void handle_get_signal_since_last_helper(websocket_server_t* server,
+                                                int client_idx,
+                                                const char* cmd_name,
+                                                bool is_capture, bool is_rms,
+                                                dyn_string_t* ds) {
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    uint64_t since = 0;
+    uint64_t now = get_time_ms();
+    level_history_t* hist = NULL;
+    if (is_capture) {
+      if (is_rms) {
+        since = server->client_sessions[client_idx].last_cap_rms_time;
+        server->client_sessions[client_idx].last_cap_rms_time = now;
+        hist = &server->capture_rms_history;
+      } else {
+        since = server->client_sessions[client_idx].last_cap_peak_time;
+        server->client_sessions[client_idx].last_cap_peak_time = now;
+        hist = &server->capture_peak_history;
+      }
+    } else {
+      if (is_rms) {
+        since = server->client_sessions[client_idx].last_pb_rms_time;
+        server->client_sessions[client_idx].last_pb_rms_time = now;
+        hist = &server->playback_rms_history;
+      } else {
+        since = server->client_sessions[client_idx].last_pb_peak_time;
+        server->client_sessions[client_idx].last_pb_peak_time = now;
+        hist = &server->playback_peak_history;
+      }
+    }
+    size_t ch = hist->channels;
+    double* vals = (double*)calloc(ch, sizeof(double));
+    if (is_rms) {
+      level_history_get_rms_since(hist, since, vals);
+    } else {
+      level_history_get_max_since(hist, since, vals);
+    }
+    reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
+    free(vals);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_capture_signal_rms_since_last(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  handle_get_signal_since_last_helper(server, client_idx, cmd_name, true, true,
+                                      ds);
+}
+
+static void handle_cmd_get_capture_signal_peak_since_last(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  handle_get_signal_since_last_helper(server, client_idx, cmd_name, true, false,
+                                      ds);
+}
+
+static void handle_cmd_get_playback_signal_rms_since_last(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  handle_get_signal_since_last_helper(server, client_idx, cmd_name, false, true,
+                                      ds);
+}
+
+static void handle_cmd_get_playback_signal_peak_since_last(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)arg;
+  handle_get_signal_since_last_helper(server, client_idx, cmd_name, false,
+                                      false, ds);
+}
+
+static void handle_get_signal_since_helper(websocket_server_t* server,
+                                           const char* cmd_name, cJSON* arg,
+                                           bool is_capture, bool is_rms,
+                                           dyn_string_t* ds) {
+  double secs = 0;
+  if (arg && cJSON_IsNumber(arg)) {
+    secs = arg->valuedouble;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      uint64_t now = get_time_ms();
+      uint64_t since = now - (uint64_t)(secs * 1000.0);
+      level_history_t* hist = NULL;
+      if (is_capture) {
+        hist = is_rms ? &server->capture_rms_history
+                      : &server->capture_peak_history;
+      } else {
+        hist = is_rms ? &server->playback_rms_history
+                      : &server->playback_peak_history;
+      }
+      size_t ch = hist->channels;
+      double* vals = (double*)calloc(ch, sizeof(double));
+      if (is_rms) {
+        level_history_get_rms_since(hist, since, vals);
+      } else {
+        level_history_get_max_since(hist, since, vals);
+      }
+      reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
+      free(vals);
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse seconds");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_capture_signal_rms_since(websocket_server_t* server,
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_signal_since_helper(server, cmd_name, arg, true, true, ds);
+}
+
+static void handle_cmd_get_capture_signal_peak_since(websocket_server_t* server,
+                                                     int client_idx,
+                                                     const char* cmd_name,
+                                                     cJSON* arg,
+                                                     dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_signal_since_helper(server, cmd_name, arg, true, false, ds);
+}
+
+static void handle_cmd_get_playback_signal_rms_since(websocket_server_t* server,
+                                                     int client_idx,
+                                                     const char* cmd_name,
+                                                     cJSON* arg,
+                                                     dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_signal_since_helper(server, cmd_name, arg, false, true, ds);
+}
+
+static void handle_cmd_get_playback_signal_peak_since(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_signal_since_helper(server, cmd_name, arg, false, false, ds);
+}
+
+static void handle_cmd_get_signal_levels(websocket_server_t* server,
+                                         int client_idx, const char* cmd_name,
+                                         cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  vu_levels_t vu;
+  memset(&vu, 0, sizeof(vu));
+  if (server && server->engine && server->engine->get_vu_levels &&
+      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddItemToObject(
+        root, "playback_rms",
+        cJSON_CreateDoubleArray(vu.playback_rms, (int)vu.playback_channels));
+    cJSON_AddItemToObject(
+        root, "playback_peak",
+        cJSON_CreateDoubleArray(vu.playback_peak, (int)vu.playback_channels));
+    cJSON_AddItemToObject(
+        root, "capture_rms",
+        cJSON_CreateDoubleArray(vu.capture_rms, (int)vu.capture_channels));
+    cJSON_AddItemToObject(
+        root, "capture_peak",
+        cJSON_CreateDoubleArray(vu.capture_peak, (int)vu.capture_channels));
+    reply_ok(cmd_name, root, ds);
+    free_vu_levels_arrays(&vu);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
+  (void)arg;
+  state_update_t status;
+  if (server && server->engine && server->engine->get_status &&
+      server->engine->get_status(server->engine->ctx, &status) &&
+      status.state == PROCESSING_STATE_RUNNING) {
+    uint64_t cap_rms_since =
+        server->client_sessions[client_idx].last_cap_rms_time;
+    uint64_t cap_pk_since =
+        server->client_sessions[client_idx].last_cap_peak_time;
+    uint64_t pb_rms_since =
+        server->client_sessions[client_idx].last_pb_rms_time;
+    uint64_t pb_pk_since =
+        server->client_sessions[client_idx].last_pb_peak_time;
+    uint64_t now = get_time_ms();
+    server->client_sessions[client_idx].last_cap_rms_time = now;
+    server->client_sessions[client_idx].last_cap_peak_time = now;
+    server->client_sessions[client_idx].last_pb_rms_time = now;
+    server->client_sessions[client_idx].last_pb_peak_time = now;
+
+    size_t c_ch = server->capture_rms_history.channels;
+    size_t p_ch = server->playback_rms_history.channels;
+    double* c_rms = (double*)calloc(c_ch, sizeof(double));
+    double* c_pk = (double*)calloc(c_ch, sizeof(double));
+    double* p_rms = (double*)calloc(p_ch, sizeof(double));
+    double* p_pk = (double*)calloc(p_ch, sizeof(double));
+
+    level_history_get_rms_since(&server->capture_rms_history, cap_rms_since,
+                                c_rms);
+    level_history_get_max_since(&server->capture_peak_history, cap_pk_since,
+                                c_pk);
+    level_history_get_rms_since(&server->playback_rms_history, pb_rms_since,
+                                p_rms);
+    level_history_get_max_since(&server->playback_peak_history, pb_pk_since,
+                                p_pk);
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "playback_rms",
+                          cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+    cJSON_AddItemToObject(root, "playback_peak",
+                          cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+    cJSON_AddItemToObject(root, "capture_rms",
+                          cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+    cJSON_AddItemToObject(root, "capture_peak",
+                          cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+
+    reply_ok(cmd_name, root, ds);
+
+    free(c_rms);
+    free(c_pk);
+    free(p_rms);
+    free(p_pk);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
+  (void)client_idx;
+  double secs = 0;
+  if (arg && cJSON_IsNumber(arg)) {
+    secs = arg->valuedouble;
+    state_update_t status;
+    if (server && server->engine && server->engine->get_status &&
+        server->engine->get_status(server->engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      uint64_t now = get_time_ms();
+      uint64_t since = now - (uint64_t)(secs * 1000.0);
+
+      size_t c_ch = server->capture_rms_history.channels;
+      size_t p_ch = server->playback_rms_history.channels;
+      double* c_rms = (double*)calloc(c_ch, sizeof(double));
+      double* c_pk = (double*)calloc(c_ch, sizeof(double));
+      double* p_rms = (double*)calloc(p_ch, sizeof(double));
+      double* p_pk = (double*)calloc(p_ch, sizeof(double));
+
+      level_history_get_rms_since(&server->capture_rms_history, since, c_rms);
+      level_history_get_max_since(&server->capture_peak_history, since, c_pk);
+      level_history_get_rms_since(&server->playback_rms_history, since,
+                                  p_rms);
+      level_history_get_max_since(&server->playback_peak_history, since,
+                                  p_pk);
+
+      cJSON* root = cJSON_CreateObject();
+      cJSON_AddItemToObject(root, "playback_rms",
+                            cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+      cJSON_AddItemToObject(root, "playback_peak",
+                            cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+      cJSON_AddItemToObject(root, "capture_rms",
+                            cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+      cJSON_AddItemToObject(root, "capture_peak",
+                            cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+
+      reply_ok(cmd_name, root, ds);
+
+      free(c_rms);
+      free(c_pk);
+      free(p_rms);
+      free(p_pk);
+    } else {
+      reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse seconds");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_signal_peaks_since_start(websocket_server_t* server,
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddItemToObject(
+      root, "capture",
+      cJSON_CreateDoubleArray(server->capture_global_peaks,
+                              (int)server->capture_global_peaks_count));
+  cJSON_AddItemToObject(
+      root, "playback",
+      cJSON_CreateDoubleArray(server->playback_global_peaks,
+                              (int)server->playback_global_peaks_count));
+  reply_ok(cmd_name, root, ds);
+}
+
+static void handle_cmd_reset_signal_peaks_since_start(
+    websocket_server_t* server, int client_idx, const char* cmd_name,
+    cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
+    server->capture_global_peaks[i] = -1000.0;
+  }
+  for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
+    server->playback_global_peaks[i] = -1000.0;
+  }
+  reply_ok(cmd_name, NULL, ds);
+}
+
+static void handle_cmd_get_channel_labels(websocket_server_t* server,
+                                          int client_idx, const char* cmd_name,
+                                          cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char* json = NULL;
+  if (server && server->engine && server->engine->get_active_config_json) {
+    server->engine->get_active_config_json(server->engine->ctx, &json);
+  }
+  if (!json) {
+    char* path = NULL;
+    if (server && server->engine && server->engine->get_config_path) {
+      path = server->engine->get_config_path(server->engine->ctx);
+    }
+    if (path) {
+      json = server_read_file_to_string(path);
+      free(path);
+    }
+  }
+  char play_labels[2048] = "null";
+  char cap_labels[2048] = "null";
+  if (json) {
+    server_get_value_at_pointer(json, "/devices/playback/labels", play_labels,
+                                sizeof(play_labels));
+    server_get_value_at_pointer(json, "/devices/capture/labels", cap_labels,
+                                sizeof(cap_labels));
+    free(json);
+  }
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "playback", cJSON_Parse(play_labels));
+  cJSON_AddItemToObject(root, "capture", cJSON_Parse(cap_labels));
+  reply_ok(cmd_name, root, ds);
+}
+
+static void handle_cmd_get_signal_range(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  vu_levels_t vu;
+  memset(&vu, 0, sizeof(vu));
+  if (server && server->engine && server->engine->get_vu_levels &&
+      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+    size_t count = vu.playback_channels;
+    double max_peak = -1000.0;
+    for (size_t i = 0; i < count; i++) {
+      double pk = vu.playback_peak[i];
+      if (pk > max_peak) max_peak = pk;
+    }
+    double range = 2.0 * db_to_amplitude(max_peak);
+    reply_ok(cmd_name, cJSON_CreateNumber(range), ds);
+    free_vu_levels_arrays(&vu);
+  } else {
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
+  }
+}
+
+
+
+
+
+static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
+                                    const char* cmd_name, cJSON* arg,
+                                    dyn_string_t* ds) {
+  (void)client_idx;
+  bool is_capture = true;
+  uint32_t channel = 0;
+  double min_freq = 20.0;
+  double max_freq = 20000.0;
+  uint32_t n_bins = 1024;
+  bool ok = false;
+  if (arg && cJSON_IsObject(arg)) {
+    cJSON* item;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "is_capture");
+    if (item && cJSON_IsBool(item)) is_capture = cJSON_IsTrue(item);
+    item = cJSON_GetObjectItemCaseSensitive(arg, "channel");
+    if (item && cJSON_IsNumber(item)) channel = (uint32_t)item->valueint;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
+    if (item && cJSON_IsNumber(item)) min_freq = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
+    if (item && cJSON_IsNumber(item)) max_freq = item->valuedouble;
+    item = cJSON_GetObjectItemCaseSensitive(arg, "n_bins");
+    if (item && cJSON_IsNumber(item)) n_bins = (uint32_t)item->valueint;
+    ok = true;
+  }
+  if (ok) {
+    spectrum_t spec;
+    memset(&spec, 0, sizeof(spec));
+    bool spec_ok =
+        server && server->engine && server->engine->get_spectrum &&
+        server->engine->get_spectrum(server->engine->ctx, is_capture, channel,
+                                     min_freq, max_freq, n_bins, &spec);
+    if (spec_ok) {
+      cJSON* spec_json = serialize_spectrum(&spec);
+      if (spec_json) {
+        reply_ok(cmd_name, spec_json, ds);
+      } else {
+        reply_error(cmd_name, "UnknownError", NULL, ds);
+      }
+      if (spec.frequencies) free(spec.frequencies);
+      if (spec.magnitudes) free(spec.magnitudes);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "DeviceError",
+                              "Failed to compute spectrum");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse GetSpectrum arguments");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_get_available_devices_helper(websocket_server_t* server,
+                                                const char* cmd_name,
+                                                cJSON* arg, bool is_capture,
+                                                dyn_string_t* ds) {
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* backend = arg->valuestring;
+    audio_device_t* devs = NULL;
+    size_t count = 0;
+    bool ok = server && server->engine &&
+              server->engine->get_available_devices &&
+              server->engine->get_available_devices(
+                  server->engine->ctx, backend, is_capture, &devs, &count);
+    if (ok && devs) {
+      cJSON* arr = cJSON_CreateArray();
+      for (size_t i = 0; i < count; i++) {
+        cJSON_AddItemToArray(arr, cJSON_CreateString(devs[i].name));
+      }
+      reply_ok(cmd_name, arr, ds);
+    } else {
+      reply_ok(cmd_name, cJSON_CreateArray(), ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse backend");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_available_capture_devices(websocket_server_t* server,
+                                                     int client_idx,
+                                                     const char* cmd_name,
+                                                     cJSON* arg,
+                                                     dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_available_devices_helper(server, cmd_name, arg, true, ds);
+}
+
+static void handle_cmd_get_available_playback_devices(websocket_server_t* server,
+                                                      int client_idx,
+                                                      const char* cmd_name,
+                                                      cJSON* arg,
+                                                      dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_available_devices_helper(server, cmd_name, arg, false, ds);
+}
+
+static void handle_get_device_capabilities_helper(websocket_server_t* server,
+                                                  const char* cmd_name,
+                                                  cJSON* arg, bool is_capture,
+                                                  dyn_string_t* ds) {
+  char backend[128] = "";
+  char device[256] = "";
+  bool ok = false;
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
+    cJSON* b_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* d_node = cJSON_GetArrayItem(arg, 1);
+    if (b_node && d_node && cJSON_IsString(b_node) &&
+        cJSON_IsString(d_node)) {
+      strncpy(backend, b_node->valuestring, sizeof(backend) - 1);
+      strncpy(device, d_node->valuestring, sizeof(device) - 1);
+      ok = true;
+    }
+  }
+  if (ok) {
+    audio_device_descriptor_t* desc = NULL;
+    device_error_t d_err;
+    device_error_clear(&d_err);
+    bool cap_ok =
+        server && server->engine && server->engine->get_device_capabilities &&
+        server->engine->get_device_capabilities(
+            server->engine->ctx, backend, device, is_capture, &desc, &d_err);
+    if (cap_ok && desc) {
+      char* val = format_device_descriptor(desc);
+      if (val) {
+        cJSON* desc_obj = cJSON_Parse(val);
+        free(val);
+        if (desc_obj) {
+          reply_ok(cmd_name, desc_obj, ds);
+        } else {
+          reply_error(cmd_name, "UnknownError", NULL, ds);
+        }
+      } else {
+        cJSON* err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "DeviceError", "Out of memory");
+        reply_error(cmd_name, NULL, err, ds);
+      }
+      extern void dsp_engine_free_device_capabilities(
+          audio_device_descriptor_t* desc);
+      dsp_engine_free_device_capabilities(desc);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, get_websocket_device_error_key(d_err.type),
+                              d_err.message);
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse backend/device array");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_get_capture_device_capabilities(websocket_server_t* server,
+                                                       int client_idx,
+                                                       const char* cmd_name,
+                                                       cJSON* arg,
+                                                       dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_device_capabilities_helper(server, cmd_name, arg, true, ds);
+}
+
+static void handle_cmd_get_playback_device_capabilities(websocket_server_t* server,
+                                                        int client_idx,
+                                                        const char* cmd_name,
+                                                        cJSON* arg,
+                                                        dyn_string_t* ds) {
+  (void)client_idx;
+  handle_get_device_capabilities_helper(server, cmd_name, arg, false, ds);
+}
+
+
+
+static void handle_cmd_get_version(websocket_server_t* server, int client_idx,
+                                   const char* cmd_name, cJSON* arg,
+                                   dyn_string_t* ds) {
+  (void)server;
+  (void)client_idx;
+  (void)arg;
+  reply_ok(cmd_name, cJSON_CreateString("CamillaDSP-C-Embedded 2.0.0"), ds);
+}
+
+static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
+                                 const char* cmd_name, cJSON* arg,
+                                 dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  processing_state_t state = PROCESSING_STATE_INACTIVE;
+  if (server && server->engine && server->engine->get_status) {
+    state_update_t status;
+    if (server->engine->get_status(server->engine->ctx, &status)) {
+      state = status.state;
+    }
+  }
+  reply_ok(cmd_name, cJSON_CreateString(processing_state_to_string(state)), ds);
+}
+
+static void handle_cmd_get_stop_reason(websocket_server_t* server,
+                                       int client_idx, const char* cmd_name,
+                                       cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  char reason_str[512] = "None";
+  if (server && server->engine && server->engine->get_status) {
+    state_update_t status;
+    if (server->engine->get_status(server->engine->ctx, &status)) {
+      stop_reason_to_string(&status.stop_reason, reason_str,
+                            sizeof(reason_str));
+    }
+  }
+  reply_ok(cmd_name, cJSON_CreateString(reason_str), ds);
+}
+
+static void handle_cmd_get_capture_rate(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  state_update_t status;
+  memset(&status, 0, sizeof(status));
+  bool has_status = server && server->engine && server->engine->get_status &&
+                    server->engine->get_status(server->engine->ctx, &status);
+  int sr = 0;
+  if (has_status && status.state == PROCESSING_STATE_RUNNING) {
+    sr = (server->engine->get_active_samplerate)
+             ? server->engine->get_active_samplerate(server->engine->ctx)
+             : 0;
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber(sr), ds);
+}
+
+static void handle_cmd_get_rate_adjust(websocket_server_t* server,
+                                       int client_idx, const char* cmd_name,
+                                       cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  double rate = 1.0;
+  if (server && server->engine && server->engine->get_processing_status) {
+    server->engine->get_processing_status(server->engine->ctx, &rate, NULL,
+                                          NULL, NULL, NULL);
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber(rate), ds);
+}
+
+static void handle_cmd_get_buffer_level(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  double lvl = 0.0;
+  if (server && server->engine && server->engine->get_processing_status) {
+    server->engine->get_processing_status(server->engine->ctx, NULL, &lvl,
+                                          NULL, NULL, NULL);
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber((int)lvl), ds);
+}
+
+static void handle_cmd_get_clipped_samples(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  uint64_t clips = 0;
+  if (server && server->engine && server->engine->get_processing_status) {
+    server->engine->get_processing_status(server->engine->ctx, NULL, NULL,
+                                          &clips, NULL, NULL);
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber((double)clips), ds);
+}
+
+static void handle_cmd_reset_clipped_samples(websocket_server_t* server,
+                                             int client_idx,
+                                             const char* cmd_name, cJSON* arg,
+                                             dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  if (server && server->engine && server->engine->reset_clipped_samples) {
+    server->engine->reset_clipped_samples(server->engine->ctx);
+  }
+  reply_ok(cmd_name, NULL, ds);
+}
+
+static void handle_cmd_get_processing_load(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  double load = 0.0;
+  if (server && server->engine && server->engine->get_processing_status) {
+    server->engine->get_processing_status(server->engine->ctx, NULL, NULL,
+                                          NULL, &load, NULL);
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber(load), ds);
+}
+
+static void handle_cmd_get_resampler_load(websocket_server_t* server,
+                                          int client_idx, const char* cmd_name,
+                                          cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  double load = 0.0;
+  if (server && server->engine && server->engine->get_processing_status) {
+    server->engine->get_processing_status(server->engine->ctx, NULL, NULL,
+                                          NULL, NULL, &load);
+  }
+  reply_ok(cmd_name, cJSON_CreateNumber(load), ds);
+}
+
+static void handle_cmd_get_supported_device_types(websocket_server_t* server,
+                                                  int client_idx,
+                                                  const char* cmd_name,
+                                                  cJSON* arg,
+                                                  dyn_string_t* ds) {
+  (void)server;
+  (void)client_idx;
+  (void)arg;
+  cJSON* arr = cJSON_CreateArray();
+  cJSON* inner_arr1 = cJSON_CreateArray();
+  cJSON_AddItemToArray(inner_arr1, cJSON_CreateString("CoreAudio"));
+  cJSON_AddItemToArray(arr, inner_arr1);
+  cJSON* inner_arr2 = cJSON_CreateArray();
+  cJSON_AddItemToArray(inner_arr2, cJSON_CreateString("CoreAudio"));
+  cJSON_AddItemToArray(arr, inner_arr2);
+  reply_ok(cmd_name, arr, ds);
+}
+
+static void handle_cmd_get_update_interval(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  (void)arg;
+  int interval = server ? (int)server->update_interval : 100;
+  reply_ok(cmd_name, cJSON_CreateNumber(interval), ds);
+}
+
+static void handle_cmd_set_update_interval(websocket_server_t* server,
+                                           int client_idx, const char* cmd_name,
+                                           cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsNumber(arg)) {
+    double val = arg->valuedouble;
+    if (val >= 0.0) {
+      if (server) server->update_interval = (uint32_t)val;
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "InvalidValueError", "Value must be >= 0");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse SetUpdateInterval argument");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+
+
 // MARK: - Command Handler
 
 /// Handle a control command text (either simple quoted string or JSON object)
@@ -1116,1580 +3230,235 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
 
   const char* simple = cmd_name;
 
-  if (strcmp(simple, "GetVersion") == 0) {
-    json_reply("GetVersion", "\"Ok\"", "\"CamillaDSP-C-Embedded 2.0.0\"", ds);
-  } else if (strcmp(simple, "GetState") == 0) {
-    processing_state_t state = PROCESSING_STATE_INACTIVE;
-    if (server && server->engine && server->engine->get_status) {
-      state_update_t status;
-      if (server->engine->get_status(server->engine->ctx, &status)) {
-        state = status.state;
-      }
-    }
-    char val[64];
-    snprintf(val, sizeof(val), "\"%s\"", processing_state_to_string(state));
-    json_reply("GetState", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetStopReason") == 0) {
-    char reason_str[512] = "\"None\"";
-    if (server && server->engine && server->engine->get_status) {
-      state_update_t status;
-      if (server->engine->get_status(server->engine->ctx, &status)) {
-        stop_reason_to_string(&status.stop_reason, reason_str,
-                              sizeof(reason_str));
-      }
-    }
-    json_reply("GetStopReason", "\"Ok\"", reason_str, ds);
-  } else if (strcmp(simple, "GetVolume") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      double vol = (server->engine->get_fader_volume)
-                       ? server->engine->get_fader_volume(server->engine->ctx, FADER_MAIN)
-                       : 0.0;
-      char val[64];
-      snprintf(val, sizeof(val), "%.17g", vol);
-      json_reply("GetVolume", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetVolume", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetMute") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      bool muted = (server->engine->is_fader_muted)
-                       ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
-                       : false;
-      json_reply("GetMute", "\"Ok\"", muted ? "true" : "false", ds);
-    } else {
-      json_reply("GetMute", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "ToggleMute") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      bool was_muted = (server->engine->is_fader_muted)
-                           ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
-                           : false;
-      if (server->engine->set_fader_mute) {
-        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN, !was_muted);
-      }
-      json_reply("ToggleMute", "\"Ok\"", !was_muted ? "true" : "false", ds);
-    } else {
-      json_reply("ToggleMute", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetFaders") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      char faders_val[1024];
-      size_t offset = 0;
-      int written = snprintf(faders_val + offset, sizeof(faders_val) - offset, "[");
-      if (written > 0 && (size_t)written < sizeof(faders_val) - offset) {
-        offset += (size_t)written;
-      }
-      for (int i = 0; i < FADER_COUNT; i++) {
-        double vol = (server->engine->get_fader_volume)
-                         ? server->engine->get_fader_volume(server->engine->ctx, (fader_t)i)
-                         : 0.0;
-        bool muted = (server->engine->is_fader_muted)
-                         ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)i)
-                         : false;
-        written = snprintf(faders_val + offset, sizeof(faders_val) - offset,
-                           "{\"volume\":%.17g,\"mute\":%s}%s", vol,
-                           muted ? "true" : "false",
-                           (i < FADER_COUNT - 1) ? "," : "");
-        if (written > 0 && (size_t)written < sizeof(faders_val) - offset) {
-          offset += (size_t)written;
-        } else {
-          break;
-        }
-      }
-      snprintf(faders_val + offset, sizeof(faders_val) - offset, "]");
-      json_reply("GetFaders", "\"Ok\"", faders_val, ds);
-    } else {
-      json_reply("GetFaders", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalRms") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char* val = format_double_array(vu.capture_rms, vu.capture_channels);
-      free_vu_levels_arrays(&vu);
-      json_reply("GetCaptureSignalRms", "\"Ok\"", val, ds);
-      free(val);
-    } else {
-      json_reply("GetCaptureSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalPeak") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char* val = format_double_array(vu.capture_peak, vu.capture_channels);
-      free_vu_levels_arrays(&vu);
-      json_reply("GetCaptureSignalPeak", "\"Ok\"", val, ds);
-      free(val);
-    } else {
-      json_reply("GetCaptureSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalRms") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char* val = format_double_array(vu.playback_rms, vu.playback_channels);
-      free_vu_levels_arrays(&vu);
-      json_reply("GetPlaybackSignalRms", "\"Ok\"", val, ds);
-      free(val);
-    } else {
-      json_reply("GetPlaybackSignalRms", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalPeak") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      char* val = format_double_array(vu.playback_peak, vu.playback_channels);
-      free_vu_levels_arrays(&vu);
-      json_reply("GetPlaybackSignalPeak", "\"Ok\"", val, ds);
-      free(val);
-    } else {
-      json_reply("GetPlaybackSignalPeak", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureRate") == 0) {
-    state_update_t status;
-    memset(&status, 0, sizeof(status));
-    bool has_status = server && server->engine && server->engine->get_status &&
-                      server->engine->get_status(server->engine->ctx, &status);
-    if (has_status && status.state == PROCESSING_STATE_RUNNING) {
-      int sr = (server && server->engine && server->engine->get_active_samplerate)
-                   ? server->engine->get_active_samplerate(server->engine->ctx)
-                   : 0;
-      char val[32];
-      snprintf(val, sizeof(val), "%d", sr);
-      json_reply("GetCaptureRate", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetCaptureRate", "\"Ok\"", "0", ds);
-    }
-  } else if (strcmp(simple, "GetRateAdjust") == 0) {
-    double rate = 1.0;
-    if (server && server->engine && server->engine->get_processing_status) {
-      server->engine->get_processing_status(server->engine->ctx, &rate, NULL, NULL, NULL, NULL);
-    }
-    char val[32];
-    snprintf(val, sizeof(val), "%.17g", rate);
-    json_reply("GetRateAdjust", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetBufferLevel") == 0) {
-    double lvl = 0.0;
-    if (server && server->engine && server->engine->get_processing_status) {
-      server->engine->get_processing_status(server->engine->ctx, NULL, &lvl, NULL, NULL, NULL);
-    }
-    char val[32];
-    snprintf(val, sizeof(val), "%d", (int)lvl);
-    json_reply("GetBufferLevel", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetClippedSamples") == 0) {
-    uint64_t clips = 0;
-    if (server && server->engine && server->engine->get_processing_status) {
-      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, &clips, NULL, NULL);
-    }
-    char val[32];
-    snprintf(val, sizeof(val), "%llu", (unsigned long long)clips);
-    json_reply("GetClippedSamples", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "ResetClippedSamples") == 0) {
-    if (server && server->engine && server->engine->reset_clipped_samples) {
-      server->engine->reset_clipped_samples(server->engine->ctx);
-    }
-    json_reply("ResetClippedSamples", "\"Ok\"", NULL, ds);
-  } else if (strcmp(simple, "GetProcessingLoad") == 0) {
-    double load = 0.0;
-    if (server && server->engine && server->engine->get_processing_status) {
-      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL, &load, NULL);
-    }
-    char val[32];
-    snprintf(val, sizeof(val), "%.17g", load);
-    json_reply("GetProcessingLoad", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetResamplerLoad") == 0) {
-    double load = 0.0;
-    if (server && server->engine && server->engine->get_processing_status) {
-      server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL, NULL, &load);
-    }
-    char val[32];
-    snprintf(val, sizeof(val), "%.17g", load);
-    json_reply("GetResamplerLoad", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetSupportedDeviceTypes") == 0) {
-    json_reply("GetSupportedDeviceTypes", "\"Ok\"",
-               "[[\"CoreAudio\"],[\"CoreAudio\"]]", ds);
-  } else if (strcmp(simple, "GetUpdateInterval") == 0) {
-    char val[32];
-    snprintf(val, sizeof(val), "%d", server ? server->update_interval : 100);
-    json_reply("GetUpdateInterval", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "SetUpdateInterval") == 0) {
-    if (arg && cJSON_IsNumber(arg)) {
-      double val = arg->valuedouble;
-      if (val >= 0.0) {
-        if (server) server->update_interval = (uint32_t)val;
-        json_reply("SetUpdateInterval", "\"Ok\"", NULL, ds);
-      } else {
-        json_reply("SetUpdateInterval",
-                   "{\"InvalidValueError\":\"Value must be >= 0\"}", NULL, ds);
-      }
-    } else {
-      json_reply("SetUpdateInterval",
-                 "{\"InvalidRequestError\":\"Could not parse SetUpdateInterval "
-                 "argument\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SubscribeState") == 0) {
-    if (server) {
-      server->client_sessions[client_idx].state_subscribed = true;
-    }
-    json_reply("SubscribeState", "\"Ok\"", NULL, ds);
-  } else if (strcmp(simple, "SubscribeVuLevels") == 0) {
-    double max_rate = 0.0;
-    double attack = 0.0;
-    double release = 0.0;
-    if (arg && cJSON_IsObject(arg)) {
-      cJSON* item;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
-      if (item && cJSON_IsNumber(item)) max_rate = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "attack");
-      if (item && cJSON_IsNumber(item)) attack = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "release");
-      if (item && cJSON_IsNumber(item)) release = item->valuedouble;
-    }
-    if (attack < 0.0 || attack > 60000.0 || release < 0.0 ||
-        release > 60000.0) {
-      json_reply("SubscribeVuLevels",
-                 "{\"InvalidValueError\":\"attack and release must be between "
-                 "0 and 60000 ms\"}",
-                 NULL, ds);
-    } else {
-      if (server) {
-        server->client_sessions[client_idx].vu_subscribed = true;
-        server->client_sessions[client_idx].vu_max_rate = max_rate;
-        server->client_sessions[client_idx].vu_attack = attack;
-        server->client_sessions[client_idx].vu_release = release;
-        server->client_sessions[client_idx].last_vu_push_time = 0;
-      }
-      json_reply("SubscribeVuLevels", "\"Ok\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "SubscribeSignalLevels") == 0) {
-    char side[16] = "";
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      strncpy(side, arg->valuestring, sizeof(side) - 1);
-    }
-    if (strcmp(side, "playback") == 0 || strcmp(side, "capture") == 0 ||
-        strcmp(side, "both") == 0) {
-      if (server) {
-        server->client_sessions[client_idx].signal_levels_subscribed = true;
-        snprintf(server->client_sessions[client_idx].signal_levels_side,
-                 sizeof(server->client_sessions[client_idx].signal_levels_side),
-                 "%s", side);
-      }
-      json_reply("SubscribeSignalLevels", "\"Ok\"", NULL, ds);
-    } else {
-      json_reply("SubscribeSignalLevels",
-                 "{\"InvalidValueError\":\"side must be playback, capture, "
-                 "or both\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SubscribeSpectrum") == 0) {
-    bool is_capture = true;
-    uint32_t channel = 0;
-    double min_freq = 20.0;
-    double max_freq = 20000.0;
-    uint32_t n_bins = 1024;
-    double max_rate = 0.0;
-    bool ok = false;
+  websocket_command_t cmd_type = lookup_command(simple);
+  switch (cmd_type) {
+    case WS_CMD_GET_VERSION:
+      handle_cmd_get_version(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_STATE:
+      handle_cmd_get_state(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_STOP_REASON:
+      handle_cmd_get_stop_reason(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_RATE:
+      handle_cmd_get_capture_rate(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_RATE_ADJUST:
+      handle_cmd_get_rate_adjust(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_BUFFER_LEVEL:
+      handle_cmd_get_buffer_level(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CLIPPED_SAMPLES:
+      handle_cmd_get_clipped_samples(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_RESET_CLIPPED_SAMPLES:
+      handle_cmd_reset_clipped_samples(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PROCESSING_LOAD:
+      handle_cmd_get_processing_load(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_RESAMPLER_LOAD:
+      handle_cmd_get_resampler_load(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SUPPORTED_DEVICE_TYPES:
+      handle_cmd_get_supported_device_types(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_UPDATE_INTERVAL:
+      handle_cmd_get_update_interval(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_UPDATE_INTERVAL:
+      handle_cmd_set_update_interval(server, client_idx, simple, arg, ds);
+      break;
 
-    if (arg && cJSON_IsObject(arg)) {
-      cJSON* item;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "is_capture");
-      if (item && cJSON_IsBool(item)) is_capture = cJSON_IsTrue(item);
-      item = cJSON_GetObjectItemCaseSensitive(arg, "channel");
-      if (item && cJSON_IsNumber(item)) channel = (uint32_t)item->valueint;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
-      if (item && cJSON_IsNumber(item)) min_freq = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
-      if (item && cJSON_IsNumber(item)) max_freq = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "n_bins");
-      if (item && cJSON_IsNumber(item)) n_bins = (uint32_t)item->valueint;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
-      if (item && cJSON_IsNumber(item)) max_rate = item->valuedouble;
-      ok = true;
-    }
+    case WS_CMD_GET_VOLUME:
+      handle_cmd_get_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_VOLUME:
+      handle_cmd_set_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_MUTE:
+      handle_cmd_get_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_MUTE:
+      handle_cmd_set_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_TOGGLE_MUTE:
+      handle_cmd_toggle_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_FADERS:
+      handle_cmd_get_faders(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_FADER_VOLUME:
+      handle_cmd_get_fader_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_FADER_VOLUME:
+      handle_cmd_set_fader_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_FADER_EXTERNAL_VOLUME:
+      handle_cmd_set_fader_external_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_FADER_MUTE:
+      handle_cmd_get_fader_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_FADER_MUTE:
+      handle_cmd_set_fader_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_TOGGLE_FADER_MUTE:
+      handle_cmd_toggle_fader_mute(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_ADJUST_VOLUME:
+      handle_cmd_adjust_volume(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_ADJUST_FADER_VOLUME:
+      handle_cmd_adjust_fader_volume(server, client_idx, simple, arg, ds);
+      break;
 
-    if (ok) {
-      if (server) {
-        server->client_sessions[client_idx].spectrum_subscribed = true;
-        server->client_sessions[client_idx].spectrum_is_capture = is_capture;
-        server->client_sessions[client_idx].spectrum_channel = channel;
-        server->client_sessions[client_idx].spectrum_min_freq = min_freq;
-        server->client_sessions[client_idx].spectrum_max_freq = max_freq;
-        server->client_sessions[client_idx].spectrum_n_bins = n_bins;
-        server->client_sessions[client_idx].spectrum_max_rate = max_rate;
-        server->client_sessions[client_idx].last_spectrum_push_time = 0;
-      }
-      json_reply("SubscribeSpectrum", "\"Ok\"", NULL, ds);
-    } else {
-      json_reply("SubscribeSpectrum",
-                 "{\"InvalidRequestError\":\"Could not parse SubscribeSpectrum "
-                 "arguments\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "StopSubscription") == 0) {
-    if (server) {
-      bool active =
-          server->client_sessions[client_idx].state_subscribed ||
-          server->client_sessions[client_idx].vu_subscribed ||
-          server->client_sessions[client_idx].signal_levels_subscribed ||
-          server->client_sessions[client_idx].spectrum_subscribed;
-      if (active) {
-        server->client_sessions[client_idx].state_subscribed = false;
-        server->client_sessions[client_idx].vu_subscribed = false;
-        server->client_sessions[client_idx].signal_levels_subscribed = false;
-        server->client_sessions[client_idx].spectrum_subscribed = false;
-        json_reply("StopSubscription", "\"Ok\"", NULL, ds);
-      } else {
-        json_reply("StopSubscription",
-                   "{\"InvalidRequestError\":\"No active subscription\"}", NULL, ds);
-      }
-    } else {
-      json_reply("StopSubscription",
-                 "{\"InvalidRequestError\":\"No active subscription\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalRmsSinceLast") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      uint64_t since = server->client_sessions[client_idx].last_cap_rms_time;
-      server->client_sessions[client_idx].last_cap_rms_time = get_time_ms();
-      size_t ch = server->capture_rms_history.channels;
-      double* rms = (double*)calloc(ch, sizeof(double));
-      level_history_get_rms_since(&server->capture_rms_history, since, rms);
-      char* rms_str = format_double_array(rms, ch);
-      json_reply("GetCaptureSignalRmsSinceLast", "\"Ok\"", rms_str, ds);
-      free(rms_str);
-      free(rms);
-    } else {
-      json_reply("GetCaptureSignalRmsSinceLast",
-                 "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalPeakSinceLast") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      uint64_t since = server->client_sessions[client_idx].last_cap_peak_time;
-      server->client_sessions[client_idx].last_cap_peak_time = get_time_ms();
-      size_t ch = server->capture_peak_history.channels;
-      double* pk = (double*)calloc(ch, sizeof(double));
-      level_history_get_max_since(&server->capture_peak_history, since, pk);
-      char* pk_str = format_double_array(pk, ch);
-      json_reply("GetCaptureSignalPeakSinceLast", "\"Ok\"", pk_str, ds);
-      free(pk_str);
-      free(pk);
-    } else {
-      json_reply("GetCaptureSignalPeakSinceLast",
-                 "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalRmsSinceLast") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      uint64_t since = server->client_sessions[client_idx].last_pb_rms_time;
-      server->client_sessions[client_idx].last_pb_rms_time = get_time_ms();
-      size_t ch = server->playback_rms_history.channels;
-      double* rms = (double*)calloc(ch, sizeof(double));
-      level_history_get_rms_since(&server->playback_rms_history, since, rms);
-      char* rms_str = format_double_array(rms, ch);
-      json_reply("GetPlaybackSignalRmsSinceLast", "\"Ok\"", rms_str, ds);
-      free(rms_str);
-      free(rms);
-    } else {
-      json_reply("GetPlaybackSignalRmsSinceLast",
-                 "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalPeakSinceLast") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      uint64_t since = server->client_sessions[client_idx].last_pb_peak_time;
-      server->client_sessions[client_idx].last_pb_peak_time = get_time_ms();
-      size_t ch = server->playback_peak_history.channels;
-      double* pk = (double*)calloc(ch, sizeof(double));
-      level_history_get_max_since(&server->playback_peak_history, since, pk);
-      char* pk_str = format_double_array(pk, ch);
-      json_reply("GetPlaybackSignalPeakSinceLast", "\"Ok\"", pk_str, ds);
-      free(pk_str);
-      free(pk);
-    } else {
-      json_reply("GetPlaybackSignalPeakSinceLast",
-                 "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalRmsSince") == 0) {
-    double secs = 0;
-    if (arg && cJSON_IsNumber(arg)) {
-      secs = arg->valuedouble;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        uint64_t now = get_time_ms();
-        uint64_t since = now - (uint64_t)(secs * 1000.0);
-        size_t ch = server->capture_rms_history.channels;
-        double* rms = (double*)calloc(ch, sizeof(double));
-        level_history_get_rms_since(&server->capture_rms_history, since, rms);
-        char* rms_str = format_double_array(rms, ch);
-        json_reply("GetCaptureSignalRmsSince", "\"Ok\"", rms_str, ds);
-        free(rms_str);
-        free(rms);
-      } else {
-        json_reply("GetCaptureSignalRmsSince", "\"ProcessingNotRunningError\"",
-                   NULL, ds);
-      }
-    } else {
-      json_reply("GetCaptureSignalRmsSince",
-                 "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureSignalPeakSince") == 0) {
-    double secs = 0;
-    if (arg && cJSON_IsNumber(arg)) {
-      secs = arg->valuedouble;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        uint64_t now = get_time_ms();
-        uint64_t since = now - (uint64_t)(secs * 1000.0);
-        size_t ch = server->capture_peak_history.channels;
-        double* pk = (double*)calloc(ch, sizeof(double));
-        level_history_get_max_since(&server->capture_peak_history, since, pk);
-        char* pk_str = format_double_array(pk, ch);
-        json_reply("GetCaptureSignalPeakSince", "\"Ok\"", pk_str, ds);
-        free(pk_str);
-        free(pk);
-      } else {
-        json_reply("GetCaptureSignalPeakSince", "\"ProcessingNotRunningError\"",
-                   NULL, ds);
-      }
-    } else {
-      json_reply("GetCaptureSignalPeakSince",
-                 "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalRmsSince") == 0) {
-    double secs = 0;
-    if (arg && cJSON_IsNumber(arg)) {
-      secs = arg->valuedouble;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        uint64_t now = get_time_ms();
-        uint64_t since = now - (uint64_t)(secs * 1000.0);
-        size_t ch = server->playback_rms_history.channels;
-        double* rms = (double*)calloc(ch, sizeof(double));
-        level_history_get_rms_since(&server->playback_rms_history, since, rms);
-        char* rms_str = format_double_array(rms, ch);
-        json_reply("GetPlaybackSignalRmsSince", "\"Ok\"", rms_str, ds);
-        free(rms_str);
-        free(rms);
-      } else {
-        json_reply("GetPlaybackSignalRmsSince", "\"ProcessingNotRunningError\"",
-                   NULL, ds);
-      }
-    } else {
-      json_reply("GetPlaybackSignalRmsSince",
-                 "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetPlaybackSignalPeakSince") == 0) {
-    double secs = 0;
-    if (arg && cJSON_IsNumber(arg)) {
-      secs = arg->valuedouble;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        uint64_t now = get_time_ms();
-        uint64_t since = now - (uint64_t)(secs * 1000.0);
-        size_t ch = server->playback_peak_history.channels;
-        double* pk = (double*)calloc(ch, sizeof(double));
-        level_history_get_max_since(&server->playback_peak_history, since, pk);
-        char* pk_str = format_double_array(pk, ch);
-        json_reply("GetPlaybackSignalPeakSince", "\"Ok\"", pk_str, ds);
-        free(pk_str);
-        free(pk);
-      } else {
-        json_reply("GetPlaybackSignalPeakSince",
-                   "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("GetPlaybackSignalPeakSince",
-                 "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetSignalLevels") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      cJSON* root = cJSON_CreateObject();
-      cJSON_AddItemToObject(root, "playback_rms",
-                            cJSON_CreateDoubleArray(vu.playback_rms,
-                                                    (int)vu.playback_channels));
-      cJSON_AddItemToObject(root, "playback_peak",
-                            cJSON_CreateDoubleArray(vu.playback_peak,
-                                                    (int)vu.playback_channels));
-      cJSON_AddItemToObject(root, "capture_rms",
-                            cJSON_CreateDoubleArray(vu.capture_rms,
-                                                    (int)vu.capture_channels));
-      cJSON_AddItemToObject(root, "capture_peak",
-                            cJSON_CreateDoubleArray(vu.capture_peak,
-                                                    (int)vu.capture_channels));
-      char* val = cJSON_PrintUnformatted(root);
-      json_reply("GetSignalLevels", "\"Ok\"", val, ds);
-      free(val);
-      cJSON_Delete(root);
-      free_vu_levels_arrays(&vu);
-    } else {
-      json_reply("GetSignalLevels", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetSignalLevelsSinceLast") == 0) {
-    state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      uint64_t cap_rms_since =
-          server->client_sessions[client_idx].last_cap_rms_time;
-      uint64_t cap_pk_since =
-          server->client_sessions[client_idx].last_cap_peak_time;
-      uint64_t pb_rms_since =
-          server->client_sessions[client_idx].last_pb_rms_time;
-      uint64_t pb_pk_since =
-          server->client_sessions[client_idx].last_pb_peak_time;
-      uint64_t now = get_time_ms();
-      server->client_sessions[client_idx].last_cap_rms_time = now;
-      server->client_sessions[client_idx].last_cap_peak_time = now;
-      server->client_sessions[client_idx].last_pb_rms_time = now;
-      server->client_sessions[client_idx].last_pb_peak_time = now;
-      size_t c_ch = server->capture_rms_history.channels;
-      size_t p_ch = server->playback_rms_history.channels;
-      double* c_rms = (double*)calloc(c_ch, sizeof(double));
-      double* c_pk = (double*)calloc(c_ch, sizeof(double));
-      double* p_rms = (double*)calloc(p_ch, sizeof(double));
-      double* p_pk = (double*)calloc(p_ch, sizeof(double));
-      level_history_get_rms_since(&server->capture_rms_history, cap_rms_since,
-                                  c_rms);
-      level_history_get_max_since(&server->capture_peak_history, cap_pk_since,
-                                  c_pk);
-      level_history_get_rms_since(&server->playback_rms_history, pb_rms_since,
-                                  p_rms);
-      level_history_get_max_since(&server->playback_peak_history, pb_pk_since,
-                                  p_pk);
-      cJSON* root = cJSON_CreateObject();
-      cJSON_AddItemToObject(
-          root, "playback_rms",
-          cJSON_CreateDoubleArray(p_rms, (int)p_ch));
-      cJSON_AddItemToObject(
-          root, "playback_peak",
-          cJSON_CreateDoubleArray(p_pk, (int)p_ch));
-      cJSON_AddItemToObject(
-          root, "capture_rms",
-          cJSON_CreateDoubleArray(c_rms, (int)c_ch));
-      cJSON_AddItemToObject(
-          root, "capture_peak",
-          cJSON_CreateDoubleArray(c_pk, (int)c_ch));
-      char* val = cJSON_PrintUnformatted(root);
-      json_reply("GetSignalLevelsSinceLast", "\"Ok\"", val, ds);
-      free(val);
-      cJSON_Delete(root);
-      free(c_rms);
-      free(c_pk);
-      free(p_rms);
-      free(p_pk);
-    } else {
-      json_reply("GetSignalLevelsSinceLast", "\"ProcessingNotRunningError\"",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetSignalLevelsSince") == 0) {
-    double secs = 0;
-    if (arg && cJSON_IsNumber(arg)) {
-      secs = arg->valuedouble;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        uint64_t now = get_time_ms();
-        uint64_t since = now - (uint64_t)(secs * 1000.0);
-        size_t c_ch = server->capture_rms_history.channels;
-        size_t p_ch = server->playback_rms_history.channels;
-        double* c_rms = (double*)calloc(c_ch, sizeof(double));
-        double* c_pk = (double*)calloc(c_ch, sizeof(double));
-        double* p_rms = (double*)calloc(p_ch, sizeof(double));
-        double* p_pk = (double*)calloc(p_ch, sizeof(double));
-        level_history_get_rms_since(&server->capture_rms_history, since, c_rms);
-        level_history_get_max_since(&server->capture_peak_history, since, c_pk);
-        level_history_get_rms_since(&server->playback_rms_history, since,
-                                    p_rms);
-        level_history_get_max_since(&server->playback_peak_history, since,
-                                    p_pk);
-        cJSON* root = cJSON_CreateObject();
-        cJSON_AddItemToObject(
-            root, "playback_rms",
-            cJSON_CreateDoubleArray(p_rms, (int)p_ch));
-        cJSON_AddItemToObject(
-            root, "playback_peak",
-            cJSON_CreateDoubleArray(p_pk, (int)p_ch));
-        cJSON_AddItemToObject(
-            root, "capture_rms",
-            cJSON_CreateDoubleArray(c_rms, (int)c_ch));
-        cJSON_AddItemToObject(
-            root, "capture_peak",
-            cJSON_CreateDoubleArray(c_pk, (int)c_ch));
-        char* val = cJSON_PrintUnformatted(root);
-        json_reply("GetSignalLevelsSince", "\"Ok\"", val, ds);
-        free(val);
-        cJSON_Delete(root);
-        free(c_rms);
-        free(c_pk);
-        free(p_rms);
-        free(p_pk);
-      } else {
-        json_reply("GetSignalLevelsSince", "\"ProcessingNotRunningError\"",
-                   NULL, ds);
-      }
-    } else {
-      json_reply("GetSignalLevelsSince",
-                 "{\"InvalidRequestError\":\"Could not parse seconds\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetSignalPeaksSinceStart") == 0) {
-    char val[2048];
-    size_t offset = 0;
-    int written = snprintf(val + offset, sizeof(val) - offset, "{\"capture\":[");
-    if (written > 0 && (size_t)written < sizeof(val) - offset) {
-      offset += (size_t)written;
-    }
-    for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-      written =
-          snprintf(val + offset, sizeof(val) - offset, "%.17g%s",
-                   server->capture_global_peaks[i],
-                   (i + 1 < server->capture_global_peaks_count) ? "," : "");
-      if (written > 0 && (size_t)written < sizeof(val) - offset) {
-        offset += (size_t)written;
-      } else {
-        break;
-      }
-    }
-    written = snprintf(val + offset, sizeof(val) - offset, "],\"playback\":[");
-    if (written > 0 && (size_t)written < sizeof(val) - offset) {
-      offset += (size_t)written;
-    }
-    for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-      written =
-          snprintf(val + offset, sizeof(val) - offset, "%.17g%s",
-                   server->playback_global_peaks[i],
-                   (i + 1 < server->playback_global_peaks_count) ? "," : "");
-      if (written > 0 && (size_t)written < sizeof(val) - offset) {
-        offset += (size_t)written;
-      } else {
-        break;
-      }
-    }
-    snprintf(val + offset, sizeof(val) - offset, "]}");
-    json_reply("GetSignalPeaksSinceStart", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "ResetSignalPeaksSinceStart") == 0) {
-    for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-      server->capture_global_peaks[i] = -1000.0;
-    }
-    for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-      server->playback_global_peaks[i] = -1000.0;
-    }
-    json_reply("ResetSignalPeaksSinceStart", "\"Ok\"", NULL, ds);
-  } else if (strcmp(simple, "GetChannelLabels") == 0) {
-    char* json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &json);
-    }
-    if (!json) {
-      char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
-      }
-      if (path) {
-        json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    char play_labels[2048] = "null";
-    char cap_labels[2048] = "null";
-    if (json) {
-      server_get_value_at_pointer(json, "/devices/playback/labels", play_labels,
-                                  sizeof(play_labels));
-      server_get_value_at_pointer(json, "/devices/capture/labels", cap_labels,
-                                  sizeof(cap_labels));
-    }
-    char val[4096];
-    snprintf(val, sizeof(val), "{\"playback\":%s,\"capture\":%s}", play_labels,
-             cap_labels);
-    json_reply("GetChannelLabels", "\"Ok\"", val, ds);
-    if (json) free(json);
-  } else if (strcmp(simple, "GetSignalRange") == 0) {
-    vu_levels_t vu;
-    memset(&vu, 0, sizeof(vu));
-    if (server && server->engine && server->engine->get_vu_levels &&
-        server->engine->get_vu_levels(server->engine->ctx, &vu)) {
-      size_t count = vu.playback_channels;
-      double max_peak = -1000.0;
-      for (size_t i = 0; i < count; i++) {
-        double pk = vu.playback_peak[i];
-        if (pk > max_peak) max_peak = pk;
-      }
-      double range = 2.0 * db_to_amplitude(max_peak);
-      char val[64];
-      snprintf(val, sizeof(val), "%.17g", range);
-      json_reply("GetSignalRange", "\"Ok\"", val, ds);
-      free_vu_levels_arrays(&vu);
-    } else {
-      json_reply("GetSignalRange", "\"ProcessingNotRunningError\"", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetConfigFilePath") == 0) {
-    char* path = NULL;
-    if (server && server->engine && server->engine->get_config_path) {
-      path = server->engine->get_config_path(server->engine->ctx);
-    }
-    char val[1100];
-    if (path) {
-      snprintf(val, sizeof(val), "\"%s\"", path);
-      free(path);
-    } else {
-      snprintf(val, sizeof(val), "null");
-    }
-    json_reply("GetConfigFilePath", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetPreviousConfig") == 0) {
-    char* prev = NULL;
-    if (server && server->engine && server->engine->get_previous_config_json) {
-      server->engine->get_previous_config_json(server->engine->ctx, &prev);
-    }
-    if (prev) {
-      json_reply("GetPreviousConfig", "\"Ok\"", prev, ds);
-      free(prev);
-    } else {
-      json_reply("GetPreviousConfig", "\"Ok\"", "null", ds);
-    }
-  } else if (strcmp(simple, "GetStateFilePath") == 0) {
-    const char* path = NULL;
-    if (server && server->engine && server->engine->get_state_file) {
-      path = server->engine->get_state_file(server->engine->ctx);
-    }
-    char val[1100];
-    if (path)
-      snprintf(val, sizeof(val), "\"%s\"", path);
-    else
-      snprintf(val, sizeof(val), "null");
-    json_reply("GetStateFilePath", "\"Ok\"", val, ds);
-  } else if (strcmp(simple, "GetStateFileUpdated") == 0) {
-    bool updated = server && server->engine && server->engine->is_state_dirty
-                       ? !server->engine->is_state_dirty(server->engine->ctx)
-                       : true;
-    json_reply("GetStateFileUpdated", "\"Ok\"", updated ? "true" : "false", ds);
-  } else if (strcmp(simple, "GetConfig") == 0 ||
-             strcmp(simple, "GetConfigJson") == 0) {
-    char* json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &json);
-    }
-    if (!json) {
-      char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
-      }
-      if (path) {
-        json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    if (json) {
-      json_reply(simple, "\"Ok\"", json, ds);
-      free(json);
-    } else {
-      json_reply(simple, "{\"InvalidRequestError\":\"No active config\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetConfigTitle") == 0) {
-    char* json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &json);
-    }
-    if (!json) {
-      char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
-      }
-      if (path) {
-        json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    char title[256];
-    if (json &&
-        extract_json_string_value(json, "title", title, sizeof(title))) {
-      char val[300];
-      snprintf(val, sizeof(val), "\"%s\"", title);
-      json_reply("GetConfigTitle", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetConfigTitle", "\"Ok\"", "null", ds);
-    }
-    if (json) free(json);
-  } else if (strcmp(simple, "GetConfigDescription") == 0) {
-    char* json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &json);
-    }
-    if (!json) {
-      char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
-      }
-      if (path) {
-        json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    char desc[512];
-    if (json &&
-        extract_json_string_value(json, "description", desc, sizeof(desc))) {
-      char val[600];
-      snprintf(val, sizeof(val), "\"%s\"", desc);
-      json_reply("GetConfigDescription", "\"Ok\"", val, ds);
-    } else {
-      json_reply("GetConfigDescription", "\"Ok\"", "null", ds);
-    }
-    if (json) free(json);
-  } else if (strcmp(simple, "Reload") == 0) {
-    char* path = NULL;
-    if (server && server->engine && server->engine->get_config_path) {
-      path = server->engine->get_config_path(server->engine->ctx);
-    }
-    if (path) {
-      char* json = server_read_file_to_string(path);
-      free(path);
-      if (json) {
-        audio_backend_error_t err;
-        memset(&err, 0, sizeof(err));
-        bool ok =
-            server && server->engine && server->engine->set_config_json &&
-            server->engine->set_config_json(server->engine->ctx, json, &err);
-        if (ok) {
-          json_reply("Reload", "\"Ok\"", NULL, ds);
-        } else {
-          char val[600];
-          snprintf(val, sizeof(val), "{\"%s\":\"%s\"}",
-                   get_websocket_error_key(err.type), err.message);
-          json_reply("Reload", val, NULL, ds);
-        }
-        free(json);
-      } else {
-        json_reply("Reload",
-                   "{\"ConfigReadError\":\"Could not read config file\"}", NULL, ds);
-      }
-    } else {
-      json_reply("Reload",
-                 "{\"InvalidRequestError\":\"No config file path set\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "Stop") == 0) {
-    if (server && server->engine && server->engine->stop) {
-      server->engine->stop(server->engine->ctx);
-    }
-    json_reply("Stop", "\"Ok\"", NULL, ds);
-  } else if (strcmp(simple, "Exit") == 0) {
-    if (server && server->engine && server->engine->stop) {
-      server->engine->stop(server->engine->ctx);
-    }
-    json_reply("Exit", "\"Ok\"", NULL, ds);
-  } else if (strcmp(simple, "SetVolume") == 0) {
-    if (arg && cJSON_IsNumber(arg)) {
-      double vol = arg->valuedouble;
-      if (server && server->engine && server->engine->set_fader_volume) {
-        double clamped = vol < -150.0 ? -150.0 : (vol > 50.0 ? 50.0 : vol);
-        server->engine->set_fader_volume(server->engine->ctx, FADER_MAIN,
-                                         clamped, false);
-        json_reply("SetVolume", "\"Ok\"", NULL, ds);
-      } else {
-        json_reply("SetVolume", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("SetVolume",
-                 "{\"InvalidRequestError\":\"Could not parse volume value\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SetMute") == 0) {
-    if (arg && cJSON_IsBool(arg)) {
-      bool mute = cJSON_IsTrue(arg);
-      if (server && server->engine && server->engine->set_fader_mute) {
-        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN, mute);
-        json_reply("SetMute", "\"Ok\"", NULL, ds);
-      } else {
-        json_reply("SetMute", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("SetMute",
-                 "{\"InvalidRequestError\":\"Could not parse mute value\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SetConfigFilePath") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* path = arg->valuestring;
-      if (server && server->engine && server->engine->set_config_path) {
-        server->engine->set_config_path(server->engine->ctx, path);
-      }
-      json_reply("SetConfigFilePath", "\"Ok\"", NULL, ds);
-    } else {
-      json_reply(
-          "SetConfigFilePath",
-          "{\"InvalidRequestError\":\"Could not parse Config File Path\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "SetConfigJson") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* new_json = arg->valuestring;
-      audio_backend_error_t err;
-      memset(&err, 0, sizeof(err));
-      bool ok =
-          server && server->engine && server->engine->set_config_json &&
-          server->engine->set_config_json(server->engine->ctx, new_json, &err);
-      if (ok) {
-        json_reply("SetConfigJson", "\"Ok\"", NULL, ds);
-      } else {
-        char val[600];
-        snprintf(val, sizeof(val), "{\"%s\":\"%s\"}",
-                 get_websocket_error_key(err.type), err.message);
-        json_reply("SetConfigJson", val, NULL, ds);
-      }
-    } else {
-      json_reply("SetConfigJson",
-                 "{\"InvalidRequestError\":\"Could not parse Config JSON\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetConfigValue") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* pointer = arg->valuestring;
-      char* json = NULL;
-      if (server && server->engine && server->engine->get_active_config_json) {
-        server->engine->get_active_config_json(server->engine->ctx, &json);
-      }
-      if (!json) {
-        char* path = NULL;
-        if (server && server->engine && server->engine->get_config_path) {
-          path = server->engine->get_config_path(server->engine->ctx);
-        }
-        if (path) {
-          json = server_read_file_to_string(path);
-          free(path);
-        }
-      }
+    case WS_CMD_GET_SPECTRUM:
+      handle_cmd_get_spectrum(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_AVAILABLE_CAPTURE_DEVICES:
+      handle_cmd_get_available_capture_devices(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_AVAILABLE_PLAYBACK_DEVICES:
+      handle_cmd_get_available_playback_devices(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_DEVICE_CAPABILITIES:
+      handle_cmd_get_capture_device_capabilities(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_DEVICE_CAPABILITIES:
+      handle_cmd_get_playback_device_capabilities(server, client_idx, simple, arg, ds);
+      break;
 
-      char val[2048];
-      if (json &&
-          server_get_value_at_pointer(json, pointer, val, sizeof(val))) {
-        json_reply("GetConfigValue", "\"Ok\"", val, ds);
-      } else {
-        char err[256];
-        snprintf(err, sizeof(err),
-                 "{\"InvalidRequestError\":\"Path not found: %s\"}", pointer);
-        json_reply("GetConfigValue", err, NULL, ds);
-      }
-      if (json) free(json);
-    } else {
-      json_reply("GetConfigValue",
-                 "{\"InvalidRequestError\":\"Could not parse pointer\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "SetConfigValue") == 0) {
-    char pointer[256] = "";
-    char* trimmed_val = NULL;
-    if (arg && cJSON_IsObject(arg)) {
-      cJSON* p_node = cJSON_GetObjectItemCaseSensitive(arg, "pointer");
-      cJSON* v_node = cJSON_GetObjectItemCaseSensitive(arg, "value");
-      if (p_node && cJSON_IsString(p_node)) {
-        strncpy(pointer, p_node->valuestring, sizeof(pointer) - 1);
-      }
-      if (v_node) {
-        trimmed_val = cJSON_PrintUnformatted(v_node);
-      }
-    }
+    case WS_CMD_GET_CAPTURE_SIGNAL_RMS:
+      handle_cmd_get_capture_signal_rms(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_SIGNAL_PEAK:
+      handle_cmd_get_capture_signal_peak(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_RMS:
+      handle_cmd_get_playback_signal_rms(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK:
+      handle_cmd_get_playback_signal_peak(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE_LAST:
+      handle_cmd_get_capture_signal_rms_since_last(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE_LAST:
+      handle_cmd_get_capture_signal_peak_since_last(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE_LAST:
+      handle_cmd_get_playback_signal_rms_since_last(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE_LAST:
+      handle_cmd_get_playback_signal_peak_since_last(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE:
+      handle_cmd_get_capture_signal_rms_since(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE:
+      handle_cmd_get_capture_signal_peak_since(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE:
+      handle_cmd_get_playback_signal_rms_since(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE:
+      handle_cmd_get_playback_signal_peak_since(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SIGNAL_LEVELS:
+      handle_cmd_get_signal_levels(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SIGNAL_LEVELS_SINCE_LAST:
+      handle_cmd_get_signal_levels_since_last(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SIGNAL_LEVELS_SINCE:
+      handle_cmd_get_signal_levels_since(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SIGNAL_PEAKS_SINCE_START:
+      handle_cmd_get_signal_peaks_since_start(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_RESET_SIGNAL_PEAKS_SINCE_START:
+      handle_cmd_reset_signal_peaks_since_start(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CHANNEL_LABELS:
+      handle_cmd_get_channel_labels(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_SIGNAL_RANGE:
+      handle_cmd_get_signal_range(server, client_idx, simple, arg, ds);
+      break;
 
-    if (pointer[0] != '\0' && trimmed_val) {
-      char* active_json = NULL;
-      if (server && server->engine && server->engine->get_active_config_json) {
-        server->engine->get_active_config_json(server->engine->ctx,
-                                               &active_json);
-      }
-      if (!active_json) {
-        char* path = NULL;
-        if (server && server->engine && server->engine->get_config_path) {
-          path = server->engine->get_config_path(server->engine->ctx);
-        }
-        if (path) {
-          active_json = server_read_file_to_string(path);
-          free(path);
-        }
-      }
+    case WS_CMD_GET_CONFIG_FILE_PATH:
+      handle_cmd_get_config_file_path(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_PREVIOUS_CONFIG:
+      handle_cmd_get_previous_config(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_STATE_FILE_PATH:
+      handle_cmd_get_state_file_path(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_STATE_FILE_UPDATED:
+      handle_cmd_get_state_file_updated(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CONFIG:
+    case WS_CMD_GET_CONFIG_JSON:
+      handle_cmd_get_config(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CONFIG_TITLE:
+      handle_cmd_get_config_title(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CONFIG_DESCRIPTION:
+      handle_cmd_get_config_description(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_RELOAD:
+      handle_cmd_reload(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_STOP:
+      handle_cmd_stop(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_EXIT:
+      handle_cmd_exit(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_CONFIG_FILE_PATH:
+      handle_cmd_set_config_file_path(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_CONFIG_JSON:
+      handle_cmd_set_config_json(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_GET_CONFIG_VALUE:
+      handle_cmd_get_config_value(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SET_CONFIG_VALUE:
+      handle_cmd_set_config_value(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_PATCH_CONFIG:
+      handle_cmd_patch_config(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_READ_CONFIG_JSON:
+    case WS_CMD_VALIDATE_CONFIG_JSON:
+      handle_cmd_read_config_json(server, client_idx, simple, arg, ds);
+      break;
 
-      if (active_json) {
-        char* updated_json =
-            server_set_value_at_pointer_str(active_json, pointer, trimmed_val);
-        if (updated_json) {
-          audio_backend_error_t err;
-          memset(&err, 0, sizeof(err));
-          bool ok = server && server->engine &&
-                    server->engine->set_config_json &&
-                    server->engine->set_config_json(server->engine->ctx,
-                                                    updated_json, &err);
-          if (ok) {
-            json_reply("SetConfigValue", "\"Ok\"", NULL, ds);
-          } else {
-            char val[600];
-            snprintf(val, sizeof(val), "{\"%s\":\"%s\"}",
-                     get_websocket_error_key(err.type), err.message);
-            json_reply("SetConfigValue", val, NULL, ds);
-          }
-          free(updated_json);
-        } else {
-          char err[256];
-          snprintf(err, sizeof(err),
-                   "{\"InvalidRequestError\":\"Path not found: %s\"}", pointer);
-          json_reply("SetConfigValue", err, NULL, ds);
-        }
-        free(active_json);
-      } else {
-        json_reply("SetConfigValue",
-                   "{\"InvalidRequestError\":\"No active config to modify\"}",
-                   NULL, ds);
-      }
-      free(trimmed_val);
-    } else {
-      json_reply("SetConfigValue",
-                 "{\"InvalidRequestError\":\"Could not parse SetConfigValue "
-                 "command\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "PatchConfig") == 0) {
-    if (arg && cJSON_IsObject(arg)) {
-      char* active_json = NULL;
-      if (server && server->engine && server->engine->get_active_config_json) {
-        server->engine->get_active_config_json(server->engine->ctx,
-                                               &active_json);
-      }
-      if (!active_json) {
-        char* path = NULL;
-        if (server && server->engine && server->engine->get_config_path) {
-          path = server->engine->get_config_path(server->engine->ctx);
-        }
-        if (path) {
-          active_json = server_read_file_to_string(path);
-          free(path);
-        }
-      }
+    case WS_CMD_SUBSCRIBE_STATE:
+      handle_cmd_subscribe_state(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SUBSCRIBE_VU_LEVELS:
+      handle_cmd_subscribe_vu_levels(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SUBSCRIBE_SIGNAL_LEVELS:
+      handle_cmd_subscribe_signal_levels(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_SUBSCRIBE_SPECTRUM:
+      handle_cmd_subscribe_spectrum(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_STOP_SUBSCRIPTION:
+      handle_cmd_stop_subscription(server, client_idx, simple, arg, ds);
+      break;
 
-      if (active_json) {
-        cJSON* target_root = cJSON_Parse(active_json);
-        if (target_root) {
-          cjson_merge_patch(target_root, arg);
-          char* target_json = cJSON_PrintUnformatted(target_root);
-          if (target_json) {
-            audio_backend_error_t err;
-            memset(&err, 0, sizeof(err));
-            bool ok = server && server->engine &&
-                      server->engine->set_config_json &&
-                      server->engine->set_config_json(server->engine->ctx,
-                                                      target_json, &err);
-            if (ok) {
-              json_reply("PatchConfig", "\"Ok\"", NULL, ds);
-            } else {
-              char val[600];
-              snprintf(val, sizeof(val), "{\"%s\":\"%s\"}",
-                       get_websocket_error_key(err.type), err.message);
-              json_reply("PatchConfig", val, NULL, ds);
-            }
-            free(target_json);
-          } else {
-            json_reply(
-                "PatchConfig",
-                "{\"InvalidRequestError\":\"Failed to format target JSON\"}",
-                NULL, ds);
-          }
-          cJSON_Delete(target_root);
-        } else {
-          cJSON_Delete(target_root);
-          json_reply(
-              "PatchConfig",
-              "{\"InvalidRequestError\":\"Failed to parse target JSON\"}", NULL, ds);
-        }
-        free(active_json);
-      } else {
-        json_reply("PatchConfig",
-                   "{\"InvalidRequestError\":\"No active config to patch\"}",
-                   NULL, ds);
-      }
-    } else {
-      json_reply(
-          "PatchConfig",
-          "{\"InvalidRequestError\":\"Could not parse PatchConfig command\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "GetFaderVolume") == 0) {
-    if (arg && cJSON_IsNumber(arg)) {
-      int idx = arg->valueint;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        if (idx >= 0 && idx < FADER_COUNT) {
-          double vol = (server->engine->get_fader_volume)
-                           ? server->engine->get_fader_volume(server->engine->ctx, (fader_t)idx)
-                           : 0.0;
-          char val[64];
-          snprintf(val, sizeof(val), "[%d,%.17g]", idx, vol);
-          json_reply("GetFaderVolume", "\"Ok\"", val, ds);
-        } else {
-          json_reply("GetFaderVolume", "\"InvalidFaderError\"", NULL, ds);
-        }
-      } else {
-        json_reply("GetFaderVolume", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("GetFaderVolume",
-                 "{\"InvalidRequestError\":\"Could not parse fader index\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SetFaderVolume") == 0 ||
-             strcmp(simple, "SetFaderExternalVolume") == 0) {
-    int idx = -1;
-    double vol = 0.0;
-    bool ok = false;
-    if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
-      cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-      cJSON* val_node = cJSON_GetArrayItem(arg, 1);
-      if (idx_node && val_node && cJSON_IsNumber(idx_node) &&
-          cJSON_IsNumber(val_node)) {
-        idx = idx_node->valueint;
-        vol = val_node->valuedouble;
-        ok = true;
-      }
-    }
-    if (ok) {
-      if (server && server->engine && server->engine->set_fader_volume) {
-        if (idx >= 0 && idx < FADER_COUNT) {
-          double clamped = vol < -150.0 ? -150.0 : (vol > 50.0 ? 50.0 : vol);
-          bool instant = (strcmp(simple, "SetFaderExternalVolume") == 0);
-          server->engine->set_fader_volume(server->engine->ctx, (fader_t)idx,
-                                           clamped, instant);
-          json_reply(simple, "\"Ok\"", NULL, ds);
-        } else {
-          json_reply(simple, "\"InvalidFaderError\"", NULL, ds);
-        }
-      } else {
-        json_reply(simple, "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply(simple,
-                 "{\"InvalidRequestError\":\"Could not parse "
-                 "SetFaderVolume/SetFaderExternalVolume array\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetFaderMute") == 0) {
-    if (arg && cJSON_IsNumber(arg)) {
-      int idx = arg->valueint;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        if (idx >= 0 && idx < FADER_COUNT) {
-          bool muted = (server->engine->is_fader_muted)
-                           ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)idx)
-                           : false;
-          char val[64];
-          snprintf(val, sizeof(val), "[%d,%s]", idx, muted ? "true" : "false");
-          json_reply("GetFaderMute", "\"Ok\"", val, ds);
-        } else {
-          json_reply("GetFaderMute", "\"InvalidFaderError\"", NULL, ds);
-        }
-      } else {
-        json_reply("GetFaderMute", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("GetFaderMute",
-                 "{\"InvalidRequestError\":\"Could not parse fader index\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "SetFaderMute") == 0) {
-    int idx = -1;
-    bool mute = false;
-    bool ok = false;
-    if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
-      cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-      cJSON* val_node = cJSON_GetArrayItem(arg, 1);
-      if (idx_node && val_node && cJSON_IsNumber(idx_node) &&
-          cJSON_IsBool(val_node)) {
-        idx = idx_node->valueint;
-        mute = cJSON_IsTrue(val_node);
-        ok = true;
-      }
-    }
-    if (ok) {
-      if (server && server->engine && server->engine->set_fader_mute) {
-        if (idx >= 0 && idx < FADER_COUNT) {
-          server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
-                                         mute);
-          json_reply("SetFaderMute", "\"Ok\"", NULL, ds);
-        } else {
-          json_reply("SetFaderMute", "\"InvalidFaderError\"", NULL, ds);
-        }
-      } else {
-        json_reply("SetFaderMute", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply(
-          "SetFaderMute",
-          "{\"InvalidRequestError\":\"Could not parse SetFaderMute array\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "ToggleFaderMute") == 0) {
-    if (arg && cJSON_IsNumber(arg)) {
-      int idx = arg->valueint;
-      state_update_t status;
-      if (server && server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status) &&
-          status.state == PROCESSING_STATE_RUNNING) {
-        if (idx >= 0 && idx < FADER_COUNT) {
-          bool was_muted = (server->engine->is_fader_muted)
-                               ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)idx)
-                               : false;
-          if (server->engine->set_fader_mute) {
-            server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
-                                           !was_muted);
-          }
-          char val[64];
-          snprintf(val, sizeof(val), "[%d,%s]", idx,
-                   !was_muted ? "true" : "false");
-          json_reply("ToggleFaderMute", "\"Ok\"", val, ds);
-        } else {
-          json_reply("ToggleFaderMute", "\"InvalidFaderError\"", NULL, ds);
-        }
-      } else {
-        json_reply("ToggleFaderMute", "\"ProcessingNotRunningError\"", NULL, ds);
-      }
-    } else {
-      json_reply("ToggleFaderMute",
-                 "{\"InvalidRequestError\":\"Could not parse fader index\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetAvailableCaptureDevices") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* backend = arg->valuestring;
-      audio_device_t* devs = NULL;
-      size_t count = 0;
-      bool ok = server && server->engine &&
-                server->engine->get_available_devices &&
-                server->engine->get_available_devices(
-                    server->engine->ctx, backend, true, &devs, &count);
-      if (ok && devs) {
-        char val[4096];
-        size_t offset = 0;
-        int written = snprintf(val + offset, sizeof(val) - offset, "[");
-        if (written > 0 && (size_t)written < sizeof(val) - offset) {
-          offset += (size_t)written;
-        }
-        for (size_t i = 0; i < count; i++) {
-          written = snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
-                             devs[i].name, (i + 1 < count) ? "," : "");
-          if (written > 0 && (size_t)written < sizeof(val) - offset) {
-            offset += (size_t)written;
-          } else {
-            break;
-          }
-        }
-        snprintf(val + offset, sizeof(val) - offset, "]");
-        json_reply("GetAvailableCaptureDevices", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetAvailableCaptureDevices", "\"Ok\"", "[]", ds);
-      }
-    } else {
-      json_reply("GetAvailableCaptureDevices",
-                 "{\"InvalidRequestError\":\"Could not parse backend\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "GetAvailablePlaybackDevices") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* backend = arg->valuestring;
-      audio_device_t* devs = NULL;
-      size_t count = 0;
-      bool ok = server && server->engine &&
-                server->engine->get_available_devices &&
-                server->engine->get_available_devices(
-                    server->engine->ctx, backend, false, &devs, &count);
-      if (ok && devs) {
-        char val[4096];
-        size_t offset = 0;
-        int written = snprintf(val + offset, sizeof(val) - offset, "[");
-        if (written > 0 && (size_t)written < sizeof(val) - offset) {
-          offset += (size_t)written;
-        }
-        for (size_t i = 0; i < count; i++) {
-          written = snprintf(val + offset, sizeof(val) - offset, "\"%s\"%s",
-                             devs[i].name, (i + 1 < count) ? "," : "");
-          if (written > 0 && (size_t)written < sizeof(val) - offset) {
-            offset += (size_t)written;
-          } else {
-            break;
-          }
-        }
-        snprintf(val + offset, sizeof(val) - offset, "]");
-        json_reply("GetAvailablePlaybackDevices", "\"Ok\"", val, ds);
-      } else {
-        json_reply("GetAvailablePlaybackDevices", "\"Ok\"", "[]", ds);
-      }
-    } else {
-      json_reply("GetAvailablePlaybackDevices",
-                 "{\"InvalidRequestError\":\"Could not parse backend\"}", NULL, ds);
-    }
-  } else if (strcmp(simple, "AdjustVolume") == 0) {
-    double delta = 0.0;
-    double min_vol = -150.0;
-    double max_vol = 50.0;
-    bool ok = false;
-    if (arg && cJSON_IsNumber(arg)) {
-      delta = arg->valuedouble;
-      ok = true;
-    } else if (arg && cJSON_IsArray(arg)) {
-      int size = cJSON_GetArraySize(arg);
-      if (size >= 1) {
-        cJSON* d_node = cJSON_GetArrayItem(arg, 0);
-        if (d_node && cJSON_IsNumber(d_node)) {
-          delta = d_node->valuedouble;
-          ok = true;
-        }
-      }
-      if (size >= 2) {
-        cJSON* min_node = cJSON_GetArrayItem(arg, 1);
-        if (min_node && cJSON_IsNumber(min_node))
-          min_vol = min_node->valuedouble;
-      }
-      if (size >= 3) {
-        cJSON* max_node = cJSON_GetArrayItem(arg, 2);
-        if (max_node && cJSON_IsNumber(max_node))
-          max_vol = max_node->valuedouble;
-      }
-    }
-
-    if (ok) {
-      server_handle_adjust_volume_fader(server, FADER_MAIN, delta, min_vol,
-                                        max_vol, ds, "AdjustVolume");
-    } else {
-      json_reply(
-          "AdjustVolume",
-          "{\"InvalidRequestError\":\"Could not parse AdjustVolume argument\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "AdjustFaderVolume") == 0) {
-    int idx = -1;
-    double delta = 0.0;
-    double min_vol = -150.0;
-    double max_vol = 50.0;
-    bool ok = false;
-    if (arg && cJSON_IsArray(arg)) {
-      int size = cJSON_GetArraySize(arg);
-      if (size >= 2) {
-        cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-        cJSON* d_node = cJSON_GetArrayItem(arg, 1);
-        if (idx_node && d_node && cJSON_IsNumber(idx_node) &&
-            cJSON_IsNumber(d_node)) {
-          idx = idx_node->valueint;
-          delta = d_node->valuedouble;
-          ok = true;
-        }
-      }
-      if (size >= 3) {
-        cJSON* min_node = cJSON_GetArrayItem(arg, 2);
-        if (min_node && cJSON_IsNumber(min_node))
-          min_vol = min_node->valuedouble;
-      }
-      if (size >= 4) {
-        cJSON* max_node = cJSON_GetArrayItem(arg, 3);
-        if (max_node && cJSON_IsNumber(max_node))
-          max_vol = max_node->valuedouble;
-      }
-    }
-
-    if (ok) {
-      if (idx >= 0 && idx < FADER_COUNT) {
-        server_handle_adjust_volume_fader(server, (fader_t)idx, delta, min_vol,
-                                          max_vol, ds, "AdjustFaderVolume");
-      } else {
-        json_reply("AdjustFaderVolume", "\"InvalidFaderError\"", NULL, ds);
-      }
-    } else {
-      json_reply("AdjustFaderVolume",
-                 "{\"InvalidRequestError\":\"Could not parse AdjustFaderVolume "
-                 "array\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetCaptureDeviceCapabilities") == 0 ||
-             strcmp(simple, "GetPlaybackDeviceCapabilities") == 0) {
-    char backend[128] = "";
-    char device[256] = "";
-    bool ok = false;
-    if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
-      cJSON* b_node = cJSON_GetArrayItem(arg, 0);
-      cJSON* d_node = cJSON_GetArrayItem(arg, 1);
-      if (b_node && d_node && cJSON_IsString(b_node) &&
-          cJSON_IsString(d_node)) {
-        strncpy(backend, b_node->valuestring, sizeof(backend) - 1);
-        strncpy(device, d_node->valuestring, sizeof(device) - 1);
-        ok = true;
-      }
-    }
-    if (ok) {
-      audio_device_descriptor_t* desc = NULL;
-      bool is_capture = (strcmp(simple, "GetCaptureDeviceCapabilities") == 0);
-      device_error_t d_err;
-      device_error_clear(&d_err);
-      bool cap_ok =
-          server && server->engine && server->engine->get_device_capabilities &&
-          server->engine->get_device_capabilities(
-              server->engine->ctx, backend, device, is_capture, &desc, &d_err);
-      if (cap_ok && desc) {
-        char* val = format_device_descriptor(desc);
-        if (val) {
-          json_reply(simple, "\"Ok\"", val, ds);
-          free(val);
-        } else {
-          json_reply(simple, "{\"DeviceError\":\"Out of memory\"}", NULL, ds);
-        }
-        extern void dsp_engine_free_device_capabilities(
-            audio_device_descriptor_t * desc);
-        dsp_engine_free_device_capabilities(desc);
-      } else {
-        char err[512];
-        const char* err_key = "DeviceError";
-        const char* err_msg = d_err.is_error ? d_err.message : "Unknown error";
-        if (d_err.is_error) {
-          if (d_err.type == DEVICE_ERROR_NOT_FOUND) {
-            err_key = "DeviceNotFoundError";
-          } else if (d_err.type == DEVICE_ERROR_BUSY) {
-            err_key = "DeviceBusyError";
-          }
-        } else {
-          err_key = "DeviceNotFoundError";
-          err_msg = device;
-        }
-        snprintf(err, sizeof(err), "{\"%s\":\"%s\"}", err_key, err_msg);
-        json_reply(simple, err, NULL, ds);
-      }
-    } else {
-      json_reply(simple,
-                 "{\"InvalidRequestError\":\"Could not parse backend and "
-                 "device arguments\"}",
-                 NULL, ds);
-    }
-  } else if (strcmp(simple, "GetSpectrum") == 0) {
-    bool is_capture = true;
-    uint32_t channel = 0;
-    double min_freq = 20.0;
-    double max_freq = 20000.0;
-    uint32_t n_bins = 1024;
-    bool ok = false;
-
-    if (arg && cJSON_IsObject(arg)) {
-      cJSON* item;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "is_capture");
-      if (item && cJSON_IsBool(item)) is_capture = cJSON_IsTrue(item);
-      item = cJSON_GetObjectItemCaseSensitive(arg, "channel");
-      if (item && cJSON_IsNumber(item)) channel = (uint32_t)item->valueint;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
-      if (item && cJSON_IsNumber(item)) min_freq = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
-      if (item && cJSON_IsNumber(item)) max_freq = item->valuedouble;
-      item = cJSON_GetObjectItemCaseSensitive(arg, "n_bins");
-      if (item && cJSON_IsNumber(item)) n_bins = (uint32_t)item->valueint;
-      ok = true;
-    }
-
-    if (ok) {
-      spectrum_t spec;
-      memset(&spec, 0, sizeof(spec));
-      bool spec_ok =
-          server && server->engine && server->engine->get_spectrum &&
-          server->engine->get_spectrum(server->engine->ctx, is_capture, channel,
-                                       min_freq, max_freq, n_bins, &spec);
-      if (spec_ok) {
-        char* spec_buf = format_spectrum(&spec);
-        if (spec_buf) {
-          json_reply("GetSpectrum", "\"Ok\"", spec_buf, ds);
-          free(spec_buf);
-        } else {
-          json_reply("GetSpectrum", "{\"DeviceError\":\"Out of memory\"}", NULL, ds);
-        }
-        if (spec.frequencies) free(spec.frequencies);
-        if (spec.magnitudes) free(spec.magnitudes);
-      } else {
-        json_reply("GetSpectrum",
-                   "{\"DeviceError\":\"Failed to compute spectrum\"}", NULL, ds);
-      }
-    } else {
-      json_reply(
-          "GetSpectrum",
-          "{\"InvalidRequestError\":\"Could not parse GetSpectrum arguments\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "ReadConfigJson") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* config_json = arg->valuestring;
-      dsp_config_t* parsed = NULL;
-      config_error_t cerr;
-      memset(&cerr, 0, sizeof(cerr));
-      if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
-        json_reply("ReadConfigJson", "\"Ok\"", config_json, ds);
-        dsp_config_free(parsed);
-      } else {
-        char val[600];
-        snprintf(val, sizeof(val), "{\"ConfigValidationError\":\"%s\"}",
-                 cerr.message);
-        json_reply("ReadConfigJson", val, NULL, ds);
-      }
-    } else {
-      json_reply(
-          "ReadConfigJson",
-          "{\"InvalidRequestError\":\"Could not parse input config JSON\"}",
-          NULL, ds);
-    }
-  } else if (strcmp(simple, "ValidateConfigJson") == 0) {
-    if (arg && cJSON_IsString(arg) && arg->valuestring) {
-      const char* config_json = arg->valuestring;
-      dsp_config_t* parsed = NULL;
-      config_error_t cerr;
-      memset(&cerr, 0, sizeof(cerr));
-      if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
-        json_reply("ValidateConfigJson", "\"Ok\"", NULL, ds);
-        dsp_config_free(parsed);
-      } else {
-        char val[600];
-        snprintf(val, sizeof(val), "{\"ConfigValidationError\":\"%s\"}",
-                 cerr.message);
-        json_reply("ValidateConfigJson", val, NULL, ds);
-      }
-    } else {
-      json_reply(
-          "ValidateConfigJson",
-          "{\"InvalidRequestError\":\"Could not parse input config JSON\"}",
-          NULL, ds);
-    }
-  } else {
-    dyn_string_printf(ds, "{\"Invalid\":{\"error\":\"Unsupported command\"}}");
+    default:
+      dyn_string_printf(ds, "{\"Invalid\":{\"error\":\"Unsupported command\"}}");
+      break;
   }
   pthread_mutex_unlock(&server->sessions_mutex);
   cJSON_Delete(root);
@@ -3089,18 +3858,17 @@ static void* server_thread_func(void* arg) {
                     session->spectrum_max_freq, session->spectrum_n_bins,
                     &spec);
             if (spec_ok) {
-              char* spec_buf = format_spectrum(&spec);
-              if (spec_buf) {
-                char* msg = (char*)malloc(strlen(spec_buf) + 120);
-                if (msg) {
-                  sprintf(msg,
-                          "{\"SpectrumEvent\":{\"result\":\"Ok\",\"value\":%s}}",
-                          spec_buf);
-                  send_websocket_frame(client_fds[i], msg);
-                  free(msg);
-                }
-                free(spec_buf);
+              cJSON* root = cJSON_CreateObject();
+              cJSON* val = cJSON_CreateObject();
+              cJSON_AddItemToObject(root, "SpectrumEvent", val);
+              cJSON_AddStringToObject(val, "result", "Ok");
+              cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
+              char* msg = cJSON_PrintUnformatted(root);
+              if (msg) {
+                send_websocket_frame(client_fds[i], msg);
+                free(msg);
               }
+              cJSON_Delete(root);
               if (spec.frequencies) free(spec.frequencies);
               if (spec.magnitudes) free(spec.magnitudes);
               session->last_spectrum_push_time = now;
