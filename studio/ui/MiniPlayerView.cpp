@@ -61,6 +61,8 @@ void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
 
 void MiniPlayerView::onFaderChanged(int index) {
     Q_UNUSED(index);
+    if (!m_settings || !m_volSlider || !m_volValueLabel || !m_muteBtn)
+        return;
     Fader f = currentFader();
     float vol = m_settings->getVolume(f);
     bool muted = m_settings->getMuted(f);

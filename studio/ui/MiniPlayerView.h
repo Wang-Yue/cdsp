@@ -43,19 +43,19 @@ private:
     std::shared_ptr<MonitoringController> m_monitoring;
 
     QPoint m_dragPosition;
-    QComboBox* m_faderCombo;
-    QPushButton* m_playStopBtn;
-    QPushButton* m_muteBtn;
-    QSlider* m_volSlider;
-    QLabel* m_volValueLabel;
+    QComboBox* m_faderCombo = nullptr;
+    QPushButton* m_playStopBtn = nullptr;
+    QPushButton* m_muteBtn = nullptr;
+    QSlider* m_volSlider = nullptr;
+    QLabel* m_volValueLabel = nullptr;
 
-    QStackedWidget* m_viewStack;
-    QWidget* m_pipelineMiniCard;
-    LevelMeterView* m_metersView;
-    SpectrumView* m_spectrumView;
-    SpectrogramView* m_spectrogramView;
-    VectorScopeView* m_vectorScopeView;
-    AnalogVUMeterView* m_analogVUView;
+    QStackedWidget* m_viewStack = nullptr;
+    QWidget* m_pipelineMiniCard = nullptr;
+    LevelMeterView* m_metersView = nullptr;
+    SpectrumView* m_spectrumView = nullptr;
+    SpectrogramView* m_spectrogramView = nullptr;
+    VectorScopeView* m_vectorScopeView = nullptr;
+    AnalogVUMeterView* m_analogVUView = nullptr;
 
     Fader currentFader() const;
     void setupUi();
