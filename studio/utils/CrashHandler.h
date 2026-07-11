@@ -12,6 +12,9 @@
 #include <windows.h>
 
 inline void logCallstack(std::ofstream& crashLog) {
+    uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
+    crashLog << "Module Base Address: 0x" << std::hex << baseAddr << std::endl;
+
     void* stack[64];
     USHORT frames = RtlCaptureStackBackTrace(0, 64, stack, NULL);
     HANDLE process = GetCurrentProcess();
@@ -28,16 +31,20 @@ inline void logCallstack(std::ofstream& crashLog) {
 
         crashLog << "Callstack (" << frames << " frames):" << std::endl;
         for (USHORT i = 0; i < frames; i++) {
-            DWORD64 address = (DWORD64)(stack[i]);
+            uintptr_t address = (uintptr_t)(stack[i]);
+            uintptr_t rva = address - baseAddr;
+            uintptr_t preferredAddress = 0x140000000 + rva;
+
+            crashLog << "  [" << i << "] Absolute: 0x" << std::hex << address << " | RVA: +0x" << std::hex << rva
+                     << " | PreferredAddr: 0x" << std::hex << preferredAddress;
+
             if (SymFromAddr(process, address, 0, symbol)) {
-                crashLog << "  [" << i << "] " << symbol->Name;
+                crashLog << " (" << symbol->Name << ")";
                 if (SymGetLineFromAddr64(process, address, &displacement, &line)) {
-                    crashLog << " (" << line.FileName << ":" << line.LineNumber << ")";
+                    crashLog << " [" << line.FileName << ":" << line.LineNumber << "]";
                 }
-                crashLog << " [0x" << std::hex << address << "]" << std::endl;
-            } else {
-                crashLog << "  [" << i << "] 0x" << std::hex << address << std::endl;
             }
+            crashLog << std::endl;
         }
         free(symbol);
     }
