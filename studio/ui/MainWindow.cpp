@@ -809,10 +809,41 @@ void MainWindow::handleNavigationTag(const QString& tag) {
 }
 
 void MainWindow::onPipelineChanged() {
+    // 1. Check if m_lastActiveTag is still valid
+    bool tagStillValid = false;
+    if (m_lastActiveTag.startsWith("stage_")) {
+        size_t idx = m_lastActiveTag.mid(6).toULongLong();
+        if (idx < m_pipeline->stages.size()) {
+            tagStillValid = true;
+        }
+    } else if (m_lastActiveTag.startsWith("eq_")) {
+        QUuid id = QUuid::fromString(m_lastActiveTag.mid(3));
+        for (const auto& eq : m_pipeline->eqPresets) {
+            if (eq.id == id) {
+                tagStillValid = true;
+                break;
+            }
+        }
+    } else if (m_lastActiveTag.startsWith("conv_")) {
+        QUuid id = QUuid::fromString(m_lastActiveTag.mid(5));
+        for (const auto& conv : m_pipeline->convPresets) {
+            if (conv.id == id) {
+                tagStillValid = true;
+                break;
+            }
+        }
+    } else {
+        tagStillValid = true;
+    }
+
+    // 2. Destroy cached detail views EXCEPT active tag if still valid
     QList<QString> keysToDestroy;
     for (auto it = m_pageCache.begin(); it != m_pageCache.end(); ++it) {
-        if (it.key().startsWith("stage_") || it.key().startsWith("eq_") || it.key().startsWith("conv_")) {
-            keysToDestroy.append(it.key());
+        QString k = it.key();
+        if (k.startsWith("stage_") || k.startsWith("eq_") || k.startsWith("conv_")) {
+            if (!tagStillValid || k != m_lastActiveTag) {
+                keysToDestroy.append(k);
+            }
         }
     }
     for (const auto& key : keysToDestroy) {
@@ -823,9 +854,14 @@ void MainWindow::onPipelineChanged() {
         }
     }
 
+    // 3. Refresh sidebar items
     refreshSidebarItems();
 
-    if (m_lastActiveTag.startsWith("stage_") || m_lastActiveTag.startsWith("eq_") || m_lastActiveTag.startsWith("conv_")) {
+    // 4. Retain current active view if valid; fallback to dashboard only if deleted
+    if (tagStillValid) {
+        handleNavigationTag(m_lastActiveTag);
+    } else {
+        m_lastActiveTag = "dashboard";
         handleNavigationTag("dashboard");
     }
 }
