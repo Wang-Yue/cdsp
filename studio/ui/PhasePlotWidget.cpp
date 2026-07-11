@@ -121,15 +121,14 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     phaseBounds(fr, unwrapped, minDeg, maxDeg);
     double spanDeg = maxDeg - minDeg;
 
-    // Draw Grid Lines (4 major frequency ticks matching SwiftUI)
-    std::vector<double> gridFreqs = {20, 100, 1000, 10000};
-    for (double f : gridFreqs) {
+    // Draw Grid Lines (10 log frequency ticks matching SwiftUI & EQDiagramWidget)
+    for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         double x = freqToX(f, w);
         painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
         painter.setPen(StyleTheme::textSecondary());
-        painter.drawText(QRectF(x + 2, h - 18, 50, 15), Qt::AlignLeft | Qt::AlignBottom,
-                         f >= 1000 ? QString::number(f / 1000.0, 'g', 0) + "k" : QString::number(f));
+        QString label = (f >= 1000.0) ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
+        painter.drawText(QRectF(x - 12, h - 18, 25, 14), Qt::AlignCenter, label);
     }
 
     double degStep = spanDeg > 2880 ? 1440 : (spanDeg > 1440 ? 720 : (spanDeg > 720 ? 360 : 90));

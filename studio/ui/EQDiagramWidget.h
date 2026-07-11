@@ -56,9 +56,13 @@ public:
     std::function<void(int index, double freq, double gain)> onBandDragged;
     std::function<void(int index, double q)> onBandQChanged;
     std::function<void(int index)> onBandSelected;
+    std::function<void()> onPresetChanged;
+    std::function<void(double freq, double gain)> onBandAdded;
+    std::function<void(int index)> onBandDeleted;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;

@@ -116,6 +116,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                                                           m_spectrogramEngine, m_vectorScopeEngine);
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
+    connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this, [this]() {
+        showNormal();
+        raise();
+        activateWindow();
+    });
 
     resize(1100, 780);
     setMinimumSize(960, 680);
@@ -507,18 +512,45 @@ void MainWindow::setupShortcuts() {
     setupNavAction({QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
     setupNavAction({QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "general_settings");
 
+    // Cmd+M / Ctrl+M: MiniPlayer Toggle
     auto actMini = new QAction(this);
     actMini->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
     connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     addAction(actMini);
+
+    // Cmd+W / Ctrl+W: Close / Hide Window
+    auto actClose = new QAction(this);
+    actClose->setShortcuts({QKeySequence("Cmd+W"), QKeySequence("Ctrl+W")});
+    connect(actClose, &QAction::triggered, this, &QMainWindow::close);
+    addAction(actClose);
 
     if (m_actImportConv)
         addAction(m_actImportConv);
     if (m_actAddEqPreset)
         addAction(m_actAddEqPreset);
 
+    // Space: Start/Stop Engine (Pause/Resume)
+    auto actStartStop = new QAction(this);
+    actStartStop->setShortcut(QKeySequence("Space"));
+    connect(actStartStop, &QAction::triggered, [this]() {
+        auto focusW = QApplication::focusWidget();
+        for (QWidget* w = focusW; w; w = w->parentWidget()) {
+            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
+                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
+                return;
+            }
+        }
+        if (m_dspController->status == ProcessingState::Running) {
+            m_dspController->stopEngine();
+        } else {
+            m_dspController->startEngine();
+        }
+    });
+    addAction(actStartStop);
+
+    // M: Toggle Mute
     auto actMute = new QAction(this);
-    actMute->setShortcut(QKeySequence("Space"));
+    actMute->setShortcut(QKeySequence(Qt::Key_M));
     connect(actMute, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
         for (QWidget* w = focusW; w; w = w->parentWidget()) {
@@ -531,11 +563,15 @@ void MainWindow::setupShortcuts() {
     });
     addAction(actMute);
 
+    // Esc Key
     auto actEsc = new QAction(this);
     actEsc->setShortcut(QKeySequence("Esc"));
     connect(actEsc, &QAction::triggered, [this]() {
         if (m_miniPlayer && m_miniPlayer->isVisible()) {
             m_miniPlayer->hide();
+            showNormal();
+            raise();
+            activateWindow();
         } else {
             auto focusW = QApplication::focusWidget();
             if (focusW && !qobject_cast<QMainWindow*>(focusW)) {
@@ -546,6 +582,16 @@ void MainWindow::setupShortcuts() {
         }
     });
     addAction(actEsc);
+}
+
+void MainWindow::changeEvent(QEvent* event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        if (isMinimized()) {
+            setWindowState(windowState() & ~Qt::WindowMinimized);
+            toggleMiniPlayer();
+        }
+    }
 }
 
 void MainWindow::toggleMute() {
@@ -746,7 +792,11 @@ void MainWindow::setupToolbar() {
 void MainWindow::toggleMiniPlayer() {
     if (m_miniPlayer->isVisible()) {
         m_miniPlayer->hide();
+        showNormal();
+        raise();
+        activateWindow();
     } else {
+        hide();
         m_miniPlayer->show();
         m_miniPlayer->raise();
         m_miniPlayer->activateWindow();

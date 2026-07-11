@@ -253,7 +253,7 @@ void MiniPlayerView::setupUi() {
 
     auto closeBtn = new QPushButton("✕", this);
     closeBtn->setFixedSize(18, 18);
-    connect(closeBtn, &QPushButton::clicked, this, &QWidget::hide);
+    connect(closeBtn, &QPushButton::clicked, this, &MiniPlayerView::closeAndRestoreMain);
     topBar->addWidget(closeBtn);
 
     mainLayout->addLayout(topBar);
@@ -296,15 +296,48 @@ void MiniPlayerView::setupUi() {
     updateEngineStatus(m_dsp->status);
 }
 
+void MiniPlayerView::closeAndRestoreMain() {
+    hide();
+    emit requestRestoreMainWindow();
+}
+
 void MiniPlayerView::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
-        hide();
-        if (parentWidget()) {
-            parentWidget()->showNormal();
-            parentWidget()->raise();
-            parentWidget()->activateWindow();
-        }
+        closeAndRestoreMain();
+        event->accept();
     }
+}
+
+void MiniPlayerView::keyPressEvent(QKeyEvent* event) {
+    bool hasCmdOrCtrl = (event->modifiers() & (Qt::ControlModifier | Qt::MetaModifier));
+
+    if (event->key() == Qt::Key_Escape || (hasCmdOrCtrl && event->key() == Qt::Key_W) ||
+        (hasCmdOrCtrl && event->key() == Qt::Key_M)) {
+        closeAndRestoreMain();
+        event->accept();
+        return;
+    } else if (event->key() == Qt::Key_Space) {
+        if (m_dsp) {
+            if (m_dsp->status == ProcessingState::Running)
+                m_dsp->stopEngine();
+            else
+                m_dsp->startEngine();
+        }
+        event->accept();
+        return;
+    } else if (event->key() == Qt::Key_M && !hasCmdOrCtrl) {
+        if (m_settings && m_dsp) {
+            Fader f = currentFader();
+            bool muted = m_settings->getMuted(f);
+            m_dsp->setFaderMute(f, !muted);
+            if (m_muteBtn) {
+                m_muteBtn->setText(!muted ? "🔇" : "🔊");
+            }
+        }
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void MiniPlayerView::paintEvent(QPaintEvent* event) {

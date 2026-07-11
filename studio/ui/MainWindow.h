@@ -34,6 +34,9 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private slots:
     void onSidebarItemClicked(QTreeWidgetItem* item, int column);
     void onPipelineChanged();

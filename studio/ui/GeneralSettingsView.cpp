@@ -71,6 +71,8 @@ void GeneralSettingsView::setupUi() {
     connect(m_pollingRateSlider, &QSlider::valueChanged, [this](int val) {
         m_monitoring->setPollingRate(static_cast<double>(val));
         m_pollingRateLabel->setText(QString("%1 Hz").arg(val));
+        if (m_settings)
+            m_settings->savePreferences();
     });
     pollForm->addRow("Monitoring Polling Rate:", pollBox);
 

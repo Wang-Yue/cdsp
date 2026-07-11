@@ -155,7 +155,7 @@ void ConsoleLogsView::refreshLogs() {
 
 void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
     LogLevel filterLevel = static_cast<LogLevel>(m_levelFilterCombo->currentData().toInt());
-    if (static_cast<int>(entry.level) < static_cast<int>(filterLevel))
+    if (static_cast<int>(entry.level) > static_cast<int>(filterLevel))
         return;
 
     QString search = m_searchEdit->text();
@@ -192,6 +192,11 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
     m_table->setItem(row, 1, levelItem);
     m_table->setItem(row, 2, msgItem);
 
+    constexpr int kMaxTableRows = 2000;
+    while (m_table->rowCount() > kMaxTableRows) {
+        m_table->removeRow(0);
+    }
+
     m_logCountLabel->setText(QString("%1 logs").arg(m_table->rowCount()));
 
     if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
@@ -204,16 +209,24 @@ void ConsoleLogsView::copySelectedLogs() {
     if (ranges.isEmpty())
         return;
 
-    QStringList textRows;
+    QSet<int> rowSet;
     for (const auto& range : ranges) {
         for (int r = range.topRow(); r <= range.bottomRow(); ++r) {
-            QString time = m_table->item(r, 0) ? m_table->item(r, 0)->text() : "";
-            QString lvl = m_table->item(r, 1) ? m_table->item(r, 1)->text() : "";
-            QString msg = m_table->item(r, 2) ? m_table->item(r, 2)->text() : "";
-            textRows.append(QString("[%1] [%2] %3").arg(time, lvl, msg));
+            rowSet.insert(r);
         }
     }
+    QList<int> sortedRows = rowSet.values();
+    std::sort(sortedRows.begin(), sortedRows.end());
+
+    QStringList textRows;
+    for (int r : sortedRows) {
+        QString time = m_table->item(r, 0) ? m_table->item(r, 0)->text() : "";
+        QString lvl = m_table->item(r, 1) ? m_table->item(r, 1)->text() : "";
+        QString msg = m_table->item(r, 2) ? m_table->item(r, 2)->text() : "";
+        textRows.append(QString("[%1] [%2] %3").arg(time, lvl, msg));
+    }
     QGuiApplication::clipboard()->setText(textRows.join("\n"));
+}
 }
 
 void ConsoleLogsView::copyAllLogs() {

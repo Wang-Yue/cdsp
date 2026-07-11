@@ -600,6 +600,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
     if (isWav) {
         m_capWavFilePathEdit = new QLineEdit(w);
         m_capWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
+        m_capWavFilePathEdit->setClearButtonEnabled(true);
+        connect(m_capWavFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
         connect(m_capWavFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
             if (m_isRefreshing)
                 return;
@@ -654,6 +656,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
     } else {
         m_capRawFilePathEdit = new QLineEdit(w);
         m_capRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
+        m_capRawFilePathEdit->setClearButtonEnabled(true);
+        connect(m_capRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
         connect(m_capRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
             if (m_isRefreshing)
                 return;
@@ -1035,6 +1039,8 @@ QWidget* DevicePickerView::createPbFileView() {
 
     m_pbRawFilePathEdit = new QLineEdit(w);
     m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
+    m_pbRawFilePathEdit->setClearButtonEnabled(true);
+    connect(m_pbRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
     connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (m_isRefreshing)
             return;

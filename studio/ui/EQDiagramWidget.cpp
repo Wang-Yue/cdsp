@@ -2,7 +2,9 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QContextMenuEvent>
 #include <QLinearGradient>
+#include <QMenu>
 #include <QPainterPath>
 #include <algorithm>
 #include <cmath>
@@ -175,12 +177,30 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
     // Reference Target & Measured Frequency Response Curves Overlay
     if (m_overlay.active) {
-        // 1. Draw Target Curve (Dashed Amber)
+        // Compute 200 Hz - 5000 Hz median offset (normDB)
+        double normDB = 0.0;
+        if (!m_overlay.measuredMagDB.empty() && m_overlay.measuredMagDB.size() == m_overlay.frequencies.size()) {
+            std::vector<double> inBand;
+            inBand.reserve(m_overlay.measuredMagDB.size());
+            for (size_t i = 0; i < m_overlay.frequencies.size(); ++i) {
+                double f = m_overlay.frequencies[i];
+                double m = m_overlay.measuredMagDB[i];
+                if (f >= 200.0 && f <= 5000.0 && std::isfinite(m) && m > -200.0) {
+                    inBand.push_back(m);
+                }
+            }
+            if (!inBand.empty()) {
+                std::sort(inBand.begin(), inBand.end());
+                normDB = inBand[inBand.size() / 2];
+            }
+        }
+
+        // 1. Target Curve (Dashed Amber)
         if (!m_overlay.targetCurve.breakpoints.empty()) {
             QPainterPath targetPath;
             for (int x = 0; x <= w; x += 2) {
                 double f = xToFreq(x, w);
-                double db = m_overlay.targetCurve.evaluate(f);
+                double db = std::max(-30.0, std::min(30.0, m_overlay.targetCurve.evaluate(f)));
                 double y = dbToY(db, h);
                 if (x == 0)
                     targetPath.moveTo(x, y);
@@ -191,12 +211,12 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             painter.drawPath(targetPath);
         }
 
-        // 2. Draw Measured Response Curve (Cyan)
+        // 2. Measured Response Curve (Cyan, Normalized by normDB)
         if (!m_overlay.measuredMagDB.empty() && m_overlay.measuredMagDB.size() == m_overlay.frequencies.size()) {
             QPainterPath measuredPath;
             for (size_t i = 0; i < m_overlay.measuredMagDB.size(); ++i) {
                 double f = m_overlay.frequencies[i];
-                double db = m_overlay.measuredMagDB[i];
+                double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB));
                 double x = freqToX(f, w);
                 double y = dbToY(db, h);
                 if (i == 0)
@@ -206,6 +226,24 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             }
             painter.setPen(QPen(QColor(0, 198, 255, 180), 1.2));
             painter.drawPath(measuredPath);
+
+            // 3. Corrected Response Curve (Orange)
+            if (m_overlay.showCorrected) {
+                QPainterPath correctedPath;
+                for (size_t i = 0; i < m_overlay.frequencies.size(); ++i) {
+                    double f = m_overlay.frequencies[i];
+                    double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB +
+                                                                   m_preset.combinedResponse(f, m_sampleRate)));
+                    double x = freqToX(f, w);
+                    double y = dbToY(db, h);
+                    if (i == 0)
+                        correctedPath.moveTo(x, y);
+                    else
+                        correctedPath.lineTo(x, y);
+                }
+                painter.setPen(QPen(QColor("#ff9500"), 1.8));
+                painter.drawPath(correctedPath);
+            }
         }
     }
 
@@ -395,6 +433,101 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
     painter.drawText(bgRect, Qt::AlignCenter, text);
 }
 
+void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
+    int w = width();
+    int h = height();
+    QPoint pos = event->pos();
+
+    int hitIndex = -1;
+    for (size_t i = 0; i < m_preset.bands.size(); ++i) {
+        const auto& b = m_preset.bands[i];
+        if (!b.isEnabled || b.type == EQBandType::Free)
+            continue;
+
+        double handleFreq = b.freq;
+        if (b.type == EQBandType::GeneralNotch)
+            handleFreq = b.freqNotch;
+        else if (b.type == EQBandType::LinkwitzTransform)
+            handleFreq = b.freqTarget;
+
+        double hx = freqToX(handleFreq, w);
+        double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
+
+        if (std::hypot(pos.x() - hx, pos.y() - hy) <= 12.0) {
+            hitIndex = static_cast<int>(i);
+            break;
+        }
+    }
+
+    QMenu menu(this);
+    if (hitIndex >= 0) {
+        auto& band = m_preset.bands[hitIndex];
+        m_selectedIndex = hitIndex;
+        if (onBandSelected)
+            onBandSelected(hitIndex);
+        update();
+
+        auto toggleAct = menu.addAction(band.isEnabled ? "Disable Band" : "Enable Band");
+        connect(toggleAct, &QAction::triggered, [this, hitIndex]() {
+            m_preset.bands[hitIndex].isEnabled = !m_preset.bands[hitIndex].isEnabled;
+            if (onPresetChanged)
+                onPresetChanged();
+            update();
+        });
+
+        auto typeMenu = menu.addMenu("Change Type");
+        for (EQBandType t :
+             {EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf, EQBandType::Lowpass,
+              EQBandType::Highpass, EQBandType::LowpassFO, EQBandType::HighpassFO, EQBandType::LowshelfFO,
+              EQBandType::HighshelfFO, EQBandType::Notch, EQBandType::Bandpass, EQBandType::Allpass,
+              EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch, EQBandType::LinkwitzTransform}) {
+            auto act = typeMenu->addAction(QString::fromStdString(eqBandTypeToString(t)));
+            connect(act, &QAction::triggered, [this, hitIndex, t]() {
+                m_preset.bands[hitIndex].type = t;
+                if (onPresetChanged)
+                    onPresetChanged();
+                update();
+            });
+        }
+
+        menu.addSeparator();
+        auto deleteAct = menu.addAction("Delete Band");
+        connect(deleteAct, &QAction::triggered, [this, hitIndex]() {
+            if (hitIndex < static_cast<int>(m_preset.bands.size())) {
+                m_preset.bands.erase(m_preset.bands.begin() + hitIndex);
+                m_selectedIndex = -1;
+                if (onBandDeleted)
+                    onBandDeleted(hitIndex);
+                if (onPresetChanged)
+                    onPresetChanged();
+                update();
+            }
+        });
+    } else {
+        double f = std::max(20.0, std::min(20000.0, xToFreq(pos.x(), w)));
+        double db = std::max(-20.0, std::min(20.0, std::round(yToDb(pos.y(), h) * 2.0) / 2.0));
+
+        auto addAct = menu.addAction(
+            QString("Add Filter at %1 Hz (%2 dB)").arg(static_cast<int>(std::round(f))).arg(db, 0, 'f', 1));
+        connect(addAct, &QAction::triggered, [this, f, db]() {
+            EQBand newBand;
+            newBand.type = EQBandType::Peaking;
+            newBand.freq = f;
+            newBand.gain = db;
+            newBand.q = 1.414;
+            newBand.isEnabled = true;
+            m_preset.bands.push_back(newBand);
+            m_selectedIndex = static_cast<int>(m_preset.bands.size()) - 1;
+            if (onBandAdded)
+                onBandAdded(f, db);
+            if (onPresetChanged)
+                onPresetChanged();
+            update();
+        });
+    }
+    menu.exec(event->globalPos());
+}
+
 void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         int w = width();
@@ -436,25 +569,49 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
     int h = height();
 
     if (m_draggingIndex >= 0 && m_draggingIndex < static_cast<int>(m_preset.bands.size())) {
-        double f = xToFreq(event->position().x(), w);
-        double db = yToDb(event->position().y(), h);
-
-        f = std::max(20.0, std::min(20000.0, f));
-        db = std::max(-36.0, std::min(36.0, db));
-
         auto& b = m_preset.bands[m_draggingIndex];
-        if (b.type == EQBandType::GeneralNotch)
-            b.freqNotch = f;
-        else if (b.type == EQBandType::LinkwitzTransform)
-            b.freqTarget = f;
-        else
-            b.freq = f;
 
-        if (eqBandTypeHasGain(b.type))
-            b.gain = std::round(db * 2.0) / 2.0;
+        if (event->modifiers() & Qt::ShiftModifier) {
+            // Shift-Drag Q Tuning based on mouse vertical movement
+            static int lastY = event->position().y();
+            int dy = event->position().y() - lastY;
+            if (dy != 0 && eqBandTypeHasQ(b.type)) {
+                double factor = std::pow(1.01, -dy);
+                if (b.useSlope) {
+                    b.slope = std::max(0.1, std::min(20.0, b.slope * factor));
+                    if (onBandQChanged)
+                        onBandQChanged(m_draggingIndex, b.slope);
+                } else if (b.useBandwidth) {
+                    b.bandwidth = std::max(0.1, std::min(20.0, b.bandwidth * factor));
+                    if (onBandQChanged)
+                        onBandQChanged(m_draggingIndex, b.bandwidth);
+                } else {
+                    b.q = std::max(0.1, std::min(20.0, b.q * factor));
+                    if (onBandQChanged)
+                        onBandQChanged(m_draggingIndex, b.q);
+                }
+            }
+            lastY = event->position().y();
+        } else {
+            double f = xToFreq(event->position().x(), w);
+            double db = yToDb(event->position().y(), h);
 
-        if (onBandDragged) {
-            onBandDragged(m_draggingIndex, f, b.gain);
+            f = std::max(20.0, std::min(20000.0, f));
+            db = std::max(-20.0, std::min(20.0, db));
+
+            if (b.type == EQBandType::GeneralNotch)
+                b.freqNotch = f;
+            else if (b.type == EQBandType::LinkwitzTransform)
+                b.freqTarget = f;
+            else
+                b.freq = f;
+
+            if (eqBandTypeHasGain(b.type))
+                b.gain = std::round(db * 2.0) / 2.0;
+
+            if (onBandDragged) {
+                onBandDragged(m_draggingIndex, f, b.gain);
+            }
         }
         update();
     } else {

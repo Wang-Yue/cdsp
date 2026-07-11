@@ -32,6 +32,13 @@ void OratoryPresetPickerDlg::setupUi() {
     auto searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Search 0 headphones...");
+    m_searchEdit->setClearButtonEnabled(true);
+    connect(m_searchEdit, &QLineEdit::returnPressed, this, [this]() {
+        if (m_listWidget->currentItem() == nullptr && m_listWidget->count() > 0) {
+            m_listWidget->setCurrentRow(0);
+        }
+        onImportClicked();
+    });
     connect(m_searchEdit, &QLineEdit::textChanged, this, &OratoryPresetPickerDlg::onSearchTextChanged);
     searchLayout->addWidget(m_searchEdit);
 
@@ -46,7 +53,7 @@ void OratoryPresetPickerDlg::setupUi() {
 
     m_listWidget = new QListWidget(this);
     m_listWidget->setAlternatingRowColors(true);
-    connect(m_listWidget, &QListWidget::itemDoubleClicked, this, &OratoryPresetPickerDlg::onImportClicked);
+    connect(m_listWidget, &QListWidget::itemActivated, this, &OratoryPresetPickerDlg::onImportClicked);
     mainLayout->addWidget(m_listWidget);
 
     m_statusLabel = new QLabel("Loading Oratory1990 index...", this);
@@ -59,6 +66,8 @@ void OratoryPresetPickerDlg::setupUi() {
     m_importBtn = new QPushButton("Import Selected Preset", this);
     m_importBtn->setStyleSheet(
         "background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
+    m_importBtn->setDefault(true);
+    m_importBtn->setAutoDefault(true);
     m_importBtn->setEnabled(false);
     connect(m_importBtn, &QPushButton::clicked, this, &OratoryPresetPickerDlg::onImportClicked);
     btnLayout->addWidget(m_importBtn);

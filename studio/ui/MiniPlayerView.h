@@ -26,10 +26,14 @@ public:
     MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
                    std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
 
+signals:
+    void requestRestoreMainWindow();
+
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private slots:

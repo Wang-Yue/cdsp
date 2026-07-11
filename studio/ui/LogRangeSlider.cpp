@@ -8,11 +8,12 @@
 LogRangeSlider::LogRangeSlider(QWidget* parent) : QWidget(parent) {
     setFixedHeight(28);
     setMinimumWidth(200);
+    setMouseTracking(true);
 }
 
 void LogRangeSlider::setRange(double minFreq, double maxFreq) {
-    m_minFreq = std::max(m_minBound, std::min(m_maxBound, minFreq));
-    m_maxFreq = std::max(m_minFreq + 10.0, std::min(m_maxBound, maxFreq));
+    m_minFreq = std::max(m_minBound, std::min(m_maxBound - 1.0, minFreq));
+    m_maxFreq = std::max(m_minFreq + 1.0, std::min(m_maxBound, maxFreq));
     update();
 }
 
@@ -99,16 +100,26 @@ void LogRangeSlider::mousePressEvent(QMouseEvent* event) {
 }
 
 void LogRangeSlider::mouseMoveEvent(QMouseEvent* event) {
+    int x = event->pos().x();
+    int xMin = freqToPos(m_minFreq);
+    int xMax = freqToPos(m_maxFreq);
+
     if (m_activeHandle > 0 && (event->buttons() & Qt::LeftButton)) {
-        double freq = posToFreq(event->pos().x());
+        double freq = posToFreq(x);
         if (m_activeHandle == 1) {
-            m_minFreq = std::min(freq, m_maxFreq - 10.0);
+            m_minFreq = std::max(m_minBound, std::min(freq, m_maxFreq - 1.0));
         } else if (m_activeHandle == 2) {
-            m_maxFreq = std::max(freq, m_minFreq + 10.0);
+            m_maxFreq = std::min(m_maxBound, std::max(freq, m_minFreq + 1.0));
         }
         emit rangeChanged(m_minFreq, m_maxFreq);
         update();
         event->accept();
+    } else {
+        if (std::abs(x - xMin) <= 10 || std::abs(x - xMax) <= 10) {
+            setCursor(Qt::SizeHorCursor);
+        } else {
+            setCursor(Qt::ArrowCursor);
+        }
     }
 }
 
@@ -117,4 +128,9 @@ void LogRangeSlider::mouseReleaseEvent(QMouseEvent* event) {
         m_activeHandle = 0;
         event->accept();
     }
+}
+
+void LogRangeSlider::leaveEvent(QEvent* event) {
+    Q_UNUSED(event);
+    setCursor(Qt::ArrowCursor);
 }
