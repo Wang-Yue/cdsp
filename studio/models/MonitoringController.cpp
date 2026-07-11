@@ -1,0 +1,59 @@
+#include "models/MonitoringController.h"
+
+MonitoringController::MonitoringController(
+    std::shared_ptr<CDSPEngine> engine,
+    std::shared_ptr<DSPEngineController> dspController,
+    std::shared_ptr<SpectrumEngine> spectrumEngine,
+    std::shared_ptr<SpectrogramEngine> spectrogramEngine,
+    std::shared_ptr<VectorScopeEngine> vectorScopeEngine,
+    QObject* parent
+) : QObject(parent),
+    m_engine(engine),
+    m_dspController(dspController),
+    m_spectrumEngine(spectrumEngine),
+    m_spectrogramEngine(spectrogramEngine),
+    m_vectorScopeEngine(vectorScopeEngine) {
+
+    connect(&m_pollTimer, &QTimer::timeout, this, &MonitoringController::onPollTimer);
+    m_pollTimer.setInterval(33); // ~30 FPS polling
+}
+
+void MonitoringController::start() {
+    m_pollTimer.start();
+}
+
+void MonitoringController::stop() {
+    m_pollTimer.stop();
+}
+
+void MonitoringController::onPollTimer() {
+    StateUpdate st = m_engine->getStatus();
+    m_dspController->updateStatus(st);
+
+    if (st.state != ProcessingState::Running) return;
+
+    // Poll VU Levels
+    VuLevels levels = m_engine->getVuLevels();
+    levelState.update(levels);
+    emit levelsUpdated();
+
+    // Poll Spectrum Engine
+    SpectrumData specData;
+    int specCh = m_spectrumEngine->channel.value_or(-1);
+    if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq, m_spectrumEngine->maxFreq, m_spectrumEngine->nBins, specData)) {
+        m_spectrumEngine->update(specData);
+    }
+
+    // Poll Spectrogram Engine
+    SpectrumData spectroData;
+    int spectroCh = m_spectrogramEngine->channel.value_or(-1);
+    if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq, m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
+        m_spectrogramEngine->pushSpectrum(spectroData);
+    }
+
+    // Poll Vector Scope Engine
+    AudioSamplesData samples;
+    if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
+        m_vectorScopeEngine->update(samples);
+    }
+}

@@ -1,0 +1,46 @@
+#ifndef CONVOLUTION_PRESET_DETAIL_VIEW_H
+#define CONVOLUTION_PRESET_DETAIL_VIEW_H
+
+#include "models/ConvolutionPreset.h"
+#include "models/PipelineStore.h"
+#include "ui/ConvolutionIRPlot.h"
+#include <QWidget>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QPushButton>
+#include <QLabel>
+#include <memory>
+
+class ConvolutionPresetDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    ConvolutionPresetDetailView(
+        ConvolutionPreset preset,
+        std::shared_ptr<PipelineStore> pipeline,
+        QWidget* parent = nullptr
+    );
+
+private slots:
+    void refreshUi();
+    void onDeleteClicked();
+
+private:
+    ConvolutionPreset m_preset;
+    std::shared_ptr<PipelineStore> m_pipeline;
+    int m_previewRate = 48000;
+
+    QLineEdit* m_nameEdit;
+    QLabel* m_kindLabel;
+    QLabel* m_tapsLabel;
+    QLabel* m_ratesLabel;
+    QLabel* m_latencyLabel;
+
+    QComboBox* m_ratePreviewCombo;
+    ConvolutionIRPlot* m_irPlot;
+    QWidget* m_filesContainer;
+
+    void setupUi();
+};
+
+#endif // CONVOLUTION_PRESET_DETAIL_VIEW_H

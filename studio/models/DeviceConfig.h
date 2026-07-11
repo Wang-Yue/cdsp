@@ -1,0 +1,64 @@
+#ifndef DEVICE_CONFIG_H
+#define DEVICE_CONFIG_H
+
+#include "config/DSPConfigTypes.h"
+#include <string>
+#include <vector>
+#include <optional>
+#include <QJsonObject>
+
+struct DeviceConfig {
+    AudioBackendType backend = AudioBackendType::CoreAudio;
+    AudioDeviceDescriptor capabilities;
+
+    int channels = 2;
+    int deviceChannels = 2;
+    int sampleRate = 48000;
+    std::string format = "F32";
+    bool bypassDoP = true;
+    double dopCutoffHz = 20000.0;
+    bool outputDoP = false;
+    SDMFilter dopEncoderFilter = SDMFilter::SDM6;
+
+    // File Backend Settings
+    std::string filename;
+    std::string fileFormat = "S16_LE";
+    bool isWav = false;
+    int skipBytes = 0;
+    int readBytes = 0;
+    int extraSamples = 0;
+
+    // Generator Backend Settings
+    std::string generatorType = "Sine";
+    double generatorFreq = 1000.0;
+    double generatorLevel = -6.0;
+
+    std::optional<std::string> deviceName() const {
+        return capabilities.name.empty() ? std::nullopt : std::make_optional(capabilities.name);
+    }
+
+    void setDeviceName(const std::string& name) {
+        if (capabilities.name != name) {
+            capabilities.name = name;
+            capabilities.capability_sets.clear();
+        }
+    }
+
+    std::vector<int> supportedChannels() const;
+    std::vector<int> supportedRates() const;
+    std::vector<std::string> supportedFormats() const;
+
+    DeviceConfig enforced() const;
+    static int bestRate(const std::vector<int>& rates, int currentRate);
+
+    CaptureDeviceConfig toCaptureDeviceConfig() const;
+    PlaybackDeviceConfig toPlaybackDeviceConfig() const;
+
+    QJsonObject toJson() const;
+    static DeviceConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const DeviceConfig& other) const;
+    bool operator!=(const DeviceConfig& other) const { return !(*this == other); }
+};
+
+#endif // DEVICE_CONFIG_H
