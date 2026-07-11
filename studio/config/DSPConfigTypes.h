@@ -157,6 +157,9 @@ struct CoreAudioPlaybackConfig {
     static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
 };
 
+using HardwareCaptureConfig = CoreAudioCaptureConfig;
+using HardwarePlaybackConfig = CoreAudioPlaybackConfig;
+
 struct WavFileCaptureConfig {
     std::string filename;
     std::optional<int> extraSamples;
