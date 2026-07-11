@@ -258,10 +258,11 @@ void StageDetailView::buildStageOptionsUi() {
 
                 auto updateBtnStyle = [btn](bool checked) {
                     if (checked) {
-                        btn->setStyleSheet(
-                            "background-color: #007aff; color: white; font-weight: bold; border-radius: 4px;");
+                        btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: "
+                                           "4px; border: none;");
                     } else {
-                        btn->setStyleSheet("background-color: #e5e5ea; color: #000000; border-radius: 4px;");
+                        btn->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: palette(text); "
+                                           "font-weight: bold; border-radius: 4px; border: none;");
                     }
                 };
                 updateBtnStyle(isSelected);
@@ -1428,8 +1429,10 @@ void StageDetailView::buildStageOptionsUi() {
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;"
-                                          : "background: #e5e5ea; color: black;");
+            btn->setStyleSheet(
+                isSelected
+                    ? "background: #007aff; color: white; border-radius: 4px; border: none;"
+                    : "background: rgba(142, 142, 147, 0.15); color: palette(text); border-radius: 4px; border: none;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {
@@ -1543,8 +1546,10 @@ void StageDetailView::buildStageOptionsUi() {
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(isSelected ? "background: #007aff; color: white;"
-                                          : "background: #e5e5ea; color: black;");
+            btn->setStyleSheet(
+                isSelected
+                    ? "background: #007aff; color: white; border-radius: 4px; border: none;"
+                    : "background: rgba(142, 142, 147, 0.15); color: palette(text); border-radius: 4px; border: none;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {

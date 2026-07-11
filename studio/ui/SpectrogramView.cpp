@@ -172,12 +172,17 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         }
 
         // Draw Frequency Y-axis labels & grid lines (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
-        p.setFont(QFont("sans-serif", 8));
+        QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        monoFont.setPointSize(8);
+        p.setFont(monoFont);
+
+        QColor gridPenCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+
         for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
             double frac = (std::log10(target) - logMin) / (logMax - logMin);
             int y = plotH - static_cast<int>(frac * plotH);
 
-            p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
+            p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
             p.drawLine(marginL, y, w, y);
 
             p.setPen(StyleTheme::textSecondary());
@@ -185,12 +190,13 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             p.drawText(2, y + 4, label);
         }
 
-        // Draw Time X-axis labels (0s to -10s)
-        p.setPen(QPen(StyleTheme::gridPenColor(), 1));
-        p.drawLine(marginL, plotH, w, plotH);
-        p.setPen(StyleTheme::textSecondary());
+        // Draw Time X-axis labels & vertical grid lines (0s to -10s)
         for (int sec : {0, -2, -4, -6, -8, -10}) {
             int x = marginL + plotW - static_cast<int>((-sec / 10.0) * plotW);
+            p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
+            p.drawLine(x, 0, x, plotH);
+
+            p.setPen(StyleTheme::textSecondary());
             p.drawText(x - 8, h - 4, QString("%1s").arg(sec));
         }
 

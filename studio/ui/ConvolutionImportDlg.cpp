@@ -15,8 +15,8 @@
 
 ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {
-    setWindowTitle("Import Impulse Responses (FIR)");
-    resize(560, 480);
+    setWindowTitle("Import Impulse Responses");
+    resize(480, 580);
     setupUi();
 }
 
@@ -38,12 +38,12 @@ void ConvolutionImportDlg::setupUi() {
     auto form = new QFormLayout();
 
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setPlaceholderText("e.g. My Custom IR");
+    m_nameEdit->setPlaceholderText("e.g., My Custom IR");
     form->addRow("Preset Name:", m_nameEdit);
 
     m_kindEdit = new QLineEdit(this);
     m_kindEdit->setText("Imported");
-    m_kindEdit->setPlaceholderText("e.g. Imported, Min-phase");
+    m_kindEdit->setPlaceholderText("e.g., Imported, Min-phase");
     form->addRow("Kind Label:", m_kindEdit);
 
     m_normalizeCheck = new QCheckBox("Normalize IR Peak (0 dBFS)", this);

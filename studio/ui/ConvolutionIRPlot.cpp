@@ -68,9 +68,10 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     int plotTop = m_title.empty() ? 4 : 22;
     int plotH = h - plotTop - 4;
 
-    // Zero axis line
+    // Zero axis line (0.18 opacity = 46 alpha)
     int midY = plotTop + plotH / 2;
-    p.setPen(QPen(StyleTheme::gridPenColor(), 1));
+    QColor baselineCol = StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46);
+    p.setPen(QPen(baselineCol, 1, Qt::SolidLine));
     p.drawLine(0, midY, w, midY);
 
     double maxVal = 1e-9;
@@ -92,6 +93,6 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
             path.lineTo(x, y);
     }
 
-    p.setPen(QPen(QColor("#007af5"), 1.2));
+    p.setPen(QPen(QColor("#007aff"), 1.0));
     p.drawPath(path);
 }

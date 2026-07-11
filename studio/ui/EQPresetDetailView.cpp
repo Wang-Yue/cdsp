@@ -250,6 +250,9 @@ void EQPresetDetailView::setupUi() {
 
     // Mode 1: Bands Form Table
     m_bandsTable = new QTableWidget(this);
+    m_bandsTable->setStyleSheet(
+        "QTableWidget::item { padding: 4px 8px; }"
+        "QHeaderView::section { padding: 4px 8px; font-weight: bold; background: palette(alternate-base); }");
     m_bandsTable->setColumnCount(7);
     m_bandsTable->setHorizontalHeaderLabels(
         {"Enable", "#", "Type", "Frequency (Hz)", "Gain (dB)", "Q Factor / Slope", "Action"});
@@ -486,7 +489,9 @@ void EQPresetDetailView::refreshUi() {
         } else {
             auto freqSpin = new QDoubleSpinBox(this);
             freqSpin->setRange(10.0, 24000.0);
+            freqSpin->setDecimals(0);
             freqSpin->setSingleStep(10.0);
+            freqSpin->setSuffix(" Hz");
             freqSpin->setValue(b.freq);
 
             connect(freqSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double val) {
@@ -501,7 +506,9 @@ void EQPresetDetailView::refreshUi() {
         if (eqBandTypeHasGain(b.type)) {
             auto gainSpin = new QDoubleSpinBox(this);
             gainSpin->setRange(-36.0, 36.0);
+            gainSpin->setDecimals(1);
             gainSpin->setSingleStep(0.5);
+            gainSpin->setSuffix(" dB");
             gainSpin->setValue(b.gain);
             connect(gainSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double val) {
                 m_preset.bands[i].gain = val;
@@ -521,6 +528,7 @@ void EQPresetDetailView::refreshUi() {
             qBox->setContentsMargins(2, 2, 2, 2);
             auto qSpin = new QDoubleSpinBox(this);
             qSpin->setRange(0.1, 20.0);
+            qSpin->setDecimals(2);
             qSpin->setSingleStep(0.05);
             qSpin->setValue(b.useSlope ? b.slope : (b.useBandwidth ? b.bandwidth : b.q));
 

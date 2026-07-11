@@ -10,8 +10,8 @@
 AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline,
                                  std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline), m_dspController(dspController) {
-    setWindowTitle("AutoEQ Online Preset Explorer");
-    resize(620, 520);
+    setWindowTitle("AutoEQ Database");
+    resize(500, 600);
     setupUi();
     loadIndex(false);
 }
@@ -27,7 +27,7 @@ void AutoEqPickerDlg::setupUi() {
 
     auto searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText("Search headphone model...");
+    m_searchEdit->setPlaceholderText("Search 0 headphones...");
     connect(m_searchEdit, &QLineEdit::textChanged, this, &AutoEqPickerDlg::onSearchTextChanged);
     searchLayout->addWidget(m_searchEdit);
 

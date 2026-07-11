@@ -10,8 +10,8 @@
 OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pipeline,
                                                std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline), m_dspController(dspController) {
-    setWindowTitle("Oratory1990 Headphone EQ Explorer");
-    resize(620, 520);
+    setWindowTitle("Oratory1990 Database");
+    resize(500, 600);
     setupUi();
     loadIndex(false);
 }
@@ -25,13 +25,13 @@ void OratoryPresetPickerDlg::setupUi() {
     headerTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
     mainLayout->addWidget(headerTitle);
 
-    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 target curve", this);
+    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 targets", this);
     subtitleLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     mainLayout->addWidget(subtitleLbl);
 
     auto searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText("Search Oratory headphone preset...");
+    m_searchEdit->setPlaceholderText("Search 0 headphones...");
     connect(m_searchEdit, &QLineEdit::textChanged, this, &OratoryPresetPickerDlg::onSearchTextChanged);
     searchLayout->addWidget(m_searchEdit);
 

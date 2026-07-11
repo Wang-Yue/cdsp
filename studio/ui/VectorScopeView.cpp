@@ -84,11 +84,15 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int centerRadius = std::min(w - 20, drawH) / 2;
         QPoint centerPt(w / 2, topMargin + drawH / 2);
 
-        bufPainter.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
+        QColor mainAxisCol = StyleTheme::isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25);
+        QColor diagAxisCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+
+        bufPainter.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
         bufPainter.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
         bufPainter.drawLine(centerPt.x(), centerPt.y() - centerRadius, centerPt.x(), centerPt.y() + centerRadius);
 
         int offset = static_cast<int>(centerRadius * 0.7071);
+        bufPainter.setPen(QPen(diagAxisCol, 0.5, Qt::SolidLine));
         bufPainter.drawLine(centerPt.x() - offset, centerPt.y() - offset, centerPt.x() + offset, centerPt.y() + offset);
         bufPainter.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
         bufPainter.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
@@ -148,7 +152,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                         path.lineTo(px, py);
                 }
                 double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 75.0);
-                bufPainter.setPen(QPen(QColor(0, 198, 255, 200), lineWidth));
+                bufPainter.setPen(QPen(QColor(0, 122, 255, 178), lineWidth));
                 bufPainter.drawPath(path);
             } else {
                 bufPainter.setPen(Qt::NoPen);

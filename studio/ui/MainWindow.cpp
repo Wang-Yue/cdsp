@@ -586,7 +586,9 @@ void MainWindow::updateVolumeDisplay() {
     if (gain > 0.0f) {
         m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 65px;");
     } else {
-        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #34c759; min-width: 65px;");
+        m_gainValueLabel->setStyleSheet(
+            QString("font-family: monospace; font-weight: bold; color: %1; min-width: 65px;")
+                .arg(StyleTheme::textPrimary().name()));
     }
 }
 
@@ -720,7 +722,7 @@ void MainWindow::setupToolbar() {
     m_headerVolumeSlider = new QSlider(Qt::Horizontal, this);
     m_headerVolumeSlider->setRange(-120, 40);
     m_headerVolumeSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
-    m_headerVolumeSlider->setFixedWidth(360);
+    m_headerVolumeSlider->setFixedWidth(400);
     connect(m_headerVolumeSlider, &QSlider::valueChanged, [this](int val) {
         float db = val / 2.0f;
         m_dspController->setFaderVolume(Fader::Main, db);

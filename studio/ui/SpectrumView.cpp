@@ -97,23 +97,30 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         return;
 
     // 1. dB Grid lines & labels [-60, -48, -36, -24, -12, 0] dB
-    p.setFont(QFont("sans-serif", 8));
+    QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    monoFont.setPointSize(8);
+    p.setFont(monoFont);
+
+    QColor gridPenCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+
     for (double db : {0, -12, -24, -36, -48, -60}) {
         double normY = normDB60(static_cast<float>(db));
         double y = marginT + plotH * (1.0 - normY);
 
-        p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
+        p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(marginL, y, w, y);
 
         p.setPen(StyleTheme::textSecondary());
         p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter,
-                   QString("%1 dB").arg(static_cast<int>(db)));
+                   QString("%1").arg(static_cast<int>(db)));
     }
 
     // 2. Freq Grid lines & log-frequency ticks (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
     double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 20.0;
     double maxF = (m_engine && m_engine->maxFreq > 0) ? m_engine->maxFreq : 20000.0;
     double logMin = std::log10(minF), logMax = std::log10(maxF);
+
+    QFont freqFont("sans-serif", 7);
 
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         if (f < minF || f > maxF)
@@ -122,7 +129,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         double x = marginL + fracX * plotW;
 
         // Grid line
-        p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
+        p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(x, marginT, x, marginT + plotH);
 
         // Tick mark
@@ -130,6 +137,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawLine(x, marginT + plotH, x, marginT + plotH + 4);
 
         // Label
+        p.setFont(freqFont);
         p.setPen(StyleTheme::textSecondary());
         QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
