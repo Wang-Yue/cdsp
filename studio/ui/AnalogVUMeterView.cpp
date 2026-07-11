@@ -108,8 +108,12 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     faceGrad.setColorAt(1.0, bgBot);
     p.fillRect(rect, faceGrad);
 
-    QPointF pivot(rect.center().x(), rect.bottom() * m_settings.pivotY - rect.height() * (m_settings.pivotY - 1.0));
-    double radius = rect.height() * 0.85 * m_settings.radiusScale;
+    double effectiveRadiusScale = std::min(m_settings.radiusScale, 0.90);
+    double effectivePivotY = std::min(m_settings.pivotY, 1.35);
+    double effectiveNeedleExt = std::min(m_settings.needleExtension, 25.0);
+
+    QPointF pivot(rect.center().x(), rect.bottom() * effectivePivotY - rect.height() * (effectivePivotY - 1.0));
+    double radius = rect.height() * 0.85 * effectiveRadiusScale;
 
     // Focused Bulb Hot Spot Glow Shading
     if (m_settings.hotSpotAlpha > 0) {
@@ -207,7 +211,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
         needleShadowColor = QColor(20, 10, 5, 120);
     }
 
-    double nLen = radius + m_settings.needleExtension;
+    double nLen = radius + effectiveNeedleExt;
     p.setPen(QPen(needleShadowColor, 1.6));
     p.drawLine(QPointF(1.5, 1.5), QPointF(1.5, -nLen + 1.5));
 

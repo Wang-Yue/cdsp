@@ -13,6 +13,13 @@ void VUSettings::load() {
     hotSpotAlpha = settings.value("vu_hot_spot_alpha", 0.5).toDouble();
     lightWash = settings.value("vu_light_wash", 0.2).toDouble();
 
+    if (radiusScale > 0.95 || pivotY > 1.35 || needleExtension > 25.0) {
+        radiusScale = 0.85;
+        pivotY = 1.30;
+        needleExtension = 15.0;
+        save();
+    }
+
     int t = settings.value("vu_theme", static_cast<int>(VUTheme::VintageAmber)).toInt();
     if (t >= 0 && t <= 2) {
         theme = static_cast<VUTheme>(t);
