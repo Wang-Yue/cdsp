@@ -5,11 +5,12 @@
 #include "room_correction/FrequencyResponse.h"
 #include "room_correction/TargetCurve.h"
 
+#include <optional>
 #include <vector>
 
 struct FIRDesignOptions {
     int fftSize = 8192;
-    int outputLength = 8192;
+    std::optional<int> outputLength;
     double preampDB = 0.0;
     double floorDB = -80.0;
 };

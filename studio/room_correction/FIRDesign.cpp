@@ -67,18 +67,26 @@ std::vector<double> FIRDesign::linearPhase(const std::vector<BiquadParameters>& 
     size_t bins = nFft / 2 + 1;
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
 
+    std::vector<BiquadCoefficients> computedCoeffs;
+    computedCoeffs.reserve(bands.size());
+    for (const auto& b : bands) {
+        auto c = BiquadCoefficients::compute(b, sampleRate);
+        if (c.has_value())
+            computedCoeffs.push_back(c.value());
+    }
+
     std::vector<double> hRe(bins), hIm(bins);
     double preampLin = std::pow(10.0, options.preampDB / 20.0);
+    double floorLin = std::pow(10.0, options.floorDB / 20.0);
 
     for (size_t k = 0; k < bins; ++k) {
         double f = static_cast<double>(k) * binHz;
         double gainDB = 0.0;
-        for (const auto& b : bands) {
-            auto coeffs = BiquadCoefficients::compute(b, sampleRate);
-            if (coeffs.has_value())
-                gainDB += coeffs.value().gainDB(f, sampleRate);
+        for (const auto& coeffs : computedCoeffs) {
+            gainDB += coeffs.gainDB(f, sampleRate);
         }
-        double mag = std::pow(10.0, gainDB / 20.0) * preampLin;
+        double magLin = std::pow(10.0, gainDB / 20.0);
+        double mag = std::max(floorLin, magLin) * preampLin;
         double phase = -M_PI * static_cast<double>(k);
         hRe[k] = mag * std::cos(phase);
         hIm[k] = mag * std::sin(phase);
@@ -86,7 +94,8 @@ std::vector<double> FIRDesign::linearPhase(const std::vector<BiquadParameters>& 
 
     std::vector<double> ir;
     MeasurementFFT::inverse(hRe, hIm, ir);
-    ir.resize(options.outputLength);
+    int outLen = options.outputLength.value_or(nFft);
+    ir.resize(outLen);
     return ir;
 }
 
@@ -96,14 +105,20 @@ std::vector<double> FIRDesign::minimumPhase(const std::vector<BiquadParameters>&
     size_t bins = nFft / 2 + 1;
     double binHz = static_cast<double>(sampleRate) / static_cast<double>(nFft);
 
+    std::vector<BiquadCoefficients> computedCoeffs;
+    computedCoeffs.reserve(bands.size());
+    for (const auto& b : bands) {
+        auto c = BiquadCoefficients::compute(b, sampleRate);
+        if (c.has_value())
+            computedCoeffs.push_back(c.value());
+    }
+
     std::vector<double> magDB(bins);
     for (size_t k = 0; k < bins; ++k) {
         double f = static_cast<double>(k) * binHz;
         double gainDB = 0.0;
-        for (const auto& b : bands) {
-            auto coeffs = BiquadCoefficients::compute(b, sampleRate);
-            if (coeffs.has_value())
-                gainDB += coeffs.value().gainDB(f, sampleRate);
+        for (const auto& coeffs : computedCoeffs) {
+            gainDB += coeffs.gainDB(f, sampleRate);
         }
         magDB[k] = gainDB;
     }
@@ -120,9 +135,11 @@ std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& m
 
     std::vector<double> hRe(bins), hIm(bins);
     double preampLin = std::pow(10.0, options.preampDB / 20.0);
+    double floorLin = std::pow(10.0, options.floorDB / 20.0);
 
     for (size_t k = 0; k < bins; ++k) {
-        double mag = std::pow(10.0, magDB[k] / 20.0) * preampLin;
+        double magLin = std::pow(10.0, magDB[k] / 20.0);
+        double mag = std::max(floorLin, magLin) * preampLin;
         double phase = -M_PI * static_cast<double>(k);
         hRe[k] = mag * std::cos(phase);
         hIm[k] = mag * std::sin(phase);
@@ -130,7 +147,8 @@ std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& m
 
     std::vector<double> rawIR;
     MeasurementFFT::inverse(hRe, hIm, rawIR);
-    rawIR.resize(options.outputLength);
+    int outLen = options.outputLength.value_or(nFft);
+    rawIR.resize(outLen);
     return rawIR;
 }
 

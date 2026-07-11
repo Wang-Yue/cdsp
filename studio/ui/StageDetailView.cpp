@@ -224,8 +224,11 @@ void StageDetailView::buildStageOptionsUi() {
                 leftCombo->addItem(QString("Channel %1").arg(c + 1), c);
             }
             leftCombo->setCurrentIndex(std::min(stage.leftChannel, incomingChannels - 1));
-            connect(leftCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, leftCombo](int idx) {
-                stage.leftChannel = leftCombo->itemData(idx).toInt();
+            connect(leftCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, leftCombo](int idx) {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                st->leftChannel = leftCombo->itemData(idx).toInt();
                 applyConfig();
             });
             leftBox->addWidget(leftCombo);
@@ -238,11 +241,13 @@ void StageDetailView::buildStageOptionsUi() {
                 rightCombo->addItem(QString("Channel %1").arg(c + 1), c);
             }
             rightCombo->setCurrentIndex(std::min(stage.rightChannel, incomingChannels - 1));
-            connect(rightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                    [this, &stage, rightCombo](int idx) {
-                        stage.rightChannel = rightCombo->itemData(idx).toInt();
-                        applyConfig();
-                    });
+            connect(rightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, rightCombo](int idx) {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                st->rightChannel = rightCombo->itemData(idx).toInt();
+                applyConfig();
+            });
             rightBox->addWidget(rightCombo);
             pairBox->addLayout(rightBox);
 
@@ -274,17 +279,20 @@ void StageDetailView::buildStageOptionsUi() {
                 };
                 updateBtnStyle(isSelected);
 
-                connect(btn, &QPushButton::clicked, [this, &stage, c, btn, updateBtnStyle]() {
-                    auto it = std::find(stage.channels.begin(), stage.channels.end(), c);
-                    if (it != stage.channels.end()) {
-                        if (stage.channels.size() > 1) {
-                            stage.channels.erase(it);
+                connect(btn, &QPushButton::clicked, [this, c, btn, updateBtnStyle]() {
+                    auto st = currentStage();
+                    if (!st)
+                        return;
+                    auto it = std::find(st->channels.begin(), st->channels.end(), c);
+                    if (it != st->channels.end()) {
+                        if (st->channels.size() > 1) {
+                            st->channels.erase(it);
                             btn->setChecked(false);
                         } else {
                             btn->setChecked(true);
                         }
                     } else {
-                        stage.channels.push_back(c);
+                        st->channels.push_back(c);
                         btn->setChecked(true);
                     }
                     updateBtnStyle(btn->isChecked());
@@ -318,8 +326,11 @@ void StageDetailView::buildStageOptionsUi() {
         infoHBox->addWidget(leftLbl);
 
         auto centerBtn = new QPushButton("Center", balGroup);
-        connect(centerBtn, &QPushButton::clicked, [this, &stage, balSlider]() {
-            stage.balancePosition = 0.0;
+        connect(centerBtn, &QPushButton::clicked, [this, balSlider]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            st->balancePosition = 0.0;
             balSlider->setValue(0);
             applyConfig();
             refreshUi();
@@ -332,10 +343,13 @@ void StageDetailView::buildStageOptionsUi() {
 
         balVBox->addLayout(infoHBox);
 
-        connect(balSlider, &QSlider::valueChanged, [this, &stage, leftLbl, rightLbl](int val) {
-            stage.balancePosition = val / 100.0;
-            leftLbl->setText(QString("Left: %1%").arg(stage.balanceLeftPercent()));
-            rightLbl->setText(QString("Right: %1%").arg(stage.balanceRightPercent()));
+        connect(balSlider, &QSlider::valueChanged, [this, leftLbl, rightLbl](int val) {
+            auto st = currentStage();
+            if (!st)
+                return;
+            st->balancePosition = val / 100.0;
+            leftLbl->setText(QString("Left: %1%").arg(st->balanceLeftPercent()));
+            rightLbl->setText(QString("Right: %1%").arg(st->balanceRightPercent()));
             applyConfig();
         });
 

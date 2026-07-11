@@ -126,11 +126,15 @@ void PipelineStore::updateConvPreset(const ConvolutionPreset& preset) {
 }
 
 void PipelineStore::deleteConvPreset(const QUuid& id) {
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     for (const auto& preset : convPresets) {
         if (preset.id == id) {
             for (const auto& [rate, path] : preset.irPaths) {
                 if (!path.empty()) {
-                    QFile::remove(QString::fromStdString(path));
+                    QString qpath = QString::fromStdString(path);
+                    if (qpath.startsWith(cacheDir)) {
+                        QFile::remove(qpath);
+                    }
                 }
             }
             break;
@@ -177,8 +181,10 @@ StageBuildResult PipelineStore::buildPipeline(int sampleRate, int channelCount) 
 
 void PipelineStore::load() {
     QSettings s("DSPMonitor", "MonitorQt");
+    bool hasInitialized = false;
 
     if (s.contains("stages")) {
+        hasInitialized = true;
         stages.clear();
         QJsonArray arr = QJsonDocument::fromJson(s.value("stages").toByteArray()).array();
         for (const auto& item : arr)
@@ -195,6 +201,10 @@ void PipelineStore::load() {
         QJsonArray arr = QJsonDocument::fromJson(s.value("convPresets").toByteArray()).array();
         for (const auto& item : arr)
             convPresets.push_back(ConvolutionPreset::fromJson(item.toObject()));
+    }
+
+    if (!hasInitialized && stages.empty()) {
+        ensureDefaultPresets();
     }
 }
 

@@ -1036,15 +1036,19 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
     } else if (tag == "auto_eq") {
         AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
+        handleNavigationTag(m_lastActiveTag);
     } else if (tag == "oratory_eq") {
         OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
         dlg.exec();
+        handleNavigationTag(m_lastActiveTag);
     } else if (tag == "import_conv") {
         ConvolutionImportDlg dlg(m_pipeline, this);
         dlg.exec();
+        handleNavigationTag(m_lastActiveTag);
     } else if (tag == "room_correction") {
         RoomCorrectionDlg dlg(m_pipeline, this);
         dlg.exec();
+        handleNavigationTag(m_lastActiveTag);
     } else {
         m_lastActiveTag = tag;
         handleNavigationTag(tag);

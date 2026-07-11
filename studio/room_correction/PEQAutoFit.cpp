@@ -66,8 +66,11 @@ std::vector<double> PEQAutoFit::smoothLogOctave(const std::vector<double>& value
 
         for (size_t j = 0; j < n; ++j) {
             double d = logF[j] - logF[i];
-            if (std::abs(d) > radius)
+            if (std::abs(d) > radius) {
+                if (d > radius)
+                    break;
                 continue;
+            }
             double w = std::exp(-0.5 * d * d / (sigma * sigma));
             sum += w * values[j];
             wsum += w;

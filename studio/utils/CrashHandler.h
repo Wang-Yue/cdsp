@@ -43,34 +43,34 @@ inline void logCallstack(std::ofstream& crashLog) {
     HANDLE process = GetCurrentProcess();
     SymInitialize(process, NULL, TRUE);
 
-    SYMBOL_INFO* symbol = (SYMBOL_INFO*)calloc(1, sizeof(SYMBOL_INFO) + 256 * sizeof(char));
-    if (symbol) {
-        symbol->MaxNameLen = 255;
-        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    alignas(SYMBOL_INFO) char symbolBuffer[sizeof(SYMBOL_INFO) + 256 * sizeof(char)];
+    SYMBOL_INFO* symbol = reinterpret_cast<SYMBOL_INFO*>(symbolBuffer);
+    std::memset(symbolBuffer, 0, sizeof(symbolBuffer));
+    symbol->MaxNameLen = 255;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
 
-        IMAGEHLP_LINE64 line;
-        line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
-        DWORD displacement = 0;
+    IMAGEHLP_LINE64 line;
+    line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    DWORD displacement = 0;
 
-        crashLog << "Callstack (" << frames << " frames):" << std::endl;
-        for (USHORT i = 0; i < frames; i++) {
-            uintptr_t address = (uintptr_t)(stack[i]);
-            uintptr_t rva = address - baseAddr;
-            uintptr_t preferredAddress = 0x140000000 + rva;
+    crashLog << "Callstack (" << frames << " frames):" << std::endl;
+    for (USHORT i = 0; i < frames; i++) {
+        uintptr_t address = (uintptr_t)(stack[i]);
+        uintptr_t rva = address - baseAddr;
+        uintptr_t preferredAddress = 0x140000000 + rva;
 
-            crashLog << "  [" << i << "] Absolute: 0x" << std::hex << address << " | RVA: +0x" << std::hex << rva
-                     << " | PreferredAddr: 0x" << std::hex << preferredAddress;
+        crashLog << "  [" << i << "] Absolute: 0x" << std::hex << address << " | RVA: +0x" << std::hex << rva
+                 << " | PreferredAddr: 0x" << std::hex << preferredAddress;
 
-            if (SymFromAddr(process, address, 0, symbol)) {
-                crashLog << " (" << symbol->Name << ")";
-                if (SymGetLineFromAddr64(process, address, &displacement, &line)) {
-                    crashLog << " [" << line.FileName << ":" << line.LineNumber << "]";
-                }
+        if (SymFromAddr(process, address, 0, symbol)) {
+            crashLog << " (" << symbol->Name << ")";
+            if (SymGetLineFromAddr64(process, address, &displacement, &line)) {
+                crashLog << " [" << line.FileName << ":" << line.LineNumber << "]";
             }
-            crashLog << std::endl;
         }
-        free(symbol);
+        crashLog << std::endl;
     }
+    SymCleanup(process);
 }
 
 inline LONG WINAPI customUnhandledExceptionFilter(EXCEPTION_POINTERS* pExceptionInfo) {

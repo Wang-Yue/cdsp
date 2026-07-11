@@ -79,12 +79,15 @@ void AutoEqService::fetchIndex(std::function<void(bool success, const std::vecto
     request.setRawHeader("User-Agent", "DSPMonitor");
 
     QNetworkReply* reply = m_networkManager.get(request);
-    connect(reply, &QNetworkReply::finished, [this, reply, callback]() {
+    QPointer<AutoEqService> weakThis(this);
+    connect(reply, &QNetworkReply::finished, [weakThis, reply, callback]() {
         reply->deleteLater();
+        if (!weakThis)
+            return;
         if (reply->error() != QNetworkReply::NoError) {
-            if (loadFromDiskCache(m_allEntries)) {
-                m_isLoaded = true;
-                callback(true, m_allEntries);
+            if (weakThis->loadFromDiskCache(weakThis->m_allEntries)) {
+                weakThis->m_isLoaded = true;
+                callback(true, weakThis->m_allEntries);
             } else {
                 callback(false, {});
             }

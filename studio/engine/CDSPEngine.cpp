@@ -34,6 +34,7 @@ fader_t CDSPEngine::faderToCFader(Fader fader) {
 
 bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    errorMessage.clear();
     if (!m_engine)
         return false;
 
@@ -153,13 +154,17 @@ VuLevels CDSPEngine::getVuLevels() const {
         return res;
 
     vu_levels_t levels = dsp_engine_get_vu_levels(m_engine);
-    for (size_t i = 0; i < levels.playback_channels; ++i) {
-        res.playback_rms.push_back(static_cast<float>(levels.playback_rms[i]));
-        res.playback_peak.push_back(static_cast<float>(levels.playback_peak[i]));
+    if (levels.playback_rms && levels.playback_peak) {
+        for (size_t i = 0; i < levels.playback_channels; ++i) {
+            res.playback_rms.push_back(static_cast<float>(levels.playback_rms[i]));
+            res.playback_peak.push_back(static_cast<float>(levels.playback_peak[i]));
+        }
     }
-    for (size_t i = 0; i < levels.capture_channels; ++i) {
-        res.capture_rms.push_back(static_cast<float>(levels.capture_rms[i]));
-        res.capture_peak.push_back(static_cast<float>(levels.capture_peak[i]));
+    if (levels.capture_rms && levels.capture_peak) {
+        for (size_t i = 0; i < levels.capture_channels; ++i) {
+            res.capture_rms.push_back(static_cast<float>(levels.capture_rms[i]));
+            res.capture_peak.push_back(static_cast<float>(levels.capture_peak[i]));
+        }
     }
 
     dsp_engine_free_vu_levels(&levels);
@@ -199,6 +204,7 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
     for (size_t ch = 0; ch < res->channels_count; ++ch) {
         std::vector<float> chSamples;
         if (res->channels && res->channels[ch]) {
+            chSamples.reserve(res->frames);
             for (size_t f = 0; f < res->frames; ++f) {
                 chSamples.push_back(static_cast<float>(res->channels[ch][f]));
             }
@@ -218,7 +224,8 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
     memset(devs, 0, sizeof(devs));
     int count = dsp_engine_get_available_devices(backend.c_str(), input, devs, 32);
     if (count > 0) {
-        for (int i = 0; i < count; ++i) {
+        int safeCount = std::min(count, 32);
+        for (int i = 0; i < safeCount; ++i) {
             result.push_back(AudioDevice{devs[i].name});
         }
     }
@@ -239,27 +246,35 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
     AudioDeviceDescriptor res;
     res.name = desc->name;
 
-    for (size_t i = 0; i < desc->capability_sets_count; ++i) {
-        const auto& cSet = desc->capability_sets[i];
-        DeviceCapabilitySet setRes;
-        for (size_t j = 0; j < cSet.capabilities_count; ++j) {
-            const auto& chCap = cSet.capabilities[j];
-            ChannelCapability capRes;
-            capRes.channels = chCap.channels;
-            for (size_t k = 0; k < chCap.samplerates_count; ++k) {
-                const auto& srCap = chCap.samplerates[k];
-                SamplerateCapability srRes;
-                srRes.samplerate = srCap.samplerate;
-                for (size_t m = 0; m < srCap.formats_count; ++m) {
-                    if (srCap.formats[m]) {
-                        srRes.formats.push_back(srCap.formats[m]);
+    if (desc->capability_sets) {
+        for (size_t i = 0; i < desc->capability_sets_count; ++i) {
+            const auto& cSet = desc->capability_sets[i];
+            DeviceCapabilitySet setRes;
+            if (cSet.capabilities) {
+                for (size_t j = 0; j < cSet.capabilities_count; ++j) {
+                    const auto& chCap = cSet.capabilities[j];
+                    ChannelCapability capRes;
+                    capRes.channels = chCap.channels;
+                    if (chCap.samplerates) {
+                        for (size_t k = 0; k < chCap.samplerates_count; ++k) {
+                            const auto& srCap = chCap.samplerates[k];
+                            SamplerateCapability srRes;
+                            srRes.samplerate = srCap.samplerate;
+                            if (srCap.formats) {
+                                for (size_t m = 0; m < srCap.formats_count; ++m) {
+                                    if (srCap.formats[m]) {
+                                        srRes.formats.push_back(srCap.formats[m]);
+                                    }
+                                }
+                            }
+                            capRes.samplerates.push_back(srRes);
+                        }
                     }
+                    setRes.capabilities.push_back(capRes);
                 }
-                capRes.samplerates.push_back(srRes);
             }
-            setRes.capabilities.push_back(capRes);
+            res.capability_sets.push_back(setRes);
         }
-        res.capability_sets.push_back(setRes);
     }
 
     dsp_engine_free_device_capabilities(desc);

@@ -237,13 +237,16 @@ void DSPEngineController::scheduleAutoRestart(int baseDelayMs) {
 
 void DSPEngineController::updateStatus(const StateUpdate& update) {
     bool stateChanged = (status != update.state);
+    bool stopReasonChanged = (lastStopReason.type != update.stopReason.type);
     status = update.state;
     lastStopReason = update.stopReason;
 
     if (stateChanged) {
         emit statusChanged(status);
     }
-    emit statusUpdated(status, lastStopReason);
+    if (stateChanged || stopReasonChanged) {
+        emit statusUpdated(status, lastStopReason);
+    }
 
     if (status == ProcessingState::Running) {
         m_retryCount = 0; // Reset retry counter immediately when running state is established
@@ -261,7 +264,9 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
                 m_devices->captureConfig.sampleRate = newRate;
                 m_devices->playbackConfig.sampleRate = newRate;
             }
+            m_devices->blockSignals(true);
             m_devices->saveConfigs();
+            m_devices->blockSignals(false);
             scheduleAutoRestart(0);
         }
     } else if (update.stopReason.type == StopReasonType::PlaybackFormatChange) {
@@ -271,7 +276,9 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
                 LogLevel::Warn,
                 QString("Playback format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
             m_devices->playbackConfig.sampleRate = newRate;
+            m_devices->blockSignals(true);
             m_devices->saveConfigs();
+            m_devices->blockSignals(false);
             scheduleAutoRestart(0);
         }
     } else if (!m_userStopped && (update.stopReason.type == StopReasonType::CaptureError ||

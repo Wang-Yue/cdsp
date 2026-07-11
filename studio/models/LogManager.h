@@ -39,4 +39,6 @@ private:
     size_t m_maxEntries = 2000;
 };
 
+Q_DECLARE_METATYPE(LogEntry)
+
 #endif // LOG_MANAGER_H

@@ -29,7 +29,9 @@ LogLevel stringToLogLevel(const QString& str) {
     return LogLevel::Info;
 }
 
-LogManager::LogManager(QObject* parent) : QObject(parent) {}
+LogManager::LogManager(QObject* parent) : QObject(parent) {
+    qRegisterMetaType<LogEntry>("LogEntry");
+}
 
 LogManager* LogManager::instance() {
     static LogManager instance;

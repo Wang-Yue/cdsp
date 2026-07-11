@@ -21,6 +21,8 @@ void MonitoringController::stop() {
 }
 
 void MonitoringController::onPollTimer() {
+    if (!m_engine || !m_dspController)
+        return;
     StateUpdate st = m_engine->getStatus();
     m_dspController->updateStatus(st);
 

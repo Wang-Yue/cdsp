@@ -298,16 +298,13 @@ void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
     // Update position chips list with row widgets
-    if (m_positionsList->count() != static_cast<int>(m_session.positions.size())) {
-        m_positionsList->clear();
-        for (const auto& p : m_session.positions) {
-            auto item = new QListWidgetItem(m_positionsList);
-            auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
-            item->setSizeHint(rowWidget->sizeHint());
-            m_positionsList->setItemWidget(item, rowWidget);
-            connect(rowWidget, &MeasurementPositionRowWidget::positionChanged, this,
-                    &RoomCorrectionDlg::refreshSessionUi);
-        }
+    m_positionsList->clear();
+    for (const auto& p : m_session.positions) {
+        auto item = new QListWidgetItem(m_positionsList);
+        auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
+        item->setSizeHint(rowWidget->sizeHint());
+        m_positionsList->setItemWidget(item, rowWidget);
+        connect(rowWidget, &MeasurementPositionRowWidget::positionChanged, this, &RoomCorrectionDlg::refreshSessionUi);
     }
 
     // Update calibration label

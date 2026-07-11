@@ -490,6 +490,7 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.name = json["name"].toString().toStdString();
     if (json.contains("type")) {
         std::string typeStr = json["type"].toString().toStdString();
+        QString cleanInput = QString::fromStdString(typeStr).remove(" ").toLower();
         for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
                              StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
                              StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
@@ -498,7 +499,8 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
                              StageType::Limiter,     StageType::Volume,    StageType::MatrixMixer,
                              StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
                              StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
-            if (stageTypeToString(st) == typeStr) {
+            QString targetStr = QString::fromStdString(stageTypeToString(st)).remove(" ").toLower();
+            if (stageTypeToString(st) == typeStr || targetStr == cleanInput) {
                 s.type = st;
                 break;
             }
