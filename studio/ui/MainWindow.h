@@ -83,9 +83,13 @@ private:
     QElapsedTimer m_engineRunTimer;
     QTimer m_runtimeUpdateTimer;
 
-    // Tray Icon
+    // Tray Icon & Menu Bar Actions
     QSystemTrayIcon* m_trayIcon;
     QMenu* m_trayMenu;
+    QMenu* m_trayPresetSubMenu = nullptr;
+    QAction* m_trayMuteAction = nullptr;
+    QAction* m_actImportConv = nullptr;
+    QAction* m_actAddEqPreset = nullptr;
 
     QMap<QString, QWidget*> m_pageCache;
     QString m_lastActiveTag = "dashboard";
@@ -93,9 +97,12 @@ private:
     void setupUi();
     void setupSidebar();
     void setupToolbar();
+    void setupMenuBar();
     void setupStatusBar();
     void setupTrayIcon();
     void setupShortcuts();
+    void updateTrayMenu();
+    void selectActiveEQPreset(const QUuid& presetId);
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);

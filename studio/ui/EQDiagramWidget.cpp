@@ -121,21 +121,24 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Grid Lines
-    painter.setPen(QPen(QColor("#d1d1d6"), 0.5, Qt::DashLine));
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         double y = dbToY(db, h);
+        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5, Qt::DashLine));
         painter.drawLine(0, y, w, y);
+        painter.setPen(StyleTheme::textSecondary());
         painter.drawText(8, y - 4, QString("%1 dB").arg(static_cast<int>(db)));
     }
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         double x = freqToX(f, w);
+        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5, Qt::DashLine));
         painter.drawLine(x, 0, x, h);
+        painter.setPen(StyleTheme::textSecondary());
         QString label = (f >= 1000.0) ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         painter.drawText(x - 10, h - 8, label);
     }
 
     // 0 dB Baseline
-    painter.setPen(QPen(QColor("#8e8e93"), 1.0));
+    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0));
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
 

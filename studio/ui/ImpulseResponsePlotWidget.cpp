@@ -1,4 +1,5 @@
 #include "ui/ImpulseResponsePlotWidget.h"
+#include "ui/StyleTheme.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <cmath>
@@ -24,10 +25,10 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double h = height();
 
     // Background
-    painter.fillRect(rect(), QColor(20, 20, 24));
+    painter.fillRect(rect(), StyleTheme::cardBg());
 
     if (!m_session || !m_session->measuredIR.has_value()) {
-        painter.setPen(QColor(160, 160, 160));
+        painter.setPen(StyleTheme::textSecondary());
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No impulse response data available.");
         return;
@@ -49,12 +50,12 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     peakAbs *= 1.05;
 
     // Center horizontal line (y = 0)
-    painter.setPen(QPen(QColor(255, 255, 255, 50), 1.0));
+    painter.setPen(QPen(StyleTheme::gridPenColor(), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
     // Zero-time vertical line
     double xPeak = w * static_cast<double>(static_cast<int>(zeroIdx) - lo) / static_cast<double>(hi - lo);
-    painter.setPen(QPen(QColor(255, 255, 255, 60), 1.0, Qt::DashLine));
+    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0, Qt::DashLine));
     painter.drawLine(QPointF(xPeak, 0), QPointF(xPeak, h));
 
     // Draw IR curve
@@ -75,7 +76,7 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // Time-axis Ticks (-50ms, -25ms, 0ms, +25ms, +50ms)
     std::vector<double> ticks = {-halfMs, -halfMs / 2.0, 0.0, halfMs / 2.0, halfMs};
-    painter.setPen(QColor(160, 160, 160));
+    painter.setPen(StyleTheme::textSecondary());
     for (double ms : ticks) {
         int sampleOffset = static_cast<int>((ms / 1000.0) * static_cast<double>(ir.sampleRate));
         int idx = static_cast<int>(zeroIdx) + sampleOffset;

@@ -21,6 +21,7 @@ protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     std::shared_ptr<VectorScopeEngine> m_engine;

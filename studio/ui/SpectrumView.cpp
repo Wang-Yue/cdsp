@@ -95,10 +95,10 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         double normY = normDB60(static_cast<float>(db));
         double y = marginT + plotH * (1.0 - normY);
 
-        p.setPen(QPen(QColor(255, 255, 255, 25), 1, Qt::DashLine));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
         p.drawLine(marginL, y, w, y);
 
-        p.setPen(QColor("#8e8e93"));
+        p.setPen(StyleTheme::textSecondary());
         p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter, QString("%1 dB").arg(static_cast<int>(db)));
     }
 
@@ -113,15 +113,15 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         double x = marginL + fracX * plotW;
 
         // Grid line
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1, Qt::DashLine));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
         p.drawLine(x, marginT, x, marginT + plotH);
 
         // Tick mark
-        p.setPen(QPen(QColor(255, 255, 255, 60), 1));
+        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
         p.drawLine(x, marginT + plotH, x, marginT + plotH + 4);
 
         // Label
-        p.setPen(QColor("#8e8e93"));
+        p.setPen(StyleTheme::textSecondary());
         QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
     }
@@ -161,7 +161,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
             float peakNormY = m_peakHold[i];
             double peakY = marginT + plotH - static_cast<double>(peakNormY * plotH);
-            p.setPen(QPen(QColor(255, 255, 255, 240), 1.8));
+            p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 240) : QColor(30, 30, 30, 240), 1.8));
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
         }
 
@@ -169,7 +169,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         else curvePath.lineTo(x, marginT + plotH - barHeight);
     }
 
-    p.setPen(QPen(QColor(255, 255, 255, 120), 1.0));
+    p.setPen(QPen(StyleTheme::gridPenColor(), 1.0));
     p.drawPath(curvePath);
 
     // 4. Hover Crosshair & Tooltip Readout Formatting

@@ -438,17 +438,34 @@ public:
         )";
     }
 
-    static QString stylesheet(AppTheme theme = AppTheme::Light) {
-        return theme == AppTheme::Dark ? darkStylesheet() : lightStylesheet();
+    inline static AppTheme s_theme = AppTheme::Light;
+
+    static void setTheme(AppTheme theme) {
+        s_theme = theme;
     }
 
-    static QColor bgDark() { return QColor("#ffffff"); }
-    static QColor cardBg() { return QColor("#f5f5f7"); }
-    static QColor border() { return QColor("#d1d1d6"); }
-    static QColor accent() { return QColor("#007aff"); }
-    static QColor accentGreen() { return QColor("#34c759"); }
-    static QColor textPrimary() { return QColor("#000000"); }
-    static QColor textSecondary() { return QColor("#6c6c70"); }
+    static AppTheme theme() {
+        return s_theme;
+    }
+
+    static bool isDark() {
+        return s_theme == AppTheme::Dark;
+    }
+
+    static QString currentStylesheet() {
+        return (s_theme == AppTheme::Dark) ? darkStylesheet() : lightStylesheet();
+    }
+
+    static QColor windowBg() { return isDark() ? QColor("#121318") : QColor("#ffffff"); }
+    static QColor cardBg() { return isDark() ? QColor("#1a1b22") : QColor("#f5f5f7"); }
+    static QColor border() { return isDark() ? QColor("#2c2d3a") : QColor("#d1d1d6"); }
+    static QColor accent() { return isDark() ? QColor("#007af5") : QColor("#007aff"); }
+    static QColor accentGreen() { return isDark() ? QColor("#2cb67d") : QColor("#34c759"); }
+    static QColor textPrimary() { return isDark() ? QColor("#ffffff") : QColor("#000000"); }
+    static QColor textSecondary() { return isDark() ? QColor("#a0a5b5") : QColor("#6c6c70"); }
+    static QColor gridPenColor() { return isDark() ? QColor(255, 255, 255, 30) : QColor(0, 0, 0, 35); }
+    static QColor axisLabelPenColor() { return isDark() ? QColor("#a0a5b5") : QColor("#444446"); }
+    static QColor bgDark() { return windowBg(); }
 };
 
 #endif // STYLE_THEME_H

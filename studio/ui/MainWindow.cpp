@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "ui/StyleTheme.h"
+#include <QMenuBar>
 #include "ui/DashboardView.h"
 #include "ui/DevicePickerView.h"
 #include "ui/EQPresetDetailView.h"
@@ -24,6 +25,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QToolBar>
+#include <QMenuBar>
 #include <QMenu>
 #include <QAction>
 #include <QTreeWidgetItem>
@@ -116,6 +118,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("CamillaDSP Monitor - Qt Edition");
 
     setupUi();
+    setupMenuBar();
     setupStatusBar();
     setupTrayIcon();
     setupShortcuts();
@@ -177,7 +180,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 void MainWindow::updateTheme() {
-    setStyleSheet(m_settings->darkMode ? StyleTheme::darkStylesheet() : StyleTheme::lightStylesheet());
+    StyleTheme::setTheme(m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
+    qApp->setStyleSheet(StyleTheme::currentStylesheet());
+    for (QWidget* w : qApp->allWidgets()) {
+        w->update();
+    }
 }
 
 void MainWindow::setupUi() {
@@ -313,6 +320,90 @@ void MainWindow::setupStatusBar() {
     m_runtimeUpdateTimer.setInterval(1000);
 }
 
+void MainWindow::setupMenuBar() {
+    auto bar = menuBar();
+
+    // 1. File Menu
+    auto fileMenu = bar->addMenu("&File");
+
+    m_actAddEqPreset = new QAction("New EQ Preset", this);
+    m_actAddEqPreset->setShortcuts({QKeySequence("Cmd+N"), QKeySequence("Ctrl+N")});
+    connect(m_actAddEqPreset, &QAction::triggered, [this]() {
+        m_pipeline->addEQPreset();
+        if (!m_pipeline->eqPresets.empty()) {
+            m_lastActiveTag = QString("eq_%1").arg(m_pipeline->eqPresets.back().id.toString());
+            handleNavigationTag(m_lastActiveTag);
+        }
+    });
+    fileMenu->addAction(m_actAddEqPreset);
+
+    m_actImportConv = new QAction("Import IR File(s)...", this);
+    m_actImportConv->setShortcuts({QKeySequence("Cmd+O"), QKeySequence("Ctrl+O")});
+    connect(m_actImportConv, &QAction::triggered, [this]() {
+        ConvolutionImportDlg dlg(m_pipeline, this);
+        dlg.exec();
+    });
+    fileMenu->addAction(m_actImportConv);
+
+    fileMenu->addSeparator();
+    auto quitAct = new QAction("Quit CamillaDSP Monitor", this);
+    quitAct->setShortcuts({QKeySequence("Cmd+Q"), QKeySequence("Ctrl+Q")});
+    connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
+    fileMenu->addAction(quitAct);
+
+    // 2. View Menu
+    auto viewMenu = bar->addMenu("&View");
+    auto setupViewAct = [this, viewMenu](const QString& title, const QList<QKeySequence>& seqs, const QString& tag) {
+        auto act = new QAction(title, this);
+        act->setShortcuts(seqs);
+        connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
+        viewMenu->addAction(act);
+    };
+
+    setupViewAct("Devices", {QKeySequence("Cmd+1"), QKeySequence("Ctrl+1")}, "devices");
+    setupViewAct("Dashboard", {QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
+    setupViewAct("Level Meters", {QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
+    setupViewAct("Spectrum", {QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
+    setupViewAct("General Settings", {QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "general_settings");
+
+    viewMenu->addSeparator();
+
+    auto miniAct = new QAction("Toggle MiniPlayer", this);
+    miniAct->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
+    connect(miniAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
+    viewMenu->addAction(miniAct);
+
+    // 3. Audio Menu
+    auto audioMenu = bar->addMenu("&Audio");
+    auto startStopAct = new QAction("Start/Stop Engine", this);
+    connect(startStopAct, &QAction::triggered, [this]() {
+        if (m_dspController->status == ProcessingState::Running) {
+            m_dspController->stopEngine();
+        } else {
+            m_dspController->startEngine();
+        }
+    });
+    audioMenu->addAction(startStopAct);
+
+    auto muteAct = new QAction("Toggle Mute", this);
+    muteAct->setShortcut(QKeySequence("Space"));
+    connect(muteAct, &QAction::triggered, [this]() {
+        auto focusW = QApplication::focusWidget();
+        for (QWidget* w = focusW; w; w = w->parentWidget()) {
+            if (qobject_cast<QLineEdit*>(w) ||
+                qobject_cast<QAbstractSpinBox*>(w) ||
+                qobject_cast<QTextEdit*>(w) ||
+                qobject_cast<QPlainTextEdit*>(w) ||
+                qobject_cast<QAbstractButton*>(w) ||
+                qobject_cast<QComboBox*>(w)) {
+                return;
+            }
+        }
+        toggleMute();
+    });
+    audioMenu->addAction(muteAct);
+}
+
 void MainWindow::setupTrayIcon() {
     m_trayIcon = new QSystemTrayIcon(this);
     m_trayIcon->setIcon(QIcon::fromTheme("audio-card", QIcon(":/icons/app.png")));
@@ -327,8 +418,11 @@ void MainWindow::setupTrayIcon() {
 
     m_trayMenu->addSeparator();
 
-    auto muteAct = m_trayMenu->addAction("Toggle Mute");
-    connect(muteAct, &QAction::triggered, this, &MainWindow::toggleMute);
+    m_trayMuteAction = m_trayMenu->addAction("Mute Audio");
+    m_trayMuteAction->setCheckable(true);
+    connect(m_trayMuteAction, &QAction::triggered, this, &MainWindow::toggleMute);
+
+    m_trayPresetSubMenu = m_trayMenu->addMenu("Active EQ Preset");
 
     m_trayMenu->addSeparator();
 
@@ -337,6 +431,69 @@ void MainWindow::setupTrayIcon() {
 
     m_trayIcon->setContextMenu(m_trayMenu);
     m_trayIcon->show();
+
+    updateTrayMenu();
+}
+
+void MainWindow::updateTrayMenu() {
+    if (!m_trayMuteAction || !m_trayPresetSubMenu) return;
+
+    bool muted = m_settings->getMuted(Fader::Main);
+    m_trayMuteAction->setChecked(muted);
+    m_trayMuteAction->setText(muted ? "🔊 Unmute Audio" : "🔇 Mute Audio");
+
+    m_trayPresetSubMenu->clear();
+
+    QUuid activeId;
+    for (const auto& stage : m_pipeline->stages) {
+        if (stage.type == StageType::EQ && stage.eqPresetId.has_value()) {
+            activeId = stage.eqPresetId.value();
+            break;
+        }
+    }
+    if (activeId.isNull() && !m_pipeline->eqPresets.empty()) {
+        activeId = m_pipeline->eqPresets.front().id;
+    }
+
+    if (m_pipeline->eqPresets.empty()) {
+        auto emptyAct = m_trayPresetSubMenu->addAction("No EQ Presets Available");
+        emptyAct->setEnabled(false);
+    } else {
+        for (const auto& preset : m_pipeline->eqPresets) {
+            auto act = m_trayPresetSubMenu->addAction(QString::fromStdString(preset.name));
+            act->setCheckable(true);
+            bool isActive = (preset.id == activeId);
+            act->setChecked(isActive);
+
+            QUuid id = preset.id;
+            connect(act, &QAction::triggered, [this, id]() {
+                selectActiveEQPreset(id);
+            });
+        }
+    }
+}
+
+void MainWindow::selectActiveEQPreset(const QUuid& presetId) {
+    bool foundEqStage = false;
+    for (auto& stage : m_pipeline->stages) {
+        if (stage.type == StageType::EQ) {
+            stage.eqPresetId = presetId;
+            foundEqStage = true;
+        }
+    }
+    if (!foundEqStage) {
+        PipelineStage newStage;
+        newStage.id = QUuid::createUuid();
+        newStage.name = "Equalizer";
+        newStage.type = StageType::EQ;
+        newStage.isEnabled = true;
+        newStage.eqPresetId = presetId;
+        m_pipeline->stages.push_back(newStage);
+    }
+    m_pipeline->save();
+    m_dspController->applyConfig();
+    updateStatusBar();
+    updateTrayMenu();
 }
 
 void MainWindow::setupShortcuts() {
@@ -358,6 +515,9 @@ void MainWindow::setupShortcuts() {
     connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     addAction(actMini);
 
+    if (m_actImportConv) addAction(m_actImportConv);
+    if (m_actAddEqPreset) addAction(m_actAddEqPreset);
+
     auto actMute = new QAction(this);
     actMute->setShortcut(QKeySequence("Space"));
     connect(actMute, &QAction::triggered, [this]() {
@@ -375,6 +535,22 @@ void MainWindow::setupShortcuts() {
         toggleMute();
     });
     addAction(actMute);
+
+    auto actEsc = new QAction(this);
+    actEsc->setShortcut(QKeySequence("Esc"));
+    connect(actEsc, &QAction::triggered, [this]() {
+        if (m_miniPlayer && m_miniPlayer->isVisible()) {
+            m_miniPlayer->hide();
+        } else {
+            auto focusW = QApplication::focusWidget();
+            if (focusW && !qobject_cast<QMainWindow*>(focusW)) {
+                focusW->clearFocus();
+            } else if (m_lastActiveTag != "dashboard") {
+                handleNavigationTag("dashboard");
+            }
+        }
+    });
+    addAction(actEsc);
 }
 
 void MainWindow::toggleMute() {
@@ -395,6 +571,11 @@ void MainWindow::updateMuteDisplay() {
         m_toolbarMuteBtn->setStyleSheet("background-color: #3a3a3c; color: white; font-weight: normal; padding: 4px 8px; border-radius: 4px;");
         m_statusMuteLabel->setText("Unmuted");
         m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
+    }
+
+    if (m_trayMuteAction) {
+        m_trayMuteAction->setChecked(muted);
+        m_trayMuteAction->setText(muted ? "🔊 Unmute Audio" : "🔇 Mute Audio");
     }
 }
 
@@ -427,8 +608,22 @@ void MainWindow::updateStatusBar() {
         m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
     }
 
+    QUuid activeId;
+    for (const auto& stage : m_pipeline->stages) {
+        if (stage.type == StageType::EQ && stage.eqPresetId.has_value()) {
+            activeId = stage.eqPresetId.value();
+            break;
+        }
+    }
     QString presetName = "Default";
-    if (!m_pipeline->eqPresets.empty()) {
+    if (!activeId.isNull()) {
+        for (const auto& eq : m_pipeline->eqPresets) {
+            if (eq.id == activeId) {
+                presetName = QString::fromStdString(eq.name);
+                break;
+            }
+        }
+    } else if (!m_pipeline->eqPresets.empty()) {
         presetName = QString::fromStdString(m_pipeline->eqPresets.front().name);
     }
     m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
@@ -877,6 +1072,7 @@ void MainWindow::onPipelineChanged() {
 
     // 3. Refresh sidebar items
     refreshSidebarItems();
+    updateTrayMenu();
 
     // 4. Retain current active view if valid; fallback to dashboard only if deleted
     if (tagStillValid) {

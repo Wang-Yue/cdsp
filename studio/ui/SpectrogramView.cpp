@@ -187,17 +187,18 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             double frac = (std::log10(target) - logMin) / (logMax - logMin);
             int y = plotH - static_cast<int>(frac * plotH);
 
-            p.setPen(QPen(QColor(255, 255, 255, 15), 1, Qt::DashLine));
+            p.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
             p.drawLine(marginL, y, w, y);
 
-            p.setPen(QColor("#8e8e93"));
+            p.setPen(StyleTheme::textSecondary());
             QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
             p.drawText(2, y + 4, label);
         }
 
         // Draw Time X-axis labels (0s to -10s)
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 1));
         p.drawLine(marginL, plotH, w, plotH);
+        p.setPen(StyleTheme::textSecondary());
         for (int sec : {0, -2, -4, -6, -8, -10}) {
             int x = marginL + plotW - static_cast<int>((-sec / 10.0) * plotW);
             p.drawText(x - 8, h - 4, QString("%1s").arg(sec));
@@ -228,7 +229,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         };
 
         // 1. Draw 3D floor grid lines (Time Grid Lines)
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 1));
         for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
             QPainterPath timeGridPath;
             double xFlat = leftPadding + fraction * drawWidth;
@@ -325,7 +326,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
 
         // 4. Draw frequency labels at the front (t = 1.0)
         p.setFont(QFont("sans-serif", 8));
-        p.setPen(QColor("#8e8e93"));
+        p.setPen(StyleTheme::textSecondary());
         for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
             double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
             double xFlat = leftPadding + binFrac * drawWidth;

@@ -84,10 +84,10 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         p.drawText(16, y + barHeight / 2 + 4, chLabel);
 
         // Background track
-        p.fillRect(xStart, y, barW, barHeight, QColor("#16161a"));
+        p.fillRect(xStart, y, barW, barHeight, StyleTheme::isDark() ? QColor("#16161a") : QColor("#e5e5ea"));
 
         // Tick Marks
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 1));
         for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
             int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
             p.drawLine(pos, y, pos, y + barHeight);
@@ -114,7 +114,7 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
 
         // Peak line indicator
         if (peakFrac > 0) {
-            p.setPen(QPen(QColor("#ffffff"), 2));
+            p.setPen(QPen(StyleTheme::isDark() ? QColor("#ffffff") : QColor("#1a1a1a"), 2));
             p.drawLine(peakX, y, peakX, y + barHeight);
         }
 
@@ -215,40 +215,56 @@ void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
     size_t capCount = st.captureRms.size();
     size_t pbCount = st.playbackRms.size();
 
-    int startX = 16;
-    int barW = 120;
-    int barH = 6;
+    size_t effectiveCap = (capCount > 0) ? std::min(capCount, (size_t)8) : 2;
+    size_t effectivePb = (pbCount > 0) ? std::min(pbCount, (size_t)8) : 2;
+
+    int statusAreaWidth = 160;
+    int reservedText = 130;
+    int availableWidth = std::max(100, w - statusAreaWidth - reservedText - 32);
+
+    size_t totalBars = effectiveCap + effectivePb;
+    int barW = std::clamp(availableWidth / static_cast<int>(totalBars), 24, 90);
+    int barH = 8;
+    int yPos = (height() - barH) / 2;
+
+    int startX = 12;
+
+    QColor trackBg = StyleTheme::isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25);
 
     // Draw Capture Meters (Mic icon + bars)
-    p.setFont(QFont("sans-serif", 9));
+    p.setFont(QFont("sans-serif", 9, QFont::Bold));
     p.setPen(StyleTheme::textSecondary());
-    p.drawText(startX, 22, "🎤 IN:");
+    p.drawText(startX, yPos + barH + 1, "🎤 IN:");
     startX += 45;
 
-    for (size_t i = 0; i < std::min(capCount, (size_t)4); ++i) {
-        p.fillRect(startX, 15, barW, barH, QColor(255, 255, 255, 20));
-        float val = i < st.capturePeak.size() ? st.capturePeak[i] : -100.0f;
-        float frac = normDB(val);
-        int fillW = static_cast<int>(frac * barW);
-        if (fillW > 0) {
-            p.fillRect(startX, 15, fillW, barH, QColor("#34c759"));
+    for (size_t i = 0; i < effectiveCap; ++i) {
+        p.fillRect(startX, yPos, barW, barH, trackBg);
+        if (i < st.capturePeak.size()) {
+            float val = st.capturePeak[i];
+            float frac = normDB(val);
+            int fillW = static_cast<int>(frac * barW);
+            if (fillW > 0) {
+                p.fillRect(startX, yPos, fillW, barH, QColor("#34c759"));
+            }
         }
-        startX += barW + 8;
+        startX += barW + 4;
     }
 
-    startX += 16;
+    startX += 12;
     // Draw Playback Meters (Speaker icon + bars)
-    p.drawText(startX, 22, "🔊 OUT:");
+    p.drawText(startX, yPos + barH + 1, "🔊 OUT:");
     startX += 55;
 
-    for (size_t i = 0; i < std::min(pbCount, (size_t)4); ++i) {
-        p.fillRect(startX, 15, barW, barH, QColor(255, 255, 255, 20));
-        float val = i < st.playbackPeak.size() ? st.playbackPeak[i] : -100.0f;
-        float frac = normDB(val);
-        int fillW = static_cast<int>(frac * barW);
-        if (fillW > 0) {
-            p.fillRect(startX, 15, fillW, barH, QColor("#007aff"));
+    for (size_t i = 0; i < effectivePb; ++i) {
+        p.fillRect(startX, yPos, barW, barH, trackBg);
+        if (i < st.playbackPeak.size()) {
+            float val = st.playbackPeak[i];
+            float frac = normDB(val);
+            int fillW = static_cast<int>(frac * barW);
+            if (fillW > 0) {
+                p.fillRect(startX, yPos, fillW, barH, QColor("#007aff"));
+            }
         }
-        startX += barW + 8;
+        startX += barW + 4;
     }
 }

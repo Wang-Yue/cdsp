@@ -2,6 +2,7 @@
 #include "ui/StyleTheme.h"
 #include <cmath>
 #include <QPainterPath>
+#include <QEvent>
 
 VectorScopeView::VectorScopeView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -40,6 +41,14 @@ void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParti
     update();
 }
 
+void VectorScopeView::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
+        m_persistenceBuffer = QImage();
+        update();
+    }
+}
+
 void VectorScopeView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
@@ -70,7 +79,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int centerRadius = std::min(w - 20, drawH) / 2;
         QPoint centerPt(w / 2, topMargin + drawH / 2);
 
-        bufPainter.setPen(QPen(QColor(255, 255, 255, 20), 1, Qt::DashLine));
+        bufPainter.setPen(QPen(StyleTheme::gridPenColor(), 1, Qt::DashLine));
         bufPainter.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
         bufPainter.drawLine(centerPt.x(), centerPt.y() - centerRadius, centerPt.x(), centerPt.y() + centerRadius);
 
@@ -178,16 +187,16 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barH = 6;
 
         p.setFont(QFont("sans-serif", 8, QFont::Bold));
-        p.setPen(QColor("#8e8e93"));
+        p.setPen(StyleTheme::textSecondary());
         p.drawText(barX - 16, barY + 7, "L");
         p.drawText(barX + barW + 6, barY + 7, "R");
 
-        p.setBrush(QColor(255, 255, 255, 25));
+        p.setBrush(StyleTheme::isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25));
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(barX, barY, barW, barH, 3, 3);
 
         // Center tick mark
-        p.setPen(QPen(QColor(255, 255, 255, 100), 1));
+        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
         p.drawLine(barX + barW / 2, barY - 2, barX + barW / 2, barY + barH + 2);
 
         // Dynamic Balance Marker
@@ -205,18 +214,18 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barH = 8;
 
         p.setFont(QFont("sans-serif", 8, QFont::Bold));
-        p.setPen(QColor("#8e8e93"));
+        p.setPen(StyleTheme::textSecondary());
         p.drawText(barX - 22, barY + 8, "-1");
         p.drawText(barX + barW / 2 - 4, barY + 8, "0");
         p.drawText(barX + barW + 4, barY + 8, "+1");
 
-        p.setBrush(QColor(255, 255, 255, 30));
+        p.setBrush(StyleTheme::isDark() ? QColor(255, 255, 255, 30) : QColor(0, 0, 0, 30));
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(barX, barY, barW, barH, 4, 4);
 
         // Center line (0 correlation)
         int centerX = barX + barW / 2;
-        p.setPen(QPen(QColor(255, 255, 255, 80), 1));
+        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
         p.drawLine(centerX, barY - 2, centerX, barY + barH + 2);
 
         // Indicator Bar fill from Center (0) to m_phaseCorrSmoothed

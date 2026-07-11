@@ -83,7 +83,9 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
             fillPath.lineTo(shiftX, h - shiftY);
             fillPath.closeSubpath();
 
-            p.fillPath(fillPath, QColor(22, 22, 26, 240));
+            QColor maskColor = StyleTheme::cardBg();
+            maskColor.setAlpha(240);
+            p.fillPath(fillPath, maskColor);
 
             double hue = 0.6 - 0.5 * (1.0 - progress);
             QColor sliceColor = QColor::fromHsvF(hue, 0.8, 0.9);

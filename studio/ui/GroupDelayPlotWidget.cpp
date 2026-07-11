@@ -1,4 +1,5 @@
 #include "ui/GroupDelayPlotWidget.h"
+#include "ui/StyleTheme.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <cmath>
@@ -47,10 +48,10 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double h = height();
 
     // Background
-    painter.fillRect(rect(), QColor(20, 20, 24));
+    painter.fillRect(rect(), StyleTheme::cardBg());
 
     if (!m_session || !m_session->measuredFR.has_value()) {
-        painter.setPen(QColor(160, 160, 160));
+        painter.setPen(StyleTheme::textSecondary());
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response data available for Group Delay plot.");
         return;
@@ -61,21 +62,22 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double scaleMs = autoScaleMs(fr, gd);
 
     // Center Line (0 ms)
-    painter.setPen(QPen(QColor(255, 255, 255, 50), 1.0));
+    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
     // Axis Labels
-    painter.setPen(QColor(160, 160, 160));
+    painter.setPen(StyleTheme::textSecondary());
     painter.drawText(QRectF(10, 8, 80, 16), Qt::AlignLeft, QString("+%1 ms").arg(scaleMs, 0, 'f', 1));
     painter.drawText(QRectF(10, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
     painter.drawText(QRectF(10, h - 22, 80, 16), Qt::AlignLeft, QString("-%1 ms").arg(scaleMs, 0, 'f', 1));
 
     // Frequency Grid
     std::vector<double> gridFreqs = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
-    painter.setPen(QPen(QColor(255, 255, 255, 25), 0.5));
     for (double f : gridFreqs) {
         double x = freqToX(f, w);
+        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
+        painter.setPen(StyleTheme::textSecondary());
         painter.drawText(QRectF(x + 2, h - 18, 50, 15), Qt::AlignLeft | Qt::AlignBottom,
                          f >= 1000 ? QString::number(f / 1000.0, 'g', 2) + "k" : QString::number(f));
     }

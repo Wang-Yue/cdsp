@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <QRadialGradient>
 #include <QLinearGradient>
+#include <QEvent>
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -80,6 +81,13 @@ void AnalogVUMeterView::onAnimTick() {
     }
 
     if (needUpdate) {
+        update();
+    }
+}
+
+void AnalogVUMeterView::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
         update();
     }
 }

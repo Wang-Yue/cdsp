@@ -67,7 +67,7 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
 
     // Zero axis line
     int midY = plotTop + plotH / 2;
-    p.setPen(QPen(QColor("#2e2e38"), 1));
+    p.setPen(QPen(StyleTheme::gridPenColor(), 1));
     p.drawLine(0, midY, w, midY);
 
     double maxVal = 1e-9;

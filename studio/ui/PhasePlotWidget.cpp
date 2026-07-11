@@ -96,10 +96,10 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     m_unwrapBtn->move(12, h - 34);
 
     // Background
-    painter.fillRect(rect(), QColor(20, 20, 24));
+    painter.fillRect(rect(), StyleTheme::cardBg());
 
     if (!m_session || !m_session->measuredFR.has_value()) {
-        painter.setPen(QColor(160, 160, 160));
+        painter.setPen(StyleTheme::textSecondary());
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response available for Phase plot.");
         return;
@@ -113,11 +113,12 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double spanDeg = maxDeg - minDeg;
 
     // Draw Grid Lines (Frequency & Phase)
-    painter.setPen(QPen(QColor(255, 255, 255, 25), 0.5));
     std::vector<double> gridFreqs = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
     for (double f : gridFreqs) {
         double x = freqToX(f, w);
+        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
+        painter.setPen(StyleTheme::textSecondary());
         painter.drawText(QRectF(x + 2, h - 18, 50, 15), Qt::AlignLeft | Qt::AlignBottom,
                          f >= 1000 ? QString::number(f / 1000.0, 'g', 2) + "k" : QString::number(f));
     }
@@ -129,9 +130,9 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     for (int deg = startDeg; deg <= endDeg; deg += static_cast<int>(degStep)) {
         double y = h * (1.0 - (static_cast<double>(deg) - minDeg) / spanDeg);
         if (y >= 0 && y <= h) {
-            painter.setPen(deg == 0 ? QPen(QColor(255, 255, 255, 60), 1.0) : QPen(QColor(255, 255, 255, 25), 0.5));
+            painter.setPen(deg == 0 ? QPen(StyleTheme::axisLabelPenColor(), 1.0) : QPen(StyleTheme::gridPenColor(), 0.5));
             painter.drawLine(QPointF(0, y), QPointF(w, y));
-            painter.setPen(QColor(160, 160, 160));
+            painter.setPen(StyleTheme::textSecondary());
             painter.drawText(QRectF(8, y - 12, 60, 14), Qt::AlignLeft | Qt::AlignVCenter, QString::number(deg) + "°");
         }
     }
@@ -190,16 +191,16 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
 
     // Legend
-    painter.fillRect(QRect(w - 200, 10, 190, 44), QColor(0, 0, 0, 150));
+    painter.fillRect(QRect(w - 200, 10, 190, 44), StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
     painter.setPen(QPen(QColor(0, 150, 255), 2));
     painter.drawLine(w - 190, 24, w - 165, 24);
-    painter.setPen(QColor(220, 220, 220));
+    painter.setPen(StyleTheme::textPrimary());
     painter.drawText(w - 155, 28, "Measured Phase");
 
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
         painter.setPen(QPen(QColor(255, 140, 0), 2));
         painter.drawLine(w - 190, 42, w - 165, 42);
-        painter.setPen(QColor(220, 220, 220));
+        painter.setPen(StyleTheme::textPrimary());
         painter.drawText(w - 155, 46, "Corrected (measured + EQ)");
     }
 }
