@@ -154,14 +154,6 @@ void StageDetailView::setupUi() {
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(scroll);
-
-    if (m_pipeline) {
-        connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, [this]() {
-            if (!m_isBuildingUi) {
-                refreshUi();
-            }
-        });
-    }
 }
 
 void StageDetailView::applyConfig() {
