@@ -639,6 +639,75 @@ static void format_state_event_payload(processing_state_t state,
            processing_state_to_string(state), reason_str);
 }
 
+static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, cmd, inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+  if (value_json) {
+    cJSON_AddItemToObject(inner, "value", value_json);
+  }
+  char* str = cJSON_PrintUnformatted(root);
+  if (str) {
+    dyn_string_printf(ds, "%s", str);
+    free(str);
+  }
+  cJSON_Delete(root);
+}
+
+static void reply_error(const char* cmd, const char* error_name,
+                        cJSON* error_value, dyn_string_t* ds) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, cmd, inner);
+  if (error_value) {
+    cJSON_AddItemToObject(inner, "result", error_value);
+  } else {
+    cJSON_AddStringToObject(inner, "result", error_name);
+  }
+  char* str = cJSON_PrintUnformatted(root);
+  if (str) {
+    dyn_string_printf(ds, "%s", str);
+    free(str);
+  }
+  cJSON_Delete(root);
+}
+
+/**
+ * @brief Parses a value node which may be a number or an array of three
+ * numbers.
+ *
+ * If the node is a number, it is treated as the relative change (delta).
+ * If the node is an array of three numbers `[delta, min, max]`, all three are
+ * parsed.
+ *
+ * @param node cJSON node to parse.
+ * @param out_delta Output for the delta value.
+ * @param out_min Output for the optional minimum value.
+ * @param out_max Output for the optional maximum value.
+ * @return true if parsing succeeded, false otherwise.
+ */
+static bool parse_value_with_optional_limits(cJSON* node, double* out_delta,
+                                             double* out_min, double* out_max) {
+  if (!node) return false;
+  if (cJSON_IsNumber(node)) {
+    *out_delta = node->valuedouble;
+    return true;
+  }
+  if (cJSON_IsArray(node) && cJSON_GetArraySize(node) >= 3) {
+    cJSON* d = cJSON_GetArrayItem(node, 0);
+    cJSON* mn = cJSON_GetArrayItem(node, 1);
+    cJSON* mx = cJSON_GetArrayItem(node, 2);
+    if (d && mn && mx && cJSON_IsNumber(d) && cJSON_IsNumber(mn) && cJSON_IsNumber(mx)) {
+      *out_delta = d->valuedouble;
+      *out_min = mn->valuedouble;
+      *out_max = mx->valuedouble;
+      return true;
+    }
+  }
+  return false;
+}
+
 typedef enum {
   WS_CMD_UNKNOWN = 0,
   WS_CMD_GET_VERSION,
@@ -1237,11 +1306,11 @@ static bool server_handle_adjust_volume_fader(
   if (!server || !server->engine || !server->engine->get_status ||
       !server->engine->get_status(server->engine->ctx, &status) ||
       status.state != PROCESSING_STATE_RUNNING) {
-    json_reply(cmd_name, "\"ProcessingNotRunningError\"", NULL, ds);
+    reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     return true;
   }
   if (!server->engine->get_fader_volume) {
-    json_reply(cmd_name, "\"UnknownError\"", NULL, ds);
+    reply_error(cmd_name, "UnknownError", NULL, ds);
     return true;
   }
 
@@ -1255,48 +1324,15 @@ static bool server_handle_adjust_volume_fader(
                                      false);
   }
 
-  char val[64];
-  if (fader == FADER_MAIN) {
-    snprintf(val, sizeof(val), "%.17g", new_vol);
+  if (strcmp(cmd_name, "AdjustVolume") == 0) {
+    reply_ok(cmd_name, cJSON_CreateNumber(new_vol), ds);
   } else {
-    snprintf(val, sizeof(val), "[%d,%.17g]", (int)fader, new_vol);
+    cJSON* arr = cJSON_CreateArray();
+    cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)fader));
+    cJSON_AddItemToArray(arr, cJSON_CreateNumber(new_vol));
+    reply_ok(cmd_name, arr, ds);
   }
-  json_reply(cmd_name, "\"Ok\"", val, ds);
   return true;
-}
-
-static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
-  cJSON* root = cJSON_CreateObject();
-  cJSON* inner = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, cmd, inner);
-  cJSON_AddStringToObject(inner, "result", "Ok");
-  if (value_json) {
-    cJSON_AddItemToObject(inner, "value", value_json);
-  }
-  char* str = cJSON_PrintUnformatted(root);
-  if (str) {
-    dyn_string_printf(ds, "%s", str);
-    free(str);
-  }
-  cJSON_Delete(root);
-}
-
-static void reply_error(const char* cmd, const char* error_name,
-                        cJSON* error_value, dyn_string_t* ds) {
-  cJSON* root = cJSON_CreateObject();
-  cJSON* inner = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, cmd, inner);
-  if (error_value) {
-    cJSON_AddItemToObject(inner, "result", error_value);
-  } else {
-    cJSON_AddStringToObject(inner, "result", error_name);
-  }
-  char* str = cJSON_PrintUnformatted(root);
-  if (str) {
-    dyn_string_printf(ds, "%s", str);
-    free(str);
-  }
-  cJSON_Delete(root);
 }
 
 static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
@@ -1456,7 +1492,10 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
                          ? server->engine->get_fader_volume(server->engine->ctx,
                                                             (fader_t)idx)
                          : 0.0;
-        reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
+        cJSON* arr = cJSON_CreateArray();
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(vol));
+        reply_ok(cmd_name, arr, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
       }
@@ -1572,7 +1611,10 @@ static void handle_cmd_get_fader_mute(websocket_server_t* server,
                         ? server->engine->is_fader_muted(server->engine->ctx,
                                                          (fader_t)idx)
                         : false;
-        reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
+        cJSON* arr = cJSON_CreateArray();
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
+        cJSON_AddItemToArray(arr, cJSON_CreateBool(mute));
+        reply_ok(cmd_name, arr, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
       }
@@ -1673,29 +1715,7 @@ static void handle_cmd_adjust_volume(websocket_server_t* server, int client_idx,
   double delta = 0.0;
   double min_vol = -150.0;
   double max_vol = 50.0;
-  bool ok = false;
-  if (arg && cJSON_IsNumber(arg)) {
-    delta = arg->valuedouble;
-    ok = true;
-  } else if (arg && cJSON_IsArray(arg)) {
-    int size = cJSON_GetArraySize(arg);
-    if (size >= 1) {
-      cJSON* d_node = cJSON_GetArrayItem(arg, 0);
-      if (d_node && cJSON_IsNumber(d_node)) {
-        delta = d_node->valuedouble;
-        ok = true;
-      }
-    }
-    if (size >= 2) {
-      cJSON* min_node = cJSON_GetArrayItem(arg, 1);
-      if (min_node && cJSON_IsNumber(min_node)) min_vol = min_node->valuedouble;
-    }
-    if (size >= 3) {
-      cJSON* max_node = cJSON_GetArrayItem(arg, 2);
-      if (max_node && cJSON_IsNumber(max_node)) max_vol = max_node->valuedouble;
-    }
-  }
-  if (ok) {
+  if (parse_value_with_optional_limits(arg, &delta, &min_vol, &max_vol)) {
     server_handle_adjust_volume_fader(server, FADER_MAIN, delta, min_vol,
                                       max_vol, ds, cmd_name);
   } else {
@@ -1715,25 +1735,12 @@ static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
   double min_vol = -150.0;
   double max_vol = 50.0;
   bool ok = false;
-  if (arg && cJSON_IsArray(arg)) {
-    int size = cJSON_GetArraySize(arg);
-    if (size >= 2) {
-      cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-      cJSON* d_node = cJSON_GetArrayItem(arg, 1);
-      if (idx_node && d_node && cJSON_IsNumber(idx_node) &&
-          cJSON_IsNumber(d_node)) {
-        idx = idx_node->valueint;
-        delta = d_node->valuedouble;
-        ok = true;
-      }
-    }
-    if (size >= 3) {
-      cJSON* min_node = cJSON_GetArrayItem(arg, 2);
-      if (min_node && cJSON_IsNumber(min_node)) min_vol = min_node->valuedouble;
-    }
-    if (size >= 4) {
-      cJSON* max_node = cJSON_GetArrayItem(arg, 3);
-      if (max_node && cJSON_IsNumber(max_node)) max_vol = max_node->valuedouble;
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
+    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* val_limits = cJSON_GetArrayItem(arg, 1);
+    if (idx_node && cJSON_IsNumber(idx_node)) {
+      idx = idx_node->valueint;
+      ok = parse_value_with_optional_limits(val_limits, &delta, &min_vol, &max_vol);
     }
   }
   if (ok) {
@@ -1933,12 +1940,7 @@ static void handle_cmd_get_previous_config(websocket_server_t* server,
     server->engine->get_previous_config_json(server->engine->ctx, &prev);
   }
   if (prev) {
-    cJSON* prev_obj = cJSON_Parse(prev);
-    if (prev_obj) {
-      reply_ok(cmd_name, prev_obj, ds);
-    } else {
-      reply_ok(cmd_name, cJSON_CreateNull(), ds);
-    }
+    reply_ok(cmd_name, cJSON_CreateString(prev), ds);
     free(prev);
   } else {
     reply_ok(cmd_name, cJSON_CreateNull(), ds);
@@ -1993,12 +1995,7 @@ static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
     }
   }
   if (json) {
-    cJSON* config_obj = cJSON_Parse(json);
-    if (config_obj) {
-      reply_ok(cmd_name, config_obj, ds);
-    } else {
-      reply_error(cmd_name, "UnknownError", NULL, ds);
-    }
+    reply_ok(cmd_name, cJSON_CreateString(json), ds);
     free(json);
   } else {
     cJSON* err = cJSON_CreateObject();
@@ -2360,7 +2357,7 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
     config_error_t cerr;
     memset(&cerr, 0, sizeof(cerr));
     if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
-      reply_ok(cmd_name, NULL, ds);
+      reply_ok(cmd_name, cJSON_CreateString(config_json), ds);
       dsp_config_free(parsed);
     } else {
       cJSON* err = cJSON_CreateObject();

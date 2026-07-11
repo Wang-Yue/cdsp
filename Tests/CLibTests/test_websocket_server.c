@@ -512,4 +512,55 @@ TEST(test_websocket_patch_config) {
   websocket_server_free(server);
 }
 
+TEST(test_websocket_format_alignments) {
+  websocket_server_t* server = websocket_server_create(54323, "127.0.0.1");
+  websocket_server_set_engine(server, &mock_engine);
+
+  mock_active_config = strdup("{\"my_config\": true}");
+  char resp[4096];
+
+  // 1. GetConfig value format (should be a JSON string, not parsed object)
+  websocket_server_handle_command(server, 0, "\"GetConfig\"", resp, sizeof(resp));
+  ASSERT_TRUE(strstr(resp, "\"GetConfig\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"value\":\"{\\\"my_config\\\": true}\"") != NULL ||
+              strstr(resp, "\"value\":\"{\\\"my_config\\\":true}\"") != NULL);
+
+  // 2. ReadConfigJson value format (should return input config string as value)
+  const char* valid_cfg = "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,\\\"capture\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2},\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2}}}";
+  char read_cmd[1024];
+  snprintf(read_cmd, sizeof(read_cmd), "{\"ReadConfigJson\":\"%s\"}", valid_cfg);
+  websocket_server_handle_command(server, 0, read_cmd, resp, sizeof(resp));
+  ASSERT_TRUE(strstr(resp, "\"ReadConfigJson\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
+  // Unescape the string to search inside resp
+  ASSERT_TRUE(strstr(resp, "\\\"samplerate\\\":44100") != NULL);
+
+  // 3. GetFaderVolume value format (should be [idx, vol] array)
+  mock_params = processing_parameters_create(2, 2);
+  websocket_server_handle_command(server, 0, "{\"GetFaderVolume\":0}", resp, sizeof(resp));
+  ASSERT_TRUE(strstr(resp, "\"GetFaderVolume\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"value\":[0,0]") != NULL);
+
+  // 4. GetFaderMute value format (should be [idx, mute] array)
+  websocket_server_handle_command(server, 0, "{\"GetFaderMute\":0}", resp, sizeof(resp));
+  ASSERT_TRUE(strstr(resp, "\"GetFaderMute\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"value\":[0,false]") != NULL);
+
+  // 5. AdjustFaderVolume with optional limits in nested array format: [0, [2.5, -30.0, 10.0]]
+  websocket_server_handle_command(server, 0, "{\"AdjustFaderVolume\":[0, [2.5, -30.0, 10.0]]}", resp, sizeof(resp));
+  ASSERT_TRUE(strstr(resp, "\"AdjustFaderVolume\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"Ok\"") != NULL);
+  ASSERT_TRUE(strstr(resp, "\"value\":[0,2.5]") != NULL);
+
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+  free(mock_active_config);
+  mock_active_config = NULL;
+
+  websocket_server_free(server);
+}
+
 TEST_MAIN()
