@@ -353,7 +353,7 @@ void spsc_queue_drain(spsc_queue_t* queue);
  * the IEEE-754 bit pattern via `_Atomic uint64_t`.
  */
 typedef struct {
-  _Atomic uint64_t bits; /**< Atomic bits storing the double representation. */
+  _Atomic(uint64_t) bits; /**< Atomic bits storing the double representation. */
 } atomic_double_t;
 
 /**
