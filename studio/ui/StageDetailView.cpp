@@ -155,6 +155,7 @@ void StageDetailView::setupUi() {
 }
 
 void StageDetailView::applyConfig() {
+    if (m_isBuildingUi) return;
     m_pipeline->save();
     emit m_pipeline->pipelineChanged();
     m_dspController->applyConfig();
@@ -167,12 +168,11 @@ void StageDetailView::refreshUi() {
     m_nameEdit->setText(QString::fromStdString(stage.name));
     m_enabledCheck->setChecked(stage.isEnabled);
 
-    QMetaObject::invokeMethod(this, [this]() {
-        buildStageOptionsUi();
-    }, Qt::QueuedConnection);
+    buildStageOptionsUi();
 }
 
 void StageDetailView::buildStageOptionsUi() {
+    m_isBuildingUi = true;
     auto containerLayout = qobject_cast<QVBoxLayout*>(m_optionsContainer->layout());
     QLayoutItem* item;
     while ((item = containerLayout->takeAt(0)) != nullptr) {
@@ -180,7 +180,10 @@ void StageDetailView::buildStageOptionsUi() {
         delete item;
     }
 
-    if (m_stageIndex >= m_pipeline->stages.size()) return;
+    if (m_stageIndex >= m_pipeline->stages.size()) {
+        m_isBuildingUi = false;
+        return;
+    }
     auto& stage = m_pipeline->stages[m_stageIndex];
 
     int incomingChannels = (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
@@ -1611,4 +1614,5 @@ void StageDetailView::buildStageOptionsUi() {
 
     default: break;
     }
+    m_isBuildingUi = false;
 }

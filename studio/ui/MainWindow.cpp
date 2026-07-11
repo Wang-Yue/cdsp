@@ -69,7 +69,7 @@ protected:
             m_tree->setCurrentItem(m_item);
         }
         if (m_onRowClick) m_onRowClick();
-        QWidget::mousePressEvent(event);
+        event->accept();
     }
 
     void contextMenuEvent(QContextMenuEvent* event) override {

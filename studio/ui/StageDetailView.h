@@ -65,6 +65,7 @@ private:
     QLineEdit* m_nameEdit;
     QCheckBox* m_enabledCheck;
     QWidget* m_optionsContainer;
+    bool m_isBuildingUi = false;
 
     void setupUi();
     void buildStageOptionsUi();
