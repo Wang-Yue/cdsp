@@ -115,6 +115,14 @@ typedef struct {
 typedef struct app_logger_s app_logger_t;
 
 /**
+ * @brief Eagerly initializes the logger singleton and background thread.
+ *
+ * Calling this before logging ensures that the very first log statement is
+ * 100% allocation-free and produces no thread startup overhead.
+ */
+void app_logger_init(void);
+
+/**
  * @brief Gets the shared singleton instance of the logger.
  * @return Pointer to the shared app_logger_t instance.
  */

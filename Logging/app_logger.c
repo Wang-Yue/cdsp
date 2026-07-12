@@ -346,10 +346,14 @@ static void init_shared_logger(void) {
   atomic_init(&g_shared_logger->write_index, 0);
   atomic_init(&g_shared_logger->read_index, 0);
   atomic_init(&g_shared_logger->should_exit, false);
-  atomic_init(&g_shared_logger->is_started, false);
+  atomic_init(&g_shared_logger->is_started, true);
   g_shared_logger->semaphore = cdsp_sem_create();
   pthread_mutex_init(&g_shared_logger->worker_mutex, NULL);
+  pthread_create(&g_shared_logger->worker_thread, NULL, worker_thread_func,
+                 g_shared_logger);
 }
+
+void app_logger_init(void) { (void)app_logger_get_shared(); }
 
 app_logger_t* app_logger_get_shared(void) {
   pthread_once(&g_logger_once, init_shared_logger);
