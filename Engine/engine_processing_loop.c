@@ -283,7 +283,11 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // using a short sleep to avoid spinning and wasting CPU.
     while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
       if (engine_shared_state_get_stop_requested(loop->shared)) {
-        break;
+        processing_stop_reason_t reason =
+            engine_shared_state_get_stop_reason(loop->shared);
+        if (reason.type != STOP_REASON_DONE) {
+          break;
+        }
       }
       engine_yield();
     }

@@ -290,7 +290,12 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     // Push the chunk pointer into the bounded lock-free SPSC queue.
     if (engine_state_machine_get_state(loop->state_machine) !=
         PROCESSING_STATE_PAUSED) {
-      engine_shared_state_enqueue_captured(loop->shared, chunk);
+      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+        if (engine_shared_state_get_stop_requested(loop->shared)) {
+          break;
+        }
+        engine_yield();
+      }
     }
   }
 
