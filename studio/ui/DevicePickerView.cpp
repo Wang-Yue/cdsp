@@ -1299,7 +1299,6 @@ void DevicePickerView::refreshUi() {
     m_queueLimitSpin->setValue(m_settings->queuelimit);
     m_stopOnRateChangeCheck->setChecked(m_settings->stopOnRateChange);
 
-    m_measureIntervalSpin->setValue(m_settings->rateMeasureInterval);
     m_measureIntervalSlider->setValue(static_cast<int>(m_settings->rateMeasureInterval * 10.0));
     m_measureIntervalValLabel->setText(QString("%1 s").arg(m_settings->rateMeasureInterval, 0, 'f', 1));
 

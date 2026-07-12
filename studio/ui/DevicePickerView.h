@@ -35,102 +35,101 @@ private:
     bool m_isRefreshing = false;
 
     // Capture Controls
-    QComboBox* m_capBackendCombo;
-    QStackedWidget* m_capStack;
+    QComboBox* m_capBackendCombo = nullptr;
+    QStackedWidget* m_capStack = nullptr;
 
     // Capture CoreAudio
-    QWidget* m_capWarningWidget;
-    QComboBox* m_capDeviceCombo;
-    QComboBox* m_capDevChannelsCombo;
-    QSpinBox* m_capDevChannelsSpin;
-    QSpinBox* m_capStreamChannelsSpin;
-    QComboBox* m_capRateCombo;
-    QLabel* m_capRateLabel;
-    QComboBox* m_capFormatCombo;
-    QLabel* m_capFormatLabel;
-    QCheckBox* m_bypassDoPCheck;
-    QLabel* m_dopCutoffLabel;
-    QComboBox* m_dopCutoffCombo;
-    QLabel* m_dopCutoffHint;
+    QWidget* m_capWarningWidget = nullptr;
+    QComboBox* m_capDeviceCombo = nullptr;
+    QComboBox* m_capDevChannelsCombo = nullptr;
+    QSpinBox* m_capDevChannelsSpin = nullptr;
+    QSpinBox* m_capStreamChannelsSpin = nullptr;
+    QComboBox* m_capRateCombo = nullptr;
+    QLabel* m_capRateLabel = nullptr;
+    QComboBox* m_capFormatCombo = nullptr;
+    QLabel* m_capFormatLabel = nullptr;
+    QCheckBox* m_bypassDoPCheck = nullptr;
+    QLabel* m_dopCutoffLabel = nullptr;
+    QComboBox* m_dopCutoffCombo = nullptr;
+    QLabel* m_dopCutoffHint = nullptr;
 
     // Capture File (RawFile & WavFile)
-    QLineEdit* m_capRawFilePathEdit;
-    QComboBox* m_capRawFileFormatCombo;
-    QSpinBox* m_capRawFileChannelsSpin;
-    QSpinBox* m_capRawSkipBytesSpin;
-    QSpinBox* m_capRawReadBytesSpin;
-    QSpinBox* m_capRawExtraSamplesSpin;
+    QLineEdit* m_capRawFilePathEdit = nullptr;
+    QComboBox* m_capRawFileFormatCombo = nullptr;
+    QSpinBox* m_capRawFileChannelsSpin = nullptr;
+    QSpinBox* m_capRawSkipBytesSpin = nullptr;
+    QSpinBox* m_capRawReadBytesSpin = nullptr;
+    QSpinBox* m_capRawExtraSamplesSpin = nullptr;
 
-    QLineEdit* m_capWavFilePathEdit;
-    QSpinBox* m_capWavSkipBytesSpin;
-    QSpinBox* m_capWavReadBytesSpin;
-    QSpinBox* m_capWavExtraSamplesSpin;
+    QLineEdit* m_capWavFilePathEdit = nullptr;
+    QSpinBox* m_capWavSkipBytesSpin = nullptr;
+    QSpinBox* m_capWavReadBytesSpin = nullptr;
+    QSpinBox* m_capWavExtraSamplesSpin = nullptr;
 
     // Capture Generator
-    QComboBox* m_genTypeCombo;
-    QSpinBox* m_genChannelsSpin;
-    QLabel* m_genFreqLabel;
-    QDoubleSpinBox* m_genFreqSpin;
-    QSlider* m_genFreqSlider;
-    QDoubleSpinBox* m_genLevelSpin;
-    QSlider* m_genLevelSlider;
+    QComboBox* m_genTypeCombo = nullptr;
+    QSpinBox* m_genChannelsSpin = nullptr;
+    QLabel* m_genFreqLabel = nullptr;
+    QDoubleSpinBox* m_genFreqSpin = nullptr;
+    QSlider* m_genFreqSlider = nullptr;
+    QDoubleSpinBox* m_genLevelSpin = nullptr;
+    QSlider* m_genLevelSlider = nullptr;
 
     // Playback Controls
-    QComboBox* m_pbBackendCombo;
-    QStackedWidget* m_pbStack;
+    QComboBox* m_pbBackendCombo = nullptr;
+    QStackedWidget* m_pbStack = nullptr;
 
     // Capture WASAPI / ASIO / ALSA / Pulse
-    QCheckBox* m_capWasapiExclusiveCheck;
-    QCheckBox* m_capWasapiLoopbackCheck;
-    QCheckBox* m_capWasapiPollingCheck;
-    QCheckBox* m_capAlsaStopInactiveCheck;
-    QLineEdit* m_capAlsaLinkVolumeEdit;
-    QLineEdit* m_capAlsaLinkMuteEdit;
-    QCheckBox* m_capPulseStopInactiveCheck;
-    QLineEdit* m_capPulseLinkVolumeEdit;
-    QLineEdit* m_capPulseLinkMuteEdit;
+    QCheckBox* m_capWasapiExclusiveCheck = nullptr;
+    QCheckBox* m_capWasapiLoopbackCheck = nullptr;
+    QCheckBox* m_capWasapiPollingCheck = nullptr;
+    QCheckBox* m_capAlsaStopInactiveCheck = nullptr;
+    QLineEdit* m_capAlsaLinkVolumeEdit = nullptr;
+    QLineEdit* m_capAlsaLinkMuteEdit = nullptr;
+    QCheckBox* m_capPulseStopInactiveCheck = nullptr;
+    QLineEdit* m_capPulseLinkVolumeEdit = nullptr;
+    QLineEdit* m_capPulseLinkMuteEdit = nullptr;
 
     // Playback CoreAudio / WASAPI / ASIO / ALSA / Pulse
-    QWidget* m_pbWarningWidget;
-    QComboBox* m_pbDeviceCombo;
-    QComboBox* m_pbDevChannelsCombo;
-    QSpinBox* m_pbDevChannelsSpin;
-    QSpinBox* m_pbStreamChannelsSpin;
-    QComboBox* m_pbRateCombo;
-    QComboBox* m_pbFormatCombo;
-    QLabel* m_pbFormatLabel;
-    QCheckBox* m_exclusiveModeCheck;
-    QLabel* m_exclusiveModeHint;
-    QCheckBox* m_pbWasapiPollingCheck;
-    QCheckBox* m_pbAlsaStopInactiveCheck;
-    QLineEdit* m_pbAlsaLinkVolumeEdit;
-    QLineEdit* m_pbAlsaLinkMuteEdit;
-    QCheckBox* m_pbPulseStopInactiveCheck;
-    QLineEdit* m_pbPulseLinkVolumeEdit;
-    QLineEdit* m_pbPulseLinkMuteEdit;
-    QCheckBox* m_outputDoPCheck;
-    QLabel* m_sdmFilterLabel;
-    QComboBox* m_sdmFilterCombo;
-    QLabel* m_pbDopHintLabel;
+    QWidget* m_pbWarningWidget = nullptr;
+    QComboBox* m_pbDeviceCombo = nullptr;
+    QComboBox* m_pbDevChannelsCombo = nullptr;
+    QSpinBox* m_pbDevChannelsSpin = nullptr;
+    QSpinBox* m_pbStreamChannelsSpin = nullptr;
+    QComboBox* m_pbRateCombo = nullptr;
+    QComboBox* m_pbFormatCombo = nullptr;
+    QLabel* m_pbFormatLabel = nullptr;
+    QCheckBox* m_exclusiveModeCheck = nullptr;
+    QLabel* m_exclusiveModeHint = nullptr;
+    QCheckBox* m_pbWasapiPollingCheck = nullptr;
+    QCheckBox* m_pbAlsaStopInactiveCheck = nullptr;
+    QLineEdit* m_pbAlsaLinkVolumeEdit = nullptr;
+    QLineEdit* m_pbAlsaLinkMuteEdit = nullptr;
+    QCheckBox* m_pbPulseStopInactiveCheck = nullptr;
+    QLineEdit* m_pbPulseLinkVolumeEdit = nullptr;
+    QLineEdit* m_pbPulseLinkMuteEdit = nullptr;
+    QCheckBox* m_outputDoPCheck = nullptr;
+    QLabel* m_sdmFilterLabel = nullptr;
+    QComboBox* m_sdmFilterCombo = nullptr;
+    QLabel* m_pbDopHintLabel = nullptr;
 
     // Playback File
-    QLineEdit* m_pbRawFilePathEdit;
-    QComboBox* m_pbRawFileFormatCombo;
-    QSpinBox* m_pbRawFileChannelsSpin;
+    QLineEdit* m_pbRawFilePathEdit = nullptr;
+    QComboBox* m_pbRawFileFormatCombo = nullptr;
+    QSpinBox* m_pbRawFileChannelsSpin = nullptr;
 
     // Processing Settings
-    QComboBox* m_chunkSizeCombo;
-    QLabel* m_latencyLabel;
-    QCheckBox* m_enableRateAdjustCheck;
-    QLabel* m_rateAdjustSub;
-    QSpinBox* m_queueLimitSpin;
-    QCheckBox* m_stopOnRateChangeCheck;
-    QDoubleSpinBox* m_measureIntervalSpin;
-    QSlider* m_measureIntervalSlider;
-    QLabel* m_measureIntervalValLabel;
-    QCheckBox* m_multithreadedCheck;
-    QWidget* m_workerThreadsRow;
-    QSpinBox* m_workerThreadsSpin;
+    QComboBox* m_chunkSizeCombo = nullptr;
+    QLabel* m_latencyLabel = nullptr;
+    QCheckBox* m_enableRateAdjustCheck = nullptr;
+    QLabel* m_rateAdjustSub = nullptr;
+    QSpinBox* m_queueLimitSpin = nullptr;
+    QCheckBox* m_stopOnRateChangeCheck = nullptr;
+    QSlider* m_measureIntervalSlider = nullptr;
+    QLabel* m_measureIntervalValLabel = nullptr;
+    QCheckBox* m_multithreadedCheck = nullptr;
+    QWidget* m_workerThreadsRow = nullptr;
+    QSpinBox* m_workerThreadsSpin = nullptr;
 
     void setupUi();
     QWidget* createCapCoreAudioView();
