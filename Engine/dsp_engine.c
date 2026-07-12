@@ -169,9 +169,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
         return true;
       } else {
         // Hot reload failed. Stop and clean up the core before failing.
-        dsp_engine_core_stop(
+        dsp_engine_core_stop_and_free(
             engine->core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
-        dsp_engine_core_free(engine->core);
         engine->core = NULL;
         if (err) *err = berr;
         return false;
@@ -181,26 +180,27 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
 
   // 2. Cold Reload:
   // If hot reload is not possible (device configuration changed or core is not
-  // running), we must stop and destroy the existing core, which shuts down the
-  // capture/playback loops.
-  if (engine->core &&
-      dsp_engine_core_get_state(engine->core) != PROCESSING_STATE_INACTIVE) {
-    dsp_engine_core_stop(engine->core,
-                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
-  }
+  // running), we must stop and destroy the existing core session.
   if (engine->core) {
-    dsp_engine_core_free(engine->core);
+    dsp_engine_core_stop_and_free(
+        engine->core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     engine->core = NULL;
   }
 
-  // Create the new engine core with the new configuration
-  dsp_engine_core_t* core = dsp_engine_core_create(config);
+  // Resize history buffers to match the new channel counts
+  audio_history_buffer_reset(
+      engine->capture_buffer,
+      capture_device_config_get_channels(&config->devices.capture));
+  audio_history_buffer_reset(
+      engine->playback_buffer,
+      playback_device_config_get_channels(&config->devices.playback));
+
+  // Create & start the new engine core session with the new configuration
+  dsp_engine_core_t* core = dsp_engine_core_create_and_start(
+      config, engine_on_chunk_captured_callback, engine->capture_buffer,
+      engine_on_chunk_processed_callback, engine->playback_buffer, err);
   if (!core) {
     dsp_config_free(config);
-    if (err) {
-      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-      snprintf(err->message, sizeof(err->message), "Failed to create core");
-    }
     return false;
   }
 
@@ -215,28 +215,6 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
     processing_parameters_set_current_volume_for_fader(core_params, vol,
                                                        (fader_t)i);
     processing_parameters_set_muted_for_fader(core_params, mute, (fader_t)i);
-  }
-
-  // Resize history buffers to match the new channel counts
-  audio_history_buffer_reset(
-      engine->capture_buffer,
-      capture_device_config_get_channels(&config->devices.capture));
-  audio_history_buffer_reset(
-      engine->playback_buffer,
-      playback_device_config_get_channels(&config->devices.playback));
-
-  // Connect callbacks to feed captured/playback data chunks into history
-  // buffers
-  dsp_engine_core_set_chunk_callbacks(
-      core, engine_on_chunk_captured_callback, engine->capture_buffer,
-      engine_on_chunk_processed_callback, engine->playback_buffer);
-
-  // Start the audio engine core (spawns capture & playback loops/threads)
-  audio_backend_error_t start_err;
-  if (!dsp_engine_core_start(core, &start_err)) {
-    dsp_engine_core_free(core);
-    if (err) *err = start_err;
-    return false;
   }
 
   engine->core = core;
@@ -269,9 +247,8 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
   memset(&cerr, 0, sizeof(cerr));
   if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
     if (engine->core) {
-      dsp_engine_core_stop(
+      dsp_engine_core_stop_and_free(
           engine->core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
-      dsp_engine_core_free(engine->core);
       engine->core = NULL;
     }
     if (err) {
@@ -299,17 +276,11 @@ void dsp_engine_stop(dsp_engine_t* engine) {
   pthread_mutex_lock(&engine->state_mutex);
   if (engine->core) {
     dsp_engine_core_collect_garbage(engine->core);
-  }
-  if (engine->core &&
-      dsp_engine_core_get_state(engine->core) != PROCESSING_STATE_INACTIVE) {
     processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
     dsp_engine_core_is_stop_requested(engine->core, &reason);
-    dsp_engine_core_stop(engine->core, reason);
     engine->last_stop_reason = reason;
     engine->has_last_stop_reason = true;
-  }
-  if (engine->core) {
-    dsp_engine_core_free(engine->core);
+    dsp_engine_core_stop_and_free(engine->core, reason);
     engine->core = NULL;
   }
   pthread_mutex_unlock(&engine->state_mutex);

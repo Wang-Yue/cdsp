@@ -53,12 +53,23 @@
 typedef struct dsp_engine_core dsp_engine_core_t;
 
 /**
- * @brief Create a new DSP engine core.
+ * @brief Creates and starts a new DSP engine core session.
  *
- * @param config Configuration to initialize the core with.
- * @return Pointer to the created core, or NULL on failure.
+ * Allocates all shared state, pre-allocates chunk pools, opens audio backends,
+ * builds the processing pipeline, and spawns the 3 audio worker threads.
+ *
+ * @param config Configuration to initialize the core session with.
+ * @param on_captured Callback invoked after a chunk is captured.
+ * @param captured_ctx Context pointer passed to on_captured.
+ * @param on_processed Callback invoked after a chunk is processed.
+ * @param processed_ctx Context pointer passed to on_processed.
+ * @param err Optional pointer to receive error details on failure.
+ * @return Pointer to the running core session, or NULL on failure.
  */
-dsp_engine_core_t* dsp_engine_core_create(dsp_config_t* config);
+dsp_engine_core_t* dsp_engine_core_create_and_start(
+    dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
+    chunk_callback_t on_processed, void* processed_ctx,
+    audio_backend_error_t* err);
 
 /**
  * @brief Get the current configuration of the engine core.
@@ -78,21 +89,6 @@ processing_parameters_t* dsp_engine_core_get_processing_params(
     dsp_engine_core_t* core);
 
 /**
- * @brief Set the chunk visualization callbacks on the engine core.
- *
- * @param core Pointer to the core instance.
- * @param on_captured Callback invoked after a chunk is captured.
- * @param captured_ctx Context pointer passed to on_captured.
- * @param on_processed Callback invoked after a chunk is processed.
- * @param processed_ctx Context pointer passed to on_processed.
- */
-void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
-                                         chunk_callback_t on_captured,
-                                         void* captured_ctx,
-                                         chunk_callback_t on_processed,
-                                         void* processed_ctx);
-
-/**
  * @brief Checks if a stop has been requested by any engine loop thread or
  * caller.
  *
@@ -103,12 +99,6 @@ void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
  */
 bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
                                        processing_stop_reason_t* out_reason);
-
-/**
- * @brief Free the DSP engine core.
- * @param core Pointer to the core instance.
- */
-void dsp_engine_core_free(dsp_engine_core_t* core);
 
 /**
  * @brief Get the current processing state.
@@ -128,22 +118,14 @@ const processing_stop_reason_t* dsp_engine_core_get_stop_reason(
     const dsp_engine_core_t* core);
 
 /**
- * @brief Start the DSP engine processing threads.
+ * @brief Stops audio threads, closes devices, and frees the DSP engine core
+ * session.
  *
- * @param core Pointer to the core instance.
- * @param err Pointer to store backend errors if starting fails.
- * @return True on success, false on failure.
- */
-bool dsp_engine_core_start(dsp_engine_core_t* core, audio_backend_error_t* err);
-
-/**
- * @brief Stop the DSP engine processing threads.
- *
- * @param core Pointer to the core instance.
+ * @param core Pointer to the core session to stop and free.
  * @param reason Reason for stopping.
  */
-void dsp_engine_core_stop(dsp_engine_core_t* core,
-                          processing_stop_reason_t reason);
+void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
+                                   processing_stop_reason_t reason);
 
 /**
  * @brief Reload the configuration.
