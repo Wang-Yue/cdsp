@@ -78,13 +78,29 @@ Fader MiniPlayerView::currentFader() const {
 
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
-        if (windowHandle()) {
-            windowHandle()->startSystemMove();
+        QWidget* child = childAt(event->position().toPoint());
+        if (!child || child == this || child == m_pipelineMiniCard) {
+            m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            m_isDragging = true;
             event->accept();
             return;
         }
     }
     QWidget::mousePressEvent(event);
+}
+
+void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
+    if (m_isDragging && (event->buttons() & Qt::LeftButton)) {
+        move(event->globalPosition().toPoint() - m_dragPosition);
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void MiniPlayerView::mouseReleaseEvent(QMouseEvent* event) {
+    m_isDragging = false;
+    QWidget::mouseReleaseEvent(event);
 }
 
 void MiniPlayerView::onFaderChanged(int index) {

@@ -32,6 +32,8 @@ signals:
 protected:
     void showEvent(QShowEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
@@ -48,6 +50,7 @@ private:
     std::shared_ptr<MonitoringController> m_monitoring;
 
     QPoint m_dragPosition;
+    bool m_isDragging = false;
     QComboBox* m_faderCombo = nullptr;
     QPushButton* m_playStopBtn = nullptr;
     QPushButton* m_muteBtn = nullptr;
