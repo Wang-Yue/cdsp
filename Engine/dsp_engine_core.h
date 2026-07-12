@@ -46,84 +46,11 @@
 #include "engine_state_machine.h"
 
 /**
- * @brief Core structure of the DSP engine.
+ * @brief Opaque structure representing the core DSP engine.
  *
  * Orchestrates the audio threads, backends, and processing pipeline.
  */
-typedef struct {
-  // MARK: - Configuration
-  /** Current configuration. */
-  dsp_config_t* current_config;
-  /** Processing parameters derived from configuration. */
-  processing_parameters_t* processing_params;
-
-  // MARK: - Shared state
-  /** State machine managing engine state. */
-  engine_state_machine_t* state_machine;
-  /** Shared state between threads. */
-  engine_shared_state_t* shared;
-
-  // MARK: - Components built per run
-  /** Capture audio backend. */
-  capture_backend_t* capture;
-  /** Playback audio backend. */
-  playback_backend_t* playback;
-  /** Processing loop instance. */
-  engine_processing_loop_t* processing_loop;
-  /** Capture loop instance. */
-  engine_capture_loop_t* capture_loop;
-  /** Playback loop instance. */
-  engine_playback_loop_t* playback_loop;
-  /** DoP decoder instance. */
-  dop_decoder_t* dop_decoder;
-  /** DoP encoder instance. */
-  dop_encoder_t* dop_encoder;
-
-  /**
-   * Playback-side chunk size — `resampler.maxOutputFrames` when a
-   * resampler is in use, otherwise `effectiveChunkSize`.
-   */
-  size_t effective_playback_chunk_size;
-  /** Scratch buffer for resampler. */
-  audio_chunk_t* resampler_scratch;
-  /** Scratch buffer for pipeline. */
-  audio_chunk_t* pipeline_scratch;
-  /** Pool of chunks for capture. */
-  round_robin_chunk_pool_t* capture_chunk_pool;
-  /** Pool of scratch chunks for processing. */
-  round_robin_chunk_pool_t* processing_scratch_pool;
-  /** Audio resampler. */
-  audio_resampler_t* resampler;
-  /** Audio processing pipeline. */
-  pipeline_t* pipeline;
-
-  // MARK: - Threading
-  /** Capture thread handle. */
-  pthread_t capture_thread;
-  /** Processing thread handle. */
-  pthread_t processing_thread;
-  /** Playback thread handle. */
-  pthread_t playback_thread;
-  /** True if threads were successfully created. */
-  bool threads_created;
-
-  // MARK: - Optional taps for visualisation
-  /**
-   * Optional callback invoked before pipeline processing.
-   * Set before `start()` and treated as immutable thereafter.
-   */
-  chunk_callback_t on_chunk_captured;
-  /** Context for capture callback. */
-  void* on_chunk_captured_ctx;
-
-  /**
-   * Optional callback invoked after pipeline processing.
-   * Set before `start()` and treated as immutable thereafter.
-   */
-  chunk_callback_t on_chunk_processed;
-  /** Context for processing callback. */
-  void* on_chunk_processed_ctx;
-} dsp_engine_core_t;
+typedef struct dsp_engine_core dsp_engine_core_t;
 
 /**
  * @brief Create a new DSP engine core.
@@ -132,6 +59,50 @@ typedef struct {
  * @return Pointer to the created core, or NULL on failure.
  */
 dsp_engine_core_t* dsp_engine_core_create(dsp_config_t* config);
+
+/**
+ * @brief Get the current configuration of the engine core.
+ *
+ * @param core Pointer to the core instance.
+ * @return Pointer to the current configuration, or NULL if core is NULL.
+ */
+const dsp_config_t* dsp_engine_core_get_config(const dsp_engine_core_t* core);
+
+/**
+ * @brief Get the processing parameters instance of the engine core.
+ *
+ * @param core Pointer to the core instance.
+ * @return Pointer to the processing parameters, or NULL if core is NULL.
+ */
+processing_parameters_t* dsp_engine_core_get_processing_params(
+    dsp_engine_core_t* core);
+
+/**
+ * @brief Set the chunk visualization callbacks on the engine core.
+ *
+ * @param core Pointer to the core instance.
+ * @param on_captured Callback invoked after a chunk is captured.
+ * @param captured_ctx Context pointer passed to on_captured.
+ * @param on_processed Callback invoked after a chunk is processed.
+ * @param processed_ctx Context pointer passed to on_processed.
+ */
+void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
+                                         chunk_callback_t on_captured,
+                                         void* captured_ctx,
+                                         chunk_callback_t on_processed,
+                                         void* processed_ctx);
+
+/**
+ * @brief Checks if a stop has been requested by any engine loop thread or
+ * caller.
+ *
+ * @param core Pointer to the core instance.
+ * @param out_reason Optional output pointer to store the stop reason if
+ * requested.
+ * @return true if a stop was requested, false otherwise.
+ */
+bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
+                                       processing_stop_reason_t* out_reason);
 
 /**
  * @brief Free the DSP engine core.

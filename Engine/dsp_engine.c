@@ -162,8 +162,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
   // dynamically without tearing down audio threads.
   if (engine->core &&
       dsp_engine_core_get_state(engine->core) != PROCESSING_STATE_INACTIVE) {
-    if (devices_config_equal(&engine->core->current_config->devices,
-                             &config->devices)) {
+    const dsp_config_t* cur_cfg = dsp_engine_core_get_config(engine->core);
+    if (cur_cfg && devices_config_equal(&cur_cfg->devices, &config->devices)) {
       audio_backend_error_t berr;
       if (dsp_engine_core_reload_config(engine->core, config, &berr)) {
         return true;
@@ -204,16 +204,17 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
     return false;
   }
 
+  processing_parameters_t* core_params =
+      dsp_engine_core_get_processing_params(core);
   // Persist fader levels and mute states across config change
   for (int i = 0; i < FADER_COUNT; i++) {
     double vol = engine->desired_fader_volumes[i];
     bool mute = engine->desired_fader_mutes[i];
-    processing_parameters_set_target_volume_for_fader(core->processing_params,
-                                                      vol, (fader_t)i);
-    processing_parameters_set_current_volume_for_fader(core->processing_params,
-                                                       vol, (fader_t)i);
-    processing_parameters_set_muted_for_fader(core->processing_params, mute,
-                                              (fader_t)i);
+    processing_parameters_set_target_volume_for_fader(core_params, vol,
+                                                      (fader_t)i);
+    processing_parameters_set_current_volume_for_fader(core_params, vol,
+                                                       (fader_t)i);
+    processing_parameters_set_muted_for_fader(core_params, mute, (fader_t)i);
   }
 
   // Resize history buffers to match the new channel counts
@@ -226,10 +227,9 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
 
   // Connect callbacks to feed captured/playback data chunks into history
   // buffers
-  core->on_chunk_captured = engine_on_chunk_captured_callback;
-  core->on_chunk_captured_ctx = engine->capture_buffer;
-  core->on_chunk_processed = engine_on_chunk_processed_callback;
-  core->on_chunk_processed_ctx = engine->playback_buffer;
+  dsp_engine_core_set_chunk_callbacks(
+      core, engine_on_chunk_captured_callback, engine->capture_buffer,
+      engine_on_chunk_processed_callback, engine->playback_buffer);
 
   // Start the audio engine core (spawns capture & playback loops/threads)
   audio_backend_error_t start_err;
@@ -303,9 +303,7 @@ void dsp_engine_stop(dsp_engine_t* engine) {
   if (engine->core &&
       dsp_engine_core_get_state(engine->core) != PROCESSING_STATE_INACTIVE) {
     processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
-    if (engine->core->shared) {
-      reason = engine->core->shared->stop_reason;
-    }
+    dsp_engine_core_is_stop_requested(engine->core, &reason);
     dsp_engine_core_stop(engine->core, reason);
     engine->last_stop_reason = reason;
     engine->has_last_stop_reason = true;
@@ -324,12 +322,12 @@ void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
   engine->desired_fader_volumes[fader] = (double)db;
   engine->unsaved_state_changes = true;
 
-  if (engine->core && engine->core->processing_params) {
-    processing_parameters_set_target_volume_for_fader(
-        engine->core->processing_params, (double)db, fader);
+  processing_parameters_t* p =
+      dsp_engine_core_get_processing_params(engine->core);
+  if (p) {
+    processing_parameters_set_target_volume_for_fader(p, (double)db, fader);
     if (instant) {
-      processing_parameters_set_current_volume_for_fader(
-          engine->core->processing_params, (double)db, fader);
+      processing_parameters_set_current_volume_for_fader(p, (double)db, fader);
     }
   }
   pthread_mutex_unlock(&engine->state_mutex);
@@ -341,9 +339,10 @@ void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
   engine->desired_fader_mutes[fader] = mute;
   engine->unsaved_state_changes = true;
 
-  if (engine->core && engine->core->processing_params) {
-    processing_parameters_set_muted_for_fader(engine->core->processing_params,
-                                              mute, fader);
+  processing_parameters_t* p =
+      dsp_engine_core_get_processing_params(engine->core);
+  if (p) {
+    processing_parameters_set_muted_for_fader(p, mute, fader);
   }
   pthread_mutex_unlock(&engine->state_mutex);
 }
@@ -423,9 +422,10 @@ vu_levels_t dsp_engine_get_vu_levels(const dsp_engine_t* engine) {
 static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine) {
   vu_levels_t res;
   memset(&res, 0, sizeof(res));
-  if (!engine->core || !engine->core->processing_params) return res;
+  processing_parameters_t* p =
+      dsp_engine_core_get_processing_params((dsp_engine_core_t*)engine->core);
+  if (!p) return res;
   dsp_engine_core_collect_garbage((dsp_engine_core_t*)engine->core);
-  processing_parameters_t* p = engine->core->processing_params;
   res.playback_channels = p->playback_channels;
   res.capture_channels = p->capture_channels;
   if (res.playback_channels > 0) {
@@ -479,10 +479,12 @@ spectrum_status_t dsp_engine_get_spectrum(dsp_engine_t* engine, bool is_capture,
 static spectrum_status_t dsp_engine_get_spectrum_locked(
     dsp_engine_t* engine, bool is_capture, int channel, double min_freq,
     double max_freq, size_t n_bins, spectrum_result_t* out_result) {
-  if (!engine->core || !engine->spectrum) return SPECTRUM_ERROR_EMPTY;
+  const dsp_config_t* core_cfg = dsp_engine_core_get_config(engine->core);
+  if (!engine->core || !core_cfg || !engine->spectrum)
+    return SPECTRUM_ERROR_EMPTY;
   audio_history_buffer_t* buf =
       is_capture ? engine->capture_buffer : engine->playback_buffer;
-  size_t samplerate = engine->core->current_config->devices.samplerate;
+  size_t samplerate = core_cfg->devices.samplerate;
   return spectrum_analyzer_compute(engine->spectrum, buf, channel, min_freq,
                                    max_freq, n_bins, samplerate, out_result);
 }
@@ -711,7 +713,7 @@ void dsp_engine_free_device_capabilities(audio_device_descriptor_t* desc) {
 const dsp_config_t* dsp_engine_get_active_config(const dsp_engine_t* engine) {
   if (!engine) return NULL;
   pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  const dsp_config_t* res = engine->core ? engine->core->current_config : NULL;
+  const dsp_config_t* res = dsp_engine_core_get_config(engine->core);
   pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
   return res;
 }
@@ -721,7 +723,7 @@ processing_parameters_t* dsp_engine_get_processing_parameters(
   if (!engine) return NULL;
   pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
   processing_parameters_t* res =
-      engine->core ? engine->core->processing_params : NULL;
+      dsp_engine_core_get_processing_params((dsp_engine_core_t*)engine->core);
   pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
   return res;
 }
@@ -735,9 +737,8 @@ static int iface_get_active_samplerate(void* ctx) {
   if (!ctx) return 0;
   dsp_engine_t* engine = (dsp_engine_t*)ctx;
   pthread_mutex_lock(&engine->state_mutex);
-  int rate = (engine->core && engine->core->current_config)
-                 ? engine->core->current_config->devices.samplerate
-                 : 0;
+  const dsp_config_t* cfg = dsp_engine_core_get_config(engine->core);
+  int rate = cfg ? cfg->devices.samplerate : 0;
   pthread_mutex_unlock(&engine->state_mutex);
   return rate;
 }
@@ -750,11 +751,12 @@ static bool iface_get_processing_status(void* ctx, double* out_rate_adjust,
   if (!ctx) return false;
   dsp_engine_t* engine = (dsp_engine_t*)ctx;
   pthread_mutex_lock(&engine->state_mutex);
-  if (!engine->core || !engine->core->processing_params) {
+  processing_parameters_t* p =
+      dsp_engine_core_get_processing_params(engine->core);
+  if (!p) {
     pthread_mutex_unlock(&engine->state_mutex);
     return false;
   }
-  processing_parameters_t* p = engine->core->processing_params;
   if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&p->rate_adjust);
   if (out_buffer_level) *out_buffer_level = atomic_double_get(&p->buffer_level);
   if (out_clipped_samples)
@@ -772,9 +774,10 @@ static void iface_reset_clipped_samples(void* ctx) {
   if (!ctx) return;
   dsp_engine_t* engine = (dsp_engine_t*)ctx;
   pthread_mutex_lock(&engine->state_mutex);
-  if (engine->core && engine->core->processing_params) {
-    atomic_store_explicit(&engine->core->processing_params->clipped_samples,
-                          0ULL, memory_order_relaxed);
+  processing_parameters_t* p =
+      dsp_engine_core_get_processing_params(engine->core);
+  if (p) {
+    atomic_store_explicit(&p->clipped_samples, 0ULL, memory_order_relaxed);
   }
   pthread_mutex_unlock(&engine->state_mutex);
 }
@@ -905,13 +908,8 @@ static void iface_set_config_path(void* ctx, const char* path) {
  */
 static bool dsp_engine_check_stop_requested(
     dsp_engine_t* engine, processing_stop_reason_t* out_reason) {
-  if (!engine || !engine->core || !engine->core->shared) return false;
-  bool req = atomic_load_explicit(&engine->core->shared->stop_requested,
-                                  memory_order_acquire);
-  if (req && out_reason) {
-    *out_reason = engine->core->shared->stop_reason;
-  }
-  return req;
+  if (!engine || !engine->core) return false;
+  return dsp_engine_core_is_stop_requested(engine->core, out_reason);
 }
 
 void dsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {

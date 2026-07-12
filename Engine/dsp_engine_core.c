@@ -35,6 +35,113 @@
 #include "Config/config_diff.h"
 #include "Logging/app_logger.h"
 
+struct dsp_engine_core {
+  // MARK: - Configuration
+  /** Current configuration. */
+  dsp_config_t* current_config;
+  /** Processing parameters derived from configuration. */
+  processing_parameters_t* processing_params;
+
+  // MARK: - Shared state
+  /** State machine managing engine state. */
+  engine_state_machine_t* state_machine;
+  /** Shared state between threads. */
+  engine_shared_state_t* shared;
+
+  // MARK: - Components built per run
+  /** Capture audio backend. */
+  capture_backend_t* capture;
+  /** Playback audio backend. */
+  playback_backend_t* playback;
+  /** Processing loop instance. */
+  engine_processing_loop_t* processing_loop;
+  /** Capture loop instance. */
+  engine_capture_loop_t* capture_loop;
+  /** Playback loop instance. */
+  engine_playback_loop_t* playback_loop;
+  /** DoP decoder instance. */
+  dop_decoder_t* dop_decoder;
+  /** DoP encoder instance. */
+  dop_encoder_t* dop_encoder;
+
+  /**
+   * Playback-side chunk size — `resampler.maxOutputFrames` when a
+   * resampler is in use, otherwise `effectiveChunkSize`.
+   */
+  size_t effective_playback_chunk_size;
+  /** Scratch buffer for resampler. */
+  audio_chunk_t* resampler_scratch;
+  /** Scratch buffer for pipeline. */
+  audio_chunk_t* pipeline_scratch;
+  /** Pool of chunks for capture. */
+  round_robin_chunk_pool_t* capture_chunk_pool;
+  /** Pool of scratch chunks for processing. */
+  round_robin_chunk_pool_t* processing_scratch_pool;
+  /** Audio resampler. */
+  audio_resampler_t* resampler;
+  /** Audio processing pipeline. */
+  pipeline_t* pipeline;
+
+  // MARK: - Threading
+  /** Capture thread handle. */
+  pthread_t capture_thread;
+  /** Processing thread handle. */
+  pthread_t processing_thread;
+  /** Playback thread handle. */
+  pthread_t playback_thread;
+  /** True if threads were successfully created. */
+  bool threads_created;
+
+  // MARK: - Optional taps for visualisation
+  /**
+   * Optional callback invoked before pipeline processing.
+   * Set before `start()` and treated as immutable thereafter.
+   */
+  chunk_callback_t on_chunk_captured;
+  /** Context for capture callback. */
+  void* on_chunk_captured_ctx;
+
+  /**
+   * Optional callback invoked after pipeline processing.
+   * Set before `start()` and treated as immutable thereafter.
+   */
+  chunk_callback_t on_chunk_processed;
+  /** Context for processing callback. */
+  void* on_chunk_processed_ctx;
+};
+
+const dsp_config_t* dsp_engine_core_get_config(const dsp_engine_core_t* core) {
+  return core ? core->current_config : NULL;
+}
+
+processing_parameters_t* dsp_engine_core_get_processing_params(
+    dsp_engine_core_t* core) {
+  return core ? core->processing_params : NULL;
+}
+
+void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
+                                         chunk_callback_t on_captured,
+                                         void* captured_ctx,
+                                         chunk_callback_t on_processed,
+                                         void* processed_ctx) {
+  if (!core) return;
+  core->on_chunk_captured = on_captured;
+  core->on_chunk_captured_ctx = captured_ctx;
+  core->on_chunk_processed = on_processed;
+  core->on_chunk_processed_ctx = processed_ctx;
+}
+
+bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
+                                       processing_stop_reason_t* out_reason) {
+  if (!core || !core->shared) return false;
+  bool req =
+      atomic_load_explicit(&core->shared->stop_requested, memory_order_acquire);
+  if (req && out_reason) {
+    *out_reason = core->shared->stop_reason;
+  }
+  return req;
+}
+
 /**
  * @brief Thread entry point wrapper for the audio capture loop.
  *
