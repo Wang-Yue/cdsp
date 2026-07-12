@@ -1029,4 +1029,129 @@ TEST(DSPEngineASIOSetConfigStruct) {
 }
 #endif
 
+static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
+                                   int total_frames, bool test_time) {
+  const char* in_file = "/tmp/e2e_rt_in.raw";
+  const char* out_file = "/tmp/e2e_rt_out.raw";
+  remove(in_file);
+  remove(out_file);
+
+  // Write test input (S16_LE mono)
+  FILE* f = fopen(in_file, "wb");
+  ASSERT_TRUE(f != NULL);
+  int16_t* input_samples = malloc(total_frames * sizeof(int16_t));
+  for (int i = 0; i < total_frames; i++) {
+    input_samples[i] = (int16_t)(i % 32768);
+  }
+  fwrite(input_samples, sizeof(int16_t), total_frames, f);
+  fclose(f);
+
+  // Build JSON configuration
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": %s\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": %s\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, capture_rt ? "true" : "false", out_file,
+           playback_rt ? "true" : "false");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = dsp_engine_set_config(engine, json, &err);
+  ASSERT_TRUE(success);
+
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+
+  // Wait for the engine to finish processing the file
+  // Timeout is 1.0s (the file is 0.1s long at 16kHz for 1600 frames)
+  int elapsed_ms = 0;
+  while (elapsed_ms < 1000) {
+    dsp_engine_poll(engine);
+    state_update_t status = dsp_engine_get_status(engine);
+    if (status.state == PROCESSING_STATE_INACTIVE) {
+      break;
+    }
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 5000000ULL};  // 5ms
+    nanosleep(&req, NULL);
+    elapsed_ms += 5;
+  }
+
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed = (double)(t1.tv_sec - t0.tv_sec) +
+                   (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  // Stop just in case it didn't finish gracefully
+  dsp_engine_stop(engine);
+  dsp_engine_free(engine);
+
+  // Verify the output content matches input
+  FILE* out_f = fopen(out_file, "rb");
+  ASSERT_TRUE(out_f != NULL);
+  int16_t* output_samples = malloc(total_frames * sizeof(int16_t));
+  size_t read_count =
+      fread(output_samples, sizeof(int16_t), total_frames, out_f);
+  ASSERT_EQ((size_t)total_frames, read_count);
+  fclose(out_f);
+
+  for (int i = 0; i < total_frames; i++) {
+    ASSERT_EQ(input_samples[i], output_samples[i]);
+  }
+
+  free(input_samples);
+  free(output_samples);
+  remove(in_file);
+  remove(out_file);
+
+  if (test_time) {
+    // If either capture or playback is realtime, it should take at least ~80ms
+    // (for 1600 frames @ 16kHz = 100ms)
+    bool is_rt = capture_rt || playback_rt;
+    if (is_rt) {
+      // should be at least 0.08s, and not more than 0.3s
+      ASSERT_TRUE(elapsed >= 0.08);
+      ASSERT_TRUE(elapsed < 0.30);
+    } else {
+      // Non-realtime should take very little time
+      ASSERT_TRUE(elapsed < 0.05);
+    }
+  }
+}
+
+TEST(DSPEngineE2E_FileFile_Realtime_FF) {
+  run_e2e_file_file_test(false, false, 1600, true);
+}
+
+TEST(DSPEngineE2E_FileFile_Realtime_TF) {
+  run_e2e_file_file_test(true, false, 1600, true);
+}
+
+TEST(DSPEngineE2E_FileFile_Realtime_FT) {
+  run_e2e_file_file_test(false, true, 1600, true);
+}
+
+TEST(DSPEngineE2E_FileFile_Realtime_TT) {
+  run_e2e_file_file_test(true, true, 1600, true);
+}
+
 TEST_MAIN()
