@@ -10,7 +10,7 @@
 #include "ui/SpectrumView.h"
 #include "ui/VectorScopeView.h"
 
-#include <QComboBox>
+#include <QGraphicsOpacityEffect>
 #include <QLabel>
 #include <QPoint>
 #include <QPushButton>
@@ -35,6 +35,8 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
@@ -51,7 +53,7 @@ private:
 
     QPoint m_dragPosition;
     bool m_isDragging = false;
-    QComboBox* m_faderCombo = nullptr;
+    QGraphicsOpacityEffect* m_headerOpacityEffect = nullptr;
     QPushButton* m_playStopBtn = nullptr;
     QPushButton* m_muteBtn = nullptr;
     QSlider* m_volSlider = nullptr;

@@ -593,6 +593,9 @@ public:
     static QColor border() { return isDark() ? QColor("#2c2d3a") : QColor("#d1d1d6"); }
     static QColor accent() { return isDark() ? QColor("#007af5") : QColor("#007aff"); }
     static QColor accentGreen() { return isDark() ? QColor("#2cb67d") : QColor("#34c759"); }
+    static QColor accentRed() { return isDark() ? QColor("#ff453a") : QColor("#ff3b30"); }
+    static QColor accentOrange() { return isDark() ? QColor("#ff9f0a") : QColor("#ff9500"); }
+    static QColor trackBg() { return isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25); }
     static QColor textPrimary() { return isDark() ? QColor("#ffffff") : QColor("#000000"); }
     static QColor textSecondary() { return isDark() ? QColor("#a0a5b5") : QColor("#6c6c70"); }
     static QColor gridPenColor() { return isDark() ? QColor(255, 255, 255, 30) : QColor(0, 0, 0, 35); }

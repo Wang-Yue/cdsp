@@ -190,6 +190,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     });
 
     m_monitoring->start();
+
+    // Save state on application shutdown
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        if (m_pipeline) {
+            m_pipeline->save();
+        }
+        if (m_settings) {
+            m_settings->savePreferences();
+        }
+    });
 }
 
 void MainWindow::updateTheme() {
@@ -219,24 +229,29 @@ void MainWindow::setupUi() {
         QString tag = item->data(0, Qt::UserRole).toString();
 
         if (tag.startsWith("stage_")) {
-            size_t idx = tag.mid(6).toULongLong();
-            QMenu menu(this);
-            auto moveUp = menu.addAction("Move Up");
-            moveUp->setEnabled(idx > 0);
-            connect(moveUp, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx - 1); });
-
-            auto moveDown = menu.addAction("Move Down");
-            moveDown->setEnabled(idx < m_pipeline->stages.size() - 1);
-            connect(moveDown, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx + 1); });
-
-            menu.addSeparator();
-            auto del = menu.addAction("Delete Stage");
-            connect(del, &QAction::triggered, [this, idx]() {
-                if (idx < m_pipeline->stages.size()) {
-                    m_pipeline->deleteStage(m_pipeline->stages[idx].id);
+            QUuid stageId = QUuid::fromString(tag.mid(6));
+            int idx = -1;
+            for (size_t i = 0; i < m_pipeline->stages.size(); ++i) {
+                if (m_pipeline->stages[i].id == stageId) {
+                    idx = static_cast<int>(i);
+                    break;
                 }
-            });
-            menu.exec(QCursor::pos());
+            }
+            if (idx >= 0) {
+                QMenu menu(this);
+                auto moveUp = menu.addAction("Move Up");
+                moveUp->setEnabled(idx > 0);
+                connect(moveUp, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx - 1); });
+
+                auto moveDown = menu.addAction("Move Down");
+                moveDown->setEnabled(idx < static_cast<int>(m_pipeline->stages.size()) - 1);
+                connect(moveDown, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx + 1); });
+
+                menu.addSeparator();
+                auto del = menu.addAction("Delete Stage");
+                connect(del, &QAction::triggered, [this, stageId]() { m_pipeline->deleteStage(stageId); });
+                menu.exec(QCursor::pos());
+            }
         } else if (tag.startsWith("eq_")) {
             QUuid id = QUuid::fromString(tag.mid(3));
             QMenu menu(this);
@@ -399,7 +414,6 @@ void MainWindow::setupMenuBar() {
     audioMenu->addAction(startStopAct);
 
     auto muteAct = new QAction("Toggle Mute", this);
-    muteAct->setShortcut(QKeySequence("Space"));
     connect(muteAct, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
         for (QWidget* w = focusW; w; w = w->parentWidget()) {
@@ -516,7 +530,12 @@ void MainWindow::setupShortcuts() {
     setupNavAction({QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
     setupNavAction({QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
     setupNavAction({QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
-    setupNavAction({QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "general_settings");
+    setupNavAction({QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "spectroscope");
+    setupNavAction({QKeySequence("Cmd+6"), QKeySequence("Ctrl+6")}, "vectorscope");
+    setupNavAction({QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
+    setupNavAction({QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
+    setupNavAction({QKeySequence("Cmd+9"), QKeySequence("Ctrl+9"), QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")},
+                   "general_settings");
 
     // Cmd+M / Ctrl+M: MiniPlayer Toggle
     auto actMini = new QAction(this);
@@ -596,6 +615,13 @@ void MainWindow::changeEvent(QEvent* event) {
         if (isMinimized()) {
             setWindowState(windowState() & ~Qt::WindowMinimized);
             toggleMiniPlayer();
+        }
+    } else if (event->type() == QEvent::ApplicationActivate) {
+        if (m_miniPlayer && m_miniPlayer->isVisible()) {
+            m_miniPlayer->hide();
+            showNormal();
+            raise();
+            activateWindow();
         }
     }
 }
@@ -910,7 +936,8 @@ void MainWindow::refreshSidebarItems() {
     for (size_t i = 0; i < m_pipeline->stages.size(); ++i) {
         const auto& stage = m_pipeline->stages[i];
         auto sItem = new QTreeWidgetItem(pipeGroup);
-        sItem->setData(0, Qt::UserRole, QString("stage_%1").arg(i));
+        QUuid stageId = stage.id;
+        sItem->setData(0, Qt::UserRole, QString("stage_%1").arg(stageId.toString()));
         std::string icon = stageTypeToIcon(stage.type);
 
         QString rawName = QString::fromStdString(stage.name);
@@ -947,12 +974,15 @@ void MainWindow::refreshSidebarItems() {
         QString stageTitle = QString("%1  %2").arg(QString::fromStdString(icon), rawName);
         auto stageW = new SidebarToggleRowWidget(
             m_sidebarTree, sItem, stageTitle, stage.isEnabled,
-            [this, i](bool c) {
-                if (i < m_pipeline->stages.size()) {
-                    m_pipeline->stages[i].isEnabled = c;
-                    m_pipeline->save();
-                    emit m_pipeline->pipelineChanged();
-                    m_dspController->applyConfig();
+            [this, stageId](bool c) {
+                for (auto& st : m_pipeline->stages) {
+                    if (st.id == stageId) {
+                        st.isEnabled = c;
+                        m_pipeline->save();
+                        emit m_pipeline->pipelineChanged();
+                        m_dspController->applyConfig();
+                        break;
+                    }
                 }
             },
             [this, sItem]() { onSidebarItemClicked(sItem, 0); }, m_sidebarTree);
@@ -1117,8 +1147,13 @@ void MainWindow::handleNavigationTag(const QString& tag) {
     } else if (tag == "logs") {
         w = new ConsoleLogsView(this);
     } else if (tag.startsWith("stage_")) {
-        size_t idx = tag.mid(6).toULongLong();
-        w = new StageDetailView(idx, m_pipeline, m_dspController, this);
+        QUuid stageId = QUuid::fromString(tag.mid(6));
+        for (size_t idx = 0; idx < m_pipeline->stages.size(); ++idx) {
+            if (m_pipeline->stages[idx].id == stageId) {
+                w = new StageDetailView(idx, m_pipeline, m_dspController, this);
+                break;
+            }
+        }
     } else if (tag.startsWith("conv_")) {
         QUuid id = QUuid::fromString(tag.mid(5));
         for (const auto& preset : m_pipeline->convPresets) {
@@ -1149,9 +1184,12 @@ void MainWindow::onPipelineChanged() {
     // 1. Check if m_lastActiveTag is still valid
     bool tagStillValid = false;
     if (m_lastActiveTag.startsWith("stage_")) {
-        size_t idx = m_lastActiveTag.mid(6).toULongLong();
-        if (idx < m_pipeline->stages.size()) {
-            tagStillValid = true;
+        QUuid stageId = QUuid::fromString(m_lastActiveTag.mid(6));
+        for (const auto& st : m_pipeline->stages) {
+            if (st.id == stageId) {
+                tagStillValid = true;
+                break;
+            }
         }
     } else if (m_lastActiveTag.startsWith("eq_")) {
         QUuid id = QUuid::fromString(m_lastActiveTag.mid(3));
@@ -1195,11 +1233,22 @@ void MainWindow::onPipelineChanged() {
     refreshSidebarItems();
     updateTrayMenu();
 
-    // 4. Retain current active view if valid; fallback to dashboard only if deleted
+    // 4. Retain current active view if valid; show placeholder if deleted
     if (tagStillValid) {
         handleNavigationTag(m_lastActiveTag);
     } else {
-        m_lastActiveTag = "dashboard";
-        handleNavigationTag("dashboard");
+        auto unavailable = new QWidget(this);
+        auto layout = new QVBoxLayout(unavailable);
+        auto lblTitle = new QLabel("Item Deleted", unavailable);
+        lblTitle->setFont(QFont("-apple-system", 18, QFont::Bold));
+        lblTitle->setAlignment(Qt::AlignCenter);
+        auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", unavailable);
+        lblDesc->setStyleSheet("color: #8e8e93; font-size: 13px;");
+        lblDesc->setAlignment(Qt::AlignCenter);
+        layout->addStretch();
+        layout->addWidget(lblTitle);
+        layout->addWidget(lblDesc);
+        layout->addStretch();
+        showCentralWidget(unavailable);
     }
 }

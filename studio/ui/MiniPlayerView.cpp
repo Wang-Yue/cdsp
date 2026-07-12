@@ -2,11 +2,14 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPropertyAnimation>
 #include <QScrollArea>
+#include <QSettings>
 #include <QStyleOption>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -26,6 +29,8 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
                     nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
                 reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"),
                                                                            1000L);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
+                    nsWindow, sel_registerName("setMovableByWindowBackground:"), true);
             }
         }
     }
@@ -38,8 +43,8 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
       m_settings(settings), m_monitoring(monitoring) {
 
     setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; "
-                  "border: 1px solid rgba(255, 255, 255, 0.15); }");
+    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(0, 0, 0, 0.45); border-radius: 12px; "
+                  "border: none; }");
     setObjectName("MiniPlayerViewWindow");
     setMinimumSize(200, 80);
     setMaximumSize(1000, 300);
@@ -62,22 +67,18 @@ void MiniPlayerView::showEvent(QShowEvent* event) {
 #ifdef Q_OS_MAC
     setMacFloatingPanelProperties(this);
 #endif
+    QSettings settings;
+    if (settings.contains("MiniPlayer/geometry")) {
+        restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
+    }
+    int savedMode = settings.value("MiniPlayer/mode", 1).toInt();
+    if (m_viewStack && savedMode >= 0 && savedMode < m_viewStack->count()) {
+        m_viewStack->setCurrentIndex(savedMode);
+    }
 }
 
 Fader MiniPlayerView::currentFader() const {
-    int idx = m_faderCombo ? m_faderCombo->currentIndex() : 0;
-    switch (idx) {
-    case 1:
-        return Fader::Aux1;
-    case 2:
-        return Fader::Aux2;
-    case 3:
-        return Fader::Aux3;
-    case 4:
-        return Fader::Aux4;
-    default:
-        return Fader::Main;
-    }
+    return Fader::Main;
 }
 
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
@@ -105,6 +106,26 @@ void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
 void MiniPlayerView::mouseReleaseEvent(QMouseEvent* event) {
     m_isDragging = false;
     QWidget::mouseReleaseEvent(event);
+}
+
+void MiniPlayerView::enterEvent(QEnterEvent* event) {
+    QWidget::enterEvent(event);
+    if (m_headerOpacityEffect) {
+        auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
+        anim->setDuration(150);
+        anim->setEndValue(1.0);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+}
+
+void MiniPlayerView::leaveEvent(QEvent* event) {
+    QWidget::leaveEvent(event);
+    if (m_headerOpacityEffect) {
+        auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
+        anim->setDuration(150);
+        anim->setEndValue(0.3);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
 }
 
 void MiniPlayerView::onFaderChanged(int index) {
@@ -140,6 +161,8 @@ void MiniPlayerView::updateEngineStatus(ProcessingState state) {
 }
 
 void MiniPlayerView::buildMiniPipelineUi() {
+    if (!m_pipelineMiniCard)
+        return;
     auto layout = qobject_cast<QHBoxLayout*>(m_pipelineMiniCard->layout());
     if (!layout)
         return;
@@ -223,10 +246,16 @@ void MiniPlayerView::setupUi() {
     mainLayout->setContentsMargins(6, 6, 6, 6);
     mainLayout->setSpacing(4);
 
-    auto topBar = new QHBoxLayout();
+    auto topBarWidget = new QWidget(this);
+    auto topBar = new QHBoxLayout(topBarWidget);
+    topBar->setContentsMargins(0, 0, 0, 0);
     topBar->setSpacing(4);
 
-    m_playStopBtn = new QPushButton("▶", this);
+    m_headerOpacityEffect = new QGraphicsOpacityEffect(topBarWidget);
+    topBarWidget->setGraphicsEffect(m_headerOpacityEffect);
+    m_headerOpacityEffect->setOpacity(0.3);
+
+    m_playStopBtn = new QPushButton("▶", topBarWidget);
     m_playStopBtn->setFixedSize(22, 22);
     m_playStopBtn->setStyleSheet(
         "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #34c759; font-weight: bold; border-radius: "
@@ -239,7 +268,7 @@ void MiniPlayerView::setupUi() {
     });
     topBar->addWidget(m_playStopBtn);
 
-    m_muteBtn = new QPushButton("🔊", this);
+    m_muteBtn = new QPushButton("🔊", topBarWidget);
     m_muteBtn->setFixedSize(22, 22);
     m_muteBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); color: white; border-radius: "
                              "4px; border: none; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
@@ -251,11 +280,11 @@ void MiniPlayerView::setupUi() {
     });
     topBar->addWidget(m_muteBtn);
 
-    m_volSlider = new QSlider(Qt::Horizontal, this);
+    m_volSlider = new QSlider(Qt::Horizontal, topBarWidget);
     m_volSlider->setRange(-120, 40);
     m_volSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
 
-    m_volValueLabel = new QLabel(" 0.0 dB", this);
+    m_volValueLabel = new QLabel(" 0.0 dB", topBarWidget);
     m_volValueLabel->setFont(QFont("monospace", 9, QFont::Bold));
     m_volValueLabel->setFixedWidth(50);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -273,15 +302,15 @@ void MiniPlayerView::setupUi() {
     topBar->addWidget(m_volValueLabel);
 
     // 6 Mode Icon Buttons matching SwiftUI icons
-    auto pipeBtn = new QPushButton("☍", this);
-    auto specBtn = new QPushButton("〰", this);
-    auto mtrBtn = new QPushButton("📊", this);
-    auto vuBtn = new QPushButton("⏱", this);
-    auto sgBtn = new QPushButton("▦", this);
-    auto vecBtn = new QPushButton("⚡", this);
+    auto pipeBtn = new QPushButton("☍", topBarWidget);
+    auto specBtn = new QPushButton("〰", topBarWidget);
+    auto mtrBtn = new QPushButton("📊", topBarWidget);
+    auto vuBtn = new QPushButton("⏱", topBarWidget);
+    auto sgBtn = new QPushButton("▦", topBarWidget);
+    auto vecBtn = new QPushButton("⚡", topBarWidget);
 
     std::vector<QPushButton*> modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
-    auto setModeStyle = [modeBtns](int activeIndex) {
+    auto setModeStyle = [this, modeBtns](int activeIndex) {
         for (int i = 0; i < static_cast<int>(modeBtns.size()); ++i) {
             if (i == activeIndex) {
                 modeBtns[i]->setStyleSheet(
@@ -297,6 +326,8 @@ void MiniPlayerView::setupUi() {
                     "QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
             }
         }
+        QSettings settings;
+        settings.setValue("MiniPlayer/mode", activeIndex);
     };
 
     pipeBtn->setToolTip("Pipeline Overview");
@@ -348,9 +379,9 @@ void MiniPlayerView::setupUi() {
     });
     topBar->addWidget(vecBtn);
 
-    setModeStyle(5); // Default vector scope mode
+    setModeStyle(1); // Default to Spectrum (mode 1) matching SwiftUI default
 
-    auto closeBtn = new QPushButton("✕", this);
+    auto closeBtn = new QPushButton("✕", topBarWidget);
     closeBtn->setFixedSize(18, 18);
     closeBtn->setStyleSheet(
         "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #8e8e93; border-radius: 9px; border: none; "
@@ -359,19 +390,26 @@ void MiniPlayerView::setupUi() {
     connect(closeBtn, &QPushButton::clicked, this, &MiniPlayerView::closeAndRestoreMain);
     topBar->addWidget(closeBtn);
 
-    mainLayout->addLayout(topBar);
+    mainLayout->addWidget(topBarWidget);
 
     m_viewStack = new QStackedWidget(this);
     m_viewStack->setStyleSheet("QStackedWidget { background: transparent; }");
 
-    // Mode 0: Mini Pipeline Chips
-    m_pipelineMiniCard = new QWidget(this);
+    // Mode 0: Mini Pipeline Chips in a QScrollArea
+    auto pipeScroll = new QScrollArea(this);
+    pipeScroll->setWidgetResizable(true);
+    pipeScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pipeScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pipeScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+
+    m_pipelineMiniCard = new QWidget(pipeScroll);
     m_pipelineMiniCard->setStyleSheet("QWidget { background: transparent; }");
     auto pipeLayout = new QHBoxLayout(m_pipelineMiniCard);
     pipeLayout->setContentsMargins(4, 4, 4, 4);
     pipeLayout->setSpacing(4);
     buildMiniPipelineUi();
-    m_viewStack->addWidget(m_pipelineMiniCard);
+    pipeScroll->setWidget(m_pipelineMiniCard);
+    m_viewStack->addWidget(pipeScroll);
 
     // Mode 1: Spectrum
     m_spectrumView = new SpectrumView(m_monitoring ? m_monitoring->spectrumEngine() : nullptr, this);
@@ -402,6 +440,8 @@ void MiniPlayerView::setupUi() {
 }
 
 void MiniPlayerView::closeAndRestoreMain() {
+    QSettings settings;
+    settings.setValue("MiniPlayer/geometry", saveGeometry());
     hide();
     emit requestRestoreMainWindow();
 }
@@ -454,26 +494,43 @@ void MiniPlayerView::paintEvent(QPaintEvent* event) {
 }
 
 void MiniPlayerView::refreshMeters() {
-    if (!m_monitoring)
+    if (!m_monitoring || !m_viewStack)
         return;
+
+    int mode = m_viewStack->currentIndex();
     const auto& st = m_monitoring->levelState;
-    if (m_metersView) {
-        m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
-    }
-    if (m_analogVUView) {
-        float left = !st.playbackPeak.empty() ? st.playbackPeak[0] : -60.0f;
-        float right = st.playbackPeak.size() > 1 ? st.playbackPeak[1] : left;
-        m_analogVUView->setLevelDB(left, right);
-    }
-    if (m_spectrumView && m_monitoring->spectrumEngine()) {
-        m_spectrumView->setSpectrum(m_monitoring->spectrumEngine()->data);
-    }
-    if (m_spectrogramView && m_monitoring->spectrogramEngine()) {
-        m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history,
-                                      m_monitoring->spectrogramEngine()->show3D);
-    }
-    if (m_vectorScopeView && m_monitoring->vectorScopeEngine()) {
-        m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples,
-                                      m_monitoring->vectorScopeEngine()->showParticles);
+
+    switch (mode) {
+    case 1: // Spectrum
+        if (m_spectrumView && m_monitoring->spectrumEngine()) {
+            m_spectrumView->setSpectrum(m_monitoring->spectrumEngine()->data);
+        }
+        break;
+    case 2: // Level Meters
+        if (m_metersView) {
+            m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
+        }
+        break;
+    case 3: // Analog VU
+        if (m_analogVUView) {
+            float left = !st.playbackPeak.empty() ? st.playbackPeak[0] : -60.0f;
+            float right = st.playbackPeak.size() > 1 ? st.playbackPeak[1] : left;
+            m_analogVUView->setLevelDB(left, right);
+        }
+        break;
+    case 4: // Spectrogram
+        if (m_spectrogramView && m_monitoring->spectrogramEngine()) {
+            m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history,
+                                          m_monitoring->spectrogramEngine()->show3D);
+        }
+        break;
+    case 5: // Vector Scope
+        if (m_vectorScopeView && m_monitoring->vectorScopeEngine()) {
+            m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples,
+                                          m_monitoring->vectorScopeEngine()->showParticles);
+        }
+        break;
+    default:
+        break;
     }
 }

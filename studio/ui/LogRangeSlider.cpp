@@ -56,19 +56,19 @@ void LogRangeSlider::paintEvent(QPaintEvent* event) {
     int w = width() - 2 * margin;
 
     // Track background
-    p.setPen(QPen(QColor(255, 255, 255, 20), 4, Qt::SolidLine, Qt::RoundCap));
+    p.setPen(QPen(StyleTheme::trackBg(), 4, Qt::SolidLine, Qt::RoundCap));
     p.drawLine(margin, yMid, margin + w, yMid);
 
     // Selected active range track
     int xMin = freqToPos(m_minFreq);
     int xMax = freqToPos(m_maxFreq);
 
-    p.setPen(QPen(QColor("#007aff"), 4, Qt::SolidLine, Qt::RoundCap));
+    p.setPen(QPen(StyleTheme::accent(), 4, Qt::SolidLine, Qt::RoundCap));
     p.drawLine(xMin, yMid, xMax, yMid);
 
     // Min and Max Handles (White circle with blue outline matching SwiftUI)
     auto drawHandle = [&](int x) {
-        p.setPen(QPen(QColor("#007aff"), 2));
+        p.setPen(QPen(StyleTheme::accent(), 2));
         p.setBrush(QColor("#ffffff"));
         p.drawEllipse(QPoint(x, yMid), 8, 8);
     };
