@@ -67,32 +67,30 @@ static bool mock_get_processing_status(void* ctx, double* out_rate_adjust,
   (void)ctx;
   if (!mock_params) return false;
   if (out_rate_adjust)
-    *out_rate_adjust = atomic_double_get(&mock_params->rate_adjust);
+    *out_rate_adjust = processing_parameters_get_rate_adjust(mock_params);
   if (out_buffer_level)
-    *out_buffer_level = atomic_double_get(&mock_params->buffer_level);
+    *out_buffer_level = processing_parameters_get_buffer_level(mock_params);
   if (out_clipped_samples)
-    *out_clipped_samples = atomic_load_explicit(&mock_params->clipped_samples,
-                                                memory_order_relaxed);
+    *out_clipped_samples = processing_parameters_get_clipped_samples(mock_params);
   if (out_processing_load)
-    *out_processing_load = atomic_double_get(&mock_params->processing_load);
+    *out_processing_load = processing_parameters_get_processing_load(mock_params);
   if (out_resampler_load)
-    *out_resampler_load = atomic_double_get(&mock_params->resampler_load);
+    *out_resampler_load = processing_parameters_get_resampler_load(mock_params);
   return true;
 }
 
 static void mock_reset_clipped_samples(void* ctx) {
   (void)ctx;
   if (mock_params) {
-    atomic_store_explicit(&mock_params->clipped_samples, 0ULL,
-                          memory_order_relaxed);
+    processing_parameters_reset_clipped_samples(mock_params);
   }
 }
 
 static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   (void)ctx;
   if (!mock_params || !out_vu) return false;
-  out_vu->playback_channels = mock_params->playback_channels;
-  out_vu->capture_channels = mock_params->capture_channels;
+  out_vu->playback_channels = processing_parameters_get_playback_channels(mock_params);
+  out_vu->capture_channels = processing_parameters_get_capture_channels(mock_params);
 
   if (out_vu->playback_channels > 0) {
     out_vu->playback_rms =

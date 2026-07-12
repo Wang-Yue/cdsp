@@ -43,46 +43,103 @@ typedef enum {
 // MARK: - Storage
 
 /**
- * @brief Structure containing processing parameters and telemetry.
+ * @brief Opaque structure containing processing parameters and telemetry.
  *
  * This structure holds atomic variables for volume, mute state, signal levels,
  * and telemetry data. It is designed to be shared between the UI thread
  * and the audio processing thread.
  */
-typedef struct processing_parameters {
-  /** Target volume (dB) for fader 0-4. UI thread writes; audio thread reads. */
-  atomic_double_t target_volumes[FADER_COUNT];
-  /** Target volume set-at timestamp (nanosecond epoch) for fader 0-4. */
-  _Atomic uint64_t target_volume_set_at[FADER_COUNT];
-  /** Current volume (dB) for fader 0-4. Audio thread updates during ramping. */
-  atomic_double_t current_volumes[FADER_COUNT];
-  /** Mute state for fader 0-4. UI thread writes; audio thread reads. */
-  _Atomic bool muted[FADER_COUNT];
+typedef struct processing_parameters processing_parameters_t;
 
-  size_t capture_channels;  /**< Number of capture channels. */
-  size_t playback_channels; /**< Number of playback channels. */
+/**
+ * @brief Gets the number of capture channels.
+ * @param params Pointer to the processing parameters.
+ * @return Number of capture channels.
+ */
+size_t processing_parameters_get_capture_channels(const processing_parameters_t* params);
 
-  /** Per-channel capture signal peak levels (dB). Array size: capture_channels.
-   */
-  atomic_double_t* capture_signal_peak;
-  /** Per-channel capture signal RMS levels (dB). Array size: capture_channels.
-   */
-  atomic_double_t* capture_signal_rms;
-  /** Per-channel playback signal peak levels (dB). Array size:
-   * playback_channels. */
-  atomic_double_t* playback_signal_peak;
-  /** Per-channel playback signal RMS levels (dB). Array size:
-   * playback_channels. */
-  atomic_double_t* playback_signal_rms;
+/**
+ * @brief Gets the number of playback channels.
+ * @param params Pointer to the processing parameters.
+ * @return Number of playback channels.
+ */
+size_t processing_parameters_get_playback_channels(const processing_parameters_t* params);
 
-  // MARK: - Telemetry
-  atomic_double_t rate_adjust;      /**< Current rate adjustment factor. */
-  atomic_double_t buffer_level;     /**< Current buffer level. */
-  _Atomic uint64_t clipped_samples; /**< Cumulative count of clipped samples. */
-  atomic_double_t processing_load;  /**< Audio processing load (0.0 to 1.0). */
-  atomic_double_t
-      resampler_load; /**< Resampler processing load (0.0 to 1.0). */
-} processing_parameters_t;
+/**
+ * @brief Gets the rate adjustment factor.
+ * @param params Pointer to the processing parameters.
+ * @return Current rate adjustment factor.
+ */
+double processing_parameters_get_rate_adjust(const processing_parameters_t* params);
+
+/**
+ * @brief Sets the rate adjustment factor.
+ * @param params Pointer to the processing parameters.
+ * @param value Rate adjustment value.
+ */
+void processing_parameters_set_rate_adjust(processing_parameters_t* params, double value);
+
+/**
+ * @brief Gets the current hardware buffer level.
+ * @param params Pointer to the processing parameters.
+ * @return Current buffer level in frames.
+ */
+double processing_parameters_get_buffer_level(const processing_parameters_t* params);
+
+/**
+ * @brief Sets the current hardware buffer level.
+ * @param params Pointer to the processing parameters.
+ * @param value Buffer level in frames.
+ */
+void processing_parameters_set_buffer_level(processing_parameters_t* params, double value);
+
+/**
+ * @brief Gets cumulative count of clipped samples.
+ * @param params Pointer to the processing parameters.
+ * @return Cumulative count of clipped samples.
+ */
+uint64_t processing_parameters_get_clipped_samples(const processing_parameters_t* params);
+
+/**
+ * @brief Atomically adds to the cumulative clipped samples count.
+ * @param params Pointer to the processing parameters.
+ * @param count Number of clipped samples to add.
+ */
+void processing_parameters_add_clipped_samples(processing_parameters_t* params, uint64_t count);
+
+/**
+ * @brief Resets the cumulative clipped samples count to zero.
+ * @param params Pointer to the processing parameters.
+ */
+void processing_parameters_reset_clipped_samples(processing_parameters_t* params);
+
+/**
+ * @brief Gets the audio processing load.
+ * @param params Pointer to the processing parameters.
+ * @return Processing load (0.0 to 1.0).
+ */
+double processing_parameters_get_processing_load(const processing_parameters_t* params);
+
+/**
+ * @brief Sets the audio processing load.
+ * @param params Pointer to the processing parameters.
+ * @param value Processing load value (0.0 to 1.0).
+ */
+void processing_parameters_set_processing_load(processing_parameters_t* params, double value);
+
+/**
+ * @brief Gets the resampler load.
+ * @param params Pointer to the processing parameters.
+ * @return Resampler load (0.0 to 1.0).
+ */
+double processing_parameters_get_resampler_load(const processing_parameters_t* params);
+
+/**
+ * @brief Sets the resampler load.
+ * @param params Pointer to the processing parameters.
+ * @param value Resampler load value (0.0 to 1.0).
+ */
+void processing_parameters_set_resampler_load(processing_parameters_t* params, double value);
 
 /**
  * @brief Creates a new processing parameters instance.

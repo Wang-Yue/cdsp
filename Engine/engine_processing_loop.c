@@ -250,14 +250,17 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         if (chunk_duration_ns > 0) {
           double p_load =
               (double)(pipe_end - pipe_start) / (double)chunk_duration_ns;
-          atomic_double_set(&loop->processing_params->processing_load, p_load);
+          processing_parameters_set_processing_load(loop->processing_params,
+                                                     p_load);
 
           if (loop->resampler) {
             double r_load =
                 (double)(res_end - res_start) / (double)chunk_duration_ns;
-            atomic_double_set(&loop->processing_params->resampler_load, r_load);
+            processing_parameters_set_resampler_load(loop->processing_params,
+                                                      r_load);
           } else {
-            atomic_double_set(&loop->processing_params->resampler_load, 0.0);
+            processing_parameters_set_resampler_load(loop->processing_params,
+                                                      0.0);
           }
         }
       }
@@ -275,10 +278,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
           }
         }
       }
-      if (clipped > 0) {
-        atomic_fetch_add_explicit(&loop->processing_params->clipped_samples,
-                                  clipped, memory_order_relaxed);
-      }
+      processing_parameters_add_clipped_samples(loop->processing_params,
+                                                clipped);
     }
 
     processing_parameters_update_playback_levels(loop->processing_params,

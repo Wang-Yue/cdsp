@@ -25,6 +25,97 @@ static inline uint64_t clock_gettime_nsec_np(int clock_id) {
 }
 #endif
 
+struct processing_parameters {
+  /** Target volume (dB) for fader 0-4. UI thread writes; audio thread reads. */
+  atomic_double_t target_volumes[FADER_COUNT];
+  /** Target volume set-at timestamp (nanosecond epoch) for fader 0-4. */
+  _Atomic uint64_t target_volume_set_at[FADER_COUNT];
+  /** Current volume (dB) for fader 0-4. Audio thread updates during ramping. */
+  atomic_double_t current_volumes[FADER_COUNT];
+  /** Mute state for fader 0-4. UI thread writes; audio thread reads. */
+  _Atomic bool muted[FADER_COUNT];
+
+  size_t capture_channels;  /**< Number of capture channels. */
+  size_t playback_channels; /**< Number of playback channels. */
+
+  /** Per-channel capture signal peak levels (dB). Array size: capture_channels.
+   */
+  atomic_double_t* capture_signal_peak;
+  /** Per-channel capture signal RMS levels (dB). Array size: capture_channels.
+   */
+  atomic_double_t* capture_signal_rms;
+  /** Per-channel playback signal peak levels (dB). Array size:
+   * playback_channels. */
+  atomic_double_t* playback_signal_peak;
+  /** Per-channel playback signal RMS levels (dB). Array size:
+   * playback_channels. */
+  atomic_double_t* playback_signal_rms;
+
+  // MARK: - Telemetry
+  atomic_double_t rate_adjust;      /**< Current rate adjustment factor. */
+  atomic_double_t buffer_level;     /**< Current buffer level. */
+  _Atomic uint64_t clipped_samples; /**< Cumulative count of clipped samples. */
+  atomic_double_t processing_load;  /**< Audio processing load (0.0 to 1.0). */
+  atomic_double_t
+      resampler_load; /**< Resampler processing load (0.0 to 1.0). */
+};
+
+size_t processing_parameters_get_capture_channels(const processing_parameters_t* params) {
+  return params ? params->capture_channels : 0;
+}
+
+size_t processing_parameters_get_playback_channels(const processing_parameters_t* params) {
+  return params ? params->playback_channels : 0;
+}
+
+double processing_parameters_get_rate_adjust(const processing_parameters_t* params) {
+  return params ? atomic_double_get(&params->rate_adjust) : 1.0;
+}
+
+void processing_parameters_set_rate_adjust(processing_parameters_t* params, double value) {
+  if (params) atomic_double_set(&params->rate_adjust, value);
+}
+
+double processing_parameters_get_buffer_level(const processing_parameters_t* params) {
+  return params ? atomic_double_get(&params->buffer_level) : 0.0;
+}
+
+void processing_parameters_set_buffer_level(processing_parameters_t* params, double value) {
+  if (params) atomic_double_set(&params->buffer_level, value);
+}
+
+uint64_t processing_parameters_get_clipped_samples(const processing_parameters_t* params) {
+  return params ? atomic_load_explicit(&params->clipped_samples, memory_order_relaxed) : 0ULL;
+}
+
+void processing_parameters_add_clipped_samples(processing_parameters_t* params, uint64_t count) {
+  if (params && count > 0) {
+    atomic_fetch_add_explicit(&params->clipped_samples, count, memory_order_relaxed);
+  }
+}
+
+void processing_parameters_reset_clipped_samples(processing_parameters_t* params) {
+  if (params) {
+    atomic_store_explicit(&params->clipped_samples, 0ULL, memory_order_relaxed);
+  }
+}
+
+double processing_parameters_get_processing_load(const processing_parameters_t* params) {
+  return params ? atomic_double_get(&params->processing_load) : 0.0;
+}
+
+void processing_parameters_set_processing_load(processing_parameters_t* params, double value) {
+  if (params) atomic_double_set(&params->processing_load, value);
+}
+
+double processing_parameters_get_resampler_load(const processing_parameters_t* params) {
+  return params ? atomic_double_get(&params->resampler_load) : 0.0;
+}
+
+void processing_parameters_set_resampler_load(processing_parameters_t* params, double value) {
+  if (params) atomic_double_set(&params->resampler_load, value);
+}
+
 processing_parameters_t* processing_parameters_create(
     size_t capture_channels, size_t playback_channels) {
   processing_parameters_t* params =
