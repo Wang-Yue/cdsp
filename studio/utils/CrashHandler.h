@@ -123,38 +123,38 @@ inline LONG WINAPI customVectoredExceptionHandler(PEXCEPTION_POINTERS pException
 }
 #endif
 
-inline void signalHandler(int sig) {
-#if defined(_WIN32)
-    std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
-    crashLog << "========================================" << std::endl;
-    crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
-    logCallstack(crashLog);
-    crashLog << "========================================" << std::endl;
-    crashLog.flush();
-    crashLog.close();
-#else
-#include <unistd.h>
-    const char msg[] = "\n========================================\nFATAL SIGNAL RECEIVED IN "
-                       "MONITORQT!\n========================================\n";
-    (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
-    ::_exit(sig);
-#endif
-}
-
-inline void customTerminateHandler() {
-    signalHandler(999);
-}
-
 inline void installCrashHandler() {
 #if defined(_WIN32)
     AddVectoredExceptionHandler(1, customVectoredExceptionHandler);
     SetUnhandledExceptionFilter(customUnhandledExceptionFilter);
+    std::set_terminate([]() {
+        std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
+        crashLog << "========================================" << std::endl;
+        crashLog << "FATAL UNHANDLED TERMINATE DETECTED!" << std::endl;
+        logCallstack(crashLog);
+        crashLog << "========================================" << std::endl;
+        crashLog.flush();
+        crashLog.close();
+    });
+    std::signal(SIGSEGV, [](int sig) {
+        std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
+        crashLog << "========================================" << std::endl;
+        crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
+        logCallstack(crashLog);
+        crashLog << "========================================" << std::endl;
+        crashLog.flush();
+        crashLog.close();
+    });
+    std::signal(SIGABRT, [](int sig) {
+        std::ofstream crashLog(getLogFilePath(), std::ios::out | std::ios::app);
+        crashLog << "========================================" << std::endl;
+        crashLog << "FATAL SIGNAL RECEIVED: " << sig << std::endl;
+        logCallstack(crashLog);
+        crashLog << "========================================" << std::endl;
+        crashLog.flush();
+        crashLog.close();
+    });
 #endif
-    std::set_terminate(customTerminateHandler);
-    std::signal(SIGSEGV, signalHandler);
-    std::signal(SIGABRT, signalHandler);
-    std::signal(SIGFPE, signalHandler);
-    std::signal(SIGILL, signalHandler);
 }
 
 #endif // CRASH_HANDLER_H
