@@ -426,8 +426,8 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine) {
       dsp_engine_core_get_processing_params((dsp_engine_core_t*)engine->core);
   if (!p) return res;
   dsp_engine_core_collect_garbage((dsp_engine_core_t*)engine->core);
-  res.playback_channels = p->playback_channels;
-  res.capture_channels = p->capture_channels;
+  res.playback_channels = processing_parameters_get_playback_channels(p);
+  res.capture_channels = processing_parameters_get_capture_channels(p);
   if (res.playback_channels > 0) {
     res.playback_rms = (double*)calloc(res.playback_channels, sizeof(double));
     res.playback_peak = (double*)calloc(res.playback_channels, sizeof(double));
@@ -757,15 +757,16 @@ static bool iface_get_processing_status(void* ctx, double* out_rate_adjust,
     pthread_mutex_unlock(&engine->state_mutex);
     return false;
   }
-  if (out_rate_adjust) *out_rate_adjust = atomic_double_get(&p->rate_adjust);
-  if (out_buffer_level) *out_buffer_level = atomic_double_get(&p->buffer_level);
+  if (out_rate_adjust)
+    *out_rate_adjust = processing_parameters_get_rate_adjust(p);
+  if (out_buffer_level)
+    *out_buffer_level = processing_parameters_get_buffer_level(p);
   if (out_clipped_samples)
-    *out_clipped_samples =
-        atomic_load_explicit(&p->clipped_samples, memory_order_relaxed);
+    *out_clipped_samples = processing_parameters_get_clipped_samples(p);
   if (out_processing_load)
-    *out_processing_load = atomic_double_get(&p->processing_load);
+    *out_processing_load = processing_parameters_get_processing_load(p);
   if (out_resampler_load)
-    *out_resampler_load = atomic_double_get(&p->resampler_load);
+    *out_resampler_load = processing_parameters_get_resampler_load(p);
   pthread_mutex_unlock(&engine->state_mutex);
   return true;
 }
@@ -777,7 +778,7 @@ static void iface_reset_clipped_samples(void* ctx) {
   processing_parameters_t* p =
       dsp_engine_core_get_processing_params(engine->core);
   if (p) {
-    atomic_store_explicit(&p->clipped_samples, 0ULL, memory_order_relaxed);
+    processing_parameters_reset_clipped_samples(p);
   }
   pthread_mutex_unlock(&engine->state_mutex);
 }

@@ -1028,15 +1028,9 @@ static void* test_processing_thread_run(void* arg) {
 static void reload_iter_c(int i, void* ctx) {
   pipeline_reload_test_ctx_t* c = (pipeline_reload_test_ctx_t*)ctx;
 
-  // 1. Enqueue chunk
-  spsc_queue_enqueue(engine_shared_state_get_captured_queue(c->shared),
-                     c->input_chunk);
-
-  // 2. Set pipeline (i + 1 because 0 was used in warmup)
+  // 1. Enqueue chunk & signal captured semaphore
   engine_processing_loop_set_pipeline(c->loop, c->reloaded_pipelines[i + 1]);
-
-  // 3. Signal captured semaphore
-  engine_sem_signal(*engine_shared_state_get_captured_semaphore(c->shared));
+  engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
 
   // 4. Wait for processing completion
   engine_sem_wait(c->processed_sem);
@@ -1114,8 +1108,8 @@ TEST(PipelineReload_AllocationFree) {
   ctx.input_chunk = audio_chunk_create(1024, 2);
   audio_chunk_set_valid_frames(ctx.input_chunk, 1024);
 
-  engine_sem_init(&ctx.thread_id_sem);
-  engine_sem_init(&ctx.processed_sem);
+  ctx.thread_id_sem = engine_sem_create();
+  ctx.processed_sem = engine_sem_create();
   atomic_init(&ctx.watched_thread_id, 0);
 
   engine_processing_loop_t* loop = engine_processing_loop_create(
@@ -1133,10 +1127,8 @@ TEST(PipelineReload_AllocationFree) {
   pthread_create(&thread, NULL, test_processing_thread_run, loop);
 
   // Warmup / get thread ID
-  spsc_queue_enqueue(engine_shared_state_get_captured_queue(shared),
-                     ctx.input_chunk);
   engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0]);
-  engine_sem_signal(*engine_shared_state_get_captured_semaphore(shared));
+  engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
 
   engine_sem_wait(ctx.thread_id_sem);
   engine_sem_wait(ctx.processed_sem);
@@ -1176,8 +1168,8 @@ TEST(PipelineReload_AllocationFree) {
   engine_state_machine_free(state_machine);
   processing_parameters_free(params);
 
-  engine_sem_destroy(&ctx.thread_id_sem);
-  engine_sem_destroy(&ctx.processed_sem);
+  engine_sem_destroy(ctx.thread_id_sem);
+  engine_sem_destroy(ctx.processed_sem);
 }
 
 typedef struct {

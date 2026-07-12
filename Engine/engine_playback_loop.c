@@ -190,9 +190,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   }
 
   audio_chunk_t* chunk = NULL;
-  while ((chunk = engine_shared_state_dequeue_blocking(
-              engine_shared_state_get_processed_queue(loop->shared),
-              engine_shared_state_get_processed_semaphore(loop->shared),
+  while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
     if (engine_playback_loop_handle_terminal_chunk(loop, chunk)) {
       break;
@@ -222,8 +220,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
         spsc_queue_get_count(
             engine_shared_state_get_processed_queue(loop->shared)) *
         loop->chunk_size;
-    processing_parameters_set_buffer_level(
-        loop->processing_params, (double)(ring_fill + queued_frames));
+    processing_parameters_set_buffer_level(loop->processing_params,
+                                           (double)(ring_fill + queued_frames));
 
     if (loop->rate_adjust_enabled && rate_controller) {
       averager_add(&averager, (double)(ring_fill + queued_frames));
@@ -237,8 +235,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
           stopwatch_restart(&stopwatch);
           averager_restart(&averager);
           apply_speed(loop, speed, &last_speed, avg);
-          processing_parameters_set_rate_adjust(loop->processing_params,
-                                                speed);
+          processing_parameters_set_rate_adjust(loop->processing_params, speed);
         }
       }
     }

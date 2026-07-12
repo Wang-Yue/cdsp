@@ -71,9 +71,11 @@ static bool mock_get_processing_status(void* ctx, double* out_rate_adjust,
   if (out_buffer_level)
     *out_buffer_level = processing_parameters_get_buffer_level(mock_params);
   if (out_clipped_samples)
-    *out_clipped_samples = processing_parameters_get_clipped_samples(mock_params);
+    *out_clipped_samples =
+        processing_parameters_get_clipped_samples(mock_params);
   if (out_processing_load)
-    *out_processing_load = processing_parameters_get_processing_load(mock_params);
+    *out_processing_load =
+        processing_parameters_get_processing_load(mock_params);
   if (out_resampler_load)
     *out_resampler_load = processing_parameters_get_resampler_load(mock_params);
   return true;
@@ -89,8 +91,10 @@ static void mock_reset_clipped_samples(void* ctx) {
 static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   (void)ctx;
   if (!mock_params || !out_vu) return false;
-  out_vu->playback_channels = processing_parameters_get_playback_channels(mock_params);
-  out_vu->capture_channels = processing_parameters_get_capture_channels(mock_params);
+  out_vu->playback_channels =
+      processing_parameters_get_playback_channels(mock_params);
+  out_vu->capture_channels =
+      processing_parameters_get_capture_channels(mock_params);
 
   if (out_vu->playback_channels > 0) {
     out_vu->playback_rms =

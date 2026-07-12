@@ -309,18 +309,12 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     if (engine_state_machine_get_state(loop->state_machine) !=
         PROCESSING_STATE_PAUSED) {
       audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
-      spsc_queue_enqueue(engine_shared_state_get_captured_queue(loop->shared),
-                         chunk);
-      engine_sem_signal(
-          *engine_shared_state_get_captured_semaphore(loop->shared));
+      engine_shared_state_enqueue_captured(loop->shared, chunk);
     }
   }
 
   if (stop_chunk) {
-    spsc_queue_enqueue(engine_shared_state_get_captured_queue(loop->shared),
-                       stop_chunk);
-    engine_sem_signal(
-        *engine_shared_state_get_captured_semaphore(loop->shared));
+    engine_shared_state_enqueue_captured(loop->shared, stop_chunk);
   }
 
   logger_info(&logger, "Capture thread stopped");

@@ -97,14 +97,14 @@ spsc_queue_t* engine_shared_state_get_processed_queue(
   return state ? state->processed_queue : NULL;
 }
 
-engine_semaphore_t* engine_shared_state_get_captured_semaphore(
-    engine_shared_state_t* state) {
-  return state ? &state->captured_semaphore : NULL;
+engine_semaphore_t engine_shared_state_get_captured_semaphore(
+    const engine_shared_state_t* state) {
+  return state ? state->captured_semaphore : NULL;
 }
 
-engine_semaphore_t* engine_shared_state_get_processed_semaphore(
-    engine_shared_state_t* state) {
-  return state ? &state->processed_semaphore : NULL;
+engine_semaphore_t engine_shared_state_get_processed_semaphore(
+    const engine_shared_state_t* state) {
+  return state ? state->processed_semaphore : NULL;
 }
 
 bool engine_shared_state_get_stop_requested(
@@ -169,8 +169,8 @@ engine_shared_state_t* engine_shared_state_create(
       spsc_queue_create(captured_queue_depth > 0 ? captured_queue_depth : 16);
   state->processed_queue =
       spsc_queue_create(processed_queue_depth > 0 ? processed_queue_depth : 16);
-  engine_sem_init(&state->captured_semaphore);
-  engine_sem_init(&state->processed_semaphore);
+  state->captured_semaphore = engine_sem_create();
+  state->processed_semaphore = engine_sem_create();
   atomic_init(&state->stop_requested, false);
   state->resampler_ratio = atomic_double_create(1.0);
   state->pipeline_garbage_queue = spsc_queue_create(32);
@@ -188,8 +188,8 @@ void engine_shared_state_free(engine_shared_state_t* state) {
   if (!state) return;
   if (state->captured_queue) spsc_queue_free(state->captured_queue);
   if (state->processed_queue) spsc_queue_free(state->processed_queue);
-  engine_sem_destroy(&state->captured_semaphore);
-  engine_sem_destroy(&state->processed_semaphore);
+  engine_sem_destroy(state->captured_semaphore);
+  engine_sem_destroy(state->processed_semaphore);
   if (state->resampler_ratio) atomic_double_free(state->resampler_ratio);
 
   if (state->pipeline_garbage_queue) {
@@ -212,13 +212,54 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
 
   // Wake up capture thread so it can emit the in-band STOP message downstream.
-  engine_sem_signal(state->captured_semaphore);
-  engine_sem_signal(state->processed_semaphore);
+  engine_shared_state_signal_captured(state);
+  engine_shared_state_signal_processed(state);
+}
+
+void engine_shared_state_signal_captured(engine_shared_state_t* state) {
+  if (state) engine_sem_signal(state->captured_semaphore);
+}
+
+void engine_shared_state_signal_processed(engine_shared_state_t* state) {
+  if (state) engine_sem_signal(state->processed_semaphore);
+}
+
+bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
+                                          audio_chunk_t* chunk) {
+  if (!state || !state->captured_queue) return false;
+  bool ok = spsc_queue_enqueue(state->captured_queue, chunk);
+  if (ok) {
+    engine_shared_state_signal_captured(state);
+  }
+  return ok;
+}
+
+bool engine_shared_state_enqueue_processed(engine_shared_state_t* state,
+                                           audio_chunk_t* chunk) {
+  if (!state || !state->processed_queue) return false;
+  bool ok = spsc_queue_enqueue(state->processed_queue, chunk);
+  if (ok) {
+    engine_shared_state_signal_processed(state);
+  }
+  return ok;
+}
+
+audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
+    engine_shared_state_t* state) {
+  if (!state) return NULL;
+  return engine_shared_state_dequeue_blocking(state->captured_queue,
+                                              state->captured_semaphore, state);
+}
+
+audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
+    engine_shared_state_t* state) {
+  if (!state) return NULL;
+  return engine_shared_state_dequeue_blocking(
+      state->processed_queue, state->processed_semaphore, state);
 }
 
 audio_chunk_t* engine_shared_state_dequeue_blocking(
-    spsc_queue_t* queue, engine_semaphore_t* sem,
-    engine_shared_state_t* state) {
+    spsc_queue_t* queue, engine_semaphore_t sem, engine_shared_state_t* state) {
   if (!queue || !sem || !state) return NULL;
   while (1) {
     audio_chunk_t* chunk = (audio_chunk_t*)spsc_queue_dequeue(queue);
@@ -228,6 +269,6 @@ audio_chunk_t* engine_shared_state_dequeue_blocking(
     if (engine_shared_state_get_stop_requested(state)) {
       return NULL;
     }
-    engine_sem_wait(*sem);
+    engine_sem_wait(sem);
   }
 }

@@ -174,7 +174,8 @@ capture_backend_t* jack_capture_create(const capture_device_config_t* config,
              "camilladsp_capture");
   }
 
-  if (!engine_sem_init(&capture->sem)) {
+  capture->sem = engine_sem_create();
+  if (!capture->sem) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to initialize semaphore");
@@ -337,7 +338,7 @@ bool jack_capture_wait(jack_capture_t* capture, uint32_t timeout_ms) {
 void jack_capture_destroy(jack_capture_t* capture) {
   if (!capture) return;
   jack_capture_close(capture);
-  engine_sem_destroy(&capture->sem);
+  engine_sem_destroy(capture->sem);
   for (int c = 0; c < capture->channels; c++) {
     spsc_audio_ring_buffer_free(capture->buffers[c]);
   }
@@ -530,7 +531,8 @@ playback_backend_t* jack_playback_create(const playback_device_config_t* config,
              "camilladsp_playback");
   }
 
-  if (!engine_sem_init(&playback->sem)) {
+  playback->sem = engine_sem_create();
+  if (!playback->sem) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to initialize semaphore");
@@ -692,7 +694,7 @@ void jack_playback_set_is_paused(jack_playback_t* playback, bool paused) {
 void jack_playback_destroy(jack_playback_t* playback) {
   if (!playback) return;
   jack_playback_close(playback);
-  engine_sem_destroy(&playback->sem);
+  engine_sem_destroy(playback->sem);
   for (int c = 0; c < playback->channels; c++) {
     spsc_audio_ring_buffer_free(playback->buffers[c]);
   }

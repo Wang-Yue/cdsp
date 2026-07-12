@@ -60,59 +60,75 @@ struct processing_parameters {
       resampler_load; /**< Resampler processing load (0.0 to 1.0). */
 };
 
-size_t processing_parameters_get_capture_channels(const processing_parameters_t* params) {
+size_t processing_parameters_get_capture_channels(
+    const processing_parameters_t* params) {
   return params ? params->capture_channels : 0;
 }
 
-size_t processing_parameters_get_playback_channels(const processing_parameters_t* params) {
+size_t processing_parameters_get_playback_channels(
+    const processing_parameters_t* params) {
   return params ? params->playback_channels : 0;
 }
 
-double processing_parameters_get_rate_adjust(const processing_parameters_t* params) {
+double processing_parameters_get_rate_adjust(
+    const processing_parameters_t* params) {
   return params ? atomic_double_get(&params->rate_adjust) : 1.0;
 }
 
-void processing_parameters_set_rate_adjust(processing_parameters_t* params, double value) {
+void processing_parameters_set_rate_adjust(processing_parameters_t* params,
+                                           double value) {
   if (params) atomic_double_set(&params->rate_adjust, value);
 }
 
-double processing_parameters_get_buffer_level(const processing_parameters_t* params) {
+double processing_parameters_get_buffer_level(
+    const processing_parameters_t* params) {
   return params ? atomic_double_get(&params->buffer_level) : 0.0;
 }
 
-void processing_parameters_set_buffer_level(processing_parameters_t* params, double value) {
+void processing_parameters_set_buffer_level(processing_parameters_t* params,
+                                            double value) {
   if (params) atomic_double_set(&params->buffer_level, value);
 }
 
-uint64_t processing_parameters_get_clipped_samples(const processing_parameters_t* params) {
-  return params ? atomic_load_explicit(&params->clipped_samples, memory_order_relaxed) : 0ULL;
+uint64_t processing_parameters_get_clipped_samples(
+    const processing_parameters_t* params) {
+  return params ? atomic_load_explicit(&params->clipped_samples,
+                                       memory_order_relaxed)
+                : 0ULL;
 }
 
-void processing_parameters_add_clipped_samples(processing_parameters_t* params, uint64_t count) {
+void processing_parameters_add_clipped_samples(processing_parameters_t* params,
+                                               uint64_t count) {
   if (params && count > 0) {
-    atomic_fetch_add_explicit(&params->clipped_samples, count, memory_order_relaxed);
+    atomic_fetch_add_explicit(&params->clipped_samples, count,
+                              memory_order_relaxed);
   }
 }
 
-void processing_parameters_reset_clipped_samples(processing_parameters_t* params) {
+void processing_parameters_reset_clipped_samples(
+    processing_parameters_t* params) {
   if (params) {
     atomic_store_explicit(&params->clipped_samples, 0ULL, memory_order_relaxed);
   }
 }
 
-double processing_parameters_get_processing_load(const processing_parameters_t* params) {
+double processing_parameters_get_processing_load(
+    const processing_parameters_t* params) {
   return params ? atomic_double_get(&params->processing_load) : 0.0;
 }
 
-void processing_parameters_set_processing_load(processing_parameters_t* params, double value) {
+void processing_parameters_set_processing_load(processing_parameters_t* params,
+                                               double value) {
   if (params) atomic_double_set(&params->processing_load, value);
 }
 
-double processing_parameters_get_resampler_load(const processing_parameters_t* params) {
+double processing_parameters_get_resampler_load(
+    const processing_parameters_t* params) {
   return params ? atomic_double_get(&params->resampler_load) : 0.0;
 }
 
-void processing_parameters_set_resampler_load(processing_parameters_t* params, double value) {
+void processing_parameters_set_resampler_load(processing_parameters_t* params,
+                                              double value) {
   if (params) atomic_double_set(&params->resampler_load, value);
 }
 
