@@ -335,4 +335,276 @@ TEST(FileBackendF64RoundTrip) {
   run_format_roundtrip_test(BINARY_SAMPLE_FORMAT_F64_LE, 1e-12);
 }
 
+TEST(FileBackendRealtimeThrottling) {
+  const char* raw_filename = "/tmp/test_file_backend_realtime.raw";
+  remove(raw_filename);
+
+  int sample_rate = 44100;
+  int channels = 1;
+  int frames = 4410;  // 0.1 seconds of audio
+
+  // 1. Write dummy data to file
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.is_wav = false;
+  play_cfg.has_is_wav = true;
+  play_cfg.cfg.raw_file.channels = channels;
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+
+  backend_error_t err;
+  playback_backend_t* playback =
+      file_playback_create(&play_cfg, sample_rate, 1024, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  audio_chunk_t* write_chunk = audio_chunk_create(frames, channels);
+  for (int f = 0; f < frames; f++) {
+    audio_chunk_get_channel(write_chunk, 0)[f] = 0.0;
+  }
+  audio_chunk_set_valid_frames(write_chunk, frames);
+  ASSERT_TRUE(playback_backend_write(playback, write_chunk, &err));
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+
+  // 2. Read back with realtime = false (default) and measure time
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = false;
+  cap_cfg.has_is_wav = true;
+  cap_cfg.cfg.raw_file.channels = channels;
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
+           "%s", raw_filename);
+  cap_cfg.cfg.raw_file.has_filename = true;
+  cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  cap_cfg.cfg.raw_file.has_format = true;
+  cap_cfg.cfg.raw_file.realtime = false;
+  cap_cfg.cfg.raw_file.has_realtime = true;
+
+  capture_backend_t* capture_fast =
+      file_capture_create(&cap_cfg, sample_rate, 441, NULL, &err);
+  ASSERT_TRUE(capture_fast != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_fast, &err));
+
+  audio_chunk_t* read_chunk = audio_chunk_create(441, channels);
+
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(capture_backend_read(capture_fast, 441, read_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
+                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  capture_backend_close(capture_fast);
+  capture_backend_free(capture_fast);
+
+  // Fast read should be very quick, much less than 100ms.
+  ASSERT_TRUE(elapsed_fast < 0.05);
+
+  // 3. Read back with realtime = true and measure time
+  cap_cfg.cfg.raw_file.realtime = true;
+  capture_backend_t* capture_rt =
+      file_capture_create(&cap_cfg, sample_rate, 441, NULL, &err);
+  ASSERT_TRUE(capture_rt != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_rt, &err));
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(capture_backend_read(capture_rt, 441, read_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
+                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  capture_backend_close(capture_rt);
+  capture_backend_free(capture_rt);
+
+  // Realtime read should take around 100ms (0.1s).
+  // We check if it is within [90ms, 200ms] to account for scheduler jitter.
+  ASSERT_TRUE(elapsed_rt >= 0.09);
+  ASSERT_TRUE(elapsed_rt < 0.20);
+
+  audio_chunk_free(write_chunk);
+  audio_chunk_free(read_chunk);
+  remove(raw_filename);
+}
+
+TEST(FileBackendPlaybackRealtimeThrottling) {
+  const char* raw_filename = "/tmp/test_file_backend_playback_realtime.raw";
+  remove(raw_filename);
+
+  int sample_rate = 44100;
+  int channels = 1;
+  int frames = 4410;  // 0.1 seconds of audio
+
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.is_wav = false;
+  play_cfg.has_is_wav = true;
+  play_cfg.cfg.raw_file.channels = channels;
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+  play_cfg.cfg.raw_file.realtime = false;
+  play_cfg.cfg.raw_file.has_realtime = true;
+
+  backend_error_t err;
+  playback_backend_t* playback_fast =
+      file_playback_create(&play_cfg, sample_rate, 441, NULL, &err);
+  ASSERT_TRUE(playback_fast != NULL);
+  ASSERT_TRUE(playback_backend_open(playback_fast, &err));
+
+  audio_chunk_t* write_chunk = audio_chunk_create(441, channels);
+  for (int f = 0; f < 441; f++) {
+    audio_chunk_get_channel(write_chunk, 0)[f] = 0.0;
+  }
+  audio_chunk_set_valid_frames(write_chunk, 441);
+
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(playback_backend_write(playback_fast, write_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
+                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  playback_backend_close(playback_fast);
+  playback_backend_free(playback_fast);
+  remove(raw_filename);
+
+  ASSERT_TRUE(elapsed_fast < 0.05);
+
+  play_cfg.cfg.raw_file.realtime = true;
+  playback_backend_t* playback_rt =
+      file_playback_create(&play_cfg, sample_rate, 441, NULL, &err);
+  ASSERT_TRUE(playback_rt != NULL);
+  ASSERT_TRUE(playback_backend_open(playback_rt, &err));
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(playback_backend_write(playback_rt, write_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
+                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  playback_backend_close(playback_rt);
+  playback_backend_free(playback_rt);
+  remove(raw_filename);
+
+  ASSERT_TRUE(elapsed_rt >= 0.09);
+  ASSERT_TRUE(elapsed_rt < 0.20);
+
+  audio_chunk_free(write_chunk);
+}
+
+TEST(FileBackendWavRealtimeThrottling) {
+  const char* wav_filename = "/tmp/test_file_backend_wav_realtime.wav";
+  remove(wav_filename);
+
+  int sample_rate = 16000;
+  int channels = 1;
+  int frames = 1600;  // 0.1 seconds of audio
+
+  // 1. Write WAV data to file
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.is_wav = true;
+  play_cfg.has_is_wav = true;
+  play_cfg.cfg.raw_file.channels = channels;
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+  play_cfg.cfg.raw_file.wav_header = true;
+  play_cfg.cfg.raw_file.has_wav_header = true;
+
+  backend_error_t err;
+  playback_backend_t* playback =
+      file_playback_create(&play_cfg, sample_rate, 1024, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  audio_chunk_t* write_chunk = audio_chunk_create(frames, channels);
+  for (int f = 0; f < frames; f++) {
+    audio_chunk_get_channel(write_chunk, 0)[f] = 0.0;
+  }
+  audio_chunk_set_valid_frames(write_chunk, frames);
+  ASSERT_TRUE(playback_backend_write(playback, write_chunk, &err));
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+
+  // 2. Read back with realtime = false (default) and measure time
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = true;
+  cap_cfg.has_is_wav = true;
+  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
+           "%s", wav_filename);
+  cap_cfg.cfg.wav_file.has_filename = true;
+  cap_cfg.cfg.wav_file.realtime = false;
+  cap_cfg.cfg.wav_file.has_realtime = true;
+
+  capture_backend_t* capture_fast =
+      file_capture_create(&cap_cfg, sample_rate, 160, NULL, &err);
+  ASSERT_TRUE(capture_fast != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_fast, &err));
+
+  audio_chunk_t* read_chunk = audio_chunk_create(160, channels);
+
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(capture_backend_read(capture_fast, 160, read_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
+                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  capture_backend_close(capture_fast);
+  capture_backend_free(capture_fast);
+
+  ASSERT_TRUE(elapsed_fast < 0.05);
+
+  // 3. Read back with realtime = true and measure time
+  cap_cfg.cfg.wav_file.realtime = true;
+  capture_backend_t* capture_rt =
+      file_capture_create(&cap_cfg, sample_rate, 160, NULL, &err);
+  ASSERT_TRUE(capture_rt != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_rt, &err));
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(capture_backend_read(capture_rt, 160, read_chunk, &err));
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
+                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+
+  capture_backend_close(capture_rt);
+  capture_backend_free(capture_rt);
+
+  // Realtime read should take around 100ms (0.1s).
+  ASSERT_TRUE(elapsed_rt >= 0.09);
+  ASSERT_TRUE(elapsed_rt < 0.20);
+
+  audio_chunk_free(write_chunk);
+  audio_chunk_free(read_chunk);
+  remove(wav_filename);
+}
+
 TEST_MAIN()

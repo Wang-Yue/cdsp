@@ -674,6 +674,8 @@ typedef struct {
   bool has_filename;      /**< True if filename is specified. */
   int extra_samples;      /**< Extra samples to read. */
   bool has_extra_samples; /**< True if extra_samples is specified. */
+  bool realtime;          /**< Read at real-time rate. */
+  bool has_realtime;      /**< True if realtime is specified. */
 } wav_file_capture_config_t;
 
 /**
@@ -691,6 +693,8 @@ typedef struct {
   bool has_read_bytes;           /**< True if read_bytes is specified. */
   int extra_samples;             /**< Extra samples to read. */
   bool has_extra_samples;        /**< True if extra_samples is specified. */
+  bool realtime;                 /**< Read at real-time rate. */
+  bool has_realtime;             /**< True if realtime is specified. */
 } raw_file_capture_config_t;
 
 /**
@@ -704,6 +708,8 @@ typedef struct {
   int channels;                  /**< Number of channels. */
   bool wav_header;               /**< Write WAV header. */
   bool has_wav_header;           /**< True if wav_header is specified. */
+  bool realtime;                 /**< Write at real-time rate. */
+  bool has_realtime;             /**< True if realtime is specified. */
 } raw_file_playback_config_t;
 
 /**

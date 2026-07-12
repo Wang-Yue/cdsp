@@ -44,6 +44,9 @@ struct file_capture {
   size_t raw_buf_capacity;
   uint64_t last_read_time_ns;
   bool is_paused;
+  bool realtime;
+  uint64_t start_time_ns;
+  size_t total_frames_read;
 };
 
 struct file_playback {
@@ -58,6 +61,9 @@ struct file_playback {
   size_t total_bytes_written;
   uint8_t* raw_buf;
   size_t raw_buf_capacity;
+  bool realtime;
+  uint64_t start_time_ns;
+  size_t total_frames_written;
 };
 
 // WAV parsing header
@@ -505,6 +511,9 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
       capture->extra_samples = config->cfg.wav_file.has_extra_samples
                                    ? (size_t)config->cfg.wav_file.extra_samples
                                    : 0;
+      capture->realtime = config->cfg.wav_file.has_realtime
+                              ? config->cfg.wav_file.realtime
+                              : false;
     } else {
       snprintf(capture->filename, sizeof(capture->filename), "%s",
                config->cfg.raw_file.filename);
@@ -519,6 +528,9 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
       capture->extra_samples = config->cfg.raw_file.has_extra_samples
                                    ? (size_t)config->cfg.raw_file.extra_samples
                                    : 0;
+      capture->realtime = config->cfg.raw_file.has_realtime
+                              ? config->cfg.raw_file.realtime
+                              : false;
     }
   }
 
@@ -610,6 +622,8 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
   capture->total_bytes_read = 0;
   capture->extra_samples_generated = 0;
   capture->last_read_time_ns = get_time_ns();
+  capture->start_time_ns = get_time_ns();
+  capture->total_frames_read = 0;
   return true;
 }
 
@@ -710,6 +724,22 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
   }
 
   audio_chunk_set_valid_frames(chunk, frames_read);
+
+  if (frames_read > 0) {
+    capture->total_frames_read += frames_read;
+    if (capture->realtime) {
+      uint64_t target_elapsed_ns = (uint64_t)capture->total_frames_read *
+                                   1000000000ULL /
+                                   (uint64_t)capture->sample_rate;
+      uint64_t actual_elapsed_ns = get_time_ns() - capture->start_time_ns;
+      if (target_elapsed_ns > actual_elapsed_ns) {
+        uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
+        struct timespec req = {.tv_sec = (time_t)(sleep_ns / 1000000000ULL),
+                               .tv_nsec = (long)(sleep_ns % 1000000000ULL)};
+        nanosleep(&req, NULL);
+      }
+    }
+  }
 
   if (frames_read == 0) {
     if (err) {
@@ -834,14 +864,19 @@ playback_backend_t* file_playback_create(const playback_device_config_t* config,
     playback->format = config->cfg.stdout_out.format;
     playback->is_wav = config->cfg.stdout_out.wav_header;
     playback->channels = config->cfg.stdout_out.channels;
+    playback->realtime = false;
   } else {
     snprintf(playback->filename, sizeof(playback->filename), "%s",
              config->cfg.raw_file.filename);
     playback->format = config->cfg.raw_file.format;
     playback->is_wav = config->cfg.raw_file.wav_header;
     playback->channels = config->cfg.raw_file.channels;
+    playback->realtime = config->cfg.raw_file.has_realtime
+                             ? config->cfg.raw_file.realtime
+                             : false;
   }
   playback->chunk_size = chunk_size;
+  playback->sample_rate = sample_rate;
 
   playback_backend_t* backend =
       (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
@@ -901,6 +936,8 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
   }
 
   playback->total_bytes_written = 0;
+  playback->start_time_ns = get_time_ns();
+  playback->total_frames_written = 0;
 
   if (playback->is_wav && !playback->is_stdout) {
     // Reserve WAV header space
@@ -956,7 +993,24 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
   }
   playback->total_bytes_written += bytes_written;
 
-  return (bytes_written == required_bytes);
+  bool success = (bytes_written == required_bytes);
+  if (success && frames > 0) {
+    playback->total_frames_written += frames;
+    if (playback->realtime) {
+      uint64_t target_elapsed_ns = (uint64_t)playback->total_frames_written *
+                                   1000000000ULL /
+                                   (uint64_t)playback->sample_rate;
+      uint64_t actual_elapsed_ns = get_time_ns() - playback->start_time_ns;
+      if (target_elapsed_ns > actual_elapsed_ns) {
+        uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
+        struct timespec req = {.tv_sec = (time_t)(sleep_ns / 1000000000ULL),
+                               .tv_nsec = (long)(sleep_ns % 1000000000ULL)};
+        nanosleep(&req, NULL);
+      }
+    }
+  }
+
+  return success;
 }
 
 void file_playback_close(file_playback_t* playback) {
