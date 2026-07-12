@@ -44,9 +44,11 @@ struct file_capture {
   size_t raw_buf_capacity;
   uint64_t last_read_time_ns;
   bool is_paused;
+#ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
   size_t total_frames_read;
+#endif
 };
 
 struct file_playback {
@@ -61,9 +63,11 @@ struct file_playback {
   size_t total_bytes_written;
   uint8_t* raw_buf;
   size_t raw_buf_capacity;
+#ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
   size_t total_frames_written;
+#endif
 };
 
 // WAV parsing header
@@ -511,9 +515,11 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
       capture->extra_samples = config->cfg.wav_file.has_extra_samples
                                    ? (size_t)config->cfg.wav_file.extra_samples
                                    : 0;
+#ifdef CDSP_TEST
       capture->realtime = config->cfg.wav_file.has_realtime
                               ? config->cfg.wav_file.realtime
                               : false;
+#endif
     } else {
       snprintf(capture->filename, sizeof(capture->filename), "%s",
                config->cfg.raw_file.filename);
@@ -528,9 +534,11 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
       capture->extra_samples = config->cfg.raw_file.has_extra_samples
                                    ? (size_t)config->cfg.raw_file.extra_samples
                                    : 0;
+#ifdef CDSP_TEST
       capture->realtime = config->cfg.raw_file.has_realtime
                               ? config->cfg.raw_file.realtime
                               : false;
+#endif
     }
   }
 
@@ -622,8 +630,10 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
   capture->total_bytes_read = 0;
   capture->extra_samples_generated = 0;
   capture->last_read_time_ns = get_time_ns();
+#ifdef CDSP_TEST
   capture->start_time_ns = get_time_ns();
   capture->total_frames_read = 0;
+#endif
   return true;
 }
 
@@ -725,6 +735,7 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
 
   audio_chunk_set_valid_frames(chunk, frames_read);
 
+#ifdef CDSP_TEST
   if (frames_read > 0) {
     capture->total_frames_read += frames_read;
     if (capture->realtime) {
@@ -740,6 +751,7 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
       }
     }
   }
+#endif
 
   if (frames_read == 0) {
     if (err) {
@@ -864,16 +876,20 @@ playback_backend_t* file_playback_create(const playback_device_config_t* config,
     playback->format = config->cfg.stdout_out.format;
     playback->is_wav = config->cfg.stdout_out.wav_header;
     playback->channels = config->cfg.stdout_out.channels;
+#ifdef CDSP_TEST
     playback->realtime = false;
+#endif
   } else {
     snprintf(playback->filename, sizeof(playback->filename), "%s",
              config->cfg.raw_file.filename);
     playback->format = config->cfg.raw_file.format;
     playback->is_wav = config->cfg.raw_file.wav_header;
     playback->channels = config->cfg.raw_file.channels;
+#ifdef CDSP_TEST
     playback->realtime = config->cfg.raw_file.has_realtime
                              ? config->cfg.raw_file.realtime
                              : false;
+#endif
   }
   playback->chunk_size = chunk_size;
   playback->sample_rate = sample_rate;
@@ -936,8 +952,10 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
   }
 
   playback->total_bytes_written = 0;
+#ifdef CDSP_TEST
   playback->start_time_ns = get_time_ns();
   playback->total_frames_written = 0;
+#endif
 
   if (playback->is_wav && !playback->is_stdout) {
     // Reserve WAV header space
@@ -994,6 +1012,7 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
   playback->total_bytes_written += bytes_written;
 
   bool success = (bytes_written == required_bytes);
+#ifdef CDSP_TEST
   if (success && frames > 0) {
     playback->total_frames_written += frames;
     if (playback->realtime) {
@@ -1009,6 +1028,7 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
       }
     }
   }
+#endif
 
   return success;
 }

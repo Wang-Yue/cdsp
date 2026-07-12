@@ -212,6 +212,10 @@ SRCS := $(filter-out $(SRC_ROOT)/Server/%.c %/Server/%.c, $(SRCS))
 OBJ_DIR := $(ROOT_DIR)/.build/obj
 OBJS := $(patsubst $(ROOT_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
+TEST_OBJ_DIR := $(ROOT_DIR)/.build/obj_test
+TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SRCS))
+TEST_LIB_TARGET := $(SRC_ROOT)/libdsp_test.a
+
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
 SERVER_SRCS := $(wildcard $(SRC_ROOT)/Server/*.c)
 CLI_SRC := $(SRC_ROOT)/main.c
@@ -231,25 +235,35 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Compile library source files with CDSP_TEST define for tests
+$(TEST_OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DCDSP_TEST -c $< -o $@
+
 # Archive object files into static library
 $(LIB_TARGET): $(OBJS)
 	@rm -f $@
 	$(AR) rcs $@ $(OBJS)
 
-# Build test binaries by linking against libdsp.a
+# Archive test object files into static library
+$(TEST_LIB_TARGET): $(TEST_OBJS)
+	@rm -f $@
+	$(AR) rcs $@ $(TEST_OBJS)
+
+# Build test binaries by linking against libdsp_test.a
 ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
 endif
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS) -o $@
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -o $@
 
 BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
@@ -288,4 +302,4 @@ format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
 
 clean:
-	rm -rf $(OBJ_DIR) $(LIB_TARGET) $(ROOT_DIR)/Tests/CLibTests/bin $(SRC_ROOT)/bin
+	rm -rf $(OBJ_DIR) $(TEST_OBJ_DIR) $(LIB_TARGET) $(TEST_LIB_TARGET) $(ROOT_DIR)/Tests/CLibTests/bin $(SRC_ROOT)/bin

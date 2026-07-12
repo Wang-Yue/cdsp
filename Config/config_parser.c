@@ -196,8 +196,10 @@ typedef struct {
   bool has_read_bytes;
   int extra_samples;
   bool has_extra_samples;
+#ifdef CDSP_TEST
   bool realtime;
   bool has_realtime;
+#endif
   char** labels;
   size_t labels_count;
   bool has_labels;
@@ -446,11 +448,13 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
     cap->has_dop_cutoff_hz = true;
   }
 
+#ifdef CDSP_TEST
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "realtime");
   if (cJSON_IsBool(item)) {
     cap->realtime = cJSON_IsTrue(item);
     cap->has_realtime = true;
   }
+#endif
 
   cJSON* sig_obj = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
   if (cJSON_IsObject(sig_obj)) {
@@ -563,8 +567,10 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
         final_cap->cfg.wav_file.has_filename = temp.has_filename;
         final_cap->cfg.wav_file.extra_samples = temp.extra_samples;
         final_cap->cfg.wav_file.has_extra_samples = temp.has_extra_samples;
+#ifdef CDSP_TEST
         final_cap->cfg.wav_file.realtime = temp.realtime;
         final_cap->cfg.wav_file.has_realtime = temp.has_realtime;
+#endif
       } else {
         snprintf(final_cap->cfg.raw_file.filename,
                  sizeof(final_cap->cfg.raw_file.filename), "%s", temp.filename);
@@ -578,8 +584,10 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
         final_cap->cfg.raw_file.has_read_bytes = temp.has_read_bytes;
         final_cap->cfg.raw_file.extra_samples = temp.extra_samples;
         final_cap->cfg.raw_file.has_extra_samples = temp.has_extra_samples;
+#ifdef CDSP_TEST
         final_cap->cfg.raw_file.realtime = temp.realtime;
         final_cap->cfg.raw_file.has_realtime = temp.has_realtime;
+#endif
       }
       break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
@@ -663,8 +671,10 @@ typedef struct {
   bool has_file_format;
   bool is_wav;
   bool has_is_wav;
+#ifdef CDSP_TEST
   bool realtime;
   bool has_realtime;
+#endif
   char** labels;
   size_t labels_count;
   bool has_labels;
@@ -804,11 +814,13 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
         (play->dop_encoder_filter != SDM_FILTER_INVALID);
   }
 
+#ifdef CDSP_TEST
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "realtime");
   if (cJSON_IsBool(item)) {
     play->realtime = cJSON_IsTrue(item);
     play->has_realtime = true;
   }
+#endif
 
 #if defined(ENABLE_PIPEWIRE)
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "node_name");
@@ -923,8 +935,10 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.raw_file.channels = temp.channels;
       final_play->cfg.raw_file.wav_header = temp.is_wav;
       final_play->cfg.raw_file.has_wav_header = temp.has_is_wav;
+#ifdef CDSP_TEST
       final_play->cfg.raw_file.realtime = temp.realtime;
       final_play->cfg.raw_file.has_realtime = temp.has_realtime;
+#endif
       break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       final_play->cfg.stdout_out.channels = temp.channels;
