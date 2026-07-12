@@ -122,7 +122,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     }
 
     // 2. Freq Grid lines & log-frequency ticks (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
-    double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 20.0;
+    double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 25.0;
     double maxF = (m_engine && m_engine->maxFreq > 0) ? m_engine->maxFreq : 20000.0;
     double logMin = std::log10(minF), logMax = std::log10(maxF);
 

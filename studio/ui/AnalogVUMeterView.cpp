@@ -121,8 +121,12 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
         if (m_levelState && i < m_levelState->playbackRms.size()) {
             levelDb = m_levelState->playbackRms[i];
             if (i < m_levelState->playbackPeak.size() && m_levelState->playbackPeak[i] >= -0.1f) {
-                clipped = true;
+                if (i == 0)
+                    m_peakClipLHold = 1.0f;
+                else if (i == 1)
+                    m_peakClipRHold = 1.0f;
             }
+            clipped = (i == 0) ? (m_peakClipLHold > 0.0f) : (m_peakClipRHold > 0.0f);
         } else {
             levelDb = (i == 0) ? m_leftDB : m_rightDB;
             clipped = (i == 0) ? (m_peakClipLHold > 0.0f) : (m_peakClipRHold > 0.0f);
@@ -174,7 +178,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
         textColor = QColor("#ff9f0a");
         arcPenColor = QColor(255, 159, 10, 128);
         redPenColor = QColor(217, 51, 26, 204);
-        needlePenColor = QColor("#ff9f0a");
+        needlePenColor = QColor(38, 38, 38);
         bulbAmberColor = QColor(242, 115, 26);
         bulbHotSpotColor = QColor(255, 204, 77);
     }
@@ -191,8 +195,8 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     double effectivePivotY = m_settings.pivotY;
     double effectiveNeedleExt = m_settings.needleExtension;
 
-    QPointF pivot(rect.center().x(), rect.bottom() * effectivePivotY - rect.height() * (effectivePivotY - 1.0));
-    double radius = rect.height() * 0.85 * effectiveRadiusScale;
+    QPointF pivot(rect.center().x(), rect.top() + rect.height() * effectivePivotY);
+    double radius = rect.height() * effectiveRadiusScale;
 
     double baseH = rect.top() + rect.height();
     double scale = rect.height() / 160.0;
@@ -294,7 +298,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
         needleShadowColor = QColor(20, 10, 5, 120);
     }
 
-    double nLen = radius + effectiveNeedleExt;
+    double nLen = radius + effectiveNeedleExt * scale;
     p.setPen(QPen(needleShadowColor, 1.6));
     p.drawLine(QPointF(1.5, 1.5), QPointF(1.5, -nLen + 1.5));
 

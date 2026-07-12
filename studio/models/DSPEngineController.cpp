@@ -275,15 +275,13 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
             LogManager::instance()->appendLog(
                 LogLevel::Warn,
                 QString("Capture format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
-            if (m_settings && m_settings->resamplerEnabled) {
-                m_devices->captureConfig.sampleRate = newRate;
-            } else {
-                m_devices->captureConfig.sampleRate = newRate;
+            m_devices->captureConfig.sampleRate = newRate;
+            if (!m_settings || !m_settings->resamplerEnabled) {
                 m_devices->playbackConfig.sampleRate = newRate;
             }
-            m_devices->blockSignals(true);
             m_devices->saveConfigs();
-            m_devices->blockSignals(false);
+            m_reconnectFailed = false;
+            m_retryCount = 0;
             scheduleAutoRestart(0);
         }
     } else if (update.stopReason.type == StopReasonType::PlaybackFormatChange) {
@@ -293,15 +291,16 @@ void DSPEngineController::updateStatus(const StateUpdate& update) {
                 LogLevel::Warn,
                 QString("Playback format change detected (%1 Hz), restarting engine immediately...").arg(newRate));
             m_devices->playbackConfig.sampleRate = newRate;
-            m_devices->blockSignals(true);
             m_devices->saveConfigs();
-            m_devices->blockSignals(false);
+            m_reconnectFailed = false;
+            m_retryCount = 0;
             scheduleAutoRestart(0);
         }
-    } else if (!m_userStopped && (update.stopReason.type == StopReasonType::CaptureError ||
-                                  update.stopReason.type == StopReasonType::PlaybackError ||
-                                  update.stopReason.type == StopReasonType::UnknownError ||
-                                  status == ProcessingState::Inactive || status == ProcessingState::Stalled)) {
+    } else if (stateChanged && !m_userStopped &&
+               (update.stopReason.type == StopReasonType::CaptureError ||
+                update.stopReason.type == StopReasonType::PlaybackError ||
+                update.stopReason.type == StopReasonType::UnknownError || status == ProcessingState::Inactive ||
+                status == ProcessingState::Stalled)) {
         scheduleAutoRestart(1000);
     }
 }

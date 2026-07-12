@@ -29,9 +29,9 @@ public:
     size_t maxHistory = 300;
 
     void pushSpectrum(const SpectrumData& newData) {
-        history.push_front(newData);
+        history.push_back(newData);
         if (history.size() > maxHistory) {
-            history.pop_back();
+            history.pop_front();
         }
         emit updated();
     }

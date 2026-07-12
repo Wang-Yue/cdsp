@@ -28,7 +28,7 @@ void MonitoringController::onPollTimer() {
         m_dspController->updateStatus(st);
     }
 
-    if (st.state != ProcessingState::Running) {
+    if (st.state == ProcessingState::Inactive || st.state == ProcessingState::Paused) {
         size_t capCh = m_dspController->devices() ? m_dspController->devices()->captureConfig.channels : 2;
         size_t pbCh = m_dspController->devices() ? m_dspController->devices()->playbackConfig.channels : 2;
         levelState.reset(capCh, pbCh);
