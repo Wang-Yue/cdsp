@@ -712,15 +712,10 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
   audio_chunk_set_valid_frames(chunk, frames_read);
 
   if (frames_read == 0) {
-    audio_chunk_set_msg_type(chunk, AUDIO_MSG_EOF);
-    audio_chunk_set_stop_reason(
-        chunk, (processing_stop_reason_t){.type = STOP_REASON_DONE});
     if (err) {
       backend_error_init(err, BACKEND_ERROR_READ_EOF,
                          "End of file/stream reached");
     }
-  } else {
-    audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
   }
 
   return (frames_read > 0);

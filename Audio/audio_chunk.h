@@ -10,17 +10,6 @@
 #include "audio_buffers.h"
 
 /**
- * @enum audio_msg_type
- * @brief Message tag describing whether an audio chunk carries data, EOF, or a
- * stop command.
- */
-typedef enum {
-  AUDIO_MSG_DATA = 0,
-  AUDIO_MSG_EOF,
-  AUDIO_MSG_STOP,
-} audio_msg_type_t;
-
-/**
  * @struct audio_chunk
  * @brief A chunk of non-interleaved audio data flowing through the pipeline.
  *
@@ -32,28 +21,6 @@ typedef enum {
  * hot path.
  */
 typedef struct audio_chunk audio_chunk_t;
-
-/**
- * @brief Get the message type tag of the chunk.
- */
-audio_msg_type_t audio_chunk_get_msg_type(const audio_chunk_t* chunk);
-
-/**
- * @brief Set the message type tag of the chunk.
- */
-void audio_chunk_set_msg_type(audio_chunk_t* chunk, audio_msg_type_t type);
-
-/**
- * @brief Get the stop reason attached to the message chunk.
- */
-processing_stop_reason_t audio_chunk_get_stop_reason(
-    const audio_chunk_t* chunk);
-
-/**
- * @brief Set the stop reason attached to the message chunk.
- */
-void audio_chunk_set_stop_reason(audio_chunk_t* chunk,
-                                 processing_stop_reason_t reason);
 
 /**
  * @struct round_robin_chunk_pool

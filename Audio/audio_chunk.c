@@ -9,8 +9,6 @@ struct audio_chunk {
   audio_buffers_t* buffers;
   size_t valid_frames;
   bool owns_buffers;
-  audio_msg_type_t msg_type;
-  processing_stop_reason_t stop_reason;
 };
 
 struct round_robin_chunk_pool {
@@ -18,25 +16,6 @@ struct round_robin_chunk_pool {
   size_t capacity;
   size_t current_index;
 };
-
-audio_msg_type_t audio_chunk_get_msg_type(const audio_chunk_t* chunk) {
-  return chunk ? chunk->msg_type : AUDIO_MSG_DATA;
-}
-
-void audio_chunk_set_msg_type(audio_chunk_t* chunk, audio_msg_type_t type) {
-  if (chunk) chunk->msg_type = type;
-}
-
-processing_stop_reason_t audio_chunk_get_stop_reason(
-    const audio_chunk_t* chunk) {
-  if (!chunk) return (processing_stop_reason_t){.type = STOP_REASON_NONE};
-  return chunk->stop_reason;
-}
-
-void audio_chunk_set_stop_reason(audio_chunk_t* chunk,
-                                 processing_stop_reason_t reason) {
-  if (chunk) chunk->stop_reason = reason;
-}
 
 size_t audio_chunk_get_frames(const audio_chunk_t* chunk) {
   return chunk ? audio_buffers_get_capacity(chunk->buffers) : 0;
@@ -131,10 +110,6 @@ audio_chunk_t* round_robin_chunk_pool_next(round_robin_chunk_pool_t* pool) {
   audio_chunk_t* chunk = pool->pool[pool->current_index];
   // Advance the index in a circular fashion. This is not thread-safe.
   pool->current_index = (pool->current_index + 1) % pool->capacity;
-  if (chunk) {
-    chunk->msg_type = AUDIO_MSG_DATA;
-    chunk->stop_reason = (processing_stop_reason_t){.type = STOP_REASON_NONE};
-  }
   return chunk;
 }
 

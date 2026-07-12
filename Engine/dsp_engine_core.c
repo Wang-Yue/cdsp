@@ -757,6 +757,7 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
       err->message[sizeof(err->message) - 1] = '\0';
     }
+    dsp_config_free(new_config);
     return false;
   }
 

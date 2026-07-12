@@ -918,6 +918,7 @@ void dsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
   pthread_mutex_lock(&engine->state_mutex);
   if (path && path[0]) {
     strncpy(engine->state_file_path, path, sizeof(engine->state_file_path) - 1);
+    engine->state_file_path[sizeof(engine->state_file_path) - 1] = '\0';
     engine->has_state_file_path = true;
   } else {
     engine->state_file_path[0] = '\0';
@@ -975,6 +976,7 @@ void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path) {
   if (path && path[0]) {
     strncpy(engine->active_config_path, path,
             sizeof(engine->active_config_path) - 1);
+    engine->active_config_path[sizeof(engine->active_config_path) - 1] = '\0';
     engine->has_active_config_path = true;
   } else {
     engine->active_config_path[0] = '\0';
@@ -1017,10 +1019,12 @@ void dsp_engine_poll(dsp_engine_t* engine) {
   // thread.
   pthread_mutex_lock(&engine->state_mutex);
   processing_stop_reason_t stop_reason;
-  if (dsp_engine_check_stop_requested(engine, &stop_reason)) {
+  bool stop_needed = dsp_engine_check_stop_requested(engine, &stop_reason);
+  pthread_mutex_unlock(&engine->state_mutex);
+
+  if (stop_needed) {
     dsp_engine_stop(engine);
   }
-  pthread_mutex_unlock(&engine->state_mutex);
 
   // 2. State persistence serialization:
   // If any fader positions or configuration path values have changed since the

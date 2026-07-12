@@ -136,36 +136,6 @@ void engine_playback_loop_free(engine_playback_loop_t* loop) {
   free(loop);
 }
 
-/**
- * @brief Handles terminal messages (EOF or STOP) or early stop requests in the
- * playback loop.
- *
- * @param loop Pointer to the playback loop instance.
- * @param chunk Pointer to the current audio chunk.
- * @return true if playback loop should terminate, false otherwise.
- */
-static bool engine_playback_loop_handle_terminal_chunk(
-    engine_playback_loop_t* loop, audio_chunk_t* chunk) {
-  audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
-  if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP ||
-      engine_shared_state_get_stop_requested(loop->shared)) {
-    processing_stop_reason_t chunk_reason = audio_chunk_get_stop_reason(chunk);
-    processing_stop_reason_t cur_reason =
-        engine_shared_state_get_stop_reason(loop->shared);
-    if (chunk_reason.type != STOP_REASON_NONE) {
-      engine_shared_state_set_stop_reason(loop->shared, chunk_reason);
-    } else if (msg_type == AUDIO_MSG_EOF &&
-               cur_reason.type == STOP_REASON_NONE) {
-      processing_stop_reason_t eof_reason = {.type = STOP_REASON_DONE};
-      snprintf(eof_reason.message, sizeof(eof_reason.message), "EOF");
-      engine_shared_state_set_stop_reason(loop->shared, eof_reason);
-    }
-    engine_shared_state_set_stop_requested(loop->shared, true);
-    return true;
-  }
-  return false;
-}
-
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.playback");
@@ -192,10 +162,6 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   audio_chunk_t* chunk = NULL;
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
-    if (engine_playback_loop_handle_terminal_chunk(loop, chunk)) {
-      break;
-    }
-
     double rate = 0.0;
     if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
       if (!loop->has_last_observed_playback_pending_rate ||

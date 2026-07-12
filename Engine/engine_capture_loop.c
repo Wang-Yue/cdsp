@@ -133,14 +133,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
 
-  audio_chunk_t* stop_chunk = NULL;
-
   while (1) {
     if (engine_shared_state_get_stop_requested(loop->shared)) {
-      stop_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
-      audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
-      audio_chunk_set_stop_reason(
-          stop_chunk, engine_shared_state_get_stop_reason(loop->shared));
       break;
     }
 
@@ -167,9 +161,6 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
         engine_shared_state_request_stop(loop->shared, reason);
-        stop_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
-        audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
-        audio_chunk_set_stop_reason(stop_chunk, reason);
         break;
       }
     }
@@ -189,10 +180,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             "Capture reached End-of-Stream; stopping engine gracefully");
         processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
         snprintf(reason.message, sizeof(reason.message), "EOF");
-
-        audio_chunk_set_msg_type(chunk, AUDIO_MSG_EOF);
-        audio_chunk_set_stop_reason(chunk, reason);
-        stop_chunk = chunk;
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
       // If reading fails with an error, trigger an engine stop.
@@ -200,10 +188,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         logger_error(&logger, "Capture error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-
-        audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
-        audio_chunk_set_stop_reason(chunk, reason);
-        stop_chunk = chunk;
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
       // If the engine is in a PAUSED state (no active input signal), reset the
@@ -261,9 +246,6 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
         engine_shared_state_request_stop(loop->shared, reason);
-        stop_chunk = chunk;
-        audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
-        audio_chunk_set_stop_reason(stop_chunk, reason);
         break;
       } else {
         logger_info(
@@ -308,13 +290,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     // Push the chunk pointer into the bounded lock-free SPSC queue.
     if (engine_state_machine_get_state(loop->state_machine) !=
         PROCESSING_STATE_PAUSED) {
-      audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
       engine_shared_state_enqueue_captured(loop->shared, chunk);
     }
-  }
-
-  if (stop_chunk) {
-    engine_shared_state_enqueue_captured(loop->shared, stop_chunk);
   }
 
   logger_info(&logger, "Capture thread stopped");

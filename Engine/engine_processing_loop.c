@@ -143,16 +143,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
                                loop->pipeline_rate);
 
   audio_chunk_t* chunk = NULL;
-  audio_chunk_t* terminal_chunk = NULL;
 
   while ((chunk = engine_shared_state_dequeue_captured_blocking(
               loop->shared)) != NULL) {
-    audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
-    if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP) {
-      terminal_chunk = chunk;
-      break;
-    }
-
     uint64_t res_start = 0;
     uint64_t res_end = 0;
     if (loop->resampler) {
@@ -180,9 +173,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
                  rerr);
         engine_shared_state_request_stop(loop->shared, reason);
-        audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
-        audio_chunk_set_stop_reason(chunk, reason);
-        terminal_chunk = chunk;
         break;
       }
       chunk = loop->resampler_scratch;
@@ -217,7 +207,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // queue to the playback thread, and we cannot reuse it immediately.
     audio_chunk_t* current_scratch =
         round_robin_chunk_pool_next(loop->scratch_pool);
-    audio_chunk_set_msg_type(current_scratch, AUDIO_MSG_DATA);
 
     uint64_t pipe_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     pipeline_error_t perr =
@@ -229,9 +218,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
                perr);
       engine_shared_state_request_stop(loop->shared, reason);
-      audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
-      audio_chunk_set_stop_reason(chunk, reason);
-      terminal_chunk = chunk;
       break;
     }
     chunk = current_scratch;
@@ -301,10 +287,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       }
       engine_yield();
     }
-  }
-
-  if (terminal_chunk) {
-    engine_shared_state_enqueue_processed(loop->shared, terminal_chunk);
   }
 
   logger_info(&logger, "Processing thread stopped");

@@ -8,19 +8,19 @@
 //
 // Concurrency model
 // -----------------
-//   shouldStop          — written by `stop()` / read by all three loops
-//                         every iteration. Atomic<Bool> w/ release-acquire
-//                         so a stop request becomes promptly visible.
-//   capturedQueue       — SPSC, single producer = capture, single
-//                         consumer = processing.
-//   processedQueue      — SPSC, single producer = processing, single
-//                         consumer = playback.
-//   capturedSemaphore   — capture signals, processing waits.
-//   processedSemaphore  — processing signals, playback waits.
-//   resamplerRatio      — playback writes (rate-adjust controller),
+//   stop_requested      — written by `request_stop()` / read by all loops.
+//                         Atomic<Bool> w/ release-acquire so a stop request
+//                         becomes promptly visible.
+//   captured_queue      — audio_sync_queue_t (SPSC queue + kernel semaphore),
+//                         single producer = capture, single consumer =
+//                         processing.
+//   processed_queue     — audio_sync_queue_t (SPSC queue + kernel semaphore),
+//                         single producer = processing, single consumer =
+//                         playback.
+//   resampler_ratio     — playback writes (rate-adjust controller),
 //                         processing reads (per chunk). 64-bit atomic.
 //
-// `DispatchSemaphore` is included to be transparent: a semaphore is a
+// `engine_semaphore_t` is included to be transparent: a semaphore is a
 // kernel signaling primitive, not a lock. Producers signal after
 // enqueue; consumers wait, then drain. There is never a critical
 // section — a single signal can wake the consumer for any number of
@@ -31,37 +31,22 @@
 
 #include <stdlib.h>
 
-#include "Engine/engine_processing_loop.h"
 #include "Pipeline/pipeline.h"
 
 struct engine_shared_state {
   /**
-   * @brief Bounded SPSC FIFO from the capture thread to the processing thread.
-   * `enqueue` returns `false` when full; the producer drops the chunk rather
-   * than allocate.
+   * @brief Bounded sync queue from the capture thread to the processing thread.
    */
-  spsc_queue_t* captured_queue;
+  audio_sync_queue_t* captured_queue;
 
   /**
-   * @brief Bounded SPSC FIFO from the processing thread to the playback thread.
+   * @brief Bounded sync queue from the processing thread to the playback
+   * thread.
    */
-  spsc_queue_t* processed_queue;
+  audio_sync_queue_t* processed_queue;
 
   /**
-   * @brief Wakeup signal for the processing thread.
-   * The capture thread signals after every successful `enqueue`.
-   */
-  engine_semaphore_t captured_semaphore;
-
-  /**
-   * @brief Wakeup signal for the playback thread.
-   * The processing thread signals after every successful `enqueue`.
-   */
-  engine_semaphore_t processed_semaphore;
-
-  /**
-   * @brief External trigger flag instructing the capture loop to emit an
-   * in-band STOP message.
+   * @brief External trigger flag instructing loops to stop.
    */
   _Atomic bool stop_requested;
 
@@ -72,39 +57,23 @@ struct engine_shared_state {
 
   /**
    * @brief Resampler relative-ratio (≈ 1.0).
-   * Published by the playback thread (rate-adjust controller); consumed by
-   * the processing thread once per chunk via `setRelativeRatio`.
    */
-  atomic_double_t* resampler_ratio;
+  _Atomic double resampler_ratio;
 
   /**
    * @brief Deferred free queue for old pipeline structures.
-   *
-   * Holds pipeline instances swapped out by the processing thread. The control
-   * thread periodically dequeues and frees them asynchronously to keep the
-   * audio thread allocation-free and real-time safe.
    */
   spsc_queue_t* pipeline_garbage_queue;
 };
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
     engine_shared_state_t* state) {
-  return state ? state->captured_queue : NULL;
+  return state ? audio_sync_queue_get_spsc_queue(state->captured_queue) : NULL;
 }
 
 spsc_queue_t* engine_shared_state_get_processed_queue(
     engine_shared_state_t* state) {
-  return state ? state->processed_queue : NULL;
-}
-
-engine_semaphore_t engine_shared_state_get_captured_semaphore(
-    const engine_shared_state_t* state) {
-  return state ? state->captured_semaphore : NULL;
-}
-
-engine_semaphore_t engine_shared_state_get_processed_semaphore(
-    const engine_shared_state_t* state) {
-  return state ? state->processed_semaphore : NULL;
+  return state ? audio_sync_queue_get_spsc_queue(state->processed_queue) : NULL;
 }
 
 bool engine_shared_state_get_stop_requested(
@@ -114,25 +83,17 @@ bool engine_shared_state_get_stop_requested(
                : false;
 }
 
-void engine_shared_state_set_stop_requested(engine_shared_state_t* state,
-                                            bool requested) {
-  if (state) {
-    atomic_store_explicit(&state->stop_requested, requested,
-                          memory_order_release);
-  }
-}
-
 double engine_shared_state_get_resampler_ratio(
     const engine_shared_state_t* state) {
-  return (state && state->resampler_ratio)
-             ? atomic_double_get(state->resampler_ratio)
-             : 1.0;
+  return state ? atomic_load_explicit(&state->resampler_ratio,
+                                      memory_order_relaxed)
+               : 1.0;
 }
 
 void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
                                              double ratio) {
-  if (state && state->resampler_ratio) {
-    atomic_double_set(state->resampler_ratio, ratio);
+  if (state) {
+    atomic_store_explicit(&state->resampler_ratio, ratio, memory_order_relaxed);
   }
 }
 
@@ -154,30 +115,22 @@ processing_stop_reason_t engine_shared_state_get_stop_reason(
   return state ? state->stop_reason : empty;
 }
 
-void engine_shared_state_set_stop_reason(engine_shared_state_t* state,
-                                         processing_stop_reason_t reason) {
-  if (state) state->stop_reason = reason;
-}
-
 engine_shared_state_t* engine_shared_state_create(
     size_t captured_queue_depth, size_t processed_queue_depth) {
   engine_shared_state_t* state =
       (engine_shared_state_t*)calloc(1, sizeof(engine_shared_state_t));
   if (!state) return NULL;
 
-  state->captured_queue =
-      spsc_queue_create(captured_queue_depth > 0 ? captured_queue_depth : 16);
-  state->processed_queue =
-      spsc_queue_create(processed_queue_depth > 0 ? processed_queue_depth : 16);
-  state->captured_semaphore = engine_sem_create();
-  state->processed_semaphore = engine_sem_create();
+  state->captured_queue = audio_sync_queue_create(
+      captured_queue_depth > 0 ? captured_queue_depth : 16);
+  state->processed_queue = audio_sync_queue_create(
+      processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->stop_requested, false);
-  state->resampler_ratio = atomic_double_create(1.0);
+  atomic_init(&state->resampler_ratio, 1.0);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
   if (!state->captured_queue || !state->processed_queue ||
-      !state->captured_semaphore || !state->processed_semaphore ||
-      !state->resampler_ratio || !state->pipeline_garbage_queue) {
+      !state->pipeline_garbage_queue) {
     engine_shared_state_free(state);
     return NULL;
   }
@@ -186,11 +139,8 @@ engine_shared_state_t* engine_shared_state_create(
 
 void engine_shared_state_free(engine_shared_state_t* state) {
   if (!state) return;
-  if (state->captured_queue) spsc_queue_free(state->captured_queue);
-  if (state->processed_queue) spsc_queue_free(state->processed_queue);
-  engine_sem_destroy(state->captured_semaphore);
-  engine_sem_destroy(state->processed_semaphore);
-  if (state->resampler_ratio) atomic_double_free(state->resampler_ratio);
+  audio_sync_queue_free(state->captured_queue);
+  audio_sync_queue_free(state->processed_queue);
 
   if (state->pipeline_garbage_queue) {
     void* p;
@@ -203,72 +153,46 @@ void engine_shared_state_free(engine_shared_state_t* state) {
   free(state);
 }
 
+static void engine_shared_state_signal_captured(engine_shared_state_t* state) {
+  if (state) audio_sync_queue_signal(state->captured_queue);
+}
+
+static void engine_shared_state_signal_processed(engine_shared_state_t* state) {
+  if (state) audio_sync_queue_signal(state->processed_queue);
+}
+
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
   state->stop_reason = reason;
-  // Store stop_requested with release ordering so the write becomes visible
-  // to the capture loop immediately on its next check.
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
 
-  // Wake up capture thread so it can emit the in-band STOP message downstream.
   engine_shared_state_signal_captured(state);
   engine_shared_state_signal_processed(state);
 }
 
-void engine_shared_state_signal_captured(engine_shared_state_t* state) {
-  if (state) engine_sem_signal(state->captured_semaphore);
-}
-
-void engine_shared_state_signal_processed(engine_shared_state_t* state) {
-  if (state) engine_sem_signal(state->processed_semaphore);
-}
-
 bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
                                           audio_chunk_t* chunk) {
-  if (!state || !state->captured_queue) return false;
-  bool ok = spsc_queue_enqueue(state->captured_queue, chunk);
-  if (ok) {
-    engine_shared_state_signal_captured(state);
-  }
-  return ok;
+  if (!state) return false;
+  return audio_sync_queue_enqueue(state->captured_queue, chunk);
 }
 
 bool engine_shared_state_enqueue_processed(engine_shared_state_t* state,
                                            audio_chunk_t* chunk) {
-  if (!state || !state->processed_queue) return false;
-  bool ok = spsc_queue_enqueue(state->processed_queue, chunk);
-  if (ok) {
-    engine_shared_state_signal_processed(state);
-  }
-  return ok;
+  if (!state) return false;
+  return audio_sync_queue_enqueue(state->processed_queue, chunk);
 }
 
 audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
-  return engine_shared_state_dequeue_blocking(state->captured_queue,
-                                              state->captured_semaphore, state);
+  return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
+      state->captured_queue, &state->stop_requested);
 }
 
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
-  return engine_shared_state_dequeue_blocking(
-      state->processed_queue, state->processed_semaphore, state);
-}
-
-audio_chunk_t* engine_shared_state_dequeue_blocking(
-    spsc_queue_t* queue, engine_semaphore_t sem, engine_shared_state_t* state) {
-  if (!queue || !sem || !state) return NULL;
-  while (1) {
-    audio_chunk_t* chunk = (audio_chunk_t*)spsc_queue_dequeue(queue);
-    if (chunk) {
-      return chunk;
-    }
-    if (engine_shared_state_get_stop_requested(state)) {
-      return NULL;
-    }
-    engine_sem_wait(sem);
-  }
+  return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
+      state->processed_queue, &state->stop_requested);
 }

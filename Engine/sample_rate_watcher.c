@@ -84,7 +84,9 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
                  "Sample rate deviation persistent! Measured rate: %.1fHz "
                  "(target %.1fHz)",
                  measured_rate, watcher->target_rate);
-    *out_measured_rate = measured_rate;
+    if (out_measured_rate) {
+      *out_measured_rate = measured_rate;
+    }
     return true;
   }
   return false;

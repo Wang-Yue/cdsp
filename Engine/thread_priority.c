@@ -84,6 +84,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
 
   kern_return_t result = thread_policy_set(
       thread, THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy, count);
+  mach_port_deallocate(mach_task_self(), thread);
 
   logger_t logger = logger_create("dsp.threadpriority");
   if (result == KERN_SUCCESS) {

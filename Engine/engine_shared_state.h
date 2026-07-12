@@ -11,137 +11,24 @@
  * used, allowing the loops to read/write fields without coordinating locks.
  *
  * @section concurrency_model Concurrency model
- * - In-Band AudioMessage Tagging (`AUDIO_MSG_DATA`, `AUDIO_MSG_EOF`,
- * `AUDIO_MSG_STOP`): Passed sequentially through SPSC queues for zero-flag
- * atomic coordination.
- * - `captured_queue`: SPSC, producer = capture, consumer = processing.
- * - `processed_queue`: SPSC, producer = processing, consumer = playback.
- * - `captured_semaphore`: Capture signals, processing waits.
- * - `processed_semaphore`: Processing signals, playback waits.
+ * - `captured_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
+ * capture, consumer = processing.
+ * - `processed_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
+ * processing, consumer = playback.
+ * - `stop_requested`: Atomic release-acquire flag set when stopping or
+ * encountering fatal errors.
  * - `resampler_ratio`: Playback writes (rate-adjust), processing reads (per
  * chunk). 64-bit atomic.
  *
  * @section semaphores Semaphores
- * Semaphores are used for kernel-level signaling (not locking). Producers
- * signal after enqueueing, and consumers wait then drain.
+ * Semaphores are encapsulated inside `audio_sync_queue_t` for kernel-level
+ * signaling (not locking). Producers signal after enqueueing, and consumers
+ * wait then drain.
  */
 
 #include "Audio/audio_chunk.h"
 #include "Audio/lock_free_ring_buffer.h"
-#ifdef __APPLE__
-#include <dispatch/dispatch.h>
-/**
- * @brief Platform-specific semaphore wrapper handle.
- */
-typedef dispatch_semaphore_t engine_semaphore_t;
-/**
- * @brief Creates a platform-specific semaphore wrapper.
- * @return The initialized semaphore handle, or NULL on failure.
- */
-static inline engine_semaphore_t engine_sem_create(void) {
-  return dispatch_semaphore_create(0);
-}
-/**
- * @brief Destroys the semaphore.
- * @param sem The semaphore handle to destroy.
- */
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) dispatch_release(sem);
-}
-/**
- * @brief Signals the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) dispatch_semaphore_signal(sem);
-}
-/**
- * @brief Waits on the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-}
-#elif defined(__linux__)
-#include <semaphore.h>
-#include <stdlib.h>
-/**
- * @brief Platform-specific semaphore wrapper handle.
- */
-typedef sem_t* engine_semaphore_t;
-/**
- * @brief Creates a platform-specific semaphore wrapper.
- * @return The initialized semaphore handle, or NULL on failure.
- */
-static inline engine_semaphore_t engine_sem_create(void) {
-  sem_t* sem = (sem_t*)calloc(1, sizeof(sem_t));
-  if (!sem) return NULL;
-  if (sem_init(sem, 0, 0) != 0) {
-    free(sem);
-    return NULL;
-  }
-  return sem;
-}
-/**
- * @brief Destroys the semaphore.
- * @param sem The semaphore handle to destroy.
- */
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) {
-    sem_destroy(sem);
-    free(sem);
-  }
-}
-/**
- * @brief Signals the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) sem_post(sem);
-}
-/**
- * @brief Waits on the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) sem_wait(sem);
-}
-#elif defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-/**
- * @brief Platform-specific semaphore wrapper handle.
- */
-typedef HANDLE engine_semaphore_t;
-/**
- * @brief Creates a platform-specific semaphore wrapper.
- * @return The initialized semaphore handle, or NULL on failure.
- */
-static inline engine_semaphore_t engine_sem_create(void) {
-  return CreateSemaphore(NULL, 0, 32767, NULL);
-}
-/**
- * @brief Destroys the semaphore.
- * @param sem The semaphore handle to destroy.
- */
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) CloseHandle(sem);
-}
-/**
- * @brief Signals the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) ReleaseSemaphore(sem, 1, NULL);
-}
-/**
- * @brief Waits on the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) WaitForSingleObject(sem, INFINITE);
-}
-#endif
+#include "audio_sync_queue.h"
 
 /**
  * @brief Yields the current thread's CPU execution slice.
@@ -185,35 +72,11 @@ spsc_queue_t* engine_shared_state_get_processed_queue(
     engine_shared_state_t* state);
 
 /**
- * @brief Gets the captured semaphore handle.
- * @param state Pointer to the shared state instance.
- * @return The captured semaphore handle.
- */
-engine_semaphore_t engine_shared_state_get_captured_semaphore(
-    const engine_shared_state_t* state);
-
-/**
- * @brief Gets the processed semaphore handle.
- * @param state Pointer to the shared state instance.
- * @return The processed semaphore handle.
- */
-engine_semaphore_t engine_shared_state_get_processed_semaphore(
-    const engine_shared_state_t* state);
-
-/**
  * @brief Checks if a stop has been requested on the shared state.
  * @param state Pointer to the shared state instance.
  * @return true if stop was requested, false otherwise.
  */
 bool engine_shared_state_get_stop_requested(const engine_shared_state_t* state);
-
-/**
- * @brief Sets the stop_requested flag on the shared state.
- * @param state Pointer to the shared state instance.
- * @param requested Value to set the stop_requested flag to.
- */
-void engine_shared_state_set_stop_requested(engine_shared_state_t* state,
-                                            bool requested);
 
 /**
  * @brief Gets the current resampler relative ratio.
@@ -260,14 +123,6 @@ processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state);
 
 /**
- * @brief Sets the current stop reason.
- * @param state Pointer to the shared state instance.
- * @param reason The processing stop reason to record.
- */
-void engine_shared_state_set_stop_reason(engine_shared_state_t* state,
-                                         processing_stop_reason_t reason);
-
-/**
  * @brief Creates a new engine shared state instance.
  *
  * @param captured_queue_depth Depth of the captured SPSC queue.
@@ -285,25 +140,13 @@ engine_shared_state_t* engine_shared_state_create(size_t captured_queue_depth,
 void engine_shared_state_free(engine_shared_state_t* state);
 
 /**
- * @brief Requests the engine loops to stop via in-band AudioMessage.
+ * @brief Requests the engine loops to stop.
  *
  * @param state Pointer to the shared state.
  * @param reason The reason for stopping.
  */
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason);
-
-/**
- * @brief Signals the captured semaphore on the shared state.
- * @param state Pointer to the shared state instance.
- */
-void engine_shared_state_signal_captured(engine_shared_state_t* state);
-
-/**
- * @brief Signals the processed semaphore on the shared state.
- * @param state Pointer to the shared state instance.
- */
-void engine_shared_state_signal_processed(engine_shared_state_t* state);
 
 /**
  * @brief Enqueues a chunk to the captured queue and signals the captured
@@ -344,18 +187,5 @@ audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
  */
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state);
-
-/**
- * @brief Dequeues an audio chunk from an SPSC queue, blocking on the semaphore
- * if empty.
- *
- * @param queue Pointer to the SPSC queue.
- * @param sem The semaphore handle to wait on when empty.
- * @param state Pointer to the shared state instance.
- * @return audio_chunk_t* Dequeued chunk, or NULL if the pipeline is stopping
- * and queue is drained.
- */
-audio_chunk_t* engine_shared_state_dequeue_blocking(
-    spsc_queue_t* queue, engine_semaphore_t sem, engine_shared_state_t* state);
 
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

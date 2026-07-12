@@ -74,7 +74,9 @@ struct pi_rate_controller {
 pi_rate_controller_t* pi_rate_controller_create(int samplerate, double interval,
                                                 int target_level, double kp,
                                                 double ki) {
-  if (samplerate <= 0 || interval < 0.1) return NULL;
+  if (samplerate <= 0 || interval < 0.1 || target_level <= 0 || kp < 0.0 ||
+      ki < 0.0)
+    return NULL;
   pi_rate_controller_t* pi =
       (pi_rate_controller_t*)calloc(1, sizeof(pi_rate_controller_t));
   if (!pi) return NULL;
@@ -109,7 +111,7 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
   // starting from the current level and ending at target_level over
   // `ramp_steps` intervals. This prevents step-response shocks and reduces
   // audible pitch changes.
-  if (pi->ramp_step >= pi->ramp_steps &&
+  if (pi->target_level > 0.0 && pi->ramp_step >= pi->ramp_steps &&
       fabs((pi->target_level - level) / pi->target_level) >
           pi->ramp_trigger_limit) {
     pi->ramp_start = level;
@@ -134,16 +136,19 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
   }
 
   double err = level - current_target;
-  double rel_err = err / pi->frames_per_interval;
+  double rel_err =
+      pi->frames_per_interval > 0.0 ? err / pi->frames_per_interval : 0.0;
   pi->accumulated += rel_err * pi->interval;
 
   // Anti-windup: clamp the integrator term to the safe saturation band (±0.005)
   double max_val = 0.005;
   double min_val = -0.005;
-  if (pi->accumulated * pi->ki > max_val) {
-    pi->accumulated = max_val / pi->ki;
-  } else if (pi->accumulated * pi->ki < min_val) {
-    pi->accumulated = min_val / pi->ki;
+  if (pi->ki > 0.0) {
+    if (pi->accumulated * pi->ki > max_val) {
+      pi->accumulated = max_val / pi->ki;
+    } else if (pi->accumulated * pi->ki < min_val) {
+      pi->accumulated = min_val / pi->ki;
+    }
   }
 
   double proportional = pi->kp * rel_err;
