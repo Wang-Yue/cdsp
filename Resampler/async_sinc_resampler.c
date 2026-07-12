@@ -502,7 +502,8 @@ resampler_error_t async_sinc_resampler_process(
     async_sinc_resampler_t* resampler, const audio_chunk_t* input,
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
-  if (audio_chunk_get_valid_frames(input) != resampler->chunk_size) {
+  size_t valid_frames = audio_chunk_get_valid_frames(input);
+  if (valid_frames > resampler->chunk_size) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(output) != resampler->channels) {
@@ -542,8 +543,11 @@ resampler_error_t async_sinc_resampler_process(
     const double* src_ptr = audio_chunk_get_channel(input, ch);
     double* dst_ptr = audio_buffers_get_channel(resampler->input_buffer, ch);
     if (!src_ptr || !dst_ptr) continue;
-    memcpy(dst_ptr + two_s_len, src_ptr,
-           resampler->chunk_size * sizeof(double));
+    memcpy(dst_ptr + two_s_len, src_ptr, valid_frames * sizeof(double));
+    if (valid_frames < resampler->chunk_size) {
+      memset(dst_ptr + two_s_len + valid_frames, 0,
+             (resampler->chunk_size - valid_frames) * sizeof(double));
+    }
   }
 
   // Pre-compute per-frame `idx` and `fracOffset` (fractional offset for
@@ -597,6 +601,7 @@ resampler_error_t async_sinc_resampler_process(
     resampler->last_index = min_safe_idx;
   }
   resampler->resample_ratio = resampler->target_ratio;
-  audio_chunk_set_valid_frames(output, output_frames);
+  size_t valid_out = (output_frames * valid_frames) / resampler->chunk_size;
+  audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }

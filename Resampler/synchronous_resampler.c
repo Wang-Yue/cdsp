@@ -365,7 +365,8 @@ resampler_error_t synchronous_resampler_process(
     synchronous_resampler_t* resampler, const audio_chunk_t* input,
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
-  if (audio_chunk_get_valid_frames(input) != resampler->chunk_size) {
+  size_t valid_frames = audio_chunk_get_valid_frames(input);
+  if (valid_frames > resampler->chunk_size) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(input) != resampler->channels) {
@@ -389,10 +390,9 @@ resampler_error_t synchronous_resampler_process(
     // the cyclic FFT convolution behave as a linear convolution
     // (Oppenheim & Schafer §8.7). The upper half is cleared each call
     // to ensure the zero-pad region for the forward FFT is clean.
-    memcpy(resampler->working_time, src_ptr,
-           resampler->input_block_len * sizeof(double));
-    memset(resampler->working_time + resampler->input_block_len, 0,
-           resampler->input_block_len * sizeof(double));
+    memcpy(resampler->working_time, src_ptr, valid_frames * sizeof(double));
+    memset(resampler->working_time + valid_frames, 0,
+           (2 * resampler->input_block_len - valid_frames) * sizeof(double));
 
     // Step 2. Forward 2N-point real FFT.
     real_fft_forward(resampler->input_fft, resampler->working_time,
@@ -454,6 +454,8 @@ resampler_error_t synchronous_resampler_process(
            resampler->output_block_len * sizeof(double));
   }
 
-  audio_chunk_set_valid_frames(output, resampler->output_chunk_size);
+  size_t valid_out =
+      (resampler->output_chunk_size * valid_frames) / resampler->chunk_size;
+  audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }

@@ -240,4 +240,53 @@ TEST(InoutAPI_RejectsTooSmallOutputBuffer_AsyncSinc) {
   assert_rejects_too_small(RESAMPLER_TYPE_ASYNC_SINC, NULL);
 }
 
+static void assert_accepts_partial_chunk(resampler_type_t type,
+                                         const char* interp_str) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, type);
+  if (interp_str) {
+    strncpy(cfg.interpolation, interp_str, sizeof(cfg.interpolation) - 1);
+    cfg.has_interpolation = true;
+  }
+  if (type == RESAMPLER_TYPE_ASYNC_SINC) {
+    strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
+    cfg.has_profile = true;
+  }
+
+  size_t chunk_size = 1024;
+  audio_resampler_t* res = audio_resampler_create_from_config(
+      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t actual_cs = audio_resampler_get_chunk_size(res);
+  size_t max_out = audio_resampler_get_max_output_frames(res);
+  audio_chunk_t* in_chunk = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out, 2);
+
+  size_t partial_valid = 500;
+  audio_chunk_set_valid_frames(in_chunk, partial_valid);
+
+  resampler_error_t err = audio_resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  size_t valid_out = audio_chunk_get_valid_frames(out_chunk);
+  ASSERT_TRUE(valid_out > 0);
+  ASSERT_TRUE(valid_out < max_out);
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  audio_resampler_free(res);
+}
+
+TEST(PartialChunk_Synchronous) {
+  assert_accepts_partial_chunk(RESAMPLER_TYPE_SYNCHRONOUS, NULL);
+}
+
+TEST(PartialChunk_AsyncPoly) {
+  assert_accepts_partial_chunk(RESAMPLER_TYPE_ASYNC_POLY, "Cubic");
+}
+
+TEST(PartialChunk_AsyncSinc) {
+  assert_accepts_partial_chunk(RESAMPLER_TYPE_ASYNC_SINC, NULL);
+}
+
 TEST_MAIN()

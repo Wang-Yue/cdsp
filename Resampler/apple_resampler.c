@@ -271,7 +271,8 @@ resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
                                           const audio_chunk_t* input,
                                           audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
-  if (audio_chunk_get_valid_frames(input) != resampler->chunk_size) {
+  size_t valid_frames = audio_chunk_get_valid_frames(input);
+  if (valid_frames > resampler->chunk_size) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(input) != resampler->channels) {
@@ -317,8 +318,11 @@ resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
     const double* src = audio_chunk_get_channel(input, ch);
     double* dst = audio_buffers_get_channel(context->buffers, ch);
     if (!src || !dst) return RESAMPLER_ERR_INVALID_PARAMETER;
-    memcpy(dst + context->write_offset, src,
-           resampler->chunk_size * sizeof(double));
+    memcpy(dst + context->write_offset, src, valid_frames * sizeof(double));
+    if (valid_frames < resampler->chunk_size) {
+      memset(dst + context->write_offset + valid_frames, 0,
+             (resampler->chunk_size - valid_frames) * sizeof(double));
+    }
   }
   context->write_offset += resampler->chunk_size;
 
