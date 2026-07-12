@@ -1318,10 +1318,14 @@ void StageDetailView::buildStageOptionsUi() {
                     btnHBox->setSpacing(2);
 
                     auto invBtn = new QPushButton("Ø", cellWidget);
-                    invBtn->setFixedSize(22, 20);
+                    invBtn->setFixedSize(24, 20);
                     invBtn->setCheckable(true);
                     invBtn->setChecked(srcPtr->inverted.value_or(false));
-                    invBtn->setStyleSheet(invBtn->isChecked() ? "background: orange; color: white;" : "color: gray;");
+                    invBtn->setStyleSheet(invBtn->isChecked()
+                                              ? "QPushButton { background: #ff9500; color: white; border-radius: 3px; "
+                                                "font-weight: bold; padding: 0px; margin: 0px; text-align: center; }"
+                                              : "QPushButton { color: #8e8e93; border-radius: 3px; padding: 0px; "
+                                                "margin: 0px; text-align: center; }");
                     connect(invBtn, &QPushButton::clicked, [this, &stage, r, c, invBtn]() {
                         auto& mapList = stage.mixerMappings;
                         auto mapIt = std::find_if(mapList.begin(), mapList.end(),
@@ -1340,10 +1344,14 @@ void StageDetailView::buildStageOptionsUi() {
                     btnHBox->addWidget(invBtn);
 
                     auto muteBtn = new QPushButton("M", cellWidget);
-                    muteBtn->setFixedSize(22, 20);
+                    muteBtn->setFixedSize(24, 20);
                     muteBtn->setCheckable(true);
                     muteBtn->setChecked(srcPtr->mute.value_or(false));
-                    muteBtn->setStyleSheet(muteBtn->isChecked() ? "background: red; color: white;" : "color: gray;");
+                    muteBtn->setStyleSheet(muteBtn->isChecked()
+                                               ? "QPushButton { background: #ff3b30; color: white; border-radius: 3px; "
+                                                 "font-weight: bold; padding: 0px; margin: 0px; text-align: center; }"
+                                               : "QPushButton { color: #8e8e93; border-radius: 3px; padding: 0px; "
+                                                 "margin: 0px; text-align: center; }");
                     connect(muteBtn, &QPushButton::clicked, [this, &stage, r, c, muteBtn]() {
                         auto& mapList = stage.mixerMappings;
                         auto mapIt = std::find_if(mapList.begin(), mapList.end(),
@@ -1363,7 +1371,9 @@ void StageDetailView::buildStageOptionsUi() {
 
                     auto scaleBtn = new QPushButton(
                         (srcPtr->scale.value_or(GainScale::dB) == GainScale::dB) ? "dB" : "lin", cellWidget);
-                    scaleBtn->setFixedSize(26, 20);
+                    scaleBtn->setFixedSize(28, 20);
+                    scaleBtn->setStyleSheet("QPushButton { color: #007aff; border-radius: 3px; font-weight: bold; "
+                                            "font-size: 11px; padding: 0px; margin: 0px; text-align: center; }");
                     connect(scaleBtn, &QPushButton::clicked, [this, &stage, r, c, srcPtr]() {
                         auto& mapList = stage.mixerMappings;
                         auto mapIt = std::find_if(mapList.begin(), mapList.end(),

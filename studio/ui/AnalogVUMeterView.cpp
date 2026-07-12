@@ -183,7 +183,9 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     QRadialGradient faceGrad(rect.center(), std::max(1.0, rect.width() / 2.0));
     faceGrad.setColorAt(0.0, bgTop);
     faceGrad.setColorAt(1.0, bgBot);
-    p.fillRect(rect, faceGrad);
+    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
+        p.fillRect(rect, faceGrad);
+    }
 
     double effectiveRadiusScale = m_settings.radiusScale;
     double effectivePivotY = m_settings.pivotY;

@@ -85,7 +85,9 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    p.fillRect(rect(), StyleTheme::cardBg());
+    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
+        p.fillRect(rect(), StyleTheme::cardBg());
+    }
 
     int w = width();
     int h = height();

@@ -126,10 +126,16 @@ void MiniPlayerView::onFaderChanged(int index) {
 void MiniPlayerView::updateEngineStatus(ProcessingState state) {
     if (state == ProcessingState::Running) {
         m_playStopBtn->setText("⏹");
-        m_playStopBtn->setStyleSheet("color: #ff3b30; font-weight: bold; border-radius: 4px;");
+        m_playStopBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.16); color: #ff3b30; "
+                                     "font-weight: bold; border-radius: "
+                                     "4px; border: none; font-size: 11px; padding: 0px; margin: 0px; text-align: "
+                                     "center; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }");
     } else {
         m_playStopBtn->setText("▶");
-        m_playStopBtn->setStyleSheet("color: #34c759; font-weight: bold; border-radius: 4px;");
+        m_playStopBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.16); color: #34c759; "
+                                     "font-weight: bold; border-radius: "
+                                     "4px; border: none; font-size: 11px; padding: 0px; margin: 0px; text-align: "
+                                     "center; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }");
     }
 }
 
@@ -267,24 +273,28 @@ void MiniPlayerView::setupUi() {
     topBar->addWidget(m_volValueLabel);
 
     // 6 Mode Icon Buttons matching SwiftUI icons
-    auto pipeBtn = new QPushButton("🔄", this);
-    auto specBtn = new QPushButton("📈", this);
+    auto pipeBtn = new QPushButton("☍", this);
+    auto specBtn = new QPushButton("〰", this);
     auto mtrBtn = new QPushButton("📊", this);
-    auto vuBtn = new QPushButton("🎛️", this);
-    auto sgBtn = new QPushButton("🌌", this);
-    auto vecBtn = new QPushButton("🎯", this);
+    auto vuBtn = new QPushButton("⏱", this);
+    auto sgBtn = new QPushButton("▦", this);
+    auto vecBtn = new QPushButton("⚡", this);
 
     std::vector<QPushButton*> modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
     auto setModeStyle = [modeBtns](int activeIndex) {
         for (int i = 0; i < static_cast<int>(modeBtns.size()); ++i) {
             if (i == activeIndex) {
-                modeBtns[i]->setStyleSheet("QPushButton { background-color: #007aff; color: white; border-radius: 4px; "
-                                           "border: none; font-size: 11px; }"
-                                           "QPushButton:hover { background-color: #0062cc; }");
+                modeBtns[i]->setStyleSheet(
+                    "QPushButton { background-color: #007aff; color: white; border-radius: 4px; border: none; "
+                    "font-size: "
+                    "11px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; } QPushButton:hover { "
+                    "background-color: #0062cc; }");
             } else {
-                modeBtns[i]->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #ffffff; "
-                                           "border-radius: 4px; border: none; font-size: 11px; }"
-                                           "QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
+                modeBtns[i]->setStyleSheet(
+                    "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #ffffff; border-radius: 4px; "
+                    "border: none; font-size: 11px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; "
+                    "} "
+                    "QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
             }
         }
     };
@@ -344,16 +354,19 @@ void MiniPlayerView::setupUi() {
     closeBtn->setFixedSize(18, 18);
     closeBtn->setStyleSheet(
         "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #8e8e93; border-radius: 9px; border: none; "
-        "font-size: 10px; font-weight: bold; } QPushButton:hover { background-color: #ff3b30; color: white; }");
+        "font-size: 10px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; } QPushButton:hover { "
+        "background-color: #ff3b30; color: white; }");
     connect(closeBtn, &QPushButton::clicked, this, &MiniPlayerView::closeAndRestoreMain);
     topBar->addWidget(closeBtn);
 
     mainLayout->addLayout(topBar);
 
     m_viewStack = new QStackedWidget(this);
+    m_viewStack->setStyleSheet("QStackedWidget { background: transparent; }");
 
     // Mode 0: Mini Pipeline Chips
     m_pipelineMiniCard = new QWidget(this);
+    m_pipelineMiniCard->setStyleSheet("QWidget { background: transparent; }");
     auto pipeLayout = new QHBoxLayout(m_pipelineMiniCard);
     pipeLayout->setContentsMargins(4, 4, 4, 4);
     pipeLayout->setSpacing(4);

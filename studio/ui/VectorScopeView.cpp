@@ -67,16 +67,17 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         return;
 
     // Allocate / resize offscreen phosphor persistence buffer if needed
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     if (m_persistenceBuffer.size() != size()) {
         m_persistenceBuffer = QImage(size(), QImage::Format_ARGB32_Premultiplied);
-        m_persistenceBuffer.fill(StyleTheme::cardBg());
+        m_persistenceBuffer.fill(inMiniPlayer ? QColor(0, 0, 0, 0) : StyleTheme::cardBg());
     }
 
     // 1. Phosphor decay: fade existing buffer content slightly toward background
     {
         QPainter bufPainter(&m_persistenceBuffer);
         bufPainter.setRenderHint(QPainter::Antialiasing);
-        QColor fadeColor = StyleTheme::cardBg();
+        QColor fadeColor = inMiniPlayer ? QColor(18, 18, 22) : StyleTheme::cardBg();
         fadeColor.setAlpha(45); // Alpha buffer decay rate (~82% retention)
         bufPainter.fillRect(m_persistenceBuffer.rect(), fadeColor);
 
