@@ -5,6 +5,7 @@
 #include <QEvent>
 #include <QMouseEvent>
 #include <QSlider>
+#include <QStyle>
 #include <QSurfaceFormat>
 #include <algorithm>
 #include <cmath>
@@ -20,16 +21,16 @@ protected:
             if (event->type() == QEvent::MouseButtonPress) {
                 auto me = static_cast<QMouseEvent*>(event);
                 if (me->button() == Qt::LeftButton) {
-                    double val = 0;
+                    int val = 0;
                     if (slider->orientation() == Qt::Horizontal) {
-                        double frac = static_cast<double>(me->pos().x()) / std::max(1, slider->width());
-                        val = slider->minimum() + frac * (slider->maximum() - slider->minimum());
+                        val = QStyle::sliderValueFromPosition(slider->minimum(), slider->maximum(), me->pos().x(),
+                                                              slider->width(), slider->invertedAppearance());
                     } else {
-                        double frac =
-                            static_cast<double>(slider->height() - me->pos().y()) / std::max(1, slider->height());
-                        val = slider->minimum() + frac * (slider->maximum() - slider->minimum());
+                        val = QStyle::sliderValueFromPosition(slider->minimum(), slider->maximum(),
+                                                              slider->height() - me->pos().y(), slider->height(),
+                                                              slider->invertedAppearance());
                     }
-                    slider->setValue(static_cast<int>(std::round(val)));
+                    slider->setValue(val);
                 }
             }
         }
@@ -43,6 +44,7 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("CamillaDSP Monitor - Qt");
     app.setOrganizationName("DSPMonitor");
     app.setOrganizationDomain("dspmonitor.io");
+    app.setQuitOnLastWindowClosed(false);
     app.installEventFilter(new ClickableSliderFilter(&app));
 
     // Enable high DPI scaling

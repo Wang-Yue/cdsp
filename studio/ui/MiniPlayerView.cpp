@@ -9,6 +9,24 @@
 #include <QScrollArea>
 #include <QStyleOption>
 #include <QVBoxLayout>
+#include <QWindow>
+
+#ifdef Q_OS_MAC
+#include <objc/message.h>
+#include <objc/runtime.h>
+
+static void setMacFloatingPanelProperties(QWidget* widget) {
+    if (auto window = widget->windowHandle()) {
+        void* nsWindow = reinterpret_cast<void*>(window->winId());
+        if (nsWindow) {
+            unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 10);
+            reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(
+                nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
+            reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"), 1000L);
+        }
+    }
+}
+#endif
 
 MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
                                std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
@@ -19,7 +37,9 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
     setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(20, 20, 25, 0.85); border-radius: 12px; "
                   "border: 1px solid rgba(255, 255, 255, 0.15); }");
     setObjectName("MiniPlayerViewWindow");
-    resize(380, 130);
+    setMinimumSize(200, 80);
+    setMaximumSize(1000, 300);
+    resize(320, 90);
 
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
@@ -27,6 +47,13 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
     if (m_settings) {
         connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() { onFaderChanged(0); });
     }
+}
+
+void MiniPlayerView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+#ifdef Q_OS_MAC
+    setMacFloatingPanelProperties(this);
+#endif
 }
 
 Fader MiniPlayerView::currentFader() const {
@@ -47,16 +74,13 @@ Fader MiniPlayerView::currentFader() const {
 
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
-        m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
-        event->accept();
+        if (windowHandle()) {
+            windowHandle()->startSystemMove();
+            event->accept();
+            return;
+        }
     }
-}
-
-void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
-    if (event->buttons() & Qt::LeftButton) {
-        move(event->globalPosition().toPoint() - m_dragPosition);
-        event->accept();
-    }
+    QWidget::mousePressEvent(event);
 }
 
 void MiniPlayerView::onFaderChanged(int index) {

@@ -3,16 +3,19 @@
 
 #include "config/DSPConfigTypes.h"
 
+#include <mutex>
 #include <vector>
 
 struct LevelState {
     int visibilityCount = 0;
+    mutable std::mutex mutex;
     std::vector<float> captureRms;
     std::vector<float> capturePeak;
     std::vector<float> playbackRms;
     std::vector<float> playbackPeak;
 
     void update(const VuLevels& levels) {
+        std::lock_guard<std::mutex> lock(mutex);
         captureRms = levels.capture_rms;
         capturePeak = levels.capture_peak;
         playbackRms = levels.playback_rms;
@@ -20,6 +23,7 @@ struct LevelState {
     }
 
     void reset(size_t capChannels = 0, size_t pbChannels = 0) {
+        std::lock_guard<std::mutex> lock(mutex);
         captureRms.assign(capChannels, -100.0f);
         capturePeak.assign(capChannels, -100.0f);
         playbackRms.assign(pbChannels, -100.0f);

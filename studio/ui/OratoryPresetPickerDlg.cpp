@@ -83,15 +83,18 @@ void OratoryPresetPickerDlg::setupUi() {
 }
 
 void OratoryPresetPickerDlg::loadIndex(bool forceRefresh) {
+    QPointer<OratoryPresetPickerDlg> safeThis(this);
     m_service.fetchIndex(
-        [this](bool ok, const std::vector<OratoryIndexEntry>& entries) {
+        [safeThis](bool ok, const std::vector<OratoryIndexEntry>& entries) {
+            if (!safeThis)
+                return;
             if (ok) {
-                m_entries = entries;
-                m_statusLabel->setText(QString("Loaded %1 Oratory presets.").arg(entries.size()));
-                m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
-                onSearchTextChanged(m_searchEdit->text());
+                safeThis->m_entries = entries;
+                safeThis->m_statusLabel->setText(QString("Loaded %1 Oratory presets.").arg(entries.size()));
+                safeThis->m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
+                safeThis->onSearchTextChanged(safeThis->m_searchEdit->text());
             } else {
-                m_statusLabel->setText("Failed to load Oratory1990 index.");
+                safeThis->m_statusLabel->setText("Failed to load Oratory1990 index.");
             }
         },
         forceRefresh);

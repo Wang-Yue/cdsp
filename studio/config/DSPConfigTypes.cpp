@@ -86,20 +86,26 @@ std::string audioBackendTypeToString(AudioBackendType type) {
 }
 
 AudioBackendType stringToAudioBackendType(const std::string& str) {
-    if (str == "WASAPI" || str == "wasapi")
+    std::string lowerStr = str;
+    std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::tolower);
+
+    if (lowerStr == "coreaudio")
+        return AudioBackendType::CoreAudio;
+    if (lowerStr == "wasapi")
         return AudioBackendType::WASAPI;
-    if (str == "ASIO" || str == "asio")
+    if (lowerStr == "asio")
         return AudioBackendType::ASIO;
-    if (str == "ALSA" || str == "alsa")
+    if (lowerStr == "alsa")
         return AudioBackendType::ALSA;
-    if (str == "PulseAudio" || str == "Pulse" || str == "pulse")
+    if (lowerStr == "pulseaudio" || lowerStr == "pulse")
         return AudioBackendType::PulseAudio;
-    if (str == "RawFile" || str == "File")
+    if (lowerStr == "rawfile" || lowerStr == "file")
         return AudioBackendType::RawFile;
-    if (str == "WavFile")
+    if (lowerStr == "wavfile")
         return AudioBackendType::WavFile;
-    if (str == "SignalGenerator")
+    if (lowerStr == "signalgenerator")
         return AudioBackendType::SignalGenerator;
+
 #if defined(_WIN32) || defined(Q_OS_WIN)
     return AudioBackendType::WASAPI;
 #elif defined(__APPLE__) || defined(Q_OS_MAC)

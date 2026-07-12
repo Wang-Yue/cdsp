@@ -68,6 +68,9 @@ std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& p
     auto wavInfo = parseWavHeader(path);
     if (wavInfo.has_value()) {
         const auto& w = wavInfo.value();
+        if (targetChannel < 0 || targetChannel >= w.channels)
+            return coeffs;
+
         std::ifstream file(path, std::ios::binary);
         if (!file.is_open())
             return coeffs;

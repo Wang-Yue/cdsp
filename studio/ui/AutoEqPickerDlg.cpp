@@ -79,15 +79,18 @@ void AutoEqPickerDlg::setupUi() {
 }
 
 void AutoEqPickerDlg::loadIndex(bool forceRefresh) {
+    QPointer<AutoEqPickerDlg> safeThis(this);
     m_service.fetchIndex(
-        [this](bool ok, const std::vector<AutoEqIndexEntry>& entries) {
+        [safeThis](bool ok, const std::vector<AutoEqIndexEntry>& entries) {
+            if (!safeThis)
+                return;
             if (ok) {
-                m_entries = entries;
-                m_statusLabel->setText(QString("Loaded %1 headphone presets.").arg(entries.size()));
-                m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
-                onSearchTextChanged(m_searchEdit->text());
+                safeThis->m_entries = entries;
+                safeThis->m_statusLabel->setText(QString("Loaded %1 headphone presets.").arg(entries.size()));
+                safeThis->m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
+                safeThis->onSearchTextChanged(safeThis->m_searchEdit->text());
             } else {
-                m_statusLabel->setText("Failed to load AutoEQ index. Check internet connection.");
+                safeThis->m_statusLabel->setText("Failed to load AutoEQ index. Check internet connection.");
             }
         },
         forceRefresh);

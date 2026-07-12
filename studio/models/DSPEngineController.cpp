@@ -26,6 +26,17 @@ DSPEngineController::DSPEngineController(std::shared_ptr<CDSPEngine> engine,
             applyConfig();
         }
     });
+
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::changed, this, [this]() {
+            if (m_devices) {
+                m_devices->validateSampleRates();
+            }
+            if (status == ProcessingState::Running) {
+                applyConfig();
+            }
+        });
+    }
 }
 
 DSPConfiguration DSPEngineController::buildConfiguration() const {
@@ -59,8 +70,14 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     if (m_settings->resamplerEnabled) {
         config.devices.captureSamplerate = captureRate;
         ResamplerConfig resCfg;
-        resCfg.type = m_settings->resamplerType;
-        switch (m_settings->resamplerType) {
+
+        ResamplerType effectiveType = m_settings->resamplerType;
+        if (m_engine && m_engine->isRustEngine() && effectiveType == ResamplerType::Apple) {
+            effectiveType = ResamplerType::AsyncSinc;
+        }
+
+        resCfg.type = effectiveType;
+        switch (effectiveType) {
         case ResamplerType::AsyncSinc:
             if (m_settings->resamplerUseProfile) {
                 resCfg.profile = resamplerProfileToString(m_settings->resamplerProfile);
