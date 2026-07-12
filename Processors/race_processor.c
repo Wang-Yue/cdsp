@@ -174,9 +174,8 @@ void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
       logger_error(
           &logger,
           "RACE channel indices (%d, %d) out of bounds for chunk channels (%d)",
-          log_arg_int((int64_t)processor->channel_a),
-          log_arg_int((int64_t)processor->channel_b),
-          log_arg_int((int64_t)audio_chunk_get_channels(chunk)));
+          processor->channel_a, processor->channel_b,
+          audio_chunk_get_channels(chunk));
       processor->channel_warning_logged = true;
     }
     return;

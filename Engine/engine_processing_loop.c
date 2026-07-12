@@ -184,8 +184,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
             loop->resampler, chunk, loop->resampler_scratch);
         res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
         if (rerr != RESAMPLER_OK) {
-          logger_error(&logger, "Processing error: resampler error %d",
-                       log_arg_int((int64_t)rerr));
+          logger_error(&logger, "Processing error: resampler error %d", rerr);
           processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
           snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
                    rerr);
@@ -229,8 +228,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
           pipeline_process(loop->active_pipeline, chunk, current_scratch);
       uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
       if (perr != PIPELINE_OK) {
-        logger_error(&logger, "Processing error: pipeline error %d",
-                     log_arg_int((int64_t)perr));
+        logger_error(&logger, "Processing error: pipeline error %d", perr);
         processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
         snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
                  perr);

@@ -288,11 +288,9 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
   logger_info(&logger,
               "Opening CoreAudio playback device '%s' (sample_rate=%.0f, "
               "channels=%d, exclusive=%d)",
-              log_arg_string(playback->device_name[0] ? playback->device_name
-                                                      : "default"),
-              log_arg_double(playback->sample_rate),
-              log_arg_int(playback->channels),
-              log_arg_int(playback->exclusive ? 1 : 0));
+              playback->device_name[0] ? playback->device_name : "default",
+              playback->sample_rate, playback->channels,
+              playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
   bool open_succeeded = false;
 
@@ -316,7 +314,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
   OSStatus status = AudioComponentInstanceNew(comp, &playback->audio_unit);
   if (status != noErr || !playback->audio_unit) {
     logger_error(&logger, "Failed to create output AudioUnit: status=%d",
-                 log_arg_int((int64_t)status));
+                 status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create output AudioUnit");
@@ -329,7 +327,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       kAudioUnitScope_Output, 0, &enable_output, sizeof(enable_output));
   if (status != noErr) {
     logger_error(&logger, "Failed to enable output on AudioUnit: status=%d",
-                 log_arg_int((int64_t)status));
+                 status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to enable output");
@@ -342,7 +340,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       kAudioUnitScope_Input, 1, &disable_input, sizeof(disable_input));
   if (status != noErr) {
     logger_error(&logger, "Failed to disable input on AudioUnit: status=%d",
-                 log_arg_int((int64_t)status));
+                 status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to disable input");
@@ -384,7 +382,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       } else {
         logger_error(&logger,
                      "Failed to set matching physical playback format: %s",
-                     log_arg_string(playback->sample_format));
+                     playback->sample_format);
         if (err)
           backend_error_init(
               err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -423,7 +421,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       logger_error(
           &logger,
           "Failed to set playback stream format on AudioUnit: status=%d",
-          log_arg_int((int64_t)status));
+          status);
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Failed to set playback stream format");
@@ -439,8 +437,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
                                 kAudioUnitProperty_SetRenderCallback,
                                 kAudioUnitScope_Input, 0, &cb, sizeof(cb));
   if (status != noErr) {
-    logger_error(&logger, "Failed to set render callback: status=%d",
-                 log_arg_int((int64_t)status));
+    logger_error(&logger, "Failed to set render callback: status=%d", status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set render callback");
@@ -462,7 +459,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
   status = AudioUnitInitialize(playback->audio_unit);
   if (status != noErr) {
     logger_error(&logger, "Failed to initialize playback AudioUnit: status=%d",
-                 log_arg_int((int64_t)status));
+                 status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to initialize output");
@@ -472,7 +469,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
     logger_error(&logger, "Failed to start output AudioUnit: status=%d",
-                 log_arg_int((int64_t)status));
+                 status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start output");

@@ -78,12 +78,10 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
     }
     const char* method_str = loop->pitch_supported ? "pitch" : "resampler";
     logger_info(&logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
-                log_arg_double(average),
-                log_arg_int((int64_t)loop->target_level), log_arg_double(speed),
-                log_arg_string(method_str));
+                average, loop->target_level, speed, method_str);
   } else {
-    logger_debug(&logger, "Rate adjust: buffer=%f, keeping speed=%f",
-                 log_arg_double(average), log_arg_double(*last_speed));
+    logger_debug(&logger, "Rate adjust: buffer=%f, keeping speed=%f", average,
+                 *last_speed);
   }
 }
 
@@ -100,8 +98,7 @@ static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
     logger_info(
         &logger,
         "Rate adjustment enabled (period=%fs, target_level=%d, method=%s)",
-        log_arg_double(loop->adjust_period),
-        log_arg_int((int64_t)loop->target_level), log_arg_string(method_str));
+        loop->adjust_period, loop->target_level, method_str);
   } else {
     logger_info(
         &logger,
@@ -210,8 +207,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       backend_error_init(&err, BACKEND_ERROR_NONE, "");
       bool ok = playback_backend_write(loop->playback, chunk, &err);
       if (!ok || err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Playback error: %s",
-                     log_arg_string(err.message));
+        logger_error(&logger, "Playback error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);

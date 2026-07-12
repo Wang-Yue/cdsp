@@ -73,9 +73,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
     logger_t logger = logger_create("dsp.engine.rate_watcher");
     logger_warn(&logger,
                 "Sample rate deviation tick %d: measured %.1fHz, target %.1fHz",
-                log_arg_int((int64_t)watcher->deviation_count),
-                log_arg_double(measured_rate),
-                log_arg_double(watcher->target_rate));
+                watcher->deviation_count, measured_rate, watcher->target_rate);
   } else {
     watcher->deviation_count = 0;
   }
@@ -85,8 +83,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
     logger_error(&logger,
                  "Sample rate deviation persistent! Measured rate: %.1fHz "
                  "(target %.1fHz)",
-                 log_arg_double(measured_rate),
-                 log_arg_double(watcher->target_rate));
+                 measured_rate, watcher->target_rate);
     *out_measured_rate = measured_rate;
     return true;
   }

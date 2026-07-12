@@ -428,10 +428,9 @@ audio_resampler_t* audio_resampler_create_from_config(
     config_error_set(err, CONFIG_ERR_PARSE, "Resampler config is NULL");
     return NULL;
   }
-  logger_info(
-      &logger, "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
-      log_arg_int((int64_t)config->type), log_arg_int((int64_t)input_rate),
-      log_arg_int((int64_t)output_rate), log_arg_int((int64_t)channels));
+  logger_info(&logger,
+              "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
+              config->type, input_rate, output_rate, channels);
   switch (config->type) {
     case RESAMPLER_TYPE_SYNCHRONOUS: {
       synchronous_resampler_t* res = synchronous_resampler_create(
@@ -534,8 +533,7 @@ audio_resampler_t* audio_resampler_create_from_config(
     }
 #endif
     default:
-      logger_error(&logger, "Unknown resampler type %d",
-                   log_arg_int((int64_t)config->type));
+      logger_error(&logger, "Unknown resampler type %d", config->type);
       config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %d",
                        config->type);
       return NULL;

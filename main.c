@@ -377,21 +377,19 @@ int main(int argc, char** argv) {
     if (!json) {
       logger_error(&logger,
                    "Configuration check failed: Could not read file %s",
-                   log_arg_string(config_path));
+                   config_path);
       printf("Configuration check failed: Could not read file.\n");
       return 1;
     }
     dsp_config_t* parsed = NULL;
     config_error_t cerr;
     if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
-      logger_error(&logger, "Configuration check failed: %s",
-                   log_arg_string(cerr.message));
+      logger_error(&logger, "Configuration check failed: %s", cerr.message);
       printf("Configuration check failed: %s\n", cerr.message);
       free(json);
       return 1;
     }
-    logger_info(&logger, "Configuration check succeeded for %s",
-                log_arg_string(config_path));
+    logger_info(&logger, "Configuration check succeeded for %s", config_path);
     printf("Configuration is valid.\n");
     dsp_config_free(parsed);
     free(json);
@@ -405,8 +403,7 @@ int main(int argc, char** argv) {
   if (state_file_path && loaded_state) {
     if (dsp_state_load(state_file_path, loaded_state)) {
       has_loaded_state = true;
-      logger_info(&logger, "Loaded state file from %s",
-                  log_arg_string(state_file_path));
+      logger_info(&logger, "Loaded state file from %s", state_file_path);
       if (!config_path && !no_config &&
           dsp_state_has_config_path(loaded_state)) {
         allocated_config_path = strdup(dsp_state_get_config_path(loaded_state));
@@ -444,7 +441,7 @@ int main(int argc, char** argv) {
     config_json = read_file_to_string(config_path);
     if (!config_json) {
       logger_error(&logger, "Failed to read configuration file %s",
-                   log_arg_string(config_path));
+                   config_path);
       printf("Failed to load configuration: Could not read file %s\n",
              config_path);
       return 1;
@@ -452,7 +449,7 @@ int main(int argc, char** argv) {
     config_error_t cerr;
     if (config_loader_parse(config_json, &parsed, &cerr) != 0 || !parsed) {
       logger_error(&logger, "Failed to parse configuration file %s: %s",
-                   log_arg_string(config_path), log_arg_string(cerr.message));
+                   config_path, cerr.message);
       printf("Failed to load configuration: %s\n", cerr.message);
       free(config_json);
       return 1;
@@ -573,8 +570,7 @@ int main(int argc, char** argv) {
       logger_info(&logger, "DSP engine configured and started");
       printf("Engine started successfully.\n");
     } else {
-      logger_error(&logger, "Failed to configure engine: %s",
-                   log_arg_string(berr.message));
+      logger_error(&logger, "Failed to configure engine: %s", berr.message);
       printf("Error starting engine: %s\n", berr.message);
       // dsp_engine_set_config_struct frees parsed on failure
       dsp_engine_free(engine);

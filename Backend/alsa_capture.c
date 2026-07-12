@@ -531,7 +531,7 @@ bool alsa_capture_open(alsa_capture_t* capture, backend_error_t* err) {
     if (rc < 0) {
       logger_t logger = logger_create("dsp.backend.alsa");
       logger_warn(&logger, "Failed to set ALSA software parameters: %s",
-                  log_arg_string(snd_strerror(rc)));
+                  snd_strerror(rc));
     }
   }
 

@@ -4058,8 +4058,7 @@ static void* server_thread_func(void* arg) {
                 }
                 payload[payload_len] = '\0';
 
-                logger_debug(&server_logger, "Received WS frame: %s",
-                             log_arg_string(payload));
+                logger_debug(&server_logger, "Received WS frame: %s", payload);
 
                 dyn_string_t ds;
                 dyn_string_init(&ds, 4096);
@@ -4067,7 +4066,7 @@ static void* server_thread_func(void* arg) {
 
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending WS response: %s",
-                               log_arg_string(ds.data));
+                               ds.data);
                   send_websocket_frame(client_fds[i], ds.data);
                 }
                 dyn_string_free(&ds);
@@ -4080,14 +4079,14 @@ static void* server_thread_func(void* arg) {
                 }
               } else {
                 logger_debug(&server_logger, "Received raw TCP: %s",
-                             log_arg_string(&buf[offset]));
+                             &buf[offset]);
 
                 dyn_string_t ds;
                 dyn_string_init(&ds, 4096);
                 websocket_server_handle_command(server, i, &buf[offset], &ds);
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending raw TCP response: %s",
-                               log_arg_string(ds.data));
+                               ds.data);
                   send(client_fds[i], ds.data, (int)strlen(ds.data), 0);
                 }
                 dyn_string_free(&ds);
@@ -4144,8 +4143,7 @@ bool websocket_server_start(websocket_server_t* server) {
   if (IS_SOCKET_ERROR(
           bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)))) {
     logger_error(&server_logger, "Failed to bind WebSocket server on %s:%d",
-                 log_arg_string(server->host),
-                 log_arg_int((int64_t)server->port));
+                 server->host, server->port);
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
 #ifdef _WIN32
@@ -4177,7 +4175,7 @@ bool websocket_server_start(websocket_server_t* server) {
   }
 
   logger_info(&server_logger, "WebSocket control server listening on %s:%d",
-              log_arg_string(server->host), log_arg_int((int64_t)server->port));
+              server->host, server->port);
   return true;
 }
 

@@ -156,7 +156,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         loop->has_last_observed_pending_rate = true;
         logger_warn(&logger,
                     "Capture device rate changed to %f Hz; stopping engine",
-                    log_arg_double(rate));
+                    rate);
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
@@ -171,7 +171,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         loop->has_last_observed_playback_pending_rate = true;
         logger_warn(&logger,
                     "Playback device rate changed to %f Hz; stopping engine",
-                    log_arg_double(rate));
+                    rate);
         processing_stop_reason_t reason = {
             .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
@@ -200,7 +200,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       }
       // If reading fails with an error, trigger an engine stop.
       if (err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Capture error: %s", log_arg_string(err.message));
+        logger_error(&logger, "Capture error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);
@@ -233,7 +233,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
           engine_state_machine_set_state(loop->state_machine,
                                          PROCESSING_STATE_STALLED);
           logger_warn(&logger, "Capture device stalled — no data for %fs",
-                      log_arg_double(loop->watchdog_timeout_seconds));
+                      loop->watchdog_timeout_seconds);
         }
       }
       // Block/wait up to 20ms using the backend's synchronization mechanism
@@ -260,7 +260,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             &logger,
             "Sample rate change detected (measured: %f Hz, expected: %zu "
             "Hz); stopping engine",
-            log_arg_double(measured_rate), log_arg_int(loop->samplerate));
+            measured_rate, loop->samplerate);
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
@@ -271,7 +271,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             &logger,
             "Sample rate drift detected (measured: %f Hz, expected: %zu "
             "Hz)",
-            log_arg_double(measured_rate), log_arg_int(loop->samplerate));
+            measured_rate, loop->samplerate);
       }
     }
 

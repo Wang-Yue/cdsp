@@ -26,9 +26,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     logger_warn(&logger,
                 "[%s] Invalid audio parameters for real-time priority: "
                 "frames=%d, rate=%d",
-                log_arg_string(name ? name : "unknown"),
-                log_arg_int((int64_t)buffer_frames),
-                log_arg_int((int64_t)sample_rate));
+                name ? name : "unknown", buffer_frames, sample_rate);
     return;
   }
 
@@ -37,8 +35,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   if (status != KERN_SUCCESS) {
     logger_t logger = logger_create("dsp.threadpriority");
     logger_error(&logger, "[%s] Failed to retrieve Mach timebase info: %d",
-                 log_arg_string(name ? name : "unknown"),
-                 log_arg_int((int64_t)status));
+                 name ? name : "unknown", status);
     return;
   }
 
@@ -60,8 +57,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     logger_info(
         &logger,
         "[%s] Thread computation budget capped at 50.0ms (%.1fms requested)",
-        log_arg_string(name ? name : "unknown"),
-        log_arg_double(computation_ns / 1000000.0));
+        name ? name : "unknown", computation_ns / 1000000.0);
     computation_ns = max_quantum_ns;
   }
 
@@ -94,14 +90,11 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     logger_info(&logger,
                 "[%s] Thread promoted to real-time priority: period=%.1fms, "
                 "computation=%.1fms, constraint=%.1fms",
-                log_arg_string(name ? name : "unknown"),
-                log_arg_double(period_ns / 1000000.0),
-                log_arg_double(computation_ns / 1000000.0),
-                log_arg_double(constraint_ns / 1000000.0));
+                name ? name : "unknown", period_ns / 1000000.0,
+                computation_ns / 1000000.0, constraint_ns / 1000000.0);
   } else {
     logger_error(&logger, "[%s] Failed to set real-time thread policy: %d",
-                 log_arg_string(name ? name : "unknown"),
-                 log_arg_int((int64_t)result));
+                 name ? name : "unknown", result);
   }
 }
 #elif defined(__linux__)
@@ -131,7 +124,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
       logger_info(&logger,
                   "[%s] Thread promoted to Linux SCHED_FIFO real-time priority "
                   "via pthread_setschedparam",
-                  log_arg_string(name ? name : "unknown"));
+                  name ? name : "unknown");
       return;
     }
   }
@@ -157,12 +150,12 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     logger_info(&logger,
                 "[%s] Thread promoted to Linux real-time priority via "
                 "RealtimeKit (rtkit)",
-                log_arg_string(name ? name : "unknown"));
+                name ? name : "unknown");
   } else {
     logger_warn(&logger,
                 "[%s] Failed to promote thread to real-time priority (both "
                 "pthread_setschedparam and RealtimeKit failed)",
-                log_arg_string(name ? name : "unknown"));
+                name ? name : "unknown");
   }
 }
 #elif defined(_WIN32)
@@ -177,12 +170,11 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   if (success) {
     logger_info(&logger,
                 "[%s] Thread promoted to Windows THREAD_PRIORITY_TIME_CRITICAL",
-                log_arg_string(name ? name : "unknown"));
+                name ? name : "unknown");
   } else {
     logger_warn(&logger,
                 "[%s] Failed to set thread priority on Windows: err=%lu",
-                log_arg_string(name ? name : "unknown"),
-                log_arg_int((int64_t)GetLastError()));
+                name ? name : "unknown", GetLastError());
   }
 }
 #else

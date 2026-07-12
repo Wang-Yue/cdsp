@@ -961,9 +961,8 @@ TEST(DoPDecoder_AllocationFree) {
 static void logger_iter(int i, void* ctx) {
   (void)ctx;
   logger_t logger = logger_create("test.alloc.free");
-  logger_info(&logger, "Test event: int=%d, float=%f, static=%s",
-              log_arg_int((int64_t)i), log_arg_double(3.14159 + (double)i),
-              log_arg_string("Static string argument value"));
+  logger_info(&logger, "Test event: int=%d, float=%f, static=%s", i,
+              3.14159 + i, "Static string argument value");
 }
 
 TEST(Logger_AllocationFree) {

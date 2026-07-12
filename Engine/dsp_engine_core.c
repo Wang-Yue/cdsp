@@ -118,14 +118,13 @@ dsp_engine_core_t* dsp_engine_core_create(dsp_config_t* config) {
 
   // Log configuration details and read properties to satisfy Periphery
   logger_t logger = logger_create("dsp.engine.core");
-  logger_info(&logger, "Engine initialized with queueLimit: %d",
-              log_arg_int((int64_t)queue_limit));
+  logger_info(&logger, "Engine initialized with queueLimit: %d", queue_limit);
 
   if (config->devices.has_rate_measure_interval) {
     logger_info(&logger,
                 "Rate measure interval configured: %f s (unused on CoreAudio "
                 "due to event-driven HAL listener)",
-                log_arg_double(config->devices.rate_measure_interval));
+                config->devices.rate_measure_interval);
   }
   if (config->devices.has_multithreaded && config->devices.multithreaded) {
     logger_info(&logger,
@@ -135,7 +134,7 @@ dsp_engine_core_t* dsp_engine_core_create(dsp_config_t* config) {
     logger_info(&logger,
                 "Worker threads requested: %d (ignored on Apple platform as "
                 "GCD automatically manages worker thread pools)",
-                log_arg_int((int64_t)config->devices.worker_threads));
+                config->devices.worker_threads);
   }
 
   return core;
@@ -235,8 +234,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
             &core->current_config->devices.capture),
         core->current_config->devices.chunksize, &cerr);
     if (!core->resampler) {
-      logger_error(&logger, "Resampler creation failed: %s",
-                   log_arg_string(cerr.message));
+      logger_error(&logger, "Resampler creation failed: %s", cerr.message);
       if (err) {
         err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
         strncpy(err->message, cerr.message, sizeof(err->message) - 1);
@@ -263,8 +261,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   if (capture_chunk_size != requested_chunk_size) {
     logger_info(&logger,
                 "Adopting resampler chunkSize=%d (config requested %d)",
-                log_arg_int((int64_t)capture_chunk_size),
-                log_arg_int((int64_t)requested_chunk_size));
+                capture_chunk_size, requested_chunk_size);
   }
 
   // 4. Check for ASIO Full-Duplex.
@@ -290,8 +287,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       &core->current_config->devices.capture, (int)capture_rate,
       (int)capture_chunk_size, full_duplex, core->processing_params, &berr);
   if (!core->capture || berr.type != BACKEND_ERROR_NONE) {
-    logger_error(&logger, "Failed to create capture backend: %s",
-                 log_arg_string(berr.message));
+    logger_error(&logger, "Failed to create capture backend: %s", berr.message);
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -305,7 +301,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       (int)playback_chunk_size, full_duplex, core->processing_params, &berr);
   if (!core->playback || berr.type != BACKEND_ERROR_NONE) {
     logger_error(&logger, "Failed to create playback backend: %s",
-                 log_arg_string(berr.message));
+                 berr.message);
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -316,8 +312,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   }
 
   if (!capture_backend_open(core->capture, &berr)) {
-    logger_error(&logger, "Failed to open capture backend: %s",
-                 log_arg_string(berr.message));
+    logger_error(&logger, "Failed to open capture backend: %s", berr.message);
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -327,8 +322,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
     return false;
   }
   if (!playback_backend_open(core->playback, &berr)) {
-    logger_error(&logger, "Failed to open playback backend: %s",
-                 log_arg_string(berr.message));
+    logger_error(&logger, "Failed to open playback backend: %s", berr.message);
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -368,7 +362,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
                       playback_chunk_size, &cerr);
   if (!core->pipeline) {
     logger_error(&logger, "Failed to create processing pipeline: %s",
-                 log_arg_string(cerr.message));
+                 cerr.message);
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
@@ -506,8 +500,7 @@ spawn_success:
 
   engine_state_machine_set_state(core->state_machine, PROCESSING_STATE_RUNNING);
   logger_info(&logger, "DSP engine started: %dHz, chunk=%d",
-              log_arg_int((int64_t)core->current_config->devices.samplerate),
-              log_arg_int((int64_t)capture_chunk_size));
+              core->current_config->devices.samplerate, capture_chunk_size);
 
   return true;
 }

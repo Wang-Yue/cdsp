@@ -220,7 +220,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
   logger_t logger = logger_create("dsp.processor");
   if (!config) {
     logger_error(&logger, "Processor config is NULL for '%s'",
-                 log_arg_string(name ? name : "unnamed"));
+                 name ? name : "unnamed");
     config_error_set(err, CONFIG_ERR_PARSE, "Processor config is NULL");
     return NULL;
   }
@@ -230,7 +230,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
           name, &config->parameters.compressor, sample_rate, chunk_size);
       if (!p) {
         logger_error(&logger, "Failed to create compressor processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to create compressor processor '%s'",
                          name ? name : "");
@@ -239,14 +239,14 @@ dsp_processor_t* dsp_processor_create(const char* name,
       dsp_processor_t* wrap = dsp_processor_wrap_compressor(p);
       if (!wrap) {
         logger_error(&logger, "Failed to wrap compressor processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap compressor processor '%s'",
                          name ? name : "");
         return NULL;
       }
       logger_info(&logger, "Created compressor processor '%s'",
-                  log_arg_string(name ? name : ""));
+                  name ? name : "");
       return wrap;
     }
     case PROCESSOR_TYPE_NOISE_GATE: {
@@ -254,7 +254,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
           name, &config->parameters.noise_gate, sample_rate, chunk_size);
       if (!p) {
         logger_error(&logger, "Failed to create noise gate processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to create noise gate processor '%s'",
                          name ? name : "");
@@ -263,14 +263,14 @@ dsp_processor_t* dsp_processor_create(const char* name,
       dsp_processor_t* wrap = dsp_processor_wrap_noise_gate(p);
       if (!wrap) {
         logger_error(&logger, "Failed to wrap noise gate processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap noise gate processor '%s'",
                          name ? name : "");
         return NULL;
       }
       logger_info(&logger, "Created noise gate processor '%s'",
-                  log_arg_string(name ? name : ""));
+                  name ? name : "");
       return wrap;
     }
     case PROCESSOR_TYPE_RACE: {
@@ -278,26 +278,24 @@ dsp_processor_t* dsp_processor_create(const char* name,
           name, &config->parameters.race, sample_rate, err);
       if (!p) {
         logger_error(&logger, "Failed to create RACE processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_race(p);
       if (!wrap) {
         logger_error(&logger, "Failed to wrap RACE processor '%s'",
-                     log_arg_string(name ? name : ""));
+                     name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap RACE processor '%s'",
                          name ? name : "");
         return NULL;
       }
-      logger_info(&logger, "Created RACE processor '%s'",
-                  log_arg_string(name ? name : ""));
+      logger_info(&logger, "Created RACE processor '%s'", name ? name : "");
       return wrap;
     }
     default:
-      logger_error(&logger, "Unknown processor type %d for '%s'",
-                   log_arg_int((int64_t)config->type),
-                   log_arg_string(name ? name : ""));
+      logger_error(&logger, "Unknown processor type %d for '%s'", config->type,
+                   name ? name : "");
       config_error_set(err, CONFIG_ERR_PARSE,
                        "Unknown processor type %d for '%s'", config->type,
                        name ? name : "");

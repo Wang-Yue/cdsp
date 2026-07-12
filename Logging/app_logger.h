@@ -241,10 +241,86 @@ static inline void logger_debug_impl(const logger_t* logger, const char* msg,
                  a1, a2, a3, a4);
 }
 
-#define _LOG_ARG_PAD_4(a1, a2, a3, a4, ...) a1, a2, a3, a4
-#define _LOG_PAD(...)                                                       \
-  _LOG_ARG_PAD_4(__VA_ARGS__ __VA_OPT__(, ) log_arg_none(), log_arg_none(), \
-                 log_arg_none(), log_arg_none())
+static inline log_argument_t _log_arg_auto_int(int64_t v) {
+  return log_arg_int(v);
+}
+static inline log_argument_t _log_arg_auto_double(double v) {
+  return log_arg_double(v);
+}
+static inline log_argument_t _log_arg_auto_string(const char* s) {
+  return log_arg_string(s);
+}
+static inline log_argument_t _log_arg_auto_struct(log_argument_t a) {
+  return a;
+}
+
+static inline double _log_float_to_dbl(float f) { return (double)f; }
+static inline double _log_dbl_to_dbl(double d) { return d; }
+
+static inline double _log_float_val(float f) { return (double)f; }
+static inline double _log_dbl_val(double d) { return d; }
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define _LOG_VAL_STRUCT(x) \
+  _Generic((x), log_argument_t: (x), default: log_arg_none())
+
+#define _LOG_DBL_ARG(x) \
+  _Generic((x) + 0, char*: 0.0, const char*: 0.0, default: (x))
+
+#define _LOG_VAL_INT(x)    \
+  _Generic((x),            \
+      log_argument_t: 0LL, \
+      float: 0LL,          \
+      double: 0LL,         \
+      default: (int64_t)(uintptr_t)(uint64_t)(x))
+
+#define _LOG_VAL_STR(x)       \
+  _Generic((x),               \
+      log_argument_t: "",     \
+      float: "",              \
+      double: "",             \
+      bool: "",               \
+      char: "",               \
+      signed char: "",        \
+      unsigned char: "",      \
+      short: "",              \
+      unsigned short: "",     \
+      int: "",                \
+      unsigned int: "",       \
+      long: "",               \
+      unsigned long: "",      \
+      long long: "",          \
+      unsigned long long: "", \
+      default: (const char*)(uintptr_t)(uint64_t)(x))
+
+#define log_arg(x)                                                  \
+  _Generic((x),                                                     \
+      log_argument_t: _log_arg_auto_struct(_LOG_VAL_STRUCT(x)),     \
+      float: _log_arg_auto_double(_log_float_val(_LOG_DBL_ARG(x))), \
+      double: _log_arg_auto_double(_log_dbl_val(_LOG_DBL_ARG(x))),  \
+      default: _Generic((x) + 0,                                    \
+          char*: _log_arg_auto_string(_LOG_VAL_STR(x)),             \
+          const char*: _log_arg_auto_string(_LOG_VAL_STR(x)),       \
+          default: _log_arg_auto_int(_LOG_VAL_INT(x))))
+#else
+#define log_arg(x) (x)
+#endif
+
+#define _LOG_PAD_0() \
+  log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none()
+#define _LOG_PAD_1(a1) \
+  log_arg(a1), log_arg_none(), log_arg_none(), log_arg_none()
+#define _LOG_PAD_2(a1, a2) \
+  log_arg(a1), log_arg(a2), log_arg_none(), log_arg_none()
+#define _LOG_PAD_3(a1, a2, a3) \
+  log_arg(a1), log_arg(a2), log_arg(a3), log_arg_none()
+#define _LOG_PAD_4(a1, a2, a3, a4) \
+  log_arg(a1), log_arg(a2), log_arg(a3), log_arg(a4)
+
+#define _LOG_GET_MACRO(_0, _1, _2, _3, _4, NAME, ...) NAME
+#define _LOG_PAD(...)                                                  \
+  _LOG_GET_MACRO(0 __VA_OPT__(, ) __VA_ARGS__, _LOG_PAD_4, _LOG_PAD_3, \
+                 _LOG_PAD_2, _LOG_PAD_1, _LOG_PAD_0)(__VA_ARGS__)
 
 /**
  * @brief Logs an informational message with 0 to 4 optional log arguments.

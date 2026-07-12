@@ -183,7 +183,7 @@ void compressor_processor_process(compressor_processor_t* processor,
       logger_error(
           &logger,
           "Compressor channel indices out of bounds for chunk channels (%d)",
-          log_arg_int((int64_t)ch_count));
+          ch_count);
       processor->channel_warning_logged = true;
     }
     return;

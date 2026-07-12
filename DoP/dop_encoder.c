@@ -187,7 +187,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
   logger_t logger = logger_create("dsp.dop.encoder");
   if (channels <= 0) {
     logger_error(&logger, "Invalid channel count for DoP encoder: %d",
-                 log_arg_int((int64_t)channels));
+                 channels);
     return NULL;
   }
   dop_encoder_t* enc = (dop_encoder_t*)calloc(1, sizeof(dop_encoder_t));
@@ -212,7 +212,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
     logger_info(
         &logger,
         "DoP encoder created (disabled: output_dop=%d, rate_supported=%d)",
-        log_arg_int(output_dop ? 1 : 0), log_arg_int(supported ? 1 : 0));
+        output_dop ? 1 : 0, supported ? 1 : 0);
     return enc;
   }
 
@@ -233,8 +233,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
     enc->channel_states[ch].marker = 0x05;
     if (!enc->channel_states[ch].modulator) {
       logger_error(&logger,
-                   "Failed to create Sigma-Delta modulator for channel %d",
-                   log_arg_int((int64_t)ch));
+                   "Failed to create Sigma-Delta modulator for channel %d", ch);
       dop_encoder_free(enc);
       return NULL;
     }
@@ -242,8 +241,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
   logger_info(&logger,
               "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
               "dsd_rate=%.0f)",
-              log_arg_int((int64_t)channels), log_arg_double(sample_rate),
-              log_arg_double(dsd_rate));
+              channels, sample_rate, dsd_rate);
   return enc;
 }
 

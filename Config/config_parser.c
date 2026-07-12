@@ -1953,7 +1953,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     cJSON_Delete(root);
     dsp_config_free(config);
     logger_error(&logger, "Config parsing failed in devices section: %s",
-                 log_arg_string(err ? err->message : ""));
+                 err ? err->message : "");
     return -1;
   }
 
@@ -1963,7 +1963,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
       cJSON_Delete(root);
       dsp_config_free(config);
       logger_error(&logger, "Config parsing failed in pipeline section: %s",
-                   log_arg_string(err ? err->message : ""));
+                   err ? err->message : "");
       return -1;
     }
   }
@@ -1974,7 +1974,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
       cJSON_Delete(root);
       dsp_config_free(config);
       logger_error(&logger, "Config parsing failed in mixers section: %s",
-                   log_arg_string(err ? err->message : ""));
+                   err ? err->message : "");
       return -1;
     }
   }
@@ -1985,7 +1985,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
       cJSON_Delete(root);
       dsp_config_free(config);
       logger_error(&logger, "Config parsing failed in filters section: %s",
-                   log_arg_string(err ? err->message : ""));
+                   err ? err->message : "");
       return -1;
     }
   }
@@ -1996,7 +1996,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
       cJSON_Delete(root);
       dsp_config_free(config);
       logger_error(&logger, "Config parsing failed in processors section: %s",
-                   log_arg_string(err ? err->message : ""));
+                   err ? err->message : "");
       return -1;
     }
   }
@@ -2008,7 +2008,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
    * pipeline to catch configuration inconsistencies before return. */
   if (dsp_config_validate(config, err) != 0) {
     logger_error(&logger, "Config validation failed: %s",
-                 log_arg_string(err ? err->message : ""));
+                 err ? err->message : "");
     dsp_config_free(config);
     return -1;
   }
@@ -2016,8 +2016,7 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
   logger_info(&logger,
               "Configuration successfully parsed and validated (samplerate=%d, "
               "chunksize=%d)",
-              log_arg_int((int64_t)config->devices.samplerate),
-              log_arg_int((int64_t)config->devices.chunksize));
+              config->devices.samplerate, config->devices.chunksize);
   *out_config = config;
   return 0;
 }

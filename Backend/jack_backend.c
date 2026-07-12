@@ -74,7 +74,7 @@ static int jack_capture_sample_rate_cb(jack_nframes_t nframes, void* arg) {
     capture->pending_rate = (double)nframes;
     capture->rate_changed = true;
     logger_warn(&capture->logger, "JACK server sample rate changed to %d Hz",
-                log_arg_int((int)nframes));
+                nframes);
   }
   return 0;
 }
@@ -416,7 +416,7 @@ static int jack_playback_sample_rate_cb(jack_nframes_t nframes, void* arg) {
     playback->pending_rate = (double)nframes;
     playback->rate_changed = true;
     logger_warn(&playback->logger, "JACK server sample rate changed to %d Hz",
-                log_arg_int((int)nframes));
+                nframes);
   }
   return 0;
 }

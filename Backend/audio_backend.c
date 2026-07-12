@@ -95,7 +95,7 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
     default: {
       logger_t logger = logger_create("dsp.backend");
       logger_error(&logger, "Unsupported capture backend type: %d",
-                   log_arg_int((int64_t)config->type));
+                   config->type);
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported capture backend type");
@@ -155,7 +155,7 @@ playback_backend_t* create_playback_backend(
     default: {
       logger_t logger = logger_create("dsp.backend");
       logger_error(&logger, "Unsupported playback backend type: %d",
-                   log_arg_int((int64_t)config->type));
+                   config->type);
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported playback backend type");

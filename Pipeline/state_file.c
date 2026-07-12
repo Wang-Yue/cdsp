@@ -44,8 +44,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   if (!filename || !out_state) return false;
   FILE* fp = fopen(filename, "r");
   if (!fp) {
-    logger_warn(&logger, "State file could not be opened: %s",
-                log_arg_string(filename));
+    logger_warn(&logger, "State file could not be opened: %s", filename);
     return false;
   }
 
@@ -151,15 +150,13 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
   char tmp_name[1024];
   int written = snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", filename);
   if (written < 0 || (size_t)written >= sizeof(tmp_name)) {
-    logger_error(&logger, "State file path overflow for %s",
-                 log_arg_string(filename));
+    logger_error(&logger, "State file path overflow for %s", filename);
     return false;
   }
 
   FILE* fp = fopen(tmp_name, "w");
   if (!fp) {
-    logger_error(&logger, "Failed to open state temporary file: %s",
-                 log_arg_string(tmp_name));
+    logger_error(&logger, "Failed to open state temporary file: %s", tmp_name);
     return false;
   }
 
@@ -184,12 +181,12 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   if (rename(tmp_name, filename) != 0) {
     logger_error(&logger, "Failed to rename state temporary file %s to %s",
-                 log_arg_string(tmp_name), log_arg_string(filename));
+                 tmp_name, filename);
     remove(tmp_name);
     return false;
   }
 
-  logger_info(&logger, "State saved to %s", log_arg_string(filename));
+  logger_info(&logger, "State saved to %s", filename);
   return true;
 }
 

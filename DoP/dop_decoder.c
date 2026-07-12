@@ -194,7 +194,7 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   logger_t logger = logger_create("dsp.dop.decoder");
   if (channels <= 0) {
     logger_error(&logger, "Invalid channel count for DoP decoder: %d",
-                 log_arg_int((int64_t)channels));
+                 channels);
     return NULL;
   }
   dop_decoder_t* dec = (dop_decoder_t*)calloc(1, sizeof(dop_decoder_t));
@@ -224,8 +224,7 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   logger_info(&logger,
               "DoP decoder created (channels=%d, sample_rate=%.0f, bypass=%d, "
               "cutoff=%.0fHz)",
-              log_arg_int((int64_t)channels), log_arg_double(sample_rate),
-              log_arg_int(bypass_dop ? 1 : 0), log_arg_double(cutoff_hz));
+              channels, sample_rate, bypass_dop ? 1 : 0, cutoff_hz);
   return dec;
 }
 
