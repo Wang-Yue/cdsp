@@ -89,13 +89,12 @@ void DashboardView::updateFaderUi() {
         row.muteBtn->blockSignals(false);
 
         if (muted) {
-            row.muteBtn->setText("🔇 Muted");
+            row.muteBtn->setText("🔇");
             row.muteBtn->setStyleSheet(
-                "background-color: #ff3b30; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;");
+                "background-color: transparent; color: #ff3b30; border: none; font-size: 16px; font-weight: bold;");
         } else {
-            row.muteBtn->setText("🔊 Mute");
-            row.muteBtn->setStyleSheet(
-                "background-color: #3a3a3c; color: white; padding: 4px 8px; border-radius: 4px;");
+            row.muteBtn->setText("🔊");
+            row.muteBtn->setStyleSheet("background-color: transparent; color: #8e8e93; border: none; font-size: 16px;");
         }
     }
 }
@@ -278,9 +277,11 @@ void DashboardView::setupUi() {
         nameLbl->setFixedWidth(80);
         nameLbl->setFont(QFont("System", 13, QFont::DemiBold));
 
-        auto muteBtn = new QPushButton("🔊 Mute", faderGroup);
+        auto muteBtn = new QPushButton("🔊", faderGroup);
         muteBtn->setCheckable(true);
-        muteBtn->setFixedWidth(90);
+        muteBtn->setFixedSize(28, 28);
+        muteBtn->setFlat(true);
+        muteBtn->setCursor(Qt::PointingHandCursor);
 
         auto slider = new QSlider(Qt::Horizontal, faderGroup);
         slider->setRange(-120, 40); // -60.0 dB to +20.0 dB
@@ -339,10 +340,10 @@ void DashboardView::setupUi() {
     mainLayout->addWidget(m_analogVUGroup);
 
     // 5. Spectrum Card
-    m_spectrumGroup = new QGroupBox("Spectrum Analyzer", container);
+    m_spectrumGroup = new QGroupBox("Spectrum", container);
     auto specLayout = new QVBoxLayout(m_spectrumGroup);
     m_spectrumView = new SpectrumView(m_spectrumEngine, m_spectrumGroup);
-    m_spectrumView->setFixedHeight(220);
+    m_spectrumView->setFixedHeight(160);
     specLayout->addWidget(m_spectrumView);
     mainLayout->addWidget(m_spectrumGroup);
 
@@ -350,7 +351,7 @@ void DashboardView::setupUi() {
     m_spectrogramGroup = new QGroupBox("Spectroscope", container);
     auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
     m_spectrogramView = new SpectrogramView(m_spectrogramEngine, m_spectrogramGroup);
-    m_spectrogramView->setFixedHeight(360);
+    m_spectrogramView->setFixedHeight(480);
     spectroLayout->addWidget(m_spectrogramView);
     mainLayout->addWidget(m_spectrogramGroup);
 
@@ -358,7 +359,7 @@ void DashboardView::setupUi() {
     m_vectorScopeGroup = new QGroupBox("Vector Scope", container);
     auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
     m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, m_vectorScopeGroup);
-    m_vectorScopeView->setFixedHeight(400);
+    m_vectorScopeView->setFixedHeight(700);
     vecLayout->addWidget(m_vectorScopeView);
     mainLayout->addWidget(m_vectorScopeGroup);
 

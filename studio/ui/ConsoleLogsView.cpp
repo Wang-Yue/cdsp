@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QClipboard>
 #include <QCursor>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -44,9 +45,21 @@ void ConsoleLogsView::setupUi() {
     m_levelFilterCombo->addItem("Info & Above", static_cast<int>(LogLevel::Info));
     m_levelFilterCombo->addItem("Warn & Above", static_cast<int>(LogLevel::Warn));
     m_levelFilterCombo->addItem("Error Only", static_cast<int>(LogLevel::Error));
-    m_levelFilterCombo->setCurrentIndex(0);
-    connect(m_levelFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &ConsoleLogsView::refreshLogs);
+
+    if (LogManager::instance()) {
+        int initialIdx = m_levelFilterCombo->findData(static_cast<int>(LogManager::instance()->logLevel()));
+        if (initialIdx >= 0) {
+            m_levelFilterCombo->setCurrentIndex(initialIdx);
+        }
+    }
+
+    connect(m_levelFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        LogLevel level = static_cast<LogLevel>(m_levelFilterCombo->itemData(idx).toInt());
+        if (LogManager::instance()) {
+            LogManager::instance()->setLogLevel(level);
+        }
+        refreshLogs();
+    });
     topToolbar->addWidget(m_levelFilterCombo);
 
     m_searchEdit = new QLineEdit(this);
@@ -74,6 +87,7 @@ void ConsoleLogsView::setupUi() {
     mainLayout->addLayout(topToolbar);
 
     m_table = new QTableWidget(this);
+    m_table->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_table->setColumnCount(3);
     m_table->setHorizontalHeaderLabels({"Timestamp", "Level", "Message"});
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);

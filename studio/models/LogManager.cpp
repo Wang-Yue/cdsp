@@ -31,8 +31,14 @@ LogLevel stringToLogLevel(const QString& str) {
     return LogLevel::Info;
 }
 
+#include <QSettings>
+
 LogManager::LogManager(QObject* parent) : QObject(parent) {
     qRegisterMetaType<LogEntry>("LogEntry");
+    QSettings settings;
+    if (settings.contains("selectedLogLevel")) {
+        m_logLevel = stringToLogLevel(settings.value("selectedLogLevel").toString());
+    }
 }
 
 LogManager* LogManager::instance() {
@@ -49,6 +55,8 @@ void LogManager::setEngine(CDSPEngine* engine) {
 
 void LogManager::setLogLevel(LogLevel level) {
     m_logLevel = level;
+    QSettings settings;
+    settings.setValue("selectedLogLevel", logLevelToString(m_logLevel).toLower());
     if (m_engine) {
         m_engine->setLogLevel(logLevelToString(m_logLevel).toLower().toStdString());
     }

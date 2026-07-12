@@ -264,21 +264,10 @@ void DevicePickerView::setupUi() {
     procForm->addRow("", m_stopOnRateChangeCheck);
 
     auto intervalBox = new QHBoxLayout();
-    m_measureIntervalSpin = new QDoubleSpinBox(procGroup);
-    m_measureIntervalSpin->setRange(0.1, 10.0);
-    m_measureIntervalSpin->setSingleStep(0.1);
-    m_measureIntervalSpin->setSuffix(" s");
-    m_measureIntervalSpin->setFixedWidth(90);
-
     m_measureIntervalSlider = new QSlider(Qt::Horizontal, procGroup);
     m_measureIntervalSlider->setRange(1, 100); // 0.1 to 10.0 s
     m_measureIntervalSlider->setFixedWidth(150);
 
-    m_measureIntervalValLabel = new QLabel(procGroup);
-    m_measureIntervalValLabel->setStyleSheet("font-family: monospace; font-size: 13px;");
-
-    m_measureIntervalSlider = new QSlider(Qt::Horizontal, procGroup);
-    m_measureIntervalSlider->setRange(1, 100);
     m_measureIntervalValLabel = new QLabel(procGroup);
     m_measureIntervalValLabel->setFont(QFont("monospace", 11));
     m_measureIntervalValLabel->setMinimumWidth(50);
@@ -544,6 +533,10 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     cutoffBox->addStretch();
     form->addRow("", cutoffBox);
 
+    m_dopCutoffHint = new QLabel("Lower cutoff = higher SINAD; higher cutoff preserves more ultrasonic content", w);
+    m_dopCutoffHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    form->addRow("", m_dopCutoffHint);
+
     m_capWasapiExclusiveCheck = new QCheckBox("WASAPI Exclusive Mode", w);
     connect(m_capWasapiExclusiveCheck, &QCheckBox::toggled, [this](bool) {
         if (!m_isRefreshing)
@@ -571,10 +564,6 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
             applySettings();
     });
     form->addRow("", m_capAlsaStopInactiveCheck);
-
-    m_dopCutoffHint = new QLabel("Lower cutoff = higher SINAD; higher cutoff preserves more ultrasonic content", w);
-    m_dopCutoffHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
-    form->addRow("", m_dopCutoffHint);
 
     return w;
 }
@@ -1341,8 +1330,8 @@ void DevicePickerView::applySettings() {
         m_settings->queuelimit = m_queueLimitSpin->value();
     if (m_stopOnRateChangeCheck)
         m_settings->stopOnRateChange = m_stopOnRateChangeCheck->isChecked();
-    if (m_measureIntervalSpin)
-        m_settings->rateMeasureInterval = m_measureIntervalSpin->value();
+    if (m_measureIntervalSlider)
+        m_settings->rateMeasureInterval = m_measureIntervalSlider->value() / 10.0;
     if (m_multithreadedCheck)
         m_settings->multithreaded = m_multithreadedCheck->isChecked();
     if (m_workerThreadsSpin)
