@@ -153,40 +153,46 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
 
         double logMin = std::log10(20.0), logMax = std::log10(20000.0);
 
+        const auto& firstSpec = m_history.front();
+        size_t binCount = firstSpec.magnitudes.size();
+
+        struct BinY {
+            int yTop;
+            int binH;
+        };
+        std::vector<BinY> binLayout(binCount);
+        for (size_t bin = 0; bin < binCount; ++bin) {
+            float freqLower = (bin < firstSpec.frequencies.size())
+                                  ? firstSpec.frequencies[bin]
+                                  : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
+            float freqUpper;
+            if (bin + 1 < firstSpec.frequencies.size()) {
+                freqUpper = firstSpec.frequencies[bin + 1];
+            } else if (bin < firstSpec.frequencies.size() && bin > 0) {
+                freqUpper = firstSpec.frequencies[bin] + (firstSpec.frequencies[bin] - firstSpec.frequencies[bin - 1]);
+            } else {
+                freqUpper = static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
+            }
+
+            freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
+            freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));
+
+            double fracYBot = (std::log10(freqLower) - logMin) / (logMax - logMin);
+            double fracYTop = (std::log10(freqUpper) - logMin) / (logMax - logMin);
+
+            int yBottom = plotH - static_cast<int>(fracYBot * plotH);
+            int yTop = plotH - static_cast<int>(fracYTop * plotH);
+            binLayout[bin] = {yTop, std::max(1, yBottom - yTop)};
+        }
+
         for (size_t col = 0; col < colCount; ++col) {
             const auto& spec = m_history[col];
-            size_t binCount = spec.magnitudes.size();
-            if (binCount == 0)
-                continue;
-
             int x = marginL + plotW - static_cast<int>(col + 1) * colW;
+            size_t count = std::min(binCount, spec.magnitudes.size());
 
-            for (size_t bin = 0; bin < binCount; ++bin) {
-                float freqLower =
-                    (bin < spec.frequencies.size())
-                        ? spec.frequencies[bin]
-                        : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
-                float freqUpper;
-                if (bin + 1 < spec.frequencies.size()) {
-                    freqUpper = spec.frequencies[bin + 1];
-                } else if (bin < spec.frequencies.size() && bin > 0) {
-                    freqUpper = spec.frequencies[bin] + (spec.frequencies[bin] - spec.frequencies[bin - 1]);
-                } else {
-                    freqUpper = static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
-                }
-
-                freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
-                freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));
-
-                double fracYBot = (std::log10(freqLower) - logMin) / (logMax - logMin);
-                double fracYTop = (std::log10(freqUpper) - logMin) / (logMax - logMin);
-
-                int yBottom = plotH - static_cast<int>(fracYBot * plotH);
-                int yTop = plotH - static_cast<int>(fracYTop * plotH);
-                int binH = std::max(1, yBottom - yTop);
-
+            for (size_t bin = 0; bin < count; ++bin) {
                 float db = spec.magnitudes[bin];
-                p.fillRect(x, yTop, colW, binH, colorForDB(db, m_palette));
+                p.fillRect(x, binLayout[bin].yTop, colW, binLayout[bin].binH, colorForDB(db, m_palette));
             }
         }
 
