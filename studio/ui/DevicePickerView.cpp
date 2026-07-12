@@ -277,29 +277,21 @@ void DevicePickerView::setupUi() {
     m_measureIntervalValLabel = new QLabel(procGroup);
     m_measureIntervalValLabel->setStyleSheet("font-family: monospace; font-size: 13px;");
 
-    connect(m_measureIntervalSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double val) {
-        if (m_isRefreshing)
-            return;
-        m_measureIntervalSlider->blockSignals(true);
-        m_measureIntervalSlider->setValue(static_cast<int>(val * 10.0));
-        m_measureIntervalSlider->blockSignals(false);
-        m_measureIntervalValLabel->setText(QString("%1 s").arg(val, 0, 'f', 1));
-        applySettings();
-    });
+    m_measureIntervalSlider = new QSlider(Qt::Horizontal, procGroup);
+    m_measureIntervalSlider->setRange(1, 100);
+    m_measureIntervalValLabel = new QLabel(procGroup);
+    m_measureIntervalValLabel->setFont(QFont("monospace", 11));
+    m_measureIntervalValLabel->setMinimumWidth(50);
+
     connect(m_measureIntervalSlider, &QSlider::valueChanged, [this](int val) {
         if (m_isRefreshing)
             return;
         double dVal = val / 10.0;
-        m_measureIntervalSpin->blockSignals(true);
-        m_measureIntervalSpin->setValue(dVal);
-        m_measureIntervalSpin->blockSignals(false);
         m_measureIntervalValLabel->setText(QString("%1 s").arg(dVal, 0, 'f', 1));
         applySettings();
     });
-    intervalBox->addWidget(m_measureIntervalSpin);
     intervalBox->addWidget(m_measureIntervalSlider);
     intervalBox->addWidget(m_measureIntervalValLabel);
-    intervalBox->addStretch();
     procForm->addRow("Measure Interval", intervalBox);
 
     m_multithreadedCheck = new QCheckBox("Multithreaded", procGroup);

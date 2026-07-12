@@ -4,6 +4,7 @@
 
 #include <QButtonGroup>
 #include <QFormLayout>
+#include <QGraphicsOpacityEffect>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -204,6 +205,13 @@ void StageDetailView::buildStageOptionsUi() {
     auto& stage = m_pipeline->stages[m_stageIndex];
 
     m_optionsContainer->setEnabled(stage.isEnabled);
+    if (!stage.isEnabled) {
+        auto opacityEffect = new QGraphicsOpacityEffect(m_optionsContainer);
+        opacityEffect->setOpacity(0.5);
+        m_optionsContainer->setGraphicsEffect(opacityEffect);
+    } else {
+        m_optionsContainer->setGraphicsEffect(nullptr);
+    }
 
     int hwChannels =
         (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
