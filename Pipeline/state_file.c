@@ -179,6 +179,7 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   fclose(fp);
 
+  remove(filename);
   if (rename(tmp_name, filename) != 0) {
     logger_error(&logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);

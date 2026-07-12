@@ -586,7 +586,9 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
   // Idempotent. Only the first caller drives teardown — concurrent
   // requests (typically the captureLoop's format-change report
   // racing with the actor's `previous.stop(.none)`) just return.
-  if (!engine_state_machine_begin_stop(core->state_machine, reason)) return;
+  if (core->state_machine &&
+      !engine_state_machine_begin_stop(core->state_machine, reason))
+    return;
 
   logger_t logger = logger_create("dsp.engine.core");
   logger_info(&logger, "Stopping and destroying engine core session");
@@ -609,13 +611,6 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
   if (core->shared) {
     spsc_queue_drain(engine_shared_state_get_captured_queue(core->shared));
     spsc_queue_drain(engine_shared_state_get_processed_queue(core->shared));
-  }
-
-  if (core->threads_created) {
-    pthread_join(core->capture_thread, NULL);
-    pthread_join(core->processing_thread, NULL);
-    pthread_join(core->playback_thread, NULL);
-    core->threads_created = false;
   }
 
   if (core->capture) {

@@ -19,13 +19,6 @@
 #define HAS_DISPATCH 0
 #endif
 
-#include "Audio/audio_buffers.h"
-#include "Audio/double_helpers.h"
-#include "Filters/filter.h"
-#include "Filters/volume.h"
-#include "Mixer/mixer.h"
-#include "Processors/processor.h"
-
 /// A filter chain applied to a single channel in parallel.
 typedef struct {
   int channel;

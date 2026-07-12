@@ -159,13 +159,18 @@ void engine_shared_state_free(engine_shared_state_t* state) {
 }
 
 void engine_shared_state_signal_captured(engine_shared_state_t* state) {
-  if (state) audio_sync_queue_signal(state->captured_queue);
+  if (!state) return;
+  if (state->captured_queue) {
+    audio_sync_queue_signal(state->captured_queue);
+  }
 }
 
 void engine_shared_state_set_processing_done(engine_shared_state_t* state) {
   if (!state) return;
   atomic_store_explicit(&state->processing_done, true, memory_order_release);
-  audio_sync_queue_signal(state->processed_queue);
+  if (state->processed_queue) {
+    audio_sync_queue_signal(state->processed_queue);
+  }
 }
 
 void engine_shared_state_request_stop(engine_shared_state_t* state,
@@ -173,10 +178,10 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   if (!state) return;
   state->stop_reason = reason;
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
-  atomic_store_explicit(&state->processing_done, false, memory_order_release);
 
-  // Signal the captured queue to wake the processing thread.
+  // Signal both captured and processed queues to wake all audio loops.
   engine_shared_state_signal_captured(state);
+  engine_shared_state_set_processing_done(state);
 }
 
 bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
