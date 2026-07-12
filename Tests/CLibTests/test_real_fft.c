@@ -10,6 +10,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#if defined(ENABLE_ACCELERATE)
 typedef struct {
   uint64_t state;
 } simple_splitmix_t;
@@ -25,7 +26,6 @@ static uint64_t simple_splitmix_next(simple_splitmix_t* rng) {
 static double simple_splitmix_next_unit(simple_splitmix_t* rng) {
   return (double)(simple_splitmix_next(rng) >> 11) * (1.0 / 9007199254740992.0);
 }
-
 static void direct_dft(const double* real_in, const double* imag_in,
                        double* real_out, double* imag_out, size_t n,
                        bool inverse) {
@@ -64,8 +64,6 @@ static void random_complex(double* re, double* im, size_t n, uint64_t seed) {
     im[i] = simple_splitmix_next_unit(&rng) * 2.0 - 1.0;
   }
 }
-
-#if defined(ENABLE_ACCELERATE)
 TEST(ForwardMatchesDirectDFT) {
   size_t sizes[] = {3, 7, 11, 13, 17, 19, 23, 29, 121, 169};
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
