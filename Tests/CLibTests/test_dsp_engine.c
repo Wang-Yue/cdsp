@@ -1101,14 +1101,16 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   clock_gettime(CLOCK_MONOTONIC, &t0);
 
   // Wait for the engine to finish processing the file
-  // Timeout is 1.0s (the file is 0.1s long at 16kHz for 1600 frames)
+  // Timeout is 35.0s in simulated time (running 15x faster -> ~2.33s of real
+  // time)
   int elapsed_ms = 0;
-  while (elapsed_ms < 1000) {
+  while (elapsed_ms < 35000) {
     state_update_t status = dsp_engine_get_status(engine);
     if (status.state == PROCESSING_STATE_INACTIVE) {
       break;
     }
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 5000000ULL};  // 5ms
+    // Sleep for 0.33ms of real time (corresponds to 5ms of simulated time)
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 333333ULL};
     nanosleep(&req, NULL);
     elapsed_ms += 5;
   }
@@ -1140,34 +1142,34 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   remove(out_file);
 
   if (test_time) {
-    // If either capture or playback is realtime, it should take at least ~80ms
-    // (for 1600 frames @ 16kHz = 100ms)
+    // If either capture or playback is realtime, the simulated elapsed time
+    // should be close to 30.0s
     bool is_rt = capture_rt || playback_rt;
     if (is_rt) {
-      // should be at least 0.08s, and not more than 0.3s
-      ASSERT_TRUE(elapsed >= 0.08);
-      ASSERT_TRUE(elapsed < 0.30);
+      // should be at least 25.0s, and not more than 40.0s in simulated time
+      ASSERT_TRUE(elapsed >= 25.0);
+      ASSERT_TRUE(elapsed < 40.0);
     } else {
-      // Non-realtime should take very little time
-      ASSERT_TRUE(elapsed < 0.05);
+      // Non-realtime should take very little simulated time
+      ASSERT_TRUE(elapsed < 1.0);
     }
   }
 }
 
 TEST(DSPEngineE2E_FileFile_Realtime_FF) {
-  run_e2e_file_file_test(false, false, 1600, true);
+  run_e2e_file_file_test(false, false, 480000, true);
 }
 
 TEST(DSPEngineE2E_FileFile_Realtime_TF) {
-  run_e2e_file_file_test(true, false, 1600, true);
+  run_e2e_file_file_test(true, false, 480000, true);
 }
 
 TEST(DSPEngineE2E_FileFile_Realtime_FT) {
-  run_e2e_file_file_test(false, true, 1600, true);
+  run_e2e_file_file_test(false, true, 480000, true);
 }
 
 TEST(DSPEngineE2E_FileFile_Realtime_TT) {
-  run_e2e_file_file_test(true, true, 1600, true);
+  run_e2e_file_file_test(true, true, 480000, true);
 }
 
 TEST_MAIN()

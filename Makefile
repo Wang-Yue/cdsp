@@ -235,10 +235,17 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+MOCK_TIME_FLAGS_LIB := -Dclock_gettime=cdsp_clock_gettime -Dclock_gettime_nsec_np=cdsp_clock_gettime_nsec_np -Dnanosleep=cdsp_nanosleep
+MOCK_TIME_FLAGS_TEST := -Dclock_gettime=cdsp_clock_gettime -Dclock_gettime_nsec_np=cdsp_clock_gettime_nsec_np
+
 # Compile library source files with CDSP_TEST define for tests
 $(TEST_OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST -c $< -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_LIB) -c $< -o $@
+
+$(ROOT_DIR)/.build/clock_mock.o: $(ROOT_DIR)/Tests/CLibTests/clock_mock.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Archive object files into static library
 $(LIB_TARGET): $(OBJS)
@@ -252,18 +259,18 @@ $(TEST_LIB_TARGET): $(TEST_OBJS)
 
 # Build test binaries by linking against libdsp_test.a
 ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
 endif
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(TEST_LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $^ $(LDFLAGS) -o $@
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET)
+$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS) -o $@
 
 BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))

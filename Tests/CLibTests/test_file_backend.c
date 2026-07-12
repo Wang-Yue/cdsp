@@ -436,7 +436,7 @@ TEST(FileBackendRealtimeThrottling) {
   capture_backend_close(capture_rt);
   capture_backend_free(capture_rt);
 
-  // Realtime read should take around 100ms (0.1s).
+  // Realtime read should take around 100ms (0.1s) of simulated time.
   // We check if it is within [90ms, 200ms] to account for scheduler jitter.
   ASSERT_TRUE(elapsed_rt >= 0.09);
   ASSERT_TRUE(elapsed_rt < 0.20);
@@ -612,7 +612,7 @@ TEST(FileBackendWavRealtimeThrottling) {
   capture_backend_close(capture_rt);
   capture_backend_free(capture_rt);
 
-  // Realtime read should take around 100ms (0.1s).
+  // Realtime read should take around 100ms (0.1s) of simulated time.
   ASSERT_TRUE(elapsed_rt >= 0.09);
   ASSERT_TRUE(elapsed_rt < 0.20);
 
