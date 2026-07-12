@@ -203,6 +203,9 @@ ifneq ($(ENABLE_BLUEZ),1)
     SRCS := $(filter-out %/bluez_backend.c, $(SRCS))
 endif
 
+# Exclude Server directory files from libdsp.a
+SRCS := $(filter-out $(SRC_ROOT)/Server/%.c %/Server/%.c, $(SRCS))
+
 # Map source files to object files in .build/obj/
 # e.g. ./Sources/CDSP/Audio/audio_buffers.c -> ./build/obj/Sources/CDSP/Audio/audio_buffers.o
 OBJ_DIR := $(ROOT_DIR)/.build/obj
@@ -237,6 +240,10 @@ $(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLib
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
 endif
+
+$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(LIB_TARGET)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(LIB_TARGET)
 	@mkdir -p $(dir $@)
