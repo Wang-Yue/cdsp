@@ -192,6 +192,7 @@ void DashboardView::updateSignalChain() {
                     m_dspController->pipelineStore()->stages[i].isEnabled =
                         !m_dspController->pipelineStore()->stages[i].isEnabled;
                     m_dspController->pipelineStore()->save();
+                    emit m_dspController->pipelineStore()->pipelineChanged();
                     m_dspController->applyConfig();
                     updateSignalChain();
                 }

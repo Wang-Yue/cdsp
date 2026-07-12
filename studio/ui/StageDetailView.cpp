@@ -101,6 +101,9 @@ StageDetailView::StageDetailView(size_t stageIndex, std::shared_ptr<PipelineStor
                                  std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QWidget(parent), m_stageIndex(stageIndex), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
+    if (m_pipeline) {
+        connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &StageDetailView::refreshUi);
+    }
     refreshUi();
 }
 

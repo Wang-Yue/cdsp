@@ -30,6 +30,9 @@ void ResamplerDetailView::setupUi() {
         m_settings->resamplerEnabled = checked;
         applySettings();
     });
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, &ResamplerDetailView::refreshUi);
+    }
     headerBox->addWidget(m_enabledCheck);
     mainLayout->addLayout(headerBox);
 
@@ -212,6 +215,7 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerAppleComplexity =
         stringToAppleResamplerComplexity(m_appleComplexityCombo->currentText().toStdString());
     m_settings->savePreferences();
+    emit m_settings->settingsChanged();
 
     if (m_dspController) {
         m_dspController->applyConfig();

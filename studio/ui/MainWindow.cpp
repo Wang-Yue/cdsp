@@ -901,6 +901,7 @@ void MainWindow::refreshSidebarItems() {
         [this](bool c) {
             m_settings->resamplerEnabled = c;
             m_settings->savePreferences();
+            emit m_settings->settingsChanged();
             m_dspController->applyConfig();
         },
         [this, resItem]() { onSidebarItemClicked(resItem, 0); }, m_sidebarTree);

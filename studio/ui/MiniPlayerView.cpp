@@ -44,6 +44,10 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
     connect(m_dsp.get(), &DSPEngineController::statusChanged, this, &MiniPlayerView::updateEngineStatus);
+    if (m_dsp && m_dsp->pipelineStore()) {
+        connect(m_dsp->pipelineStore().get(), &PipelineStore::pipelineChanged, this,
+                [this]() { buildMiniPipelineUi(); });
+    }
     if (m_settings) {
         connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() { onFaderChanged(0); });
     }
@@ -176,6 +180,8 @@ void MiniPlayerView::buildMiniPipelineUi() {
                     st.isEnabled = !st.isEnabled;
                     chip->setChecked(st.isEnabled);
                     updateStyle(st.isEnabled);
+                    m_dsp->pipelineStore()->save();
+                    emit m_dsp->pipelineStore()->pipelineChanged();
                     m_dsp->applyConfig();
                     break;
                 }
