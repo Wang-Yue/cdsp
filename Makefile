@@ -20,6 +20,7 @@ UNAME_S := $(shell uname -s)
 
 # Setup Default Feature Flags
 ifeq ($(UNAME_S),Darwin)
+    CFLAGS += -mcpu=native
     ENABLE_COREAUDIO ?= 1
     ENABLE_ACCELERATE ?= 1
     ENABLE_ALSA ?= 0
@@ -247,7 +248,7 @@ $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTes
 
 $(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) $(LIB_TARGET) -o $@
 
 BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
@@ -269,7 +270,7 @@ test: test-rust-build $(UNIT_TEST_BINS)
 	done
 	@echo "\n✅ All C unit tests passed!"
 
-bench: $(BENCH_BINS)
+bench: test-rust-build $(BENCH_BINS)
 	@echo "\n=== Running C Benchmark Tests ==="
 	@for bin in $(BENCH_BINS); do \
 		echo ""; \

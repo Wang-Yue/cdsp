@@ -40,7 +40,8 @@ static void run_upstream_filter_benchmarks(void) {
   if (!home) return;
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
-           "cd %s/camilladsp && cargo bench --bench filters -- --sample-size "
+           "cd %s/camilladsp && RAYON_NUM_THREADS=1 cargo bench --bench "
+           "filters -- --sample-size "
            "10 --warm-up-time 0.3 --measurement-time 0.5 2>&1",
            home);
   FILE* fp = popen(cmd, "r");

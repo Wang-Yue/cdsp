@@ -3,6 +3,10 @@
 #include "Audio/sample_conversion.h"
 #include "FFT/real_fft.h"
 
+#if defined(ENABLE_ACCELERATE)
+#include <Accelerate/Accelerate.h>
+#endif
+
 struct convolution_filter {
   char name[64];
   size_t chunk_size;
@@ -19,6 +23,7 @@ struct convolution_filter {
   double* spec_accum_im;
 };
 
+#if !defined(ENABLE_ACCELERATE)
 typedef double double4 __attribute__((vector_size(32), aligned(8)));
 
 static inline double4 load_double4(const double* p) {
@@ -26,6 +31,7 @@ static inline double4 load_double4(const double* p) {
 }
 
 static inline void store_double4(double* p, double4 v) { *(double4*)p = v; }
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -551,12 +557,26 @@ static void process_chunk(convolution_filter_t* filter,
   real_fft_forward(filter->fft, filter->time_buf, filter->hist_re[widx],
                    filter->hist_im[widx]);
 
-  memset(filter->spec_accum_re, 0, spec_len * sizeof(double));
-  memset(filter->spec_accum_im, 0, spec_len * sizeof(double));
-
   // 3. Spectrum-domain multiply-accumulate across the segment
   //    history. seg=0 pairs the newest input with coeff[0]; seg=k
   //    pairs the input from `k` blocks ago with coeff[k].
+#if defined(ENABLE_ACCELERATE)
+  for (size_t s = 0; s < num_seg; s++) {
+    size_t hidx = (widx + num_seg - s) % num_seg;
+    DSPDoubleSplitComplex h = {filter->hist_re[hidx], filter->hist_im[hidx]};
+    DSPDoubleSplitComplex c = {filter->spec_re[s], filter->spec_im[s]};
+    DSPDoubleSplitComplex acc = {filter->spec_accum_re, filter->spec_accum_im};
+
+    if (s == 0) {
+      vDSP_zvmulD(&h, 1, &c, 1, &acc, 1, (vDSP_Length)spec_len, 1);
+    } else {
+      vDSP_zvmaD(&h, 1, &c, 1, &acc, 1, &acc, 1, (vDSP_Length)spec_len);
+    }
+  }
+#else
+  memset(filter->spec_accum_re, 0, spec_len * sizeof(double));
+  memset(filter->spec_accum_im, 0, spec_len * sizeof(double));
+
   for (size_t s = 0; s < num_seg; s++) {
     size_t hidx = (widx + num_seg - s) % num_seg;
     const double* hre = filter->hist_re[hidx];
@@ -622,6 +642,7 @@ static void process_chunk(convolution_filter_t* filter,
       acc_im[k] += hre[k] * sim[k] + him[k] * sre[k];
     }
   }
+#endif
 
   // 4. Inverse FFT. RealFFT.inverse multiplies by
   //    `length = 2N`, but `coeffsF` was pre-divided by `2N` in init,

@@ -18,8 +18,6 @@ struct vdsp_real_fft {
   size_t half_n;
   vDSP_Length log2n;
   FFTSetupD setup;
-  double* scratch_re;
-  double* scratch_im;
 };
 
 /**
@@ -89,12 +87,6 @@ vdsp_real_fft_t* vdsp_real_fft_create(size_t length) {
   fft->half_n = half_n;
   fft->log2n = log2n;
   fft->setup = setup;
-  fft->scratch_re = (double*)calloc(half_n, sizeof(double));
-  fft->scratch_im = (double*)calloc(half_n, sizeof(double));
-  if (!fft->scratch_re || !fft->scratch_im) {
-    vdsp_real_fft_free(fft);
-    return NULL;
-  }
   return fft;
 }
 
@@ -103,29 +95,29 @@ void vdsp_real_fft_forward(vdsp_real_fft_t* fft, waveform_t real_in,
                            mutable_waveform_t spec_im) {
   if (!fft) return;
   size_t n = fft->half_n;
-  // Deinterleave 2N real samples into N split-complex pairs:
-  // scratch.real[k] = realIn[2k], scratch.imag[k] = realIn[2k+1].
-  DSPDoubleSplitComplex split = {fft->scratch_re, fft->scratch_im};
+  // Deinterleave 2N real samples directly into spec_re and spec_im:
+  // spec_re[k] = realIn[2k], spec_im[k] = realIn[2k+1].
+  DSPDoubleSplitComplex split = {spec_re, spec_im};
   vDSP_ctozD((const DSPDoubleComplex*)real_in, 2, &split, 1, (vDSP_Length)n);
   // In-place real-to-complex forward FFT. vDSP scales by 2.
   vDSP_fft_zripD(fft->setup, &split, 1, fft->log2n, FFT_FORWARD);
 
-  // Repack vDSP's packed spectrum into our flat (N+1)-bin layout, folding
-  // the `0.5` un-scale into the copy. After:
+  // Unpack vDSP's format (Nyquist in imagp[0]) and scale by 0.5 in-place.
+  // Layout mapping into flat (N+1)-bin spectrum layout:
   //   specRe[0]   = vDSP_DC / 2 = unscaled DC
   //   specIm[0]   = 0
   //   specRe[k]   = vDSP_Re[k] / 2   for k = 1..N-1
   //   specIm[k]   = vDSP_Im[k] / 2   for k = 1..N-1
   //   specRe[N]   = vDSP_Im[0] / 2   (Nyquist was packed in imagp[0])
   //   specIm[N]   = 0
+  double nyquist = spec_im[0] * 0.5;
   double half = 0.5;
-  vDSP_vsmulD(fft->scratch_re, 1, &half, spec_re, 1, (vDSP_Length)n);
+  vDSP_vsmulD(spec_re, 1, &half, spec_re, 1, (vDSP_Length)n);
   if (n > 1) {
-    vDSP_vsmulD(fft->scratch_im + 1, 1, &half, spec_im + 1, 1,
-                (vDSP_Length)(n - 1));
+    vDSP_vsmulD(spec_im + 1, 1, &half, spec_im + 1, 1, (vDSP_Length)(n - 1));
   }
   spec_im[0] = 0.0;
-  spec_re[n] = fft->scratch_im[0] * 0.5;
+  spec_re[n] = nyquist;
   spec_im[n] = 0.0;
 }
 
@@ -133,34 +125,31 @@ void vdsp_real_fft_inverse(vdsp_real_fft_t* fft, waveform_t spec_re,
                            waveform_t spec_im, mutable_waveform_t real_out) {
   if (!fft) return;
   size_t n = fft->half_n;
-  // Repack our flat (N+1)-bin layout back into vDSP's packed format
-  // (DC in realp[0], Nyquist in imagp[0], bins 1..N-1 in realp[k]/imagp[k]).
-  fft->scratch_re[0] = spec_re[0];
-  fft->scratch_im[0] = spec_re[n];
-  if (n > 1) {
-    memcpy(fft->scratch_re + 1, spec_re + 1, (n - 1) * sizeof(double));
-    memcpy(fft->scratch_im + 1, spec_im + 1, (n - 1) * sizeof(double));
-  }
+  double* re = (double*)spec_re;
+  double* im = (double*)spec_im;
 
-  DSPDoubleSplitComplex split = {fft->scratch_re, fft->scratch_im};
+  // Temporarily repack Nyquist (re[N]) into im[0] for in-place vDSP IDFT
+  double orig_im0 = im[0];
+  im[0] = re[n];
+
+  DSPDoubleSplitComplex split = {re, im};
   vDSP_fft_zripD(fft->setup, &split, 1, fft->log2n, FFT_INVERSE);
 
-  // Asymmetric vDSP scaling: forward applies a `2×` factor, inverse
-  // does not. Feeding unscaled bins (we already halved the forward
-  // output) directly produces the unnormalised IDFT result —
-  // `length · signal` — which is exactly the RealFFT
-  // convention. No extra scaling needed here.
+  // Asymmetric vDSP scaling: forward applies a `2×` factor, inverse does not.
+  // Feeding unscaled bins (we already halved the forward output) directly
+  // produces the unnormalised IDFT result — `length · signal` — which is
+  // exactly the RealFFT convention. No extra scaling needed here.
   //
-  // Re-interleave split-complex back to 2N reals: realOut[2k] = split.real[k],
-  // realOut[2k+1] = split.imag[k].
+  // Re-interleave split-complex in-place back to 2N reals:
+  // realOut[2k] = split.real[k], realOut[2k+1] = split.imag[k].
   vDSP_ztocD(&split, 1, (DSPDoubleComplex*)real_out, 2, (vDSP_Length)n);
+
+  im[0] = orig_im0;
 }
 
 void vdsp_real_fft_free(vdsp_real_fft_t* fft) {
   if (!fft) return;
   if (fft->setup) vDSP_destroy_fftsetupD(fft->setup);
-  if (fft->scratch_re) free(fft->scratch_re);
-  if (fft->scratch_im) free(fft->scratch_im);
   free(fft);
 }
 
@@ -170,8 +159,6 @@ struct vdsp_real_fftf {
   size_t half_n;
   vDSP_Length log2n;
   FFTSetup setup;
-  float* scratch_re;
-  float* scratch_im;
 };
 
 static void vdsp_real_fftf_forward_wrapper(void* ctx, const float* real_in,
@@ -215,12 +202,6 @@ vdsp_real_fftf_t* vdsp_real_fftf_create(size_t length) {
   fft->half_n = half_n;
   fft->log2n = log2n;
   fft->setup = setup;
-  fft->scratch_re = (float*)calloc(half_n, sizeof(float));
-  fft->scratch_im = (float*)calloc(half_n, sizeof(float));
-  if (!fft->scratch_re || !fft->scratch_im) {
-    vdsp_real_fftf_free(fft);
-    return NULL;
-  }
   return fft;
 }
 
@@ -228,18 +209,26 @@ void vdsp_real_fftf_forward(vdsp_real_fftf_t* fft, const float* real_in,
                             float* spec_re, float* spec_im) {
   if (!fft) return;
   size_t n = fft->half_n;
-  DSPSplitComplex split = {fft->scratch_re, fft->scratch_im};
+  DSPSplitComplex split = {spec_re, spec_im};
   vDSP_ctoz((const DSPComplex*)real_in, 2, &split, 1, (vDSP_Length)n);
   vDSP_fft_zrip(fft->setup, &split, 1, fft->log2n, FFT_FORWARD);
 
+  // Unpack vDSP's format (Nyquist in imagp[0]) and scale by 0.5 in-place.
+  // Layout mapping into flat (N+1)-bin spectrum layout:
+  //   specRe[0]   = vDSP_DC / 2 = unscaled DC
+  //   specIm[0]   = 0
+  //   specRe[k]   = vDSP_Re[k] / 2   for k = 1..N-1
+  //   specIm[k]   = vDSP_Im[k] / 2   for k = 1..N-1
+  //   specRe[N]   = vDSP_Im[0] / 2   (Nyquist was packed in imagp[0])
+  //   specIm[N]   = 0
+  float nyquist = spec_im[0] * 0.5f;
   float half = 0.5f;
-  vDSP_vsmul(fft->scratch_re, 1, &half, spec_re, 1, (vDSP_Length)n);
+  vDSP_vsmul(spec_re, 1, &half, spec_re, 1, (vDSP_Length)n);
   if (n > 1) {
-    vDSP_vsmul(fft->scratch_im + 1, 1, &half, spec_im + 1, 1,
-               (vDSP_Length)(n - 1));
+    vDSP_vsmul(spec_im + 1, 1, &half, spec_im + 1, 1, (vDSP_Length)(n - 1));
   }
   spec_im[0] = 0.0f;
-  spec_re[n] = fft->scratch_im[0] * 0.5f;
+  spec_re[n] = nyquist;
   spec_im[n] = 0.0f;
 }
 
@@ -247,24 +236,31 @@ void vdsp_real_fftf_inverse(vdsp_real_fftf_t* fft, const float* spec_re,
                             const float* spec_im, float* real_out) {
   if (!fft) return;
   size_t n = fft->half_n;
-  fft->scratch_re[0] = spec_re[0];
-  fft->scratch_im[0] = spec_re[n];
-  if (n > 1) {
-    memcpy(fft->scratch_re + 1, spec_re + 1, (n - 1) * sizeof(float));
-    memcpy(fft->scratch_im + 1, spec_im + 1, (n - 1) * sizeof(float));
-  }
+  float* re = (float*)spec_re;
+  float* im = (float*)spec_im;
 
-  DSPSplitComplex split = {fft->scratch_re, fft->scratch_im};
+  // Temporarily repack Nyquist (re[N]) into im[0] for in-place vDSP IDFT
+  float orig_im0 = im[0];
+  im[0] = re[n];
+
+  DSPSplitComplex split = {re, im};
   vDSP_fft_zrip(fft->setup, &split, 1, fft->log2n, FFT_INVERSE);
 
+  // Asymmetric vDSP scaling: forward applies a `2×` factor, inverse does not.
+  // Feeding unscaled bins (we already halved the forward output) directly
+  // produces the unnormalised IDFT result — `length · signal` — which is
+  // exactly the RealFFT convention. No extra scaling needed here.
+  //
+  // Re-interleave split-complex in-place back to 2N reals:
+  // realOut[2k] = split.real[k], realOut[2k+1] = split.imag[k].
   vDSP_ztoc(&split, 1, (DSPComplex*)real_out, 2, (vDSP_Length)n);
+
+  im[0] = orig_im0;
 }
 
 void vdsp_real_fftf_free(vdsp_real_fftf_t* fft) {
   if (!fft) return;
   if (fft->setup) vDSP_destroy_fftsetup(fft->setup);
-  if (fft->scratch_re) free(fft->scratch_re);
-  if (fft->scratch_im) free(fft->scratch_im);
   free(fft);
 }
 
