@@ -30,8 +30,7 @@ void GeneralSettingsView::setupUi() {
     connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_settings->darkMode = (idx == 1);
         m_settings->savePreferences();
-        StyleTheme::setTheme(m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
-        qApp->setStyleSheet(StyleTheme::currentStylesheet());
+        StyleTheme::applyTheme(qApp, m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
         for (QWidget* w : qApp->allWidgets()) {
             w->update();
         }
