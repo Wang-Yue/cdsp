@@ -3848,6 +3848,7 @@ static void* server_thread_func(void* arg) {
       if (fds[0].revents & POLLIN) {
         socket_t cfd = accept(server->server_fd, NULL, NULL);
         if (!IS_INVALID_SOCKET(cfd) && num_clients < 32) {
+          logger_info(&server_logger, "Accepted client connection on slot %d", num_clients);
           client_fds[num_clients] = cfd;
           last_state[num_clients][0] = '\0';
 
@@ -3863,6 +3864,7 @@ static void* server_thread_func(void* arg) {
 
           num_clients++;
         } else if (!IS_INVALID_SOCKET(cfd)) {
+          logger_warn(&server_logger, "Max clients (32) reached, rejecting new connection");
           CLOSE_SOCKET(cfd);
         }
       }
@@ -3871,6 +3873,7 @@ static void* server_thread_func(void* arg) {
           char buf[4096];
           int n = recv(client_fds[i], buf, sizeof(buf) - 1, 0);
           if (n <= 0) {
+            logger_info(&server_logger, "Client disconnected on slot %d", i);
             CLOSE_SOCKET(client_fds[i]);
             pthread_mutex_lock(&server->sessions_mutex);
             client_session_clear(&server->client_sessions[i]);

@@ -45,10 +45,16 @@ struct spectrum_analyzer {
 #define M_PI 3.14159265358979323846
 #endif
 
+#include "Logging/app_logger.h"
+
 spectrum_analyzer_t* spectrum_analyzer_create(void) {
+  logger_t logger = logger_create("dsp.spectrum_analyzer");
   spectrum_analyzer_t* analyzer =
       (spectrum_analyzer_t*)calloc(1, sizeof(spectrum_analyzer_t));
-  if (!analyzer) return NULL;
+  if (!analyzer) {
+    logger_error(&logger, "Memory allocation failed for spectrum_analyzer_t");
+    return NULL;
+  }
   analyzer->fft_n = 4096;
   analyzer->fft_setup = real_fftf_create(4096);
   analyzer->window = (float*)calloc(analyzer->fft_n, sizeof(float));
@@ -76,10 +82,13 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
       !analyzer->realp || !analyzer->imagp || !analyzer->magnitudes ||
       !analyzer->db_magnitudes || !analyzer->plan.frequencies ||
       !analyzer->plan.ranges || !analyzer->out_magnitudes) {
+    logger_error(&logger, "Failed to allocate memory buffers for spectrum analyzer");
     spectrum_analyzer_free(analyzer);
     return NULL;
   }
 
+  logger_info(&logger, "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
+              analyzer->fft_n, analyzer->out_capacity);
   return analyzer;
 }
 

@@ -10,12 +10,18 @@ struct silence_counter {
   size_t silent_chunks;
 };
 
+#include "Logging/app_logger.h"
+
 silence_counter_t* silence_counter_create(double threshold_db,
                                           double timeout_seconds,
                                           size_t samplerate, size_t chunksize) {
   silence_counter_t* counter =
       (silence_counter_t*)calloc(1, sizeof(silence_counter_t));
-  if (!counter) return NULL;
+  if (!counter) {
+    logger_t logger = logger_create("dsp.silence_counter");
+    logger_error(&logger, "Memory allocation failed for silence_counter_t");
+    return NULL;
+  }
   silence_counter_init(counter, threshold_db, timeout_seconds, samplerate,
                        chunksize);
   return counter;
@@ -46,6 +52,10 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
   } else {
     counter->limit_chunks = 0;
   }
+  logger_t logger = logger_create("dsp.silence_counter");
+  logger_info(&logger,
+              "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, limit_chunks=%zu)",
+              threshold_db, timeout_seconds, counter->limit_chunks);
 }
 
 /// Feed the next chunk's loudest channel peak (dB). Returns the
@@ -57,6 +67,12 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   }
   // Reset counter if signal level is above the silence threshold.
   if (signal_peak_db > counter->threshold_db) {
+    if (counter->silent_chunks > 0) {
+      logger_t logger = logger_create("dsp.silence_counter");
+      logger_info(&logger,
+                  "Audio signal restored above threshold (peak=%.1fdB > threshold=%.1fdB), resuming",
+                  signal_peak_db, counter->threshold_db);
+    }
     counter->silent_chunks = 0;
     return PROCESSING_STATE_RUNNING;
   }
@@ -65,7 +81,12 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
     counter->silent_chunks++;
   }
   // Transition to PAUSED state if silence duration exceeds the limit.
-  return (counter->silent_chunks >= counter->limit_chunks)
-             ? PROCESSING_STATE_PAUSED
-             : PROCESSING_STATE_RUNNING;
+  if (counter->silent_chunks >= counter->limit_chunks) {
+    logger_t logger = logger_create("dsp.silence_counter");
+    logger_info(&logger,
+                "Silence timeout reached (silent_chunks=%zu, limit_chunks=%zu), requesting pause",
+                counter->silent_chunks, counter->limit_chunks);
+    return PROCESSING_STATE_PAUSED;
+  }
+  return PROCESSING_STATE_RUNNING;
 }

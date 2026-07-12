@@ -63,19 +63,25 @@ size_t real_fft_get_spectrum_length(const real_fft_t* fft) {
 #include "FFT/vdsp_complex_dft.h"
 #include "FFT/vdsp_real_fft.h"
 
+#include "Logging/app_logger.h"
+
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
+  logger_t logger = logger_create("dsp.fft");
   if (length == 0) {
     config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be positive");
+    logger_error(&logger, "RealFFT: length must be positive");
     return NULL;
   }
   if (length % 2 != 0) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "RealFFT: length must be even, got %zu", length);
+    logger_error(&logger, "RealFFT: length must be even, got %zu", length);
     return NULL;
   }
   real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));
   if (!fft) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate RealFFT");
+    logger_error(&logger, "Failed to allocate RealFFT");
     return NULL;
   }
   fft->length = length;
@@ -87,6 +93,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   vdsp_real_fft_t* vdsp = vdsp_real_fft_create(length);
   if (vdsp) {
     fft->backend = vdsp_real_fft_as_backend(vdsp);
+    logger_info(&logger, "RealFFT created using vDSP Real FFT backend (length=%zu)", length);
     return fft;
   }
 
@@ -96,22 +103,27 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   // itself just consumes the chosen `inner`.
   size_t half_n = length / 2;
   arbitrary_complex_fft_t* inner = NULL;
+  const char* backend_name = "unknown";
   vdsp_complex_dft_t* dft = vdsp_complex_dft_create(half_n);
   if (dft) {
     inner = vdsp_complex_dft_as_arbitrary(dft);
+    backend_name = "vDSP Complex DFT";
   } else {
     mixed_radix_fft_t* mr = mixed_radix_fft_create(half_n);
     if (mr) {
       inner = mixed_radix_fft_as_arbitrary(mr);
+      backend_name = "Mixed-Radix FFT";
     } else {
       bluestein_fft_t* bs = bluestein_fft_create(half_n, err);
       if (bs) {
         inner = bluestein_fft_as_arbitrary(bs);
+        backend_name = "Bluestein FFT";
       }
     }
   }
 
   if (!inner) {
+    logger_error(&logger, "Failed to initialize any complex FFT backend for half_n=%zu", half_n);
     free(fft);
     return NULL;
   }
@@ -121,12 +133,14 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   if (!complex_inner) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate ComplexInnerRealFFT");
+    logger_error(&logger, "Failed to allocate ComplexInnerRealFFT");
     arbitrary_complex_fft_free(inner);
     free(fft);
     return NULL;
   }
 
   fft->backend = complex_inner_real_fft_as_backend(complex_inner);
+  logger_info(&logger, "RealFFT created using ComplexInner + %s backend (length=%zu)", backend_name, length);
   return fft;
 }
 
