@@ -187,7 +187,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
 
         for (size_t col = 0; col < colCount; ++col) {
             const auto& spec = m_history[col];
-            int x = marginL + plotW - static_cast<int>(col + 1) * colW;
+            int x = marginL + static_cast<int>(col) * colW;
             size_t count = std::min(binCount, spec.magnitudes.size());
 
             for (size_t bin = 0; bin < count; ++bin) {

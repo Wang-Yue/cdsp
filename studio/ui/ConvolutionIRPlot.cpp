@@ -85,7 +85,7 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     for (size_t i = 0; i < count; ++i) {
         double norm = m_samples[i] / maxVal;
         double x = (static_cast<double>(i) / static_cast<double>(std::max<size_t>(1, count - 1))) * w;
-        double y = midY - norm * (plotH / 2.0 * 0.9);
+        double y = midY - norm * (plotH / 2.0);
 
         if (i == 0)
             path.moveTo(x, y);

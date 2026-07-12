@@ -60,8 +60,16 @@ struct SpectrumData {
 
 struct AudioSamplesData {
     std::vector<std::vector<float>> channels;
-    std::vector<float> left() const { return !channels.empty() ? channels[0] : std::vector<float>(); }
-    std::vector<float> right() const { return channels.size() > 1 ? channels[1] : left(); }
+
+    const std::vector<float>& left() const {
+        static const std::vector<float> empty;
+        return !channels.empty() ? channels[0] : empty;
+    }
+
+    const std::vector<float>& right() const {
+        static const std::vector<float> empty;
+        return channels.size() > 1 ? channels[1] : left();
+    }
 };
 
 struct SamplerateCapability {

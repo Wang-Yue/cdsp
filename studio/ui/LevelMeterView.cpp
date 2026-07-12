@@ -41,7 +41,8 @@ static QColor appThemeColor(float value) {
         float t = (v - 0.35f) / 0.2f;
         int r = static_cast<int>(52 + t * (255 - 52));
         int g = static_cast<int>(199 + t * (204 - 199));
-        return QColor(r, g, 0);
+        int b = static_cast<int>(89 * (1.0f - t));
+        return QColor(r, g, b);
     } else if (v < 0.75f) {
         float t = (v - 0.55f) / 0.2f;
         int g = static_cast<int>(204 - t * (204 - 149));
