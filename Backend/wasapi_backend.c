@@ -1174,6 +1174,15 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
       log_arg_int((int64_t)playback->channels),
       log_arg_int((int64_t)playback->exclusive));
 
+  if (!playback->exclusive) {
+    logger_warn(
+        &logger,
+        "WASAPI operating in Shared Mode (32-bit Float). Note: Bit-exact DoP "
+        "requires Exclusive Mode ('exclusive': true) to prevent float mixer "
+        "bit corruption",
+        log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none());
+  }
+
   return true;
 
 error_cleanup:

@@ -262,17 +262,25 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     double measured_rate = 0.0;
     if (sample_rate_watcher_tick(loop->rate_watcher, loop->chunk_size,
                                  &measured_rate)) {
-      logger_warn(&logger,
-                  "Sample rate change detected (measured: %f Hz, expected: %zu "
-                  "Hz); stopping engine",
-                  log_arg_double(measured_rate), log_arg_int(loop->samplerate),
-                  log_arg_none(), log_arg_none());
       if (sample_rate_watcher_get_stop_on_rate_change(loop->rate_watcher)) {
+        logger_warn(
+            &logger,
+            "Sample rate change detected (measured: %f Hz, expected: %zu "
+            "Hz); stopping engine",
+            log_arg_double(measured_rate), log_arg_int(loop->samplerate),
+            log_arg_none(), log_arg_none());
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
         engine_shared_state_request_stop(loop->shared, reason);
         break;
+      } else {
+        logger_info(
+            &logger,
+            "Sample rate drift detected (measured: %f Hz, expected: %zu "
+            "Hz)",
+            log_arg_double(measured_rate), log_arg_int(loop->samplerate),
+            log_arg_none(), log_arg_none());
       }
     }
 
