@@ -24,7 +24,9 @@ void MonitoringController::onPollTimer() {
     if (!m_engine || !m_dspController)
         return;
     StateUpdate st = m_engine->getStatus();
-    m_dspController->updateStatus(st);
+    if (st.state != m_dspController->status || st.stopReason.type != m_dspController->lastStopReason.type) {
+        m_dspController->updateStatus(st);
+    }
 
     if (st.state != ProcessingState::Running) {
         size_t capCh = m_dspController->devices() ? m_dspController->devices()->captureConfig.channels : 2;

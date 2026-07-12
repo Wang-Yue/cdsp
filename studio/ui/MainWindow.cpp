@@ -371,7 +371,13 @@ void MainWindow::setupMenuBar() {
     setupViewAct("Dashboard", {QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
     setupViewAct("Level Meters", {QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
     setupViewAct("Spectrum", {QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
-    setupViewAct("General Settings", {QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "general_settings");
+    setupViewAct("Spectroscope Waterfall", {QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "spectroscope");
+    setupViewAct("Vector Scope", {QKeySequence("Cmd+6"), QKeySequence("Ctrl+6")}, "vectorscope");
+    setupViewAct("Analog VU Meter", {QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
+    setupViewAct("Console Logs", {QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
+    setupViewAct("General Settings",
+                 {QKeySequence("Cmd+9"), QKeySequence("Ctrl+9"), QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")},
+                 "general_settings");
 
     viewMenu->addSeparator();
 

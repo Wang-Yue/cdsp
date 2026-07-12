@@ -46,6 +46,9 @@ bool OratoryPresetService::loadFromDiskCache(std::vector<OratoryIndexEntry>& ent
             OratoryIndexEntry entry;
             entry.name = headphoneName.toStdString();
             entry.path = path.toStdString();
+            entry.author = "oratory1990";
+            entry.url = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
+                        path.toUtf8().toPercentEncoding().toStdString();
             entries.push_back(entry);
         }
     }
@@ -123,6 +126,9 @@ void OratoryPresetService::fetchIndex(
                 OratoryIndexEntry entry;
                 entry.name = headphoneName.toStdString();
                 entry.path = path.toStdString();
+                entry.author = "oratory1990";
+                entry.url = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
+                            path.toUtf8().toPercentEncoding().toStdString();
                 entries.push_back(entry);
             }
         }
@@ -134,9 +140,15 @@ void OratoryPresetService::fetchIndex(
 
 void OratoryPresetService::fetchPreset(const OratoryIndexEntry& entry,
                                        std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
-    QString downloadPath = QString::fromStdString(entry.path).replace(" ", "%20");
+    QString pathStr = QString::fromStdString(entry.path);
+    QString encodedPath;
+    for (const QString& seg : pathStr.split('/')) {
+        if (!encodedPath.isEmpty())
+            encodedPath += '/';
+        encodedPath += QString::fromUtf8(QUrl::toPercentEncoding(seg.toUtf8()));
+    }
     QString rawUrlStr =
-        "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" + downloadPath;
+        "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" + encodedPath;
 
     QUrl url(rawUrlStr);
     QNetworkRequest request(url);

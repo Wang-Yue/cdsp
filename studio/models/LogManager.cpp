@@ -1,5 +1,7 @@
 #include "models/LogManager.h"
 
+#include "engine/CDSPEngine.h"
+
 QString logLevelToString(LogLevel level) {
     switch (level) {
     case LogLevel::Error:
@@ -36,6 +38,20 @@ LogManager::LogManager(QObject* parent) : QObject(parent) {
 LogManager* LogManager::instance() {
     static LogManager instance;
     return &instance;
+}
+
+void LogManager::setEngine(CDSPEngine* engine) {
+    m_engine = engine;
+    if (m_engine) {
+        m_engine->setLogLevel(logLevelToString(m_logLevel).toLower().toStdString());
+    }
+}
+
+void LogManager::setLogLevel(LogLevel level) {
+    m_logLevel = level;
+    if (m_engine) {
+        m_engine->setLogLevel(logLevelToString(m_logLevel).toLower().toStdString());
+    }
 }
 
 void LogManager::appendLog(LogLevel level, const QString& message) {

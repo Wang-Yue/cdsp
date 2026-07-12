@@ -18,12 +18,18 @@ struct LogEntry {
     QString message;
 };
 
+class CDSPEngine;
+
 class LogManager : public QObject {
     Q_OBJECT
 
 public:
     explicit LogManager(QObject* parent = nullptr);
     static LogManager* instance();
+
+    void setEngine(CDSPEngine* engine);
+    void setLogLevel(LogLevel level);
+    LogLevel logLevel() const { return m_logLevel; }
 
     void appendLog(LogLevel level, const QString& message);
     std::vector<LogEntry> logs(LogLevel minLevel = LogLevel::Trace, const QString& searchFilter = "") const;
@@ -35,6 +41,8 @@ signals:
 
 private:
     mutable std::mutex m_mutex;
+    CDSPEngine* m_engine = nullptr;
+    LogLevel m_logLevel = LogLevel::Info;
     std::vector<LogEntry> m_entries;
     size_t m_maxEntries = 2000;
 };

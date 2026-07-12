@@ -582,7 +582,7 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
                     if (onBandQChanged)
                         onBandQChanged(m_draggingIndex, b.slope);
                 } else if (b.useBandwidth) {
-                    b.bandwidth = std::max(0.1, std::min(20.0, b.bandwidth * factor));
+                    b.bandwidth = std::max(0.1, std::min(20.0, b.bandwidth / factor));
                     if (onBandQChanged)
                         onBandQChanged(m_draggingIndex, b.bandwidth);
                 } else {
