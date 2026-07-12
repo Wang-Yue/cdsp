@@ -179,9 +179,8 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   state->stop_reason = reason;
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
 
-  // Signal both captured and processed queues to wake all audio loops.
+  // Signal captured queue to wake processing loop if waiting on sem
   engine_shared_state_signal_captured(state);
-  engine_shared_state_set_processing_done(state);
 }
 
 bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,

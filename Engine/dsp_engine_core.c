@@ -596,6 +596,9 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
   // Dispatch in-band AudioMessage stop signal downstream
   if (core->shared) {
     engine_shared_state_request_stop(core->shared, reason);
+    if (!core->threads_created) {
+      engine_shared_state_set_processing_done(core->shared);
+    }
   }
 
   // Wait for all audio threads to finish.
