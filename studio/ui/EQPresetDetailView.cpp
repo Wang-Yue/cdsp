@@ -144,16 +144,30 @@ void EQPresetDetailView::setupUi() {
     auto autoEqBtn = new QPushButton("🔍 AutoEQ Database", this);
     connect(autoEqBtn, &QPushButton::clicked, [this]() {
         AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        refreshUi();
+        if (dlg.exec() == QDialog::Accepted && m_pipeline) {
+            for (const auto& p : m_pipeline->eqPresets) {
+                if (p.id == m_preset.id) {
+                    m_preset = p;
+                    break;
+                }
+            }
+            refreshUi();
+        }
     });
     subToolLayout->addWidget(autoEqBtn);
 
     auto oratoryBtn = new QPushButton("🎧 Oratory1990", this);
     connect(oratoryBtn, &QPushButton::clicked, [this]() {
         OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        refreshUi();
+        if (dlg.exec() == QDialog::Accepted && m_pipeline) {
+            for (const auto& p : m_pipeline->eqPresets) {
+                if (p.id == m_preset.id) {
+                    m_preset = p;
+                    break;
+                }
+            }
+            refreshUi();
+        }
     });
     subToolLayout->addWidget(oratoryBtn);
 
@@ -180,6 +194,22 @@ void EQPresetDetailView::setupUi() {
 
     m_diagramWidget = new EQDiagramWidget(diagramModeWidget);
     m_diagramWidget->setPipelineStore(m_pipeline);
+    m_diagramWidget->onPresetChanged = [this]() {
+        applyConfig();
+        refreshUi();
+    };
+    m_diagramWidget->onBandAdded = [this](double freq, double gain) {
+        applyConfig();
+        refreshUi();
+    };
+    m_diagramWidget->onBandDeleted = [this](int idx) {
+        if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
+            m_preset.bands.erase(m_preset.bands.begin() + idx);
+            m_diagramWidget->setSelectedBandIndex(-1);
+            applyConfig();
+            refreshUi();
+        }
+    };
     m_diagramWidget->onBandDragged = [this](int idx, double f, double g) {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
             auto& b = m_preset.bands[idx];

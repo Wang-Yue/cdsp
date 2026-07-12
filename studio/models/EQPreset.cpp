@@ -465,10 +465,11 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                         EQBand band(type);
                         band.isEnabled = enabled;
 
-                        for (size_t i = idx + 1; i + 1 < words.size(); ++i) {
+                        for (size_t i = idx + 1; i + 1 < words.size();) {
                             std::string k = words[i];
                             std::transform(k.begin(), k.end(), k.begin(), ::tolower);
                             std::string v = words[i + 1];
+                            bool matchedKey = true;
 
                             try {
                                 if (k == "fc") {
@@ -508,8 +509,17 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                                     band.a1 = std::stod(v);
                                 } else if (k == "a2") {
                                     band.a2 = std::stod(v);
+                                } else {
+                                    matchedKey = false;
                                 }
                             } catch (...) {
+                                matchedKey = false;
+                            }
+
+                            if (matchedKey) {
+                                i += 2;
+                            } else {
+                                i += 1;
                             }
                         }
                         parsedBands.push_back(band);
