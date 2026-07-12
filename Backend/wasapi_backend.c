@@ -1230,7 +1230,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
   // Keep writing audio packets until all frames from the input chunk are
   // written.
   while (frames_written < total_frames) {
-    if (GetTickCount() - start_time > 1000) {
+    if (GetTickCount() - start_time > 3000) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "WASAPI playback timeout (device stalled)");
