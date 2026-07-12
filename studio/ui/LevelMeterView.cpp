@@ -178,11 +178,18 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
             p.fillPath(peakPath, grad);
         }
 
+        // 6b. Peak Hold Line Indicators
+        if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
+            int peakHoldX = xStart + static_cast<int>(m_peakHold[i] * barW);
+            p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 220) : QColor(30, 30, 30, 220), 1.5));
+            p.drawLine(peakHoldX, y, peakHoldX, y + barHeight);
+        }
+
         // 7. Stacked Monospace Numeric Readouts (%5.1f format)
         p.setFont(QFont("monospace", 9, QFont::Normal));
         p.setPen(StyleTheme::textSecondary());
-        QString rmsStr = (rmsVal < -90) ? " -inf" : QString::asprintf("%5.1f", rmsVal);
-        QString peakStr = (peakVal < -90) ? " -inf" : QString::asprintf("%5.1f", peakVal);
+        QString rmsStr = QString::asprintf("%5.1f", rmsVal);
+        QString peakStr = QString::asprintf("%5.1f", peakVal);
 
         p.drawText(xStart + barW + 4, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
         p.drawText(xStart + barW + 4, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);

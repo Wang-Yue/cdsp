@@ -57,6 +57,32 @@ struct AudioQueueRecordContext {
     int targetChannel = 0;
 };
 
+struct AudioQueuePlayContext {
+    std::vector<float> pcmData;
+    size_t currentSample = 0;
+};
+
+static void MyAQOutputCallback(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer) {
+    auto* ctx = static_cast<AudioQueuePlayContext*>(inUserData);
+    if (!ctx || !inBuffer)
+        return;
+
+    float* target = static_cast<float*>(inBuffer->mAudioData);
+    size_t capacitySamples = inBuffer->mAudioDataBytesCapacity / sizeof(float);
+    size_t remaining = ctx->pcmData.size() - ctx->currentSample;
+    size_t toCopy = std::min(capacitySamples, remaining);
+
+    if (toCopy > 0) {
+        std::memcpy(target, ctx->pcmData.data() + ctx->currentSample, toCopy * sizeof(float));
+        ctx->currentSample += toCopy;
+        inBuffer->mAudioDataByteSize = static_cast<UInt32>(toCopy * sizeof(float));
+        AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nullptr);
+    } else {
+        std::memset(target, 0, capacitySamples * sizeof(float));
+        inBuffer->mAudioDataByteSize = static_cast<UInt32>(capacitySamples * sizeof(float));
+    }
+}
+
 static void MyAQInputCallback(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer,
                               const AudioTimeStamp* inStartTime, UInt32 inNumberPacketDescriptions,
                               const AudioStreamPacketDescription* inPacketDescs) {
@@ -81,8 +107,6 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
                                           int inputChannel, int outputChannel, double playbackGainDB) {
     Q_UNUSED(inputDeviceName);
     Q_UNUSED(outputDeviceName);
-    Q_UNUSED(inputChannel);
-    Q_UNUSED(outputChannel);
 
     auto [sweep, inv] = SweepGenerator::sweepAndInverse(f1, f2, durationSeconds, sampleRate, 0.02, 0.02);
     if (sweep.empty() || inv.empty())
@@ -92,6 +116,11 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
     size_t leadSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t tailSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t totalPlaySamples = leadSamples + sweep.size() + tailSamples;
+
+    std::vector<float> playPcm(totalPlaySamples, 0.0f);
+    for (size_t i = 0; i < sweep.size(); ++i) {
+        playPcm[leadSamples + i] = static_cast<float>(sweep[i] * gainLin);
+    }
 
     std::vector<double> capturedRaw;
 
@@ -108,27 +137,39 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
     format.mBitsPerChannel = 32;
 
     AudioQueueRef inputQueue = nullptr;
+    AudioQueueRef outputQueue = nullptr;
     AudioQueueRecordContext recContext;
     recContext.targetChannel = inputChannel;
+    AudioQueuePlayContext playContext{playPcm, 0};
 
-    OSStatus status = AudioQueueNewInput(&format, MyAQInputCallback, &recContext, nullptr, nullptr, 0, &inputQueue);
-    if (status == noErr && inputQueue) {
+    OSStatus inStatus = AudioQueueNewInput(&format, MyAQInputCallback, &recContext, nullptr, nullptr, 0, &inputQueue);
+    OSStatus outStatus =
+        AudioQueueNewOutput(&format, MyAQOutputCallback, &playContext, nullptr, nullptr, 0, &outputQueue);
+
+    if (inStatus == noErr && outStatus == noErr && inputQueue && outputQueue) {
         const int numBuffers = 3;
         const UInt32 bufferByteSize = 4096 * sizeof(float);
-        AudioQueueBufferRef buffers[numBuffers];
+        AudioQueueBufferRef inBuffers[numBuffers];
+        AudioQueueBufferRef outBuffers[numBuffers];
 
         for (int i = 0; i < numBuffers; ++i) {
-            AudioQueueAllocateBuffer(inputQueue, bufferByteSize, &buffers[i]);
-            AudioQueueEnqueueBuffer(inputQueue, buffers[i], 0, nullptr);
+            AudioQueueAllocateBuffer(inputQueue, bufferByteSize, &inBuffers[i]);
+            AudioQueueEnqueueBuffer(inputQueue, inBuffers[i], 0, nullptr);
+
+            AudioQueueAllocateBuffer(outputQueue, bufferByteSize, &outBuffers[i]);
+            MyAQOutputCallback(&playContext, outputQueue, outBuffers[i]);
         }
 
         AudioQueueStart(inputQueue, nullptr);
+        AudioQueueStart(outputQueue, nullptr);
 
         // Play sweep PCM and stream input
         double totalSeconds = static_cast<double>(totalPlaySamples) / sampleRate;
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(totalSeconds * 1000.0) + 200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(totalSeconds * 1000.0) + 300));
 
+        AudioQueueStop(outputQueue, true);
         AudioQueueStop(inputQueue, true);
+        AudioQueueDispose(outputQueue, true);
         AudioQueueDispose(inputQueue, true);
 
         capturedRaw = recContext.samples;

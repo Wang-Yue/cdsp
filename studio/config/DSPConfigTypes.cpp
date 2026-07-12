@@ -219,6 +219,106 @@ std::string resamplerTypeToString(ResamplerType t) {
     return "Synchronous";
 }
 
+std::string sincInterpolationToString(SincInterpolation interp) {
+    switch (interp) {
+    case SincInterpolation::Nearest:
+        return "Nearest";
+    case SincInterpolation::Linear:
+        return "Linear";
+    case SincInterpolation::Quadratic:
+        return "Quadratic";
+    case SincInterpolation::Cubic:
+        return "Cubic";
+    }
+    return "Linear";
+}
+
+SincInterpolation stringToSincInterpolation(const std::string& str) {
+    if (str == "Nearest")
+        return SincInterpolation::Nearest;
+    if (str == "Quadratic")
+        return SincInterpolation::Quadratic;
+    if (str == "Cubic")
+        return SincInterpolation::Cubic;
+    return SincInterpolation::Linear;
+}
+
+std::string resamplerInterpolationToString(ResamplerInterpolation interp) {
+    switch (interp) {
+    case ResamplerInterpolation::Linear:
+        return "Linear";
+    case ResamplerInterpolation::Cubic:
+        return "Cubic";
+    case ResamplerInterpolation::Quintic:
+        return "Quintic";
+    case ResamplerInterpolation::Septic:
+        return "Septic";
+    }
+    return "Linear";
+}
+
+ResamplerInterpolation stringToResamplerInterpolation(const std::string& str) {
+    if (str == "Cubic")
+        return ResamplerInterpolation::Cubic;
+    if (str == "Quintic")
+        return ResamplerInterpolation::Quintic;
+    if (str == "Septic")
+        return ResamplerInterpolation::Septic;
+    return ResamplerInterpolation::Linear;
+}
+
+std::string appleResamplerQualityToString(AppleResamplerQuality q) {
+    switch (q) {
+    case AppleResamplerQuality::Min:
+        return "Min";
+    case AppleResamplerQuality::Low:
+        return "Low";
+    case AppleResamplerQuality::Medium:
+        return "Medium";
+    case AppleResamplerQuality::High:
+        return "High";
+    case AppleResamplerQuality::Max:
+        return "Max";
+    }
+    return "Medium";
+}
+
+AppleResamplerQuality stringToAppleResamplerQuality(const std::string& str) {
+    if (str == "Min")
+        return AppleResamplerQuality::Min;
+    if (str == "Low")
+        return AppleResamplerQuality::Low;
+    if (str == "High")
+        return AppleResamplerQuality::High;
+    if (str == "Max")
+        return AppleResamplerQuality::Max;
+    return AppleResamplerQuality::Medium;
+}
+
+std::string appleResamplerComplexityToString(AppleResamplerComplexity c) {
+    switch (c) {
+    case AppleResamplerComplexity::Linear:
+        return "Linear";
+    case AppleResamplerComplexity::Normal:
+        return "Normal";
+    case AppleResamplerComplexity::Mastering:
+        return "Mastering";
+    case AppleResamplerComplexity::MinimumPhase:
+        return "MinimumPhase";
+    }
+    return "Normal";
+}
+
+AppleResamplerComplexity stringToAppleResamplerComplexity(const std::string& str) {
+    if (str == "Linear")
+        return AppleResamplerComplexity::Linear;
+    if (str == "Mastering")
+        return AppleResamplerComplexity::Mastering;
+    if (str == "MinimumPhase")
+        return AppleResamplerComplexity::MinimumPhase;
+    return AppleResamplerComplexity::Normal;
+}
+
 ResamplerType stringToResamplerType(const std::string& str) {
     if (str == "Apple")
         return ResamplerType::Apple;

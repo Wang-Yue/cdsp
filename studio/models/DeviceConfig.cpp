@@ -267,6 +267,9 @@ QJsonObject DeviceConfig::toJson() const {
     obj["generatorType"] = QString::fromStdString(generatorType);
     obj["generatorFreq"] = generatorFreq;
     obj["generatorLevel"] = generatorLevel;
+    QJsonObject capObj;
+    capObj["name"] = QString::fromStdString(capabilities.name);
+    obj["capabilities"] = capObj;
     if (!capabilities.name.empty()) {
         obj["deviceName"] = QString::fromStdString(capabilities.name);
     }
@@ -314,8 +317,13 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.generatorFreq = json["generatorFreq"].toDouble();
     if (json.contains("generatorLevel"))
         cfg.generatorLevel = json["generatorLevel"].toDouble();
-    if (json.contains("deviceName"))
+    if (json.contains("capabilities") && json["capabilities"].isObject()) {
+        QJsonObject cObj = json["capabilities"].toObject();
+        if (cObj.contains("name"))
+            cfg.capabilities.name = cObj["name"].toString().toStdString();
+    } else if (json.contains("deviceName")) {
         cfg.capabilities.name = json["deviceName"].toString().toStdString();
+    }
     return cfg;
 }
 

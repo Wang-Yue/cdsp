@@ -119,8 +119,28 @@ void ConvolutionImportDlg::onAddFilesClicked() {
             item.sampleRate = wavInfo->sampleRate;
             item.format = "WAV";
         } else {
-            item.sampleRate = 48000;
-            item.format = "FLOAT64";
+            QString lower = file.toLower();
+            if (lower.endsWith(".txt"))
+                item.format = "TEXT";
+            else if (lower.endsWith(".f32") || lower.contains("float32"))
+                item.format = "FLOAT32";
+            else if (lower.endsWith(".f64") || lower.contains("float64"))
+                item.format = "FLOAT64";
+            else if (lower.contains("s16"))
+                item.format = "S16_LE";
+            else if (lower.contains("s32"))
+                item.format = "S32_LE";
+            else
+                item.format = "FLOAT64";
+
+            static const std::vector<int> stdRates = {768000, 705600, 384000, 352800, 192000, 176400,
+                                                      96000,  88200,  48000,  44100,  32000};
+            for (int r : stdRates) {
+                if (lower.contains(QString::number(r)) || lower.contains(QString("%1k").arg(r / 1000))) {
+                    item.sampleRate = r;
+                    break;
+                }
+            }
         }
         m_items.push_back(item);
 
@@ -162,7 +182,7 @@ void ConvolutionImportDlg::updateTable() {
         rates.insert(item.sampleRate);
 
         auto fmtCombo = new QComboBox(this);
-        fmtCombo->addItems({"WAV", "FLOAT64", "FLOAT32", "TEXT"});
+        fmtCombo->addItems({"WAV", "FLOAT64", "FLOAT32", "S16_LE", "S32_LE", "TEXT"});
         fmtCombo->setCurrentText(item.format);
         connect(fmtCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, fmtCombo]() {
             m_items[i].format = fmtCombo->currentText();
@@ -173,6 +193,7 @@ void ConvolutionImportDlg::updateTable() {
         auto chSpin = new QSpinBox(this);
         chSpin->setRange(0, 15);
         chSpin->setValue(item.channel);
+        chSpin->setEnabled(item.format == "WAV");
         connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, i](int val) { m_items[i].channel = val; });
         m_fileTable->setCellWidget(row, 3, chSpin);
 

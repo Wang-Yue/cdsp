@@ -100,14 +100,14 @@ void AudioSettings::loadPreferences() {
     resamplerOversamplingFactor = s.value("resamplerOversamplingFactor", 128).toInt();
     resamplerWindow = s.value("resamplerWindow", "BlackmanHarris").toString().toStdString();
     resamplerFCutoff = s.value("resamplerFCutoff", 0.95).toDouble();
-    resamplerInterpolation = static_cast<ResamplerInterpolation>(
-        s.value("resamplerInterpolation", static_cast<int>(ResamplerInterpolation::Cubic)).toInt());
-    resamplerSincInterpolation = static_cast<SincInterpolation>(
-        s.value("resamplerSincInterpolation", static_cast<int>(SincInterpolation::Cubic)).toInt());
-    resamplerAppleQuality = static_cast<AppleResamplerQuality>(
-        s.value("resamplerAppleQuality", static_cast<int>(AppleResamplerQuality::Max)).toInt());
-    resamplerAppleComplexity = static_cast<AppleResamplerComplexity>(
-        s.value("resamplerAppleComplexity", static_cast<int>(AppleResamplerComplexity::Normal)).toInt());
+    resamplerInterpolation =
+        stringToResamplerInterpolation(s.value("resamplerInterpolation", "Cubic").toString().toStdString());
+    resamplerSincInterpolation =
+        stringToSincInterpolation(s.value("resamplerSincInterpolation", "Cubic").toString().toStdString());
+    resamplerAppleQuality =
+        stringToAppleResamplerQuality(s.value("resamplerAppleQuality", "Max").toString().toStdString());
+    resamplerAppleComplexity =
+        stringToAppleResamplerComplexity(s.value("resamplerAppleComplexity", "Normal").toString().toStdString());
 
     volume = s.value("volume", 0.0f).toFloat();
     isMuted = s.value("isMuted", false).toBool();
@@ -153,10 +153,13 @@ void AudioSettings::savePreferences() {
     s.setValue("resamplerOversamplingFactor", resamplerOversamplingFactor);
     s.setValue("resamplerWindow", QString::fromStdString(resamplerWindow));
     s.setValue("resamplerFCutoff", resamplerFCutoff);
-    s.setValue("resamplerInterpolation", static_cast<int>(resamplerInterpolation));
-    s.setValue("resamplerSincInterpolation", static_cast<int>(resamplerSincInterpolation));
-    s.setValue("resamplerAppleQuality", static_cast<int>(resamplerAppleQuality));
-    s.setValue("resamplerAppleComplexity", static_cast<int>(resamplerAppleComplexity));
+    s.setValue("resamplerInterpolation",
+               QString::fromStdString(resamplerInterpolationToString(resamplerInterpolation)));
+    s.setValue("resamplerSincInterpolation",
+               QString::fromStdString(sincInterpolationToString(resamplerSincInterpolation)));
+    s.setValue("resamplerAppleQuality", QString::fromStdString(appleResamplerQualityToString(resamplerAppleQuality)));
+    s.setValue("resamplerAppleComplexity",
+               QString::fromStdString(appleResamplerComplexityToString(resamplerAppleComplexity)));
 
     s.setValue("volume", volume);
     s.setValue("isMuted", isMuted);

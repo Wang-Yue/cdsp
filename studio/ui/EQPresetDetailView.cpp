@@ -53,7 +53,9 @@ void EQPresetDetailView::setupUi() {
             return;
         if (m_preset.name != text.toStdString()) {
             m_preset.name = text.toStdString();
-            applyConfig();
+            if (m_pipeline) {
+                m_pipeline->updateEQPreset(m_preset);
+            }
         }
     });
     headerLayout->addWidget(m_nameEdit);
@@ -61,11 +63,11 @@ void EQPresetDetailView::setupUi() {
     headerLayout->addWidget(new QLabel("Preamp:", this));
 
     m_preampSlider = new QSlider(Qt::Horizontal, this);
-    m_preampSlider->setRange(-360, 360);
+    m_preampSlider->setRange(-200, 120);
     m_preampSlider->setFixedWidth(100);
 
     m_preampSpin = new QDoubleSpinBox(this);
-    m_preampSpin->setRange(-36.0, 36.0);
+    m_preampSpin->setRange(-20.0, 12.0);
     m_preampSpin->setSingleStep(0.5);
     m_preampSpin->setSuffix(" dB");
     m_preampSpin->setFixedWidth(80);
@@ -193,7 +195,6 @@ void EQPresetDetailView::setupUi() {
 
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
-            refreshUi();
         }
     };
     m_diagramWidget->onBandQChanged = [this](int idx, double val) {
@@ -208,7 +209,6 @@ void EQPresetDetailView::setupUi() {
             }
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
-            refreshUi();
         }
     };
     m_diagramWidget->onBandSelected = [this](int idx) {
@@ -792,7 +792,7 @@ void EQPresetDetailView::onApplyCSV() {
     if (parsed.has_value()) {
         m_preset.preampGain = parsed->preampGain;
         m_preset.bands = parsed->bands;
-        m_pipeline->updateEQPreset(m_preset);
+        applyConfig();
         m_csvStatusLabel->setText("Applied EqualizerAPO syntax successfully!");
         refreshUi();
     } else {
@@ -803,6 +803,7 @@ void EQPresetDetailView::onApplyCSV() {
 void EQPresetDetailView::onCopyCSV() {
     QApplication::clipboard()->setText(m_csvTextEdit->toPlainText());
     m_csvStatusLabel->setText("Copied to clipboard!");
+    QTimer::singleShot(1500, this, [this]() { m_csvStatusLabel->setText("AutoEq / EqualizerAPO Syntax"); });
 }
 
 void EQPresetDetailView::applyConfig() {

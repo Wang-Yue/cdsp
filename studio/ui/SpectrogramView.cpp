@@ -73,31 +73,37 @@ static QColor interpColors(float t, const std::vector<QColor>& stops) {
 QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
 
+    QColor color;
     switch (palette) {
     case ColorPalette::Viridis: {
         static const std::vector<QColor> viridisStops = {QColor(68, 1, 84), QColor(59, 82, 139), QColor(33, 145, 140),
                                                          QColor(94, 201, 98), QColor(253, 231, 37)};
-        return interpColors(norm, viridisStops);
+        color = interpColors(norm, viridisStops);
+        break;
     }
     case ColorPalette::Magma: {
         static const std::vector<QColor> magmaStops = {QColor(0, 0, 4), QColor(81, 18, 124), QColor(182, 54, 121),
                                                        QColor(251, 136, 97), QColor(252, 253, 191)};
-        return interpColors(norm, magmaStops);
+        color = interpColors(norm, magmaStops);
+        break;
     }
     case ColorPalette::Plasma: {
         static const std::vector<QColor> plasmaStops = {QColor(13, 8, 135), QColor(126, 3, 168), QColor(204, 71, 120),
                                                         QColor(248, 149, 64), QColor(240, 249, 33)};
-        return interpColors(norm, plasmaStops);
+        color = interpColors(norm, plasmaStops);
+        break;
     }
     case ColorPalette::Inferno: {
         static const std::vector<QColor> infernoStops = {QColor(0, 0, 4), QColor(87, 16, 110), QColor(187, 55, 84),
                                                          QColor(249, 142, 9), QColor(252, 255, 164)};
-        return interpColors(norm, infernoStops);
+        color = interpColors(norm, infernoStops);
+        break;
     }
     case ColorPalette::Jet: {
         static const std::vector<QColor> jetStops = {QColor(0, 0, 143), QColor(0, 222, 255), QColor(163, 255, 87),
                                                      QColor(255, 153, 0), QColor(128, 0, 0)};
-        return interpColors(norm, jetStops);
+        color = interpColors(norm, jetStops);
+        break;
     }
     case ColorPalette::Default:
     default: {
@@ -115,6 +121,11 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
         }
     }
     }
+
+    if (norm < 0.2f) {
+        color.setAlphaF(norm / 0.2f);
+    }
+    return color;
 }
 
 void SpectrogramView::paintEvent(QPaintEvent* event) {

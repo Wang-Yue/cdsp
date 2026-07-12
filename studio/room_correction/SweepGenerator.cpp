@@ -23,12 +23,10 @@ std::vector<double> SweepGenerator::generate(double f1, double f2, double durati
 
     std::vector<double> sweep(n, 0.0);
     double invFs = 1.0 / static_cast<double>(sampleRate);
-    double stepMult = std::exp(r * invFs);
-    double expVal = 1.0;
 
     for (size_t i = 0; i < n; ++i) {
-        sweep[i] = std::sin(k * (expVal - 1.0));
-        expVal *= stepMult;
+        double t = static_cast<double>(i) * invFs;
+        sweep[i] = std::sin(k * (std::exp(r * t) - 1.0));
     }
 
     size_t inSamples = static_cast<size_t>(std::max(0.0, fadeInSeconds) * static_cast<double>(sampleRate));

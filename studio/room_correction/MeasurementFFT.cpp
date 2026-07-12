@@ -109,11 +109,11 @@ void MeasurementFFT::inverse(const std::vector<double>& inReal, const std::vecto
     size_t n = (bins - 1) * 2;
 
     std::vector<std::complex<double>> cIn(n);
-    for (size_t k = 0; k < bins; ++k) {
-        cIn[k] = std::complex<double>(inReal[k], inImag[k]);
-    }
-    // Hermite symmetry for real IFFT
+    cIn[0] = std::complex<double>(inReal[0], 0.0);
+    cIn[bins - 1] = std::complex<double>(inReal[bins - 1], 0.0);
+
     for (size_t k = 1; k < bins - 1; ++k) {
+        cIn[k] = std::complex<double>(inReal[k], inImag[k]);
         cIn[n - k] = std::complex<double>(inReal[k], -inImag[k]);
     }
 

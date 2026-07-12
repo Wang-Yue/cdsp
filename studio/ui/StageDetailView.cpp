@@ -132,7 +132,7 @@ void StageDetailView::setupUi() {
         if (m_stageIndex < m_pipeline->stages.size()) {
             m_pipeline->stages[m_stageIndex].isEnabled = checked;
             if (m_optionsContainer) {
-                m_optionsContainer->setEnabled(true);
+                m_optionsContainer->setEnabled(checked);
             }
             applyConfig();
         }
@@ -203,10 +203,11 @@ void StageDetailView::buildStageOptionsUi() {
         return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
-    m_optionsContainer->setEnabled(true);
+    m_optionsContainer->setEnabled(stage.isEnabled);
 
-    int incomingChannels =
+    int hwChannels =
         (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
+    int incomingChannels = m_pipeline ? m_pipeline->channelCountBeforeStage(m_stageIndex, hwChannels) : hwChannels;
     if (incomingChannels < 1)
         incomingChannels = 2;
 

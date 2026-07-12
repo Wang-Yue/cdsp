@@ -102,6 +102,11 @@ void PipelineStore::updateEQPreset(const EQPreset& preset) {
 }
 
 void PipelineStore::deleteEQPreset(const QUuid& id) {
+    for (auto& stage : stages) {
+        if (stage.eqPresetId == id) {
+            stage.eqPresetId = QUuid();
+        }
+    }
     eqPresets.erase(std::remove_if(eqPresets.begin(), eqPresets.end(), [&id](const EQPreset& p) { return p.id == id; }),
                     eqPresets.end());
     save();
@@ -127,6 +132,11 @@ void PipelineStore::updateConvPreset(const ConvolutionPreset& preset) {
 }
 
 void PipelineStore::deleteConvPreset(const QUuid& id) {
+    for (auto& stage : stages) {
+        if (stage.convPresetId == id) {
+            stage.convPresetId = QUuid();
+        }
+    }
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     for (const auto& preset : convPresets) {
         if (preset.id == id) {
@@ -184,10 +194,11 @@ void PipelineStore::load() {
     QSettings s("DSPMonitor", "MonitorQt");
     bool hasInitialized = false;
 
-    if (s.contains("stages")) {
+    QString stagesKey = s.contains("pipelineStages") ? "pipelineStages" : (s.contains("stages") ? "stages" : "");
+    if (!stagesKey.isEmpty()) {
         hasInitialized = true;
         stages.clear();
-        QJsonArray arr = QJsonDocument::fromJson(s.value("stages").toByteArray()).array();
+        QJsonArray arr = QJsonDocument::fromJson(s.value(stagesKey).toByteArray()).array();
         for (const auto& item : arr)
             stages.push_back(PipelineStage::fromJson(item.toObject()));
     }
@@ -215,7 +226,7 @@ void PipelineStore::save() {
     QJsonArray stagesArr;
     for (const auto& st : stages)
         stagesArr.append(st.toJson());
-    s.setValue("stages", QJsonDocument(stagesArr).toJson(QJsonDocument::Compact));
+    s.setValue("pipelineStages", QJsonDocument(stagesArr).toJson(QJsonDocument::Compact));
 
     QJsonArray eqArr;
     for (const auto& eq : eqPresets)

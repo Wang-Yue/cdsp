@@ -1,110 +1,12 @@
 #include "ui/ResamplerDetailView.h"
 
+#include "config/DSPConfigTypes.h"
 #include "ui/StyleTheme.h"
 
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
-static std::string sincInterpolationToString(SincInterpolation interp) {
-    switch (interp) {
-    case SincInterpolation::Nearest:
-        return "Nearest";
-    case SincInterpolation::Linear:
-        return "Linear";
-    case SincInterpolation::Quadratic:
-        return "Quadratic";
-    case SincInterpolation::Cubic:
-        return "Cubic";
-    }
-    return "Linear";
-}
-
-static SincInterpolation stringToSincInterpolation(const std::string& str) {
-    if (str == "Nearest")
-        return SincInterpolation::Nearest;
-    if (str == "Quadratic")
-        return SincInterpolation::Quadratic;
-    if (str == "Cubic")
-        return SincInterpolation::Cubic;
-    return SincInterpolation::Linear;
-}
-
-static std::string resamplerInterpolationToString(ResamplerInterpolation interp) {
-    switch (interp) {
-    case ResamplerInterpolation::Linear:
-        return "Linear";
-    case ResamplerInterpolation::Cubic:
-        return "Cubic";
-    case ResamplerInterpolation::Quintic:
-        return "Quintic";
-    case ResamplerInterpolation::Septic:
-        return "Septic";
-    }
-    return "Linear";
-}
-
-static ResamplerInterpolation stringToResamplerInterpolation(const std::string& str) {
-    if (str == "Cubic")
-        return ResamplerInterpolation::Cubic;
-    if (str == "Quintic")
-        return ResamplerInterpolation::Quintic;
-    if (str == "Septic")
-        return ResamplerInterpolation::Septic;
-    return ResamplerInterpolation::Linear;
-}
-
-static std::string resamplerAppleQualityToString(AppleResamplerQuality q) {
-    switch (q) {
-    case AppleResamplerQuality::Min:
-        return "Min";
-    case AppleResamplerQuality::Low:
-        return "Low";
-    case AppleResamplerQuality::Medium:
-        return "Medium";
-    case AppleResamplerQuality::High:
-        return "High";
-    case AppleResamplerQuality::Max:
-        return "Max";
-    }
-    return "Medium";
-}
-
-static AppleResamplerQuality stringToResamplerAppleQuality(const std::string& str) {
-    if (str == "Min")
-        return AppleResamplerQuality::Min;
-    if (str == "Low")
-        return AppleResamplerQuality::Low;
-    if (str == "High")
-        return AppleResamplerQuality::High;
-    if (str == "Max")
-        return AppleResamplerQuality::Max;
-    return AppleResamplerQuality::Medium;
-}
-
-static std::string resamplerAppleComplexityToString(AppleResamplerComplexity c) {
-    switch (c) {
-    case AppleResamplerComplexity::Linear:
-        return "Linear";
-    case AppleResamplerComplexity::Normal:
-        return "Normal";
-    case AppleResamplerComplexity::Mastering:
-        return "Mastering";
-    case AppleResamplerComplexity::MinimumPhase:
-        return "MinimumPhase";
-    }
-    return "Normal";
-}
-
-static AppleResamplerComplexity stringToResamplerAppleComplexity(const std::string& str) {
-    if (str == "Linear")
-        return AppleResamplerComplexity::Linear;
-    if (str == "Mastering")
-        return AppleResamplerComplexity::Mastering;
-    if (str == "MinimumPhase")
-        return AppleResamplerComplexity::MinimumPhase;
-    return AppleResamplerComplexity::Normal;
-}
 
 ResamplerDetailView::ResamplerDetailView(std::shared_ptr<AudioSettings> settings,
                                          std::shared_ptr<AudioDeviceManager> devices,
@@ -185,12 +87,12 @@ void ResamplerDetailView::setupUi() {
     m_typeForm->addRow("Cutoff Frequency Ratio:", m_fCutoffSpin);
 
     m_sincInterpCombo = new QComboBox(m_typeGroup);
-    m_sincInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
+    m_sincInterpCombo->addItems({"Nearest", "Linear", "Quadratic", "Cubic"});
     connect(m_sincInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Sinc Interpolation:", m_sincInterpCombo);
 
     m_polyInterpCombo = new QComboBox(m_typeGroup);
-    m_polyInterpCombo->addItems({"Linear", "Quadratic", "Cubic"});
+    m_polyInterpCombo->addItems({"Linear", "Cubic", "Quintic", "Septic"});
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Poly Interpolation:", m_polyInterpCombo);
 
@@ -200,7 +102,7 @@ void ResamplerDetailView::setupUi() {
     m_typeForm->addRow("Apple Quality:", m_appleQualityCombo);
 
     m_appleComplexityCombo = new QComboBox(m_typeGroup);
-    m_appleComplexityCombo->addItems({"Normal", "Mastering"});
+    m_appleComplexityCombo->addItems({"Linear", "Normal", "Mastering", "MinimumPhase"});
     connect(m_appleComplexityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Apple Algorithm:", m_appleComplexityCombo);
 
@@ -261,7 +163,7 @@ void ResamplerDetailView::updateVisibility() {
 void ResamplerDetailView::refreshUi() {
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
     if (m_typeGroup)
-        m_typeGroup->setEnabled(true);
+        m_typeGroup->setEnabled(m_settings->resamplerEnabled);
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
@@ -275,9 +177,9 @@ void ResamplerDetailView::refreshUi() {
     m_polyInterpCombo->setCurrentText(
         QString::fromStdString(resamplerInterpolationToString(m_settings->resamplerInterpolation)));
     m_appleQualityCombo->setCurrentText(
-        QString::fromStdString(resamplerAppleQualityToString(m_settings->resamplerAppleQuality)));
+        QString::fromStdString(appleResamplerQualityToString(m_settings->resamplerAppleQuality)));
     m_appleComplexityCombo->setCurrentText(
-        QString::fromStdString(resamplerAppleComplexityToString(m_settings->resamplerAppleComplexity)));
+        QString::fromStdString(appleResamplerComplexityToString(m_settings->resamplerAppleComplexity)));
 
     if (m_devices) {
         int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
@@ -305,9 +207,9 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerFCutoff = m_fCutoffSpin->value();
     m_settings->resamplerSincInterpolation = stringToSincInterpolation(m_sincInterpCombo->currentText().toStdString());
     m_settings->resamplerInterpolation = stringToResamplerInterpolation(m_polyInterpCombo->currentText().toStdString());
-    m_settings->resamplerAppleQuality = stringToResamplerAppleQuality(m_appleQualityCombo->currentText().toStdString());
+    m_settings->resamplerAppleQuality = stringToAppleResamplerQuality(m_appleQualityCombo->currentText().toStdString());
     m_settings->resamplerAppleComplexity =
-        stringToResamplerAppleComplexity(m_appleComplexityCombo->currentText().toStdString());
+        stringToAppleResamplerComplexity(m_appleComplexityCombo->currentText().toStdString());
     m_settings->savePreferences();
 
     if (m_dspController) {

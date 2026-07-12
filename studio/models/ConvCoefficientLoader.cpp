@@ -143,6 +143,22 @@ std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& p
         for (float val : fBuf)
             coeffs.push_back(static_cast<double>(val));
         return coeffs;
+    } else if (fmt == "S32_LE") {
+        size_t count = fileSize / sizeof(int32_t);
+        std::vector<int32_t> iBuf(count);
+        rawFile.read(reinterpret_cast<char*>(iBuf.data()), fileSize);
+        coeffs.reserve(count);
+        for (int32_t val : iBuf)
+            coeffs.push_back(static_cast<double>(val) / 2147483648.0);
+        return coeffs;
+    } else if (fmt == "S16_LE") {
+        size_t count = fileSize / sizeof(int16_t);
+        std::vector<int16_t> iBuf(count);
+        rawFile.read(reinterpret_cast<char*>(iBuf.data()), fileSize);
+        coeffs.reserve(count);
+        for (int16_t val : iBuf)
+            coeffs.push_back(static_cast<double>(val) / 32768.0);
+        return coeffs;
     }
 
     // Fallback to text reading

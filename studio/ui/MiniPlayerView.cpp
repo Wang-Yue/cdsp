@@ -230,13 +230,13 @@ void MiniPlayerView::setupUi() {
     auto vuBtn = new QPushButton("🎛️", this);
     vuBtn->setToolTip("Analog VU Meter");
     vuBtn->setFixedSize(24, 22);
-    connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
+    connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
     topBar->addWidget(vuBtn);
 
     auto mtrBtn = new QPushButton("📊", this);
     mtrBtn->setToolTip("Level Meters");
     mtrBtn->setFixedSize(24, 22);
-    connect(mtrBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
+    connect(mtrBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
     topBar->addWidget(mtrBtn);
 
     auto sgBtn = new QPushButton("🌌", this);

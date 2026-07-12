@@ -118,6 +118,7 @@ void ConvolutionPresetDetailView::refreshUi() {
     m_ratesLabel->setText(rateStrs.join(" / "));
 
     m_ratePreviewCombo->clear();
+    m_ratePreviewCombo->setVisible(rates.size() > 1);
     for (int r : rates) {
         m_ratePreviewCombo->addItem(QString("%1 Hz").arg(r), r);
     }

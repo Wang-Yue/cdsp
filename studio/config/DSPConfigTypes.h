@@ -119,6 +119,15 @@ enum class SincInterpolation { Nearest, Linear, Quadratic, Cubic };
 enum class AppleResamplerQuality { Min, Low, Medium, High, Max };
 enum class AppleResamplerComplexity { Linear, Normal, Mastering, MinimumPhase };
 
+std::string resamplerInterpolationToString(ResamplerInterpolation interp);
+ResamplerInterpolation stringToResamplerInterpolation(const std::string& str);
+std::string sincInterpolationToString(SincInterpolation interp);
+SincInterpolation stringToSincInterpolation(const std::string& str);
+std::string appleResamplerQualityToString(AppleResamplerQuality q);
+AppleResamplerQuality stringToAppleResamplerQuality(const std::string& str);
+std::string appleResamplerComplexityToString(AppleResamplerComplexity c);
+AppleResamplerComplexity stringToAppleResamplerComplexity(const std::string& str);
+
 enum class ConfigErrorType { ParseError, ValidationError, InvalidFilter, InvalidMixer, InvalidPipeline };
 
 struct ConfigError {

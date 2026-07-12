@@ -100,6 +100,9 @@ void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
 
     int count = 0;
     for (size_t i = 0; i < m_entries.size(); ++i) {
+        if (tokens.isEmpty() && count >= 50)
+            break;
+
         QString name = QString::fromStdString(m_entries[i].name);
         QString path = QString::fromStdString(m_entries[i].path);
 
