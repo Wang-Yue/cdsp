@@ -66,11 +66,15 @@ void LogRangeSlider::paintEvent(QPaintEvent* event) {
     p.setPen(QPen(QColor("#007aff"), 4, Qt::SolidLine, Qt::RoundCap));
     p.drawLine(xMin, yMid, xMax, yMid);
 
-    // Min and Max Handles
-    p.setPen(QPen(QColor("#ffffff"), 2));
-    p.setBrush(QColor("#007aff"));
-    p.drawEllipse(QPoint(xMin, yMid), 7, 7);
-    p.drawEllipse(QPoint(xMax, yMid), 7, 7);
+    // Min and Max Handles (White circle with blue outline matching SwiftUI)
+    auto drawHandle = [&](int x) {
+        p.setPen(QPen(QColor("#007aff"), 2));
+        p.setBrush(QColor("#ffffff"));
+        p.drawEllipse(QPoint(x, yMid), 8, 8);
+    };
+
+    drawHandle(xMin);
+    drawHandle(xMax);
 }
 
 void LogRangeSlider::mousePressEvent(QMouseEvent* event) {
@@ -79,21 +83,17 @@ void LogRangeSlider::mousePressEvent(QMouseEvent* event) {
         int xMin = freqToPos(m_minFreq);
         int xMax = freqToPos(m_maxFreq);
 
-        if (std::abs(x - xMin) <= 20) {
+        if (std::abs(x - xMin) <= 16) {
             m_activeHandle = 1;
-        } else if (std::abs(x - xMax) <= 20) {
+        } else if (std::abs(x - xMax) <= 16) {
             m_activeHandle = 2;
         } else {
-            // Pick closer handle
+            // Click outside handle hitboxes: pick closer handle without abrupt jump
             if (std::abs(x - xMin) < std::abs(x - xMax)) {
                 m_activeHandle = 1;
-                m_minFreq = std::min(posToFreq(x), m_maxFreq - 10.0);
             } else {
                 m_activeHandle = 2;
-                m_maxFreq = std::max(posToFreq(x), m_minFreq + 10.0);
             }
-            emit rangeChanged(m_minFreq, m_maxFreq);
-            update();
         }
         event->accept();
     }

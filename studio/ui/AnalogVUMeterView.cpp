@@ -192,9 +192,12 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
     QPointF pivot(rect.center().x(), rect.bottom() * effectivePivotY - rect.height() * (effectivePivotY - 1.0));
     double radius = rect.height() * 0.85 * effectiveRadiusScale;
 
+    double baseH = rect.top() + rect.height();
+    double scale = rect.height() / 160.0;
+
     // Focused Bulb Hot Spot Glow Shading
     if (m_settings.hotSpotAlpha > 0) {
-        QRadialGradient bulbGrad(QPointF(rect.center().x(), rect.bottom() + 5), rect.height() * 0.4);
+        QRadialGradient bulbGrad(QPointF(rect.center().x(), baseH + 5 * scale), rect.height() * 0.4);
         QColor hsColor = bulbHotSpotColor;
         hsColor.setAlphaF(m_settings.hotSpotAlpha);
         bulbGrad.setColorAt(0.0, hsColor);
@@ -205,7 +208,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angle
 
     // Ambient Glow
     if (m_settings.ambientGlow > 0) {
-        QRadialGradient glowGrad(QPointF(rect.center().x(), rect.bottom() + 10), rect.height() * 1.6);
+        QRadialGradient glowGrad(QPointF(rect.center().x(), baseH + 10 * scale), rect.height() * 1.6);
         QColor ambColor = bulbAmberColor;
         ambColor.setAlphaF(m_settings.ambientGlow);
         glowGrad.setColorAt(0.0, ambColor);
