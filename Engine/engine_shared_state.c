@@ -46,10 +46,7 @@ engine_shared_state_t* engine_shared_state_create(
       spsc_queue_create(processed_queue_depth > 0 ? processed_queue_depth : 16);
   engine_sem_init(&state->captured_semaphore);
   engine_sem_init(&state->processed_semaphore);
-  atomic_init(&state->should_stop, false);
-  atomic_init(&state->stop_reason_written, false);
-  atomic_init(&state->capture_finished, false);
-  atomic_init(&state->processing_finished, false);
+  atomic_init(&state->stop_requested, false);
   state->resampler_ratio = atomic_double_create(1.0);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
@@ -84,19 +81,28 @@ void engine_shared_state_free(engine_shared_state_t* state) {
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
-  bool expected = false;
-  // Atomically check if the stop reason has already been recorded.
-  // We use a first-reason-wins strategy to preserve the root cause of the stop.
-  if (atomic_compare_exchange_strong(&state->stop_reason_written, &expected,
-                                     true)) {
-    state->stop_reason = reason;
-  }
-  // Store should_stop with release ordering so the write becomes visible
-  // to the capture, processing, and playback loops immediately on their next
-  // check.
-  atomic_store_explicit(&state->should_stop, true, memory_order_release);
+  state->stop_reason = reason;
+  // Store stop_requested with release ordering so the write becomes visible
+  // to the capture loop immediately on its next check.
+  atomic_store_explicit(&state->stop_requested, true, memory_order_release);
 
-  // Wake up processing and playback threads if they are blocked waiting.
+  // Wake up capture thread so it can emit the in-band STOP message downstream.
   engine_sem_signal(state->captured_semaphore);
   engine_sem_signal(state->processed_semaphore);
+}
+
+audio_chunk_t* engine_shared_state_dequeue_blocking(
+    spsc_queue_t* queue, engine_semaphore_t* sem,
+    _Atomic bool* stop_requested) {
+  if (!queue || !sem || !stop_requested) return NULL;
+  while (1) {
+    audio_chunk_t* chunk = (audio_chunk_t*)spsc_queue_dequeue(queue);
+    if (chunk) {
+      return chunk;
+    }
+    if (atomic_load_explicit(stop_requested, memory_order_acquire)) {
+      return NULL;
+    }
+    engine_sem_wait(*sem);
+  }
 }

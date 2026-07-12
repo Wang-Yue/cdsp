@@ -203,8 +203,6 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
 
   engine_state_machine_set_state(core->state_machine,
                                  PROCESSING_STATE_STARTING);
-  atomic_store_explicit(&core->shared->should_stop, false,
-                        memory_order_release);
   logger_info(&logger, "Starting DSP engine");
 
   // Resolve capture/playback rates. `capture_samplerate` is the
@@ -488,11 +486,12 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   goto spawn_success;
 
 thread_error_2:
-  atomic_store_explicit(&core->shared->should_stop, true, memory_order_release);
-  engine_sem_signal(core->shared->captured_semaphore);
+  engine_shared_state_request_stop(
+      core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(core->processing_thread, NULL);
 thread_error_1:
-  atomic_store_explicit(&core->shared->should_stop, true, memory_order_release);
+  engine_shared_state_request_stop(
+      core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(core->capture_thread, NULL);
 thread_error_0:
   if (err) {
@@ -525,14 +524,8 @@ void dsp_engine_core_stop(dsp_engine_core_t* core,
   logger_t logger = logger_create("dsp.engine.core");
   logger_info(&logger, "Stopping engine");
 
-  // Signal to the three background loops that they should exit their execution
-  // loops.
-  atomic_store_explicit(&core->shared->should_stop, true, memory_order_release);
-
-  // Wake the loops out of their semaphore waits so they can
-  // observe `shouldStop` and exit cleanly.
-  engine_sem_signal(core->shared->captured_semaphore);
-  engine_sem_signal(core->shared->processed_semaphore);
+  // Dispatch in-band AudioMessage stop signal downstream
+  engine_shared_state_request_stop(core->shared, reason);
 
   // Wait for all audio threads to finish.
   if (core->threads_created) {

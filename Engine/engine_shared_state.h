@@ -11,8 +11,9 @@
  * used, allowing the loops to read/write fields without coordinating locks.
  *
  * @section concurrency_model Concurrency model
- * - `should_stop`: Written by `stop()`, read by all three loops every
- * iteration. Uses release-acquire atomic semantics.
+ * - In-Band AudioMessage Tagging (`AUDIO_MSG_DATA`, `AUDIO_MSG_EOF`,
+ * `AUDIO_MSG_STOP`): Passed sequentially through SPSC queues for zero-flag
+ * atomic coordination.
  * - `captured_queue`: SPSC, producer = capture, consumer = processing.
  * - `processed_queue`: SPSC, producer = processing, consumer = playback.
  * - `captured_semaphore`: Capture signals, processing waits.
@@ -206,26 +207,13 @@ typedef struct {
   engine_semaphore_t processed_semaphore;
 
   /**
-   * @brief Stop flag.
-   * Written exactly once (false → true) per engine run.
-   * Each loop polls between iterations and exits when set.
+   * @brief External trigger flag instructing the capture loop to emit an
+   * in-band STOP message.
    */
-  _Atomic bool should_stop;
+  _Atomic bool stop_requested;
 
   /**
-   * @brief Guard flag to ensure stop_reason is only written once (no
-   * write-write race).
-   */
-  _Atomic bool stop_reason_written;
-
-  /**
-   * @brief Pipeline status flags to propagate graceful EOF sequentially.
-   */
-  _Atomic bool capture_finished;
-  _Atomic bool processing_finished;
-
-  /**
-   * @brief Stop reason explaining why the loop stopped (e.g. format change).
+   * @brief Terminal stop reason explaining why the engine stopped.
    */
   processing_stop_reason_t stop_reason;
 
@@ -264,14 +252,25 @@ engine_shared_state_t* engine_shared_state_create(size_t captured_queue_depth,
 void engine_shared_state_free(engine_shared_state_t* state);
 
 /**
- * @brief Requests the engine loops to stop.
- *
- * Sets the `should_stop` flag and sets the stop reason.
+ * @brief Requests the engine loops to stop via in-band AudioMessage.
  *
  * @param state Pointer to the shared state.
  * @param reason The reason for stopping.
  */
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason);
+
+/**
+ * @brief Dequeues an audio chunk from an SPSC queue, blocking on the semaphore
+ * if empty.
+ *
+ * @param queue Pointer to the SPSC queue.
+ * @param sem Pointer to the semaphore to wait on when empty.
+ * @param stop_requested Pointer to the atomic stop requested flag.
+ * @return audio_chunk_t* Dequeued chunk, or NULL if the pipeline is stopping
+ * and queue is drained.
+ */
+audio_chunk_t* engine_shared_state_dequeue_blocking(
+    spsc_queue_t* queue, engine_semaphore_t* sem, _Atomic bool* stop_requested);
 
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

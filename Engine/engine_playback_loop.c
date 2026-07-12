@@ -44,6 +44,8 @@ struct engine_playback_loop {
   bool rate_adjust_enabled;
   double adjust_period;
   int target_level;
+  bool has_last_observed_playback_pending_rate;
+  double last_observed_playback_pending_rate;
 };
 
 /**
@@ -134,6 +136,37 @@ void engine_playback_loop_free(engine_playback_loop_t* loop) {
   free(loop);
 }
 
+/**
+ * @brief Handles terminal messages (EOF or STOP) or early stop requests in the
+ * playback loop.
+ *
+ * @param loop Pointer to the playback loop instance.
+ * @param chunk Pointer to the current audio chunk.
+ * @return true if playback loop should terminate, false otherwise.
+ */
+static bool engine_playback_loop_handle_terminal_chunk(
+    engine_playback_loop_t* loop, audio_chunk_t* chunk) {
+  audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
+  if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP ||
+      atomic_load_explicit(&loop->shared->stop_requested,
+                           memory_order_acquire)) {
+    processing_stop_reason_t chunk_reason = audio_chunk_get_stop_reason(chunk);
+    if (chunk_reason.type != STOP_REASON_NONE) {
+      loop->shared->stop_reason = chunk_reason;
+    } else if (msg_type == AUDIO_MSG_EOF &&
+               loop->shared->stop_reason.type == STOP_REASON_NONE) {
+      loop->shared->stop_reason =
+          (processing_stop_reason_t){.type = STOP_REASON_DONE};
+      snprintf(loop->shared->stop_reason.message,
+               sizeof(loop->shared->stop_reason.message), "EOF");
+    }
+    atomic_store_explicit(&loop->shared->stop_requested, true,
+                          memory_order_release);
+    return true;
+  }
+  return false;
+}
+
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.playback");
@@ -157,63 +190,69 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     stopwatch_restart(&stopwatch);
   }
 
-  while (1) {
-    engine_sem_wait(loop->shared->processed_semaphore);
-
-    bool emergency = atomic_load_explicit(&loop->shared->should_stop,
-                                          memory_order_acquire) &&
-                     loop->shared->stop_reason.type != STOP_REASON_DONE;
-    bool graceful = atomic_load_explicit(&loop->shared->processing_finished,
-                                         memory_order_acquire) &&
-                    spsc_queue_get_count(loop->shared->processed_queue) == 0;
-    if (emergency || graceful) {
+  audio_chunk_t* chunk = NULL;
+  while ((chunk = engine_shared_state_dequeue_blocking(
+              loop->shared->processed_queue, &loop->shared->processed_semaphore,
+              &loop->shared->stop_requested)) != NULL) {
+    if (engine_playback_loop_handle_terminal_chunk(loop, chunk)) {
       break;
     }
 
-    audio_chunk_t* chunk = NULL;
-    while ((chunk = (audio_chunk_t*)spsc_queue_dequeue(
-                loop->shared->processed_queue)) != NULL) {
-      // Calculate total buffer level: frames in the hardware playback buffer
-      // plus frames currently queued in the SPSC queue waiting to be written.
-      size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
-      size_t queued_frames =
-          spsc_queue_get_count(loop->shared->processed_queue) *
-          loop->chunk_size;
-      if (loop->processing_params) {
-        atomic_double_set(&loop->processing_params->buffer_level,
-                          (double)(ring_fill + queued_frames));
+    double rate = 0.0;
+    if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
+      if (!loop->has_last_observed_playback_pending_rate ||
+          rate != loop->last_observed_playback_pending_rate) {
+        loop->last_observed_playback_pending_rate = rate;
+        loop->has_last_observed_playback_pending_rate = true;
+        logger_warn(&logger,
+                    "Playback device rate changed to %f Hz; stopping engine",
+                    rate);
+        processing_stop_reason_t reason = {
+            .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
+            .format_change_rate = (int)(rate + 0.5)};
+        engine_shared_state_request_stop(loop->shared, reason);
+        break;
       }
+    }
 
-      if (loop->rate_adjust_enabled && rate_controller) {
-        averager_add(&averager, (double)(ring_fill + queued_frames));
+    // Calculate total buffer level: frames in the hardware playback buffer
+    // plus frames currently queued in the SPSC queue waiting to be written.
+    size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
+    size_t queued_frames =
+        spsc_queue_get_count(loop->shared->processed_queue) * loop->chunk_size;
+    if (loop->processing_params) {
+      atomic_double_set(&loop->processing_params->buffer_level,
+                        (double)(ring_fill + queued_frames));
+    }
 
-        // Only run the PI controller periodically to avoid rapid fluctuations
-        // and allow the physical/resampler adjustments to take effect.
-        if (stopwatch_elapsed_seconds(&stopwatch) >= loop->adjust_period) {
-          double avg = 0.0;
-          if (averager_get_average(&averager, &avg)) {
-            double speed = pi_rate_controller_next(rate_controller, avg);
-            stopwatch_restart(&stopwatch);
-            averager_restart(&averager);
-            apply_speed(loop, speed, &last_speed, avg);
-            if (loop->processing_params) {
-              atomic_double_set(&loop->processing_params->rate_adjust, speed);
-            }
+    if (loop->rate_adjust_enabled && rate_controller) {
+      averager_add(&averager, (double)(ring_fill + queued_frames));
+
+      // Only run the PI controller periodically to avoid rapid fluctuations
+      // and allow the physical/resampler adjustments to take effect.
+      if (stopwatch_elapsed_seconds(&stopwatch) >= loop->adjust_period) {
+        double avg = 0.0;
+        if (averager_get_average(&averager, &avg)) {
+          double speed = pi_rate_controller_next(rate_controller, avg);
+          stopwatch_restart(&stopwatch);
+          averager_restart(&averager);
+          apply_speed(loop, speed, &last_speed, avg);
+          if (loop->processing_params) {
+            atomic_double_set(&loop->processing_params->rate_adjust, speed);
           }
         }
       }
+    }
 
-      backend_error_t err;
-      backend_error_init(&err, BACKEND_ERROR_NONE, "");
-      bool ok = playback_backend_write(loop->playback, chunk, &err);
-      if (!ok || err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Playback error: %s", err.message);
-        processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
-        snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-        engine_shared_state_request_stop(loop->shared, reason);
-        if (rate_controller) pi_rate_controller_free(rate_controller);
-        return;
-      }
+    backend_error_t err;
+    backend_error_init(&err, BACKEND_ERROR_NONE, "");
+    bool ok = playback_backend_write(loop->playback, chunk, &err);
+    if (!ok || err.type != BACKEND_ERROR_NONE) {
+      logger_error(&logger, "Playback error: %s", err.message);
+      processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
+      snprintf(reason.message, sizeof(reason.message), "%s", err.message);
+      engine_shared_state_request_stop(loop->shared, reason);
+      break;
     }
   }
 

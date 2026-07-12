@@ -638,7 +638,8 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
   if (should_poll) {
     // Poll the file descriptor to see if data is readable.
     // Timeout is set to 50ms. If no data, return false (no data read) so that
-    // the engine capture loop doesn't block forever and can check should_stop.
+    // the engine capture loop doesn't block forever and can check stop
+    // requests.
     struct pollfd pfd = {
         .fd = fileno(capture->f), .events = POLLIN, .revents = 0};
     int poll_ret = poll(&pfd, 1, 50);
@@ -711,10 +712,15 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
   audio_chunk_set_valid_frames(chunk, frames_read);
 
   if (frames_read == 0) {
+    audio_chunk_set_msg_type(chunk, AUDIO_MSG_EOF);
+    audio_chunk_set_stop_reason(
+        chunk, (processing_stop_reason_t){.type = STOP_REASON_DONE});
     if (err) {
       backend_error_init(err, BACKEND_ERROR_READ_EOF,
                          "End of file/stream reached");
     }
+  } else {
+    audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
   }
 
   return (frames_read > 0);

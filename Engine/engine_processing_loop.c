@@ -142,176 +142,173 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
                                audio_chunk_get_frames(loop->pipeline_scratch),
                                loop->pipeline_rate);
 
-  while (1) {
-    engine_sem_wait(loop->shared->captured_semaphore);
+  audio_chunk_t* chunk = NULL;
+  audio_chunk_t* terminal_chunk = NULL;
 
-    bool emergency = atomic_load_explicit(&loop->shared->should_stop,
-                                          memory_order_acquire) &&
-                     loop->shared->stop_reason.type != STOP_REASON_DONE;
-    bool graceful = atomic_load_explicit(&loop->shared->capture_finished,
-                                         memory_order_acquire) &&
-                    spsc_queue_get_count(loop->shared->captured_queue) == 0;
-    if (emergency || graceful) {
+  while ((chunk = engine_shared_state_dequeue_blocking(
+              loop->shared->captured_queue, &loop->shared->captured_semaphore,
+              &loop->shared->stop_requested)) != NULL) {
+    audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
+    if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP) {
+      terminal_chunk = chunk;
       break;
     }
 
-    // Drain everything the capture thread enqueued since the last
-    // wake. One semaphore signal can correspond to multiple
-    // enqueues if the producer outran us briefly; the inner loop
-    // catches up before we wait again.
-    audio_chunk_t* chunk = NULL;
-    while ((chunk = (audio_chunk_t*)spsc_queue_dequeue(
-                loop->shared->captured_queue)) != NULL) {
-      uint64_t res_start = 0;
-      uint64_t res_end = 0;
-      if (loop->resampler) {
-        // Resample if configured. The desired ratio is published
-        // by the rate-adjust controller via `shared.resamplerRatio`;
-        // we sync the resampler to it once per chunk. The
-        // resampler's internal state is otherwise owned exclusively
-        // by this thread, so no lock is required.
-        double ratio = atomic_double_get(loop->shared->resampler_ratio);
-        audio_resampler_set_relative_ratio(loop->resampler, ratio);
+    uint64_t res_start = 0;
+    uint64_t res_end = 0;
+    if (loop->resampler) {
+      // Resample if configured. The desired ratio is published
+      // by the rate-adjust controller via `shared.resamplerRatio`;
+      // we sync the resampler to it once per chunk. The
+      // resampler's internal state is otherwise owned exclusively
+      // by this thread, so no lock is required.
+      double ratio = atomic_double_get(loop->shared->resampler_ratio);
+      audio_resampler_set_relative_ratio(loop->resampler, ratio);
 
-        // Write into the pre-sized output scratch (sized to
-        // `resampler.maxOutputFrames`), then make that scratch
-        // our working chunk. We can't `swap` here — a non-1:1
-        // resampler has different input/output chunk sizes, so
-        // swapping would leave scratch holding a too-small array
-        // on the next iteration.
-        res_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-        resampler_error_t rerr = audio_resampler_process(
-            loop->resampler, chunk, loop->resampler_scratch);
-        res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-        if (rerr != RESAMPLER_OK) {
-          logger_error(&logger, "Processing error: resampler error %d", rerr);
-          processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
-          snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
-                   rerr);
-          engine_shared_state_request_stop(loop->shared, reason);
-          return;
-        }
-        chunk = loop->resampler_scratch;
-      }
-
-      // Pre-processing tap for visualisation.
-      if (loop->on_chunk_captured) {
-        loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
-      }
-
-      // Run through the pipeline using pre-allocated output
-      // scratch.
-      pipeline_t* next_pipeline = atomic_exchange(&loop->next_pipeline, NULL);
-      if (next_pipeline) {
-        if (loop->active_pipeline) {
-          pipeline_transfer_state(next_pipeline, loop->active_pipeline);
-          if (!spsc_queue_enqueue(loop->shared->pipeline_garbage_queue,
-                                  loop->active_pipeline)) {
-            pipeline_free(loop->active_pipeline);
-          }
-        }
-        loop->active_pipeline = next_pipeline;
-      }
-
-      if (engine_state_machine_get_state(loop->state_machine) ==
-          PROCESSING_STATE_PAUSED) {
-        continue;
-      }
-
-      // Retrieve a pre-allocated scratch chunk from the round-robin pool.
-      // We must use a pool because the pipeline output chunk is passed down the
-      // queue to the playback thread, and we cannot reuse it immediately.
-      audio_chunk_t* current_scratch =
-          round_robin_chunk_pool_next(loop->scratch_pool);
-      uint64_t pipe_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-      pipeline_error_t perr =
-          pipeline_process(loop->active_pipeline, chunk, current_scratch);
-      uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-      if (perr != PIPELINE_OK) {
-        logger_error(&logger, "Processing error: pipeline error %d", perr);
+      // Write into the pre-sized output scratch (sized to
+      // `resampler.maxOutputFrames`), then make that scratch
+      // our working chunk. We can't `swap` here — a non-1:1
+      // resampler has different input/output chunk sizes, so
+      // swapping would leave scratch holding a too-small array
+      // on the next iteration.
+      res_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+      resampler_error_t rerr = audio_resampler_process(loop->resampler, chunk,
+                                                       loop->resampler_scratch);
+      res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+      if (rerr != RESAMPLER_OK) {
+        logger_error(&logger, "Processing error: resampler error %d", rerr);
         processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
-        snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
-                 perr);
+        snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
+                 rerr);
         engine_shared_state_request_stop(loop->shared, reason);
-        return;
+        audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
+        audio_chunk_set_stop_reason(chunk, reason);
+        terminal_chunk = chunk;
+        break;
       }
-      chunk = current_scratch;
-
-      // Calculate CPU load of the DSP pipeline and resampler.
-      // The load is the ratio of processing time (in nanoseconds) to the
-      // physical duration of the audio chunk. A load > 1.0 means we cannot
-      // process in real-time and will cause dropouts.
-      if (loop->processing_params) {
-        size_t frames = audio_chunk_get_valid_frames(chunk);
-        if (frames > 0) {
-          uint64_t chunk_duration_ns =
-              (uint64_t)frames * 1000000000ULL / loop->pipeline_rate;
-          if (chunk_duration_ns > 0) {
-            double p_load =
-                (double)(pipe_end - pipe_start) / (double)chunk_duration_ns;
-            atomic_double_set(&loop->processing_params->processing_load,
-                              p_load);
-
-            if (loop->resampler) {
-              double r_load =
-                  (double)(res_end - res_start) / (double)chunk_duration_ns;
-              atomic_double_set(&loop->processing_params->resampler_load,
-                                r_load);
-            } else {
-              atomic_double_set(&loop->processing_params->resampler_load, 0.0);
-            }
-          }
-        }
-
-        // Scan the output chunk for clipped samples (outside [-1.0, 1.0]
-        // range). This is done before DoP encoding.
-        size_t channels = audio_chunk_get_channels(chunk);
-        size_t c_frames = audio_chunk_get_valid_frames(chunk);
-        uint64_t clipped = 0;
-        for (size_t c = 0; c < channels; c++) {
-          mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
-          for (size_t f = 0; f < c_frames; f++) {
-            if (data[f] > 1.0 || data[f] < -1.0) {
-              clipped++;
-            }
-          }
-        }
-        if (clipped > 0) {
-          atomic_fetch_add_explicit(&loop->processing_params->clipped_samples,
-                                    clipped, memory_order_relaxed);
-        }
-      }
-
-      processing_parameters_update_playback_levels(loop->processing_params,
-                                                   chunk);
-
-      if (loop->on_chunk_processed) {
-        loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
-      }
-
-      // Encode PCM to DoP in place if enabled
-      if (loop->dop_encoder) {
-        dop_encoder_encode(loop->dop_encoder, chunk);
-      }
-
-      // Enqueue the processed chunk to the playback queue.
-      // If the queue is full (playback thread falling behind), we block-wait
-      // using a short sleep to avoid spinning and wasting CPU.
-      while (!spsc_queue_enqueue(loop->shared->processed_queue, chunk)) {
-        if (atomic_load_explicit(&loop->shared->should_stop,
-                                 memory_order_acquire)) {
-          break;
-        }
-        engine_yield();
-      }
-      engine_sem_signal(loop->shared->processed_semaphore);
+      chunk = loop->resampler_scratch;
     }
+
+    // Pre-processing tap for visualisation.
+    if (loop->on_chunk_captured) {
+      loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
+    }
+
+    // Run through the pipeline using pre-allocated output
+    // scratch.
+    pipeline_t* next_pipeline = atomic_exchange(&loop->next_pipeline, NULL);
+    if (next_pipeline) {
+      if (loop->active_pipeline) {
+        pipeline_transfer_state(next_pipeline, loop->active_pipeline);
+        if (!spsc_queue_enqueue(loop->shared->pipeline_garbage_queue,
+                                loop->active_pipeline)) {
+          pipeline_free(loop->active_pipeline);
+        }
+      }
+      loop->active_pipeline = next_pipeline;
+    }
+
+    if (engine_state_machine_get_state(loop->state_machine) ==
+        PROCESSING_STATE_PAUSED) {
+      continue;
+    }
+
+    // Retrieve a pre-allocated scratch chunk from the round-robin pool.
+    // We must use a pool because the pipeline output chunk is passed down the
+    // queue to the playback thread, and we cannot reuse it immediately.
+    audio_chunk_t* current_scratch =
+        round_robin_chunk_pool_next(loop->scratch_pool);
+    audio_chunk_set_msg_type(current_scratch, AUDIO_MSG_DATA);
+
+    uint64_t pipe_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    pipeline_error_t perr =
+        pipeline_process(loop->active_pipeline, chunk, current_scratch);
+    uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    if (perr != PIPELINE_OK) {
+      logger_error(&logger, "Processing error: pipeline error %d", perr);
+      processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
+      snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
+               perr);
+      engine_shared_state_request_stop(loop->shared, reason);
+      audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
+      audio_chunk_set_stop_reason(chunk, reason);
+      terminal_chunk = chunk;
+      break;
+    }
+    chunk = current_scratch;
+
+    // Calculate CPU load of the DSP pipeline and resampler.
+    // The load is the ratio of processing time (in nanoseconds) to the
+    // physical duration of the audio chunk. A load > 1.0 means we cannot
+    // process in real-time and will cause dropouts.
+    if (loop->processing_params) {
+      size_t frames = audio_chunk_get_valid_frames(chunk);
+      if (frames > 0) {
+        uint64_t chunk_duration_ns =
+            (uint64_t)frames * 1000000000ULL / loop->pipeline_rate;
+        if (chunk_duration_ns > 0) {
+          double p_load =
+              (double)(pipe_end - pipe_start) / (double)chunk_duration_ns;
+          atomic_double_set(&loop->processing_params->processing_load, p_load);
+
+          if (loop->resampler) {
+            double r_load =
+                (double)(res_end - res_start) / (double)chunk_duration_ns;
+            atomic_double_set(&loop->processing_params->resampler_load, r_load);
+          } else {
+            atomic_double_set(&loop->processing_params->resampler_load, 0.0);
+          }
+        }
+      }
+
+      // Scan the output chunk for clipped samples (outside [-1.0, 1.0]
+      // range). This is done before DoP encoding.
+      size_t channels = audio_chunk_get_channels(chunk);
+      size_t c_frames = audio_chunk_get_valid_frames(chunk);
+      uint64_t clipped = 0;
+      for (size_t c = 0; c < channels; c++) {
+        mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
+        for (size_t f = 0; f < c_frames; f++) {
+          if (data[f] > 1.0 || data[f] < -1.0) {
+            clipped++;
+          }
+        }
+      }
+      if (clipped > 0) {
+        atomic_fetch_add_explicit(&loop->processing_params->clipped_samples,
+                                  clipped, memory_order_relaxed);
+      }
+    }
+
+    processing_parameters_update_playback_levels(loop->processing_params,
+                                                 chunk);
+
+    if (loop->on_chunk_processed) {
+      loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
+    }
+
+    // Encode PCM to DoP in place if enabled
+    if (loop->dop_encoder) {
+      dop_encoder_encode(loop->dop_encoder, chunk);
+    }
+
+    // Enqueue the processed chunk to the playback queue.
+    // If the queue is full (playback thread falling behind), we block-wait
+    // using a short sleep to avoid spinning and wasting CPU.
+    while (!spsc_queue_enqueue(loop->shared->processed_queue, chunk)) {
+      if (atomic_load_explicit(&loop->shared->stop_requested,
+                               memory_order_acquire)) {
+        break;
+      }
+      engine_yield();
+    }
+    engine_sem_signal(loop->shared->processed_semaphore);
   }
 
-  // Propagate graceful shutdown sequentially.
-  atomic_store_explicit(&loop->shared->processing_finished, true,
-                        memory_order_release);
-  engine_sem_signal(loop->shared->processed_semaphore);
+  if (terminal_chunk) {
+    spsc_queue_enqueue(loop->shared->processed_queue, terminal_chunk);
+    engine_sem_signal(loop->shared->processed_semaphore);
+  }
 
   logger_info(&logger, "Processing thread stopped");
 }

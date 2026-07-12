@@ -894,7 +894,7 @@ static void iface_set_config_path(void* ctx, const char* path) {
 /**
  * @brief Checks if the running audio threads have requested the engine to stop.
  *
- * Querying the atomic flag `should_stop` from the core's shared state informs
+ * Querying `stop_requested` from the core's shared state informs
  * the main engine thread that a thread has failed (e.g. buffer
  * underrun/overrun, device disconnected, etc.) and the engine needs to halt
  * processing.
@@ -906,7 +906,7 @@ static void iface_set_config_path(void* ctx, const char* path) {
 static bool dsp_engine_check_stop_requested(
     dsp_engine_t* engine, processing_stop_reason_t* out_reason) {
   if (!engine || !engine->core || !engine->core->shared) return false;
-  bool req = atomic_load_explicit(&engine->core->shared->should_stop,
+  bool req = atomic_load_explicit(&engine->core->shared->stop_requested,
                                   memory_order_acquire);
   if (req && out_reason) {
     *out_reason = engine->core->shared->stop_reason;

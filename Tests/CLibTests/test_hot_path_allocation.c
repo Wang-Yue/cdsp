@@ -1154,8 +1154,8 @@ TEST(PipelineReload_AllocationFree) {
                                    reload_iter_c, &ctx);
 
   // Stop the thread
-  atomic_store_explicit(&shared->should_stop, true, memory_order_release);
-  engine_sem_signal(shared->captured_semaphore);
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(thread, NULL);
 
   // Cleanup

@@ -37,8 +37,6 @@ struct engine_capture_loop {
   size_t samplerate;
   double last_observed_pending_rate;
   bool has_last_observed_pending_rate;
-  double last_observed_playback_pending_rate;
-  bool has_last_observed_playback_pending_rate;
 
   silence_counter_t* silence_counter;
   round_robin_chunk_pool_t* chunk_pool;
@@ -132,17 +130,25 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   logger_t logger = logger_create("dsp.capture");
   logger_info(&logger, "Capture thread started");
 
-  // Set real-time execution priority parameters for this thread.
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
-
   sample_rate_watcher_reset(loop->rate_watcher);
 
-  while (
-      !atomic_load_explicit(&loop->shared->should_stop, memory_order_acquire)) {
+  audio_chunk_t* stop_chunk = NULL;
+
+  while (1) {
+    if (atomic_load_explicit(&loop->shared->stop_requested,
+                             memory_order_acquire)) {
+      stop_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+      audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
+      audio_chunk_set_stop_reason(stop_chunk, loop->shared->stop_reason);
+      break;
+    }
+
     if (engine_state_machine_get_state(loop->state_machine) ==
         PROCESSING_STATE_PAUSED) {
       sample_rate_watcher_reset(loop->rate_watcher);
     }
+
     // 1. Hardware Sample-Rate Change Check:
     // Check if the hardware sample rates have drifted or been explicitly
     // modified (e.g. by another application or OS settings). An unexpected
@@ -161,21 +167,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
         engine_shared_state_request_stop(loop->shared, reason);
-        break;
-      }
-    }
-    if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
-      if (!loop->has_last_observed_playback_pending_rate ||
-          rate != loop->last_observed_playback_pending_rate) {
-        loop->last_observed_playback_pending_rate = rate;
-        loop->has_last_observed_playback_pending_rate = true;
-        logger_warn(&logger,
-                    "Playback device rate changed to %f Hz; stopping engine",
-                    rate);
-        processing_stop_reason_t reason = {
-            .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
-            .format_change_rate = (int)(rate + 0.5)};
-        engine_shared_state_request_stop(loop->shared, reason);
+        stop_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+        audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
+        audio_chunk_set_stop_reason(stop_chunk, reason);
         break;
       }
     }
@@ -195,7 +189,10 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             "Capture reached End-of-Stream; stopping engine gracefully");
         processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
         snprintf(reason.message, sizeof(reason.message), "EOF");
-        engine_shared_state_request_stop(loop->shared, reason);
+
+        audio_chunk_set_msg_type(chunk, AUDIO_MSG_EOF);
+        audio_chunk_set_stop_reason(chunk, reason);
+        stop_chunk = chunk;
         break;
       }
       // If reading fails with an error, trigger an engine stop.
@@ -203,13 +200,12 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         logger_error(&logger, "Capture error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-        engine_shared_state_request_stop(loop->shared, reason);
+
+        audio_chunk_set_msg_type(chunk, AUDIO_MSG_STOP);
+        audio_chunk_set_stop_reason(chunk, reason);
+        stop_chunk = chunk;
         break;
       }
-      // If we should stop, exit the thread loop.
-      if (atomic_load_explicit(&loop->shared->should_stop,
-                               memory_order_acquire))
-        break;
       // If the engine is in a PAUSED state (no active input signal), reset the
       // watchdog timer to avoid triggering stall warnings while waiting for
       // signal.
@@ -265,6 +261,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
         engine_shared_state_request_stop(loop->shared, reason);
+        stop_chunk = chunk;
+        audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
+        audio_chunk_set_stop_reason(stop_chunk, reason);
         break;
       } else {
         logger_info(
@@ -306,27 +305,19 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     }
 
     // 8. Enqueue Captured Chunk:
-    // If the engine is running (not paused), push the chunk pointer into the
-    // bounded lock-free SPSC queue. If the queue is full, sleep briefly to
-    // yield CPU and propagate backpressure upstream.
+    // Push the chunk pointer into the bounded lock-free SPSC queue.
     if (engine_state_machine_get_state(loop->state_machine) !=
         PROCESSING_STATE_PAUSED) {
-      while (!spsc_queue_enqueue(loop->shared->captured_queue, chunk)) {
-        if (atomic_load_explicit(&loop->shared->should_stop,
-                                 memory_order_acquire)) {
-          break;
-        }
-        engine_yield();
-      }
-      // Signal the processing thread that a new chunk is available.
+      audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
+      spsc_queue_enqueue(loop->shared->captured_queue, chunk);
       engine_sem_signal(loop->shared->captured_semaphore);
     }
   }
 
-  // Propagate graceful shutdown sequentially.
-  atomic_store_explicit(&loop->shared->capture_finished, true,
-                        memory_order_release);
-  engine_sem_signal(loop->shared->captured_semaphore);
+  if (stop_chunk) {
+    spsc_queue_enqueue(loop->shared->captured_queue, stop_chunk);
+    engine_sem_signal(loop->shared->captured_semaphore);
+  }
 
   logger_info(&logger, "Capture thread stopped");
 }
