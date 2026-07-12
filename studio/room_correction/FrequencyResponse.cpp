@@ -101,9 +101,7 @@ FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetF
 }
 
 FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycles, int targetFftSize) {
-    int n = targetFftSize;
-    if (n <= 0)
-        n = static_cast<int>(ir.samples.size());
+    int n = std::max(targetFftSize, static_cast<int>(ir.samples.size()));
     if (n % 2 != 0)
         n += 1;
     size_t bins = n / 2 + 1;

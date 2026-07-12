@@ -67,8 +67,8 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     double plotW = w - totalShiftX;
     double plotH = h - totalDepthY;
 
-    double fMin = 20.0, fMax = 1000.0;
-    double floorDB = -40.0;
+    double fMin = m_fMin, fMax = m_fMax;
+    double floorDB = m_floorDB;
     double logMin = std::log10(fMin);
     double logMax = std::log10(fMax);
 

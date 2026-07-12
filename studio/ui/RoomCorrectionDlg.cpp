@@ -333,6 +333,15 @@ void RoomCorrectionDlg::refreshSessionUi() {
         m_frDiagramWidget->setPreset(m_session.correctionPreset.value());
     }
 
+    // Forward Measurement Reference Overlays to Diagram Widget
+    EQReferenceOverlayData overlay;
+    overlay.frequencies = m_session.grid;
+    overlay.measuredMagDB = m_session.displayedMagDB();
+    overlay.targetCurve = m_session.targetCurve();
+    overlay.showCorrected = true;
+    overlay.active = !overlay.measuredMagDB.empty() && m_session.correctionPreset.has_value();
+    m_frDiagramWidget->setReferenceOverlay(overlay);
+
     if (m_session.measuredIR.has_value()) {
         m_waterfallWidget->recomputeSTFTAsync(m_session.measuredIR.value());
     }
@@ -379,9 +388,11 @@ void RoomCorrectionDlg::onLoadTargetCurve() {
         auto cal = CalibrationCurve::load(path.toStdString());
         if (cal.has_value()) {
             TargetCurve tc;
+            std::vector<TargetBreakpoint> bps;
             for (size_t i = 0; i < cal->frequencies.size(); ++i) {
-                tc.breakpoints.push_back({cal->frequencies[i], cal->magnitudesDB[i]});
+                bps.push_back({cal->frequencies[i], cal->magnitudesDB[i]});
             }
+            tc.setBreakpoints(bps);
             m_session.customTarget = tc;
             m_session.recomputeAverage();
             QMessageBox::information(this, "Target Loaded", "Loaded custom target curve successfully!");
@@ -396,6 +407,8 @@ void RoomCorrectionDlg::onRunFit() {
     m_session.maxGainDB = m_maxGainSpin->value();
     m_session.modalMode = m_modalCheck->isChecked();
     m_session.schroederHz = m_schroederSpin->value();
+
+    m_session.customTarget = std::nullopt;
 
     switch (m_targetPresetCombo->currentIndex()) {
     case 0:
