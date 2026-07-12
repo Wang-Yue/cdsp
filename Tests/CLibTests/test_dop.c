@@ -218,4 +218,80 @@ TEST(DoPRoundtripSINAD) {
   }
 }
 
+TEST(DoPVariableChunkRoundtrip) {
+  double pcm_sample_rate = 176400.0;
+  dop_encoder_t* encoder =
+      dop_encoder_create(1, pcm_sample_rate, true, SDM_FILTER_SDM6, 20000.0);
+  dop_decoder_t* decoder =
+      dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+
+  double frames_per_cycle = pcm_sample_rate / 1000.0;
+  int active_frames = (int)round(frames_per_cycle * 10.0);
+  int settle_frames = (int)round(frames_per_cycle * 4.0);
+  int total_frames = settle_frames + active_frames;
+
+  double* input_buf = (double*)calloc(total_frames, sizeof(double));
+  double* output_buf = (double*)calloc(total_frames, sizeof(double));
+  double amplitude = 0.7071;
+  for (int t = 0; t < total_frames; t++) {
+    input_buf[t] =
+        amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / pcm_sample_rate);
+  }
+
+  int chunk_sizes[] = {200, 50, 400, 1000, 5, 815};
+  int num_chunks = sizeof(chunk_sizes) / sizeof(chunk_sizes[0]);
+
+  int offset = 0;
+  for (int i = 0; i < num_chunks; i++) {
+    int sz = chunk_sizes[i];
+    audio_chunk_t* chunk = audio_chunk_create(sz, 1);
+    double* ch_data = audio_chunk_get_channel(chunk, 0);
+    memcpy(ch_data, input_buf + offset, sz * sizeof(double));
+    audio_chunk_set_valid_frames(chunk, sz);
+
+    dop_encoder_encode(encoder, chunk);
+    bool processed = dop_decoder_detect_and_process(decoder, chunk);
+    if (offset >= 32) {
+      ASSERT_TRUE(processed);
+      ASSERT_TRUE(dop_decoder_is_active(decoder));
+    }
+
+    memcpy(output_buf + offset, audio_chunk_get_channel(chunk, 0),
+           sz * sizeof(double));
+    audio_chunk_free(chunk);
+    offset += sz;
+  }
+
+  double target_freq = 1000.0;
+  double cos_sum = 0.0;
+  double sin_sum = 0.0;
+  for (int t = settle_frames; t < total_frames; t++) {
+    double angle = 2.0 * M_PI * target_freq * (double)t / pcm_sample_rate;
+    cos_sum += output_buf[t] * cos(angle);
+    sin_sum += output_buf[t] * sin(angle);
+  }
+  double cos_amp = (2.0 / (double)active_frames) * cos_sum;
+  double sin_amp = (2.0 / (double)active_frames) * sin_sum;
+  double fundamental_power = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+
+  double total_power = 0.0;
+  for (int t = settle_frames; t < total_frames; t++) {
+    total_power += output_buf[t] * output_buf[t];
+  }
+  total_power /= (double)active_frames;
+
+  double noise_power = total_power - fundamental_power;
+  if (noise_power < 1e-20) noise_power = 1e-20;
+  double sinad = 10.0 * log10(fundamental_power / noise_power);
+
+  ASSERT_TRUE(sinad >= 90.0);
+
+  free(input_buf);
+  free(output_buf);
+  dop_decoder_free(decoder);
+  dop_encoder_free(encoder);
+}
+
 TEST_MAIN()

@@ -974,4 +974,42 @@ TEST(PipelineReload_StatePreserved) {
   processing_parameters_free(params);
 }
 
+TEST(PipelineProcessPartialChunk) {
+  dsp_config_t config;
+  init_default_config(&config);
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipeline = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline != NULL);
+
+  audio_chunk_t* chunk = audio_chunk_create(1024, 2);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t buf = audio_chunk_get_channel(chunk, ch);
+    for (size_t t = 0; t < 1024; t++) {
+      buf[t] = sin(2.0 * M_PI * 1000.0 * (double)t / 44100.0);
+    }
+  }
+  // Configured chunk size is 1024, but we only pass 500 frames of valid data.
+  size_t partial_frames = 500;
+  audio_chunk_set_valid_frames(chunk, partial_frames);
+
+  audio_chunk_t* output = audio_chunk_create(1024, 2);
+  pipeline_error_t err = pipeline_process(pipeline, chunk, output);
+  ASSERT_EQ(PIPELINE_OK, err);
+  ASSERT_EQ(partial_frames, audio_chunk_get_valid_frames(output));
+  ASSERT_EQ(2, audio_chunk_get_channels(output));
+
+  for (size_t ch = 0; ch < 2; ch++) {
+    waveform_t in_buf = audio_chunk_get_channel(chunk, ch);
+    waveform_t out_buf = audio_chunk_get_channel(output, ch);
+    for (size_t t = 0; t < partial_frames; t++) {
+      ASSERT_NEAR(in_buf[t], out_buf[t], 1e-9);
+    }
+  }
+
+  audio_chunk_free(chunk);
+  audio_chunk_free(output);
+  pipeline_free(pipeline);
+  processing_parameters_free(params);
+}
+
 TEST_MAIN()
