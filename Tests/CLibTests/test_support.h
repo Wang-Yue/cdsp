@@ -9,6 +9,45 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
+#include <stdarg.h>
+
+static inline int custom_snprintf(char* str, size_t size, const char* format,
+                                  ...) {
+  va_list args;
+  va_start(args, format);
+  int ret;
+  if (strncmp(format, "/tmp/", 5) == 0) {
+    char temp[512];
+    ret = vsnprintf(temp, sizeof(temp), format, args);
+    if (ret >= 0 && ret < (int)sizeof(temp)) {
+      char* dot = strrchr(temp, '.');
+      if (dot && strcmp(dot, ".raw") == 0) {
+        *dot = '\0';
+        ret = (snprintf)(str, size, "%s_%d.raw", temp, getpid());
+      } else if (dot && strcmp(dot, ".yaml") == 0) {
+        *dot = '\0';
+        ret = (snprintf)(str, size, "%s_%d.yaml", temp, getpid());
+      } else {
+        ret = (snprintf)(str, size, "%s_%d", temp, getpid());
+      }
+    }
+  } else {
+    ret = vsnprintf(str, size, format, args);
+  }
+  va_end(args);
+  return ret;
+}
+
+#define snprintf(buf, size, fmt, ...) \
+  custom_snprintf(buf, size, fmt, ##__VA_ARGS__)
+
 static int g_test_count = 0;
 static int g_test_failures = 0;
 
@@ -118,7 +157,33 @@ static inline void register_test(const char* name, test_func_t func) {
   } while (0)
 
 #define TEST_MAIN()                                                         \
-  int main(void) {                                                          \
+  int main(int argc, char* argv[]) {                                        \
+    if (argc > 1 && strcmp(argv[1], "--list") == 0) {                       \
+      test_entry_t* curr = g_test_head;                                     \
+      while (curr) {                                                        \
+        printf("%s\n", curr->name);                                         \
+        curr = curr->next;                                                  \
+      }                                                                     \
+      return 0;                                                             \
+    }                                                                       \
+    const char* run_only = NULL;                                            \
+    if (argc > 2 && strcmp(argv[1], "--run") == 0) {                        \
+      run_only = argv[2];                                                   \
+    } else if (argc > 1) {                                                  \
+      run_only = argv[1];                                                   \
+    }                                                                       \
+    if (run_only) {                                                         \
+      test_entry_t* curr = g_test_head;                                     \
+      while (curr) {                                                        \
+        if (strcmp(curr->name, run_only) == 0) {                            \
+          curr->func();                                                     \
+          return g_test_failures > 0 ? 1 : 0;                               \
+        }                                                                   \
+        curr = curr->next;                                                  \
+      }                                                                     \
+      fprintf(stderr, "Test '%s' not found\n", run_only);                   \
+      return 2;                                                             \
+    }                                                                       \
     printf("\n=== Running Registered C Tests ===\n\n");                     \
     test_entry_t* curr = g_test_head;                                       \
     while (curr) {                                                          \

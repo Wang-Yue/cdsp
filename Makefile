@@ -264,12 +264,7 @@ test-rust-build:
 	fi
 
 test: test-rust-build $(UNIT_TEST_BINS)
-	@echo "\n=== Running C Unit Tests ==="
-	@for bin in $(UNIT_TEST_BINS); do \
-		echo ""; \
-		$$bin || exit 1; \
-	done
-	@echo "\n✅ All C unit tests passed!"
+	@python3 Tests/run_tests.py $(UNIT_TEST_BINS)
 
 bench: test-rust-build $(BENCH_BINS)
 	@echo "\n=== Running C Benchmark Tests ==="

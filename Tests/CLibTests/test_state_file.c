@@ -6,7 +6,8 @@
 #include "test_support.h"
 
 TEST(test_state_file_round_trip) {
-  const char* test_file = "test_state.yaml";
+  char test_file[256];
+  snprintf(test_file, sizeof(test_file), "test_state_%d.yaml", getpid());
 
   dsp_state_t* original = dsp_state_create();
   ASSERT_TRUE(original != NULL);
@@ -51,7 +52,9 @@ TEST(test_state_file_round_trip) {
 }
 
 TEST(test_state_file_no_config_path) {
-  const char* test_file = "test_state_no_path.yaml";
+  char test_file[256];
+  snprintf(test_file, sizeof(test_file), "test_state_no_path_%d.yaml",
+           getpid());
 
   dsp_state_t* original = dsp_state_create();
   ASSERT_TRUE(original != NULL);

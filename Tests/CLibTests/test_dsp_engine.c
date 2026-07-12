@@ -661,34 +661,43 @@ TEST(DSPEngineE2E_JACK) {
 }
 
 TEST(DSPEngineE2E_GeneratorFile) {
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Generator\",\n"
-      "            \"channels\": 2,\n"
-      "            \"signal\": {\n"
-      "                \"type\": \"Sine\",\n"
-      "                \"freq\": 1000.0,\n"
-      "                \"level\": -6.0\n"
-      "            }\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/tmp/e2e_out.raw\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_out_%d.raw", getpid());
+  remove(out_file);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -6.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
   run_e2e_test_config(json, "Generator -> File");
+  remove(out_file);
 }
 
 TEST(DSPEngineE2E_FileFile) {
-  const char* in_file = "/tmp/e2e_in.raw";
-  const char* out_file = "/tmp/e2e_out.raw";
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/e2e_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_out_%d.raw", getpid());
   remove(in_file);
   remove(out_file);
 
@@ -701,25 +710,27 @@ TEST(DSPEngineE2E_FileFile) {
   fwrite(input_samples, sizeof(int16_t), 1024 * 2, f);
   fclose(f);
 
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/tmp/e2e_in.raw\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/tmp/e2e_out.raw\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, out_file);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -751,31 +762,35 @@ TEST(DSPEngineE2E_FileFile) {
 }
 
 TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
-  const char* out_filename = "/tmp/e2e_out_speed.raw";
+  char out_filename[256];
+  snprintf(out_filename, sizeof(out_filename), "/tmp/e2e_out_speed_%d.raw",
+           getpid());
   remove(out_filename);
 
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Generator\",\n"
-      "            \"channels\": 2,\n"
-      "            \"signal\": {\n"
-      "                \"type\": \"Sine\",\n"
-      "                \"freq\": 1000.0,\n"
-      "                \"level\": -6.0\n"
-      "            }\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/tmp/e2e_out_speed.raw\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -6.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_filename);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -1031,8 +1046,10 @@ TEST(DSPEngineASIOSetConfigStruct) {
 
 static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
                                    int total_frames, bool test_time) {
-  const char* in_file = "/tmp/e2e_rt_in.raw";
-  const char* out_file = "/tmp/e2e_rt_out.raw";
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/e2e_rt_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_rt_out_%d.raw", getpid());
   remove(in_file);
   remove(out_file);
 

@@ -12,7 +12,9 @@
 #include "test_support.h"
 
 TEST(FileBackendRawRoundTrip) {
-  const char* raw_filename = "/tmp/test_file_backend_roundtrip.raw";
+  char raw_filename[256];
+  snprintf(raw_filename, sizeof(raw_filename),
+           "/tmp/test_file_backend_roundtrip_%d.raw", getpid());
   remove(raw_filename);
 
   // 1. Write raw float values to file
@@ -83,7 +85,9 @@ TEST(FileBackendRawRoundTrip) {
 }
 
 TEST(FileBackendWavRoundTrip) {
-  const char* wav_filename = "/tmp/test_file_backend_roundtrip.wav";
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_roundtrip_%d.wav", getpid());
   remove(wav_filename);
 
   // 1. Write WAV file (S16 format)
@@ -155,7 +159,9 @@ TEST(FileBackendWavRoundTrip) {
 }
 
 TEST(FileBackendPauseThrottling) {
-  const char* raw_filename = "/tmp/test_file_backend_pause.raw";
+  char raw_filename[256];
+  snprintf(raw_filename, sizeof(raw_filename),
+           "/tmp/test_file_backend_pause_%d.raw", getpid());
   remove(raw_filename);
 
   // 1. Write 200 frames to temp file
@@ -239,7 +245,9 @@ TEST(FileBackendPauseThrottling) {
 
 static void run_format_roundtrip_test(binary_sample_format_t format,
                                       double eps) {
-  const char* raw_filename = "/tmp/test_file_backend_roundtrip_tmp.raw";
+  char raw_filename[256];
+  snprintf(raw_filename, sizeof(raw_filename),
+           "/tmp/test_file_backend_roundtrip_tmp_%d.raw", getpid());
   remove(raw_filename);
 
   playback_device_config_t play_cfg;
@@ -336,7 +344,9 @@ TEST(FileBackendF64RoundTrip) {
 }
 
 TEST(FileBackendRealtimeThrottling) {
-  const char* raw_filename = "/tmp/test_file_backend_realtime.raw";
+  char raw_filename[256];
+  snprintf(raw_filename, sizeof(raw_filename),
+           "/tmp/test_file_backend_realtime_%d.raw", getpid());
   remove(raw_filename);
 
   int sample_rate = 44100;
@@ -437,7 +447,9 @@ TEST(FileBackendRealtimeThrottling) {
 }
 
 TEST(FileBackendPlaybackRealtimeThrottling) {
-  const char* raw_filename = "/tmp/test_file_backend_playback_realtime.raw";
+  char raw_filename[256];
+  snprintf(raw_filename, sizeof(raw_filename),
+           "/tmp/test_file_backend_playback_realtime_%d.raw", getpid());
   remove(raw_filename);
 
   int sample_rate = 44100;
@@ -510,7 +522,9 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
 }
 
 TEST(FileBackendWavRealtimeThrottling) {
-  const char* wav_filename = "/tmp/test_file_backend_wav_realtime.wav";
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_wav_realtime_%d.wav", getpid());
   remove(wav_filename);
 
   int sample_rate = 16000;
