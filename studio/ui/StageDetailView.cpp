@@ -136,7 +136,14 @@ void StageDetailView::setupUi() {
         if (m_stageIndex < m_pipeline->stages.size()) {
             m_pipeline->stages[m_stageIndex].isEnabled = checked;
             if (m_optionsContainer) {
-                m_optionsContainer->setEnabled(checked);
+                m_optionsContainer->setEnabled(true);
+                if (!checked) {
+                    auto opacityEffect = new QGraphicsOpacityEffect(m_optionsContainer);
+                    opacityEffect->setOpacity(0.5);
+                    m_optionsContainer->setGraphicsEffect(opacityEffect);
+                } else {
+                    m_optionsContainer->setGraphicsEffect(nullptr);
+                }
             }
             applyConfig();
         }
@@ -207,7 +214,7 @@ void StageDetailView::buildStageOptionsUi() {
         return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
-    m_optionsContainer->setEnabled(stage.isEnabled);
+    m_optionsContainer->setEnabled(true);
     if (!stage.isEnabled) {
         auto opacityEffect = new QGraphicsOpacityEffect(m_optionsContainer);
         opacityEffect->setOpacity(0.5);

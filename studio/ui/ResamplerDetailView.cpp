@@ -4,6 +4,7 @@
 #include "ui/StyleTheme.h"
 
 #include <QFormLayout>
+#include <QGraphicsOpacityEffect>
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
@@ -162,12 +163,22 @@ void ResamplerDetailView::updateVisibility() {
 
     m_typeForm->setRowVisible(m_appleQualityCombo, isApple);
     m_typeForm->setRowVisible(m_appleComplexityCombo, isApple);
+
+    if (m_typeGroup && m_settings) {
+        m_typeGroup->setEnabled(true);
+        if (!m_settings->resamplerEnabled) {
+            auto opacityEffect = new QGraphicsOpacityEffect(m_typeGroup);
+            opacityEffect->setOpacity(0.5);
+            m_typeGroup->setGraphicsEffect(opacityEffect);
+        } else {
+            m_typeGroup->setGraphicsEffect(nullptr);
+        }
+    }
 }
 
 void ResamplerDetailView::refreshUi() {
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
-    if (m_typeGroup)
-        m_typeGroup->setEnabled(m_settings->resamplerEnabled);
+    updateVisibility();
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
