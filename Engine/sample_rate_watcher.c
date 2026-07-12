@@ -30,7 +30,7 @@ sample_rate_watcher_t* sample_rate_watcher_create(double target_rate,
       (sample_rate_watcher_t*)calloc(1, sizeof(sample_rate_watcher_t));
   if (!watcher) return NULL;
   watcher->target_rate = target_rate;
-  watcher->measure_interval = measure_interval;
+  watcher->measure_interval = measure_interval > 0.1 ? measure_interval : 1.0;
   watcher->stop_on_rate_change = stop_on_rate_change;
   watcher->captured_frames = 0;
   watcher->last_reset_ns = 0;
@@ -57,7 +57,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
   uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   double elapsed = (double)(now - watcher->last_reset_ns) / 1000000000.0;
 
-  if (elapsed < watcher->measure_interval) {
+  if (elapsed <= 0.0 || elapsed < watcher->measure_interval) {
     return false;
   }
 
