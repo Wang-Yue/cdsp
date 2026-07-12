@@ -607,10 +607,10 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
 
   // 1. Validate input and output buffer shapes/capacities against pipeline
   // configurations.
-  if (valid_frames != pipeline->frames_per_chunk) {
+  if (valid_frames > pipeline->frames_per_chunk) {
     logger_t logger = logger_create("dsp.pipeline");
     logger_warn(&logger,
-                "Pipeline input frame size mismatch: needed %zu, got %zu",
+                "Pipeline input frame size mismatch: needed <= %zu, got %zu",
                 pipeline->frames_per_chunk, valid_frames);
     pipeline->last_error_needed = pipeline->frames_per_chunk;
     pipeline->last_error_got = valid_frames;
