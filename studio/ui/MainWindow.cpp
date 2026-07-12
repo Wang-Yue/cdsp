@@ -183,10 +183,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         updateStatusBar();
     });
     connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+        static bool lastDarkMode = m_settings->darkMode;
         updateMuteDisplay();
         updateVolumeDisplay();
         updateStatusBar();
-        updateTheme();
+        if (m_settings->darkMode != lastDarkMode) {
+            lastDarkMode = m_settings->darkMode;
+            updateTheme();
+        }
     });
 
     m_monitoring->start();
@@ -434,7 +438,14 @@ void MainWindow::setupTrayIcon() {
     m_trayMenu = new QMenu(this);
 
     auto showAct = m_trayMenu->addAction("Show Main Window");
-    connect(showAct, &QAction::triggered, this, &MainWindow::showNormal);
+    connect(showAct, &QAction::triggered, this, [this]() {
+        if (m_miniPlayer && m_miniPlayer->isVisible()) {
+            m_miniPlayer->hide();
+        }
+        showNormal();
+        raise();
+        activateWindow();
+    });
 
     auto miniPlayerAct = m_trayMenu->addAction("Toggle MiniPlayer");
     connect(miniPlayerAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
@@ -703,7 +714,7 @@ void MainWindow::updateStatusBar() {
             break;
         }
     }
-    QString presetName = "Default";
+    QString presetName = "None";
     if (!activeId.isNull()) {
         for (const auto& eq : m_pipeline->eqPresets) {
             if (eq.id == activeId) {
@@ -711,8 +722,6 @@ void MainWindow::updateStatusBar() {
                 break;
             }
         }
-    } else if (!m_pipeline->eqPresets.empty()) {
-        presetName = QString::fromStdString(m_pipeline->eqPresets.front().name);
     }
     m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
     updateMuteDisplay();
@@ -799,6 +808,8 @@ void MainWindow::setupToolbar() {
     // 400px Volume slider (-60 to +20 dB in 0.5 dB steps: mapped to -120 to +40 int range)
     m_headerVolumeSlider = new QSlider(Qt::Horizontal, this);
     m_headerVolumeSlider->setRange(-120, 40);
+    m_headerVolumeSlider->setSingleStep(1);
+    m_headerVolumeSlider->setPageStep(2);
     m_headerVolumeSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
     m_headerVolumeSlider->setFixedWidth(400);
     connect(m_headerVolumeSlider, &QSlider::valueChanged, [this](int val) {

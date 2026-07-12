@@ -94,22 +94,6 @@ std::vector<double> FIRDesign::linearPhase(const std::vector<BiquadParameters>& 
 
     std::vector<double> ir;
     MeasurementFFT::inverse(hRe, hIm, ir);
-    int outLen = options.outputLength.value_or(nFft);
-    if (outLen < static_cast<int>(ir.size())) {
-        auto maxIt =
-            std::max_element(ir.begin(), ir.end(), [](double a, double b) { return std::abs(a) < std::abs(b); });
-        size_t peakIdx = std::distance(ir.begin(), maxIt);
-        int halfLen = outLen / 2;
-        int startIdx = std::max(0, static_cast<int>(peakIdx) - halfLen);
-        std::vector<double> truncated(outLen, 0.0);
-        for (int i = 0; i < outLen; ++i) {
-            int src = startIdx + i;
-            if (src >= 0 && static_cast<size_t>(src) < ir.size()) {
-                truncated[i] = ir[src];
-            }
-        }
-        return truncated;
-    }
     return ir;
 }
 

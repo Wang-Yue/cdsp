@@ -11,7 +11,7 @@
 struct FIRDesignOptions {
     int fftSize = 8192;
     std::optional<int> outputLength;
-    double preampDB = 0.0;
+    double preampDB = -6.0;
     double floorDB = -80.0;
 };
 
