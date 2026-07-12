@@ -201,7 +201,6 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
       (dsp_engine_core_t*)calloc(1, sizeof(dsp_engine_core_t));
   if (!core) return NULL;
 
-  core->current_config = config;
   core->on_chunk_captured = on_captured;
   core->on_chunk_captured_ctx = captured_ctx;
   core->on_chunk_processed = on_processed;
@@ -542,6 +541,7 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
   if (ret != 0) goto thread_error_2;
 
   core->threads_created = true;
+  core->current_config = config;
   engine_state_machine_set_state(core->state_machine, PROCESSING_STATE_RUNNING);
   logger_info(&logger, "DSP engine started: %zuHz, chunk=%zu",
               config->devices.samplerate, capture_chunk_size);
