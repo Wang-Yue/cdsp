@@ -111,22 +111,23 @@ public:
 
             /* Buttons */
             QPushButton {
-                background-color: #34c759;
-                color: #ffffff;
-                border: none;
+                background-color: #e5e5ea;
+                color: #000000;
+                border: 1px solid #c6c6c8;
                 border-radius: 6px;
                 padding: 6px 14px;
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #30b753;
+                background-color: #d1d1d6;
             }
             QPushButton:pressed {
-                background-color: #289a46;
+                background-color: #b0b0b8;
             }
             QPushButton:disabled {
-                background-color: #e5e5ea;
+                background-color: #f2f2f7;
                 color: #8e8e93;
+                border: 1px solid #e5e5ea;
             }
 
             /* Form Input Controls */
@@ -372,22 +373,23 @@ public:
             }
 
             QPushButton {
-                background-color: #2cb67d;
+                background-color: #2c2d3a;
                 color: #ffffff;
-                border: none;
+                border: 1px solid #3a3d4e;
                 border-radius: 6px;
                 padding: 6px 14px;
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #35cd8c;
+                background-color: #3a3d4e;
             }
             QPushButton:pressed {
-                background-color: #249969;
+                background-color: #20212b;
             }
             QPushButton:disabled {
-                background-color: #282a36;
+                background-color: #1a1b22;
                 color: #5a5f73;
+                border: 1px solid #282a36;
             }
 
             QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {

@@ -222,6 +222,9 @@ void MiniPlayerView::setupUi() {
 
     m_playStopBtn = new QPushButton("▶", this);
     m_playStopBtn->setFixedSize(22, 22);
+    m_playStopBtn->setStyleSheet(
+        "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #34c759; font-weight: bold; border-radius: "
+        "4px; border: none; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
     connect(m_playStopBtn, &QPushButton::clicked, [this]() {
         if (m_dsp->status == ProcessingState::Running)
             m_dsp->stopEngine();
@@ -232,6 +235,8 @@ void MiniPlayerView::setupUi() {
 
     m_muteBtn = new QPushButton("🔊", this);
     m_muteBtn->setFixedSize(22, 22);
+    m_muteBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); color: white; border-radius: "
+                             "4px; border: none; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
     connect(m_muteBtn, &QPushButton::clicked, [this]() {
         Fader f = currentFader();
         bool muted = m_settings->getMuted(f);
@@ -263,46 +268,83 @@ void MiniPlayerView::setupUi() {
 
     // 6 Mode Icon Buttons matching SwiftUI icons
     auto pipeBtn = new QPushButton("🔄", this);
+    auto specBtn = new QPushButton("📈", this);
+    auto mtrBtn = new QPushButton("📊", this);
+    auto vuBtn = new QPushButton("🎛️", this);
+    auto sgBtn = new QPushButton("🌌", this);
+    auto vecBtn = new QPushButton("🎯", this);
+
+    std::vector<QPushButton*> modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
+    auto setModeStyle = [modeBtns](int activeIndex) {
+        for (int i = 0; i < static_cast<int>(modeBtns.size()); ++i) {
+            if (i == activeIndex) {
+                modeBtns[i]->setStyleSheet("QPushButton { background-color: #007aff; color: white; border-radius: 4px; "
+                                           "border: none; font-size: 11px; }"
+                                           "QPushButton:hover { background-color: #0062cc; }");
+            } else {
+                modeBtns[i]->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #ffffff; "
+                                           "border-radius: 4px; border: none; font-size: 11px; }"
+                                           "QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
+            }
+        }
+    };
+
     pipeBtn->setToolTip("Pipeline Overview");
     pipeBtn->setFixedSize(24, 22);
-    connect(pipeBtn, &QPushButton::clicked, [this]() {
+    connect(pipeBtn, &QPushButton::clicked, [this, setModeStyle]() {
         buildMiniPipelineUi();
         m_viewStack->setCurrentIndex(0);
+        setModeStyle(0);
     });
     topBar->addWidget(pipeBtn);
 
-    auto specBtn = new QPushButton("📈", this);
     specBtn->setToolTip("Spectrum Analyzer");
     specBtn->setFixedSize(24, 22);
-    connect(specBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(1); });
+    connect(specBtn, &QPushButton::clicked, [this, setModeStyle]() {
+        m_viewStack->setCurrentIndex(1);
+        setModeStyle(1);
+    });
     topBar->addWidget(specBtn);
 
-    auto vuBtn = new QPushButton("🎛️", this);
-    vuBtn->setToolTip("Analog VU Meter");
-    vuBtn->setFixedSize(24, 22);
-    connect(vuBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(3); });
-    topBar->addWidget(vuBtn);
-
-    auto mtrBtn = new QPushButton("📊", this);
     mtrBtn->setToolTip("Level Meters");
     mtrBtn->setFixedSize(24, 22);
-    connect(mtrBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(2); });
+    connect(mtrBtn, &QPushButton::clicked, [this, setModeStyle]() {
+        m_viewStack->setCurrentIndex(2);
+        setModeStyle(2);
+    });
     topBar->addWidget(mtrBtn);
 
-    auto sgBtn = new QPushButton("🌌", this);
+    vuBtn->setToolTip("Analog VU Meter");
+    vuBtn->setFixedSize(24, 22);
+    connect(vuBtn, &QPushButton::clicked, [this, setModeStyle]() {
+        m_viewStack->setCurrentIndex(3);
+        setModeStyle(3);
+    });
+    topBar->addWidget(vuBtn);
+
     sgBtn->setToolTip("Spectroscope Waterfall");
     sgBtn->setFixedSize(24, 22);
-    connect(sgBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(4); });
+    connect(sgBtn, &QPushButton::clicked, [this, setModeStyle]() {
+        m_viewStack->setCurrentIndex(4);
+        setModeStyle(4);
+    });
     topBar->addWidget(sgBtn);
 
-    auto vecBtn = new QPushButton("🎯", this);
     vecBtn->setToolTip("Vector Scope");
     vecBtn->setFixedSize(24, 22);
-    connect(vecBtn, &QPushButton::clicked, [this]() { m_viewStack->setCurrentIndex(5); });
+    connect(vecBtn, &QPushButton::clicked, [this, setModeStyle]() {
+        m_viewStack->setCurrentIndex(5);
+        setModeStyle(5);
+    });
     topBar->addWidget(vecBtn);
+
+    setModeStyle(5); // Default vector scope mode
 
     auto closeBtn = new QPushButton("✕", this);
     closeBtn->setFixedSize(18, 18);
+    closeBtn->setStyleSheet(
+        "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #8e8e93; border-radius: 9px; border: none; "
+        "font-size: 10px; font-weight: bold; } QPushButton:hover { background-color: #ff3b30; color: white; }");
     connect(closeBtn, &QPushButton::clicked, this, &MiniPlayerView::closeAndRestoreMain);
     topBar->addWidget(closeBtn);
 
