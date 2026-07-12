@@ -94,7 +94,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 computation_ns / 1000000.0, constraint_ns / 1000000.0);
   } else {
     logger_warn(&logger, "[%s] Failed to set real-time thread policy: %d",
-                 name ? name : "unknown", result);
+                name ? name : "unknown", result);
   }
 }
 #elif defined(__linux__)

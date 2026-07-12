@@ -78,7 +78,7 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
     }
     const char* method_str = loop->pitch_supported ? "pitch" : "resampler";
     logger_debug(&logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
-                average, loop->target_level, speed, method_str);
+                 average, loop->target_level, speed, method_str);
   } else {
     logger_debug(&logger, "Rate adjust: buffer=%f, keeping speed=%f", average,
                  *last_speed);

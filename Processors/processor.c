@@ -229,8 +229,10 @@ dsp_processor_t* dsp_processor_create(const char* name,
       compressor_processor_t* p = compressor_processor_create(
           name, &config->parameters.compressor, sample_rate, chunk_size);
       if (!p) {
-        logger_error(&logger, "Failed to create compressor processor '%s' (rate=%d, chunk=%zu)",
-                     name ? name : "", sample_rate, chunk_size);
+        logger_error(
+            &logger,
+            "Failed to create compressor processor '%s' (rate=%d, chunk=%zu)",
+            name ? name : "", sample_rate, chunk_size);
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to create compressor processor '%s'",
                          name ? name : "");
@@ -246,15 +248,17 @@ dsp_processor_t* dsp_processor_create(const char* name,
         return NULL;
       }
       logger_debug(&logger, "Created compressor processor '%s'",
-                  name ? name : "");
+                   name ? name : "");
       return wrap;
     }
     case PROCESSOR_TYPE_NOISE_GATE: {
       noise_gate_processor_t* p = noise_gate_processor_create(
           name, &config->parameters.noise_gate, sample_rate, chunk_size);
       if (!p) {
-        logger_error(&logger, "Failed to create noise gate processor '%s' (rate=%d, chunk=%zu)",
-                     name ? name : "", sample_rate, chunk_size);
+        logger_error(
+            &logger,
+            "Failed to create noise gate processor '%s' (rate=%d, chunk=%zu)",
+            name ? name : "", sample_rate, chunk_size);
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to create noise gate processor '%s'",
                          name ? name : "");
@@ -270,15 +274,17 @@ dsp_processor_t* dsp_processor_create(const char* name,
         return NULL;
       }
       logger_debug(&logger, "Created noise gate processor '%s'",
-                  name ? name : "");
+                   name ? name : "");
       return wrap;
     }
     case PROCESSOR_TYPE_RACE: {
       race_processor_t* p = race_processor_create(
           name, &config->parameters.race, sample_rate, err);
       if (!p) {
-        logger_error(&logger, "Failed to create RACE processor '%s' (rate=%d): %s",
-                     name ? name : "", sample_rate, err ? err->message : "unknown error");
+        logger_error(&logger,
+                     "Failed to create RACE processor '%s' (rate=%d): %s",
+                     name ? name : "", sample_rate,
+                     err ? err->message : "unknown error");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_race(p);

@@ -54,8 +54,9 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
   }
   logger_t logger = logger_create("dsp.silence_counter");
   logger_debug(&logger,
-              "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, limit_chunks=%zu)",
-              threshold_db, timeout_seconds, counter->limit_chunks);
+               "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, "
+               "limit_chunks=%zu)",
+               threshold_db, timeout_seconds, counter->limit_chunks);
 }
 
 /// Feed the next chunk's loudest channel peak (dB). Returns the
@@ -70,7 +71,8 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
     if (counter->silent_chunks > 0) {
       logger_t logger = logger_create("dsp.silence_counter");
       logger_info(&logger,
-                  "Audio signal restored above threshold (peak=%.1fdB > threshold=%.1fdB), resuming",
+                  "Audio signal restored above threshold (peak=%.1fdB > "
+                  "threshold=%.1fdB), resuming",
                   signal_peak_db, counter->threshold_db);
     }
     counter->silent_chunks = 0;
@@ -84,7 +86,8 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   if (counter->silent_chunks >= counter->limit_chunks) {
     logger_t logger = logger_create("dsp.silence_counter");
     logger_info(&logger,
-                "Silence timeout reached (silent_chunks=%zu, limit_chunks=%zu), requesting pause",
+                "Silence timeout reached (silent_chunks=%zu, "
+                "limit_chunks=%zu), requesting pause",
                 counter->silent_chunks, counter->limit_chunks);
     return PROCESSING_STATE_PAUSED;
   }

@@ -222,9 +222,9 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
     return NULL;
   }
   logger_debug(&logger,
-              "DoP decoder created (channels=%d, sample_rate=%.0f, bypass=%d, "
-              "cutoff=%.0fHz)",
-              channels, sample_rate, bypass_dop ? 1 : 0, cutoff_hz);
+               "DoP decoder created (channels=%d, sample_rate=%.0f, bypass=%d, "
+               "cutoff=%.0fHz)",
+               channels, sample_rate, bypass_dop ? 1 : 0, cutoff_hz);
   return dec;
 }
 

@@ -3848,7 +3848,8 @@ static void* server_thread_func(void* arg) {
       if (fds[0].revents & POLLIN) {
         socket_t cfd = accept(server->server_fd, NULL, NULL);
         if (!IS_INVALID_SOCKET(cfd) && num_clients < 32) {
-          logger_info(&server_logger, "Accepted client connection on slot %d", num_clients);
+          logger_info(&server_logger, "Accepted client connection on slot %d",
+                      num_clients);
           client_fds[num_clients] = cfd;
           last_state[num_clients][0] = '\0';
 
@@ -3864,7 +3865,8 @@ static void* server_thread_func(void* arg) {
 
           num_clients++;
         } else if (!IS_INVALID_SOCKET(cfd)) {
-          logger_warn(&server_logger, "Max clients (32) reached, rejecting new connection");
+          logger_warn(&server_logger,
+                      "Max clients (32) reached, rejecting new connection");
           CLOSE_SOCKET(cfd);
         }
       }
@@ -4122,7 +4124,9 @@ bool websocket_server_start(websocket_server_t* server) {
 
   server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (IS_INVALID_SOCKET(server->server_fd)) {
-    logger_error(&server_logger, "Failed to create server socket: %s (errno=%d)", strerror(errno), errno);
+    logger_error(&server_logger,
+                 "Failed to create server socket: %s (errno=%d)",
+                 strerror(errno), errno);
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -4156,8 +4160,10 @@ bool websocket_server_start(websocket_server_t* server) {
   }
 
   if (IS_SOCKET_ERROR(listen(server->server_fd, 10))) {
-    logger_error(&server_logger, "Failed to listen on WebSocket server socket on %s:%d: %s (errno=%d)",
-                 server->host, server->port, strerror(errno), errno);
+    logger_error(
+        &server_logger,
+        "Failed to listen on WebSocket server socket on %s:%d: %s (errno=%d)",
+        server->host, server->port, strerror(errno), errno);
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
 #ifdef _WIN32
@@ -4168,7 +4174,8 @@ bool websocket_server_start(websocket_server_t* server) {
 
   atomic_store_explicit(&server->running, true, memory_order_release);
   if (pthread_create(&server->thread, NULL, server_thread_func, server) != 0) {
-    logger_error(&server_logger, "Failed to create WebSocket server thread: %s (errno=%d)",
+    logger_error(&server_logger,
+                 "Failed to create WebSocket server thread: %s (errno=%d)",
                  strerror(errno), errno);
     atomic_store_explicit(&server->running, false, memory_order_release);
     CLOSE_SOCKET(server->server_fd);

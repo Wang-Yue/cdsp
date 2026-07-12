@@ -611,7 +611,8 @@ int main(int argc, char** argv) {
     if (websocket_server_start(server)) {
       printf("WebSocket server running on %s:%u\n", bind_address, port);
     } else {
-      logger_error(&logger, "Failed to start WebSocket server on %s:%u", bind_address, port);
+      logger_error(&logger, "Failed to start WebSocket server on %s:%u",
+                   bind_address, port);
       printf("Error starting WebSocket server\n");
     }
   }

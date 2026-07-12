@@ -238,10 +238,11 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
       return NULL;
     }
   }
-  logger_debug(&logger,
-              "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
-              "dsd_rate=%.0f)",
-              channels, sample_rate, dsd_rate);
+  logger_debug(
+      &logger,
+      "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
+      "dsd_rate=%.0f)",
+      channels, sample_rate, dsd_rate);
   return enc;
 }
 

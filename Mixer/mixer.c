@@ -145,8 +145,9 @@ audio_mixer_t* audio_mixer_create(const char* name,
   }
 
   populate_mapping(mixer, config);
-  logger_debug(&logger, "Created mixer '%s' (in_channels=%zu, out_channels=%zu)",
-              mixer->name, mixer->channels_in, mixer->channels_out);
+  logger_debug(&logger,
+               "Created mixer '%s' (in_channels=%zu, out_channels=%zu)",
+               mixer->name, mixer->channels_in, mixer->channels_out);
   return mixer;
 }
 

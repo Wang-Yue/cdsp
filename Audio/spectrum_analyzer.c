@@ -82,13 +82,15 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
       !analyzer->realp || !analyzer->imagp || !analyzer->magnitudes ||
       !analyzer->db_magnitudes || !analyzer->plan.frequencies ||
       !analyzer->plan.ranges || !analyzer->out_magnitudes) {
-    logger_error(&logger, "Failed to allocate memory buffers for spectrum analyzer");
+    logger_error(&logger,
+                 "Failed to allocate memory buffers for spectrum analyzer");
     spectrum_analyzer_free(analyzer);
     return NULL;
   }
 
-  logger_debug(&logger, "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
-              analyzer->fft_n, analyzer->out_capacity);
+  logger_debug(&logger,
+               "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
+               analyzer->fft_n, analyzer->out_capacity);
   return analyzer;
 }
 

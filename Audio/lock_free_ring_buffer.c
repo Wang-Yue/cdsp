@@ -86,21 +86,25 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   spsc_audio_ring_buffer_t* ring =
       (spsc_audio_ring_buffer_t*)calloc(1, sizeof(spsc_audio_ring_buffer_t));
   if (!ring) {
-    logger_error(&logger, "Memory allocation failed for spsc_audio_ring_buffer_t");
+    logger_error(&logger,
+                 "Memory allocation failed for spsc_audio_ring_buffer_t");
     return NULL;
   }
   ring->capacity = cap;
   ring->mask = cap - 1;
   ring->storage = (float*)calloc(cap, sizeof(float));
   if (!ring->storage) {
-    logger_error(&logger, "Failed to allocate storage buffer for capacity=%zu", cap);
+    logger_error(&logger, "Failed to allocate storage buffer for capacity=%zu",
+                 cap);
     free(ring);
     return NULL;
   }
   atomic_init(&ring->write_index, 0);
   atomic_init(&ring->read_index, 0);
   ring->overwrite_on_overflow = false;
-  logger_debug(&logger, "SPSC audio ring buffer created (capacity=%zu, min_cap=%zu)", cap, minimum_capacity);
+  logger_debug(&logger,
+               "SPSC audio ring buffer created (capacity=%zu, min_cap=%zu)",
+               cap, minimum_capacity);
   return ring;
 }
 

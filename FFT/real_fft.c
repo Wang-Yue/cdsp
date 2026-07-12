@@ -78,7 +78,6 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
 #include "FFT/mixed_radix_fft.h"
 #include "FFT/vdsp_complex_dft.h"
 #include "FFT/vdsp_real_fft.h"
-
 #include "Logging/app_logger.h"
 
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
@@ -109,7 +108,9 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   vdsp_real_fft_t* vdsp = vdsp_real_fft_create(length);
   if (vdsp) {
     fft->backend = vdsp_real_fft_as_backend(vdsp);
-    logger_debug(&logger, "RealFFT created using vDSP Real FFT backend (length=%zu)", length);
+    logger_debug(&logger,
+                 "RealFFT created using vDSP Real FFT backend (length=%zu)",
+                 length);
     return fft;
   }
 
@@ -139,7 +140,9 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   }
 
   if (!inner) {
-    logger_error(&logger, "Failed to initialize any complex FFT backend for half_n=%zu", half_n);
+    logger_error(&logger,
+                 "Failed to initialize any complex FFT backend for half_n=%zu",
+                 half_n);
     free(fft);
     return NULL;
   }
@@ -156,7 +159,9 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   }
 
   fft->backend = complex_inner_real_fft_as_backend(complex_inner);
-  logger_debug(&logger, "RealFFT created using ComplexInner + %s backend (length=%zu)", backend_name, length);
+  logger_debug(&logger,
+               "RealFFT created using ComplexInner + %s backend (length=%zu)",
+               backend_name, length);
   return fft;
 }
 
@@ -396,6 +401,7 @@ real_fftf_t* real_fftf_create(size_t length) {
 #else
 
 #include <math.h>
+
 #include "Logging/app_logger.h"
 
 #ifndef M_PI
@@ -406,12 +412,17 @@ static inline bool fallback_is_power_of_two(size_t n) {
   return n > 0 && (n & (n - 1)) == 0;
 }
 
-static void fallback_fft_complex_double(double* re, double* im, size_t n, bool is_inverse) {
+static void fallback_fft_complex_double(double* re, double* im, size_t n,
+                                        bool is_inverse) {
   size_t j = 0;
   for (size_t i = 0; i < n - 1; ++i) {
     if (i < j) {
-      double tr = re[i]; re[i] = re[j]; re[j] = tr;
-      double ti = im[i]; im[i] = im[j]; im[j] = ti;
+      double tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      double ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
     }
     size_t k = n >> 1;
     while (k <= j) {
@@ -447,12 +458,17 @@ static void fallback_fft_complex_double(double* re, double* im, size_t n, bool i
   }
 }
 
-static void fallback_fft_complex_float(float* re, float* im, size_t n, bool is_inverse) {
+static void fallback_fft_complex_float(float* re, float* im, size_t n,
+                                       bool is_inverse) {
   size_t j = 0;
   for (size_t i = 0; i < n - 1; ++i) {
     if (i < j) {
-      float tr = re[i]; re[i] = re[j]; re[j] = tr;
-      float ti = im[i]; im[i] = im[j]; im[j] = ti;
+      float tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      float ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
     }
     size_t k = n >> 1;
     while (k <= j) {
@@ -511,7 +527,8 @@ static void fallback_dft_real_inverse_double(size_t n, size_t spectrum_length,
   for (size_t nn = 0; nn < n; nn++) {
     double sum = spec_re[0];
     if (spectrum_length > 1 && n % 2 == 0) {
-      double angle_nyquist = 2.0 * M_PI * (double)((spectrum_length - 1) * nn) / (double)n;
+      double angle_nyquist =
+          2.0 * M_PI * (double)((spectrum_length - 1) * nn) / (double)n;
       sum += spec_re[spectrum_length - 1] * cos(angle_nyquist);
     }
     for (size_t k = 1; k < spectrum_length - 1; k++) {
@@ -547,7 +564,8 @@ static void fallback_dft_real_inverse_float(size_t n, size_t spectrum_length,
   for (size_t nn = 0; nn < n; nn++) {
     double sum = (double)spec_re[0];
     if (spectrum_length > 1 && n % 2 == 0) {
-      double angle_nyquist = 2.0 * M_PI * (double)((spectrum_length - 1) * nn) / (double)n;
+      double angle_nyquist =
+          2.0 * M_PI * (double)((spectrum_length - 1) * nn) / (double)n;
       sum += (double)spec_re[spectrum_length - 1] * cos(angle_nyquist);
     }
     for (size_t k = 1; k < spectrum_length - 1; k++) {
@@ -586,7 +604,8 @@ static void fallback_real_fft_forward(void* ctx_ptr, waveform_t real_in,
       spec_im[k] = ctx->work_im[k];
     }
   } else {
-    fallback_dft_real_forward_double(n, ctx->spectrum_length, real_in, spec_re, spec_im);
+    fallback_dft_real_forward_double(n, ctx->spectrum_length, real_in, spec_re,
+                                     spec_im);
   }
 }
 
@@ -653,9 +672,11 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   fft->length = length;
   fft->spectrum_length = length / 2 + 1;
 
-  fallback_real_fft_ctx_t* ctx = (fallback_real_fft_ctx_t*)calloc(1, sizeof(fallback_real_fft_ctx_t));
+  fallback_real_fft_ctx_t* ctx =
+      (fallback_real_fft_ctx_t*)calloc(1, sizeof(fallback_real_fft_ctx_t));
   if (!ctx) {
-    logger_error(&logger, "Memory allocation failed for fallback_real_fft_ctx_t");
+    logger_error(&logger,
+                 "Memory allocation failed for fallback_real_fft_ctx_t");
     free(fft);
     return NULL;
   }
@@ -667,7 +688,8 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     ctx->work_re = (double*)calloc(length, sizeof(double));
     ctx->work_im = (double*)calloc(length, sizeof(double));
     if (!ctx->work_re || !ctx->work_im) {
-      logger_error(&logger, "Failed to allocate work buffers for fallback RealFFT");
+      logger_error(&logger,
+                   "Failed to allocate work buffers for fallback RealFFT");
       fallback_real_fft_free(ctx);
       free(fft);
       return NULL;
@@ -680,7 +702,8 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   ctx->base.free = fallback_real_fft_free;
 
   fft->backend = (real_fft_backend_t*)&ctx->base;
-  logger_warn(&logger, "RealFFT using C software fallback backend (%s, length=%zu)",
+  logger_warn(&logger,
+              "RealFFT using C software fallback backend (%s, length=%zu)",
               ctx->is_pow2 ? "Cooley-Tukey Radix-2" : "Direct DFT", length);
   return fft;
 }
@@ -711,7 +734,8 @@ static void fallback_real_fftf_forward(void* ctx_ptr, const float* real_in,
       spec_im[k] = ctx->work_im[k];
     }
   } else {
-    fallback_dft_real_forward_float(n, ctx->spectrum_length, real_in, spec_re, spec_im);
+    fallback_dft_real_forward_float(n, ctx->spectrum_length, real_in, spec_re,
+                                    spec_im);
   }
 }
 
@@ -760,7 +784,8 @@ real_fftf_t* real_fftf_create(size_t length) {
   real_fftf_t* fft = (real_fftf_t*)calloc(1, sizeof(real_fftf_t));
   if (!fft) return NULL;
 
-  fallback_real_fftf_ctx_t* ctx = (fallback_real_fftf_ctx_t*)calloc(1, sizeof(fallback_real_fftf_ctx_t));
+  fallback_real_fftf_ctx_t* ctx =
+      (fallback_real_fftf_ctx_t*)calloc(1, sizeof(fallback_real_fftf_ctx_t));
   if (!ctx) {
     free(fft);
     return NULL;

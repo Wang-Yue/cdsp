@@ -243,8 +243,11 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       volume_filter_create("master_volume", &vol_params, pipeline->rate,
                            pipeline->frames_per_chunk, proc_params, err);
   if (!pipeline->master_volume) {
-    logger_error(&logger, "Failed to create master volume filter (rate=%d, chunk=%zu): %s",
-                 pipeline->rate, pipeline->frames_per_chunk, err ? err->message : "unknown error");
+    logger_error(
+        &logger,
+        "Failed to create master volume filter (rate=%d, chunk=%zu): %s",
+        pipeline->rate, pipeline->frames_per_chunk,
+        err ? err->message : "unknown error");
     pipeline_free(pipeline);
     return NULL;
   }
@@ -253,8 +256,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   pipeline->capture_scratch = audio_chunk_create(
       pipeline->frames_per_chunk, pipeline->expected_in_channels);
   if (!pipeline->capture_scratch) {
-    logger_error(&logger, "Failed to allocate capture scratch buffer (frames=%zu, channels=%zu)",
-                 pipeline->frames_per_chunk, pipeline->expected_in_channels);
+    logger_error(
+        &logger,
+        "Failed to allocate capture scratch buffer (frames=%zu, channels=%zu)",
+        pipeline->frames_per_chunk, pipeline->expected_in_channels);
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate capture scratch buffer");
     pipeline_free(pipeline);

@@ -145,7 +145,7 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
     return NULL;
   }
   logger_debug(&logger, "Filter '%s' successfully created (type=%d)",
-              filter->name, filter->type);
+               filter->name, filter->type);
   return filter;
 }
 
