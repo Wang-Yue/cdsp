@@ -93,7 +93,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 name ? name : "unknown", period_ns / 1000000.0,
                 computation_ns / 1000000.0, constraint_ns / 1000000.0);
   } else {
-    logger_error(&logger, "[%s] Failed to set real-time thread policy: %d",
+    logger_warn(&logger, "[%s] Failed to set real-time thread policy: %d",
                  name ? name : "unknown", result);
   }
 }

@@ -100,7 +100,7 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   atomic_init(&ring->write_index, 0);
   atomic_init(&ring->read_index, 0);
   ring->overwrite_on_overflow = false;
-  logger_info(&logger, "SPSC audio ring buffer created (capacity=%zu, min_cap=%zu)", cap, minimum_capacity);
+  logger_debug(&logger, "SPSC audio ring buffer created (capacity=%zu, min_cap=%zu)", cap, minimum_capacity);
   return ring;
 }
 

@@ -53,7 +53,7 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
     counter->limit_chunks = 0;
   }
   logger_t logger = logger_create("dsp.silence_counter");
-  logger_info(&logger,
+  logger_debug(&logger,
               "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, limit_chunks=%zu)",
               threshold_db, timeout_seconds, counter->limit_chunks);
 }

@@ -245,7 +245,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
                          name ? name : "");
         return NULL;
       }
-      logger_info(&logger, "Created compressor processor '%s'",
+      logger_debug(&logger, "Created compressor processor '%s'",
                   name ? name : "");
       return wrap;
     }
@@ -269,7 +269,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
                          name ? name : "");
         return NULL;
       }
-      logger_info(&logger, "Created noise gate processor '%s'",
+      logger_debug(&logger, "Created noise gate processor '%s'",
                   name ? name : "");
       return wrap;
     }
@@ -290,7 +290,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
                          name ? name : "");
         return NULL;
       }
-      logger_info(&logger, "Created RACE processor '%s'", name ? name : "");
+      logger_debug(&logger, "Created RACE processor '%s'", name ? name : "");
       return wrap;
     }
     default:

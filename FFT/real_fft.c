@@ -109,7 +109,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   vdsp_real_fft_t* vdsp = vdsp_real_fft_create(length);
   if (vdsp) {
     fft->backend = vdsp_real_fft_as_backend(vdsp);
-    logger_info(&logger, "RealFFT created using vDSP Real FFT backend (length=%zu)", length);
+    logger_debug(&logger, "RealFFT created using vDSP Real FFT backend (length=%zu)", length);
     return fft;
   }
 
@@ -156,7 +156,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   }
 
   fft->backend = complex_inner_real_fft_as_backend(complex_inner);
-  logger_info(&logger, "RealFFT created using ComplexInner + %s backend (length=%zu)", backend_name, length);
+  logger_debug(&logger, "RealFFT created using ComplexInner + %s backend (length=%zu)", backend_name, length);
   return fft;
 }
 

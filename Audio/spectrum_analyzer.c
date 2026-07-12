@@ -87,7 +87,7 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
     return NULL;
   }
 
-  logger_info(&logger, "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
+  logger_debug(&logger, "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
               analyzer->fft_n, analyzer->out_capacity);
   return analyzer;
 }

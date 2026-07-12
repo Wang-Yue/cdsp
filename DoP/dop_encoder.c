@@ -209,7 +209,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
   enc->enabled = output_dop && supported;
 
   if (!enc->enabled) {
-    logger_info(
+    logger_debug(
         &logger,
         "DoP encoder created (disabled: output_dop=%d, rate_supported=%d)",
         output_dop ? 1 : 0, supported ? 1 : 0);
@@ -238,7 +238,7 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
       return NULL;
     }
   }
-  logger_info(&logger,
+  logger_debug(&logger,
               "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
               "dsd_rate=%.0f)",
               channels, sample_rate, dsd_rate);

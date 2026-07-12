@@ -428,7 +428,7 @@ audio_resampler_t* audio_resampler_create_from_config(
     config_error_set(err, CONFIG_ERR_PARSE, "Resampler config is NULL");
     return NULL;
   }
-  logger_info(&logger,
+  logger_debug(&logger,
               "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
               config->type, input_rate, output_rate, channels);
   switch (config->type) {
