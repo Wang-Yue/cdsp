@@ -9,7 +9,7 @@
 
 #include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
-#include "Engine/engine_shared_state.h"
+#include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 
 // ============================================================================
@@ -24,7 +24,7 @@ struct jack_capture {
   int sample_rate;
   int chunk_size;
   spsc_audio_ring_buffer_t** buffers;
-  engine_semaphore_t sem;
+  cdsp_sem_t sem;
   bool active;
   double pending_rate;
   bool rate_changed;
@@ -55,7 +55,7 @@ static int jack_capture_process_cb(jack_nframes_t nframes, void* arg) {
     }
   }
 
-  engine_sem_signal(capture->sem);
+  cdsp_sem_signal(capture->sem);
   return 0;
 }
 
@@ -90,7 +90,7 @@ static int jack_capture_sample_rate_cb(jack_nframes_t nframes, void* arg) {
 static void jack_capture_shutdown_cb(void* arg) {
   jack_capture_t* capture = (jack_capture_t*)arg;
   capture->active = false;
-  engine_sem_signal(capture->sem);
+  cdsp_sem_signal(capture->sem);
   logger_error(&capture->logger, "JACK server shutdown");
 }
 
@@ -174,7 +174,7 @@ capture_backend_t* jack_capture_create(const capture_device_config_t* config,
              "camilladsp_capture");
   }
 
-  capture->sem = engine_sem_create();
+  capture->sem = cdsp_sem_create();
   if (!capture->sem) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -268,7 +268,7 @@ bool jack_capture_read(jack_capture_t* capture, size_t frames,
   // data.
   while (spsc_audio_ring_buffer_get_available_to_read(capture->buffers[0]) <
          frames) {
-    engine_sem_wait(capture->sem);
+    cdsp_sem_wait(capture->sem);
     if (!capture->active) return false;
   }
 
@@ -331,14 +331,14 @@ bool jack_capture_wait(jack_capture_t* capture, uint32_t timeout_ms) {
     return true;
   }
   // Wait on sem
-  engine_sem_wait(capture->sem);
+  cdsp_sem_wait(capture->sem);
   return capture->active;
 }
 
 void jack_capture_destroy(jack_capture_t* capture) {
   if (!capture) return;
   jack_capture_close(capture);
-  engine_sem_destroy(capture->sem);
+  cdsp_sem_destroy(capture->sem);
   for (int c = 0; c < capture->channels; c++) {
     spsc_audio_ring_buffer_free(capture->buffers[c]);
   }
@@ -358,7 +358,7 @@ struct jack_playback {
   int sample_rate;
   int chunk_size;
   spsc_audio_ring_buffer_t** buffers;
-  engine_semaphore_t sem;
+  cdsp_sem_t sem;
   bool active;
   bool is_paused;
   double pending_rate;
@@ -398,7 +398,7 @@ static int jack_playback_process_cb(jack_nframes_t nframes, void* arg) {
     }
   }
 
-  engine_sem_signal(playback->sem);
+  cdsp_sem_signal(playback->sem);
   return 0;
 }
 
@@ -433,7 +433,7 @@ static int jack_playback_sample_rate_cb(jack_nframes_t nframes, void* arg) {
 static void jack_playback_shutdown_cb(void* arg) {
   jack_playback_t* playback = (jack_playback_t*)arg;
   playback->active = false;
-  engine_sem_signal(playback->sem);
+  cdsp_sem_signal(playback->sem);
   logger_error(&playback->logger, "JACK server shutdown");
 }
 
@@ -531,7 +531,7 @@ playback_backend_t* jack_playback_create(const playback_device_config_t* config,
              "camilladsp_playback");
   }
 
-  playback->sem = engine_sem_create();
+  playback->sem = cdsp_sem_create();
   if (!playback->sem) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -627,7 +627,7 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
   // The JACK process callback will signal the semaphore when it consumes data.
   while (spsc_audio_ring_buffer_get_available_to_write(playback->buffers[0]) <
          frames) {
-    engine_sem_wait(playback->sem);
+    cdsp_sem_wait(playback->sem);
     if (!playback->active) return false;
   }
 
@@ -694,7 +694,7 @@ void jack_playback_set_is_paused(jack_playback_t* playback, bool paused) {
 void jack_playback_destroy(jack_playback_t* playback) {
   if (!playback) return;
   jack_playback_close(playback);
-  engine_sem_destroy(playback->sem);
+  cdsp_sem_destroy(playback->sem);
   for (int c = 0; c < playback->channels; c++) {
     spsc_audio_ring_buffer_free(playback->buffers[c]);
   }

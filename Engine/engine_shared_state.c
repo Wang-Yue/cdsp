@@ -165,8 +165,11 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
   state->stop_reason = reason;
+  // Store stop_requested with release ordering so the write becomes visible
+  // to the capture loop immediately on its next check.
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
 
+  // Wake up capture thread so it can emit the in-band STOP message downstream.
   engine_shared_state_signal_captured(state);
   engine_shared_state_signal_processed(state);
 }

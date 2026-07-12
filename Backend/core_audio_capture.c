@@ -22,6 +22,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 
 struct core_audio_capture {
@@ -71,7 +72,7 @@ struct core_audio_capture {
   /// Sized to one chunk; reused on every read so the consumer thread
   /// doesn't churn the heap.
   float* read_scratch;
-  dispatch_semaphore_t semaphore;
+  cdsp_sem_t semaphore;
 };
 
 /**
@@ -177,7 +178,7 @@ static OSStatus capture_callback(void* inRefCon,
 
   // Signal the semaphore to wake up the consumer thread waiting for new data.
   if (capture->semaphore) {
-    dispatch_semaphore_signal(capture->semaphore);
+    cdsp_sem_signal(capture->semaphore);
   }
 
   return noErr;
@@ -355,7 +356,7 @@ capture_backend_t* core_audio_capture_create(
                          "Out of memory");
     return NULL;
   }
-  capture->semaphore = dispatch_semaphore_create(0);
+  capture->semaphore = cdsp_sem_create();
   if (!capture->semaphore) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -667,7 +668,7 @@ void core_audio_capture_close(core_audio_capture_t* capture) {
   logger_t logger = logger_create("dsp.backend.coreaudio.capture");
   logger_info(&logger, "Closing CoreAudio capture device");
   if (capture->semaphore) {
-    dispatch_semaphore_signal(capture->semaphore);
+    cdsp_sem_signal(capture->semaphore);
   }
   if (capture->rate_watcher) {
     rate_change_watcher_free(capture->rate_watcher);
@@ -719,9 +720,7 @@ void core_audio_capture_set_pitch(core_audio_capture_t* capture,
 bool core_audio_capture_wait(core_audio_capture_t* capture,
                              uint32_t timeout_ms) {
   if (!capture || !capture->semaphore) return false;
-  dispatch_time_t timeout =
-      dispatch_time(DISPATCH_TIME_NOW, (int64_t)timeout_ms * 1000000LL);
-  return dispatch_semaphore_wait(capture->semaphore, timeout) == 0;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 /// Destroy and free the CoreAudio capture backend.
@@ -740,7 +739,7 @@ void core_audio_capture_destroy(core_audio_capture_t* capture) {
     free(capture->capture_rings);
   }
   if (capture->semaphore) {
-    dispatch_release(capture->semaphore);
+    cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
   free(capture);

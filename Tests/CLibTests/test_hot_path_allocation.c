@@ -13,6 +13,7 @@
 #include "Audio/processing_parameters.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dop_encoder.h"
+#include "Engine/cdsp_sem.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
 #include "Engine/engine_state_machine.h"
@@ -999,8 +1000,8 @@ typedef struct {
   engine_shared_state_t* shared;
   pipeline_t** reloaded_pipelines;
   audio_chunk_t* input_chunk;
-  engine_semaphore_t thread_id_sem;
-  engine_semaphore_t processed_sem;
+  cdsp_sem_t thread_id_sem;
+  cdsp_sem_t processed_sem;
   _Atomic uintptr_t watched_thread_id;
 } pipeline_reload_test_ctx_t;
 
@@ -1015,9 +1016,9 @@ static void on_chunk_processed_cb(void* ctx, const audio_chunk_t* chunk) {
   uintptr_t tid = (uintptr_t)pthread_self();
   uintptr_t expected = 0;
   if (atomic_compare_exchange_strong(&c->watched_thread_id, &expected, tid)) {
-    engine_sem_signal(c->thread_id_sem);
+    cdsp_sem_signal(c->thread_id_sem);
   }
-  engine_sem_signal(c->processed_sem);
+  cdsp_sem_signal(c->processed_sem);
 }
 
 static void* test_processing_thread_run(void* arg) {
@@ -1033,7 +1034,7 @@ static void reload_iter_c(int i, void* ctx) {
   engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
 
   // 4. Wait for processing completion
-  engine_sem_wait(c->processed_sem);
+  cdsp_sem_wait(c->processed_sem);
 
   // 5. Clean up queues
   void* processed =
@@ -1108,8 +1109,8 @@ TEST(PipelineReload_AllocationFree) {
   ctx.input_chunk = audio_chunk_create(1024, 2);
   audio_chunk_set_valid_frames(ctx.input_chunk, 1024);
 
-  ctx.thread_id_sem = engine_sem_create();
-  ctx.processed_sem = engine_sem_create();
+  ctx.thread_id_sem = cdsp_sem_create();
+  ctx.processed_sem = cdsp_sem_create();
   atomic_init(&ctx.watched_thread_id, 0);
 
   engine_processing_loop_t* loop = engine_processing_loop_create(
@@ -1130,8 +1131,8 @@ TEST(PipelineReload_AllocationFree) {
   engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0]);
   engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
 
-  engine_sem_wait(ctx.thread_id_sem);
-  engine_sem_wait(ctx.processed_sem);
+  cdsp_sem_wait(ctx.thread_id_sem);
+  cdsp_sem_wait(ctx.processed_sem);
 
   // Clean up queues after warmup
   void* processed =
@@ -1168,8 +1169,8 @@ TEST(PipelineReload_AllocationFree) {
   engine_state_machine_free(state_machine);
   processing_parameters_free(params);
 
-  engine_sem_destroy(ctx.thread_id_sem);
-  engine_sem_destroy(ctx.processed_sem);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+  cdsp_sem_destroy(ctx.processed_sem);
 }
 
 typedef struct {

@@ -8,77 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __APPLE__
-#include <dispatch/dispatch.h>
-typedef dispatch_semaphore_t app_logger_sem_t;
-/**
- * @brief Initializes a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_init(
-    app_logger_sem_t* sem) {
-  *sem = dispatch_semaphore_create(0);
-}
-/**
- * @brief Destroys a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_destroy(
-    app_logger_sem_t* sem) {
-  dispatch_release(*sem);
-}
-/**
- * @brief Signals a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_signal(
-    app_logger_sem_t* sem) {
-  dispatch_semaphore_signal(*sem);
-}
-/**
- * @brief Waits on a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_wait(
-    app_logger_sem_t* sem) {
-  dispatch_semaphore_wait(*sem, DISPATCH_TIME_FOREVER);
-}
-#else
-#include <semaphore.h>
-typedef sem_t app_logger_sem_t;
-/**
- * @brief Initializes a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_init(
-    app_logger_sem_t* sem) {
-  sem_init(sem, 0, 0);
-}
-/**
- * @brief Destroys a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_destroy(
-    app_logger_sem_t* sem) {
-  sem_destroy(sem);
-}
-/**
- * @brief Signals a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_signal(
-    app_logger_sem_t* sem) {
-  sem_post(sem);
-}
-/**
- * @brief Waits on a semaphore wrapper.
- * @param sem Pointer to the semaphore wrapper.
- */
-static inline void __attribute__((unused)) app_logger_sem_wait(
-    app_logger_sem_t* sem) {
-  sem_wait(sem);
-}
-#endif
+#include "Engine/cdsp_sem.h"
 
 struct app_logger_s {
   log_record_t* storage;
@@ -87,7 +17,7 @@ struct app_logger_s {
   size_t mask;
   _Atomic uint64_t write_index;
   _Atomic uint64_t read_index;
-  app_logger_sem_t semaphore;
+  cdsp_sem_t semaphore;
   _Atomic bool should_exit;
   _Atomic bool is_started;
   pthread_t worker_thread;
@@ -318,7 +248,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
 static void* worker_thread_func(void* arg) {
   app_logger_t* logger = (app_logger_t*)arg;
   while (!atomic_load_explicit(&logger->should_exit, memory_order_acquire)) {
-    app_logger_sem_wait(&logger->semaphore);
+    cdsp_sem_wait(logger->semaphore);
     if (atomic_load_explicit(&logger->should_exit, memory_order_acquire)) {
       // Drain remaining records before exiting
     }
@@ -383,6 +313,7 @@ static void* worker_thread_func(void* arg) {
 
 static void free_logger_internal(app_logger_t* logger) {
   if (!logger) return;
+  cdsp_sem_destroy(logger->semaphore);
   free(logger->storage);
   free(logger->sequences);
   free(logger);
@@ -416,7 +347,7 @@ static void init_shared_logger(void) {
   atomic_init(&g_shared_logger->read_index, 0);
   atomic_init(&g_shared_logger->should_exit, false);
   atomic_init(&g_shared_logger->is_started, false);
-  app_logger_sem_init(&g_shared_logger->semaphore);
+  g_shared_logger->semaphore = cdsp_sem_create();
   pthread_mutex_init(&g_shared_logger->worker_mutex, NULL);
 }
 
@@ -482,14 +413,14 @@ void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
 
   // Publish the written slot to the worker thread.
   atomic_store_explicit(&logger->sequences[slot], w + 1, memory_order_release);
-  app_logger_sem_signal(&logger->semaphore);
+  cdsp_sem_signal(logger->semaphore);
 }
 
 void app_logger_flush_and_stop(app_logger_t* logger) {
   if (!logger) return;
   if (atomic_load_explicit(&logger->is_started, memory_order_acquire)) {
     atomic_store_explicit(&logger->should_exit, true, memory_order_release);
-    app_logger_sem_signal(&logger->semaphore);
+    cdsp_sem_signal(logger->semaphore);
     pthread_join(logger->worker_thread, NULL);
     atomic_store_explicit(&logger->is_started, false, memory_order_release);
     atomic_store_explicit(&logger->should_exit, false, memory_order_release);

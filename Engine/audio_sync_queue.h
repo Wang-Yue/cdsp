@@ -12,83 +12,7 @@
 #include <stddef.h>
 
 #include "Audio/lock_free_ring_buffer.h"
-
-#ifdef __APPLE__
-#include <dispatch/dispatch.h>
-/**
- * @brief Platform-specific semaphore wrapper handle.
- */
-typedef dispatch_semaphore_t engine_semaphore_t;
-/**
- * @brief Creates a platform-specific semaphore wrapper.
- * @return The initialized semaphore handle, or NULL on failure.
- */
-static inline engine_semaphore_t engine_sem_create(void) {
-  return dispatch_semaphore_create(0);
-}
-/**
- * @brief Destroys the semaphore.
- * @param sem The semaphore handle to destroy.
- */
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) dispatch_release(sem);
-}
-/**
- * @brief Signals the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) dispatch_semaphore_signal(sem);
-}
-/**
- * @brief Waits on the semaphore.
- * @param sem The semaphore handle.
- */
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-}
-#elif defined(__linux__)
-#include <semaphore.h>
-#include <stdlib.h>
-typedef sem_t* engine_semaphore_t;
-static inline engine_semaphore_t engine_sem_create(void) {
-  sem_t* sem = (sem_t*)calloc(1, sizeof(sem_t));
-  if (!sem) return NULL;
-  if (sem_init(sem, 0, 0) != 0) {
-    free(sem);
-    return NULL;
-  }
-  return sem;
-}
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) {
-    sem_destroy(sem);
-    free(sem);
-  }
-}
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) sem_post(sem);
-}
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) sem_wait(sem);
-}
-#elif defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-typedef HANDLE engine_semaphore_t;
-static inline engine_semaphore_t engine_sem_create(void) {
-  return CreateSemaphore(NULL, 0, 2147483647L, NULL);
-}
-static inline void engine_sem_destroy(engine_semaphore_t sem) {
-  if (sem) CloseHandle(sem);
-}
-static inline void engine_sem_signal(engine_semaphore_t sem) {
-  if (sem) ReleaseSemaphore(sem, 1, NULL);
-}
-static inline void engine_sem_wait(engine_semaphore_t sem) {
-  if (sem) WaitForSingleObject(sem, INFINITE);
-}
-#endif
+#include "cdsp_sem.h"
 
 /**
  * @struct audio_sync_queue
@@ -126,8 +50,7 @@ spsc_queue_t* audio_sync_queue_get_spsc_queue(const audio_sync_queue_t* queue);
  * @param queue Pointer to the audio_sync_queue_t instance.
  * @return The kernel semaphore handle.
  */
-engine_semaphore_t audio_sync_queue_get_semaphore(
-    const audio_sync_queue_t* queue);
+cdsp_sem_t audio_sync_queue_get_semaphore(const audio_sync_queue_t* queue);
 
 /**
  * @brief Manually signals the queue's semaphore to wake up waiting consumer
