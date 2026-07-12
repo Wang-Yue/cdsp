@@ -69,6 +69,16 @@ struct engine_shared_state {
    * @brief Deferred free queue for old pipeline structures.
    */
   spsc_queue_t* pipeline_garbage_queue;
+
+  /**
+   * @brief Reference to the engine state machine.
+   */
+  engine_state_machine_t* state_machine;
+
+  /**
+   * @brief Count of active audio-priority loop threads.
+   */
+  _Atomic int active_threads;
 };
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
@@ -132,6 +142,7 @@ engine_shared_state_t* engine_shared_state_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->stop_requested, false);
   atomic_init(&state->resampler_ratio, 1.0);
+  atomic_init(&state->active_threads, 3);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
   if (!state->captured_queue || !state->processed_queue ||
@@ -207,4 +218,24 @@ audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
   if (!state) return NULL;
   return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
       state->processed_queue, &state->processing_done);
+}
+
+void engine_shared_state_set_state_machine(engine_shared_state_t* state,
+                                           engine_state_machine_t* sm) {
+  if (state) {
+    state->state_machine = sm;
+  }
+}
+
+void engine_shared_state_thread_exited(engine_shared_state_t* state) {
+  if (!state) return;
+  int remaining = atomic_fetch_sub_explicit(&state->active_threads, 1,
+                                            memory_order_acq_rel) -
+                  1;
+  if (remaining == 0) {
+    if (state->state_machine) {
+      engine_state_machine_set_state(state->state_machine,
+                                     PROCESSING_STATE_INACTIVE);
+    }
+  }
 }

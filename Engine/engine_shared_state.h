@@ -49,6 +49,7 @@ static inline void engine_yield(void) { SwitchToThread(); }
 #include <stdint.h>
 
 #include "Config/engine_config_types.h"
+#include "engine_state_machine.h"
 
 /**
  * @brief Opaque structure representing shared state between the engine threads.
@@ -199,5 +200,23 @@ audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
  */
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state);
+
+/**
+ * @brief Sets the state machine pointer in the shared state.
+ * @param state Pointer to the shared state instance.
+ * @param sm Pointer to the state machine instance.
+ */
+void engine_shared_state_set_state_machine(engine_shared_state_t* state,
+                                           engine_state_machine_t* sm);
+
+/**
+ * @brief Reports that an engine loop thread has exited.
+ *
+ * Decrements the active thread count. The thread that decrements it to 0
+ * transitions the state machine state to PROCESSING_STATE_INACTIVE.
+ *
+ * @param state Pointer to the shared state instance.
+ */
+void engine_shared_state_thread_exited(engine_shared_state_t* state);
 
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

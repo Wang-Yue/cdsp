@@ -210,6 +210,9 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
       config->devices.has_queuelimit ? config->devices.queuelimit : 4;
   core->shared = engine_shared_state_create(queue_limit, queue_limit);
   core->state_machine = engine_state_machine_create();
+  if (core->shared && core->state_machine) {
+    engine_shared_state_set_state_machine(core->shared, core->state_machine);
+  }
   core->processing_params = processing_parameters_create(
       capture_device_config_get_channels(&config->devices.capture),
       playback_device_config_get_channels(&config->devices.playback));

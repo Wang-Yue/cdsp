@@ -1087,7 +1087,6 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   // Timeout is 1.0s (the file is 0.1s long at 16kHz for 1600 frames)
   int elapsed_ms = 0;
   while (elapsed_ms < 1000) {
-    dsp_engine_poll(engine);
     state_update_t status = dsp_engine_get_status(engine);
     if (status.state == PROCESSING_STATE_INACTIVE) {
       break;

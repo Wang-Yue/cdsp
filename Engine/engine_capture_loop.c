@@ -298,4 +298,5 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     engine_shared_state_signal_captured(loop->shared);
   }
   logger_info(&logger, "Capture thread stopped");
+  engine_shared_state_thread_exited(loop->shared);
 }

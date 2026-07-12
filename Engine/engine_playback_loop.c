@@ -220,4 +220,5 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   if (rate_controller) pi_rate_controller_free(rate_controller);
   logger_info(&logger, "Playback thread stopped");
+  engine_shared_state_thread_exited(loop->shared);
 }

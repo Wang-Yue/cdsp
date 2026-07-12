@@ -293,4 +293,5 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     engine_shared_state_set_processing_done(loop->shared);
   }
   logger_info(&logger, "Processing thread stopped");
+  engine_shared_state_thread_exited(loop->shared);
 }
