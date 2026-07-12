@@ -66,7 +66,7 @@ void GeneralSettingsView::setupUi() {
     m_pollingRateLabel = new QLabel("30 Hz", pollGroup);
     m_pollingRateLabel->setFont(QFont("monospace", 11));
     m_pollingRateLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_pollingRateLabel->setFixedWidth(60);
+    m_pollingRateLabel->setMinimumWidth(80);
     pollBox->addWidget(m_pollingRateLabel);
 
     connect(m_pollingRateSlider, &QSlider::valueChanged, [this](int val) {
@@ -95,7 +95,7 @@ void GeneralSettingsView::setupUi() {
     m_silenceThresholdLabel = new QLabel("-60 dB", silenceGroup);
     m_silenceThresholdLabel->setFont(QFont("monospace", 11));
     m_silenceThresholdLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_silenceThresholdLabel->setFixedWidth(60);
+    m_silenceThresholdLabel->setMinimumWidth(80);
     threshBox->addWidget(m_silenceThresholdLabel);
 
     connect(m_silenceThresholdSlider, &QSlider::valueChanged, [this](int val) {
@@ -113,7 +113,7 @@ void GeneralSettingsView::setupUi() {
     m_silenceTimeoutLabel = new QLabel("Disabled", silenceGroup);
     m_silenceTimeoutLabel->setFont(QFont("monospace", 11));
     m_silenceTimeoutLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_silenceTimeoutLabel->setFixedWidth(60);
+    m_silenceTimeoutLabel->setMinimumWidth(85);
     timeoutBox->addWidget(m_silenceTimeoutLabel);
 
     connect(m_silenceTimeoutSlider, &QSlider::valueChanged, [this](int val) {

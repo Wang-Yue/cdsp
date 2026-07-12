@@ -274,7 +274,7 @@ void DashboardView::setupUi() {
         auto rowLayout = new QHBoxLayout();
 
         auto nameLbl = new QLabel(info.name, faderGroup);
-        nameLbl->setFixedWidth(80);
+        nameLbl->setFixedWidth(100);
         nameLbl->setFont(QFont("System", 13, QFont::DemiBold));
 
         auto muteBtn = new QPushButton("🔊", faderGroup);
@@ -288,7 +288,7 @@ void DashboardView::setupUi() {
 
         auto gainLbl = new QLabel(" 0.0 dB", faderGroup);
         gainLbl->setFont(QFont("monospace", 11, QFont::Bold));
-        gainLbl->setFixedWidth(75);
+        gainLbl->setMinimumWidth(90);
         gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
         Fader f = info.fader;

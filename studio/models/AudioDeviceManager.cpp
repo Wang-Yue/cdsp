@@ -2,24 +2,11 @@
 
 #include <QDebug>
 #include <QJsonDocument>
+#include <QMediaDevices>
 #include <QSettings>
 #include <QtConcurrent>
 #include <algorithm>
 #include <set>
-
-#ifdef __APPLE__
-#include <CoreAudio/CoreAudio.h>
-
-static OSStatus audioDeviceChangeListenerCallback(AudioObjectID inObjectID, UInt32 inNumberAddresses,
-                                                  const AudioObjectPropertyAddress inAddresses[], void* inClientData) {
-    AudioDeviceManager* manager = static_cast<AudioDeviceManager*>(inClientData);
-    if (manager) {
-        qDebug() << "[AudioDeviceManager] CoreAudio device change detected, refreshing devices...";
-        QMetaObject::invokeMethod(manager, [manager]() { manager->fetchDevices(); });
-    }
-    return noErr;
-}
-#endif
 
 AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings,
                                        QObject* parent)
@@ -39,19 +26,26 @@ AudioDeviceManager::~AudioDeviceManager() {
 }
 
 void AudioDeviceManager::startDeviceChangeListener() {
-#ifdef __APPLE__
-    AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
-                                          kAudioObjectPropertyElementMain};
-    AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, audioDeviceChangeListenerCallback, this);
-#endif
+    stopDeviceChangeListener();
+    m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this]() {
+        qDebug() << "[AudioDeviceManager] Qt audio input device change detected, refreshing devices...";
+        fetchDevices();
+    });
+    m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
+        qDebug() << "[AudioDeviceManager] Qt audio output device change detected, refreshing devices...";
+        fetchDevices();
+    });
 }
 
 void AudioDeviceManager::stopDeviceChangeListener() {
-#ifdef __APPLE__
-    AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
-                                          kAudioObjectPropertyElementMain};
-    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address, audioDeviceChangeListenerCallback, this);
-#endif
+    if (m_inputsConnection) {
+        disconnect(m_inputsConnection);
+        m_inputsConnection = {};
+    }
+    if (m_outputsConnection) {
+        disconnect(m_outputsConnection);
+        m_outputsConnection = {};
+    }
 }
 
 void AudioDeviceManager::loadSavedConfigs() {

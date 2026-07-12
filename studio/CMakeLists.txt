@@ -9,7 +9,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
 find_package(Threads REQUIRED)
 
 # Define system libraries based on platform
@@ -113,6 +113,7 @@ target_link_libraries(MonitorQt PRIVATE
     Qt6::Widgets
     Qt6::Network
     Qt6::Concurrent
+    Qt6::Multimedia
     Threads::Threads
     ${CDSP_LIB}
     ${PLATFORM_LIBS}

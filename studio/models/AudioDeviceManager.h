@@ -6,6 +6,7 @@
 #include "models/DeviceConfig.h"
 
 #include <QFutureWatcher>
+#include <QMediaDevices>
 #include <QObject>
 #include <memory>
 #include <vector>
@@ -56,6 +57,10 @@ private:
 
     QFutureWatcher<void> m_devicesWatcher;
     QFutureWatcher<void> m_capabilitiesWatcher;
+
+    QMediaDevices m_mediaDevices;
+    QMetaObject::Connection m_inputsConnection;
+    QMetaObject::Connection m_outputsConnection;
 
     void loadSavedConfigs();
 };

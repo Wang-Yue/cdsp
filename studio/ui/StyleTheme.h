@@ -131,11 +131,18 @@ public:
             }
 
             /* Form Input Controls */
-            QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+            QLineEdit, QTextEdit, QPlainTextEdit {
                 background-color: #ffffff;
                 border: 1px solid #c6c6c8;
                 border-radius: 6px;
-                padding: 5px 8px;
+                padding: 4px 8px;
+                color: #000000;
+            }
+            QSpinBox, QDoubleSpinBox {
+                background-color: #ffffff;
+                border: 1px solid #c6c6c8;
+                border-radius: 6px;
+                padding: 4px 20px 4px 6px;
                 color: #000000;
             }
             QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {
@@ -392,11 +399,18 @@ public:
                 border: 1px solid #282a36;
             }
 
-            QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+            QLineEdit, QTextEdit, QPlainTextEdit {
                 background-color: #121318;
                 border: 1px solid #2c2d3a;
                 border-radius: 6px;
-                padding: 5px 8px;
+                padding: 4px 8px;
+                color: #ffffff;
+            }
+            QSpinBox, QDoubleSpinBox {
+                background-color: #121318;
+                border: 1px solid #2c2d3a;
+                border-radius: 6px;
+                padding: 4px 20px 4px 6px;
                 color: #ffffff;
             }
             QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {

@@ -169,7 +169,7 @@ void ConvolutionPresetDetailView::refreshUi() {
             auto fileRow = new QHBoxLayout();
 
             auto rateLbl = new QLabel(QString("%1 Hz:").arg(r), m_filesContainer);
-            rateLbl->setFixedWidth(80);
+            rateLbl->setFixedWidth(110);
             fileRow->addWidget(rateLbl);
 
             auto pathLbl = new QLabel(p, m_filesContainer);

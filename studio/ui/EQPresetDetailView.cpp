@@ -70,7 +70,8 @@ void EQPresetDetailView::setupUi() {
     m_preampSpin->setRange(-20.0, 12.0);
     m_preampSpin->setSingleStep(0.5);
     m_preampSpin->setSuffix(" dB");
-    m_preampSpin->setFixedWidth(80);
+    m_preampSpin->setMinimumWidth(100);
+    m_preampSpin->setMaximumWidth(130);
 
     connect(m_preampSlider, &QSlider::valueChanged, [this](int val) {
         if (m_isRefreshing)
