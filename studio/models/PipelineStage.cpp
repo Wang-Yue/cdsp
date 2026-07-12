@@ -731,9 +731,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         }
     }
 
-    std::string prefix =
-        QString::fromStdString(stageTypeToString(stage.type)).toLower().replace(" ", "").toStdString() + "_" +
-        stage.id.toString(QUuid::WithoutBraces).left(8).toStdString();
+    std::string prefix = QString::fromStdString(stageTypeToString(stage.type)).toLower().toStdString() + "_" +
+                         stage.id.toString(QUuid::WithoutBraces).left(8).toStdString();
     std::vector<int> chList = stage.channels;
     std::sort(chList.begin(), chList.end());
 

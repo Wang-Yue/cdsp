@@ -1157,6 +1157,8 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto relSlider = new QSlider(Qt::Horizontal, limGroup);
         relSlider->setRange(5, 1000);
+        relSlider->setSingleStep(5);
+        relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.lookaheadRelease)), limGroup);
         relLbl->setFixedWidth(65);
