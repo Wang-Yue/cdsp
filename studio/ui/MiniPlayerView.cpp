@@ -17,12 +17,16 @@
 
 static void setMacFloatingPanelProperties(QWidget* widget) {
     if (auto window = widget->windowHandle()) {
-        void* nsWindow = reinterpret_cast<void*>(window->winId());
-        if (nsWindow) {
-            unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 10);
-            reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(
-                nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
-            reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"), 1000L);
+        void* view = reinterpret_cast<void*>(window->winId());
+        if (view) {
+            void* nsWindow = reinterpret_cast<void* (*)(void*, SEL)>(objc_msgSend)(view, sel_registerName("window"));
+            if (nsWindow) {
+                unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 10);
+                reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(
+                    nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
+                reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"),
+                                                                           1000L);
+            }
         }
     }
 }
