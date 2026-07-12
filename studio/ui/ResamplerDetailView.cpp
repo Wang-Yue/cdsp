@@ -36,6 +36,7 @@ void ResamplerDetailView::setupUi() {
     auto container = this;
     m_typeGroup = new QGroupBox("Resampler Type & Parameters", container);
     m_typeForm = new QFormLayout(m_typeGroup);
+    m_typeForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_typeCombo = new QComboBox(m_typeGroup);
     m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly", "Apple"});

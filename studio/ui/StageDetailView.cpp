@@ -538,11 +538,15 @@ void StageDetailView::buildStageOptionsUi() {
 
         if (stage.cxCustomEnabled) {
             auto formLayout = new QFormLayout();
+            formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
             auto fcSlider = new QSlider(Qt::Horizontal, customGroup);
             fcSlider->setRange(300, 1200);
             fcSlider->setValue(static_cast<int>(stage.cxFc));
             auto fcLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.cxFc)), customGroup);
+            fcLbl->setFixedWidth(65);
+            fcLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            fcLbl->setFont(QFont("monospace", 11));
             connect(fcSlider, &QSlider::valueChanged, [this, &stage, fcLbl](int val) {
                 stage.cxFc = val;
                 fcLbl->setText(QString("%1 Hz").arg(val));
@@ -557,6 +561,9 @@ void StageDetailView::buildStageOptionsUi() {
             dbSlider->setRange(10, 200);
             dbSlider->setValue(static_cast<int>(stage.cxDb * 10.0));
             auto dbLbl = new QLabel(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1), customGroup);
+            dbLbl->setFixedWidth(65);
+            dbLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            dbLbl->setFont(QFont("monospace", 11));
             connect(dbSlider, &QSlider::valueChanged, [this, &stage, dbLbl](int val) {
                 stage.cxDb = val / 10.0;
                 dbLbl->setText(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1));
@@ -805,11 +812,15 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Loudness: {
         auto loudGroup = new QGroupBox("Loudness Compensation", m_optionsContainer);
         auto formLayout = new QFormLayout(loudGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto refSlider = new QSlider(Qt::Horizontal, loudGroup);
         refSlider->setRange(-100, 20);
         refSlider->setValue(static_cast<int>(stage.loudnessReference));
         auto refLbl = new QLabel(QString("%1 dB").arg(static_cast<int>(stage.loudnessReference)), loudGroup);
+        refLbl->setFixedWidth(65);
+        refLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        refLbl->setFont(QFont("monospace", 11));
         connect(refSlider, &QSlider::valueChanged, [this, &stage, refLbl](int val) {
             stage.loudnessReference = val;
             refLbl->setText(QString("%1 dB").arg(val));
@@ -824,6 +835,9 @@ void StageDetailView::buildStageOptionsUi() {
         lowSlider->setRange(0, 40);
         lowSlider->setValue(static_cast<int>(stage.loudnessLowBoost * 2.0));
         auto lowLbl = new QLabel(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1), loudGroup);
+        lowLbl->setFixedWidth(65);
+        lowLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lowLbl->setFont(QFont("monospace", 11));
         connect(lowSlider, &QSlider::valueChanged, [this, &stage, lowLbl](int val) {
             stage.loudnessLowBoost = val / 2.0;
             lowLbl->setText(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1));
@@ -838,6 +852,9 @@ void StageDetailView::buildStageOptionsUi() {
         highSlider->setRange(0, 40);
         highSlider->setValue(static_cast<int>(stage.loudnessHighBoost * 2.0));
         auto highLbl = new QLabel(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1), loudGroup);
+        highLbl->setFixedWidth(65);
+        highLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        highLbl->setFont(QFont("monospace", 11));
         connect(highSlider, &QSlider::valueChanged, [this, &stage, highLbl](int val) {
             stage.loudnessHighBoost = val / 2.0;
             highLbl->setText(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1));
@@ -967,6 +984,7 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Delay: {
         auto delayGroup = new QGroupBox("Delay / Time Alignment", m_optionsContainer);
         auto formLayout = new QFormLayout(delayGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto unitCombo = new QComboBox(delayGroup);
         unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
@@ -992,6 +1010,9 @@ void StageDetailView::buildStageOptionsUi() {
                                        .arg(stage.delayValue, 0, 'f', 2)
                                        .arg(QString::fromStdString(delayUnitToString(stage.delayUnit))),
                                    delayGroup);
+        delayLbl->setFixedWidth(80);
+        delayLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        delayLbl->setFont(QFont("monospace", 11));
 
         auto zeroBtn = new QPushButton("Zero", delayGroup);
         connect(zeroBtn, &QPushButton::clicked, [this, &stage]() {
@@ -1030,6 +1051,7 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Volume: {
         auto volGroup = new QGroupBox("Volume Control", m_optionsContainer);
         auto formLayout = new QFormLayout(volGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto faderCombo = new QComboBox(volGroup);
         faderCombo->addItems({"Aux 1", "Aux 2", "Aux 3", "Aux 4"});
@@ -1044,6 +1066,9 @@ void StageDetailView::buildStageOptionsUi() {
         rampSlider->setRange(0, 40);
         rampSlider->setValue(static_cast<int>(stage.volumeRampTime / 50.0));
         auto rampLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.volumeRampTime)), volGroup);
+        rampLbl->setFixedWidth(65);
+        rampLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        rampLbl->setFont(QFont("monospace", 11));
         connect(rampSlider, &QSlider::valueChanged, [this, &stage, rampLbl](int val) {
             stage.volumeRampTime = val * 50;
             rampLbl->setText(QString("%1 ms").arg(static_cast<int>(stage.volumeRampTime)));
@@ -1059,6 +1084,9 @@ void StageDetailView::buildStageOptionsUi() {
         limitSlider->setValue(static_cast<int>(stage.volumeLimit * 10.0));
         auto limitLbl = new QLabel(
             QString("%1%2 dB").arg(stage.volumeLimit >= 0 ? "+" : "").arg(stage.volumeLimit, 0, 'f', 1), volGroup);
+        limitLbl->setFixedWidth(65);
+        limitLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        limitLbl->setFont(QFont("monospace", 11));
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
             stage.volumeLimit = val / 10.0;
             limitLbl->setText(
@@ -1077,11 +1105,15 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::LookaheadLimiter: {
         auto limGroup = new QGroupBox("Lookahead Peak Limiter", m_optionsContainer);
         auto formLayout = new QFormLayout(limGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
         limitSlider->setRange(-300, 0);
         limitSlider->setValue(static_cast<int>(stage.lookaheadLimit * 10.0));
         auto limitLbl = new QLabel(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1), limGroup);
+        limitLbl->setFixedWidth(65);
+        limitLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        limitLbl->setFont(QFont("monospace", 11));
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
             stage.lookaheadLimit = val / 10.0;
             limitLbl->setText(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1));
@@ -1096,6 +1128,9 @@ void StageDetailView::buildStageOptionsUi() {
         attSlider->setRange(1, 10000);
         attSlider->setValue(static_cast<int>(stage.lookaheadAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1), limGroup);
+        attLbl->setFixedWidth(65);
+        attLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        attLbl->setFont(QFont("monospace", 11));
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.lookaheadAttack = val / 10.0;
             attLbl->setText(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1));
@@ -1110,6 +1145,9 @@ void StageDetailView::buildStageOptionsUi() {
         relSlider->setRange(5, 1000);
         relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.lookaheadRelease)), limGroup);
+        relLbl->setFixedWidth(65);
+        relLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        relLbl->setFont(QFont("monospace", 11));
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
             stage.lookaheadRelease = val;
             relLbl->setText(QString("%1 ms").arg(val));
@@ -1127,11 +1165,15 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Limiter: {
         auto limGroup = new QGroupBox("Peak Limiter", m_optionsContainer);
         auto formLayout = new QFormLayout(limGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
         limitSlider->setRange(-300, 0);
         limitSlider->setValue(static_cast<int>(stage.limiterLimit * 10.0));
         auto limitLbl = new QLabel(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1), limGroup);
+        limitLbl->setFixedWidth(65);
+        limitLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        limitLbl->setFont(QFont("monospace", 11));
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
             stage.limiterLimit = val / 10.0;
             limitLbl->setText(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1));
@@ -1378,11 +1420,15 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Compressor: {
         auto compGroup = new QGroupBox("Dynamics Compressor", m_optionsContainer);
         auto formLayout = new QFormLayout(compGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto thSlider = new QSlider(Qt::Horizontal, compGroup);
         thSlider->setRange(-600, 0);
         thSlider->setValue(static_cast<int>(stage.compressorThreshold * 10.0));
         auto thLbl = new QLabel(QString("%1 dB").arg(stage.compressorThreshold, 0, 'f', 1), compGroup);
+        thLbl->setFixedWidth(65);
+        thLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        thLbl->setFont(QFont("monospace", 11));
         connect(thSlider, &QSlider::valueChanged, [this, &stage, thLbl](int val) {
             stage.compressorThreshold = val / 10.0;
             thLbl->setText(QString("%1 dB").arg(stage.compressorThreshold, 0, 'f', 1));
@@ -1397,6 +1443,9 @@ void StageDetailView::buildStageOptionsUi() {
         ratioSlider->setRange(10, 200);
         ratioSlider->setValue(static_cast<int>(stage.compressorRatio * 10.0));
         auto ratioLbl = new QLabel(QString("%1:1").arg(stage.compressorRatio, 0, 'f', 1), compGroup);
+        ratioLbl->setFixedWidth(65);
+        ratioLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        ratioLbl->setFont(QFont("monospace", 11));
         connect(ratioSlider, &QSlider::valueChanged, [this, &stage, ratioLbl](int val) {
             stage.compressorRatio = val / 10.0;
             ratioLbl->setText(QString("%1:1").arg(stage.compressorRatio, 0, 'f', 1));
@@ -1411,6 +1460,9 @@ void StageDetailView::buildStageOptionsUi() {
         attSlider->setRange(1, 1000);
         attSlider->setValue(static_cast<int>(stage.compressorAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1), compGroup);
+        attLbl->setFixedWidth(65);
+        attLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        attLbl->setFont(QFont("monospace", 11));
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.compressorAttack = val / 10.0;
             attLbl->setText(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1));
@@ -1425,6 +1477,9 @@ void StageDetailView::buildStageOptionsUi() {
         relSlider->setRange(5, 1000);
         relSlider->setValue(static_cast<int>(stage.compressorRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.compressorRelease)), compGroup);
+        relLbl->setFixedWidth(65);
+        relLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        relLbl->setFont(QFont("monospace", 11));
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
             stage.compressorRelease = val;
             relLbl->setText(QString("%1 ms").arg(val));
@@ -1442,6 +1497,9 @@ void StageDetailView::buildStageOptionsUi() {
                                     .arg(stage.compressorMakeupGain >= 0 ? "+" : "")
                                     .arg(stage.compressorMakeupGain, 0, 'f', 1),
                                 compGroup);
+        mkLbl->setFixedWidth(65);
+        mkLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        mkLbl->setFont(QFont("monospace", 11));
         connect(mkSlider, &QSlider::valueChanged, [this, &stage, mkLbl](int val) {
             stage.compressorMakeupGain = val / 10.0;
             mkLbl->setText(QString("%1%2 dB")
@@ -1496,6 +1554,9 @@ void StageDetailView::buildStageOptionsUi() {
             clipSlider->setRange(-100, 0);
             clipSlider->setValue(static_cast<int>(stage.compressorClipLimit * 10.0));
             auto clipLbl = new QLabel(QString("%1 dB").arg(stage.compressorClipLimit, 0, 'f', 1), compGroup);
+            clipLbl->setFixedWidth(65);
+            clipLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            clipLbl->setFont(QFont("monospace", 11));
             connect(clipSlider, &QSlider::valueChanged, [this, &stage, clipLbl](int val) {
                 stage.compressorClipLimit = val / 10.0;
                 clipLbl->setText(QString("%1 dB").arg(stage.compressorClipLimit, 0, 'f', 1));
@@ -1514,11 +1575,15 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::NoiseGate: {
         auto gateGroup = new QGroupBox("Noise Gate", m_optionsContainer);
         auto formLayout = new QFormLayout(gateGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto thSlider = new QSlider(Qt::Horizontal, gateGroup);
         thSlider->setRange(-1000, 0);
         thSlider->setValue(static_cast<int>(stage.gateThreshold * 10.0));
         auto thLbl = new QLabel(QString("%1 dB").arg(stage.gateThreshold, 0, 'f', 1), gateGroup);
+        thLbl->setFixedWidth(65);
+        thLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        thLbl->setFont(QFont("monospace", 11));
         connect(thSlider, &QSlider::valueChanged, [this, &stage, thLbl](int val) {
             stage.gateThreshold = val / 10.0;
             thLbl->setText(QString("%1 dB").arg(stage.gateThreshold, 0, 'f', 1));
@@ -1533,6 +1598,9 @@ void StageDetailView::buildStageOptionsUi() {
         attenSlider->setRange(-1000, 0);
         attenSlider->setValue(static_cast<int>(stage.gateAttenuation * 10.0));
         auto attenLbl = new QLabel(QString("%1 dB").arg(stage.gateAttenuation, 0, 'f', 1), gateGroup);
+        attenLbl->setFixedWidth(65);
+        attenLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        attenLbl->setFont(QFont("monospace", 11));
         connect(attenSlider, &QSlider::valueChanged, [this, &stage, attenLbl](int val) {
             stage.gateAttenuation = val / 10.0;
             attenLbl->setText(QString("%1 dB").arg(stage.gateAttenuation, 0, 'f', 1));
@@ -1547,6 +1615,9 @@ void StageDetailView::buildStageOptionsUi() {
         attSlider->setRange(1, 1000);
         attSlider->setValue(static_cast<int>(stage.gateAttack * 10.0));
         auto attLbl = new QLabel(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1), gateGroup);
+        attLbl->setFixedWidth(65);
+        attLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        attLbl->setFont(QFont("monospace", 11));
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.gateAttack = val / 10.0;
             attLbl->setText(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1));
@@ -1614,6 +1685,7 @@ void StageDetailView::buildStageOptionsUi() {
         raceVBox->addWidget(descLbl);
 
         auto formLayout = new QFormLayout();
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto unitCombo = new QComboBox(raceGroup);
         unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
@@ -1648,6 +1720,9 @@ void StageDetailView::buildStageOptionsUi() {
                                        .arg(stage.raceDelay, 0, 'f', 2)
                                        .arg(QString::fromStdString(delayUnitToString(stage.raceDelayUnit))),
                                    raceGroup);
+        delayLbl->setFixedWidth(80);
+        delayLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        delayLbl->setFont(QFont("monospace", 11));
         connect(delaySlider, &QSlider::valueChanged, [this, &stage, delayLbl, minVal, stepVal](int val) {
             stage.raceDelay = minVal + val * stepVal;
             delayLbl->setText(QString("%1 %2")
@@ -1664,6 +1739,9 @@ void StageDetailView::buildStageOptionsUi() {
         attenSlider->setRange(10, 200);
         attenSlider->setValue(static_cast<int>(stage.raceAttenuation * 10.0));
         auto attenLbl = new QLabel(QString("%1 dB").arg(stage.raceAttenuation, 0, 'f', 1), raceGroup);
+        attenLbl->setFixedWidth(65);
+        attenLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        attenLbl->setFont(QFont("monospace", 11));
         connect(attenSlider, &QSlider::valueChanged, [this, &stage, attenLbl](int val) {
             stage.raceAttenuation = val / 10.0;
             attenLbl->setText(QString("%1 dB").arg(stage.raceAttenuation, 0, 'f', 1));
@@ -1690,6 +1768,7 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::Dither: {
         auto ditherGroup = new QGroupBox("Dither Noise Shaping", m_optionsContainer);
         auto formLayout = new QFormLayout(ditherGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto typeCombo = new QComboBox(ditherGroup);
         static const std::vector<DitherType> types = {DitherType::None,
@@ -1750,6 +1829,9 @@ void StageDetailView::buildStageOptionsUi() {
         ampSlider->setRange(0, 1000);
         ampSlider->setValue(static_cast<int>(stage.ditherAmplitude * 10.0));
         auto ampLbl = new QLabel(QString("%1").arg(stage.ditherAmplitude, 0, 'f', 1), ditherGroup);
+        ampLbl->setFixedWidth(65);
+        ampLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        ampLbl->setFont(QFont("monospace", 11));
         connect(ampSlider, &QSlider::valueChanged, [this, &stage, ampLbl](int val) {
             stage.ditherAmplitude = val / 10.0;
             ampLbl->setText(QString("%1").arg(stage.ditherAmplitude, 0, 'f', 1));
@@ -1774,6 +1856,7 @@ void StageDetailView::buildStageOptionsUi() {
         deVBox->addWidget(descLbl);
 
         auto formLayout = new QFormLayout();
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto bEdit = new QLineEdit(QString::fromStdString(stage.diffEqB), deGroup);
         bEdit->setPlaceholderText("e.g. 1.0, 0.5, 0.25");
@@ -1799,6 +1882,7 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::BiquadCombo: {
         auto comboGroup = new QGroupBox("Biquad Combo / Crossovers", m_optionsContainer);
         auto formLayout = new QFormLayout(comboGroup);
+        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto typeCombo = new QComboBox(comboGroup);
         typeCombo->addItems({"Butterworth Lowpass", "Butterworth Highpass", "Linkwitz-Riley Lowpass",
@@ -1816,6 +1900,9 @@ void StageDetailView::buildStageOptionsUi() {
             freqSlider->setRange(20, 20000);
             freqSlider->setValue(static_cast<int>(stage.comboFreq));
             auto freqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)), comboGroup);
+            freqLbl->setFixedWidth(65);
+            freqLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            freqLbl->setFont(QFont("monospace", 11));
             connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl](int val) {
                 stage.comboFreq = val;
                 freqLbl->setText(QString("%1 Hz").arg(val));
@@ -1852,6 +1939,9 @@ void StageDetailView::buildStageOptionsUi() {
             gainSlider->setValue(static_cast<int>(stage.comboGain * 10.0));
             auto gainLbl = new QLabel(
                 QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1), comboGroup);
+            gainLbl->setFixedWidth(65);
+            gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            gainLbl->setFont(QFont("monospace", 11));
             connect(gainSlider, &QSlider::valueChanged, [this, &stage, gainLbl](int val) {
                 stage.comboGain = val / 10.0;
                 gainLbl->setText(
