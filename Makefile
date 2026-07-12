@@ -213,6 +213,7 @@ OBJ_DIR := $(ROOT_DIR)/.build/obj
 OBJS := $(patsubst $(ROOT_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
+SERVER_SRCS := $(wildcard $(SRC_ROOT)/Server/*.c)
 CLI_SRC := $(SRC_ROOT)/main.c
 CLI_BIN := $(SRC_ROOT)/bin/dsp-cli
 
@@ -280,9 +281,13 @@ bench: test-rust-build $(BENCH_BINS)
 
 cli: $(CLI_BIN)
 
-$(CLI_BIN): $(CLI_SRC) $(LIB_TARGET)
+$(CLI_BIN): $(CLI_SRC) $(SERVER_SRCS) $(LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
+ifeq ($(UNAME_S),Darwin)
+	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,-force_load $(LIB_TARGET) $(LDFLAGS) -o $@
+else
+	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
+endif
 
 format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
