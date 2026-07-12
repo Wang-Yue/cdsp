@@ -454,10 +454,21 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
                       : capture_chunk_size,
       capture_device_config_get_channels(
           &core->current_config->devices.capture));
-  audio_chunk_set_valid_frames(core->resampler_scratch, 0);
   core->pipeline_scratch = audio_chunk_create(
       playback_chunk_size, playback_device_config_get_channels(
                                &core->current_config->devices.playback));
+  if (!core->resampler_scratch || !core->pipeline_scratch) {
+    logger_error(&logger, "Failed to allocate scratch audio chunks");
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      snprintf(err->message, sizeof(err->message),
+               "Failed to allocate scratch chunks");
+    }
+    dsp_engine_core_stop(core,
+                         (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    return false;
+  }
+  audio_chunk_set_valid_frames(core->resampler_scratch, 0);
   audio_chunk_set_valid_frames(core->pipeline_scratch, 0);
 
   // 8. Create the DSP processing pipeline.
