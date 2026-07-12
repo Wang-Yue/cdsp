@@ -436,7 +436,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       synchronous_resampler_t* res = synchronous_resampler_create(
           channels, input_rate, output_rate, chunk_size, err);
       if (!res) {
-        logger_error(&logger, "Failed to create synchronous resampler");
+        logger_error(&logger, "Failed to create synchronous resampler (%zuHz->%zuHz, %zuch): %s",
+                     input_rate, output_rate, channels, err ? err->message : "unknown error");
         return NULL;
       }
       audio_resampler_t* wrap = audio_resampler_wrap_synchronous(res);
@@ -459,7 +460,8 @@ audio_resampler_t* audio_resampler_create_from_config(
             (size_t)config->oversampling_factor, interp, wf, config->f_cutoff,
             config->has_f_cutoff, chunk_size, 1.1, err);
         if (!res) {
-          logger_error(&logger, "Failed to create async sinc resampler");
+          logger_error(&logger, "Failed to create async sinc resampler (%zuHz->%zuHz, %zuch): %s",
+                       input_rate, output_rate, channels, err ? err->message : "unknown error");
           return NULL;
         }
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
@@ -477,8 +479,8 @@ audio_resampler_t* audio_resampler_create_from_config(
         async_sinc_resampler_t* res = async_sinc_resampler_create_from_profile(
             channels, input_rate, output_rate, prof, chunk_size, 1.1, err);
         if (!res) {
-          logger_error(&logger,
-                       "Failed to create async sinc resampler from profile");
+          logger_error(&logger, "Failed to create async sinc resampler from profile (%zuHz->%zuHz, %zuch): %s",
+                       input_rate, output_rate, channels, err ? err->message : "unknown error");
           return NULL;
         }
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
@@ -498,7 +500,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       async_poly_resampler_t* res = async_poly_resampler_create(
           channels, input_rate, output_rate, interp, chunk_size, 1.1, err);
       if (!res) {
-        logger_error(&logger, "Failed to create async poly resampler");
+        logger_error(&logger, "Failed to create async poly resampler (%zuHz->%zuHz, %zuch): %s",
+                     input_rate, output_rate, channels, err ? err->message : "unknown error");
         return NULL;
       }
       audio_resampler_t* wrap = audio_resampler_wrap_async_poly(res);
@@ -520,7 +523,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       apple_resampler_t* res = apple_resampler_create(
           channels, input_rate, output_rate, qual, comp, chunk_size, err);
       if (!res) {
-        logger_error(&logger, "Failed to create Apple resampler");
+        logger_error(&logger, "Failed to create Apple resampler (%zuHz->%zuHz, %zuch): %s",
+                     input_rate, output_rate, channels, err ? err->message : "unknown error");
         return NULL;
       }
       audio_resampler_t* wrap = audio_resampler_wrap_apple(res);

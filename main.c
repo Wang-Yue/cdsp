@@ -557,7 +557,7 @@ int main(int argc, char** argv) {
 
   dsp_engine_t* engine = dsp_engine_create();
   if (!engine) {
-    logger_error(&logger, "Failed to allocate dsp_engine_t");
+    logger_error(&logger, "Failed to allocate dsp_engine_t: out of memory");
     printf("Error starting engine: Failed to allocate engine\n");
     if (parsed) dsp_config_free(parsed);
     if (config_json) free(config_json);
@@ -611,7 +611,7 @@ int main(int argc, char** argv) {
     if (websocket_server_start(server)) {
       printf("WebSocket server running on %s:%u\n", bind_address, port);
     } else {
-      logger_error(&logger, "Failed to start WebSocket server");
+      logger_error(&logger, "Failed to start WebSocket server on %s:%u", bind_address, port);
       printf("Error starting WebSocket server\n");
     }
   }

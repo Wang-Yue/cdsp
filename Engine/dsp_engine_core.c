@@ -392,7 +392,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
           &core->current_config->devices.playback));
 
   if (!core->capture_chunk_pool || !core->processing_scratch_pool) {
-    logger_error(&logger, "Failed to allocate round-robin chunk pools");
+    logger_error(&logger, "Failed to allocate round-robin chunk pools (cap_pool=%zu, proc_pool=%zu, chunk_size=%zu)",
+                 capture_pool_cap, processing_pool_cap, capture_chunk_size);
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       snprintf(err->message, sizeof(err->message),
@@ -449,7 +450,10 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       target_level);
 
   if (!core->capture_loop || !core->processing_loop || !core->playback_loop) {
-    logger_error(&logger, "Failed to instantiate engine loops");
+    logger_error(&logger, "Failed to instantiate engine loops (capture_loop=%s, processing_loop=%s, playback_loop=%s)",
+                 core->capture_loop ? "OK" : "NULL",
+                 core->processing_loop ? "OK" : "NULL",
+                 core->playback_loop ? "OK" : "NULL");
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       snprintf(err->message, sizeof(err->message),

@@ -4122,7 +4122,7 @@ bool websocket_server_start(websocket_server_t* server) {
 
   server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (IS_INVALID_SOCKET(server->server_fd)) {
-    logger_error(&server_logger, "Failed to create server socket");
+    logger_error(&server_logger, "Failed to create server socket: %s (errno=%d)", strerror(errno), errno);
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -4156,7 +4156,8 @@ bool websocket_server_start(websocket_server_t* server) {
   }
 
   if (IS_SOCKET_ERROR(listen(server->server_fd, 10))) {
-    logger_error(&server_logger, "Failed to listen on WebSocket server socket");
+    logger_error(&server_logger, "Failed to listen on WebSocket server socket on %s:%d: %s (errno=%d)",
+                 server->host, server->port, strerror(errno), errno);
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
 #ifdef _WIN32
@@ -4167,7 +4168,8 @@ bool websocket_server_start(websocket_server_t* server) {
 
   atomic_store_explicit(&server->running, true, memory_order_release);
   if (pthread_create(&server->thread, NULL, server_thread_func, server) != 0) {
-    logger_error(&server_logger, "Failed to create WebSocket server thread");
+    logger_error(&server_logger, "Failed to create WebSocket server thread: %s (errno=%d)",
+                 strerror(errno), errno);
     atomic_store_explicit(&server->running, false, memory_order_release);
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
