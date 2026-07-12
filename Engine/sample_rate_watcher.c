@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "Logging/app_logger.h"
+
 #ifndef __APPLE__
 #define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
 static inline uint64_t clock_gettime_nsec_np(int clock_id) {
@@ -68,11 +70,23 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
 
   if (measured_rate < min_val || measured_rate > max_val) {
     watcher->deviation_count++;
+    logger_t logger = logger_create("dsp.engine.rate_watcher");
+    logger_warn(&logger,
+                "Sample rate deviation tick %d: measured %.1fHz, target %.1fHz",
+                log_arg_int((int64_t)watcher->deviation_count),
+                log_arg_double(measured_rate),
+                log_arg_double(watcher->target_rate));
   } else {
     watcher->deviation_count = 0;
   }
 
   if (watcher->deviation_count >= 3) {
+    logger_t logger = logger_create("dsp.engine.rate_watcher");
+    logger_error(&logger,
+                 "Sample rate deviation persistent! Measured rate: %.1fHz "
+                 "(target %.1fHz)",
+                 log_arg_double(measured_rate),
+                 log_arg_double(watcher->target_rate));
     *out_measured_rate = measured_rate;
     return true;
   }

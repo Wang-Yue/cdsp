@@ -8,6 +8,7 @@
 #include "Audio/double_helpers.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
+#include "Logging/app_logger.h"
 #include "Mixer/mixer.h"
 #include "Processors/processor.h"
 
@@ -197,13 +198,17 @@ void pipeline_free(pipeline_t* pipeline) {
 pipeline_t* pipeline_create(const dsp_config_t* config,
                             processing_parameters_t* proc_params,
                             size_t explicit_chunk_size, config_error_t* err) {
+  logger_t logger = logger_create("dsp.pipeline");
   if (!config) {
+    logger_error(&logger, "Pipeline creation failed: Configuration is NULL");
     config_error_set(err, CONFIG_ERR_VALIDATION, "Configuration is NULL");
     return NULL;
   }
 
   pipeline_t* pipeline = (pipeline_t*)calloc(1, sizeof(pipeline_t));
   if (!pipeline) {
+    logger_error(&logger,
+                 "Pipeline creation failed: Memory allocation failure");
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
     return NULL;
   }
@@ -215,6 +220,14 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       capture_device_config_get_channels(&config->devices.capture);
   pipeline->multithreaded =
       config->devices.has_multithreaded ? config->devices.multithreaded : false;
+
+  logger_info(&logger,
+              "Initializing DSP pipeline (sample_rate=%d, chunk_size=%zu, "
+              "in_channels=%zu, multithreaded=%d)",
+              log_arg_int((int64_t)pipeline->rate),
+              log_arg_int((int64_t)pipeline->frames_per_chunk),
+              log_arg_int((int64_t)pipeline->expected_in_channels),
+              log_arg_int(pipeline->multithreaded ? 1 : 0));
 
   // Create the implicit master volume filter
   volume_parameters_t vol_params;
@@ -232,6 +245,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       volume_filter_create("master_volume", &vol_params, pipeline->rate,
                            pipeline->frames_per_chunk, proc_params, err);
   if (!pipeline->master_volume) {
+    logger_error(&logger, "Failed to create master volume filter");
     pipeline_free(pipeline);
     return NULL;
   }
@@ -240,6 +254,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   pipeline->capture_scratch = audio_chunk_create(
       pipeline->frames_per_chunk, pipeline->expected_in_channels);
   if (!pipeline->capture_scratch) {
+    logger_error(&logger, "Failed to allocate capture scratch buffer");
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate capture scratch buffer");
     pipeline_free(pipeline);
@@ -594,21 +609,41 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   // 1. Validate input and output buffer shapes/capacities against pipeline
   // configurations.
   if (valid_frames != pipeline->frames_per_chunk) {
+    logger_t logger = logger_create("dsp.pipeline");
+    logger_warn(&logger,
+                "Pipeline input frame size mismatch: needed %zu, got %zu",
+                log_arg_int((int64_t)pipeline->frames_per_chunk),
+                log_arg_int((int64_t)valid_frames));
     pipeline->last_error_needed = pipeline->frames_per_chunk;
     pipeline->last_error_got = valid_frames;
     return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(input) != pipeline->expected_in_channels) {
+    logger_t logger = logger_create("dsp.pipeline");
+    logger_warn(&logger,
+                "Pipeline input channel mismatch: expected %zu, got %zu",
+                log_arg_int((int64_t)pipeline->expected_in_channels),
+                log_arg_int((int64_t)audio_chunk_get_channels(input)));
     pipeline->last_error_needed = pipeline->expected_in_channels;
     pipeline->last_error_got = audio_chunk_get_channels(input);
     return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
   }
   if (audio_chunk_get_channels(output) != pipeline->expected_out_channels) {
+    logger_t logger = logger_create("dsp.pipeline");
+    logger_warn(&logger,
+                "Pipeline output channel mismatch: expected %zu, got %zu",
+                log_arg_int((int64_t)pipeline->expected_out_channels),
+                log_arg_int((int64_t)audio_chunk_get_channels(output)));
     pipeline->last_error_needed = pipeline->expected_out_channels;
     pipeline->last_error_got = audio_chunk_get_channels(output);
     return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
   }
   if (audio_chunk_get_frames(output) < valid_frames) {
+    logger_t logger = logger_create("dsp.pipeline");
+    logger_warn(&logger,
+                "Pipeline output buffer too small: needed %zu, got %zu",
+                log_arg_int((int64_t)valid_frames),
+                log_arg_int((int64_t)audio_chunk_get_frames(output)));
     pipeline->last_error_needed = valid_frames;
     pipeline->last_error_got = audio_chunk_get_frames(output);
     return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;

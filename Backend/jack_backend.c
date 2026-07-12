@@ -74,8 +74,7 @@ static int jack_capture_sample_rate_cb(jack_nframes_t nframes, void* arg) {
     capture->pending_rate = (double)nframes;
     capture->rate_changed = true;
     logger_warn(&capture->logger, "JACK server sample rate changed to %d Hz",
-                log_arg_int((int)nframes), log_arg_none(), log_arg_none(),
-                log_arg_none());
+                log_arg_int((int)nframes));
   }
   return 0;
 }
@@ -92,8 +91,7 @@ static void jack_capture_shutdown_cb(void* arg) {
   jack_capture_t* capture = (jack_capture_t*)arg;
   capture->active = false;
   engine_sem_signal(capture->sem);
-  logger_error(&capture->logger, "JACK server shutdown", log_arg_none(),
-               log_arg_none(), log_arg_none(), log_arg_none());
+  logger_error(&capture->logger, "JACK server shutdown");
 }
 
 /** @brief Vtable wrapper for jack_capture_destroy. */
@@ -418,8 +416,7 @@ static int jack_playback_sample_rate_cb(jack_nframes_t nframes, void* arg) {
     playback->pending_rate = (double)nframes;
     playback->rate_changed = true;
     logger_warn(&playback->logger, "JACK server sample rate changed to %d Hz",
-                log_arg_int((int)nframes), log_arg_none(), log_arg_none(),
-                log_arg_none());
+                log_arg_int((int)nframes));
   }
   return 0;
 }
@@ -436,8 +433,7 @@ static void jack_playback_shutdown_cb(void* arg) {
   jack_playback_t* playback = (jack_playback_t*)arg;
   playback->active = false;
   engine_sem_signal(playback->sem);
-  logger_error(&playback->logger, "JACK server shutdown", log_arg_none(),
-               log_arg_none(), log_arg_none(), log_arg_none());
+  logger_error(&playback->logger, "JACK server shutdown");
 }
 
 /** @brief Vtable wrapper for jack_playback_destroy. */

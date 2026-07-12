@@ -602,11 +602,10 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
       &logger, "Opened WASAPI capture: device=%s, rate=%d, channels=%d",
       log_arg_string(capture->device[0] != '\0' ? capture->device : "default"),
       log_arg_int((int64_t)capture->sample_rate),
-      log_arg_int((int64_t)capture->channels), log_arg_none());
+      log_arg_int((int64_t)capture->channels));
   logger_info(&logger, "WASAPI capture options: loopback=%d, exclusive=%d",
               log_arg_int((int64_t)capture->loopback),
-              log_arg_int((int64_t)capture->exclusive), log_arg_none(),
-              log_arg_none());
+              log_arg_int((int64_t)capture->exclusive));
 
   return true;
 
@@ -1179,8 +1178,7 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
         &logger,
         "WASAPI operating in Shared Mode (32-bit Float). Note: Bit-exact DoP "
         "requires Exclusive Mode ('exclusive': true) to prevent float mixer "
-        "bit corruption",
-        log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none());
+        "bit corruption");
   }
 
   return true;

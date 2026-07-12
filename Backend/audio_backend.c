@@ -32,6 +32,7 @@
 #endif
 #include <stdlib.h>
 
+#include "Logging/app_logger.h"
 #include "file_backend.h"
 #include "generator_capture.h"
 
@@ -91,11 +92,15 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
     case AUDIO_BACKEND_TYPE_FILE:
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return file_capture_create(config, sample_rate, chunk_size, params, err);
-    default:
+    default: {
+      logger_t logger = logger_create("dsp.backend");
+      logger_error(&logger, "Unsupported capture backend type: %d",
+                   log_arg_int((int64_t)config->type));
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported capture backend type");
       return NULL;
+    }
   }
 }
 
@@ -147,11 +152,15 @@ playback_backend_t* create_playback_backend(
     case AUDIO_BACKEND_TYPE_FILE:
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return file_playback_create(config, sample_rate, chunk_size, params, err);
-    default:
+    default: {
+      logger_t logger = logger_create("dsp.backend");
+      logger_error(&logger, "Unsupported playback backend type: %d",
+                   log_arg_int((int64_t)config->type));
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported playback backend type");
       return NULL;
+    }
   }
 }
 

@@ -83,8 +83,7 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
                 log_arg_string(method_str));
   } else {
     logger_debug(&logger, "Rate adjust: buffer=%f, keeping speed=%f",
-                 log_arg_double(average), log_arg_double(*last_speed),
-                 log_arg_none(), log_arg_none());
+                 log_arg_double(average), log_arg_double(*last_speed));
   }
 }
 
@@ -102,13 +101,11 @@ static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
         &logger,
         "Rate adjustment enabled (period=%fs, target_level=%d, method=%s)",
         log_arg_double(loop->adjust_period),
-        log_arg_int((int64_t)loop->target_level), log_arg_string(method_str),
-        log_arg_none());
+        log_arg_int((int64_t)loop->target_level), log_arg_string(method_str));
   } else {
     logger_info(
         &logger,
-        "Rate adjustment disabled (enable_rate_adjust not set in config)",
-        log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none());
+        "Rate adjustment disabled (enable_rate_adjust not set in config)");
   }
 }
 
@@ -143,8 +140,7 @@ void engine_playback_loop_free(engine_playback_loop_t* loop) {
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.playback");
-  logger_info(&logger, "Playback thread started", log_arg_none(),
-              log_arg_none(), log_arg_none(), log_arg_none());
+  logger_info(&logger, "Playback thread started");
 
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
@@ -214,8 +210,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       backend_error_init(&err, BACKEND_ERROR_NONE, "");
       bool ok = playback_backend_write(loop->playback, chunk, &err);
       if (!ok || err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Playback error: %s", log_arg_string(err.message),
-                     log_arg_none(), log_arg_none(), log_arg_none());
+        logger_error(&logger, "Playback error: %s",
+                     log_arg_string(err.message));
         processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);
@@ -226,6 +222,5 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   }
 
   if (rate_controller) pi_rate_controller_free(rate_controller);
-  logger_info(&logger, "Playback thread stopped", log_arg_none(),
-              log_arg_none(), log_arg_none(), log_arg_none());
+  logger_info(&logger, "Playback thread stopped");
 }

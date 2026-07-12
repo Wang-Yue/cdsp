@@ -571,8 +571,7 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
                 "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
                 log_arg_int((int64_t)info.sample_rate),
                 log_arg_int((int64_t)info.channels),
-                log_arg_string(binary_sample_format_to_string(info.format)),
-                log_arg_none());
+                log_arg_string(binary_sample_format_to_string(info.format)));
 
     fseek(capture->f, info.data_start_offset, SEEK_SET);
   } else {

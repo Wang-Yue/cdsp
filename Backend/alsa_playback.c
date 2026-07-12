@@ -365,8 +365,7 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     if (rc < 0) {
       logger_t logger = logger_create("dsp.backend.alsa");
       logger_warn(&logger, "Failed to set ALSA software parameters: %s",
-                  log_arg_string(snd_strerror(rc)), log_arg_none(),
-                  log_arg_none(), log_arg_none());
+                  log_arg_string(snd_strerror(rc)));
     }
   }
 

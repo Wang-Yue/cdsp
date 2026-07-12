@@ -130,8 +130,7 @@ void engine_capture_loop_free(engine_capture_loop_t* loop) {
 void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.capture");
-  logger_info(&logger, "Capture thread started", log_arg_none(), log_arg_none(),
-              log_arg_none(), log_arg_none());
+  logger_info(&logger, "Capture thread started");
 
   // Set real-time execution priority parameters for this thread.
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
@@ -157,8 +156,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         loop->has_last_observed_pending_rate = true;
         logger_warn(&logger,
                     "Capture device rate changed to %f Hz; stopping engine",
-                    log_arg_double(rate), log_arg_none(), log_arg_none(),
-                    log_arg_none());
+                    log_arg_double(rate));
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
@@ -173,8 +171,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         loop->has_last_observed_playback_pending_rate = true;
         logger_warn(&logger,
                     "Playback device rate changed to %f Hz; stopping engine",
-                    log_arg_double(rate), log_arg_none(), log_arg_none(),
-                    log_arg_none());
+                    log_arg_double(rate));
         processing_stop_reason_t reason = {
             .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
@@ -193,10 +190,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         capture_backend_read(loop->capture, loop->chunk_size, chunk, &err);
     if (!got_data) {
       if (err.type == BACKEND_ERROR_READ_EOF) {
-        logger_info(&logger,
-                    "Capture reached End-of-Stream; stopping engine gracefully",
-                    log_arg_none(), log_arg_none(), log_arg_none(),
-                    log_arg_none());
+        logger_info(
+            &logger,
+            "Capture reached End-of-Stream; stopping engine gracefully");
         processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
         snprintf(reason.message, sizeof(reason.message), "EOF");
         engine_shared_state_request_stop(loop->shared, reason);
@@ -204,8 +200,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       }
       // If reading fails with an error, trigger an engine stop.
       if (err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Capture error: %s", log_arg_string(err.message),
-                     log_arg_none(), log_arg_none(), log_arg_none());
+        logger_error(&logger, "Capture error: %s", log_arg_string(err.message));
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);
@@ -238,8 +233,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
           engine_state_machine_set_state(loop->state_machine,
                                          PROCESSING_STATE_STALLED);
           logger_warn(&logger, "Capture device stalled — no data for %fs",
-                      log_arg_double(loop->watchdog_timeout_seconds),
-                      log_arg_none(), log_arg_none(), log_arg_none());
+                      log_arg_double(loop->watchdog_timeout_seconds));
         }
       }
       // Block/wait up to 20ms using the backend's synchronization mechanism
@@ -254,8 +248,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (loop->watchdog_triggered) {
       loop->watchdog_triggered = false;
-      logger_info(&logger, "Capture recovered from stall", log_arg_none(),
-                  log_arg_none(), log_arg_none(), log_arg_none());
+      logger_info(&logger, "Capture recovered from stall");
     }
 
     // 5.5. Rate Watcher Measurement:
@@ -267,8 +260,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             &logger,
             "Sample rate change detected (measured: %f Hz, expected: %zu "
             "Hz); stopping engine",
-            log_arg_double(measured_rate), log_arg_int(loop->samplerate),
-            log_arg_none(), log_arg_none());
+            log_arg_double(measured_rate), log_arg_int(loop->samplerate));
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
@@ -279,8 +271,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             &logger,
             "Sample rate drift detected (measured: %f Hz, expected: %zu "
             "Hz)",
-            log_arg_double(measured_rate), log_arg_int(loop->samplerate),
-            log_arg_none(), log_arg_none());
+            log_arg_double(measured_rate), log_arg_int(loop->samplerate));
       }
     }
 
@@ -337,6 +328,5 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
                         memory_order_release);
   engine_sem_signal(loop->shared->captured_semaphore);
 
-  logger_info(&logger, "Capture thread stopped", log_arg_none(), log_arg_none(),
-              log_arg_none(), log_arg_none());
+  logger_info(&logger, "Capture thread stopped");
 }

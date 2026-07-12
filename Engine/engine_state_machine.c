@@ -23,6 +23,10 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "Logging/app_logger.h"
 
 struct engine_state_machine {
   /** Raw atomic state representation. */
@@ -33,9 +37,6 @@ struct engine_state_machine {
    * discipline. */
   processing_stop_reason_t stop_reason;
 };
-
-#include <stdlib.h>
-#include <string.h>
 
 engine_state_machine_t* engine_state_machine_create(void) {
   engine_state_machine_t* sm =
@@ -72,6 +73,9 @@ void engine_state_machine_set_state(engine_state_machine_t* sm,
                                     processing_state_t new_state) {
   if (!sm) return;
   uint8_t raw = processing_state_to_raw_byte(new_state);
+  logger_t logger = logger_create("dsp.engine.state");
+  logger_info(&logger, "Engine state transitioning to %d",
+              log_arg_int((int64_t)new_state));
   // Use release memory order to ensure that all prior writes (specifically,
   // the stop_reason written in begin_stop) are visible to any thread that
   // reads the state with acquire ordering and observes this new state.
@@ -105,6 +109,10 @@ bool engine_state_machine_begin_stop(engine_state_machine_t* sm,
       &sm->stop_once, &expected, true, memory_order_acq_rel,
       memory_order_acquire);
   if (!exchanged) return false;
+
+  logger_t logger = logger_create("dsp.engine.state");
+  logger_info(&logger, "Engine begin_stop triggered with reason type %d",
+              log_arg_int((int64_t)reason.type));
 
   // The winner thread writes the stop reason. This write is synchronized with
   // other threads via the state change to INACTIVE using set_state(...,

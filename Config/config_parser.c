@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "Logging/app_logger.h"
 #include "cJSON.h"
 #include "configuration.h"
 
@@ -1911,15 +1912,20 @@ static int parse_processors(const cJSON* processors_obj, dsp_config_t* config,
 
 int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
                           config_error_t* err) {
+  logger_t logger = logger_create("dsp.config.parser");
   if (!json || !out_config) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "JSON string or output pointer is NULL");
+    logger_error(
+        &logger,
+        "Config parsing failed: JSON string or output pointer is NULL");
     return -1;
   }
 
   dsp_config_t* config = (dsp_config_t*)calloc(1, sizeof(dsp_config_t));
   if (!config) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+    logger_error(&logger, "Config parsing failed: Memory allocation failure");
     return -1;
   }
 
@@ -1928,6 +1934,8 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     free(config);
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to parse JSON (syntax error or invalid JSON)");
+    logger_error(&logger,
+                 "Config parsing failed: Syntax error or invalid JSON");
     return -1;
   }
 
@@ -1936,12 +1944,16 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     cJSON_Delete(root);
     free(config);
     config_error_set(err, CONFIG_ERR_PARSE, "Config must contain 'devices'");
+    logger_error(&logger,
+                 "Config parsing failed: Config must contain 'devices' object");
     return -1;
   }
 
   if (parse_devices(devices_obj, config, err) != 0) {
     cJSON_Delete(root);
     dsp_config_free(config);
+    logger_error(&logger, "Config parsing failed in devices section: %s",
+                 log_arg_string(err ? err->message : ""));
     return -1;
   }
 
@@ -1950,6 +1962,8 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     if (parse_pipeline(pipeline_arr, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
+      logger_error(&logger, "Config parsing failed in pipeline section: %s",
+                   log_arg_string(err ? err->message : ""));
       return -1;
     }
   }
@@ -1959,6 +1973,8 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     if (parse_mixers(mixers_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
+      logger_error(&logger, "Config parsing failed in mixers section: %s",
+                   log_arg_string(err ? err->message : ""));
       return -1;
     }
   }
@@ -1968,6 +1984,8 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     if (parse_filters(filters_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
+      logger_error(&logger, "Config parsing failed in filters section: %s",
+                   log_arg_string(err ? err->message : ""));
       return -1;
     }
   }
@@ -1977,6 +1995,8 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     if (parse_processors(processors_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
+      logger_error(&logger, "Config parsing failed in processors section: %s",
+                   log_arg_string(err ? err->message : ""));
       return -1;
     }
   }
@@ -1987,10 +2007,17 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
    * This checks schema constraints and traces channel flows through the
    * pipeline to catch configuration inconsistencies before return. */
   if (dsp_config_validate(config, err) != 0) {
+    logger_error(&logger, "Config validation failed: %s",
+                 log_arg_string(err ? err->message : ""));
     dsp_config_free(config);
     return -1;
   }
 
+  logger_info(&logger,
+              "Configuration successfully parsed and validated (samplerate=%d, "
+              "chunksize=%d)",
+              log_arg_int((int64_t)config->devices.samplerate),
+              log_arg_int((int64_t)config->devices.chunksize));
   *out_config = config;
   return 0;
 }

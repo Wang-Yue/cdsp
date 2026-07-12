@@ -153,11 +153,10 @@ bool generator_capture_open(generator_capture_t* capture,
   capture->phase = 0.0;
 
   logger_t logger = logger_create("dsp.backend.generator");
-  logger_info(&logger,
-              "Opened generator capture: type=%s, freq=%.1f Hz, amp=%.3f",
-              log_arg_string(signal_type_to_string(capture->signal_type)),
-              log_arg_double(capture->frequency),
-              log_arg_double(capture->amplitude), log_arg_none());
+  logger_info(
+      &logger, "Opened generator capture: type=%s, freq=%.1f Hz, amp=%.3f",
+      log_arg_string(signal_type_to_string(capture->signal_type)),
+      log_arg_double(capture->frequency), log_arg_double(capture->amplitude));
   return true;
 }
 

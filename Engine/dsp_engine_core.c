@@ -119,27 +119,23 @@ dsp_engine_core_t* dsp_engine_core_create(dsp_config_t* config) {
   // Log configuration details and read properties to satisfy Periphery
   logger_t logger = logger_create("dsp.engine.core");
   logger_info(&logger, "Engine initialized with queueLimit: %d",
-              log_arg_int((int64_t)queue_limit), log_arg_none(), log_arg_none(),
-              log_arg_none());
+              log_arg_int((int64_t)queue_limit));
 
   if (config->devices.has_rate_measure_interval) {
     logger_info(&logger,
                 "Rate measure interval configured: %f s (unused on CoreAudio "
                 "due to event-driven HAL listener)",
-                log_arg_double(config->devices.rate_measure_interval),
-                log_arg_none(), log_arg_none(), log_arg_none());
+                log_arg_double(config->devices.rate_measure_interval));
   }
   if (config->devices.has_multithreaded && config->devices.multithreaded) {
     logger_info(&logger,
-                "Multithreaded processing enabled (using GCD thread pool)",
-                log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none());
+                "Multithreaded processing enabled (using GCD thread pool)");
   }
   if (config->devices.has_worker_threads) {
     logger_info(&logger,
                 "Worker threads requested: %d (ignored on Apple platform as "
                 "GCD automatically manages worker thread pools)",
-                log_arg_int((int64_t)config->devices.worker_threads),
-                log_arg_none(), log_arg_none(), log_arg_none());
+                log_arg_int((int64_t)config->devices.worker_threads));
   }
 
   return core;
@@ -202,8 +198,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   config_error_init(&cerr);
   logger_t logger = logger_create("dsp.engine.core");
   if (dsp_engine_core_get_state(core) != PROCESSING_STATE_INACTIVE) {
-    logger_warn(&logger, "Engine already running", log_arg_none(),
-                log_arg_none(), log_arg_none(), log_arg_none());
+    logger_warn(&logger, "Engine already running");
     return true;
   }
 
@@ -211,8 +206,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
                                  PROCESSING_STATE_STARTING);
   atomic_store_explicit(&core->shared->should_stop, false,
                         memory_order_release);
-  logger_info(&logger, "Starting DSP engine", log_arg_none(), log_arg_none(),
-              log_arg_none(), log_arg_none());
+  logger_info(&logger, "Starting DSP engine");
 
   // Resolve capture/playback rates. `capture_samplerate` is the
   // configuration option for "capture device runs at a different rate
@@ -241,6 +235,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
             &core->current_config->devices.capture),
         core->current_config->devices.chunksize, &cerr);
     if (!core->resampler) {
+      logger_error(&logger, "Resampler creation failed: %s",
+                   log_arg_string(cerr.message));
       if (err) {
         err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
         strncpy(err->message, cerr.message, sizeof(err->message) - 1);
@@ -268,8 +264,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
     logger_info(&logger,
                 "Adopting resampler chunkSize=%d (config requested %d)",
                 log_arg_int((int64_t)capture_chunk_size),
-                log_arg_int((int64_t)requested_chunk_size), log_arg_none(),
-                log_arg_none());
+                log_arg_int((int64_t)requested_chunk_size));
   }
 
   // 4. Check for ASIO Full-Duplex.
@@ -295,6 +290,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       &core->current_config->devices.capture, (int)capture_rate,
       (int)capture_chunk_size, full_duplex, core->processing_params, &berr);
   if (!core->capture || berr.type != BACKEND_ERROR_NONE) {
+    logger_error(&logger, "Failed to create capture backend: %s",
+                 log_arg_string(berr.message));
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -307,6 +304,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       &core->current_config->devices.playback, (int)pipeline_rate,
       (int)playback_chunk_size, full_duplex, core->processing_params, &berr);
   if (!core->playback || berr.type != BACKEND_ERROR_NONE) {
+    logger_error(&logger, "Failed to create playback backend: %s",
+                 log_arg_string(berr.message));
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -317,6 +316,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   }
 
   if (!capture_backend_open(core->capture, &berr)) {
+    logger_error(&logger, "Failed to open capture backend: %s",
+                 log_arg_string(berr.message));
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -326,6 +327,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
     return false;
   }
   if (!playback_backend_open(core->playback, &berr)) {
+    logger_error(&logger, "Failed to open playback backend: %s",
+                 log_arg_string(berr.message));
     if (err) {
       err->type = map_backend_error(berr.type);
       snprintf(err->message, sizeof(err->message), "%s", berr.message);
@@ -364,6 +367,8 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       pipeline_create(core->current_config, core->processing_params,
                       playback_chunk_size, &cerr);
   if (!core->pipeline) {
+    logger_error(&logger, "Failed to create processing pipeline: %s",
+                 log_arg_string(cerr.message));
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
@@ -393,6 +398,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
           &core->current_config->devices.playback));
 
   if (!core->capture_chunk_pool || !core->processing_scratch_pool) {
+    logger_error(&logger, "Failed to allocate round-robin chunk pools");
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       snprintf(err->message, sizeof(err->message),
@@ -449,6 +455,7 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
       target_level);
 
   if (!core->capture_loop || !core->processing_loop || !core->playback_loop) {
+    logger_error(&logger, "Failed to instantiate engine loops");
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       snprintf(err->message, sizeof(err->message),
@@ -500,8 +507,7 @@ spawn_success:
   engine_state_machine_set_state(core->state_machine, PROCESSING_STATE_RUNNING);
   logger_info(&logger, "DSP engine started: %dHz, chunk=%d",
               log_arg_int((int64_t)core->current_config->devices.samplerate),
-              log_arg_int((int64_t)capture_chunk_size), log_arg_none(),
-              log_arg_none());
+              log_arg_int((int64_t)capture_chunk_size));
 
   return true;
 }
@@ -516,8 +522,7 @@ void dsp_engine_core_stop(dsp_engine_core_t* core,
   if (dsp_engine_core_get_state(core) == PROCESSING_STATE_INACTIVE) return;
 
   logger_t logger = logger_create("dsp.engine.core");
-  logger_info(&logger, "Stopping engine", log_arg_none(), log_arg_none(),
-              log_arg_none(), log_arg_none());
+  logger_info(&logger, "Stopping engine");
 
   // Signal to the three background loops that they should exit their execution
   // loops.
@@ -592,8 +597,7 @@ void dsp_engine_core_stop(dsp_engine_core_t* core,
 
   engine_state_machine_set_state(core->state_machine,
                                  PROCESSING_STATE_INACTIVE);
-  logger_info(&logger, "Engine stopped", log_arg_none(), log_arg_none(),
-              log_arg_none(), log_arg_none());
+  logger_info(&logger, "Engine stopped");
 }
 
 /// Rebuild or update the processing pipeline against `newConfig` without
@@ -625,8 +629,7 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
       config_diff(old_config, new_config, change);
 
   if (change_type == CONFIG_CHANGE_NONE) {
-    logger_info(&logger, "No changes in config.", log_arg_none(),
-                log_arg_none(), log_arg_none(), log_arg_none());
+    logger_info(&logger, "No changes in config.");
     dsp_config_free(new_config);  // new config is identical, discard it
     config_change_free(change);
     return true;
@@ -664,8 +667,7 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
     dsp_config_free(old_config);
   }
 
-  logger_info(&logger, "Pipeline rebuilt without audio-device restart",
-              log_arg_none(), log_arg_none(), log_arg_none(), log_arg_none());
+  logger_info(&logger, "Pipeline rebuilt without audio-device restart");
   return true;
 }
 

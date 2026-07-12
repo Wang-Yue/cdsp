@@ -7,6 +7,8 @@
 
 #include "audio_resampler.h"
 
+#include "Logging/app_logger.h"
+
 struct audio_resampler {
   resampler_impl_type_t type;
   void* impl;
@@ -420,17 +422,27 @@ audio_resampler_t* audio_resampler_wrap_apple(apple_resampler_t* res) {
 audio_resampler_t* audio_resampler_create_from_config(
     const resampler_config_t* config, size_t input_rate, size_t output_rate,
     size_t channels, size_t chunk_size, config_error_t* err) {
+  logger_t logger = logger_create("dsp.resampler");
   if (!config) {
+    logger_error(&logger, "Resampler config is NULL");
     config_error_set(err, CONFIG_ERR_PARSE, "Resampler config is NULL");
     return NULL;
   }
+  logger_info(
+      &logger, "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
+      log_arg_int((int64_t)config->type), log_arg_int((int64_t)input_rate),
+      log_arg_int((int64_t)output_rate), log_arg_int((int64_t)channels));
   switch (config->type) {
     case RESAMPLER_TYPE_SYNCHRONOUS: {
       synchronous_resampler_t* res = synchronous_resampler_create(
           channels, input_rate, output_rate, chunk_size, err);
-      if (!res) return NULL;
+      if (!res) {
+        logger_error(&logger, "Failed to create synchronous resampler");
+        return NULL;
+      }
       audio_resampler_t* wrap = audio_resampler_wrap_synchronous(res);
       if (!wrap) {
+        logger_error(&logger, "Failed to wrap synchronous resampler");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap synchronous resampler");
       }
@@ -447,9 +459,13 @@ audio_resampler_t* audio_resampler_create_from_config(
             channels, input_rate, output_rate, (size_t)config->sinc_len,
             (size_t)config->oversampling_factor, interp, wf, config->f_cutoff,
             config->has_f_cutoff, chunk_size, 1.1, err);
-        if (!res) return NULL;
+        if (!res) {
+          logger_error(&logger, "Failed to create async sinc resampler");
+          return NULL;
+        }
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
         if (!wrap) {
+          logger_error(&logger, "Failed to wrap async sinc resampler");
           config_error_set(err, CONFIG_ERR_PARSE,
                            "Failed to wrap async sinc resampler");
         }
@@ -461,9 +477,14 @@ audio_resampler_t* audio_resampler_create_from_config(
         }
         async_sinc_resampler_t* res = async_sinc_resampler_create_from_profile(
             channels, input_rate, output_rate, prof, chunk_size, 1.1, err);
-        if (!res) return NULL;
+        if (!res) {
+          logger_error(&logger,
+                       "Failed to create async sinc resampler from profile");
+          return NULL;
+        }
         audio_resampler_t* wrap = audio_resampler_wrap_async_sinc(res);
         if (!wrap) {
+          logger_error(&logger, "Failed to wrap async sinc resampler");
           config_error_set(err, CONFIG_ERR_PARSE,
                            "Failed to wrap async sinc resampler");
         }
@@ -477,9 +498,13 @@ audio_resampler_t* audio_resampler_create_from_config(
       }
       async_poly_resampler_t* res = async_poly_resampler_create(
           channels, input_rate, output_rate, interp, chunk_size, 1.1, err);
-      if (!res) return NULL;
+      if (!res) {
+        logger_error(&logger, "Failed to create async poly resampler");
+        return NULL;
+      }
       audio_resampler_t* wrap = audio_resampler_wrap_async_poly(res);
       if (!wrap) {
+        logger_error(&logger, "Failed to wrap async poly resampler");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap async poly resampler");
       }
@@ -495,9 +520,13 @@ audio_resampler_t* audio_resampler_create_from_config(
                                        : APPLE_RESAMPLER_COMPLEXITY_NORMAL;
       apple_resampler_t* res = apple_resampler_create(
           channels, input_rate, output_rate, qual, comp, chunk_size, err);
-      if (!res) return NULL;
+      if (!res) {
+        logger_error(&logger, "Failed to create Apple resampler");
+        return NULL;
+      }
       audio_resampler_t* wrap = audio_resampler_wrap_apple(res);
       if (!wrap) {
+        logger_error(&logger, "Failed to wrap Apple resampler");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap Apple resampler");
       }
@@ -505,6 +534,8 @@ audio_resampler_t* audio_resampler_create_from_config(
     }
 #endif
     default:
+      logger_error(&logger, "Unknown resampler type %d",
+                   log_arg_int((int64_t)config->type));
       config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %d",
                        config->type);
       return NULL;

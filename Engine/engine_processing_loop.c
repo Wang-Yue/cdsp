@@ -136,8 +136,7 @@ void engine_processing_loop_set_pipeline(engine_processing_loop_t* loop,
 void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.processing");
-  logger_info(&logger, "Processing thread started", log_arg_none(),
-              log_arg_none(), log_arg_none(), log_arg_none());
+  logger_info(&logger, "Processing thread started");
 
   set_realtime_thread_priority("Processing",
                                audio_chunk_get_frames(loop->pipeline_scratch),
@@ -186,8 +185,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
         if (rerr != RESAMPLER_OK) {
           logger_error(&logger, "Processing error: resampler error %d",
-                       log_arg_int((int64_t)rerr), log_arg_none(),
-                       log_arg_none(), log_arg_none());
+                       log_arg_int((int64_t)rerr));
           processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
           snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
                    rerr);
@@ -232,8 +230,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
       if (perr != PIPELINE_OK) {
         logger_error(&logger, "Processing error: pipeline error %d",
-                     log_arg_int((int64_t)perr), log_arg_none(), log_arg_none(),
-                     log_arg_none());
+                     log_arg_int((int64_t)perr));
         processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
         snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
                  perr);
@@ -318,6 +315,5 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
                         memory_order_release);
   engine_sem_signal(loop->shared->processed_semaphore);
 
-  logger_info(&logger, "Processing thread stopped", log_arg_none(),
-              log_arg_none(), log_arg_none(), log_arg_none());
+  logger_info(&logger, "Processing thread stopped");
 }

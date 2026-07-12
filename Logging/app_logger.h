@@ -178,7 +178,7 @@ static inline logger_t logger_create(const char* label) {
 }
 
 /**
- * @brief Logs an informational message.
+ * @brief Implementation function for logging an informational message.
  * @param logger Pointer to the logger handle.
  * @param msg Message format string.
  * @param a1 First optional argument.
@@ -186,15 +186,15 @@ static inline logger_t logger_create(const char* label) {
  * @param a3 Third optional argument.
  * @param a4 Fourth optional argument.
  */
-static inline void logger_info(const logger_t* logger, const char* msg,
-                               log_argument_t a1, log_argument_t a2,
-                               log_argument_t a3, log_argument_t a4) {
+static inline void logger_info_impl(const logger_t* logger, const char* msg,
+                                    log_argument_t a1, log_argument_t a2,
+                                    log_argument_t a3, log_argument_t a4) {
   app_logger_log(app_logger_get_shared(), LOG_LEVEL_INFO, logger->label, msg,
                  a1, a2, a3, a4);
 }
 
 /**
- * @brief Logs a warning message.
+ * @brief Implementation function for logging a warning message.
  * @param logger Pointer to the logger handle.
  * @param msg Message format string.
  * @param a1 First optional argument.
@@ -202,15 +202,15 @@ static inline void logger_info(const logger_t* logger, const char* msg,
  * @param a3 Third optional argument.
  * @param a4 Fourth optional argument.
  */
-static inline void logger_warn(const logger_t* logger, const char* msg,
-                               log_argument_t a1, log_argument_t a2,
-                               log_argument_t a3, log_argument_t a4) {
+static inline void logger_warn_impl(const logger_t* logger, const char* msg,
+                                    log_argument_t a1, log_argument_t a2,
+                                    log_argument_t a3, log_argument_t a4) {
   app_logger_log(app_logger_get_shared(), LOG_LEVEL_WARN, logger->label, msg,
                  a1, a2, a3, a4);
 }
 
 /**
- * @brief Logs an error message.
+ * @brief Implementation function for logging an error message.
  * @param logger Pointer to the logger handle.
  * @param msg Message format string.
  * @param a1 First optional argument.
@@ -218,15 +218,15 @@ static inline void logger_warn(const logger_t* logger, const char* msg,
  * @param a3 Third optional argument.
  * @param a4 Fourth optional argument.
  */
-static inline void logger_error(const logger_t* logger, const char* msg,
-                                log_argument_t a1, log_argument_t a2,
-                                log_argument_t a3, log_argument_t a4) {
+static inline void logger_error_impl(const logger_t* logger, const char* msg,
+                                     log_argument_t a1, log_argument_t a2,
+                                     log_argument_t a3, log_argument_t a4) {
   app_logger_log(app_logger_get_shared(), LOG_LEVEL_ERROR, logger->label, msg,
                  a1, a2, a3, a4);
 }
 
 /**
- * @brief Logs a debugging message.
+ * @brief Implementation function for logging a debugging message.
  * @param logger Pointer to the logger handle.
  * @param msg Message format string.
  * @param a1 First optional argument.
@@ -234,11 +234,56 @@ static inline void logger_error(const logger_t* logger, const char* msg,
  * @param a3 Third optional argument.
  * @param a4 Fourth optional argument.
  */
-static inline void logger_debug(const logger_t* logger, const char* msg,
-                                log_argument_t a1, log_argument_t a2,
-                                log_argument_t a3, log_argument_t a4) {
+static inline void logger_debug_impl(const logger_t* logger, const char* msg,
+                                     log_argument_t a1, log_argument_t a2,
+                                     log_argument_t a3, log_argument_t a4) {
   app_logger_log(app_logger_get_shared(), LOG_LEVEL_DEBUG, logger->label, msg,
                  a1, a2, a3, a4);
 }
+
+#define _LOG_ARG_PAD_4(a1, a2, a3, a4, ...) a1, a2, a3, a4
+#define _LOG_PAD(...)                                                       \
+  _LOG_ARG_PAD_4(__VA_ARGS__ __VA_OPT__(, ) log_arg_none(), log_arg_none(), \
+                 log_arg_none(), log_arg_none())
+
+/**
+ * @brief Logs an informational message with 0 to 4 optional log arguments.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param ... Optional log arguments (log_arg_int, log_arg_double,
+ * log_arg_string).
+ */
+#define logger_info(logger, msg, ...) \
+  logger_info_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
+
+/**
+ * @brief Logs a warning message with 0 to 4 optional log arguments.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param ... Optional log arguments (log_arg_int, log_arg_double,
+ * log_arg_string).
+ */
+#define logger_warn(logger, msg, ...) \
+  logger_warn_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
+
+/**
+ * @brief Logs an error message with 0 to 4 optional log arguments.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param ... Optional log arguments (log_arg_int, log_arg_double,
+ * log_arg_string).
+ */
+#define logger_error(logger, msg, ...) \
+  logger_error_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
+
+/**
+ * @brief Logs a debugging message with 0 to 4 optional log arguments.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param ... Optional log arguments (log_arg_int, log_arg_double,
+ * log_arg_string).
+ */
+#define logger_debug(logger, msg, ...) \
+  logger_debug_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
 
 #endif  // CLIB_LOGGING_APP_LOGGER_H

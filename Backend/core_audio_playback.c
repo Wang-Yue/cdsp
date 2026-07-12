@@ -20,6 +20,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "Logging/app_logger.h"
+
 struct core_audio_playback {
   char device_name[256];
   int channels;
@@ -282,6 +284,15 @@ playback_backend_t* core_audio_playback_create(
 bool core_audio_playback_open(core_audio_playback_t* playback,
                               backend_error_t* err) {
   if (!playback) return false;
+  logger_t logger = logger_create("dsp.backend.coreaudio.playback");
+  logger_info(&logger,
+              "Opening CoreAudio playback device '%s' (sample_rate=%.0f, "
+              "channels=%d, exclusive=%d)",
+              log_arg_string(playback->device_name[0] ? playback->device_name
+                                                      : "default"),
+              log_arg_double(playback->sample_rate),
+              log_arg_int(playback->channels),
+              log_arg_int(playback->exclusive ? 1 : 0));
   core_audio_playback_close(playback);
   bool open_succeeded = false;
 
@@ -294,6 +305,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   AudioComponent comp = AudioComponentFindNext(NULL, &desc);
   if (!comp) {
+    logger_error(&logger,
+                 "No HAL output component found for CoreAudio playback");
     if (err)
       backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
                          "No HAL output component found");
@@ -302,6 +315,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   OSStatus status = AudioComponentInstanceNew(comp, &playback->audio_unit);
   if (status != noErr || !playback->audio_unit) {
+    logger_error(&logger, "Failed to create output AudioUnit: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create output AudioUnit");
@@ -313,6 +328,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
       kAudioUnitScope_Output, 0, &enable_output, sizeof(enable_output));
   if (status != noErr) {
+    logger_error(&logger, "Failed to enable output on AudioUnit: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to enable output");
@@ -324,6 +341,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
       kAudioUnitScope_Input, 1, &disable_input, sizeof(disable_input));
   if (status != noErr) {
+    logger_error(&logger, "Failed to disable input on AudioUnit: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to disable input");
@@ -349,12 +368,13 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
                                      &hog_pid) == noErr) {
         playback->did_acquire_hog_mode = true;
+        logger_info(&logger, "Acquired exclusive hog mode on playback device");
+      } else {
+        logger_warn(&logger,
+                    "Failed to acquire exclusive hog mode on playback device");
       }
     }
-    // Set the device format. If a specific sample format was requested, we try
-    // to find a matching physical format on the device. Otherwise, we just set
-    // the nominal sample rate and let the system handle format conversion if
-    // necessary.
+    // Set the device format.
     bool physical_format_set = false;
     if (playback->has_sample_format) {
       if (core_audio_device_set_matching_physical_format(
@@ -362,6 +382,9 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
               playback->sample_format, playback->channels)) {
         physical_format_set = true;
       } else {
+        logger_error(&logger,
+                     "Failed to set matching physical playback format: %s",
+                     log_arg_string(playback->sample_format));
         if (err)
           backend_error_init(
               err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -397,6 +420,10 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
         playback->audio_unit, kAudioUnitProperty_StreamFormat,
         kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
     if (status != noErr) {
+      logger_error(
+          &logger,
+          "Failed to set playback stream format on AudioUnit: status=%d",
+          log_arg_int((int64_t)status));
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Failed to set playback stream format");
@@ -412,16 +439,14 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
                                 kAudioUnitProperty_SetRenderCallback,
                                 kAudioUnitScope_Input, 0, &cb, sizeof(cb));
   if (status != noErr) {
+    logger_error(&logger, "Failed to set render callback: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set render callback");
     goto cleanup;
   }
 
-  // Configure the maximum frames per slice. This informs the AudioUnit of the
-  // maximum buffer size it will be asked to render. We check the device's
-  // actual buffer frame size to ensure we don't under-allocate if the device is
-  // configured for a larger buffer than our chunk size.
   UInt32 max_frames = (UInt32)playback->chunk_size;
   if (dev_id != 0) {
     uint32_t actual_size = 0;
@@ -436,6 +461,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   status = AudioUnitInitialize(playback->audio_unit);
   if (status != noErr) {
+    logger_error(&logger, "Failed to initialize playback AudioUnit: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to initialize output");
@@ -444,6 +471,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
+    logger_error(&logger, "Failed to start output AudioUnit: status=%d",
+                 log_arg_int((int64_t)status));
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start output");
@@ -456,6 +485,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
         rate_change_watcher_create(dev_id, playback->sample_rate);
   }
 
+  logger_info(&logger, "CoreAudio playback successfully opened and started");
   open_succeeded = true;
   return true;
 
@@ -539,6 +569,8 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
 /// Close the CoreAudio playback device and release HAL resources.
 void core_audio_playback_close(core_audio_playback_t* playback) {
   if (!playback) return;
+  logger_t logger = logger_create("dsp.backend.coreaudio.playback");
+  logger_info(&logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
     rate_change_watcher_free(playback->rate_watcher);
     playback->rate_watcher = NULL;

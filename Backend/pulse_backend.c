@@ -208,7 +208,7 @@ bool pulse_capture_open(pulse_capture_t* capture, backend_error_t* err) {
       &logger, "Opened PulseAudio capture: device=%s, rate=%d, channels=%d",
       log_arg_string(capture->device[0] != '\0' ? capture->device : "default"),
       log_arg_int((int64_t)capture->sample_rate),
-      log_arg_int((int64_t)capture->channels), log_arg_none());
+      log_arg_int((int64_t)capture->channels));
 
   return true;
 }
@@ -492,7 +492,7 @@ bool pulse_playback_open(pulse_playback_t* playback, backend_error_t* err) {
               log_arg_string(playback->device[0] != '\0' ? playback->device
                                                          : "default"),
               log_arg_int((int64_t)playback->sample_rate),
-              log_arg_int((int64_t)playback->channels), log_arg_none());
+              log_arg_int((int64_t)playback->channels));
 
   return true;
 }

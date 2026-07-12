@@ -1,5 +1,6 @@
 #include "filter.h"
 
+#include "Logging/app_logger.h"
 #include "biquad.h"
 #include "biquad_combo.h"
 #include "convolution.h"
@@ -38,12 +39,17 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                         int sample_rate, size_t chunk_size,
                         processing_parameters_t* proc_params,
                         config_error_t* err) {
+  logger_t logger = logger_create("dsp.filter");
   if (!config) {
+    logger_error(&logger, "Filter config is NULL for '%s'",
+                 log_arg_string(name ? name : "unnamed"));
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter config is NULL");
     return NULL;
   }
   filter_t* filter = (filter_t*)calloc(1, sizeof(filter_t));
   if (!filter) {
+    logger_error(&logger, "Failed to allocate filter wrapper for '%s'",
+                 log_arg_string(name ? name : "unnamed"));
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate filter wrapper");
     return NULL;
@@ -60,6 +66,9 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
       biquad_coefficients_t coeffs;
       if (!biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
                                        &coeffs)) {
+        logger_error(&logger,
+                     "Failed to compute biquad coefficients for filter '%s'",
+                     log_arg_string(filter->name));
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
             "Failed to compute biquad coefficients for filter '%s'",
@@ -121,6 +130,9 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                                chunk_size, proc_params, err);
       break;
     default:
+      logger_error(&logger, "Unknown filter type %d for '%s'",
+                   log_arg_int((int64_t)config->type),
+                   log_arg_string(filter->name));
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Unknown filter type %d for '%s'", config->type,
                        filter->name);
@@ -129,9 +141,13 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   }
 
   if (!filter->instance) {
+    logger_error(&logger, "Failed to instantiate filter '%s'",
+                 log_arg_string(filter->name));
     free(filter);
     return NULL;
   }
+  logger_info(&logger, "Filter '%s' successfully created (type=%d)",
+              log_arg_string(filter->name), log_arg_int((int64_t)filter->type));
   return filter;
 }
 

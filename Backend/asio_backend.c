@@ -848,9 +848,7 @@ static long asio_message(long selector, long value, void* message,
     case 5:  // kAsioResetRequest {
     {
       logger_t logger = logger_create("dsp.backend.asio");
-      logger_warn(&logger, "ASIO reset request received from driver.",
-                  log_arg_none(), log_arg_none(), log_arg_none(),
-                  log_arg_none());
+      logger_warn(&logger, "ASIO reset request received from driver.");
     }
       return 1;
     case 6:  // kAsioBufferSizeChange

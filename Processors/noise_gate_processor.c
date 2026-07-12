@@ -158,8 +158,7 @@ void noise_gate_processor_process(noise_gate_processor_t* processor,
       logger_error(
           &logger,
           "Noise Gate channel indices out of bounds for chunk channels (%d)",
-          log_arg_int((int64_t)ch_count), log_arg_none(), log_arg_none(),
-          log_arg_none());
+          log_arg_int((int64_t)ch_count));
       processor->channel_warning_logged = true;
     }
     return;

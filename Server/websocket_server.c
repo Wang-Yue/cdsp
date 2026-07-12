@@ -4059,8 +4059,7 @@ static void* server_thread_func(void* arg) {
                 payload[payload_len] = '\0';
 
                 logger_debug(&server_logger, "Received WS frame: %s",
-                             log_arg_string(payload), log_arg_none(),
-                             log_arg_none(), log_arg_none());
+                             log_arg_string(payload));
 
                 dyn_string_t ds;
                 dyn_string_init(&ds, 4096);
@@ -4068,8 +4067,7 @@ static void* server_thread_func(void* arg) {
 
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending WS response: %s",
-                               log_arg_string(ds.data), log_arg_none(),
-                               log_arg_none(), log_arg_none());
+                               log_arg_string(ds.data));
                   send_websocket_frame(client_fds[i], ds.data);
                 }
                 dyn_string_free(&ds);
@@ -4082,16 +4080,14 @@ static void* server_thread_func(void* arg) {
                 }
               } else {
                 logger_debug(&server_logger, "Received raw TCP: %s",
-                             log_arg_string(&buf[offset]), log_arg_none(),
-                             log_arg_none(), log_arg_none());
+                             log_arg_string(&buf[offset]));
 
                 dyn_string_t ds;
                 dyn_string_init(&ds, 4096);
                 websocket_server_handle_command(server, i, &buf[offset], &ds);
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending raw TCP response: %s",
-                               log_arg_string(ds.data), log_arg_none(),
-                               log_arg_none(), log_arg_none());
+                               log_arg_string(ds.data));
                   send(client_fds[i], ds.data, (int)strlen(ds.data), 0);
                 }
                 dyn_string_free(&ds);
@@ -4117,12 +4113,14 @@ bool websocket_server_start(websocket_server_t* server) {
 #ifdef _WIN32
   WSADATA wsaData;
   if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    logger_error(&server_logger, "WSAStartup failed");
     return false;
   }
 #endif
 
   server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (IS_INVALID_SOCKET(server->server_fd)) {
+    logger_error(&server_logger, "Failed to create server socket");
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -4145,6 +4143,9 @@ bool websocket_server_start(websocket_server_t* server) {
 
   if (IS_SOCKET_ERROR(
           bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)))) {
+    logger_error(&server_logger, "Failed to bind WebSocket server on %s:%d",
+                 log_arg_string(server->host),
+                 log_arg_int((int64_t)server->port));
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
 #ifdef _WIN32
@@ -4154,6 +4155,7 @@ bool websocket_server_start(websocket_server_t* server) {
   }
 
   if (IS_SOCKET_ERROR(listen(server->server_fd, 10))) {
+    logger_error(&server_logger, "Failed to listen on WebSocket server socket");
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
 #ifdef _WIN32
@@ -4164,6 +4166,7 @@ bool websocket_server_start(websocket_server_t* server) {
 
   atomic_store_explicit(&server->running, true, memory_order_release);
   if (pthread_create(&server->thread, NULL, server_thread_func, server) != 0) {
+    logger_error(&server_logger, "Failed to create WebSocket server thread");
     atomic_store_explicit(&server->running, false, memory_order_release);
     CLOSE_SOCKET(server->server_fd);
     server->server_fd = INVALID_SOCKET_VAL;
@@ -4173,6 +4176,8 @@ bool websocket_server_start(websocket_server_t* server) {
     return false;
   }
 
+  logger_info(&server_logger, "WebSocket control server listening on %s:%d",
+              log_arg_string(server->host), log_arg_int((int64_t)server->port));
   return true;
 }
 
@@ -4180,6 +4185,7 @@ bool websocket_server_start(websocket_server_t* server) {
 void websocket_server_stop(websocket_server_t* server) {
   if (!server || !atomic_load_explicit(&server->running, memory_order_acquire))
     return;
+  logger_info(&server_logger, "Stopping WebSocket control server");
   atomic_store_explicit(&server->running, false, memory_order_release);
   pthread_join(server->thread, NULL);
   if (!IS_INVALID_SOCKET(server->server_fd)) {

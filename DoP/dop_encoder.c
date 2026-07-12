@@ -24,6 +24,7 @@
 #include "dop_encoder.h"
 
 #include "Audio/sample_conversion.h"
+#include "Logging/app_logger.h"
 #include "sigma_delta_modulator.h"
 #if defined(ENABLE_BLAS)
 #include <cblas.h>
@@ -183,12 +184,22 @@ static double* build_coeffs(double sample_rate, double cutoff_hz) {
 dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
                                   bool output_dop, sdm_filter_t filter_name,
                                   double cutoff_hz) {
-  if (channels <= 0) return NULL;
+  logger_t logger = logger_create("dsp.dop.encoder");
+  if (channels <= 0) {
+    logger_error(&logger, "Invalid channel count for DoP encoder: %d",
+                 log_arg_int((int64_t)channels));
+    return NULL;
+  }
   dop_encoder_t* enc = (dop_encoder_t*)calloc(1, sizeof(dop_encoder_t));
-  if (!enc) return NULL;
+  if (!enc) {
+    logger_error(&logger, "Memory allocation failed for dop_encoder_t");
+    return NULL;
+  }
   enc->channels = channels;
   enc->coeffs = build_coeffs(sample_rate, cutoff_hz);
   if (!enc->coeffs) {
+    logger_error(&logger,
+                 "Failed to build polyphase coefficients for DoP encoder");
     dop_encoder_free(enc);
     return NULL;
   }
@@ -198,12 +209,18 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
   enc->enabled = output_dop && supported;
 
   if (!enc->enabled) {
+    logger_info(
+        &logger,
+        "DoP encoder created (disabled: output_dop=%d, rate_supported=%d)",
+        log_arg_int(output_dop ? 1 : 0), log_arg_int(supported ? 1 : 0));
     return enc;
   }
 
   enc->channel_states = (dop_encoder_channel_state_t*)calloc(
       channels, sizeof(dop_encoder_channel_state_t));
   if (!enc->channel_states) {
+    logger_error(&logger,
+                 "Memory allocation failed for DoP encoder channel states");
     dop_encoder_free(enc);
     return NULL;
   }
@@ -215,10 +232,18 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
         sigma_delta_modulator_create(filter_name, freq);
     enc->channel_states[ch].marker = 0x05;
     if (!enc->channel_states[ch].modulator) {
+      logger_error(&logger,
+                   "Failed to create Sigma-Delta modulator for channel %d",
+                   log_arg_int((int64_t)ch));
       dop_encoder_free(enc);
       return NULL;
     }
   }
+  logger_info(&logger,
+              "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
+              "dsd_rate=%.0f)",
+              log_arg_int((int64_t)channels), log_arg_double(sample_rate),
+              log_arg_double(dsd_rate));
   return enc;
 }
 
