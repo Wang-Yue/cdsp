@@ -149,6 +149,18 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason);
 
 /**
+ * @brief Signals the captured sync queue.
+ * @param state Pointer to the shared state.
+ */
+void engine_shared_state_signal_captured(engine_shared_state_t* state);
+
+/**
+ * @brief Signals the processed sync queue and marks processing completion.
+ * @param state Pointer to the shared state.
+ */
+void engine_shared_state_set_processing_done(engine_shared_state_t* state);
+
+/**
  * @brief Enqueues a chunk to the captured queue and signals the captured
  * semaphore.
  * @param state Pointer to the shared state instance.

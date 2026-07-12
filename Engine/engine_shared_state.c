@@ -51,6 +51,11 @@ struct engine_shared_state {
   _Atomic bool stop_requested;
 
   /**
+   * @brief Atomic flag indicating that the processing loop has finished.
+   */
+  _Atomic bool processing_done;
+
+  /**
    * @brief Terminal stop reason explaining why the engine stopped.
    */
   processing_stop_reason_t stop_reason;
@@ -153,25 +158,25 @@ void engine_shared_state_free(engine_shared_state_t* state) {
   free(state);
 }
 
-static void engine_shared_state_signal_captured(engine_shared_state_t* state) {
+void engine_shared_state_signal_captured(engine_shared_state_t* state) {
   if (state) audio_sync_queue_signal(state->captured_queue);
 }
 
-static void engine_shared_state_signal_processed(engine_shared_state_t* state) {
-  if (state) audio_sync_queue_signal(state->processed_queue);
+void engine_shared_state_set_processing_done(engine_shared_state_t* state) {
+  if (!state) return;
+  atomic_store_explicit(&state->processing_done, true, memory_order_release);
+  audio_sync_queue_signal(state->processed_queue);
 }
 
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
   state->stop_reason = reason;
-  // Store stop_requested with release ordering so the write becomes visible
-  // to the capture loop immediately on its next check.
   atomic_store_explicit(&state->stop_requested, true, memory_order_release);
+  atomic_store_explicit(&state->processing_done, false, memory_order_release);
 
-  // Wake up capture thread so it can emit the in-band STOP message downstream.
+  // Signal the captured queue to wake the processing thread.
   engine_shared_state_signal_captured(state);
-  engine_shared_state_signal_processed(state);
 }
 
 bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
@@ -197,5 +202,5 @@ audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
   return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
-      state->processed_queue, &state->stop_requested);
+      state->processed_queue, &state->processing_done);
 }

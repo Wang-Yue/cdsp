@@ -294,5 +294,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     }
   }
 
+  if (loop->shared) {
+    engine_shared_state_signal_captured(loop->shared);
+  }
   logger_info(&logger, "Capture thread stopped");
 }

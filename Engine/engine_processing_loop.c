@@ -289,5 +289,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     }
   }
 
+  if (loop->shared) {
+    engine_shared_state_set_processing_done(loop->shared);
+  }
   logger_info(&logger, "Processing thread stopped");
 }
