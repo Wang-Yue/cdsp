@@ -1,5 +1,6 @@
 #include "convolution.h"
 
+#include "Audio/sample_conversion.h"
 #include "FFT/real_fft.h"
 
 struct convolution_filter {
@@ -85,25 +86,6 @@ static size_t get_raw_sample_size(binary_sample_format_t format) {
     default:
       return 0;
   }
-}
-
-static inline int16_t read_i16_le(const uint8_t* buf) {
-  int16_t v;
-  memcpy(&v, buf, sizeof(v));
-  return v;
-}
-
-static inline int32_t read_i32_le(const uint8_t* buf) {
-  int32_t v;
-  memcpy(&v, buf, sizeof(v));
-  return v;
-}
-
-static inline int32_t read_i24_3_le(const uint8_t* buf) {
-  uint32_t u =
-      (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16);
-  if (u & 0x800000) u |= 0xFF000000;
-  return (int32_t)u;
 }
 
 /**
@@ -204,25 +186,17 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
     const uint8_t* src = frame_buf + channel * bytes_per_sample;
     double sample = 0.0;
     if (bits_per_sample == 16) {
-      int16_t val = src[0] | (src[1] << 8);
-      sample = (double)val / 32768.0;
+      sample = pcm_sample_decode_s16_bytes(src);
     } else if (bits_per_sample == 24) {
-      int32_t val = src[0] | (src[1] << 8) | (src[2] << 16);
-      if (val & 0x800000) val |= ~0xFFFFFF;
-      sample = (double)val / 8388608.0;
+      sample = pcm_sample_decode_s24_3bytes(src);
     } else if (bits_per_sample == 32) {
       if (audio_format == 3) {
-        float val;
-        memcpy(&val, src, 4);
-        sample = (double)val;
+        sample = pcm_sample_decode_f32_bytes(src);
       } else {
-        int32_t val = src[0] | (src[1] << 8) | (src[2] << 16) | (src[3] << 24);
-        sample = (double)val / 2147483648.0;
+        sample = pcm_sample_decode_s32_bytes(src);
       }
     } else if (bits_per_sample == 64) {
-      double val;
-      memcpy(&val, src, 8);
-      sample = val;
+      sample = pcm_sample_decode_f64_bytes(src);
     }
     result[read_frames++] = sample;
   }
@@ -354,27 +328,31 @@ static double* load_raw_file(const char* path, const char* format_str,
     double val = 0.0;
     switch (format) {
       case BINARY_SAMPLE_FORMAT_S16_LE: {
-        val = (double)read_i16_le(buf) / 32768.0;
+        val = pcm_sample_decode_s16_bytes(buf);
         break;
       }
       case BINARY_SAMPLE_FORMAT_S24_3_LE: {
-        val = (double)read_i24_3_le(buf) / 8388608.0;
+        val = pcm_sample_decode_s24_3bytes(buf);
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
+        val = pcm_sample_decode_s24_4_rj_bytes(buf);
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
+        val = pcm_sample_decode_s24_4_lj_bytes(buf);
         break;
       }
       case BINARY_SAMPLE_FORMAT_S32_LE: {
-        val = (double)read_i32_le(buf) / 2147483648.0;
+        val = pcm_sample_decode_s32_bytes(buf);
         break;
       }
       case BINARY_SAMPLE_FORMAT_F32_LE: {
-        float v;
-        memcpy(&v, buf, 4);
-        val = (double)v;
+        val = pcm_sample_decode_f32_bytes(buf);
         break;
       }
       case BINARY_SAMPLE_FORMAT_F64_LE: {
-        double v;
-        memcpy(&v, buf, 8);
-        val = v;
+        val = pcm_sample_decode_f64_bytes(buf);
         break;
       }
       default:

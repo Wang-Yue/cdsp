@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "Audio/processing_parameters.h"
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "alsa_device.h"
 
@@ -616,43 +617,33 @@ bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         double* dst = audio_chunk_get_channel(chunk, c);
-        dst[f] = src[f * capture->channels + c];
+        dst[f] = pcm_sample_decode_f32(src[f * capture->channels + c]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_S32_LE) {
     int32_t* src = (int32_t*)capture->interleaved_buf;
-    double scale = 1.0 / 2147483648.0;
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         double* dst = audio_chunk_get_channel(chunk, c);
-        dst[f] = (double)src[f * capture->channels + c] * scale;
+        dst[f] = pcm_sample_decode_s32(src[f * capture->channels + c]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_S24_3LE) {
     // Handle 24-bit 3-byte format (requires sign extension)
     uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    double scale = 1.0 / 8388608.0;
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         size_t offset = (f * capture->channels + c) * 3;
-        // Pack 3 bytes into a 32-bit int
-        int32_t val =
-            (src[offset] | (src[offset + 1] << 8) | (src[offset + 2] << 16));
-        // Sign extend from 24-bit to 32-bit
-        if (val & 0x800000) {
-          val |= 0xFF000000;
-        }
         double* dst = audio_chunk_get_channel(chunk, c);
-        dst[f] = (double)val * scale;
+        dst[f] = pcm_sample_decode_s24_3bytes(&src[offset]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_S24_LE) {
     int32_t* src = (int32_t*)capture->interleaved_buf;
-    double scale = 1.0 / 8388608.0;
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         double* dst = audio_chunk_get_channel(chunk, c);
-        dst[f] = (double)src[f * capture->channels + c] * scale;
+        dst[f] = pcm_sample_decode_s24(src[f * capture->channels + c]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE) {
@@ -665,11 +656,10 @@ bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
     }
   } else if (capture->format == SND_PCM_FORMAT_S16_LE) {
     int16_t* src = (int16_t*)capture->interleaved_buf;
-    double scale = 1.0 / 32768.0;
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         double* dst = audio_chunk_get_channel(chunk, c);
-        dst[f] = (double)src[f * capture->channels + c] * scale;
+        dst[f] = pcm_sample_decode_s16(src[f * capture->channels + c]);
       }
     }
   }

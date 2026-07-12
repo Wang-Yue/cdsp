@@ -10,12 +10,8 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
-#include <stdatomic.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <windows.h>
 
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "wasapi_capabilities.h"
 
@@ -127,7 +123,7 @@ static inline void decode_samples_from_wasapi(audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         audio_chunk_get_channel(chunk, c)[chunk_offset + f] =
-            (double)f32[f * channels + c];
+            pcm_sample_decode_f32(f32[f * channels + c]);
       }
     }
     return;
@@ -138,28 +134,23 @@ static inline void decode_samples_from_wasapi(audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         audio_chunk_get_channel(chunk, c)[chunk_offset + f] =
-            (double)s16[f * channels + c] / 32768.0;
+            pcm_sample_decode_s16(s16[f * channels + c]);
       }
     }
   } else if (bits_per_sample == 24) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         size_t idx = (f * channels + c) * 3;
-        int32_t val = (src[idx] | (src[idx + 1] << 8) | (src[idx + 2] << 16));
-        if (val & 0x800000) {
-          val |= 0xFF000000;
-        }
         audio_chunk_get_channel(chunk, c)[chunk_offset + f] =
-            (double)val / 8388608.0;
+            pcm_sample_decode_s24_3bytes(&src[idx]);
       }
     }
   } else if (bits_per_sample == 32 && valid_bits == 24) {
     const int32_t* s32 = (const int32_t*)src;
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
-        int32_t val = s32[f * channels + c] >> 8;
         audio_chunk_get_channel(chunk, c)[chunk_offset + f] =
-            (double)val / 8388608.0;
+            pcm_sample_decode_s24(s32[f * channels + c] >> 8);
       }
     }
   } else if (bits_per_sample == 32 && valid_bits == 32) {
@@ -167,7 +158,7 @@ static inline void decode_samples_from_wasapi(audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         audio_chunk_get_channel(chunk, c)[chunk_offset + f] =
-            (double)s32[f * channels + c] / 2147483648.0;
+            pcm_sample_decode_s32(s32[f * channels + c]);
       }
     }
   }
@@ -204,8 +195,8 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
     float* f32 = (float*)dst;
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
-        f32[f * channels + c] =
-            (float)audio_chunk_get_channel(chunk, c)[chunk_offset + f];
+        f32[f * channels + c] = pcm_sample_encode_f32(
+            audio_chunk_get_channel(chunk, c)[chunk_offset + f]);
       }
     }
     return;
@@ -216,26 +207,15 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[chunk_offset + f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        s16[f * channels + c] = (int16_t)(val * 32767.0);
+        s16[f * channels + c] = pcm_sample_encode_s16(val);
       }
     }
   } else if (bits_per_sample == 24) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[chunk_offset + f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        int32_t val24 = (int32_t)(val * 8388607.0);
         size_t idx = (f * channels + c) * 3;
-        dst[idx] = val24 & 0xFF;
-        dst[idx + 1] = (val24 >> 8) & 0xFF;
-        dst[idx + 2] = (val24 >> 16) & 0xFF;
+        pcm_sample_encode_s24_3bytes(val, &dst[idx]);
       }
     }
   } else if (bits_per_sample == 32 && valid_bits == 24) {
@@ -243,11 +223,7 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[chunk_offset + f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        s32[f * channels + c] = ((int32_t)(val * 8388607.0)) << 8;
+        s32[f * channels + c] = pcm_sample_encode_s24_msb(val);
       }
     }
   } else if (bits_per_sample == 32 && valid_bits == 32) {
@@ -255,11 +231,7 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[chunk_offset + f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        s32[f * channels + c] = (int32_t)(val * 2147483647.0);
+        s32[f * channels + c] = pcm_sample_encode_s32(val);
       }
     }
   }

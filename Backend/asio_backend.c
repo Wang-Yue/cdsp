@@ -12,6 +12,7 @@
 #include <windows.h>
 
 #include "Audio/lock_free_ring_buffer.h"
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
 // COM Release helper
@@ -745,22 +746,18 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
 
           // Convert sample based on the ASIO channel's native format.
           if (type == ASIOSTInt16LSB) {
-            ((int16_t*)dst)[f] = (int16_t)(val * 32767.0f);
+            ((int16_t*)dst)[f] = pcm_sample_encode_s16(val);
           } else if (type == ASIOSTInt32LSB || type == ASIOSTInt32LSB16 ||
                      type == ASIOSTInt32LSB18 || type == ASIOSTInt32LSB20 ||
                      type == ASIOSTInt32LSB24) {
-            ((int32_t*)dst)[f] = (int32_t)(val * 2147483647.0f);
+            ((int32_t*)dst)[f] = pcm_sample_encode_s32(val);
           } else if (type == ASIOSTFloat32LSB) {
-            ((float*)dst)[f] = val;
+            ((float*)dst)[f] = pcm_sample_encode_f32(val);
           } else if (type == ASIOSTFloat64LSB) {
-            ((double*)dst)[f] = (double)val;
+            ((double*)dst)[f] = pcm_clamp_sample(val);
           } else if (type == ASIOSTInt24LSB) {
             // ASIOSTInt24LSB uses packed 3-byte samples.
-            int32_t ival = (int32_t)(val * 8388607.0f);
-            uint8_t* p = &((uint8_t*)dst)[f * 3];
-            p[0] = ival & 0xFF;
-            p[1] = (ival >> 8) & 0xFF;
-            p[2] = (ival >> 16) & 0xFF;
+            pcm_sample_encode_s24_3bytes(val, &((uint8_t*)dst)[f * 3]);
           }
         }
       }
@@ -783,21 +780,19 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
           float val = 0.0f;
           // Convert the native ASIO channel's samples to float.
           if (type == ASIOSTInt16LSB) {
-            val = ((int16_t*)src)[f] / 32768.0f;
+            val = (float)pcm_sample_decode_s16(((int16_t*)src)[f]);
           } else if (type == ASIOSTInt32LSB || type == ASIOSTInt32LSB16 ||
                      type == ASIOSTInt32LSB18 || type == ASIOSTInt32LSB20 ||
                      type == ASIOSTInt32LSB24) {
-            val = ((int32_t*)src)[f] / 2147483648.0f;
+            val = (float)pcm_sample_decode_s32(((int32_t*)src)[f]);
           } else if (type == ASIOSTFloat32LSB) {
-            val = ((float*)src)[f];
+            val = (float)pcm_sample_decode_f32(((float*)src)[f]);
           } else if (type == ASIOSTFloat64LSB) {
-            val = (float)(((double*)src)[f]);
+            val = (float)pcm_sample_decode_f64_bytes(
+                (const uint8_t*)&((double*)src)[f]);
           } else if (type == ASIOSTInt24LSB) {
             // ASIOSTInt24LSB uses packed 3-byte samples. Sign-extend the value.
-            uint8_t* p = &((uint8_t*)src)[f * 3];
-            int32_t ival = (p[0]) | (p[1] << 8) | (p[2] << 16);
-            if (ival & 0x800000) ival |= 0xFF000000;
-            val = ival / 8388608.0f;
+            val = (float)pcm_sample_decode_s24_3bytes(&((uint8_t*)src)[f * 3]);
           }
           interleaved_buf[f * channels + c] = val;
         }
@@ -1378,7 +1373,7 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
   for (size_t f = 0; f < audio_chunk_get_valid_frames(chunk); f++) {
     for (int c = 0; c < playback->channels; c++) {
       playback->encode_buf[f * playback->channels + c] =
-          (float)audio_chunk_get_channel(chunk, c)[f];
+          pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
     }
   }
 

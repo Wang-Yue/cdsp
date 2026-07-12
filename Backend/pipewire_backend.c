@@ -11,6 +11,7 @@
 #include <time.h>
 
 #include "Audio/lock_free_ring_buffer.h"
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
 struct pipewire_capture {
@@ -410,7 +411,7 @@ bool pipewire_capture_read(pipewire_capture_t* capture, size_t frames,
   for (size_t f = 0; f < frames; f++) {
     for (int c = 0; c < capture->channels; c++) {
       audio_chunk_get_channel(chunk, c)[f] =
-          (double)capture->decode_buf[f * capture->channels + c];
+          pcm_sample_decode_f32(capture->decode_buf[f * capture->channels + c]);
     }
   }
 
@@ -757,7 +758,7 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
   for (size_t f = 0; f < frames; f++) {
     for (int c = 0; c < playback->channels; c++) {
       playback->encode_buf[f * playback->channels + c] =
-          (float)audio_chunk_get_channel(chunk, c)[f];
+          pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
     }
   }
 

@@ -27,6 +27,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "Audio/sample_conversion.h"
+
 #define DOP_FIFO_SIZE 64  // power of 2
 #define DOP_FIFO_MASK 63
 
@@ -241,9 +243,6 @@ static void process_channel(dop_decoder_channel_state_t* state,
 
   for (size_t t = 0; t < frames; t++) {
     double raw = buf[t];
-    if (!isfinite(raw)) {
-      raw = 0.0;
-    }
 
     // Recover both 24- and 32-bit container interpretations. DoP is most
     // commonly carried as right-aligned 24-bit-in-32-bit (marker at bits
@@ -256,55 +255,19 @@ static void process_channel(dop_decoder_channel_state_t* state,
 
     if (state->container_known) {
       if (state->is_32bit_container) {
-        double scaled = raw * 2147483648.0;
-        int32_t val32;
-        if (!isfinite(scaled))
-          val32 = 0;
-        else if (scaled >= 2147483647.0)
-          val32 = 2147483647;
-        else if (scaled <= -2147483648.0)
-          val32 = -2147483647 - 1;
-        else
-          val32 = (int32_t)lrint(scaled);
+        int32_t val32 = pcm_sample_encode_s32(raw);
         marker = (uint8_t)(((uint32_t)val32 >> 16) & 0xFF);
         dsd_word = (uint16_t)((uint32_t)val32 & 0xFFFF);
       } else {
-        double scaled = raw * 8388608.0;
-        int32_t val24;
-        if (!isfinite(scaled))
-          val24 = 0;
-        else if (scaled >= 8388607.0)
-          val24 = 8388607;
-        else if (scaled <= -8388608.0)
-          val24 = -8388608;
-        else
-          val24 = (int32_t)lrint(scaled);
+        int32_t val24 = pcm_sample_encode_s24(raw);
         marker = (uint8_t)(((uint32_t)val24 >> 16) & 0xFF);
         dsd_word = (uint16_t)((uint32_t)val24 & 0xFFFF);
       }
     } else {
-      double scaled32 = raw * 2147483648.0;
-      int32_t val32;
-      if (!isfinite(scaled32))
-        val32 = 0;
-      else if (scaled32 >= 2147483647.0)
-        val32 = 2147483647;
-      else if (scaled32 <= -2147483648.0)
-        val32 = -2147483647 - 1;
-      else
-        val32 = (int32_t)lrint(scaled32);
+      int32_t val32 = pcm_sample_encode_s32(raw);
       uint8_t marker32 = (uint8_t)(((uint32_t)val32 >> 16) & 0xFF);
 
-      double scaled24 = raw * 8388608.0;
-      int32_t val24;
-      if (!isfinite(scaled24))
-        val24 = 0;
-      else if (scaled24 >= 8388607.0)
-        val24 = 8388607;
-      else if (scaled24 <= -8388608.0)
-        val24 = -8388608;
-      else
-        val24 = (int32_t)lrint(scaled24);
+      int32_t val24 = pcm_sample_encode_s24(raw);
       uint8_t marker24 = (uint8_t)(((uint32_t)val24 >> 16) & 0xFF);
 
       if (marker32 == 0x05 || marker32 == 0xFA) {

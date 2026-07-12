@@ -23,6 +23,7 @@
 
 #include "dop_encoder.h"
 
+#include "Audio/sample_conversion.h"
 #include "sigma_delta_modulator.h"
 #if defined(ENABLE_BLAS)
 #include <cblas.h>
@@ -310,7 +311,7 @@ static void encode_channel_batched(dop_encoder_channel_state_t* state,
     uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
     int32_t int_val =
         (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
-    buf[t] = (double)int_val / 8388608.0;
+    buf[t] = pcm_sample_decode_s24(int_val);
 
     marker = (marker == 0x05) ? 0xFA : 0x05;
   }
@@ -480,7 +481,7 @@ static void encode_channel(dop_encoder_channel_state_t* state,
     // right by 8.
     int32_t int_val =
         (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
-    buf[t] = (double)int_val / 8388608.0;
+    buf[t] = pcm_sample_decode_s24(int_val);
 
     marker = (marker == 0x05) ? 0xFA : 0x05;
     pos = (pos + 1) & DOP_ENC_FIFO_MASK;

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
 struct pulse_capture {
@@ -250,7 +251,7 @@ bool pulse_capture_read(pulse_capture_t* capture, size_t frames,
   for (size_t f = 0; f < frames; f++) {
     for (int c = 0; c < capture->channels; c++) {
       audio_chunk_get_channel(chunk, c)[f] =
-          (double)src[f * capture->channels + c];
+          pcm_sample_decode_f32(src[f * capture->channels + c]);
     }
   }
 
@@ -531,7 +532,7 @@ bool pulse_playback_write(pulse_playback_t* playback,
   for (size_t f = 0; f < frames; f++) {
     for (int c = 0; c < playback->channels; c++) {
       dst[f * playback->channels + c] =
-          (float)audio_chunk_get_channel(chunk, c)[f];
+          pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
     }
   }
 

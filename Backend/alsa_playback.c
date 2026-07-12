@@ -1,13 +1,7 @@
 #if defined(ENABLE_ALSA)
 #include "alsa_playback.h"
 
-#include <alloca.h>
-#include <alsa/asoundlib.h>
-#include <stdatomic.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "alsa_device.h"
 
@@ -469,7 +463,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        dst[f * playback->channels + c] = (float)val;
+        dst[f * playback->channels + c] = pcm_sample_encode_f32(val);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_S32_LE) {
@@ -478,11 +472,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        dst[f * playback->channels + c] = (int32_t)(val * 2147483647.0);
+        dst[f * playback->channels + c] = pcm_sample_encode_s32(val);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_S24_3LE) {
@@ -491,15 +481,8 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        int32_t ival = (int32_t)(val * 8388607.0);
         size_t offset = (f * playback->channels + c) * 3;
-        dst[offset] = ival & 0xFF;
-        dst[offset + 1] = (ival >> 8) & 0xFF;
-        dst[offset + 2] = (ival >> 16) & 0xFF;
+        pcm_sample_encode_s24_3bytes(val, &dst[offset]);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_S24_LE) {
@@ -508,11 +491,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        dst[f * playback->channels + c] = (int32_t)(val * 8388607.0);
+        dst[f * playback->channels + c] = pcm_sample_encode_s24(val);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
@@ -529,11 +508,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        if (val > 1.0)
-          val = 1.0;
-        else if (val < -1.0)
-          val = -1.0;
-        dst[f * playback->channels + c] = (int16_t)(val * 32767.0);
+        dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
       }
     }
   }

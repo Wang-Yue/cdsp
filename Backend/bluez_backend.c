@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
 struct bluez_capture {
@@ -70,36 +71,25 @@ static inline double decode_sample(const uint8_t* src,
                                    binary_sample_format_t format) {
   switch (format) {
     case BINARY_SAMPLE_FORMAT_S16_LE: {
-      int16_t val = src[0] | (src[1] << 8);
-      return (double)val / 32768.0;
+      return pcm_sample_decode_s16_bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_S24_3_LE: {
-      int32_t val = src[0] | (src[1] << 8) | (src[2] << 16);
-      if (val & 0x800000) val |= ~0xFFFFFF;
-      return (double)val / 8388608.0;
+      return pcm_sample_decode_s24_3bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
-      int32_t val = src[0] | (src[1] << 8) | (src[2] << 16);
-      if (val & 0x800000) val |= ~0xFFFFFF;
-      return (double)val / 8388608.0;
+      return pcm_sample_decode_s24_4_rj_bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
-      int32_t val = (src[1] << 8) | (src[2] << 16) | (src[3] << 24);
-      return (double)val / 2147483648.0;
+      return pcm_sample_decode_s24_4_lj_bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_S32_LE: {
-      int32_t val = src[0] | (src[1] << 8) | (src[2] << 16) | (src[3] << 24);
-      return (double)val / 2147483648.0;
+      return pcm_sample_decode_s32_bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_F32_LE: {
-      float val;
-      memcpy(&val, src, 4);
-      return (double)val;
+      return pcm_sample_decode_f32_bytes(src);
     }
     case BINARY_SAMPLE_FORMAT_F64_LE: {
-      double val;
-      memcpy(&val, src, 8);
-      return val;
+      return pcm_sample_decode_f64_bytes(src);
     }
     default:
       return 0.0;

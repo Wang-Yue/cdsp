@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #endif
 
+#include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
 /**
@@ -272,8 +273,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 2;
-          int16_t val = src[offset] | (src[offset + 1] << 8);
-          dst_channels[c][f] = (double)val * (1.0 / 32768.0);
+          dst_channels[c][f] = pcm_sample_decode_s16_bytes(src + offset);
         }
       }
       break;
@@ -282,10 +282,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 3;
-          int32_t val =
-              src[offset] | (src[offset + 1] << 8) | (src[offset + 2] << 16);
-          if (val & 0x800000) val |= ~0xFFFFFF;
-          dst_channels[c][f] = (double)val * (1.0 / 8388608.0);
+          dst_channels[c][f] = pcm_sample_decode_s24_3bytes(src + offset);
         }
       }
       break;
@@ -294,10 +291,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          int32_t val =
-              src[offset] | (src[offset + 1] << 8) | (src[offset + 2] << 16);
-          if (val & 0x800000) val |= ~0xFFFFFF;
-          dst_channels[c][f] = (double)val * (1.0 / 8388608.0);
+          dst_channels[c][f] = pcm_sample_decode_s24_4_rj_bytes(src + offset);
         }
       }
       break;
@@ -306,9 +300,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          int32_t val;
-          memcpy(&val, src + offset, 4);
-          dst_channels[c][f] = (double)val * (1.0 / 2147483648.0);
+          dst_channels[c][f] = pcm_sample_decode_s24_4_lj_bytes(src + offset);
         }
       }
       break;
@@ -317,9 +309,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          int32_t val;
-          memcpy(&val, src + offset, 4);
-          dst_channels[c][f] = (double)val * (1.0 / 2147483648.0);
+          dst_channels[c][f] = pcm_sample_decode_s32_bytes(src + offset);
         }
       }
       break;
@@ -328,9 +318,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          float val;
-          memcpy(&val, src + offset, 4);
-          dst_channels[c][f] = (double)val;
+          dst_channels[c][f] = pcm_sample_decode_f32_bytes(src + offset);
         }
       }
       break;
@@ -339,9 +327,7 @@ static inline void decode_samples_deinterleave(double* const* dst_channels,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 8;
-          double val;
-          memcpy(&val, src + offset, 8);
-          dst_channels[c][f] = val;
+          dst_channels[c][f] = pcm_sample_decode_f64_bytes(src + offset);
         }
       }
       break;
@@ -370,10 +356,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 2;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          int16_t val = (int16_t)round(value * 32767.0);
-          memcpy(dst + offset, &val, 2);
+          pcm_sample_encode_s16_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -382,12 +365,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 3;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          int32_t val = (int32_t)round(value * 8388607.0);
-          dst[offset] = val & 0xFF;
-          dst[offset + 1] = (val >> 8) & 0xFF;
-          dst[offset + 2] = (val >> 16) & 0xFF;
+          pcm_sample_encode_s24_3bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -396,10 +374,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          int32_t val = (int32_t)round(value * 8388607.0);
-          memcpy(dst + offset, &val, 4);
+          pcm_sample_encode_s24_4_rj_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -408,11 +383,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          int32_t val = (int32_t)round(value * 8388607.0);
-          int32_t shifted = val << 8;
-          memcpy(dst + offset, &shifted, 4);
+          pcm_sample_encode_s24_4_lj_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -421,10 +392,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          int32_t val = (int32_t)round(value * 2147483647.0);
-          memcpy(dst + offset, &val, 4);
+          pcm_sample_encode_s32_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -433,10 +401,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 4;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          float val = (float)value;
-          memcpy(dst + offset, &val, 4);
+          pcm_sample_encode_f32_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;
@@ -445,10 +410,7 @@ static inline void encode_samples_interleave(uint8_t* dst,
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < channels; c++) {
           size_t offset = (f * channels + c) * 8;
-          double value = src_channels[c][f];
-          value = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-          double val = value;
-          memcpy(dst + offset, &val, 8);
+          pcm_sample_encode_f64_bytes(src_channels[c][f], dst + offset);
         }
       }
       break;

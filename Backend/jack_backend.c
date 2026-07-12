@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "Audio/lock_free_ring_buffer.h"
+#include "Audio/sample_conversion.h"
 #include "Engine/engine_shared_state.h"
 #include "Logging/app_logger.h"
 
@@ -278,7 +279,7 @@ bool jack_capture_read(jack_capture_t* capture, size_t frames,
         spsc_audio_ring_buffer_consume(capture->buffers[c], temp, frames);
     double* dest = audio_chunk_get_channel(chunk, c);
     for (size_t f = 0; f < consumed; f++) {
-      dest[f] = (double)temp[f];
+      dest[f] = pcm_sample_decode_f32(temp[f]);
     }
     for (size_t f = consumed; f < frames; f++) {
       dest[f] = 0.0;
@@ -636,7 +637,7 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
   for (int c = 0; c < playback->channels; c++) {
     const double* src = audio_chunk_get_channel(chunk, c);
     for (size_t f = 0; f < frames; f++) {
-      temp[f] = (float)src[f];
+      temp[f] = pcm_sample_encode_f32(src[f]);
     }
     spsc_audio_ring_buffer_write(playback->buffers[c], temp, frames, 1);
   }
