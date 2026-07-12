@@ -1,6 +1,8 @@
 #if defined(ENABLE_ALSA)
 #include "alsa_playback.h"
 
+#include <stdatomic.h>
+
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "alsa_device.h"
