@@ -62,6 +62,7 @@ private:
     QCheckBox* m_enabledCheck;
     QWidget* m_optionsContainer;
     bool m_isBuildingUi = false;
+    bool m_isLocalEditing = false;
 
     void setupUi();
     void buildStageOptionsUi();

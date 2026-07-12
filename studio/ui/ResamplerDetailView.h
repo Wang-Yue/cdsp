@@ -54,6 +54,8 @@ private:
 
     void updateVisibility();
 
+    bool m_isLocalEditing = false;
+
     void setupUi();
 };
 

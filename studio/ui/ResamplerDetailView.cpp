@@ -177,6 +177,8 @@ void ResamplerDetailView::updateVisibility() {
 }
 
 void ResamplerDetailView::refreshUi() {
+    if (m_isLocalEditing)
+        return;
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
     updateVisibility();
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
@@ -211,6 +213,7 @@ void ResamplerDetailView::refreshUi() {
 }
 
 void ResamplerDetailView::applySettings() {
+    m_isLocalEditing = true;
     m_settings->resamplerEnabled = m_enabledCheck->isChecked();
     m_settings->resamplerType = stringToResamplerType(m_typeCombo->currentText().toStdString());
     m_settings->resamplerUseProfile = m_useProfileCheck->isChecked();
@@ -231,4 +234,5 @@ void ResamplerDetailView::applySettings() {
     if (m_dspController) {
         m_dspController->applyConfig();
     }
+    m_isLocalEditing = false;
 }

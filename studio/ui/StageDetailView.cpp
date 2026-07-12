@@ -170,9 +170,11 @@ void StageDetailView::setupUi() {
 void StageDetailView::applyConfig() {
     if (m_isBuildingUi)
         return;
+    m_isLocalEditing = true;
     m_pipeline->save();
     emit m_pipeline->pipelineChanged();
     m_dspController->applyConfig();
+    m_isLocalEditing = false;
 }
 
 PipelineStage* StageDetailView::currentStage() const {
@@ -183,6 +185,8 @@ PipelineStage* StageDetailView::currentStage() const {
 }
 
 void StageDetailView::refreshUi() {
+    if (m_isLocalEditing)
+        return;
     m_isBuildingUi = true;
     if (m_stageIndex < m_pipeline->stages.size()) {
         const auto& stage = m_pipeline->stages[m_stageIndex];
