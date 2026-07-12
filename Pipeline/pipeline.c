@@ -481,11 +481,12 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             for (size_t c = 0; c < new_chains_count; c++) {
               for (size_t k = 0; k < c; k++) {
                 if (new_chains[c].channel == new_chains[k].channel) {
+                  int dup_channel = new_chains[c].channel;
                   free_filter_chains(new_chains, new_chains_count);
                   config_error_set(
                       err, CONFIG_ERR_INVALID_PIPELINE,
                       "Duplicate channel %d in parallel filter step",
-                      new_chains[c].channel);
+                      dup_channel);
                   pipeline_free(pipeline);
                   return NULL;
                 }
