@@ -1029,25 +1029,27 @@ static void reload_iter_c(int i, void* ctx) {
   pipeline_reload_test_ctx_t* c = (pipeline_reload_test_ctx_t*)ctx;
 
   // 1. Enqueue chunk
-  spsc_queue_enqueue(c->shared->captured_queue, c->input_chunk);
+  spsc_queue_enqueue(engine_shared_state_get_captured_queue(c->shared),
+                     c->input_chunk);
 
   // 2. Set pipeline (i + 1 because 0 was used in warmup)
   engine_processing_loop_set_pipeline(c->loop, c->reloaded_pipelines[i + 1]);
 
   // 3. Signal captured semaphore
-  engine_sem_signal(c->shared->captured_semaphore);
+  engine_sem_signal(*engine_shared_state_get_captured_semaphore(c->shared));
 
   // 4. Wait for processing completion
   engine_sem_wait(c->processed_sem);
 
   // 5. Clean up queues
-  void* processed = spsc_queue_dequeue(c->shared->processed_queue);
+  void* processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
   (void)processed;
 
-  void* garbage = NULL;
-  while ((garbage = spsc_queue_dequeue(c->shared->pipeline_garbage_queue)) !=
+  pipeline_t* garbage = NULL;
+  while ((garbage = engine_shared_state_dequeue_garbage_pipeline(c->shared)) !=
          NULL) {
-    pipeline_free((pipeline_t*)garbage);
+    pipeline_free(garbage);
   }
 }
 
@@ -1131,20 +1133,22 @@ TEST(PipelineReload_AllocationFree) {
   pthread_create(&thread, NULL, test_processing_thread_run, loop);
 
   // Warmup / get thread ID
-  spsc_queue_enqueue(shared->captured_queue, ctx.input_chunk);
+  spsc_queue_enqueue(engine_shared_state_get_captured_queue(shared),
+                     ctx.input_chunk);
   engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0]);
-  engine_sem_signal(shared->captured_semaphore);
+  engine_sem_signal(*engine_shared_state_get_captured_semaphore(shared));
 
   engine_sem_wait(ctx.thread_id_sem);
   engine_sem_wait(ctx.processed_sem);
 
   // Clean up queues after warmup
-  void* processed = spsc_queue_dequeue(shared->processed_queue);
+  void* processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
   (void)processed;
-  void* garbage = NULL;
-  while ((garbage = spsc_queue_dequeue(shared->pipeline_garbage_queue)) !=
+  pipeline_t* garbage = NULL;
+  while ((garbage = engine_shared_state_dequeue_garbage_pipeline(shared)) !=
          NULL) {
-    pipeline_free((pipeline_t*)garbage);
+    pipeline_free(garbage);
   }
 
   uintptr_t tid = atomic_load(&ctx.watched_thread_id);

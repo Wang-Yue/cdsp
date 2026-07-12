@@ -174,65 +174,108 @@ static inline void engine_yield(void) { SwitchToThread(); }
 #include "Config/engine_config_types.h"
 
 /**
- * @brief Shared state between the engine threads.
- *
- * Genuinely `Sendable` — every stored field is itself `Sendable`
- * (the SPSC queues, the kernel semaphores, and the atomics).
- * Producers and consumers may freely access these from any thread
- * without coordination beyond what each individual field's API requires.
+ * @brief Opaque structure representing shared state between the engine threads.
  */
-typedef struct {
-  /**
-   * @brief Bounded SPSC FIFO from the capture thread to the processing thread.
-   * `enqueue` returns `false` when full; the producer drops the chunk rather
-   * than allocate.
-   */
-  spsc_queue_t* captured_queue;
+typedef struct engine_shared_state engine_shared_state_t;
 
-  /**
-   * @brief Bounded SPSC FIFO from the processing thread to the playback thread.
-   */
-  spsc_queue_t* processed_queue;
+/**
+ * @brief Gets the captured SPSC queue pointer.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the captured SPSC queue.
+ */
+spsc_queue_t* engine_shared_state_get_captured_queue(
+    engine_shared_state_t* state);
 
-  /**
-   * @brief Wakeup signal for the processing thread.
-   * The capture thread signals after every successful `enqueue`.
-   */
-  engine_semaphore_t captured_semaphore;
+/**
+ * @brief Gets the processed SPSC queue pointer.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the processed SPSC queue.
+ */
+spsc_queue_t* engine_shared_state_get_processed_queue(
+    engine_shared_state_t* state);
 
-  /**
-   * @brief Wakeup signal for the playback thread.
-   * The processing thread signals after every successful `enqueue`.
-   */
-  engine_semaphore_t processed_semaphore;
+/**
+ * @brief Gets the captured semaphore pointer.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the captured semaphore.
+ */
+engine_semaphore_t* engine_shared_state_get_captured_semaphore(
+    engine_shared_state_t* state);
 
-  /**
-   * @brief External trigger flag instructing the capture loop to emit an
-   * in-band STOP message.
-   */
-  _Atomic bool stop_requested;
+/**
+ * @brief Gets the processed semaphore pointer.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the processed semaphore.
+ */
+engine_semaphore_t* engine_shared_state_get_processed_semaphore(
+    engine_shared_state_t* state);
 
-  /**
-   * @brief Terminal stop reason explaining why the engine stopped.
-   */
-  processing_stop_reason_t stop_reason;
+/**
+ * @brief Checks if a stop has been requested on the shared state.
+ * @param state Pointer to the shared state instance.
+ * @return true if stop was requested, false otherwise.
+ */
+bool engine_shared_state_get_stop_requested(const engine_shared_state_t* state);
 
-  /**
-   * @brief Resampler relative-ratio (≈ 1.0).
-   * Published by the playback thread (rate-adjust controller); consumed by
-   * the processing thread once per chunk via `setRelativeRatio`.
-   */
-  atomic_double_t* resampler_ratio;
+/**
+ * @brief Sets the stop_requested flag on the shared state.
+ * @param state Pointer to the shared state instance.
+ * @param requested Value to set the stop_requested flag to.
+ */
+void engine_shared_state_set_stop_requested(engine_shared_state_t* state,
+                                            bool requested);
 
-  /**
-   * @brief Deferred free queue for old pipeline structures.
-   *
-   * Holds pipeline instances swapped out by the processing thread. The control
-   * thread periodically dequeues and frees them asynchronously to keep the
-   * audio thread allocation-free and real-time safe.
-   */
-  spsc_queue_t* pipeline_garbage_queue;
-} engine_shared_state_t;
+/**
+ * @brief Gets the current resampler relative ratio.
+ * @param state Pointer to the shared state instance.
+ * @return The current relative sample rate ratio (e.g. 1.0).
+ */
+double engine_shared_state_get_resampler_ratio(
+    const engine_shared_state_t* state);
+
+/**
+ * @brief Sets the resampler relative ratio.
+ * @param state Pointer to the shared state instance.
+ * @param ratio The new relative sample rate ratio to apply.
+ */
+void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
+                                             double ratio);
+
+typedef struct pipeline_s pipeline_t;
+
+/**
+ * @brief Enqueues a swapped-out pipeline instance into the garbage queue for
+ * deferred freeing.
+ * @param state Pointer to the shared state instance.
+ * @param pipeline Pointer to the pipeline object to enqueue.
+ * @return true if enqueued successfully, false if the queue was full.
+ */
+bool engine_shared_state_enqueue_garbage_pipeline(engine_shared_state_t* state,
+                                                  pipeline_t* pipeline);
+
+/**
+ * @brief Dequeues a pipeline instance from the garbage queue for cleanup.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the dequeued pipeline object, or NULL if empty.
+ */
+pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
+    engine_shared_state_t* state);
+
+/**
+ * @brief Gets the current stop reason.
+ * @param state Pointer to the shared state instance.
+ * @return The processing stop reason structure.
+ */
+processing_stop_reason_t engine_shared_state_get_stop_reason(
+    const engine_shared_state_t* state);
+
+/**
+ * @brief Sets the current stop reason.
+ * @param state Pointer to the shared state instance.
+ * @param reason The processing stop reason to record.
+ */
+void engine_shared_state_set_stop_reason(engine_shared_state_t* state,
+                                         processing_stop_reason_t reason);
 
 /**
  * @brief Creates a new engine shared state instance.
@@ -266,11 +309,11 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
  *
  * @param queue Pointer to the SPSC queue.
  * @param sem Pointer to the semaphore to wait on when empty.
- * @param stop_requested Pointer to the atomic stop requested flag.
+ * @param state Pointer to the shared state instance.
  * @return audio_chunk_t* Dequeued chunk, or NULL if the pipeline is stopping
  * and queue is drained.
  */
 audio_chunk_t* engine_shared_state_dequeue_blocking(
-    spsc_queue_t* queue, engine_semaphore_t* sem, _Atomic bool* stop_requested);
+    spsc_queue_t* queue, engine_semaphore_t* sem, engine_shared_state_t* state);
 
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

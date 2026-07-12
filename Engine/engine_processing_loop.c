@@ -146,8 +146,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   audio_chunk_t* terminal_chunk = NULL;
 
   while ((chunk = engine_shared_state_dequeue_blocking(
-              loop->shared->captured_queue, &loop->shared->captured_semaphore,
-              &loop->shared->stop_requested)) != NULL) {
+              engine_shared_state_get_captured_queue(loop->shared),
+              engine_shared_state_get_captured_semaphore(loop->shared),
+              loop->shared)) != NULL) {
     audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
     if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP) {
       terminal_chunk = chunk;
@@ -162,7 +163,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       // we sync the resampler to it once per chunk. The
       // resampler's internal state is otherwise owned exclusively
       // by this thread, so no lock is required.
-      double ratio = atomic_double_get(loop->shared->resampler_ratio);
+      double ratio = engine_shared_state_get_resampler_ratio(loop->shared);
       audio_resampler_set_relative_ratio(loop->resampler, ratio);
 
       // Write into the pre-sized output scratch (sized to
@@ -200,8 +201,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     if (next_pipeline) {
       if (loop->active_pipeline) {
         pipeline_transfer_state(next_pipeline, loop->active_pipeline);
-        if (!spsc_queue_enqueue(loop->shared->pipeline_garbage_queue,
-                                loop->active_pipeline)) {
+        if (!engine_shared_state_enqueue_garbage_pipeline(
+                loop->shared, loop->active_pipeline)) {
           pipeline_free(loop->active_pipeline);
         }
       }
@@ -295,19 +296,22 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // Enqueue the processed chunk to the playback queue.
     // If the queue is full (playback thread falling behind), we block-wait
     // using a short sleep to avoid spinning and wasting CPU.
-    while (!spsc_queue_enqueue(loop->shared->processed_queue, chunk)) {
-      if (atomic_load_explicit(&loop->shared->stop_requested,
-                               memory_order_acquire)) {
+    while (!spsc_queue_enqueue(
+        engine_shared_state_get_processed_queue(loop->shared), chunk)) {
+      if (engine_shared_state_get_stop_requested(loop->shared)) {
         break;
       }
       engine_yield();
     }
-    engine_sem_signal(loop->shared->processed_semaphore);
+    engine_sem_signal(
+        *engine_shared_state_get_processed_semaphore(loop->shared));
   }
 
   if (terminal_chunk) {
-    spsc_queue_enqueue(loop->shared->processed_queue, terminal_chunk);
-    engine_sem_signal(loop->shared->processed_semaphore);
+    spsc_queue_enqueue(engine_shared_state_get_processed_queue(loop->shared),
+                       terminal_chunk);
+    engine_sem_signal(
+        *engine_shared_state_get_processed_semaphore(loop->shared));
   }
 
   logger_info(&logger, "Processing thread stopped");

@@ -134,10 +134,9 @@ void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
 bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
                                        processing_stop_reason_t* out_reason) {
   if (!core || !core->shared) return false;
-  bool req =
-      atomic_load_explicit(&core->shared->stop_requested, memory_order_acquire);
+  bool req = engine_shared_state_get_stop_requested(core->shared);
   if (req && out_reason) {
-    *out_reason = core->shared->stop_reason;
+    *out_reason = engine_shared_state_get_stop_reason(core->shared);
   }
   return req;
 }
@@ -483,14 +482,18 @@ bool dsp_engine_core_start(dsp_engine_core_t* core,
   // and processing loop threads never perform dynamic memory allocations on the
   // hot path.
   size_t capture_pool_cap =
-      spsc_queue_get_capacity(core->shared->captured_queue) + 4;
+      spsc_queue_get_capacity(
+          engine_shared_state_get_captured_queue(core->shared)) +
+      4;
   core->capture_chunk_pool = round_robin_chunk_pool_create(
       capture_pool_cap, capture_chunk_size,
       capture_device_config_get_channels(
           &core->current_config->devices.capture));
 
   size_t processing_pool_cap =
-      spsc_queue_get_capacity(core->shared->processed_queue) + 4;
+      spsc_queue_get_capacity(
+          engine_shared_state_get_processed_queue(core->shared)) +
+      4;
   core->processing_scratch_pool = round_robin_chunk_pool_create(
       processing_pool_cap, playback_chunk_size,
       playback_device_config_get_channels(
@@ -645,8 +648,8 @@ void dsp_engine_core_stop(dsp_engine_core_t* core,
   // Drain any chunks left in the lock-free queues before the
   // device handles go away. Prevents stale-chunk pollution if
   // the engine is restarted with a different config.
-  spsc_queue_drain(core->shared->captured_queue);
-  spsc_queue_drain(core->shared->processed_queue);
+  spsc_queue_drain(engine_shared_state_get_captured_queue(core->shared));
+  spsc_queue_drain(engine_shared_state_get_processed_queue(core->shared));
 
   if (core->capture) {
     capture_backend_close(core->capture);
@@ -775,11 +778,9 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
 void dsp_engine_core_collect_garbage(dsp_engine_core_t* core) {
   if (!core || !core->shared) return;
 
-  if (core->shared->pipeline_garbage_queue) {
-    void* p = NULL;
-    while ((p = spsc_queue_dequeue(core->shared->pipeline_garbage_queue)) !=
-           NULL) {
-      pipeline_free((pipeline_t*)p);
-    }
+  pipeline_t* p = NULL;
+  while ((p = engine_shared_state_dequeue_garbage_pipeline(core->shared)) !=
+         NULL) {
+    pipeline_free(p);
   }
 }

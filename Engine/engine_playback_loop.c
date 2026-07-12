@@ -75,8 +75,8 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
     } else if (loop->playback &&
                playback_backend_pitch_control_supported(loop->playback)) {
       playback_backend_set_pitch(loop->playback, speed);
-    } else if (loop->shared && loop->shared->resampler_ratio) {
-      atomic_double_set(loop->shared->resampler_ratio, speed);
+    } else if (loop->shared) {
+      engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
     const char* method_str = loop->pitch_supported ? "pitch" : "resampler";
     logger_debug(&logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
@@ -148,20 +148,19 @@ static bool engine_playback_loop_handle_terminal_chunk(
     engine_playback_loop_t* loop, audio_chunk_t* chunk) {
   audio_msg_type_t msg_type = audio_chunk_get_msg_type(chunk);
   if (msg_type == AUDIO_MSG_EOF || msg_type == AUDIO_MSG_STOP ||
-      atomic_load_explicit(&loop->shared->stop_requested,
-                           memory_order_acquire)) {
+      engine_shared_state_get_stop_requested(loop->shared)) {
     processing_stop_reason_t chunk_reason = audio_chunk_get_stop_reason(chunk);
+    processing_stop_reason_t cur_reason =
+        engine_shared_state_get_stop_reason(loop->shared);
     if (chunk_reason.type != STOP_REASON_NONE) {
-      loop->shared->stop_reason = chunk_reason;
+      engine_shared_state_set_stop_reason(loop->shared, chunk_reason);
     } else if (msg_type == AUDIO_MSG_EOF &&
-               loop->shared->stop_reason.type == STOP_REASON_NONE) {
-      loop->shared->stop_reason =
-          (processing_stop_reason_t){.type = STOP_REASON_DONE};
-      snprintf(loop->shared->stop_reason.message,
-               sizeof(loop->shared->stop_reason.message), "EOF");
+               cur_reason.type == STOP_REASON_NONE) {
+      processing_stop_reason_t eof_reason = {.type = STOP_REASON_DONE};
+      snprintf(eof_reason.message, sizeof(eof_reason.message), "EOF");
+      engine_shared_state_set_stop_reason(loop->shared, eof_reason);
     }
-    atomic_store_explicit(&loop->shared->stop_requested, true,
-                          memory_order_release);
+    engine_shared_state_set_stop_requested(loop->shared, true);
     return true;
   }
   return false;
@@ -192,8 +191,9 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   audio_chunk_t* chunk = NULL;
   while ((chunk = engine_shared_state_dequeue_blocking(
-              loop->shared->processed_queue, &loop->shared->processed_semaphore,
-              &loop->shared->stop_requested)) != NULL) {
+              engine_shared_state_get_processed_queue(loop->shared),
+              engine_shared_state_get_processed_semaphore(loop->shared),
+              loop->shared)) != NULL) {
     if (engine_playback_loop_handle_terminal_chunk(loop, chunk)) {
       break;
     }
@@ -219,7 +219,9 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     // plus frames currently queued in the SPSC queue waiting to be written.
     size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
     size_t queued_frames =
-        spsc_queue_get_count(loop->shared->processed_queue) * loop->chunk_size;
+        spsc_queue_get_count(
+            engine_shared_state_get_processed_queue(loop->shared)) *
+        loop->chunk_size;
     if (loop->processing_params) {
       atomic_double_set(&loop->processing_params->buffer_level,
                         (double)(ring_fill + queued_frames));

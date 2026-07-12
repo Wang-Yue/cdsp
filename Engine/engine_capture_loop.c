@@ -136,11 +136,11 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   audio_chunk_t* stop_chunk = NULL;
 
   while (1) {
-    if (atomic_load_explicit(&loop->shared->stop_requested,
-                             memory_order_acquire)) {
+    if (engine_shared_state_get_stop_requested(loop->shared)) {
       stop_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
       audio_chunk_set_msg_type(stop_chunk, AUDIO_MSG_STOP);
-      audio_chunk_set_stop_reason(stop_chunk, loop->shared->stop_reason);
+      audio_chunk_set_stop_reason(
+          stop_chunk, engine_shared_state_get_stop_reason(loop->shared));
       break;
     }
 
@@ -309,14 +309,18 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     if (engine_state_machine_get_state(loop->state_machine) !=
         PROCESSING_STATE_PAUSED) {
       audio_chunk_set_msg_type(chunk, AUDIO_MSG_DATA);
-      spsc_queue_enqueue(loop->shared->captured_queue, chunk);
-      engine_sem_signal(loop->shared->captured_semaphore);
+      spsc_queue_enqueue(engine_shared_state_get_captured_queue(loop->shared),
+                         chunk);
+      engine_sem_signal(
+          *engine_shared_state_get_captured_semaphore(loop->shared));
     }
   }
 
   if (stop_chunk) {
-    spsc_queue_enqueue(loop->shared->captured_queue, stop_chunk);
-    engine_sem_signal(loop->shared->captured_semaphore);
+    spsc_queue_enqueue(engine_shared_state_get_captured_queue(loop->shared),
+                       stop_chunk);
+    engine_sem_signal(
+        *engine_shared_state_get_captured_semaphore(loop->shared));
   }
 
   logger_info(&logger, "Capture thread stopped");
