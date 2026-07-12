@@ -10,6 +10,8 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
+#include <stdatomic.h>
+#include <stdio.h>
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
