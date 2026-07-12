@@ -1,10 +1,21 @@
 #include "room_correction/SweepRecorder.h"
 
 #include "room_correction/SweepDeconvolver.h"
+#include "room_correction/SweepGenerator.h"
 
+#include <QAudioFormat>
+#include <QAudioSink>
+#include <QAudioSource>
+#include <QBuffer>
+#include <QEventLoop>
+#include <QMediaDevices>
+#include <QTimer>
 #include <QtGlobal>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstring>
+#include <thread>
 
 std::optional<int> SweepRecorder::locateSweepStart(const std::vector<double>& recording,
                                                    const std::vector<double>& inverse) {
@@ -43,70 +54,11 @@ std::vector<double> SweepRecorder::trimAndAlign(const std::vector<double>& captu
     return out;
 }
 
-#include "room_correction/SweepGenerator.h"
-
-#include <chrono>
-#include <thread>
-
-#if defined(ENABLE_COREAUDIO)
-#include <AudioToolbox/AudioToolbox.h>
-#include <CoreAudio/CoreAudio.h>
-
-struct AudioQueueRecordContext {
-    std::vector<double> samples;
-    int targetChannel = 0;
-};
-
-struct AudioQueuePlayContext {
-    std::vector<float> pcmData;
-    size_t currentSample = 0;
-};
-
-static void MyAQOutputCallback(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer) {
-    auto* ctx = static_cast<AudioQueuePlayContext*>(inUserData);
-    if (!ctx || !inBuffer)
-        return;
-
-    float* target = static_cast<float*>(inBuffer->mAudioData);
-    size_t capacitySamples = inBuffer->mAudioDataBytesCapacity / sizeof(float);
-    size_t remaining = ctx->pcmData.size() - ctx->currentSample;
-    size_t toCopy = std::min(capacitySamples, remaining);
-
-    if (toCopy > 0) {
-        std::memcpy(target, ctx->pcmData.data() + ctx->currentSample, toCopy * sizeof(float));
-        ctx->currentSample += toCopy;
-        inBuffer->mAudioDataByteSize = static_cast<UInt32>(toCopy * sizeof(float));
-        AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nullptr);
-    } else {
-        std::memset(target, 0, capacitySamples * sizeof(float));
-        inBuffer->mAudioDataByteSize = static_cast<UInt32>(capacitySamples * sizeof(float));
-    }
-}
-
-static void MyAQInputCallback(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer,
-                              const AudioTimeStamp* inStartTime, UInt32 inNumberPacketDescriptions,
-                              const AudioStreamPacketDescription* inPacketDescs) {
-    Q_UNUSED(inStartTime);
-    Q_UNUSED(inNumberPacketDescriptions);
-    Q_UNUSED(inPacketDescs);
-    auto* ctx = static_cast<AudioQueueRecordContext*>(inUserData);
-    if (!ctx || !inBuffer || inBuffer->mAudioDataByteSize == 0)
-        return;
-
-    const float* ptr = static_cast<const float*>(inBuffer->mAudioData);
-    size_t sampleCount = inBuffer->mAudioDataByteSize / sizeof(float);
-    for (size_t i = 0; i < sampleCount; ++i) {
-        ctx->samples.push_back(static_cast<double>(ptr[i]));
-    }
-    AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nullptr);
-}
-#endif
-
 SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationSeconds, int sampleRate,
                                           const std::string& inputDeviceName, const std::string& outputDeviceName,
                                           int inputChannel, int outputChannel, double playbackGainDB) {
-    Q_UNUSED(inputDeviceName);
-    Q_UNUSED(outputDeviceName);
+    Q_UNUSED(inputChannel);
+    Q_UNUSED(outputChannel);
 
     auto [sweep, inv] = SweepGenerator::sweepAndInverse(f1, f2, durationSeconds, sampleRate, 0.02, 0.02);
     if (sweep.empty() || inv.empty())
@@ -124,57 +76,63 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
 
     std::vector<double> capturedRaw;
 
-#if defined(ENABLE_COREAUDIO)
-    AudioStreamBasicDescription format;
-    std::memset(&format, 0, sizeof(format));
-    format.mSampleRate = sampleRate;
-    format.mFormatID = kAudioFormatLinearPCM;
-    format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-    format.mBytesPerPacket = sizeof(float);
-    format.mFramesPerPacket = 1;
-    format.mBytesPerFrame = sizeof(float);
-    format.mChannelsPerFrame = 1;
-    format.mBitsPerChannel = 32;
+    QAudioFormat fmt;
+    fmt.setSampleRate(sampleRate);
+    fmt.setChannelCount(1);
+    fmt.setSampleFormat(QAudioFormat::Float);
 
-    AudioQueueRef inputQueue = nullptr;
-    AudioQueueRef outputQueue = nullptr;
-    AudioQueueRecordContext recContext;
-    recContext.targetChannel = inputChannel;
-    AudioQueuePlayContext playContext{playPcm, 0};
-
-    OSStatus inStatus = AudioQueueNewInput(&format, MyAQInputCallback, &recContext, nullptr, nullptr, 0, &inputQueue);
-    OSStatus outStatus =
-        AudioQueueNewOutput(&format, MyAQOutputCallback, &playContext, nullptr, nullptr, 0, &outputQueue);
-
-    if (inStatus == noErr && outStatus == noErr && inputQueue && outputQueue) {
-        const int numBuffers = 3;
-        const UInt32 bufferByteSize = 4096 * sizeof(float);
-        AudioQueueBufferRef inBuffers[numBuffers];
-        AudioQueueBufferRef outBuffers[numBuffers];
-
-        for (int i = 0; i < numBuffers; ++i) {
-            AudioQueueAllocateBuffer(inputQueue, bufferByteSize, &inBuffers[i]);
-            AudioQueueEnqueueBuffer(inputQueue, inBuffers[i], 0, nullptr);
-
-            AudioQueueAllocateBuffer(outputQueue, bufferByteSize, &outBuffers[i]);
-            MyAQOutputCallback(&playContext, outputQueue, outBuffers[i]);
+    QAudioDevice targetInputDevice = QMediaDevices::defaultAudioInput();
+    if (!inputDeviceName.empty()) {
+        for (const auto& dev : QMediaDevices::audioInputs()) {
+            if (dev.description().toStdString() == inputDeviceName) {
+                targetInputDevice = dev;
+                break;
+            }
         }
-
-        AudioQueueStart(inputQueue, nullptr);
-        AudioQueueStart(outputQueue, nullptr);
-
-        // Play sweep PCM and stream input
-        double totalSeconds = static_cast<double>(totalPlaySamples) / sampleRate;
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(totalSeconds * 1000.0) + 300));
-
-        AudioQueueStop(outputQueue, true);
-        AudioQueueStop(inputQueue, true);
-        AudioQueueDispose(outputQueue, true);
-        AudioQueueDispose(inputQueue, true);
-
-        capturedRaw = recContext.samples;
     }
-#endif
+
+    QAudioDevice targetOutputDevice = QMediaDevices::defaultAudioOutput();
+    if (!outputDeviceName.empty()) {
+        for (const auto& dev : QMediaDevices::audioOutputs()) {
+            if (dev.description().toStdString() == outputDeviceName) {
+                targetOutputDevice = dev;
+                break;
+            }
+        }
+    }
+
+    if (!targetInputDevice.isNull() && !targetOutputDevice.isNull()) {
+        QByteArray playBuf(reinterpret_cast<const char*>(playPcm.data()),
+                           static_cast<qsizetype>(playPcm.size() * sizeof(float)));
+        QBuffer playDevice(&playBuf);
+        playDevice.open(QIODevice::ReadOnly);
+
+        QByteArray recordBuf;
+        QBuffer recordDevice(&recordBuf);
+        recordDevice.open(QIODevice::WriteOnly);
+
+        QAudioSink sink(targetOutputDevice, fmt);
+        QAudioSource source(targetInputDevice, fmt);
+
+        sink.start(&playDevice);
+        source.start(&recordDevice);
+
+        double totalSeconds = static_cast<double>(totalPlaySamples) / sampleRate;
+        int waitMs = static_cast<int>(totalSeconds * 1000.0) + 300;
+
+        QEventLoop loop;
+        QTimer::singleShot(waitMs, &loop, &QEventLoop::quit);
+        loop.exec();
+
+        sink.stop();
+        source.stop();
+
+        const float* ptr = reinterpret_cast<const float*>(recordBuf.constData());
+        size_t recordedCount = recordBuf.size() / sizeof(float);
+        for (size_t i = 0; i < recordedCount; ++i) {
+            capturedRaw.push_back(static_cast<double>(ptr[i]));
+        }
+    }
 
     // Fallback if hardware mic buffer is empty (e.g. simulation or no input mic permission)
     if (capturedRaw.empty()) {

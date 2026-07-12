@@ -1,9 +1,6 @@
 #ifndef CDSP_ENGINE_H
 #define CDSP_ENGINE_H
 
-#ifdef __APPLE__
-#include <Accelerate/Accelerate.h>
-#endif
 #include "config/DSPConfigTypes.h"
 
 #include <bitset>

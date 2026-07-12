@@ -7,10 +7,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifdef __APPLE__
-#include <Accelerate/Accelerate.h>
-#endif
-
 bool MeasurementFFT::isPowerOfTwo(size_t n) {
     return n > 0 && (n & (n - 1)) == 0;
 }
