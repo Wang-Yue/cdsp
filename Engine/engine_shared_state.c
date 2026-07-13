@@ -31,6 +31,7 @@
 
 #include <stdlib.h>
 
+#include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 
 struct engine_shared_state {
@@ -56,7 +57,8 @@ struct engine_shared_state {
   _Atomic bool processing_done;
 
   /**
-   * @brief Terminal stop reason explaining why the engine stopped.
+   * @brief The reason the engine stopped. See file-level note for publication
+   * discipline.
    */
   processing_stop_reason_t stop_reason;
 
@@ -71,9 +73,14 @@ struct engine_shared_state {
   spsc_queue_t* pipeline_garbage_queue;
 
   /**
-   * @brief Reference to the engine state machine.
+   * @brief Raw atomic state representation.
    */
-  engine_state_machine_t* state_machine;
+  _Atomic uint8_t state_raw;
+
+  /**
+   * @brief Atomic flag to ensure stop logic is executed only once.
+   */
+  _Atomic bool stop_once;
 
   /**
    * @brief Count of active audio-priority loop threads.
@@ -143,6 +150,9 @@ engine_shared_state_t* engine_shared_state_create(
   atomic_init(&state->stop_requested, false);
   atomic_init(&state->resampler_ratio, 1.0);
   atomic_init(&state->active_threads, 3);
+  atomic_init(&state->state_raw,
+              processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));
+  atomic_init(&state->stop_once, false);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
   if (!state->captured_queue || !state->processed_queue ||
@@ -220,11 +230,55 @@ audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
       state->processed_queue, &state->processing_done);
 }
 
-void engine_shared_state_set_state_machine(engine_shared_state_t* state,
-                                           engine_state_machine_t* sm) {
-  if (state) {
-    state->state_machine = sm;
-  }
+processing_state_t engine_shared_state_get_state(
+    const engine_shared_state_t* state) {
+  if (!state) return PROCESSING_STATE_INACTIVE;
+  // Use acquire memory order to ensure that any reads of other shared state
+  // (like stop_reason) after this call will see the values written before
+  // the corresponding release-store in set_state.
+  uint8_t raw = atomic_load_explicit(&state->state_raw, memory_order_acquire);
+  return processing_state_from_raw_byte(raw);
+}
+
+void engine_shared_state_set_state(engine_shared_state_t* state,
+                                   processing_state_t new_state) {
+  if (!state) return;
+  uint8_t raw = processing_state_to_raw_byte(new_state);
+  logger_t logger = logger_create("dsp.engine.state");
+  logger_info(&logger, "Engine state transitioning to %d", new_state);
+  // Use release memory order to ensure that all prior writes (specifically,
+  // the stop_reason written in begin_stop) are visible to any thread that
+  // reads the state with acquire ordering and observes this new state.
+  atomic_store_explicit(&state->state_raw, raw, memory_order_release);
+}
+
+bool engine_shared_state_begin_stop(engine_shared_state_t* state,
+                                    processing_stop_reason_t reason) {
+  if (!state) return false;
+  bool expected = false;
+  // Use compare-exchange (CAS) to ensure that only the first thread to request
+  // a stop succeeds. We use acq_rel ordering because we are performing a
+  // read-modify-write operation that needs to synchronize with other threads.
+  bool exchanged = atomic_compare_exchange_strong_explicit(
+      &state->stop_once, &expected, true, memory_order_acq_rel,
+      memory_order_acquire);
+  if (!exchanged) return false;
+
+  logger_t logger = logger_create("dsp.engine.state");
+  logger_info(&logger, "Engine begin_stop triggered with reason type %d",
+              reason.type);
+
+  // The winner thread writes the stop reason. This write is synchronized with
+  // other threads via the state change to INACTIVE using set_state(...,
+  // INACTIVE).
+  state->stop_reason = reason;
+  return true;
+}
+
+const processing_stop_reason_t* engine_shared_state_get_stop_reason_ref(
+    const engine_shared_state_t* state) {
+  if (!state) return NULL;
+  return &state->stop_reason;
 }
 
 void engine_shared_state_thread_exited(engine_shared_state_t* state) {
@@ -233,9 +287,6 @@ void engine_shared_state_thread_exited(engine_shared_state_t* state) {
                                             memory_order_acq_rel) -
                   1;
   if (remaining == 0) {
-    if (state->state_machine) {
-      engine_state_machine_set_state(state->state_machine,
-                                     PROCESSING_STATE_INACTIVE);
-    }
+    engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
   }
 }

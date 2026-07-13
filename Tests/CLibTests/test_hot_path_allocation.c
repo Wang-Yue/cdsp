@@ -16,7 +16,6 @@
 #include "Engine/cdsp_sem.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
-#include "Engine/engine_state_machine.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/convolution.h"
@@ -1092,9 +1091,7 @@ TEST(PipelineReload_AllocationFree) {
 
   engine_shared_state_t* shared = engine_shared_state_create(32, 32);
   ASSERT_TRUE(shared != NULL);
-
-  engine_state_machine_t* state_machine = engine_state_machine_create();
-  engine_state_machine_set_state(state_machine, PROCESSING_STATE_RUNNING);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
   audio_chunk_t* resampler_scratch = audio_chunk_create(1024, 2);
   audio_chunk_t* pipeline_scratch = audio_chunk_create(1024, 2);
@@ -1114,7 +1111,7 @@ TEST(PipelineReload_AllocationFree) {
   atomic_init(&ctx.watched_thread_id, 0);
 
   engine_processing_loop_t* loop = engine_processing_loop_create(
-      shared, state_machine, params, 44100,
+      shared, params, 44100,
       NULL,  // resampler
       initial_pipeline,
       NULL,  // dop_encoder
@@ -1166,7 +1163,6 @@ TEST(PipelineReload_AllocationFree) {
   audio_chunk_free(pipeline_scratch);
   round_robin_chunk_pool_free(scratch_pool);
   engine_shared_state_free(shared);
-  engine_state_machine_free(state_machine);
   processing_parameters_free(params);
 
   cdsp_sem_destroy(ctx.thread_id_sem);

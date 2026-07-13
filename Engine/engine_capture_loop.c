@@ -26,7 +26,6 @@
 
 struct engine_capture_loop {
   engine_shared_state_t* shared;
-  engine_state_machine_t* state_machine;
   capture_backend_t* capture;
   playback_backend_t* playback;
   processing_parameters_t* processing_params;
@@ -72,19 +71,17 @@ static inline uint64_t clock_gettime_nsec_np(int clock_id) {
 #endif
 
 engine_capture_loop_t* engine_capture_loop_create(
-    engine_shared_state_t* shared, engine_state_machine_t* state_machine,
-    capture_backend_t* capture, playback_backend_t* playback,
-    processing_parameters_t* processing_params, dop_decoder_t* dop_decoder,
-    round_robin_chunk_pool_t* chunk_pool, size_t chunk_size, size_t channels,
-    size_t samplerate, double silence_threshold_db,
-    double silence_timeout_seconds, bool stop_on_rate_change,
-    double rate_measure_interval) {
+    engine_shared_state_t* shared, capture_backend_t* capture,
+    playback_backend_t* playback, processing_parameters_t* processing_params,
+    dop_decoder_t* dop_decoder, round_robin_chunk_pool_t* chunk_pool,
+    size_t chunk_size, size_t channels, size_t samplerate,
+    double silence_threshold_db, double silence_timeout_seconds,
+    bool stop_on_rate_change, double rate_measure_interval) {
   engine_capture_loop_t* loop =
       (engine_capture_loop_t*)calloc(1, sizeof(engine_capture_loop_t));
   if (!loop) return NULL;
 
   loop->shared = shared;
-  loop->state_machine = state_machine;
   loop->capture = capture;
   loop->playback = playback;
   loop->processing_params = processing_params;
@@ -138,7 +135,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       break;
     }
 
-    if (engine_state_machine_get_state(loop->state_machine) ==
+    if (engine_shared_state_get_state(loop->shared) ==
         PROCESSING_STATE_PAUSED) {
       sample_rate_watcher_reset(loop->rate_watcher);
     }
@@ -194,7 +191,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       // If the engine is in a PAUSED state (no active input signal), reset the
       // watchdog timer to avoid triggering stall warnings while waiting for
       // signal.
-      if (engine_state_machine_get_state(loop->state_machine) ==
+      if (engine_shared_state_get_state(loop->shared) ==
           PROCESSING_STATE_PAUSED) {
         loop->watchdog_last_success_ns =
             clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
@@ -211,8 +208,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             (double)(now - loop->watchdog_last_success_ns) / 1000000000.0;
         if (elapsed > loop->watchdog_timeout_seconds) {
           loop->watchdog_triggered = true;
-          engine_state_machine_set_state(loop->state_machine,
-                                         PROCESSING_STATE_STALLED);
+          engine_shared_state_set_state(loop->shared, PROCESSING_STATE_STALLED);
           logger_warn(&logger, "Capture device stalled — no data for %fs",
                       loop->watchdog_timeout_seconds);
         }
@@ -276,10 +272,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     // downstream devices.
     processing_state_t desired =
         silence_counter_update(loop->silence_counter, loudest_peak);
-    processing_state_t current =
-        engine_state_machine_get_state(loop->state_machine);
+    processing_state_t current = engine_shared_state_get_state(loop->shared);
     if (desired != current) {
-      engine_state_machine_set_state(loop->state_machine, desired);
+      engine_shared_state_set_state(loop->shared, desired);
       playback_backend_set_is_paused(loop->playback,
                                      (desired == PROCESSING_STATE_PAUSED));
       capture_backend_set_is_paused(loop->capture,
@@ -288,7 +283,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
     // 8. Enqueue Captured Chunk:
     // Push the chunk pointer into the bounded lock-free SPSC queue.
-    if (engine_state_machine_get_state(loop->state_machine) !=
+    if (engine_shared_state_get_state(loop->shared) !=
         PROCESSING_STATE_PAUSED) {
       while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
         if (engine_shared_state_get_stop_requested(loop->shared)) {

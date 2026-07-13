@@ -43,7 +43,6 @@
 #include "engine_playback_loop.h"
 #include "engine_processing_loop.h"
 #include "engine_shared_state.h"
-#include "engine_state_machine.h"
 
 /**
  * @brief Opaque structure representing the core DSP engine.

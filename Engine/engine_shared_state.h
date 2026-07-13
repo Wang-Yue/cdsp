@@ -19,6 +19,15 @@
  * encountering fatal errors.
  * - `resampler_ratio`: Playback writes (rate-adjust), processing reads (per
  * chunk). 64-bit atomic.
+ * - `state_raw`: Raw byte encoding of `processing_state_t` (`_Atomic uint8_t`).
+ * Read uses acquire ordering; write uses release ordering.
+ * - `stop_reason`: Published using the release-store on `state_raw` to
+ * `PROCESSING_STATE_INACTIVE` as the synchronisation edge. A reader that
+ * acquire-loads the state and observes `PROCESSING_STATE_INACTIVE` is
+ * guaranteed by release-acquire ordering to see the writer's prior
+ * `stop_reason` assignment.
+ * - `stop_once`: CAS-guarded "first caller wins" stop flag, ensuring stop logic
+ * is executed only once.
  *
  * @section semaphores Semaphores
  * Semaphores are encapsulated inside `audio_sync_queue_t` for kernel-level
@@ -49,7 +58,6 @@ static inline void engine_yield(void) { SwitchToThread(); }
 #include <stdint.h>
 
 #include "Config/engine_config_types.h"
-#include "engine_state_machine.h"
 
 /**
  * @brief Opaque structure representing shared state between the engine threads.
@@ -202,12 +210,59 @@ audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state);
 
 /**
- * @brief Sets the state machine pointer in the shared state.
+ * @brief Gets the current state of the engine.
+ *
+ * Acquire-load; pairs with `engine_shared_state_set_state`'s release-store.
+ *
  * @param state Pointer to the shared state instance.
- * @param sm Pointer to the state machine instance.
+ * @return The current processing state.
  */
-void engine_shared_state_set_state_machine(engine_shared_state_t* state,
-                                           engine_state_machine_t* sm);
+processing_state_t engine_shared_state_get_state(
+    const engine_shared_state_t* state);
+
+/**
+ * @brief Sets the engine state.
+ *
+ * Release-store; pairs with the acquire-load in
+ * `engine_shared_state_get_state`. The release on a transition to inactive is
+ * also what publishes `stop_reason` to readers.
+ *
+ * @param state Pointer to the shared state instance.
+ * @param new_state The new processing state to set.
+ */
+void engine_shared_state_set_state(engine_shared_state_t* state,
+                                   processing_state_t new_state);
+
+/**
+ * @brief Attempts to transition the shared state to a stopping state.
+ *
+ * CAS-guarded "first caller wins". The winner gets to set the stop reason
+ * and proceeds with teardown; subsequent concurrent callers see `false`
+ * and return without disturbing state.
+ *
+ * The reason is written before any subsequent state transition to inactive
+ * release, which is what makes it safely observable by other threads that
+ * acquire-load the state.
+ *
+ * @param state Pointer to the shared state instance.
+ * @param reason The reason for stopping.
+ * @return true if this call initiated the stop, false otherwise.
+ */
+bool engine_shared_state_begin_stop(engine_shared_state_t* state,
+                                    processing_stop_reason_t reason);
+
+/**
+ * @brief Gets a pointer to the stop reason.
+ *
+ * Stop reason set by the most recent `engine_shared_state_begin_stop` winner.
+ * Only guaranteed visible to readers that have observed inactive state via
+ * acquire-load.
+ *
+ * @param state Pointer to the shared state instance.
+ * @return A pointer to the stop reason, or NULL if not set.
+ */
+const processing_stop_reason_t* engine_shared_state_get_stop_reason_ref(
+    const engine_shared_state_t* state);
 
 /**
  * @brief Reports that an engine loop thread has exited.

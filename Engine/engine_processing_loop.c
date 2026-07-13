@@ -38,7 +38,6 @@ struct pending_update {
 
 struct engine_processing_loop {
   engine_shared_state_t* shared;
-  engine_state_machine_t* state_machine;
   processing_parameters_t* processing_params;
   size_t pipeline_rate;
   audio_resampler_t* resampler;
@@ -81,9 +80,8 @@ static inline uint64_t clock_gettime_nsec_np(int clock_id) {
 #endif
 
 engine_processing_loop_t* engine_processing_loop_create(
-    engine_shared_state_t* shared, engine_state_machine_t* state_machine,
-    processing_parameters_t* processing_params, size_t pipeline_rate,
-    audio_resampler_t* resampler, pipeline_t* pipeline,
+    engine_shared_state_t* shared, processing_parameters_t* processing_params,
+    size_t pipeline_rate, audio_resampler_t* resampler, pipeline_t* pipeline,
     dop_encoder_t* dop_encoder, audio_chunk_t* resampler_scratch,
     audio_chunk_t* pipeline_scratch, round_robin_chunk_pool_t* scratch_pool,
     chunk_callback_t on_chunk_captured, void* on_chunk_captured_ctx,
@@ -92,7 +90,6 @@ engine_processing_loop_t* engine_processing_loop_create(
       (engine_processing_loop_t*)calloc(1, sizeof(engine_processing_loop_t));
   if (!loop) return NULL;
   loop->shared = shared;
-  loop->state_machine = state_machine;
   loop->processing_params = processing_params;
   loop->pipeline_rate = pipeline_rate;
   loop->resampler = resampler;
@@ -197,7 +194,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       loop->active_pipeline = next_pipeline;
     }
 
-    if (engine_state_machine_get_state(loop->state_machine) ==
+    if (engine_shared_state_get_state(loop->shared) ==
         PROCESSING_STATE_PAUSED) {
       continue;
     }

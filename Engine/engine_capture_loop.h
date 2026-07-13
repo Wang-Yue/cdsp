@@ -32,7 +32,6 @@
 #include "Backend/audio_backend.h"
 #include "DoP/dop_decoder.h"
 #include "engine_shared_state.h"
-#include "engine_state_machine.h"
 
 /**
  * @brief Opaque structure representing the capture loop.
@@ -51,7 +50,6 @@ typedef struct engine_capture_loop engine_capture_loop_t;
  * @brief Creates a new engine capture loop instance.
  *
  * @param shared Pointer to the shared state.
- * @param state_machine Pointer to the engine state machine.
  * @param capture Pointer to the capture backend.
  * @param playback Pointer to the playback backend.
  * @param processing_params Pointer to the processing parameters.
@@ -65,13 +63,12 @@ typedef struct engine_capture_loop engine_capture_loop_t;
  * @return Pointer to the created capture loop instance, or NULL on failure.
  */
 engine_capture_loop_t* engine_capture_loop_create(
-    engine_shared_state_t* shared, engine_state_machine_t* state_machine,
-    capture_backend_t* capture, playback_backend_t* playback,
-    processing_parameters_t* processing_params, dop_decoder_t* dop_decoder,
-    round_robin_chunk_pool_t* chunk_pool, size_t chunk_size, size_t channels,
-    size_t samplerate, double silence_threshold_db,
-    double silence_timeout_seconds, bool stop_on_rate_change,
-    double rate_measure_interval);
+    engine_shared_state_t* shared, capture_backend_t* capture,
+    playback_backend_t* playback, processing_parameters_t* processing_params,
+    dop_decoder_t* dop_decoder, round_robin_chunk_pool_t* chunk_pool,
+    size_t chunk_size, size_t channels, size_t samplerate,
+    double silence_threshold_db, double silence_timeout_seconds,
+    bool stop_on_rate_change, double rate_measure_interval);
 
 /**
  * @brief Frees the engine capture loop instance.

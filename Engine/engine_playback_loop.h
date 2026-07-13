@@ -35,7 +35,6 @@
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "engine_shared_state.h"
-#include "engine_state_machine.h"
 #include "rate_controller.h"
 
 /**

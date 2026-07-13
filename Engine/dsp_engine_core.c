@@ -43,8 +43,6 @@ struct dsp_engine_core {
   processing_parameters_t* processing_params;
 
   // MARK: - Shared state
-  /** State machine managing engine state. */
-  engine_state_machine_t* state_machine;
   /** Shared state between threads. */
   engine_shared_state_t* shared;
 
@@ -209,10 +207,6 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
   int queue_limit =
       config->devices.has_queuelimit ? config->devices.queuelimit : 4;
   core->shared = engine_shared_state_create(queue_limit, queue_limit);
-  core->state_machine = engine_state_machine_create();
-  if (core->shared && core->state_machine) {
-    engine_shared_state_set_state_machine(core->shared, core->state_machine);
-  }
   core->processing_params = processing_parameters_create(
       capture_device_config_get_channels(&config->devices.capture),
       playback_device_config_get_channels(&config->devices.playback));
@@ -238,15 +232,14 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
       playback_device_config_get_output_dop(&config->devices.playback),
       dop_filter, 20000.0);
 
-  if (!core->shared || !core->state_machine || !core->processing_params ||
-      !core->dop_decoder || !core->dop_encoder) {
+  if (!core->shared || !core->processing_params || !core->dop_decoder ||
+      !core->dop_encoder) {
     dsp_engine_core_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
   }
 
-  engine_state_machine_set_state(core->state_machine,
-                                 PROCESSING_STATE_STARTING);
+  engine_shared_state_set_state(core->shared, PROCESSING_STATE_STARTING);
   logger_info(&logger, "Starting DSP engine session with queueLimit: %d",
               queue_limit);
 
@@ -472,9 +465,8 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
 
   // 10. Instantiate the loop orchestrators.
   core->capture_loop = engine_capture_loop_create(
-      core->shared, core->state_machine, core->capture, core->playback,
-      core->processing_params, core->dop_decoder, core->capture_chunk_pool,
-      capture_chunk_size,
+      core->shared, core->capture, core->playback, core->processing_params,
+      core->dop_decoder, core->capture_chunk_pool, capture_chunk_size,
       capture_device_config_get_channels(&config->devices.capture),
       (size_t)capture_rate,
       config->devices.has_silence_threshold ? config->devices.silence_threshold
@@ -489,12 +481,11 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
           : 1.0);
 
   core->processing_loop = engine_processing_loop_create(
-      core->shared, core->state_machine, core->processing_params, pipeline_rate,
-      core->resampler, core->pipeline, core->dop_encoder,
-      core->resampler_scratch, core->pipeline_scratch,
-      core->processing_scratch_pool, core->on_chunk_captured,
-      core->on_chunk_captured_ctx, core->on_chunk_processed,
-      core->on_chunk_processed_ctx);
+      core->shared, core->processing_params, pipeline_rate, core->resampler,
+      core->pipeline, core->dop_encoder, core->resampler_scratch,
+      core->pipeline_scratch, core->processing_scratch_pool,
+      core->on_chunk_captured, core->on_chunk_captured_ctx,
+      core->on_chunk_processed, core->on_chunk_processed_ctx);
 
   bool rate_adjust_enabled = config->devices.has_enable_rate_adjust
                                  ? config->devices.enable_rate_adjust
@@ -545,7 +536,7 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
 
   core->threads_created = true;
   core->current_config = config;
-  engine_state_machine_set_state(core->state_machine, PROCESSING_STATE_RUNNING);
+  engine_shared_state_set_state(core->shared, PROCESSING_STATE_RUNNING);
   logger_info(&logger, "DSP engine started: %zuHz, chunk=%zu",
               config->devices.samplerate, capture_chunk_size);
   return core;
@@ -570,15 +561,14 @@ thread_error_0:
 }
 
 processing_state_t dsp_engine_core_get_state(const dsp_engine_core_t* core) {
-  return core && core->state_machine
-             ? engine_state_machine_get_state(core->state_machine)
-             : PROCESSING_STATE_INACTIVE;
+  return core && core->shared ? engine_shared_state_get_state(core->shared)
+                              : PROCESSING_STATE_INACTIVE;
 }
 
 const processing_stop_reason_t* dsp_engine_core_get_stop_reason(
     const dsp_engine_core_t* core) {
-  return core && core->state_machine
-             ? engine_state_machine_get_stop_reason(core->state_machine)
+  return core && core->shared
+             ? engine_shared_state_get_stop_reason_ref(core->shared)
              : NULL;
 }
 
@@ -586,11 +576,8 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
                                    processing_stop_reason_t reason) {
   if (!core) return;
 
-  // Idempotent. Only the first caller drives teardown — concurrent
-  // requests (typically the captureLoop's format-change report
-  // racing with the actor's `previous.stop(.none)`) just return.
-  if (core->state_machine &&
-      !engine_state_machine_begin_stop(core->state_machine, reason))
+  // Idempotent. Only the first caller drives teardown.
+  if (core->shared && !engine_shared_state_begin_stop(core->shared, reason))
     return;
 
   logger_t logger = logger_create("dsp.engine.core");
@@ -675,13 +662,8 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
     processing_parameters_free(core->processing_params);
     core->processing_params = NULL;
   }
-  if (core->state_machine) {
-    engine_state_machine_set_state(core->state_machine,
-                                   PROCESSING_STATE_INACTIVE);
-    engine_state_machine_free(core->state_machine);
-    core->state_machine = NULL;
-  }
   if (core->shared) {
+    engine_shared_state_set_state(core->shared, PROCESSING_STATE_INACTIVE);
     engine_shared_state_free(core->shared);
     core->shared = NULL;
   }
