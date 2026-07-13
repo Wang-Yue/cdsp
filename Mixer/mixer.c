@@ -27,6 +27,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.mixer"};
+
 /**
  * @brief Represents a prepared source channel contribution to a destination
  * channel.
@@ -118,15 +120,14 @@ static void populate_mapping(audio_mixer_t* mixer,
 audio_mixer_t* audio_mixer_create(const char* name,
                                   const mixer_config_t* config,
                                   size_t chunk_size) {
-  logger_t logger = logger_create("dsp.mixer");
   if (!config) {
-    logger_error(&logger, "Mixer config is NULL for '%s'",
+    logger_error(&g_logger, "Mixer config is NULL for '%s'",
                  name ? name : "unnamed");
     return NULL;
   }
   audio_mixer_t* mixer = (audio_mixer_t*)calloc(1, sizeof(audio_mixer_t));
   if (!mixer) {
-    logger_error(&logger, "Failed to allocate audio_mixer_t for '%s'",
+    logger_error(&g_logger, "Failed to allocate audio_mixer_t for '%s'",
                  name ? name : "unnamed");
     return NULL;
   }
@@ -138,7 +139,7 @@ audio_mixer_t* audio_mixer_create(const char* name,
   mixer->mapping = (prepared_source_list_t*)calloc(
       mixer->channels_out, sizeof(prepared_source_list_t));
   if (!mixer->mapping) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Failed to allocate prepared source list for mixer '%s'",
                  mixer->name);
     audio_mixer_free(mixer);
@@ -146,7 +147,7 @@ audio_mixer_t* audio_mixer_create(const char* name,
   }
 
   populate_mapping(mixer, config);
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "Created mixer '%s' (in_channels=%zu, out_channels=%zu)",
                mixer->name, mixer->channels_in, mixer->channels_out);
   return mixer;
@@ -165,23 +166,20 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
   if (!mixer || !input || !output) return MIXER_ERR_INPUT_SIZE_MISMATCH;
   size_t frames = audio_chunk_get_valid_frames(input);
   if (frames > mixer->chunk_size) {
-    logger_t logger = logger_create("dsp.mixer");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "Mixer '%s' input frame count exceeds chunk_size: %zu > %zu",
                 mixer->name, frames, mixer->chunk_size);
     return MIXER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(output) != mixer->channels_out) {
-    logger_t logger = logger_create("dsp.mixer");
     logger_warn(
-        &logger,
+        &g_logger,
         "Mixer '%s' output channel count mismatch: expected %zu, got %zu",
         mixer->name, mixer->channels_out, audio_chunk_get_channels(output));
     return MIXER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   if (audio_chunk_get_frames(output) < frames) {
-    logger_t logger = logger_create("dsp.mixer");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "Mixer '%s' output buffer frame count too small: valid=%zu, "
                 "allocated=%zu",
                 mixer->name, frames, audio_chunk_get_frames(output));

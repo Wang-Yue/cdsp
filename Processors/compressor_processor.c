@@ -23,6 +23,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"compressor_processor"};
+
 struct compressor_processor {
   char name[64];          ///< Unique name of the compressor instance.
   int* monitor_channels;  ///< Array of channel indices to monitor for level
@@ -179,9 +181,8 @@ void compressor_processor_process(compressor_processor_t* processor,
   }
   if (mismatch) {
     if (!processor->channel_warning_logged) {
-      logger_t logger = logger_create("compressor_processor");
       logger_error(
-          &logger,
+          &g_logger,
           "Compressor channel indices out of bounds for chunk channels (%d)",
           ch_count);
       processor->channel_warning_logged = true;

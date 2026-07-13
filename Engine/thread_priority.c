@@ -1,6 +1,8 @@
 #include "thread_priority.h"
 
 #include "Logging/app_logger.h"
+
+static const logger_t g_logger = {"dsp.threadpriority"};
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -22,8 +24,7 @@
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
   if (buffer_frames == 0 || sample_rate == 0) {
-    logger_t logger = logger_create("dsp.threadpriority");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "[%s] Invalid audio parameters for real-time priority: "
                 "frames=%d, rate=%d",
                 name ? name : "unknown", buffer_frames, sample_rate);
@@ -33,8 +34,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   mach_timebase_info_data_t tb_info;
   kern_return_t status = mach_timebase_info(&tb_info);
   if (status != KERN_SUCCESS) {
-    logger_t logger = logger_create("dsp.threadpriority");
-    logger_error(&logger, "[%s] Failed to retrieve Mach timebase info: %d",
+    logger_error(&g_logger, "[%s] Failed to retrieve Mach timebase info: %d",
                  name ? name : "unknown", status);
     return;
   }
@@ -53,9 +53,8 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   // the system from lockups if a real-time thread spins endlessly.
   double max_quantum_ns = 50000000.0;
   if (computation_ns > max_quantum_ns) {
-    logger_t logger = logger_create("dsp.threadpriority");
     logger_info(
-        &logger,
+        &g_logger,
         "[%s] Thread computation budget capped at 50.0ms (%.1fms requested)",
         name ? name : "unknown", computation_ns / 1000000.0);
     computation_ns = max_quantum_ns;
@@ -86,15 +85,14 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
       thread, THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy, count);
   mach_port_deallocate(mach_task_self(), thread);
 
-  logger_t logger = logger_create("dsp.threadpriority");
   if (result == KERN_SUCCESS) {
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "[%s] Thread promoted to real-time priority: period=%.1fms, "
                 "computation=%.1fms, constraint=%.1fms",
                 name ? name : "unknown", period_ns / 1000000.0,
                 computation_ns / 1000000.0, constraint_ns / 1000000.0);
   } else {
-    logger_warn(&logger, "[%s] Failed to set real-time thread policy: %d",
+    logger_warn(&g_logger, "[%s] Failed to set real-time thread policy: %d",
                 name ? name : "unknown", result);
   }
 }
@@ -112,7 +110,6 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   pthread_t thread = pthread_self();
   struct sched_param param;
   int policy;
-  logger_t logger = logger_create("dsp.threadpriority");
 
   // 1. Try native POSIX scheduling first.
   // This requires the process to have CAP_SYS_NICE capability or configured
@@ -122,7 +119,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     int res = pthread_setschedparam(thread, SCHED_FIFO, &param);
     if (res == 0) {
-      logger_info(&logger,
+      logger_info(&g_logger,
                   "[%s] Thread promoted to Linux SCHED_FIFO real-time priority "
                   "via pthread_setschedparam",
                   name ? name : "unknown");
@@ -148,12 +145,12 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
            (unsigned long long)tid, 10);
   int rtkit_res = system(cmd);
   if (rtkit_res == 0) {
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "[%s] Thread promoted to Linux real-time priority via "
                 "RealtimeKit (rtkit)",
                 name ? name : "unknown");
   } else {
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "[%s] Failed to promote thread to real-time priority (both "
                 "pthread_setschedparam and RealtimeKit failed)",
                 name ? name : "unknown");
@@ -167,13 +164,12 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   (void)sample_rate;
   HANDLE thread = GetCurrentThread();
   BOOL success = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL);
-  logger_t logger = logger_create("dsp.threadpriority");
   if (success) {
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "[%s] Thread promoted to Windows THREAD_PRIORITY_TIME_CRITICAL",
                 name ? name : "unknown");
   } else {
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "[%s] Failed to set thread priority on Windows: err=%lu",
                 name ? name : "unknown", GetLastError());
   }

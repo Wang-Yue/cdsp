@@ -14,6 +14,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.pipewire"};
+
 struct pipewire_capture {
   char device[256];
   int sample_rate;
@@ -368,8 +370,7 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
     return false;
   }
 
-  logger_t logger = logger_create("dsp.backend.pipewire");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opened PipeWire capture: device=%s, rate=%d, channels=%d",
               capture->device[0] != '\0' ? capture->device : "default",
               capture->sample_rate, capture->channels);
@@ -722,8 +723,7 @@ bool pipewire_playback_open(pipewire_playback_t* playback,
   }
   playback->paused = false;
 
-  logger_t logger = logger_create("dsp.backend.pipewire");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opened PipeWire playback: device=%s, rate=%d, channels=%d",
               playback->device[0] != '\0' ? playback->device : "default",
               playback->sample_rate, playback->channels);

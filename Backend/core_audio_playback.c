@@ -22,6 +22,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
+
 struct core_audio_playback {
   char device_name[256];
   int channels;
@@ -284,8 +286,7 @@ playback_backend_t* core_audio_playback_create(
 bool core_audio_playback_open(core_audio_playback_t* playback,
                               backend_error_t* err) {
   if (!playback) return false;
-  logger_t logger = logger_create("dsp.backend.coreaudio.playback");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opening CoreAudio playback device '%s' (sample_rate=%.0f, "
               "channels=%d, exclusive=%d)",
               playback->device_name[0] ? playback->device_name : "default",
@@ -303,7 +304,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   AudioComponent comp = AudioComponentFindNext(NULL, &desc);
   if (!comp) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "No HAL output component found for CoreAudio playback");
     if (err)
       backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
@@ -313,7 +314,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   OSStatus status = AudioComponentInstanceNew(comp, &playback->audio_unit);
   if (status != noErr || !playback->audio_unit) {
-    logger_error(&logger, "Failed to create output AudioUnit: status=%d",
+    logger_error(&g_logger, "Failed to create output AudioUnit: status=%d",
                  status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -326,7 +327,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
       kAudioUnitScope_Output, 0, &enable_output, sizeof(enable_output));
   if (status != noErr) {
-    logger_error(&logger, "Failed to enable output on AudioUnit: status=%d",
+    logger_error(&g_logger, "Failed to enable output on AudioUnit: status=%d",
                  status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -339,7 +340,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
       kAudioUnitScope_Input, 1, &disable_input, sizeof(disable_input));
   if (status != noErr) {
-    logger_error(&logger, "Failed to disable input on AudioUnit: status=%d",
+    logger_error(&g_logger, "Failed to disable input on AudioUnit: status=%d",
                  status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -366,9 +367,10 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
       if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
                                      &hog_pid) == noErr) {
         playback->did_acquire_hog_mode = true;
-        logger_info(&logger, "Acquired exclusive hog mode on playback device");
+        logger_info(&g_logger,
+                    "Acquired exclusive hog mode on playback device");
       } else {
-        logger_warn(&logger,
+        logger_warn(&g_logger,
                     "Failed to acquire exclusive hog mode on playback device");
       }
     }
@@ -380,7 +382,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
               playback->sample_format, playback->channels)) {
         physical_format_set = true;
       } else {
-        logger_error(&logger,
+        logger_error(&g_logger,
                      "Failed to set matching physical playback format: %s",
                      playback->sample_format);
         if (err)
@@ -419,7 +421,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
         kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
     if (status != noErr) {
       logger_error(
-          &logger,
+          &g_logger,
           "Failed to set playback stream format on AudioUnit: status=%d",
           status);
       if (err)
@@ -437,7 +439,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
                                 kAudioUnitProperty_SetRenderCallback,
                                 kAudioUnitScope_Input, 0, &cb, sizeof(cb));
   if (status != noErr) {
-    logger_error(&logger, "Failed to set render callback: status=%d", status);
+    logger_error(&g_logger, "Failed to set render callback: status=%d", status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set render callback");
@@ -458,8 +460,8 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   status = AudioUnitInitialize(playback->audio_unit);
   if (status != noErr) {
-    logger_error(&logger, "Failed to initialize playback AudioUnit: status=%d",
-                 status);
+    logger_error(&g_logger,
+                 "Failed to initialize playback AudioUnit: status=%d", status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to initialize output");
@@ -468,7 +470,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
 
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
-    logger_error(&logger, "Failed to start output AudioUnit: status=%d",
+    logger_error(&g_logger, "Failed to start output AudioUnit: status=%d",
                  status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -482,7 +484,7 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
         rate_change_watcher_create(dev_id, playback->sample_rate);
   }
 
-  logger_info(&logger, "CoreAudio playback successfully opened and started");
+  logger_info(&g_logger, "CoreAudio playback successfully opened and started");
   open_succeeded = true;
   return true;
 
@@ -566,8 +568,7 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
 /// Close the CoreAudio playback device and release HAL resources.
 void core_audio_playback_close(core_audio_playback_t* playback) {
   if (!playback) return;
-  logger_t logger = logger_create("dsp.backend.coreaudio.playback");
-  logger_info(&logger, "Closing CoreAudio playback device");
+  logger_info(&g_logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
     rate_change_watcher_free(playback->rate_watcher);
     playback->rate_watcher = NULL;

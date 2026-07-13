@@ -30,6 +30,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.dop.decoder"};
+
 #define DOP_FIFO_SIZE 64  // power of 2
 #define DOP_FIFO_MASK 63
 
@@ -191,15 +193,14 @@ static double* build_ctables(double sample_rate, double cutoff_hz) {
 
 dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
                                   bool bypass_dop, double cutoff_hz) {
-  logger_t logger = logger_create("dsp.dop.decoder");
   if (channels <= 0) {
-    logger_error(&logger, "Invalid channel count for DoP decoder: %d",
+    logger_error(&g_logger, "Invalid channel count for DoP decoder: %d",
                  channels);
     return NULL;
   }
   dop_decoder_t* dec = (dop_decoder_t*)calloc(1, sizeof(dop_decoder_t));
   if (!dec) {
-    logger_error(&logger, "Memory allocation failed for dop_decoder_t");
+    logger_error(&g_logger, "Memory allocation failed for dop_decoder_t");
     return NULL;
   }
   dec->channels = channels;
@@ -207,7 +208,7 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   dec->channel_states = (dop_decoder_channel_state_t*)calloc(
       channels, sizeof(dop_decoder_channel_state_t));
   if (!dec->channel_states) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Memory allocation failed for DoP decoder channel states");
     dop_decoder_free(dec);
     return NULL;
@@ -217,11 +218,11 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   }
   dec->ctables = build_ctables(sample_rate, cutoff_hz);
   if (!dec->ctables) {
-    logger_error(&logger, "Failed to build DoP lookup tables");
+    logger_error(&g_logger, "Failed to build DoP lookup tables");
     dop_decoder_free(dec);
     return NULL;
   }
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "DoP decoder created (channels=%d, sample_rate=%.0f, bypass=%d, "
                "cutoff=%.0fHz)",
                channels, sample_rate, bypass_dop ? 1 : 0, cutoff_hz);
@@ -429,11 +430,10 @@ bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
   if (decoder->chunks_at_seen_state >= DOP_LOG_SETTLE_CHUNKS &&
       decoder->last_seen_active != decoder->logged_active) {
     decoder->logged_active = decoder->last_seen_active;
-    logger_t logger = logger_create("dsp.dop.decoder");
     if (decoder->logged_active) {
-      logger_info(&logger, "DoP decoder stream locked (DSD stream detected)");
+      logger_info(&g_logger, "DoP decoder stream locked (DSD stream detected)");
     } else {
-      logger_info(&logger,
+      logger_info(&g_logger,
                   "DoP decoder stream released lock (reverting to PCM)");
     }
   }

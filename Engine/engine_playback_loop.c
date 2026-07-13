@@ -37,6 +37,8 @@
 #include "Logging/app_logger.h"
 #include "thread_priority.h"
 
+static const logger_t g_logger = {"dsp.playback"};
+
 struct engine_playback_loop {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
@@ -70,7 +72,6 @@ struct engine_playback_loop {
 static void apply_speed(engine_playback_loop_t* loop, double speed,
                         double* last_speed, double average) {
   bool changed = fabs(speed - *last_speed) > 0.000001;
-  logger_t logger = logger_create("dsp.playback");
   if (changed) {
     *last_speed = speed;
     if (loop->capture &&
@@ -83,10 +84,10 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
     const char* method_str = loop->pitch_supported ? "pitch" : "resampler";
-    logger_debug(&logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
+    logger_debug(&g_logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
                  average, loop->target_level, speed, method_str);
   } else {
-    logger_debug(&logger, "Rate adjust: buffer=%f, keeping speed=%f", average,
+    logger_debug(&g_logger, "Rate adjust: buffer=%f, keeping speed=%f", average,
                  *last_speed);
   }
 }
@@ -97,17 +98,16 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
  * @param loop Pointer to the playback loop structure.
  */
 static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
-  logger_t logger = logger_create("dsp.playback");
   if (loop->rate_adjust_enabled) {
     const char* method_str =
         loop->pitch_supported ? "capture clock pitch" : "resampler ratio";
     logger_info(
-        &logger,
+        &g_logger,
         "Rate adjustment enabled (period=%fs, target_level=%d, method=%s)",
         loop->adjust_period, loop->target_level, method_str);
   } else {
     logger_info(
-        &logger,
+        &g_logger,
         "Rate adjustment disabled (enable_rate_adjust not set in config)");
   }
 }
@@ -142,8 +142,7 @@ void engine_playback_loop_free(engine_playback_loop_t* loop) {
 
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (!loop) return;
-  logger_t logger = logger_create("dsp.playback");
-  logger_info(&logger, "Playback thread started");
+  logger_info(&g_logger, "Playback thread started");
 
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
@@ -173,7 +172,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
           rate != loop->last_observed_playback_pending_rate) {
         loop->last_observed_playback_pending_rate = rate;
         loop->has_last_observed_playback_pending_rate = true;
-        logger_warn(&logger,
+        logger_warn(&g_logger,
                     "Playback device rate changed to %f Hz; stopping engine",
                     rate);
         processing_stop_reason_t reason = {
@@ -217,7 +216,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
-      logger_error(&logger, "Playback error: %s", err.message);
+      logger_error(&g_logger, "Playback error: %s", err.message);
       processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
       snprintf(reason.message, sizeof(reason.message), "%s", err.message);
       engine_shared_state_request_stop(loop->shared, reason);
@@ -230,7 +229,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   // and device is not paused (aligning with CamillaDSP draining behavior).
   bool is_paused = playback_backend_get_is_paused(loop->playback);
   if (reached_eos && !is_paused) {
-    logger_info(&logger, "Draining playback hardware buffer...");
+    logger_info(&g_logger, "Draining playback hardware buffer...");
     size_t last_level = 0;
     struct timespec last_change_ts;
     clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
@@ -251,7 +250,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
             (double)(now_ts.tv_sec - last_change_ts.tv_sec) +
             (double)(now_ts.tv_nsec - last_change_ts.tv_nsec) / 1000000000.0;
         if (elapsed > 3.0) {
-          logger_warn(&logger, "Playback drain timeout reached; aborting");
+          logger_warn(&g_logger, "Playback drain timeout reached; aborting");
           break;
         }
       }
@@ -263,13 +262,13 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       nanosleep(&req, NULL);
 #endif
     }
-    logger_info(&logger, "Playback hardware buffer drained");
+    logger_info(&g_logger, "Playback hardware buffer drained");
   } else {
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "Skipping playback hardware buffer drain (eos=%d, paused=%d)",
                 reached_eos, is_paused);
   }
 
   if (rate_controller) pi_rate_controller_free(rate_controller);
-  logger_info(&logger, "Playback thread stopped");
+  logger_info(&g_logger, "Playback thread stopped");
 }

@@ -22,6 +22,8 @@ struct filter {
 #include <stdlib.h>
 #include <string.h>
 
+static const logger_t g_logger = {"dsp.filter"};
+
 /// Protocol for all audio filters. Filters operate on one channel at a time.
 ///
 /// `waveform` is a pointer into class-owned storage (`AudioBuffers`). The
@@ -39,16 +41,15 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                         int sample_rate, size_t chunk_size,
                         processing_parameters_t* proc_params,
                         config_error_t* err) {
-  logger_t logger = logger_create("dsp.filter");
   if (!config) {
-    logger_error(&logger, "Filter config is NULL for '%s'",
+    logger_error(&g_logger, "Filter config is NULL for '%s'",
                  name ? name : "unnamed");
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter config is NULL");
     return NULL;
   }
   filter_t* filter = (filter_t*)calloc(1, sizeof(filter_t));
   if (!filter) {
-    logger_error(&logger, "Failed to allocate filter wrapper for '%s'",
+    logger_error(&g_logger, "Failed to allocate filter wrapper for '%s'",
                  name ? name : "unnamed");
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate filter wrapper");
@@ -118,7 +119,7 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                                chunk_size, proc_params, err);
       break;
     default:
-      logger_error(&logger, "Unknown filter type %d for '%s'", config->type,
+      logger_error(&g_logger, "Unknown filter type %d for '%s'", config->type,
                    filter->name);
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Unknown filter type %d for '%s'", config->type,
@@ -128,11 +129,11 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   }
 
   if (!filter->instance) {
-    logger_error(&logger, "Failed to instantiate filter '%s'", filter->name);
+    logger_error(&g_logger, "Failed to instantiate filter '%s'", filter->name);
     free(filter);
     return NULL;
   }
-  logger_debug(&logger, "Filter '%s' successfully created (type=%d)",
+  logger_debug(&g_logger, "Filter '%s' successfully created (type=%d)",
                filter->name, filter->type);
   return filter;
 }
@@ -192,23 +193,33 @@ void filter_transfer_state(filter_t* dest, const filter_t* src) {
   if (!dest || !src) return;
   if (dest->type != src->type) return;
 
+  const char* fname = filter_get_name(dest);
   switch (dest->type) {
     case FILTER_INSTANCE_BIQUAD:
       biquad_filter_transfer_state((biquad_filter_t*)dest->instance,
                                    (const biquad_filter_t*)src->instance);
+      logger_info(&g_logger, "Transferred filter state for '%s' (type=Biquad)",
+                  fname);
       break;
     case FILTER_INSTANCE_BIQUAD_COMBO:
       biquad_combo_filter_transfer_state(
           (biquad_combo_filter_t*)dest->instance,
           (const biquad_combo_filter_t*)src->instance);
+      logger_info(&g_logger,
+                  "Transferred filter state for '%s' (type=BiquadCombo)",
+                  fname);
       break;
     case FILTER_INSTANCE_LOUDNESS:
       loudness_filter_transfer_state((loudness_filter_t*)dest->instance,
                                      (const loudness_filter_t*)src->instance);
+      logger_info(&g_logger,
+                  "Transferred filter state for '%s' (type=Loudness)", fname);
       break;
     case FILTER_INSTANCE_VOLUME:
       volume_filter_transfer_state((volume_filter_t*)dest->instance,
                                    (const volume_filter_t*)src->instance);
+      logger_info(&g_logger, "Transferred filter state for '%s' (type=Volume)",
+                  fname);
       break;
     default:
       break;

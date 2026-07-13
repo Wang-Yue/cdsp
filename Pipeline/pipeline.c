@@ -9,6 +9,8 @@
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
+
+static const logger_t g_logger = {"dsp.pipeline"};
 #include "Mixer/mixer.h"
 #include "Processors/processor.h"
 
@@ -157,9 +159,12 @@ static void transfer_processor_state(const pipeline_exec_step_t* dest_step,
 void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
   if (!dest || !src) return;
 
+  logger_info(&g_logger, "Starting pipeline state transfer");
+
   // 1. Transfer Master Volume state
   if (dest->master_volume && src->master_volume) {
     volume_filter_transfer_state(dest->master_volume, src->master_volume);
+    logger_info(&g_logger, "Transferred master volume filter state");
   }
 
   // 2. Transfer steps state
@@ -171,6 +176,8 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
       transfer_processor_state(step, src);
     }
   }
+
+  logger_info(&g_logger, "Completed pipeline state transfer");
 }
 
 /// Destroy and free the pipeline.
@@ -214,16 +221,15 @@ void pipeline_free(pipeline_t* pipeline) {
 pipeline_t* pipeline_create(const dsp_config_t* config,
                             processing_parameters_t* proc_params,
                             size_t explicit_chunk_size, config_error_t* err) {
-  logger_t logger = logger_create("dsp.pipeline");
   if (!config) {
-    logger_error(&logger, "Pipeline creation failed: Configuration is NULL");
+    logger_error(&g_logger, "Pipeline creation failed: Configuration is NULL");
     config_error_set(err, CONFIG_ERR_VALIDATION, "Configuration is NULL");
     return NULL;
   }
 
   pipeline_t* pipeline = (pipeline_t*)calloc(1, sizeof(pipeline_t));
   if (!pipeline) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Pipeline creation failed: Memory allocation failure");
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
     return NULL;
@@ -237,7 +243,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   pipeline->multithreaded =
       config->devices.has_multithreaded ? config->devices.multithreaded : false;
 
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Initializing DSP pipeline (sample_rate=%d, chunk_size=%zu, "
               "in_channels=%zu, multithreaded=%d)",
               pipeline->rate, pipeline->frames_per_chunk,
@@ -259,7 +265,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                            pipeline->frames_per_chunk, proc_params, err);
   if (!pipeline->master_volume) {
     logger_error(
-        &logger,
+        &g_logger,
         "Failed to create master volume filter (rate=%d, chunk=%zu): %s",
         pipeline->rate, pipeline->frames_per_chunk,
         err ? err->message : "unknown error");
@@ -272,7 +278,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       pipeline->frames_per_chunk, pipeline->expected_in_channels);
   if (!pipeline->capture_scratch) {
     logger_error(
-        &logger,
+        &g_logger,
         "Failed to allocate capture scratch buffer (frames=%zu, channels=%zu)",
         pipeline->frames_per_chunk, pipeline->expected_in_channels);
     config_error_set(err, CONFIG_ERR_PARSE,
@@ -624,8 +630,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   // 1. Validate input and output buffer shapes/capacities against pipeline
   // configurations.
   if (valid_frames > pipeline->frames_per_chunk) {
-    logger_t logger = logger_create("dsp.pipeline");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "Pipeline input frame size mismatch: needed <= %zu, got %zu",
                 pipeline->frames_per_chunk, valid_frames);
     pipeline->last_error_needed = pipeline->frames_per_chunk;
@@ -633,26 +638,23 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
     return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(input) != pipeline->expected_in_channels) {
-    logger_t logger = logger_create("dsp.pipeline");
     logger_warn(
-        &logger, "Pipeline input channel mismatch: expected %zu, got %zu",
+        &g_logger, "Pipeline input channel mismatch: expected %zu, got %zu",
         pipeline->expected_in_channels, audio_chunk_get_channels(input));
     pipeline->last_error_needed = pipeline->expected_in_channels;
     pipeline->last_error_got = audio_chunk_get_channels(input);
     return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
   }
   if (audio_chunk_get_channels(output) != pipeline->expected_out_channels) {
-    logger_t logger = logger_create("dsp.pipeline");
     logger_warn(
-        &logger, "Pipeline output channel mismatch: expected %zu, got %zu",
+        &g_logger, "Pipeline output channel mismatch: expected %zu, got %zu",
         pipeline->expected_out_channels, audio_chunk_get_channels(output));
     pipeline->last_error_needed = pipeline->expected_out_channels;
     pipeline->last_error_got = audio_chunk_get_channels(output);
     return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
   }
   if (audio_chunk_get_frames(output) < valid_frames) {
-    logger_t logger = logger_create("dsp.pipeline");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "Pipeline output buffer too small: needed %zu, got %zu",
                 valid_frames, audio_chunk_get_frames(output));
     pipeline->last_error_needed = valid_frames;

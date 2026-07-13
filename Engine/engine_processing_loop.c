@@ -60,6 +60,8 @@ struct engine_processing_loop {
 #include "Logging/app_logger.h"
 #include "thread_priority.h"
 
+static const logger_t g_logger = {"dsp.processing"};
+
 #ifndef __APPLE__
 #define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
 
@@ -132,8 +134,7 @@ void engine_processing_loop_set_pipeline(engine_processing_loop_t* loop,
 
 void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (!loop) return;
-  logger_t logger = logger_create("dsp.processing");
-  logger_info(&logger, "Processing thread started");
+  logger_info(&g_logger, "Processing thread started");
 
   set_realtime_thread_priority("Processing",
                                audio_chunk_get_frames(loop->pipeline_scratch),
@@ -170,7 +171,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
                                                        loop->resampler_scratch);
       res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
       if (rerr != RESAMPLER_OK) {
-        logger_error(&logger, "Processing error: resampler error %d", rerr);
+        logger_error(&g_logger, "Processing error: resampler error %d", rerr);
         processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
         snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
                  rerr);
@@ -210,7 +211,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         pipeline_process(loop->active_pipeline, chunk, current_scratch);
     uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (perr != PIPELINE_OK) {
-      logger_error(&logger, "Processing error: pipeline error %d", perr);
+      logger_error(&g_logger, "Processing error: pipeline error %d", perr);
       processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
       snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
                perr);
@@ -293,5 +294,5 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
   }
-  logger_info(&logger, "Processing thread stopped");
+  logger_info(&g_logger, "Processing thread stopped");
 }

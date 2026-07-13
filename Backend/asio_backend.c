@@ -15,6 +15,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.asio"};
+
 // COM Release helper
 static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid);
 static void asio_capture_close_internal(void* ctx);
@@ -845,10 +847,7 @@ static long asio_message(long selector, long value, void* message,
     case 3:      // kAsioSupportsTimeInfo
       return 1;
     case 5:  // kAsioResetRequest {
-    {
-      logger_t logger = logger_create("dsp.backend.asio");
-      logger_warn(&logger, "ASIO reset request received from driver.");
-    }
+      logger_warn(&g_logger, "ASIO reset request received from driver.");
       return 1;
     case 6:  // kAsioBufferSizeChange
       return 1;
@@ -1208,8 +1207,8 @@ capture_backend_t* asio_capture_new(const capture_device_config_t* config,
  */
 static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
   asio_playback_t* playback = (asio_playback_t*)ctx;
-  logger_t logger = logger_create("dsp.backend.asio");
-  logger_info(&logger, "Opening ASIO playback: device=%s, rate=%d, channels=%d",
+  logger_info(&g_logger,
+              "Opening ASIO playback: device=%s, rate=%d, channels=%d",
               playback->device, playback->sample_rate, playback->channels);
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
@@ -1332,7 +1331,7 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
     }
   }
 
-  logger_info(&logger,
+  logger_info(&g_logger,
               "ASIO playback successfully opened and started: buffer_size=%ld, "
               "channels=%d",
               playback->actual_buffer_size, playback->channels);

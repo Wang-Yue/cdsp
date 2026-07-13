@@ -7,6 +7,8 @@
 #include "Logging/app_logger.h"
 #include "alsa_device.h"
 
+static const logger_t g_logger = {"dsp.backend.alsa"};
+
 struct alsa_playback {
   char device_name[256];
   int sample_rate;
@@ -357,8 +359,7 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
                                     playback->chunk_size);
     rc = snd_pcm_sw_params(playback->pcm, sw_params);
     if (rc < 0) {
-      logger_t logger = logger_create("dsp.backend.alsa");
-      logger_warn(&logger, "Failed to set ALSA software parameters: %s",
+      logger_warn(&g_logger, "Failed to set ALSA software parameters: %s",
                   snd_strerror(rc));
     }
   }

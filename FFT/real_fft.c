@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Logging/app_logger.h"
+
+static const logger_t g_logger = {"dsp.fft"};
+
 // Double-precision (double) FFTW context and implementation
 struct real_fft {
   size_t length;          /**< Time-domain length (must be even). */
@@ -78,25 +82,23 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
 #include "FFT/mixed_radix_fft.h"
 #include "FFT/vdsp_complex_dft.h"
 #include "FFT/vdsp_real_fft.h"
-#include "Logging/app_logger.h"
 
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
-  logger_t logger = logger_create("dsp.fft");
   if (length == 0) {
     config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be positive");
-    logger_error(&logger, "RealFFT: length must be positive");
+    logger_error(&g_logger, "RealFFT: length must be positive");
     return NULL;
   }
   if (length % 2 != 0) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "RealFFT: length must be even, got %zu", length);
-    logger_error(&logger, "RealFFT: length must be even, got %zu", length);
+    logger_error(&g_logger, "RealFFT: length must be even, got %zu", length);
     return NULL;
   }
   real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));
   if (!fft) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate RealFFT");
-    logger_error(&logger, "Failed to allocate RealFFT");
+    logger_error(&g_logger, "Failed to allocate RealFFT");
     return NULL;
   }
   fft->length = length;
@@ -108,7 +110,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   vdsp_real_fft_t* vdsp = vdsp_real_fft_create(length);
   if (vdsp) {
     fft->backend = vdsp_real_fft_as_backend(vdsp);
-    logger_debug(&logger,
+    logger_debug(&g_logger,
                  "RealFFT created using vDSP Real FFT backend (length=%zu)",
                  length);
     return fft;
@@ -140,7 +142,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   }
 
   if (!inner) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Failed to initialize any complex FFT backend for half_n=%zu",
                  half_n);
     free(fft);
@@ -152,14 +154,14 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   if (!complex_inner) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate ComplexInnerRealFFT");
-    logger_error(&logger, "Failed to allocate ComplexInnerRealFFT");
+    logger_error(&g_logger, "Failed to allocate ComplexInnerRealFFT");
     arbitrary_complex_fft_free(inner);
     free(fft);
     return NULL;
   }
 
   fft->backend = complex_inner_real_fft_as_backend(complex_inner);
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "RealFFT created using ComplexInner + %s backend (length=%zu)",
                backend_name, length);
   return fft;
@@ -401,8 +403,6 @@ real_fftf_t* real_fftf_create(size_t length) {
 #else
 
 #include <math.h>
-
-#include "Logging/app_logger.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -651,22 +651,21 @@ static void fallback_real_fft_free(void* ctx_ptr) {
 }
 
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
-  logger_t logger = logger_create("dsp.fft");
   if (length == 0) {
     config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be positive");
-    logger_error(&logger, "RealFFT length must be positive");
+    logger_error(&g_logger, "RealFFT length must be positive");
     return NULL;
   }
   if (length % 2 != 0) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "RealFFT: length must be even, got %zu", length);
-    logger_error(&logger, "RealFFT length must be even, got %zu", length);
+    logger_error(&g_logger, "RealFFT length must be even, got %zu", length);
     return NULL;
   }
   real_fft_t* fft = (real_fft_t*)calloc(1, sizeof(real_fft_t));
   if (!fft) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate RealFFT");
-    logger_error(&logger, "Memory allocation failed for RealFFT");
+    logger_error(&g_logger, "Memory allocation failed for RealFFT");
     return NULL;
   }
   fft->length = length;
@@ -675,7 +674,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   fallback_real_fft_ctx_t* ctx =
       (fallback_real_fft_ctx_t*)calloc(1, sizeof(fallback_real_fft_ctx_t));
   if (!ctx) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Memory allocation failed for fallback_real_fft_ctx_t");
     free(fft);
     return NULL;
@@ -688,7 +687,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     ctx->work_re = (double*)calloc(length, sizeof(double));
     ctx->work_im = (double*)calloc(length, sizeof(double));
     if (!ctx->work_re || !ctx->work_im) {
-      logger_error(&logger,
+      logger_error(&g_logger,
                    "Failed to allocate work buffers for fallback RealFFT");
       fallback_real_fft_free(ctx);
       free(fft);
@@ -702,7 +701,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   ctx->base.free = fallback_real_fft_free;
 
   fft->backend = (real_fft_backend_t*)&ctx->base;
-  logger_warn(&logger,
+  logger_warn(&g_logger,
               "RealFFT using C software fallback backend (%s, length=%zu)",
               ctx->is_pow2 ? "Cooley-Tukey Radix-2" : "Direct DFT", length);
   return fft;

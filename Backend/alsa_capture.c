@@ -13,6 +13,8 @@
 #include "Logging/app_logger.h"
 #include "alsa_device.h"
 
+static const logger_t g_logger = {"dsp.backend.alsa"};
+
 struct alsa_capture {
   char device_name[256];
   int sample_rate;
@@ -524,8 +526,7 @@ bool alsa_capture_open(alsa_capture_t* capture, backend_error_t* err) {
                                     capture->chunk_size);
     rc = snd_pcm_sw_params(capture->pcm, sw_params);
     if (rc < 0) {
-      logger_t logger = logger_create("dsp.backend.alsa");
-      logger_warn(&logger, "Failed to set ALSA software parameters: %s",
+      logger_warn(&g_logger, "Failed to set ALSA software parameters: %s",
                   snd_strerror(rc));
     }
   }

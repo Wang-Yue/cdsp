@@ -14,6 +14,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.bluez"};
+
 struct bluez_capture {
   int pipe_fd;
   int ctrl_fd;
@@ -201,7 +203,7 @@ capture_backend_t* bluez_capture_create(const capture_device_config_t* config,
     return NULL;
   }
 
-  capture->logger = logger_create("dsp.capture.bluez");
+  capture->logger = g_logger;
   capture->channels = config->cfg.bluez.channels;
   capture->format = config->cfg.bluez.format;
   capture->sample_rate = sample_rate;

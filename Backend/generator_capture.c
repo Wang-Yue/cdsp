@@ -7,6 +7,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.generator"};
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -153,8 +155,7 @@ bool generator_capture_open(generator_capture_t* capture,
   capture->last_read_time_ns = get_time_ns();
   capture->phase = 0.0;
 
-  logger_t logger = logger_create("dsp.backend.generator");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opened generator capture: type=%s, freq=%.1f Hz, amp=%.3f",
               signal_type_to_string(capture->signal_type), capture->frequency,
               capture->amplitude);

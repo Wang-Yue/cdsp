@@ -22,6 +22,8 @@
 #include "Pipeline/state_file.h"
 #include "Server/websocket_server.h"
 
+static const logger_t g_logger = {"dsp.main"};
+
 static volatile sig_atomic_t keep_running = 1;
 
 /**
@@ -364,18 +366,17 @@ int main(int argc, char** argv) {
 
   dsp_engine_set_log_level(log_level_from_string(log_level_str));
 
-  logger_t logger = logger_create("dsp.main");
-  logger_info(&logger, "Starting dsp-cli application");
+  logger_info(&g_logger, "Starting dsp-cli application");
 
   if (check_only) {
     if (!config_path) {
-      logger_error(&logger, "Missing config file for --check");
+      logger_error(&g_logger, "Missing config file for --check");
       printf("Error: Missing config file to check.\n");
       return 1;
     }
     char* json = read_file_to_string(config_path);
     if (!json) {
-      logger_error(&logger,
+      logger_error(&g_logger,
                    "Configuration check failed: Could not read file %s",
                    config_path);
       printf("Configuration check failed: Could not read file.\n");
@@ -384,12 +385,12 @@ int main(int argc, char** argv) {
     dsp_config_t* parsed = NULL;
     config_error_t cerr;
     if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
-      logger_error(&logger, "Configuration check failed: %s", cerr.message);
+      logger_error(&g_logger, "Configuration check failed: %s", cerr.message);
       printf("Configuration check failed: %s\n", cerr.message);
       free(json);
       return 1;
     }
-    logger_info(&logger, "Configuration check succeeded for %s", config_path);
+    logger_info(&g_logger, "Configuration check succeeded for %s", config_path);
     printf("Configuration is valid.\n");
     dsp_config_free(parsed);
     free(json);
@@ -403,7 +404,7 @@ int main(int argc, char** argv) {
   if (state_file_path && loaded_state) {
     if (dsp_state_load(state_file_path, loaded_state)) {
       has_loaded_state = true;
-      logger_info(&logger, "Loaded state file from %s", state_file_path);
+      logger_info(&g_logger, "Loaded state file from %s", state_file_path);
       if (!config_path && !no_config &&
           dsp_state_has_config_path(loaded_state)) {
         allocated_config_path = strdup(dsp_state_get_config_path(loaded_state));
@@ -433,14 +434,14 @@ int main(int argc, char** argv) {
   dsp_config_t* parsed = NULL;
   if (!wait_config && !no_config) {
     if (!config_path) {
-      logger_error(&logger, "Missing required configuration file");
+      logger_error(&g_logger, "Missing required configuration file");
       printf("Error: Missing required configuration file.\n");
       print_usage();
       return 1;
     }
     config_json = read_file_to_string(config_path);
     if (!config_json) {
-      logger_error(&logger, "Failed to read configuration file %s",
+      logger_error(&g_logger, "Failed to read configuration file %s",
                    config_path);
       printf("Failed to load configuration: Could not read file %s\n",
              config_path);
@@ -448,7 +449,7 @@ int main(int argc, char** argv) {
     }
     config_error_t cerr;
     if (config_loader_parse(config_json, &parsed, &cerr) != 0 || !parsed) {
-      logger_error(&logger, "Failed to parse configuration file %s: %s",
+      logger_error(&g_logger, "Failed to parse configuration file %s: %s",
                    config_path, cerr.message);
       printf("Failed to load configuration: %s\n", cerr.message);
       free(config_json);
@@ -557,7 +558,7 @@ int main(int argc, char** argv) {
 
   dsp_engine_t* engine = dsp_engine_create();
   if (!engine) {
-    logger_error(&logger, "Failed to allocate dsp_engine_t: out of memory");
+    logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
     printf("Error starting engine: Failed to allocate engine\n");
     if (parsed) dsp_config_free(parsed);
     if (config_json) free(config_json);
@@ -567,10 +568,10 @@ int main(int argc, char** argv) {
   if (parsed) {
     audio_backend_error_t berr;
     if (dsp_engine_set_config_struct(engine, parsed, &berr)) {
-      logger_info(&logger, "DSP engine configured and started");
+      logger_info(&g_logger, "DSP engine configured and started");
       printf("Engine started successfully.\n");
     } else {
-      logger_error(&logger, "Failed to configure engine: %s", berr.message);
+      logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
       printf("Error starting engine: %s\n", berr.message);
       // dsp_engine_set_config_struct frees parsed on failure
       dsp_engine_free(engine);
@@ -580,7 +581,7 @@ int main(int argc, char** argv) {
     if (config_json) free(config_json);
   } else {
     logger_info(
-        &logger,
+        &g_logger,
         "Starting engine in inactive state (waiting for websocket config)");
     printf(
         "Starting engine in inactive state (waiting for websocket "
@@ -611,7 +612,7 @@ int main(int argc, char** argv) {
     if (websocket_server_start(server)) {
       printf("WebSocket server running on %s:%u\n", bind_address, port);
     } else {
-      logger_error(&logger, "Failed to start WebSocket server on %s:%u",
+      logger_error(&g_logger, "Failed to start WebSocket server on %s:%u",
                    bind_address, port);
       printf("Error starting WebSocket server\n");
     }
@@ -625,7 +626,7 @@ int main(int argc, char** argv) {
     if (started) {
       state_update_t status = dsp_engine_get_status(engine);
       if (status.state == PROCESSING_STATE_INACTIVE) {
-        logger_info(&logger, "Engine reached inactive state, exiting loop");
+        logger_info(&g_logger, "Engine reached inactive state, exiting loop");
         printf("Engine finished processing. Exiting.\n");
         break;
       }
@@ -635,7 +636,7 @@ int main(int argc, char** argv) {
   if (server) websocket_server_free(server);
   dsp_engine_free(engine);
   if (allocated_config_path) free(allocated_config_path);
-  logger_info(&logger, "Application exit clean");
+  logger_info(&g_logger, "Application exit clean");
   printf("Engine stopped.\n");
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
   CoUninitialize();

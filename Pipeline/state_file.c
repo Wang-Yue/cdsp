@@ -7,6 +7,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.pipeline.state"};
+
 struct dsp_state_s {
   char config_path[1024];
   bool has_config_path;
@@ -40,11 +42,10 @@ static void trim_trailing(char* str) {
 }
 
 bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
-  logger_t logger = logger_create("dsp.pipeline.state");
   if (!filename || !out_state) return false;
   FILE* fp = fopen(filename, "r");
   if (!fp) {
-    logger_warn(&logger, "State file could not be opened: %s", filename);
+    logger_warn(&g_logger, "State file could not be opened: %s", filename);
     return false;
   }
 
@@ -141,7 +142,6 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
 }
 
 bool dsp_state_save(const char* filename, const dsp_state_t* state) {
-  logger_t logger = logger_create("dsp.pipeline.state");
   if (!filename || !state) return false;
 
   // Save to a temporary file first, then rename to the target filename.
@@ -150,13 +150,14 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
   char tmp_name[1024];
   int written = snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", filename);
   if (written < 0 || (size_t)written >= sizeof(tmp_name)) {
-    logger_error(&logger, "State file path overflow for %s", filename);
+    logger_error(&g_logger, "State file path overflow for %s", filename);
     return false;
   }
 
   FILE* fp = fopen(tmp_name, "w");
   if (!fp) {
-    logger_error(&logger, "Failed to open state temporary file: %s", tmp_name);
+    logger_error(&g_logger, "Failed to open state temporary file: %s",
+                 tmp_name);
     return false;
   }
 
@@ -181,13 +182,13 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   remove(filename);
   if (rename(tmp_name, filename) != 0) {
-    logger_error(&logger, "Failed to rename state temporary file %s to %s",
+    logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);
     remove(tmp_name);
     return false;
   }
 
-  logger_info(&logger, "State saved to %s", filename);
+  logger_info(&g_logger, "State saved to %s", filename);
   return true;
 }
 

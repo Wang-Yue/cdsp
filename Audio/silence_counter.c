@@ -12,14 +12,15 @@ struct silence_counter {
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.silence_counter"};
+
 silence_counter_t* silence_counter_create(double threshold_db,
                                           double timeout_seconds,
                                           size_t samplerate, size_t chunksize) {
   silence_counter_t* counter =
       (silence_counter_t*)calloc(1, sizeof(silence_counter_t));
   if (!counter) {
-    logger_t logger = logger_create("dsp.silence_counter");
-    logger_error(&logger, "Memory allocation failed for silence_counter_t");
+    logger_error(&g_logger, "Memory allocation failed for silence_counter_t");
     return NULL;
   }
   silence_counter_init(counter, threshold_db, timeout_seconds, samplerate,
@@ -52,8 +53,7 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
   } else {
     counter->limit_chunks = 0;
   }
-  logger_t logger = logger_create("dsp.silence_counter");
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, "
                "limit_chunks=%zu)",
                threshold_db, timeout_seconds, counter->limit_chunks);
@@ -69,8 +69,7 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   // Reset counter if signal level is above the silence threshold.
   if (signal_peak_db > counter->threshold_db) {
     if (counter->silent_chunks > 0) {
-      logger_t logger = logger_create("dsp.silence_counter");
-      logger_info(&logger,
+      logger_info(&g_logger,
                   "Audio signal restored above threshold (peak=%.1fdB > "
                   "threshold=%.1fdB), resuming",
                   signal_peak_db, counter->threshold_db);
@@ -84,8 +83,7 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   }
   // Transition to PAUSED state if silence duration exceeds the limit.
   if (counter->silent_chunks >= counter->limit_chunks) {
-    logger_t logger = logger_create("dsp.silence_counter");
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "Silence timeout reached (silent_chunks=%zu, "
                 "limit_chunks=%zu), requesting pause",
                 counter->silent_chunks, counter->limit_chunks);

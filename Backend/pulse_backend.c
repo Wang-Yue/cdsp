@@ -12,6 +12,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.pulse"};
+
 struct pulse_capture {
   char device[256];
   int sample_rate;
@@ -203,8 +205,7 @@ bool pulse_capture_open(pulse_capture_t* capture, backend_error_t* err) {
     return false;
   }
 
-  logger_t logger = logger_create("dsp.backend.pulse");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opened PulseAudio capture: device=%s, rate=%d, channels=%d",
               capture->device[0] != '\0' ? capture->device : "default",
               capture->sample_rate, capture->channels);
@@ -485,8 +486,7 @@ bool pulse_playback_open(pulse_playback_t* playback, backend_error_t* err) {
 
   playback->paused = false;
 
-  logger_t logger = logger_create("dsp.backend.pulse");
-  logger_info(&logger,
+  logger_info(&g_logger,
               "Opened PulseAudio playback: device=%s, rate=%d, channels=%d",
               playback->device[0] != '\0' ? playback->device : "default",
               playback->sample_rate, playback->channels);

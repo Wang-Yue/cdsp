@@ -12,6 +12,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.processor"};
+
 struct dsp_processor {
   processor_impl_type_t type;  ///< Concrete implementation type identifier.
   void* impl;                  ///< Pointer to underlying processor structure.
@@ -36,20 +38,29 @@ void dsp_processor_transfer_state(dsp_processor_t* dest,
                                   const dsp_processor_t* src) {
   if (!dest || !src) return;
   if (dest->type != src->type) return;
+  const char* pname = dsp_processor_get_name(dest);
   switch (dest->type) {
     case PROCESSOR_IMPL_COMPRESSOR:
       compressor_processor_transfer_state(
           (compressor_processor_t*)dest->impl,
           (const compressor_processor_t*)src->impl);
+      logger_info(&g_logger,
+                  "Transferred processor state for '%s' (type=Compressor)",
+                  pname);
       break;
     case PROCESSOR_IMPL_NOISE_GATE:
       noise_gate_processor_transfer_state(
           (noise_gate_processor_t*)dest->impl,
           (const noise_gate_processor_t*)src->impl);
+      logger_info(&g_logger,
+                  "Transferred processor state for '%s' (type=NoiseGate)",
+                  pname);
       break;
     case PROCESSOR_IMPL_RACE:
       race_processor_transfer_state((race_processor_t*)dest->impl,
                                     (const race_processor_t*)src->impl);
+      logger_info(&g_logger, "Transferred processor state for '%s' (type=RACE)",
+                  pname);
       break;
   }
 }
@@ -217,9 +228,8 @@ dsp_processor_t* dsp_processor_create(const char* name,
                                       const processor_config_t* config,
                                       int sample_rate, size_t chunk_size,
                                       config_error_t* err) {
-  logger_t logger = logger_create("dsp.processor");
   if (!config) {
-    logger_error(&logger, "Processor config is NULL for '%s'",
+    logger_error(&g_logger, "Processor config is NULL for '%s'",
                  name ? name : "unnamed");
     config_error_set(err, CONFIG_ERR_PARSE, "Processor config is NULL");
     return NULL;
@@ -230,7 +240,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
           name, &config->parameters.compressor, sample_rate, chunk_size);
       if (!p) {
         logger_error(
-            &logger,
+            &g_logger,
             "Failed to create compressor processor '%s' (rate=%d, chunk=%zu)",
             name ? name : "", sample_rate, chunk_size);
         config_error_set(err, CONFIG_ERR_PARSE,
@@ -240,14 +250,14 @@ dsp_processor_t* dsp_processor_create(const char* name,
       }
       dsp_processor_t* wrap = dsp_processor_wrap_compressor(p);
       if (!wrap) {
-        logger_error(&logger, "Failed to wrap compressor processor '%s'",
+        logger_error(&g_logger, "Failed to wrap compressor processor '%s'",
                      name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap compressor processor '%s'",
                          name ? name : "");
         return NULL;
       }
-      logger_debug(&logger, "Created compressor processor '%s'",
+      logger_debug(&g_logger, "Created compressor processor '%s'",
                    name ? name : "");
       return wrap;
     }
@@ -256,7 +266,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
           name, &config->parameters.noise_gate, sample_rate, chunk_size);
       if (!p) {
         logger_error(
-            &logger,
+            &g_logger,
             "Failed to create noise gate processor '%s' (rate=%d, chunk=%zu)",
             name ? name : "", sample_rate, chunk_size);
         config_error_set(err, CONFIG_ERR_PARSE,
@@ -266,14 +276,14 @@ dsp_processor_t* dsp_processor_create(const char* name,
       }
       dsp_processor_t* wrap = dsp_processor_wrap_noise_gate(p);
       if (!wrap) {
-        logger_error(&logger, "Failed to wrap noise gate processor '%s'",
+        logger_error(&g_logger, "Failed to wrap noise gate processor '%s'",
                      name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap noise gate processor '%s'",
                          name ? name : "");
         return NULL;
       }
-      logger_debug(&logger, "Created noise gate processor '%s'",
+      logger_debug(&g_logger, "Created noise gate processor '%s'",
                    name ? name : "");
       return wrap;
     }
@@ -281,7 +291,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
       race_processor_t* p = race_processor_create(
           name, &config->parameters.race, sample_rate, err);
       if (!p) {
-        logger_error(&logger,
+        logger_error(&g_logger,
                      "Failed to create RACE processor '%s' (rate=%d): %s",
                      name ? name : "", sample_rate,
                      err ? err->message : "unknown error");
@@ -289,19 +299,19 @@ dsp_processor_t* dsp_processor_create(const char* name,
       }
       dsp_processor_t* wrap = dsp_processor_wrap_race(p);
       if (!wrap) {
-        logger_error(&logger, "Failed to wrap RACE processor '%s'",
+        logger_error(&g_logger, "Failed to wrap RACE processor '%s'",
                      name ? name : "");
         config_error_set(err, CONFIG_ERR_PARSE,
                          "Failed to wrap RACE processor '%s'",
                          name ? name : "");
         return NULL;
       }
-      logger_debug(&logger, "Created RACE processor '%s'", name ? name : "");
+      logger_debug(&g_logger, "Created RACE processor '%s'", name ? name : "");
       return wrap;
     }
     default:
-      logger_error(&logger, "Unknown processor type %d for '%s'", config->type,
-                   name ? name : "");
+      logger_error(&g_logger, "Unknown processor type %d for '%s'",
+                   config->type, name ? name : "");
       config_error_set(err, CONFIG_ERR_PARSE,
                        "Unknown processor type %d for '%s'", config->type,
                        name ? name : "");

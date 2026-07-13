@@ -22,6 +22,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"race_processor"};
+
 struct race_processor {
   char name[64];  ///< Unique name of the RACE processor instance.
   int channel_a;  ///< Index of primary channel A (e.g., Left).
@@ -170,9 +172,8 @@ void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
   double* base_b = audio_chunk_get_channel(chunk, processor->channel_b);
   if (!base_a || !base_b) {
     if (!processor->channel_warning_logged) {
-      logger_t logger = logger_create("race_processor");
       logger_error(
-          &logger,
+          &g_logger,
           "RACE channel indices (%d, %d) out of bounds for chunk channels (%d)",
           processor->channel_a, processor->channel_b,
           audio_chunk_get_channels(chunk));

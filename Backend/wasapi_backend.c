@@ -17,6 +17,8 @@
 #include "Logging/app_logger.h"
 #include "wasapi_capabilities.h"
 
+static const logger_t g_logger = {"dsp.backend.wasapi"};
+
 #ifndef AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
 #define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
 #endif
@@ -598,11 +600,11 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
 
   IAudioClient_Start(capture->client);
 
-  logger_t logger = logger_create("dsp.backend.wasapi");
-  logger_info(&logger, "Opened WASAPI capture: device=%s, rate=%d, channels=%d",
+  logger_info(&g_logger,
+              "Opened WASAPI capture: device=%s, rate=%d, channels=%d",
               capture->device[0] != '\0' ? capture->device : "default",
               capture->sample_rate, capture->channels);
-  logger_info(&logger, "WASAPI capture options: loopback=%d, exclusive=%d",
+  logger_info(&g_logger, "WASAPI capture options: loopback=%d, exclusive=%d",
               capture->loopback, capture->exclusive);
 
   return true;
@@ -1165,16 +1167,15 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
   playback->paused = false;
   playback->started = false;
 
-  logger_t logger = logger_create("dsp.backend.wasapi");
   logger_info(
-      &logger,
+      &g_logger,
       "Opened WASAPI playback: device=%s, rate=%d, channels=%d, exclusive=%d",
       playback->device[0] != '\0' ? playback->device : "default",
       playback->sample_rate, playback->channels, playback->exclusive);
 
   if (!playback->exclusive) {
     logger_warn(
-        &logger,
+        &g_logger,
         "WASAPI operating in Shared Mode (32-bit Float). Note: Bit-exact DoP "
         "requires Exclusive Mode ('exclusive': true) to prevent float mixer "
         "bit corruption");

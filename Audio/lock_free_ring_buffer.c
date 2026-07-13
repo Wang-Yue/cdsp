@@ -76,17 +76,18 @@ size_t spsc_queue_get_capacity(const spsc_queue_t* queue) {
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.ring_buffer"};
+
 // MARK: - SPSCAudioRingBuffer Implementation
 
 spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
     size_t minimum_capacity) {
-  logger_t logger = logger_create("dsp.ring_buffer");
   size_t cap = spsc_audio_ring_buffer_round_up_to_power_of_two(
       minimum_capacity < 2 ? 2 : minimum_capacity);
   spsc_audio_ring_buffer_t* ring =
       (spsc_audio_ring_buffer_t*)calloc(1, sizeof(spsc_audio_ring_buffer_t));
   if (!ring) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Memory allocation failed for spsc_audio_ring_buffer_t");
     return NULL;
   }
@@ -94,15 +95,15 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   ring->mask = cap - 1;
   ring->storage = (float*)calloc(cap, sizeof(float));
   if (!ring->storage) {
-    logger_error(&logger, "Failed to allocate storage buffer for capacity=%zu",
-                 cap);
+    logger_error(&g_logger,
+                 "Failed to allocate storage buffer for capacity=%zu", cap);
     free(ring);
     return NULL;
   }
   atomic_init(&ring->write_index, 0);
   atomic_init(&ring->read_index, 0);
   ring->overwrite_on_overflow = false;
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "SPSC audio ring buffer created (capacity=%zu, min_cap=%zu)",
                cap, minimum_capacity);
   return ring;

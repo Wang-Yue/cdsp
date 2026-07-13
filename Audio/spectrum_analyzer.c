@@ -47,12 +47,13 @@ struct spectrum_analyzer {
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.spectrum_analyzer"};
+
 spectrum_analyzer_t* spectrum_analyzer_create(void) {
-  logger_t logger = logger_create("dsp.spectrum_analyzer");
   spectrum_analyzer_t* analyzer =
       (spectrum_analyzer_t*)calloc(1, sizeof(spectrum_analyzer_t));
   if (!analyzer) {
-    logger_error(&logger, "Memory allocation failed for spectrum_analyzer_t");
+    logger_error(&g_logger, "Memory allocation failed for spectrum_analyzer_t");
     return NULL;
   }
   analyzer->fft_n = 4096;
@@ -82,13 +83,13 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
       !analyzer->realp || !analyzer->imagp || !analyzer->magnitudes ||
       !analyzer->db_magnitudes || !analyzer->plan.frequencies ||
       !analyzer->plan.ranges || !analyzer->out_magnitudes) {
-    logger_error(&logger,
+    logger_error(&g_logger,
                  "Failed to allocate memory buffers for spectrum analyzer");
     spectrum_analyzer_free(analyzer);
     return NULL;
   }
 
-  logger_debug(&logger,
+  logger_debug(&g_logger,
                "Spectrum analyzer created (fft_n=%zu, out_capacity=%zu)",
                analyzer->fft_n, analyzer->out_capacity);
   return analyzer;

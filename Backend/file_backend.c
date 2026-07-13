@@ -15,6 +15,8 @@
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.file"};
+
 /**
  * @brief Helper to get monotonic time in nanoseconds.
  *
@@ -592,8 +594,7 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
     capture->channels = info.channels;
     capture->format = info.format;
 
-    logger_t logger = logger_create("dsp.backend.file");
-    logger_info(&logger,
+    logger_info(&g_logger,
                 "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
                 info.sample_rate, info.channels,
                 binary_sample_format_to_string(info.format));

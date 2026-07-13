@@ -19,6 +19,8 @@
 
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"noise_gate_processor"};
+
 struct noise_gate_processor {
   char name[64];          ///< Unique name of the noise gate instance.
   int* monitor_channels;  ///< Array of channel indices monitored for level
@@ -154,9 +156,8 @@ void noise_gate_processor_process(noise_gate_processor_t* processor,
   }
   if (mismatch) {
     if (!processor->channel_warning_logged) {
-      logger_t logger = logger_create("noise_gate_processor");
       logger_error(
-          &logger,
+          &g_logger,
           "Noise Gate channel indices out of bounds for chunk channels (%d)",
           ch_count);
       processor->channel_warning_logged = true;

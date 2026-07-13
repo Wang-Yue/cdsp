@@ -53,6 +53,8 @@ struct engine_capture_loop {
 #include "Logging/app_logger.h"
 #include "thread_priority.h"
 
+static const logger_t g_logger = {"dsp.capture"};
+
 #ifndef __APPLE__
 #define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
 /**
@@ -126,8 +128,7 @@ void engine_capture_loop_free(engine_capture_loop_t* loop) {
 
 void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (!loop) return;
-  logger_t logger = logger_create("dsp.capture");
-  logger_info(&logger, "Capture thread started (realtime: %s)",
+  logger_info(&g_logger, "Capture thread started (realtime: %s)",
               capture_backend_is_realtime(loop->capture) ? "yes" : "no");
 
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
@@ -154,7 +155,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
           rate != loop->last_observed_pending_rate) {
         loop->last_observed_pending_rate = rate;
         loop->has_last_observed_pending_rate = true;
-        logger_warn(&logger,
+        logger_warn(&g_logger,
                     "Capture device rate changed to %f Hz; stopping engine",
                     rate);
         processing_stop_reason_t reason = {
@@ -176,7 +177,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     if (!got_data) {
       if (err.type == BACKEND_ERROR_READ_EOF) {
         logger_info(
-            &logger,
+            &g_logger,
             "Capture reached End-of-Stream; stopping engine gracefully");
         processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
         snprintf(reason.message, sizeof(reason.message), "EOF");
@@ -185,7 +186,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       }
       // If reading fails with an error, trigger an engine stop.
       if (err.type != BACKEND_ERROR_NONE) {
-        logger_error(&logger, "Capture error: %s", err.message);
+        logger_error(&g_logger, "Capture error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
         engine_shared_state_request_stop(loop->shared, reason);
@@ -212,7 +213,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         if (elapsed > loop->watchdog_timeout_seconds) {
           loop->watchdog_triggered = true;
           engine_shared_state_set_state(loop->shared, PROCESSING_STATE_STALLED);
-          logger_warn(&logger, "Capture device stalled — no data for %fs",
+          logger_warn(&g_logger, "Capture device stalled — no data for %fs",
                       loop->watchdog_timeout_seconds);
         }
       }
@@ -228,7 +229,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (loop->watchdog_triggered) {
       loop->watchdog_triggered = false;
-      logger_info(&logger, "Capture recovered from stall");
+      logger_info(&g_logger, "Capture recovered from stall");
     }
 
     // 5.5. Rate Watcher Measurement:
@@ -237,7 +238,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
                                  &measured_rate)) {
       if (sample_rate_watcher_get_stop_on_rate_change(loop->rate_watcher)) {
         logger_warn(
-            &logger,
+            &g_logger,
             "Sample rate change detected (measured: %f Hz, expected: %zu "
             "Hz); stopping engine",
             measured_rate, loop->samplerate);
@@ -248,7 +249,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         break;
       } else {
         logger_info(
-            &logger,
+            &g_logger,
             "Sample rate drift detected (measured: %f Hz, expected: %zu "
             "Hz)",
             measured_rate, loop->samplerate);
@@ -296,7 +297,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       if (capture_backend_is_realtime(loop->capture)) {
         if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
           loop->captured_drop_counter++;
-          logger_warn(&logger, "Captured chunk dropped (queue full)");
+          logger_warn(&g_logger, "Captured chunk dropped (queue full)");
         }
       } else {
         while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
@@ -313,10 +314,10 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     engine_shared_state_shutdown_captured_queue(loop->shared);
   }
   if (loop->captured_drop_counter > 0) {
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "Capture thread stopped. Total dropped captured chunks: %llu",
                 (unsigned long long)loop->captured_drop_counter);
   } else {
-    logger_info(&logger, "Capture thread stopped");
+    logger_info(&g_logger, "Capture thread stopped");
   }
 }

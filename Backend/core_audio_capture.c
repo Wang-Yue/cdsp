@@ -25,6 +25,8 @@
 #include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
+
 struct core_audio_capture {
   char device_name[256];
   int channels;
@@ -631,8 +633,7 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
   if (!capture) return false;
   // Verify that the hardware device is still alive using atomic access.
   if (!atomic_load_explicit(&capture->is_device_alive, memory_order_acquire)) {
-    logger_t logger = logger_create("dsp.backend.coreaudio.capture");
-    logger_warn(&logger,
+    logger_warn(&g_logger,
                 "CoreAudio capture read failed: device is disconnected");
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -666,8 +667,7 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
 /// Close the CoreAudio capture device and release HAL resources.
 void core_audio_capture_close(core_audio_capture_t* capture) {
   if (!capture) return;
-  logger_t logger = logger_create("dsp.backend.coreaudio.capture");
-  logger_info(&logger, "Closing CoreAudio capture device");
+  logger_info(&g_logger, "Closing CoreAudio capture device");
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }

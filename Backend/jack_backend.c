@@ -12,6 +12,8 @@
 #include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 
+static const logger_t g_logger = {"dsp.backend.jack"};
+
 // ============================================================================
 // JACK Capture Backend
 // ============================================================================
@@ -75,8 +77,7 @@ static int jack_capture_sample_rate_cb(jack_nframes_t nframes, void* arg) {
   if ((int)nframes != capture->sample_rate) {
     capture->pending_rate = (double)nframes;
     capture->rate_changed = true;
-    logger_warn(&capture->logger, "JACK server sample rate changed to %d Hz",
-                nframes);
+    logger_warn(&g_logger, "JACK server sample rate changed to %d Hz", nframes);
   }
   return 0;
 }
@@ -93,7 +94,7 @@ static void jack_capture_shutdown_cb(void* arg) {
   jack_capture_t* capture = (jack_capture_t*)arg;
   capture->active = false;
   cdsp_sem_signal(capture->sem);
-  logger_error(&capture->logger, "JACK server shutdown");
+  logger_error(&g_logger, "JACK server shutdown");
 }
 
 /** @brief Vtable wrapper for jack_capture_destroy. */
@@ -160,7 +161,7 @@ capture_backend_t* jack_capture_create(const capture_device_config_t* config,
     return NULL;
   }
 
-  capture->logger = logger_create("dsp.capture.jack");
+  capture->logger = g_logger;
   capture->channels = config->cfg.jack.channels;
   capture->sample_rate = sample_rate;
   capture->chunk_size = chunk_size;
@@ -430,8 +431,7 @@ static int jack_playback_sample_rate_cb(jack_nframes_t nframes, void* arg) {
   if ((int)nframes != playback->sample_rate) {
     playback->pending_rate = (double)nframes;
     playback->rate_changed = true;
-    logger_warn(&playback->logger, "JACK server sample rate changed to %d Hz",
-                nframes);
+    logger_warn(&g_logger, "JACK server sample rate changed to %d Hz", nframes);
   }
   return 0;
 }
@@ -448,7 +448,7 @@ static void jack_playback_shutdown_cb(void* arg) {
   jack_playback_t* playback = (jack_playback_t*)arg;
   playback->active = false;
   cdsp_sem_signal(playback->sem);
-  logger_error(&playback->logger, "JACK server shutdown");
+  logger_error(&g_logger, "JACK server shutdown");
 }
 
 /** @brief Vtable wrapper for jack_playback_destroy. */
@@ -528,7 +528,7 @@ playback_backend_t* jack_playback_create(const playback_device_config_t* config,
     return NULL;
   }
 
-  playback->logger = logger_create("dsp.playback.jack");
+  playback->logger = g_logger;
   playback->channels = config->cfg.jack.channels;
   playback->sample_rate = sample_rate;
   playback->chunk_size = chunk_size;
