@@ -296,6 +296,10 @@ static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
   }
 
   // 9. Spawn worker threads.
+  // Set RUNNING state before spawning threads to prevent newly launched threads
+  // from seeing INACTIVE state.
+  engine_shared_state_set_state(core->shared, PROCESSING_STATE_RUNNING);
+
   // Wrap `pthread_create` construction so each spawn shares the same QoS and
   // lifecycle.
   int ret;
@@ -324,7 +328,6 @@ static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
 
   core->threads_created = true;
   core->current_config = config;
-  engine_shared_state_set_state(core->shared, PROCESSING_STATE_RUNNING);
   return true;
 }
 

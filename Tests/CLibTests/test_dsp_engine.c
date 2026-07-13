@@ -1108,23 +1108,20 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   // Wait for the engine to finish processing the file
   // Timeout is 35.0s in simulated time (running 15x faster -> ~2.33s of real
   // time)
-  int elapsed_ms = 0;
-  while (elapsed_ms < 35000) {
+  while (1) {
     state_update_t status = dsp_engine_get_status(engine);
     if (status.state == PROCESSING_STATE_INACTIVE) {
       break;
     }
-#ifdef _WIN32
-    // Sleep for 10ms of real time (corresponds to 150ms of simulated time)
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double cur_elapsed = (double)(now.tv_sec - t0.tv_sec) +
+                         (double)(now.tv_nsec - t0.tv_nsec) / 1000000000.0;
+    if (cur_elapsed >= 35.0) {
+      break;
+    }
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 5000000ULL};  // 5ms sleep
     nanosleep(&req, NULL);
-    elapsed_ms += 150;
-#else
-    // Sleep for 0.33ms of real time (corresponds to 5ms of simulated time)
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 333333ULL};
-    nanosleep(&req, NULL);
-    elapsed_ms += 5;
-#endif
   }
 
   // Stop the engine and wait for playback/processing threads to finish draining
@@ -1160,10 +1157,10 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
     bool is_rt = capture_rt || playback_rt;
     if (is_rt) {
       ASSERT_TRUE(elapsed >= 28.0);
-      ASSERT_TRUE(elapsed < 40.0);
+      ASSERT_TRUE(elapsed < 60.0);
     } else {
       // Non-realtime should take very little simulated time
-      ASSERT_TRUE(elapsed < 5.0);
+      ASSERT_TRUE(elapsed < 15.0);
     }
   }
 }

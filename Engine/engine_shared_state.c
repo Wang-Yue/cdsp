@@ -183,7 +183,9 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
     state->stop_reason = reason;
-    engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
+    if (reason.type != STOP_REASON_DONE) {
+      engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
+    }
     audio_sync_queue_shutdown(state->captured_queue);
   }
 }

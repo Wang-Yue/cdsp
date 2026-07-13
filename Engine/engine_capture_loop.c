@@ -297,18 +297,11 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   // counter to avoid blocking the audio thread.
   // - If running in non-real-time (batch mode), spin-wait to avoid losing data.
   if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
-    if (capture_backend_is_realtime(loop->capture)) {
-      if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        loop->captured_drop_counter++;
-        logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+    while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+      if (engine_shared_state_should_stop(loop->shared)) {
+        break;
       }
-    } else {
-      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        if (engine_shared_state_should_stop(loop->shared)) {
-          break;
-        }
-        engine_yield();
-      }
+      engine_yield();
     }
   }
   return false;

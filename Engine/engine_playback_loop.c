@@ -321,5 +321,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   }
 
   if (rate_controller) pi_rate_controller_free(rate_controller);
+  if (loop->shared) {
+    engine_shared_state_set_state(loop->shared, PROCESSING_STATE_INACTIVE);
+  }
   logger_info(&g_logger, "Playback thread stopped");
 }
