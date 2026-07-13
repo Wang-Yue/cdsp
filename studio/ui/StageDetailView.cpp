@@ -288,7 +288,8 @@ void StageDetailView::buildStageOptionsUi() {
             auto pillsLayout = new QHBoxLayout();
             for (int c = 0; c < incomingChannels; ++c) {
                 auto btn = new QPushButton(QString::number(c + 1), chanGroup);
-                btn->setFixedWidth(36);
+                int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
+                btn->setFixedWidth(btnWidth);
                 btn->setCheckable(true);
                 bool isSelected = std::find(stage.channels.begin(), stage.channels.end(), c) != stage.channels.end();
                 btn->setChecked(isSelected);
@@ -296,10 +297,10 @@ void StageDetailView::buildStageOptionsUi() {
                 auto updateBtnStyle = [btn](bool checked) {
                     if (checked) {
                         btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: "
-                                           "4px; border: none;");
+                                           "4px; border: none; padding: 0px; margin: 0px;");
                     } else {
                         btn->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: palette(text); "
-                                           "font-weight: bold; border-radius: 4px; border: none;");
+                                           "font-weight: bold; border-radius: 4px; border: none; padding: 0px; margin: 0px;");
                     }
                 };
                 updateBtnStyle(isSelected);
