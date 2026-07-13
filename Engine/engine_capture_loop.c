@@ -292,16 +292,28 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
 
   // Enqueue Captured Chunk:
   // Push the chunk pointer into the bounded lock-free SPSC queue.
-  // If the queue is full (processing thread falling behind):
-  // - If running in real-time, drop the chunk and increment the captured drop
-  // counter to avoid blocking the audio thread.
-  // - If running in non-real-time (batch mode), spin-wait to avoid losing data.
+  // - Physical/Real-time hardware capture: if queue is full, incoming signal is
+  // lost anyway.
+  //   Increment drop counter, log warning, and continue without blocking or
+  //   spinning.
+  // - Non-real-time capture (File/Generator): sleep with nanosleep while
+  // waiting for queue space
+  //   so no samples are missed and CPU isn't consumed by spin loops.
   if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
-    while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-      if (engine_shared_state_should_stop(loop->shared)) {
-        break;
+    if (capture_backend_is_realtime(loop->capture)) {
+      if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+        loop->captured_drop_counter++;
+        logger_warn(&g_logger, "Captured chunk dropped (queue full)");
       }
-      engine_yield();
+    } else {
+      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+        if (engine_shared_state_should_stop(loop->shared)) {
+          break;
+        }
+        struct timespec req = {.tv_sec = 0,
+                               .tv_nsec = 1000000ULL};  // 1ms sleep
+        nanosleep(&req, NULL);
+      }
     }
   }
   return false;
