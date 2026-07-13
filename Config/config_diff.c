@@ -516,10 +516,9 @@ bool devices_config_equal(const devices_config_t* a,
 
   if (a->capture.has_labels != b->capture.has_labels) return false;
   if (a->capture.has_labels) {
-    if (a->capture.labels_count != b->capture.labels_count) return false;
-    for (size_t i = 0; i < a->capture.labels_count; i++) {
-      if (strcmp(a->capture.labels[i], b->capture.labels[i]) != 0) return false;
-    }
+    if (!string_arrays_equal(a->capture.labels, a->capture.labels_count,
+                             b->capture.labels, b->capture.labels_count))
+      return false;
   }
 
   switch (a->capture.type) {
@@ -700,11 +699,9 @@ bool devices_config_equal(const devices_config_t* a,
 
   if (a->playback.has_labels != b->playback.has_labels) return false;
   if (a->playback.has_labels) {
-    if (a->playback.labels_count != b->playback.labels_count) return false;
-    for (size_t i = 0; i < a->playback.labels_count; i++) {
-      if (strcmp(a->playback.labels[i], b->playback.labels[i]) != 0)
-        return false;
-    }
+    if (!string_arrays_equal(a->playback.labels, a->playback.labels_count,
+                             b->playback.labels, b->playback.labels_count))
+      return false;
   }
 
   switch (a->playback.type) {
@@ -921,6 +918,9 @@ config_change_type_t config_diff(const dsp_config_t* current,
     if (!changed_filters) goto error_cleanup;
   }
   for (size_t i = 0; i < current->filters_count; i++) {
+    if (current->filters[i].filter.type != new_conf->filters[i].filter.type) {
+      goto error_cleanup;
+    }
     if (!filter_config_equal(&current->filters[i].filter,
                              &new_conf->filters[i].filter)) {
       char* name_copy = strdup(current->filters[i].name);
@@ -947,6 +947,10 @@ config_change_type_t config_diff(const dsp_config_t* current,
     if (!changed_processors) goto error_cleanup;
   }
   for (size_t i = 0; i < current->processors_count; i++) {
+    if (current->processors[i].processor.type !=
+        new_conf->processors[i].processor.type) {
+      goto error_cleanup;
+    }
     if (!processor_config_equal(&current->processors[i].processor,
                                 &new_conf->processors[i].processor)) {
       char* name_copy = strdup(current->processors[i].name);

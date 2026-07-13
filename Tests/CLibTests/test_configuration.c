@@ -182,31 +182,6 @@ TEST(ValidatePipelineFilterMissingNames) {
   ASSERT_TRUE(strstr(err.message, "must have 'names'") != NULL);
 }
 
-TEST(ValidatePipelineFilterMissingChannels) {
-  dsp_config_t config;
-  memset(&config, 0, sizeof(config));
-  config.devices.samplerate = 44100;
-  config.devices.chunksize = 1024;
-  set_test_channels(&config, 2, 2);
-
-  char* name = strdup("myfilter");
-  pipeline_step_t step;
-  memset(&step, 0, sizeof(step));
-  step.type = PIPELINE_STEP_TYPE_FILTER;
-  step.names = &name;
-  step.names_count = 1;
-
-  config.pipeline = &step;
-  config.pipeline_count = 1;
-
-  config_error_t err;
-  config_error_init(&err);
-  int res = dsp_config_validate(&config, &err);
-  free(name);
-  ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_INVALID_PIPELINE, err.type);
-  ASSERT_TRUE(strstr(err.message, "must have 'channel' or 'channels'") != NULL);
-}
 
 TEST(ValidatePipelineFilterUndefined) {
   dsp_config_t config;

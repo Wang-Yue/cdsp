@@ -187,13 +187,8 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                            "Filter step %zu must have 'names'", i);
           return -1;
         }
-        if (!step->has_channel &&
-            (!step->channels || step->channels_count == 0)) {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Filter step %zu must have 'channel' or 'channels'",
-                           i);
-          return -1;
-        }
+        // Filter step without 'channel' or 'channels' applies to all channels
+
         for (size_t j = 0; j < step->names_count; j++) {
           if (!step->names[j] || step->names[j][0] == '\0') {
             config_error_set(
