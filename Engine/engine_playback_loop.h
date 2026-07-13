@@ -50,24 +50,29 @@
 typedef struct engine_playback_loop engine_playback_loop_t;
 
 /**
+ * @brief Configuration parameters for creating an engine playback loop
+ * instance.
+ */
+typedef struct {
+  engine_shared_state_t* shared;
+  capture_backend_t* capture;
+  playback_backend_t* playback;
+  processing_parameters_t* processing_params;
+  size_t pipeline_rate;
+  size_t chunk_size;
+  bool rate_adjust_enabled;
+  double adjust_period;
+  int target_level;
+} engine_playback_loop_config_t;
+
+/**
  * @brief Creates a new engine playback loop instance.
  *
- * @param shared Pointer to the shared state.
- * @param capture Pointer to the capture backend.
- * @param playback Pointer to the playback backend.
- * @param processing_params Pointer to the processing parameters.
- * @param pipeline_rate Rate of the pipeline.
- * @param chunk_size Size of each audio chunk in frames.
- * @param rate_adjust_enabled Whether rate adjustment is enabled.
- * @param adjust_period Interval for rate adjustment calculation in seconds.
- * @param target_level Target buffer level.
+ * @param config Pointer to the playback loop configuration structure.
  * @return Pointer to the created playback loop instance, or NULL on failure.
  */
 engine_playback_loop_t* engine_playback_loop_create(
-    engine_shared_state_t* shared, capture_backend_t* capture,
-    playback_backend_t* playback, processing_parameters_t* processing_params,
-    size_t pipeline_rate, size_t chunk_size, bool rate_adjust_enabled,
-    double adjust_period, int target_level);
+    const engine_playback_loop_config_t* config);
 
 /**
  * @brief Frees the engine playback loop instance.

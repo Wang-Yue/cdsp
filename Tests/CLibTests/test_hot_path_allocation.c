@@ -1107,13 +1107,22 @@ TEST(PipelineReload_AllocationFree) {
   ctx.processed_sem = cdsp_sem_create();
   atomic_init(&ctx.watched_thread_id, 0);
 
-  engine_processing_loop_t* loop = engine_processing_loop_create(
-      shared, params, 44100,
-      NULL,  // resampler
-      initial_pipeline,
-      NULL,  // dop_encoder
-      resampler_scratch, pipeline_scratch, scratch_pool, on_chunk_captured_cb,
-      NULL, on_chunk_processed_cb, &ctx);
+  engine_processing_loop_config_t proc_cfg = {
+      .shared = shared,
+      .processing_params = params,
+      .pipeline_rate = 44100,
+      .resampler = NULL,
+      .pipeline = initial_pipeline,
+      .dop_encoder = NULL,
+      .resampler_scratch = resampler_scratch,
+      .pipeline_scratch = pipeline_scratch,
+      .scratch_pool = scratch_pool,
+      .on_chunk_captured = on_chunk_captured_cb,
+      .on_chunk_captured_ctx = NULL,
+      .on_chunk_processed = on_chunk_processed_cb,
+      .on_chunk_processed_ctx = &ctx,
+  };
+  engine_processing_loop_t* loop = engine_processing_loop_create(&proc_cfg);
   ASSERT_TRUE(loop != NULL);
   ctx.loop = loop;
 

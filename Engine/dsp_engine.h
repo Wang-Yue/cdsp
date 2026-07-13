@@ -13,18 +13,7 @@
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Config/log_level.h"
-#if defined(ENABLE_COREAUDIO)
-#include "Backend/core_audio_capabilities.h"
-#endif
-#if defined(ENABLE_ALSA)
-#include "Backend/alsa_capabilities.h"
-#endif
-#if defined(ENABLE_ASIO)
-#include "Backend/asio_capabilities.h"
-#endif
-#if defined(ENABLE_WASAPI)
-#include "Backend/wasapi_capabilities.h"
-#endif
+/* Platform capability discovery is encapsulated in audio_backend_registry */
 #include <stdbool.h>
 #include <stddef.h>
 

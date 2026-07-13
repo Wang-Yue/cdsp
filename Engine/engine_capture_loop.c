@@ -74,34 +74,33 @@ static inline uint64_t clock_gettime_nsec_np(int clock_id) {
 #endif
 
 engine_capture_loop_t* engine_capture_loop_create(
-    engine_shared_state_t* shared, capture_backend_t* capture,
-    playback_backend_t* playback, processing_parameters_t* processing_params,
-    dop_decoder_t* dop_decoder, round_robin_chunk_pool_t* chunk_pool,
-    size_t chunk_size, size_t channels, size_t samplerate,
-    double silence_threshold_db, double silence_timeout_seconds,
-    bool stop_on_rate_change, double rate_measure_interval) {
+    const engine_capture_loop_config_t* config) {
+  if (!config) return NULL;
+
   engine_capture_loop_t* loop =
       (engine_capture_loop_t*)calloc(1, sizeof(engine_capture_loop_t));
   if (!loop) return NULL;
 
-  loop->shared = shared;
-  loop->capture = capture;
-  loop->playback = playback;
-  loop->processing_params = processing_params;
-  loop->dop_decoder = dop_decoder;
-  loop->chunk_pool = chunk_pool;
-  loop->chunk_size = chunk_size;
-  loop->channels = channels;
-  loop->samplerate = samplerate;
+  loop->shared = config->shared;
+  loop->capture = config->capture;
+  loop->playback = config->playback;
+  loop->processing_params = config->processing_params;
+  loop->dop_decoder = config->dop_decoder;
+  loop->chunk_pool = config->chunk_pool;
+  loop->chunk_size = config->chunk_size;
+  loop->channels = config->channels;
+  loop->samplerate = config->samplerate;
   loop->silence_counter = silence_counter_create(
-      silence_threshold_db, silence_timeout_seconds, samplerate, chunk_size);
+      config->silence_threshold_db, config->silence_timeout_seconds,
+      config->samplerate, config->chunk_size);
   if (!loop->silence_counter) {
     engine_capture_loop_free(loop);
     return NULL;
   }
 
-  loop->rate_watcher = sample_rate_watcher_create(
-      (double)samplerate, rate_measure_interval, stop_on_rate_change);
+  loop->rate_watcher = sample_rate_watcher_create((double)config->samplerate,
+                                                  config->rate_measure_interval,
+                                                  config->stop_on_rate_change);
   if (!loop->rate_watcher) {
     engine_capture_loop_free(loop);
     return NULL;
@@ -126,6 +125,195 @@ void engine_capture_loop_free(engine_capture_loop_t* loop) {
   free(loop);
 }
 
+/**
+ * @brief Checks if the capture hardware backend has reported an unexpected
+ * sample rate change.
+ *
+ * @param loop Pointer to the capture loop context.
+ * @return true if a format change occurred and an engine stop was requested,
+ * false otherwise.
+ */
+static bool capture_loop_check_format_change(engine_capture_loop_t* loop) {
+  // 1. Hardware Sample-Rate Change Check:
+  // Check if the hardware sample rates have drifted or been explicitly
+  // modified (e.g. by another application or OS settings). An unexpected
+  // hardware rate change invalidates the processing thread pipeline, so we
+  // signal a host rebuild stop reason.
+  double rate = 0.0;
+  if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {
+    if (!loop->has_last_observed_pending_rate ||
+        rate != loop->last_observed_pending_rate) {
+      loop->last_observed_pending_rate = rate;
+      loop->has_last_observed_pending_rate = true;
+      logger_warn(&g_logger,
+                  "Capture device rate changed to %f Hz; stopping engine",
+                  rate);
+      processing_stop_reason_t reason = {
+          .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
+          .format_change_rate = (int)(rate + 0.5)};
+      engine_shared_state_request_stop(loop->shared, reason);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @brief Handles the condition where reading from the capture backend produced
+ * no audio data. Handles EOF, backend errors, paused state, and watchdog stall
+ * monitoring.
+ *
+ * @param loop Pointer to the capture loop context.
+ * @param err Error descriptor filled by the capture backend.
+ * @return true if the loop must break due to fatal error or EOF, false to
+ * continue waiting.
+ */
+static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
+                                        const backend_error_t* err) {
+  if (err->type == BACKEND_ERROR_READ_EOF) {
+    logger_info(&g_logger,
+                "Capture reached End-of-Stream; stopping engine gracefully");
+    processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
+    snprintf(reason.message, sizeof(reason.message), "EOF");
+    engine_shared_state_request_stop(loop->shared, reason);
+    return true;
+  }
+  // If reading fails with an error, trigger an engine stop.
+  if (err->type != BACKEND_ERROR_NONE) {
+    logger_error(&g_logger, "Capture error: %s", err->message);
+    processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
+    snprintf(reason.message, sizeof(reason.message), "%s", err->message);
+    engine_shared_state_request_stop(loop->shared, reason);
+    return true;
+  }
+
+  // If the engine is in a PAUSED state (no active input signal), reset the
+  // watchdog timer to avoid triggering stall warnings while waiting for signal.
+  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
+    loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    capture_backend_wait(loop->capture, 20);
+    return false;
+  }
+
+  // Watchdog / Stall Monitor:
+  // If the engine is running but we get no data chunks from the capture device
+  // for more than watchdog_timeout_seconds, set state to STALLED and log a
+  // warning.
+  if (!loop->watchdog_triggered) {
+    uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    double elapsed =
+        (double)(now - loop->watchdog_last_success_ns) / 1000000000.0;
+    if (elapsed > loop->watchdog_timeout_seconds) {
+      loop->watchdog_triggered = true;
+      engine_shared_state_set_state(loop->shared, PROCESSING_STATE_STALLED);
+      logger_warn(&g_logger, "Capture device stalled — no data for %fs",
+                  loop->watchdog_timeout_seconds);
+    }
+  }
+  // Block/wait up to 20ms using the backend's synchronization mechanism (e.g.
+  // semaphore). This yields CPU time while maintaining real-time scheduling
+  // priority.
+  capture_backend_wait(loop->capture, 20);
+  return false;
+}
+
+/**
+ * @brief Processes a successfully captured audio chunk and enqueues it to the
+ * processing thread. Handles watchdog stall recovery, sample rate measurement,
+ * DoP decoding, metering, silence detection auto-pause gate, and lock-free
+ * queue push.
+ *
+ * @param loop Pointer to the capture loop context.
+ * @param chunk Pre-allocated audio chunk containing newly captured PCM/DSD
+ * samples.
+ * @return true if the loop must break (e.g. rate watcher change detected),
+ * false otherwise.
+ */
+static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
+                                             audio_chunk_t* chunk) {
+  // Watchdog Stall Recovery:
+  // Reset the watchdog status if we successfully read data after a stall.
+  loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  if (loop->watchdog_triggered) {
+    loop->watchdog_triggered = false;
+    logger_info(&g_logger, "Capture recovered from stall");
+  }
+
+  // Rate Watcher Measurement:
+  double measured_rate = 0.0;
+  if (sample_rate_watcher_tick(loop->rate_watcher, loop->chunk_size,
+                               &measured_rate)) {
+    if (sample_rate_watcher_get_stop_on_rate_change(loop->rate_watcher)) {
+      logger_warn(&g_logger,
+                  "Sample rate change detected (measured: %f Hz, expected: %zu "
+                  "Hz); stopping engine",
+                  measured_rate, loop->samplerate);
+      processing_stop_reason_t reason = {
+          .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
+          .format_change_rate = (int)(measured_rate + 0.5)};
+      engine_shared_state_request_stop(loop->shared, reason);
+      return true;
+    } else {
+      logger_info(
+          &g_logger,
+          "Sample rate drift detected (measured: %f Hz, expected: %zu Hz)",
+          measured_rate, loop->samplerate);
+    }
+  }
+
+  // DoP (DSD over PCM) Decoding:
+  // If DoP decoding is active, process the PCM chunk to detect DSD marker
+  // flags and decode them back to raw DSD samples in-place. Decoding is done
+  // before metering so RMS/Peak values reflect the actual signal instead of
+  // the carrier noise.
+  if (loop->dop_decoder) {
+    dop_decoder_detect_and_process(loop->dop_decoder, chunk);
+  }
+
+  // Update level meters with the peak/rms of this chunk.
+  double loudest_peak = processing_parameters_update_capture_levels(
+      loop->processing_params, chunk);
+
+  // Silence/Auto-pause Gate:
+  // Update the silence counter. If the signal level is below the threshold
+  // for longer than the timeout duration, desired is set to
+  // PROCESSING_STATE_PAUSED. We toggle the backends' state to paused to stop
+  // downstream devices.
+  processing_state_t desired =
+      silence_counter_update(loop->silence_counter, loudest_peak);
+  processing_state_t current = engine_shared_state_get_state(loop->shared);
+  if (desired != current) {
+    engine_shared_state_set_state(loop->shared, desired);
+    playback_backend_set_is_paused(loop->playback,
+                                   (desired == PROCESSING_STATE_PAUSED));
+    capture_backend_set_is_paused(loop->capture,
+                                  (desired == PROCESSING_STATE_PAUSED));
+  }
+
+  // Enqueue Captured Chunk:
+  // Push the chunk pointer into the bounded lock-free SPSC queue.
+  // If the queue is full (processing thread falling behind):
+  // - If running in real-time, drop the chunk and increment the captured drop
+  // counter to avoid blocking the audio thread.
+  // - If running in non-real-time (batch mode), spin-wait to avoid losing data.
+  if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
+    if (capture_backend_is_realtime(loop->capture)) {
+      if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+        loop->captured_drop_counter++;
+        logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+      }
+    } else {
+      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+        if (engine_shared_state_should_stop(loop->shared)) {
+          break;
+        }
+        engine_yield();
+      }
+    }
+  }
+  return false;
+}
+
 void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Capture thread started (realtime: %s)",
@@ -144,26 +332,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       sample_rate_watcher_reset(loop->rate_watcher);
     }
 
-    // 1. Hardware Sample-Rate Change Check:
-    // Check if the hardware sample rates have drifted or been explicitly
-    // modified (e.g. by another application or OS settings). An unexpected
-    // hardware rate change invalidates the processing thread pipeline, so we
-    // signal a host rebuild stop reason.
-    double rate = 0.0;
-    if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {
-      if (!loop->has_last_observed_pending_rate ||
-          rate != loop->last_observed_pending_rate) {
-        loop->last_observed_pending_rate = rate;
-        loop->has_last_observed_pending_rate = true;
-        logger_warn(&g_logger,
-                    "Capture device rate changed to %f Hz; stopping engine",
-                    rate);
-        processing_stop_reason_t reason = {
-            .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
-            .format_change_rate = (int)(rate + 0.5)};
-        engine_shared_state_request_stop(loop->shared, reason);
-        break;
-      }
+    // 1. Hardware Sample-Rate Change Check
+    if (capture_loop_check_format_change(loop)) {
+      break;
     }
 
     // 2. Fetch a chunk buffer from the pre-allocated round-robin pool.
@@ -175,138 +346,15 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     bool got_data =
         capture_backend_read(loop->capture, loop->chunk_size, chunk, &err);
     if (!got_data) {
-      if (err.type == BACKEND_ERROR_READ_EOF) {
-        logger_info(
-            &g_logger,
-            "Capture reached End-of-Stream; stopping engine gracefully");
-        processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
-        snprintf(reason.message, sizeof(reason.message), "EOF");
-        engine_shared_state_request_stop(loop->shared, reason);
+      if (capture_loop_handle_no_data(loop, &err)) {
         break;
       }
-      // If reading fails with an error, trigger an engine stop.
-      if (err.type != BACKEND_ERROR_NONE) {
-        logger_error(&g_logger, "Capture error: %s", err.message);
-        processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
-        snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-        engine_shared_state_request_stop(loop->shared, reason);
-        break;
-      }
-      // If the engine is in a PAUSED state (no active input signal), reset the
-      // watchdog timer to avoid triggering stall warnings while waiting for
-      // signal.
-      if (engine_shared_state_get_state(loop->shared) ==
-          PROCESSING_STATE_PAUSED) {
-        loop->watchdog_last_success_ns =
-            clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-        capture_backend_wait(loop->capture, 20);
-        continue;
-      }
-      // 4. Watchdog / Stall Monitor:
-      // If the engine is running but we get no data chunks from the capture
-      // device for more than watchdog_timeout_seconds, set state to STALLED and
-      // log a warning.
-      if (!loop->watchdog_triggered) {
-        uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-        double elapsed =
-            (double)(now - loop->watchdog_last_success_ns) / 1000000000.0;
-        if (elapsed > loop->watchdog_timeout_seconds) {
-          loop->watchdog_triggered = true;
-          engine_shared_state_set_state(loop->shared, PROCESSING_STATE_STALLED);
-          logger_warn(&g_logger, "Capture device stalled — no data for %fs",
-                      loop->watchdog_timeout_seconds);
-        }
-      }
-      // Block/wait up to 20ms using the backend's synchronization mechanism
-      // (e.g. semaphore). This yields CPU time while maintaining real-time
-      // scheduling priority.
-      capture_backend_wait(loop->capture, 20);
       continue;
     }
 
-    // 5. Watchdog Stall Recovery:
-    // Reset the watchdog status if we successfully read data after a stall.
-    loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    if (loop->watchdog_triggered) {
-      loop->watchdog_triggered = false;
-      logger_info(&g_logger, "Capture recovered from stall");
-    }
-
-    // 5.5. Rate Watcher Measurement:
-    double measured_rate = 0.0;
-    if (sample_rate_watcher_tick(loop->rate_watcher, loop->chunk_size,
-                                 &measured_rate)) {
-      if (sample_rate_watcher_get_stop_on_rate_change(loop->rate_watcher)) {
-        logger_warn(
-            &g_logger,
-            "Sample rate change detected (measured: %f Hz, expected: %zu "
-            "Hz); stopping engine",
-            measured_rate, loop->samplerate);
-        processing_stop_reason_t reason = {
-            .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
-            .format_change_rate = (int)(measured_rate + 0.5)};
-        engine_shared_state_request_stop(loop->shared, reason);
-        break;
-      } else {
-        logger_info(
-            &g_logger,
-            "Sample rate drift detected (measured: %f Hz, expected: %zu "
-            "Hz)",
-            measured_rate, loop->samplerate);
-      }
-    }
-
-    // 6. DoP (DSD over PCM) Decoding:
-    // If DoP decoding is active, process the PCM chunk to detect DSD marker
-    // flags and decode them back to raw DSD samples in-place. Decoding is done
-    // before metering so RMS/Peak values reflect the actual signal instead of
-    // the carrier noise.
-    if (loop->dop_decoder) {
-      dop_decoder_detect_and_process(loop->dop_decoder, chunk);
-    }
-
-    // Update level meters with the peak/rms of this chunk.
-    double loudest_peak = processing_parameters_update_capture_levels(
-        loop->processing_params, chunk);
-
-    // 7. Silence/Auto-pause Gate:
-    // Update the silence counter. If the signal level is below the threshold
-    // for longer than the timeout duration, desired is set to
-    // PROCESSING_STATE_PAUSED. We toggle the backends' state to paused to stop
-    // downstream devices.
-    processing_state_t desired =
-        silence_counter_update(loop->silence_counter, loudest_peak);
-    processing_state_t current = engine_shared_state_get_state(loop->shared);
-    if (desired != current) {
-      engine_shared_state_set_state(loop->shared, desired);
-      playback_backend_set_is_paused(loop->playback,
-                                     (desired == PROCESSING_STATE_PAUSED));
-      capture_backend_set_is_paused(loop->capture,
-                                    (desired == PROCESSING_STATE_PAUSED));
-    }
-
-    // 8. Enqueue Captured Chunk:
-    // Push the chunk pointer into the bounded lock-free SPSC queue.
-    // If the queue is full (processing thread falling behind):
-    // - If running in real-time, drop the chunk and increment the captured drop
-    // counter to avoid blocking the audio thread.
-    // - If running in non-real-time (batch mode), spin-wait to avoid losing
-    // data.
-    if (engine_shared_state_get_state(loop->shared) !=
-        PROCESSING_STATE_PAUSED) {
-      if (capture_backend_is_realtime(loop->capture)) {
-        if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-          loop->captured_drop_counter++;
-          logger_warn(&g_logger, "Captured chunk dropped (queue full)");
-        }
-      } else {
-        while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-          if (engine_shared_state_should_stop(loop->shared)) {
-            break;
-          }
-          engine_yield();
-        }
-      }
+    // 4. Process metering, DoP decode, silence gate, and push to SPSC queue.
+    if (capture_loop_process_and_enqueue(loop, chunk)) {
+      break;
     }
   }
 

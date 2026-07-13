@@ -47,28 +47,32 @@
 typedef struct engine_capture_loop engine_capture_loop_t;
 
 /**
+ * @brief Configuration parameters for creating an engine capture loop instance.
+ */
+typedef struct {
+  engine_shared_state_t* shared;
+  capture_backend_t* capture;
+  playback_backend_t* playback;
+  processing_parameters_t* processing_params;
+  dop_decoder_t* dop_decoder;
+  round_robin_chunk_pool_t* chunk_pool;
+  size_t chunk_size;
+  size_t channels;
+  size_t samplerate;
+  double silence_threshold_db;
+  double silence_timeout_seconds;
+  bool stop_on_rate_change;
+  double rate_measure_interval;
+} engine_capture_loop_config_t;
+
+/**
  * @brief Creates a new engine capture loop instance.
  *
- * @param shared Pointer to the shared state.
- * @param capture Pointer to the capture backend.
- * @param playback Pointer to the playback backend.
- * @param processing_params Pointer to the processing parameters.
- * @param dop_decoder Pointer to the DoP decoder (optional, can be NULL).
- * @param chunk_pool Pointer to the chunk pool for allocating audio chunks.
- * @param chunk_size Size of each audio chunk in frames.
- * @param channels Number of channels.
- * @param samplerate Sample rate.
- * @param silence_threshold_db Silence threshold in decibels.
- * @param silence_timeout_seconds Silence timeout in seconds.
+ * @param config Pointer to the capture loop configuration structure.
  * @return Pointer to the created capture loop instance, or NULL on failure.
  */
 engine_capture_loop_t* engine_capture_loop_create(
-    engine_shared_state_t* shared, capture_backend_t* capture,
-    playback_backend_t* playback, processing_parameters_t* processing_params,
-    dop_decoder_t* dop_decoder, round_robin_chunk_pool_t* chunk_pool,
-    size_t chunk_size, size_t channels, size_t samplerate,
-    double silence_threshold_db, double silence_timeout_seconds,
-    bool stop_on_rate_change, double rate_measure_interval);
+    const engine_capture_loop_config_t* config);
 
 /**
  * @brief Frees the engine capture loop instance.

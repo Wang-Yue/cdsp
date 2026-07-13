@@ -478,28 +478,47 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
   }
 
   // 10. Instantiate the loop orchestrators.
-  core->capture_loop = engine_capture_loop_create(
-      core->shared, core->capture, core->playback, core->processing_params,
-      core->dop_decoder, core->capture_chunk_pool, capture_chunk_size,
-      capture_device_config_get_channels(&config->devices.capture),
-      (size_t)capture_rate,
-      config->devices.has_silence_threshold ? config->devices.silence_threshold
-                                            : 0.0,
-      config->devices.has_silence_timeout ? config->devices.silence_timeout
-                                          : 0.0,
-      config->devices.has_stop_on_rate_change
-          ? config->devices.stop_on_rate_change
-          : false,
-      config->devices.has_rate_measure_interval
-          ? config->devices.rate_measure_interval
-          : 1.0);
+  engine_capture_loop_config_t cap_cfg = {
+      .shared = core->shared,
+      .capture = core->capture,
+      .playback = core->playback,
+      .processing_params = core->processing_params,
+      .dop_decoder = core->dop_decoder,
+      .chunk_pool = core->capture_chunk_pool,
+      .chunk_size = capture_chunk_size,
+      .channels = capture_device_config_get_channels(&config->devices.capture),
+      .samplerate = (size_t)capture_rate,
+      .silence_threshold_db = config->devices.has_silence_threshold
+                                  ? config->devices.silence_threshold
+                                  : 0.0,
+      .silence_timeout_seconds = config->devices.has_silence_timeout
+                                     ? config->devices.silence_timeout
+                                     : 0.0,
+      .stop_on_rate_change = config->devices.has_stop_on_rate_change
+                                 ? config->devices.stop_on_rate_change
+                                 : false,
+      .rate_measure_interval = config->devices.has_rate_measure_interval
+                                   ? config->devices.rate_measure_interval
+                                   : 1.0,
+  };
+  core->capture_loop = engine_capture_loop_create(&cap_cfg);
 
-  core->processing_loop = engine_processing_loop_create(
-      core->shared, core->processing_params, pipeline_rate, core->resampler,
-      core->pipeline, core->dop_encoder, core->resampler_scratch,
-      core->pipeline_scratch, core->processing_scratch_pool,
-      core->on_chunk_captured, core->on_chunk_captured_ctx,
-      core->on_chunk_processed, core->on_chunk_processed_ctx);
+  engine_processing_loop_config_t proc_cfg = {
+      .shared = core->shared,
+      .processing_params = core->processing_params,
+      .pipeline_rate = pipeline_rate,
+      .resampler = core->resampler,
+      .pipeline = core->pipeline,
+      .dop_encoder = core->dop_encoder,
+      .resampler_scratch = core->resampler_scratch,
+      .pipeline_scratch = core->pipeline_scratch,
+      .scratch_pool = core->processing_scratch_pool,
+      .on_chunk_captured = core->on_chunk_captured,
+      .on_chunk_captured_ctx = core->on_chunk_captured_ctx,
+      .on_chunk_processed = core->on_chunk_processed,
+      .on_chunk_processed_ctx = core->on_chunk_processed_ctx,
+  };
+  core->processing_loop = engine_processing_loop_create(&proc_cfg);
 
   bool rate_adjust_enabled = config->devices.has_enable_rate_adjust
                                  ? config->devices.enable_rate_adjust
@@ -510,10 +529,18 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
                          ? config->devices.target_level
                          : (int)playback_chunk_size;
 
-  core->playback_loop = engine_playback_loop_create(
-      core->shared, core->capture, core->playback, core->processing_params,
-      pipeline_rate, playback_chunk_size, rate_adjust_enabled, adjust_period,
-      target_level);
+  engine_playback_loop_config_t play_cfg = {
+      .shared = core->shared,
+      .capture = core->capture,
+      .playback = core->playback,
+      .processing_params = core->processing_params,
+      .pipeline_rate = pipeline_rate,
+      .chunk_size = playback_chunk_size,
+      .rate_adjust_enabled = rate_adjust_enabled,
+      .adjust_period = adjust_period,
+      .target_level = target_level,
+  };
+  core->playback_loop = engine_playback_loop_create(&play_cfg);
 
   if (!core->capture_loop || !core->processing_loop || !core->playback_loop) {
     logger_error(&g_logger,

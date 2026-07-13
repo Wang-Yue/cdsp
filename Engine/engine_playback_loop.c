@@ -113,31 +113,150 @@ static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
 }
 
 engine_playback_loop_t* engine_playback_loop_create(
-    engine_shared_state_t* shared, capture_backend_t* capture,
-    playback_backend_t* playback, processing_parameters_t* processing_params,
-    size_t pipeline_rate, size_t chunk_size, bool rate_adjust_enabled,
-    double adjust_period, int target_level) {
+    const engine_playback_loop_config_t* config) {
+  if (!config) return NULL;
+
   engine_playback_loop_t* loop =
       (engine_playback_loop_t*)calloc(1, sizeof(engine_playback_loop_t));
   if (!loop) return NULL;
-  loop->shared = shared;
-  loop->capture = capture;
-  loop->playback = playback;
-  loop->processing_params = processing_params;
-  loop->pipeline_rate = pipeline_rate;
-  loop->chunk_size = chunk_size;
+  loop->shared = config->shared;
+  loop->capture = config->capture;
+  loop->playback = config->playback;
+  loop->processing_params = config->processing_params;
+  loop->pipeline_rate = config->pipeline_rate;
+  loop->chunk_size = config->chunk_size;
   loop->pitch_supported =
-      (capture && capture_backend_pitch_control_supported(capture)) ||
-      (playback && playback_backend_pitch_control_supported(playback));
-  loop->rate_adjust_enabled = rate_adjust_enabled;
-  loop->adjust_period = adjust_period;
-  loop->target_level = target_level;
+      (config->capture &&
+       capture_backend_pitch_control_supported(config->capture)) ||
+      (config->playback &&
+       playback_backend_pitch_control_supported(config->playback));
+  loop->rate_adjust_enabled = config->rate_adjust_enabled;
+  loop->adjust_period = config->adjust_period;
+  loop->target_level = config->target_level;
   return loop;
 }
 
 void engine_playback_loop_free(engine_playback_loop_t* loop) {
   if (!loop) return;
   free(loop);
+}
+
+/**
+ * @brief Checks if the playback backend has reported a pending hardware sample
+ * rate change.
+ *
+ * @param loop Pointer to the playback loop context.
+ * @return true if a format change occurred and an engine stop was requested,
+ * false otherwise.
+ */
+static bool playback_loop_check_format_change(engine_playback_loop_t* loop) {
+  double rate = 0.0;
+  if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
+    if (!loop->has_last_observed_playback_pending_rate ||
+        rate != loop->last_observed_playback_pending_rate) {
+      loop->last_observed_playback_pending_rate = rate;
+      loop->has_last_observed_playback_pending_rate = true;
+      logger_warn(&g_logger,
+                  "Playback device rate changed to %f Hz; stopping engine",
+                  rate);
+      processing_stop_reason_t reason = {
+          .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
+          .format_change_rate = (int)(rate + 0.5)};
+      engine_shared_state_request_stop(loop->shared, reason);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @brief Calculates the total buffer level and updates the PI rate controller.
+ *
+ * Combines the hardware playback ring buffer level with the SPSC processed
+ * queue frames to compute total buffer fill, then triggers periodic rate
+ * adjustment.
+ *
+ * @param loop Pointer to the playback loop context.
+ * @param rate_controller PI rate controller instance.
+ * @param averager Averager buffer level accumulator.
+ * @param stopwatch Period timer for controller execution.
+ * @param last_speed Pointer to last applied speed ratio.
+ */
+static void playback_loop_update_rate_adjust(
+    engine_playback_loop_t* loop, pi_rate_controller_t* rate_controller,
+    averager_t* averager, stopwatch_t* stopwatch, double* last_speed) {
+  // Calculate total buffer level: frames in hardware playback buffer plus
+  // processed queue frames (matching upstream CamillaDSP).
+  size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
+  size_t processed_queued =
+      spsc_queue_get_count(
+          engine_shared_state_get_processed_queue(loop->shared)) *
+      loop->chunk_size;
+  double total_buffer_fill = (double)(ring_fill + processed_queued);
+  processing_parameters_set_buffer_level(loop->processing_params,
+                                         total_buffer_fill);
+
+  if (loop->rate_adjust_enabled && rate_controller) {
+    averager_add(averager, total_buffer_fill);
+
+    // Only run the PI controller periodically to avoid rapid fluctuations
+    // and allow the physical/resampler adjustments to take effect.
+    if (stopwatch_elapsed_seconds(stopwatch) >= loop->adjust_period) {
+      double avg = 0.0;
+      if (averager_get_average(averager, &avg)) {
+        double speed = pi_rate_controller_next(rate_controller, avg);
+        stopwatch_restart(stopwatch);
+        averager_restart(averager);
+        apply_speed(loop, speed, last_speed, avg);
+        processing_parameters_set_rate_adjust(loop->processing_params, speed);
+      }
+    }
+  }
+}
+
+/**
+ * @brief Drains remaining audio frames from the hardware playback buffer prior
+ * to exit.
+ *
+ * Polling level until buffer is 0 or a 3-second timeout occurs.
+ *
+ * @param loop Pointer to the playback loop context.
+ */
+static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
+  logger_info(&g_logger, "Draining playback hardware buffer...");
+  size_t last_level = 0;
+  struct timespec last_change_ts;
+  clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+
+  while (1) {
+    size_t level = playback_backend_get_buffer_level(loop->playback);
+    if (level == 0) {
+      break;
+    }
+
+    if (level != last_level) {
+      last_level = level;
+      clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+    } else {
+      struct timespec now_ts;
+      clock_gettime(CLOCK_MONOTONIC, &now_ts);
+      double elapsed =
+          (double)(now_ts.tv_sec - last_change_ts.tv_sec) +
+          (double)(now_ts.tv_nsec - last_change_ts.tv_nsec) / 1000000000.0;
+      if (elapsed > 3.0) {
+        logger_warn(&g_logger, "Playback drain timeout reached; aborting");
+        break;
+      }
+    }
+
+#ifdef _WIN32
+    Sleep(10);
+#else
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};  // 10ms
+    nanosleep(&req, NULL);
+#endif
+  }
+  logger_info(&g_logger, "Playback hardware buffer drained");
 }
 
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
@@ -148,11 +267,10 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
                                loop->pipeline_rate);
   log_rate_adjust_mode(loop);
 
-  // Rate-adjust state lives entirely on this thread.
+  double last_speed = 1.0;
   pi_rate_controller_t* rate_controller = NULL;
   averager_t averager = {0};
   stopwatch_t stopwatch = {0};
-  double last_speed = 1.0;
 
   if (loop->rate_adjust_enabled) {
     rate_controller = pi_rate_controller_create_default(
@@ -166,52 +284,17 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   audio_chunk_t* chunk = NULL;
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
-    double rate = 0.0;
-    if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
-      if (!loop->has_last_observed_playback_pending_rate ||
-          rate != loop->last_observed_playback_pending_rate) {
-        loop->last_observed_playback_pending_rate = rate;
-        loop->has_last_observed_playback_pending_rate = true;
-        logger_warn(&g_logger,
-                    "Playback device rate changed to %f Hz; stopping engine",
-                    rate);
-        processing_stop_reason_t reason = {
-            .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
-            .format_change_rate = (int)(rate + 0.5)};
-        engine_shared_state_request_stop(loop->shared, reason);
-        reached_eos = false;
-        break;
-      }
+    // 1. Hardware Sample-Rate Change Check
+    if (playback_loop_check_format_change(loop)) {
+      reached_eos = false;
+      break;
     }
 
-    // Calculate total buffer level: frames in hardware playback buffer plus
-    // processed queue frames (matching upstream CamillaDSP).
-    size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
-    size_t processed_queued =
-        spsc_queue_get_count(
-            engine_shared_state_get_processed_queue(loop->shared)) *
-        loop->chunk_size;
-    double total_buffer_fill = (double)(ring_fill + processed_queued);
-    processing_parameters_set_buffer_level(loop->processing_params,
-                                           total_buffer_fill);
+    // 2. Buffer fill level calculation and PI rate adjustment
+    playback_loop_update_rate_adjust(loop, rate_controller, &averager,
+                                     &stopwatch, &last_speed);
 
-    if (loop->rate_adjust_enabled && rate_controller) {
-      averager_add(&averager, total_buffer_fill);
-
-      // Only run the PI controller periodically to avoid rapid fluctuations
-      // and allow the physical/resampler adjustments to take effect.
-      if (stopwatch_elapsed_seconds(&stopwatch) >= loop->adjust_period) {
-        double avg = 0.0;
-        if (averager_get_average(&averager, &avg)) {
-          double speed = pi_rate_controller_next(rate_controller, avg);
-          stopwatch_restart(&stopwatch);
-          averager_restart(&averager);
-          apply_speed(loop, speed, &last_speed, avg);
-          processing_parameters_set_rate_adjust(loop->processing_params, speed);
-        }
-      }
-    }
-
+    // 3. Write PCM chunk to physical audio output backend
     backend_error_t err;
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
@@ -225,44 +308,12 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     }
   }
 
-  // Drain the hardware playback buffer before exiting if stream ended normally
-  // and device is not paused (aligning with CamillaDSP draining behavior).
+  // 4. Drain the hardware playback buffer before exiting if stream ended
+  // normally and device is not paused (aligning with CamillaDSP draining
+  // behavior).
   bool is_paused = playback_backend_get_is_paused(loop->playback);
   if (reached_eos && !is_paused) {
-    logger_info(&g_logger, "Draining playback hardware buffer...");
-    size_t last_level = 0;
-    struct timespec last_change_ts;
-    clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
-
-    while (1) {
-      size_t level = playback_backend_get_buffer_level(loop->playback);
-      if (level == 0) {
-        break;
-      }
-
-      if (level != last_level) {
-        last_level = level;
-        clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
-      } else {
-        struct timespec now_ts;
-        clock_gettime(CLOCK_MONOTONIC, &now_ts);
-        double elapsed =
-            (double)(now_ts.tv_sec - last_change_ts.tv_sec) +
-            (double)(now_ts.tv_nsec - last_change_ts.tv_nsec) / 1000000000.0;
-        if (elapsed > 3.0) {
-          logger_warn(&g_logger, "Playback drain timeout reached; aborting");
-          break;
-        }
-      }
-
-#ifdef _WIN32
-      Sleep(10);
-#else
-      struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};  // 10ms
-      nanosleep(&req, NULL);
-#endif
-    }
-    logger_info(&g_logger, "Playback hardware buffer drained");
+    playback_loop_drain_hardware_buffer(loop);
   } else {
     logger_info(&g_logger,
                 "Skipping playback hardware buffer drain (eos=%d, paused=%d)",

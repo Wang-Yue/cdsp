@@ -5,6 +5,7 @@
 #include "Audio/audio_history_buffer.h"
 #include "Config/config_diff.h"
 #include "dsp_engine_core.h"
+#include "engine_state_manager.h"
 
 struct dsp_engine {
   /** Pointer to the underlying DSP core. */
@@ -15,26 +16,14 @@ struct dsp_engine {
   audio_history_buffer_t* capture_buffer;
   /** History buffer for playback audio. */
   audio_history_buffer_t* playback_buffer;
-  /** Target volumes for faders. */
-  double desired_fader_volumes[FADER_COUNT];
-  /** Target mute states for faders. */
-  bool desired_fader_mutes[FADER_COUNT];
+  /** State manager for volume/mute and path persistence. */
+  engine_state_manager_t* state_mgr;
   /** Reason for the last processing stop. */
   processing_stop_reason_t last_stop_reason;
   /** True if last stop reason is valid. */
   bool has_last_stop_reason;
   /** Mutex for protecting state variables. */
   pthread_mutex_t state_mutex;
-  /** Path to the active configuration file. */
-  char active_config_path[1024];
-  /** True if active config path is set. */
-  bool has_active_config_path;
-  /** Path to the state persistence file. */
-  char state_file_path[1024];
-  /** True if state file path is set. */
-  bool has_state_file_path;
-  /** True if there are unsaved state changes. */
-  bool unsaved_state_changes;
   /** JSON representation of the active configuration. */
   char* active_config_json;
   /** JSON representation of the previous configuration. */
@@ -48,6 +37,7 @@ struct dsp_engine {
 #include <string.h>
 #include <strings.h>
 
+#include "Backend/audio_backend_registry.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/state_file.h"
@@ -58,7 +48,6 @@ static bool dsp_engine_check_stop_requested(
     dsp_engine_t* engine, processing_stop_reason_t* out_reason);
 static const char* dsp_engine_get_state_file(const dsp_engine_t* engine);
 static bool dsp_engine_is_state_dirty(const dsp_engine_t* engine);
-static void dsp_engine_set_state_dirty(dsp_engine_t* engine, bool dirty);
 static char* dsp_engine_get_config_path(const dsp_engine_t* engine);
 
 /**
@@ -94,17 +83,14 @@ dsp_engine_t* dsp_engine_create(void) {
   engine->spectrum = spectrum_analyzer_create();
   engine->capture_buffer = audio_history_buffer_create();
   engine->playback_buffer = audio_history_buffer_create();
+  engine->state_mgr = engine_state_manager_create();
 
   if (!engine->spectrum || !engine->capture_buffer ||
-      !engine->playback_buffer) {
+      !engine->playback_buffer || !engine->state_mgr) {
     dsp_engine_free(engine);
     return NULL;
   }
 
-  for (int i = 0; i < FADER_COUNT; i++) {
-    engine->desired_fader_volumes[i] = 0.0;
-    engine->desired_fader_mutes[i] = false;
-  }
   engine->has_last_stop_reason = false;
 
   pthread_mutexattr_t attr;
@@ -112,11 +98,6 @@ dsp_engine_t* dsp_engine_create(void) {
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   pthread_mutex_init(&engine->state_mutex, &attr);
   pthread_mutexattr_destroy(&attr);
-  engine->active_config_path[0] = '\0';
-  engine->has_active_config_path = false;
-  engine->state_file_path[0] = '\0';
-  engine->has_state_file_path = false;
-  engine->unsaved_state_changes = false;
   engine->active_config_json = NULL;
   engine->previous_config_json = NULL;
 
@@ -130,6 +111,7 @@ void dsp_engine_free(dsp_engine_t* engine) {
   if (engine->capture_buffer) audio_history_buffer_free(engine->capture_buffer);
   if (engine->playback_buffer)
     audio_history_buffer_free(engine->playback_buffer);
+  if (engine->state_mgr) engine_state_manager_free(engine->state_mgr);
   pthread_mutex_destroy(&engine->state_mutex);
   if (engine->active_config_json) free(engine->active_config_json);
   if (engine->previous_config_json) free(engine->previous_config_json);
@@ -209,15 +191,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
   processing_parameters_t* core_params =
       dsp_engine_core_get_processing_params(core);
   // Persist fader levels and mute states across config change
-  for (int i = 0; i < FADER_COUNT; i++) {
-    double vol = engine->desired_fader_volumes[i];
-    bool mute = engine->desired_fader_mutes[i];
-    processing_parameters_set_target_volume_for_fader(core_params, vol,
-                                                      (fader_t)i);
-    processing_parameters_set_current_volume_for_fader(core_params, vol,
-                                                       (fader_t)i);
-    processing_parameters_set_muted_for_fader(core_params, mute, (fader_t)i);
-  }
+  engine_state_manager_sync_to_processing_parameters(engine->state_mgr,
+                                                     core_params);
 
   engine->core = core;
   engine->has_last_stop_reason = false;
@@ -290,8 +265,7 @@ void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
                                  bool instant) {
   if (!engine || fader < 0 || fader >= FADER_COUNT) return;
   pthread_mutex_lock(&engine->state_mutex);
-  engine->desired_fader_volumes[fader] = (double)db;
-  engine->unsaved_state_changes = true;
+  engine_state_manager_set_fader_volume(engine->state_mgr, fader, db);
 
   processing_parameters_t* p =
       dsp_engine_core_get_processing_params(engine->core);
@@ -307,8 +281,7 @@ void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
 void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
   if (!engine || fader < 0 || fader >= FADER_COUNT) return;
   pthread_mutex_lock(&engine->state_mutex);
-  engine->desired_fader_mutes[fader] = mute;
-  engine->unsaved_state_changes = true;
+  engine_state_manager_set_fader_mute(engine->state_mgr, fader, mute);
 
   processing_parameters_t* p =
       dsp_engine_core_get_processing_params(engine->core);
@@ -319,19 +292,14 @@ void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
 }
 
 float dsp_engine_get_fader_volume(const dsp_engine_t* engine, fader_t fader) {
-  if (!engine || fader < 0 || fader >= FADER_COUNT) return 0.0f;
-  pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  float db = (float)engine->desired_fader_volumes[fader];
-  pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
-  return db;
+  return engine
+             ? engine_state_manager_get_fader_volume(engine->state_mgr, fader)
+             : 0.0f;
 }
 
 bool dsp_engine_is_fader_muted(const dsp_engine_t* engine, fader_t fader) {
-  if (!engine || fader < 0 || fader >= FADER_COUNT) return false;
-  pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  bool mute = engine->desired_fader_mutes[fader];
-  pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
-  return mute;
+  return engine ? engine_state_manager_is_fader_muted(engine->state_mgr, fader)
+                : false;
 }
 
 static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine);
@@ -552,124 +520,15 @@ void dsp_engine_set_log_level(log_level_t level) {
 int dsp_engine_get_available_devices(const char* backend, bool input,
                                      audio_device_t* out_devices,
                                      int max_devices) {
-  if (!backend) return 0;
-  if (strcasecmp(backend, "coreaudio") == 0) {
-#if defined(ENABLE_COREAUDIO)
-    char names[32][256];
-    int count =
-        core_audio_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
-    for (int i = 0; i < count; i++) {
-      if (out_devices) {
-        memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
-        out_devices[i].name[sizeof(out_devices[i].name) - 1] = '\0';
-      }
-    }
-    return count;
-#else
-    return 0;
-#endif
-  } else if (strcasecmp(backend, "alsa") == 0) {
-#if defined(ENABLE_ALSA)
-    char names[32][256];
-    int count = alsa_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
-    for (int i = 0; i < count; i++) {
-      if (out_devices) {
-        memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
-        out_devices[i].name[sizeof(out_devices[i].name) - 1] = '\0';
-      }
-    }
-    return count;
-#else
-    return 0;
-#endif
-  } else if (strcasecmp(backend, "wasapi") == 0) {
-#if defined(ENABLE_WASAPI)
-    char names[32][256];
-    int count = wasapi_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
-    for (int i = 0; i < count; i++) {
-      if (out_devices) {
-        memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
-        out_devices[i].name[sizeof(out_devices[i].name) - 1] = '\0';
-      }
-    }
-    return count;
-#else
-    return 0;
-#endif
-  } else if (strcasecmp(backend, "asio") == 0) {
-#if defined(ENABLE_ASIO)
-    char names[32][256];
-    int count = asio_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
-    for (int i = 0; i < count; i++) {
-      if (out_devices) {
-        memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
-        out_devices[i].name[sizeof(out_devices[i].name) - 1] = '\0';
-      }
-    }
-    return count;
-#else
-    return 0;
-#endif
-  }
-  return 0;
+  return audio_backend_registry_get_available_devices(backend, input,
+                                                      out_devices, max_devices);
 }
 
 audio_device_descriptor_t* dsp_engine_get_device_capabilities(
     const char* backend, const char* device, bool is_capture,
     device_error_t* err) {
-  if (!backend || !device) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER,
-                        "Invalid backend or device name");
-    }
-    return NULL;
-  }
-  if (strcasecmp(backend, "coreaudio") == 0) {
-#if defined(ENABLE_COREAUDIO)
-    return core_audio_capabilities_describe(device, is_capture, err);
-#else
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER,
-                        "CoreAudio backend not compiled");
-    }
-    return NULL;
-#endif
-  } else if (strcasecmp(backend, "alsa") == 0) {
-#if defined(ENABLE_ALSA)
-    return alsa_capabilities_describe(device, is_capture, err);
-#else
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "ALSA backend not compiled");
-    }
-    return NULL;
-#endif
-  } else if (strcasecmp(backend, "wasapi") == 0) {
-#if defined(ENABLE_WASAPI)
-    return wasapi_capabilities_describe(device, is_capture, err);
-#else
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "WASAPI backend not compiled");
-    }
-    return NULL;
-#endif
-  } else if (strcasecmp(backend, "asio") == 0) {
-#if defined(ENABLE_ASIO)
-    return asio_capabilities_describe(device, is_capture, err);
-#else
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "ASIO backend not compiled");
-    }
-    return NULL;
-#endif
-  }
-  if (err) {
-    device_error_init(err, DEVICE_ERROR_OTHER, "Unsupported backend");
-  }
-  return NULL;
+  return audio_backend_registry_get_device_capabilities(backend, device,
+                                                        is_capture, err);
 }
 
 void dsp_engine_free_device_capabilities(audio_device_descriptor_t* desc) {
@@ -880,17 +739,7 @@ static bool dsp_engine_check_stop_requested(
 }
 
 void dsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
-  if (!engine) return;
-  pthread_mutex_lock(&engine->state_mutex);
-  if (path && path[0]) {
-    strncpy(engine->state_file_path, path, sizeof(engine->state_file_path) - 1);
-    engine->state_file_path[sizeof(engine->state_file_path) - 1] = '\0';
-    engine->has_state_file_path = true;
-  } else {
-    engine->state_file_path[0] = '\0';
-    engine->has_state_file_path = false;
-  }
-  pthread_mutex_unlock(&engine->state_mutex);
+  if (engine) engine_state_manager_set_state_file(engine->state_mgr, path);
 }
 
 /**
@@ -900,12 +749,7 @@ void dsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
  * @return The state file path string, or NULL if none set.
  */
 static const char* dsp_engine_get_state_file(const dsp_engine_t* engine) {
-  if (!engine) return NULL;
-  pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  const char* path =
-      engine->has_state_file_path ? engine->state_file_path : NULL;
-  pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
-  return path;
+  return engine ? engine_state_manager_get_state_file(engine->state_mgr) : NULL;
 }
 
 /**
@@ -916,40 +760,11 @@ static const char* dsp_engine_get_state_file(const dsp_engine_t* engine) {
  * @return true if there are unsaved fader/config path updates, false otherwise.
  */
 static bool dsp_engine_is_state_dirty(const dsp_engine_t* engine) {
-  if (!engine) return false;
-  pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  bool dirty = engine->unsaved_state_changes;
-  pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
-  return dirty;
-}
-
-/**
- * @brief Thread-safe setter for the unsaved changes dirty flag.
- *
- * @param engine Pointer to the dsp_engine_t instance.
- * @param dirty Whether the engine has unsaved changes.
- */
-static void dsp_engine_set_state_dirty(dsp_engine_t* engine, bool dirty) {
-  if (!engine) return;
-  pthread_mutex_lock(&engine->state_mutex);
-  engine->unsaved_state_changes = dirty;
-  pthread_mutex_unlock(&engine->state_mutex);
+  return engine ? engine_state_manager_is_dirty(engine->state_mgr) : false;
 }
 
 void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path) {
-  if (!engine) return;
-  pthread_mutex_lock(&engine->state_mutex);
-  if (path && path[0]) {
-    strncpy(engine->active_config_path, path,
-            sizeof(engine->active_config_path) - 1);
-    engine->active_config_path[sizeof(engine->active_config_path) - 1] = '\0';
-    engine->has_active_config_path = true;
-  } else {
-    engine->active_config_path[0] = '\0';
-    engine->has_active_config_path = false;
-  }
-  engine->unsaved_state_changes = true;
-  pthread_mutex_unlock(&engine->state_mutex);
+  if (engine) engine_state_manager_set_config_path(engine->state_mgr, path);
 }
 
 /**
@@ -960,14 +775,8 @@ void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path) {
  * by caller.
  */
 static char* dsp_engine_get_config_path(const dsp_engine_t* engine) {
-  if (!engine) return NULL;
-  pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
-  char* path = NULL;
-  if (engine->has_active_config_path) {
-    path = strdup(engine->active_config_path);
-  }
-  pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
-  return path;
+  return engine ? engine_state_manager_get_config_path(engine->state_mgr)
+                : NULL;
 }
 
 void dsp_engine_poll(dsp_engine_t* engine) {
@@ -996,36 +805,7 @@ void dsp_engine_poll(dsp_engine_t* engine) {
   // If any fader positions or configuration path values have changed since the
   // last poll, serialize them to the configured state file so the state is
   // restored on engine restart.
-  pthread_mutex_lock(&engine->state_mutex);
-  bool dirty = engine->unsaved_state_changes;
-  bool has_state = engine->has_state_file_path;
-  pthread_mutex_unlock(&engine->state_mutex);
-
-  if (has_state && dirty) {
-    dsp_state_t* state_to_save = dsp_state_create();
-    if (state_to_save) {
-      char* current_path = dsp_engine_get_config_path(engine);
-      if (current_path) {
-        if (current_path[0]) {
-          dsp_state_set_config_path(state_to_save, current_path);
-        }
-        free(current_path);
-      }
-
-      for (int i = 0; i < FADER_COUNT; i++) {
-        dsp_state_set_volume(state_to_save, i,
-                             dsp_engine_get_fader_volume(engine, (fader_t)i));
-        dsp_state_set_mute(state_to_save, i,
-                           dsp_engine_is_fader_muted(engine, (fader_t)i));
-      }
-
-      const char* s_path = dsp_engine_get_state_file(engine);
-      if (s_path && dsp_state_save(s_path, state_to_save)) {
-        dsp_engine_set_state_dirty(engine, false);
-      }
-      dsp_state_free(state_to_save);
-    }
-  }
+  engine_state_manager_save_if_needed(engine->state_mgr);
 }
 
 dsp_engine_interface_t* dsp_engine_get_interface(dsp_engine_t* engine) {

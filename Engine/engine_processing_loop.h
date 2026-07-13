@@ -58,30 +58,33 @@ typedef void (*chunk_callback_t)(void* ctx, const audio_chunk_t* chunk);
 typedef struct engine_processing_loop engine_processing_loop_t;
 
 /**
+ * @brief Configuration parameters for creating an engine processing loop
+ * instance.
+ */
+typedef struct {
+  engine_shared_state_t* shared;
+  processing_parameters_t* processing_params;
+  size_t pipeline_rate;
+  audio_resampler_t* resampler;
+  pipeline_t* pipeline;
+  dop_encoder_t* dop_encoder;
+  audio_chunk_t* resampler_scratch;
+  audio_chunk_t* pipeline_scratch;
+  round_robin_chunk_pool_t* scratch_pool;
+  chunk_callback_t on_chunk_captured;
+  void* on_chunk_captured_ctx;
+  chunk_callback_t on_chunk_processed;
+  void* on_chunk_processed_ctx;
+} engine_processing_loop_config_t;
+
+/**
  * @brief Creates a new engine processing loop instance.
  *
- * @param shared Pointer to the shared state.
- * @param processing_params Pointer to the processing parameters.
- * @param pipeline_rate Rate of the pipeline.
- * @param resampler Pointer to the audio resampler (optional, can be NULL).
- * @param pipeline Pointer to the processing pipeline.
- * @param dop_encoder Pointer to the DoP encoder (optional, can be NULL).
- * @param resampler_scratch Pointer to the resampler scratch buffer.
- * @param pipeline_scratch Pointer to the pipeline scratch buffer.
- * @param scratch_pool Pointer to the chunk pool.
- * @param on_chunk_captured Callback called when a chunk is captured.
- * @param on_chunk_captured_ctx Context pointer for the captured callback.
- * @param on_chunk_processed Callback called when a chunk is processed.
- * @param on_chunk_processed_ctx Context pointer for the processed callback.
+ * @param config Pointer to the processing loop configuration structure.
  * @return Pointer to the created processing loop instance, or NULL on failure.
  */
 engine_processing_loop_t* engine_processing_loop_create(
-    engine_shared_state_t* shared, processing_parameters_t* processing_params,
-    size_t pipeline_rate, audio_resampler_t* resampler, pipeline_t* pipeline,
-    dop_encoder_t* dop_encoder, audio_chunk_t* resampler_scratch,
-    audio_chunk_t* pipeline_scratch, round_robin_chunk_pool_t* scratch_pool,
-    chunk_callback_t on_chunk_captured, void* on_chunk_captured_ctx,
-    chunk_callback_t on_chunk_processed, void* on_chunk_processed_ctx);
+    const engine_processing_loop_config_t* config);
 
 /**
  * @brief Frees the engine processing loop instance.
