@@ -1212,6 +1212,8 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::MatrixMixer: {
+        stage.mixerChannelsIn = incomingChannels;
+
         auto mmGroup = new QGroupBox("Matrix Mixer Configuration", m_optionsContainer);
         auto mmVBox = new QVBoxLayout(mmGroup);
 
@@ -1219,16 +1221,10 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto inBox = new QVBoxLayout();
         inBox->addWidget(new QLabel("Input Channels", mmGroup));
-        auto inCombo = new QComboBox(mmGroup);
-        for (int c = 1; c <= 16; ++c)
-            inCombo->addItem(QString("%1 Channels").arg(c), c);
-        inCombo->setCurrentIndex(stage.mixerChannelsIn - 1);
-        connect(inCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, inCombo](int idx) {
-            stage.mixerChannelsIn = inCombo->itemData(idx).toInt();
-            applyConfig();
-            refreshUi();
-        });
-        inBox->addWidget(inCombo);
+        auto inLabel = new QLabel(QString("%1 Channels (Auto)").arg(incomingChannels), mmGroup);
+        inLabel->setStyleSheet(
+            "QLabel { background: rgba(128, 128, 128, 0.15); padding: 4px 8px; border-radius: 4px; color: #8e8e93; font-size: 13px; }");
+        inBox->addWidget(inLabel);
         dimHBox->addLayout(inBox);
 
         auto outBox = new QVBoxLayout();
@@ -1252,7 +1248,7 @@ void StageDetailView::buildStageOptionsUi() {
         auto matrixVBox = new QVBoxLayout(matrixGroup);
 
         int rows = stage.mixerChannelsOut;
-        int cols = stage.mixerChannelsIn;
+        int cols = incomingChannels;
 
         auto table = new QTableWidget(rows, cols, matrixGroup);
         table->horizontalHeader()->setDefaultSectionSize(95);

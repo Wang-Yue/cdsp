@@ -1218,19 +1218,19 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
             if (it != stage.mixerMappings.end()) {
                 std::vector<MixerSource> cleanedSources;
                 for (const auto& src : it->sources) {
-                    if (src.channel < stage.mixerChannelsIn) {
+                    if (src.channel < channelCount) {
                         cleanedSources.push_back(src);
                     }
                 }
                 cleanedMapping.push_back(MixerMapping{dest, cleanedSources, it->mute});
             } else {
-                int src = dest < stage.mixerChannelsIn ? dest : 0;
+                int src = dest < channelCount ? dest : 0;
                 cleanedMapping.push_back(MixerMapping{dest, {MixerSource{src, 0.0, false}}, std::nullopt});
             }
         }
 
         res.mixers[prefix] =
-            MixerConfig{stage.mixerChannelsIn, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
+            MixerConfig{channelCount, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
         res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix, {}, std::nullopt});
         break;
     }
