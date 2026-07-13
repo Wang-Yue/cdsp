@@ -35,10 +35,10 @@ typedef enum {
 typedef struct {
   log_arg_type_t type; /**< The type of the argument. */
   union {
-    int64_t i;    /**< Integer value. */
-    double d;     /**< Double value. */
-    char s[8192]; /**< String value copy. */
-  } val;          /**< The union containing the argument value. */
+    int64_t i;   /**< Integer value. */
+    double d;    /**< Double value. */
+    char s[256]; /**< String value copy (compact to prevent stack overflow). */
+  } val;         /**< The union containing the argument value. */
 } log_argument_t;
 
 /**
@@ -369,5 +369,26 @@ static inline double _log_dbl_val(double d) { return d; }
  */
 #define logger_debug(logger, msg, ...) \
   logger_debug_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
+
+/**
+ * @brief Logs a control-plane message with a direct raw string parameter.
+ *
+ * Bypasses log_argument_t array packing for long control-plane strings
+ * (such as JSON configurations) to allow unlimited string length without
+ * stack allocation overhead or truncation.
+ *
+ * @param logger Pointer to the logger handle.
+ * @param level Severity level.
+ * @param msg Message format string or prefix.
+ * @param str Raw string pointer to log.
+ */
+void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
+                            const char* msg, const char* str);
+
+/**
+ * @brief Logs an informational control-plane message with a direct raw string.
+ */
+#define logger_info_str(logger, msg, str) \
+  app_logger_log_raw_str((logger), LOG_LEVEL_INFO, (msg), (str))
 
 #endif  // CLIB_LOGGING_APP_LOGGER_H

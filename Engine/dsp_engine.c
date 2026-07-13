@@ -214,9 +214,7 @@ bool dsp_engine_set_config(dsp_engine_t* engine, const char* json,
 static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
                                          audio_backend_error_t* err) {
   if (!engine || !json) return false;
-  static _Thread_local char s_json_log_buf[32768];
-  snprintf(s_json_log_buf, sizeof(s_json_log_buf), "%s", json);
-  logger_info(&g_logger, "Set config: %s", s_json_log_buf);
+  logger_info_str(&g_logger, "Set config:", json);
 
   dsp_config_t* parsed = NULL;
   config_error_t cerr = {0};

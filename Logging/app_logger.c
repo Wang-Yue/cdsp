@@ -430,3 +430,29 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
     atomic_store_explicit(&logger->should_exit, false, memory_order_release);
   }
 }
+
+void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
+                            const char* msg, const char* str) {
+  if (!logger || !msg || !str || level > app_logger_get_level()) return;
+  const char* lvl_str = "INFO";
+  switch (level) {
+    case LOG_LEVEL_ERROR:
+      lvl_str = "ERROR";
+      break;
+    case LOG_LEVEL_WARN:
+      lvl_str = "WARN";
+      break;
+    case LOG_LEVEL_DEBUG:
+      lvl_str = "DEBUG";
+      break;
+    case LOG_LEVEL_TRACE:
+      lvl_str = "TRACE";
+      break;
+    default:
+      lvl_str = "INFO";
+      break;
+  }
+  printf("[%s] %s: %s %s\n", lvl_str, logger->label ? logger->label : "", msg,
+         str);
+  fflush(stdout);
+}
