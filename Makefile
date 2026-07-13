@@ -284,8 +284,36 @@ test-rust-build:
 		cd $(RUST_HARNESS_DIR) && cargo build --release; \
 	fi
 
+ALL_TEST_CASES :=
+
+define DEFINE_CASE_RULE
+.PHONY: case_$(1)_$(2)
+case_$(1)_$(2):
+	@$(3) --run $(2) > /dev/null 2>&1 && echo "✅ $(1):$(2) passed" || (echo "❌ $(1):$(2) failed" && exit 1)
+ALL_TEST_CASES += case_$(1)_$(2)
+endef
+
+define DEFINE_BIN_RULE
+.PHONY: case_$(1)_all
+case_$(1)_all:
+	@$(2) > /dev/null 2>&1 && echo "✅ $(1) passed" || (echo "❌ $(1) failed" && exit 1)
+ALL_TEST_CASES += case_$(1)_all
+endef
+
+$(foreach bin,$(UNIT_TEST_BINS),\
+  $(eval CASES := $(shell $(bin) --list 2>/dev/null))\
+  $(if $(CASES),\
+    $(foreach c,$(CASES),\
+      $(eval $(call DEFINE_CASE_RULE,$(notdir $(bin)),$(c),$(bin)))\
+    ),\
+    $(eval $(call DEFINE_BIN_RULE,$(notdir $(bin)),$(bin)))\
+  )\
+)
+
 test: test-rust-build $(UNIT_TEST_BINS)
-	@python3 Tests/run_tests.py $(UNIT_TEST_BINS)
+	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"
+	+@$(MAKE) $(ALL_TEST_CASES)
+
 
 bench: test-rust-build $(BENCH_BINS)
 	@echo "\n=== Running C Benchmark Tests ==="
