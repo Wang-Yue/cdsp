@@ -231,7 +231,6 @@ void MiniPlayerView::buildMiniPipelineUi() {
                     updateStyle(st.isEnabled);
                     m_dsp->pipelineStore()->save();
                     emit m_dsp->pipelineStore()->pipelineChanged();
-                    m_dsp->applyConfig();
                     break;
                 }
             }

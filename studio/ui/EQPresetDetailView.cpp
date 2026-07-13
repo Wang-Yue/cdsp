@@ -841,7 +841,4 @@ void EQPresetDetailView::applyConfig() {
     if (m_pipeline) {
         m_pipeline->updateEQPreset(m_preset);
     }
-    if (m_dspController) {
-        m_dspController->applyConfig();
-    }
 }

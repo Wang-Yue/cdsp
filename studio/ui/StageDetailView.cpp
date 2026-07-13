@@ -173,7 +173,6 @@ void StageDetailView::applyConfig() {
     m_isLocalEditing = true;
     m_pipeline->save();
     emit m_pipeline->pipelineChanged();
-    m_dspController->applyConfig();
     m_isLocalEditing = false;
 }
 

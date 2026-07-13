@@ -229,7 +229,6 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerAppleComplexity =
         stringToAppleResamplerComplexity(m_appleComplexityCombo->currentText().toStdString());
     m_settings->savePreferences();
-    emit m_settings->settingsChanged();
 
     if (m_dspController) {
         m_dspController->applyConfig();

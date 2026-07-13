@@ -189,11 +189,6 @@ void OratoryPresetPickerDlg::onImportClicked() {
             m_pipeline->save();
             emit m_pipeline->pipelineChanged();
 
-            // Direct call to DSPEngineController::applyConfig()
-            if (m_dspController) {
-                m_dspController->applyConfig();
-            }
-
             QMessageBox::information(
                 this, "Success",
                 QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(p.name)));

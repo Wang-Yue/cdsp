@@ -991,7 +991,6 @@ void MainWindow::refreshSidebarItems() {
                         st.isEnabled = c;
                         m_pipeline->save();
                         emit m_pipeline->pipelineChanged();
-                        m_dspController->applyConfig();
                         break;
                     }
                 }
