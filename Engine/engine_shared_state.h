@@ -15,12 +15,12 @@
  * capture, consumer = processing.
  * - `processed_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
  * processing, consumer = playback.
- * - `stop_requested`: Atomic release-acquire flag set when stopping or
- * encountering fatal errors.
  * - `resampler_ratio`: Playback writes (rate-adjust), processing reads (per
  * chunk). 64-bit atomic.
  * - `state_raw`: Raw byte encoding of `processing_state_t` (`_Atomic uint8_t`).
- * Read uses acquire ordering; write uses release ordering.
+ * Read uses acquire ordering; write uses release ordering. When the state
+ * transitions to `PROCESSING_STATE_INACTIVE`, it serves as the signal that the
+ * engine should stop.
  * - `stop_reason`: Published using the release-store on `state_raw` to
  * `PROCESSING_STATE_INACTIVE` as the synchronisation edge. A reader that
  * acquire-loads the state and observes `PROCESSING_STATE_INACTIVE` is

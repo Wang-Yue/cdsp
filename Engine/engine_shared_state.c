@@ -8,9 +8,10 @@
 //
 // Concurrency model
 // -----------------
-//   stop_requested      — written by `request_stop()` / read by all loops.
-//                         Atomic<Bool> w/ release-acquire so a stop request
-//                         becomes promptly visible.
+//   state_raw           — state representation. When set to
+//   PROCESSING_STATE_INACTIVE,
+//                         it serves as the stop signal. Read uses acquire
+//                         ordering; write uses release ordering.
 //   captured_queue      — audio_sync_queue_t (SPSC queue + kernel semaphore),
 //                         single producer = capture, single consumer =
 //                         processing.
@@ -45,11 +46,6 @@ struct engine_shared_state {
    * thread.
    */
   audio_sync_queue_t* processed_queue;
-
-  /**
-   * @brief Atomic flag instructing engine loops to stop.
-   */
-  _Atomic bool stop_requested;
 
   /**
    * @brief The reason the engine stopped. See file-level note for publication
@@ -89,8 +85,8 @@ spsc_queue_t* engine_shared_state_get_processed_queue(
 }
 
 bool engine_shared_state_should_stop(const engine_shared_state_t* state) {
-  return state ? atomic_load_explicit(&state->stop_requested,
-                                      memory_order_acquire)
+  return state ? (engine_shared_state_get_state(state) ==
+                  PROCESSING_STATE_INACTIVE)
                : false;
 }
 
@@ -136,7 +132,6 @@ engine_shared_state_t* engine_shared_state_create(
       captured_queue_depth > 0 ? captured_queue_depth : 16);
   state->processed_queue = audio_sync_queue_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
-  atomic_init(&state->stop_requested, false);
   atomic_init(&state->resampler_ratio, 1.0);
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));
@@ -187,7 +182,6 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                               memory_order_acquire)) {
     state->stop_reason = reason;
     engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
-    atomic_store_explicit(&state->stop_requested, true, memory_order_release);
     audio_sync_queue_shutdown(state->captured_queue);
   }
 }
@@ -244,11 +238,22 @@ processing_state_t engine_shared_state_get_state(
 void engine_shared_state_set_state(engine_shared_state_t* state,
                                    processing_state_t new_state) {
   if (!state) return;
-  uint8_t raw = processing_state_to_raw_byte(new_state);
-  logger_t logger = logger_create("dsp.engine.state");
-  logger_info(&logger, "Engine state transitioning to %d", new_state);
-  // Use release memory order to ensure that all prior writes (specifically,
-  // the stop_reason written in begin_stop) are visible to any thread that
-  // reads the state with acquire ordering and observes this new state.
-  atomic_store_explicit(&state->state_raw, raw, memory_order_release);
+
+  uint8_t expected =
+      atomic_load_explicit(&state->state_raw, memory_order_relaxed);
+  while (1) {
+    if (atomic_load_explicit(&state->stop_once, memory_order_acquire)) {
+      if (new_state != PROCESSING_STATE_INACTIVE) {
+        return;
+      }
+    }
+    uint8_t desired_raw = processing_state_to_raw_byte(new_state);
+    if (atomic_compare_exchange_weak_explicit(&state->state_raw, &expected,
+                                              desired_raw, memory_order_release,
+                                              memory_order_acquire)) {
+      logger_t logger = logger_create("dsp.engine.state");
+      logger_info(&logger, "Engine state transitioning to %d", new_state);
+      break;
+    }
+  }
 }
