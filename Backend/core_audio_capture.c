@@ -414,6 +414,7 @@ capture_backend_t* core_audio_capture_create(
   }
   backend->ctx = capture;
   backend->vtable = &CORE_AUDIO_CAPTURE_VTABLE;
+  backend->is_realtime = true;
   return backend;
 }
 

@@ -143,6 +143,7 @@ capture_backend_t* generator_capture_create(
 
   backend->ctx = capture;
   backend->vtable = &generator_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 

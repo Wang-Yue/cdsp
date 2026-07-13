@@ -148,6 +148,7 @@ capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
   }
   backend->ctx = capture;
   backend->vtable = &ALSA_CAPTURE_VTABLE;
+  backend->is_realtime = true;
   return backend;
 }
 

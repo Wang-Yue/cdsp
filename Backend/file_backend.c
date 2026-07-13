@@ -553,6 +553,11 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
   }
   backend->ctx = capture;
   backend->vtable = &file_capture_vtable;
+#ifdef CDSP_TEST
+  backend->is_realtime = capture->realtime;
+#else
+  backend->is_realtime = false;
+#endif
   return backend;
 }
 

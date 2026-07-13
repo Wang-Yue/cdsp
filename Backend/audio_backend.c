@@ -228,6 +228,10 @@ void capture_backend_free(capture_backend_t* backend) {
   free(backend);
 }
 
+bool capture_backend_is_realtime(const capture_backend_t* backend) {
+  return backend ? backend->is_realtime : false;
+}
+
 /// Open the playback device
 bool playback_backend_open(playback_backend_t* backend, backend_error_t* err) {
   if (!backend || !backend->vtable || !backend->vtable->open) return false;

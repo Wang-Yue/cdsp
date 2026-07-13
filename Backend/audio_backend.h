@@ -116,6 +116,7 @@ typedef struct {
 struct capture_backend {
   void* ctx;                              /**< Private context pointer */
   const capture_backend_vtable_t* vtable; /**< Virtual method table */
+  bool is_realtime; /**< True if the backend operates in real-time */
 };
 
 /**
@@ -328,6 +329,13 @@ void capture_backend_set_is_paused(capture_backend_t* backend, bool paused);
  * @param backend Pointer to the capture backend to free.
  */
 void capture_backend_free(capture_backend_t* backend);
+
+/**
+ * @brief Check if the capture backend operates in real-time.
+ * @param backend Pointer to the capture backend.
+ * @return true if real-time, false otherwise.
+ */
+bool capture_backend_is_realtime(const capture_backend_t* backend);
 
 // PlaybackBackend wrapper methods
 

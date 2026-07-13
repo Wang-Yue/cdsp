@@ -156,6 +156,7 @@ capture_backend_t* pulse_capture_create(const capture_device_config_t* config,
   }
   backend->ctx = capture;
   backend->vtable = &pulse_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 

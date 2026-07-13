@@ -367,6 +367,7 @@ capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
   }
   backend->ctx = capture;
   backend->vtable = &wasapi_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 

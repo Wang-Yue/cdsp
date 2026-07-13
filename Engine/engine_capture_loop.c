@@ -45,6 +45,7 @@ struct engine_capture_loop {
   double watchdog_timeout_seconds;
 
   sample_rate_watcher_t* rate_watcher;
+  uint64_t captured_drop_counter;
 };
 #include <stdlib.h>
 #include <time.h>
@@ -107,6 +108,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   loop->watchdog_timeout_seconds = 0.5;
   loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   loop->watchdog_triggered = false;
+  loop->captured_drop_counter = 0;
 
   return loop;
 }
@@ -125,7 +127,8 @@ void engine_capture_loop_free(engine_capture_loop_t* loop) {
 void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (!loop) return;
   logger_t logger = logger_create("dsp.capture");
-  logger_info(&logger, "Capture thread started");
+  logger_info(&logger, "Capture thread started (realtime: %s)",
+              capture_backend_is_realtime(loop->capture) ? "yes" : "no");
 
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
@@ -283,13 +286,25 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
     // 8. Enqueue Captured Chunk:
     // Push the chunk pointer into the bounded lock-free SPSC queue.
+    // If the queue is full (processing thread falling behind):
+    // - If running in real-time, drop the chunk and increment the captured drop
+    // counter to avoid blocking the audio thread.
+    // - If running in non-real-time (batch mode), spin-wait to avoid losing
+    // data.
     if (engine_shared_state_get_state(loop->shared) !=
         PROCESSING_STATE_PAUSED) {
-      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        if (engine_shared_state_should_stop(loop->shared)) {
-          break;
+      if (capture_backend_is_realtime(loop->capture)) {
+        if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+          loop->captured_drop_counter++;
+          logger_warn(&logger, "Captured chunk dropped (queue full)");
         }
-        engine_yield();
+      } else {
+        while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+          if (engine_shared_state_should_stop(loop->shared)) {
+            break;
+          }
+          engine_yield();
+        }
       }
     }
   }
@@ -297,5 +312,11 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (loop->shared) {
     engine_shared_state_shutdown_captured_queue(loop->shared);
   }
-  logger_info(&logger, "Capture thread stopped");
+  if (loop->captured_drop_counter > 0) {
+    logger_warn(&logger,
+                "Capture thread stopped. Total dropped captured chunks: %llu",
+                (unsigned long long)loop->captured_drop_counter);
+  } else {
+    logger_info(&logger, "Capture thread stopped");
+  }
 }

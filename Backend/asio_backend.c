@@ -1192,6 +1192,7 @@ capture_backend_t* asio_capture_new(const capture_device_config_t* config,
   }
   backend->ctx = capture;
   backend->vtable = &asio_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 

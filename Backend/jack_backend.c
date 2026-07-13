@@ -194,6 +194,7 @@ capture_backend_t* jack_capture_create(const capture_device_config_t* config,
       (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   backend->ctx = capture;
   backend->vtable = &JACK_CAPTURE_VTABLE;
+  backend->is_realtime = true;
   return backend;
 }
 

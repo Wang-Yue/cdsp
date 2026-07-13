@@ -241,6 +241,7 @@ capture_backend_t* pipewire_capture_create(
   }
   backend->ctx = capture;
   backend->vtable = &pipewire_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 
