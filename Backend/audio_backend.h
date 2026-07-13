@@ -390,6 +390,13 @@ bool playback_backend_prefill_silence(playback_backend_t* backend,
                                       size_t frames, backend_error_t* err);
 
 /**
+ * @brief Check if paused status is set for the playback device via wrapper.
+ * @param backend Pointer to the playback backend.
+ * @return true if paused, false otherwise.
+ */
+bool playback_backend_get_is_paused(playback_backend_t* backend);
+
+/**
  * @brief Set paused status for the playback device via wrapper.
  * @param backend Pointer to the playback backend.
  * @param paused true to pause, false to resume.
