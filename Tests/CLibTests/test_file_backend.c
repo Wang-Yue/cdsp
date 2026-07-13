@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "Backend/file_backend.h"
 #include "test_support.h"
@@ -454,7 +455,6 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
 
   int sample_rate = 44100;
   int channels = 1;
-  int frames = 4410;  // 0.1 seconds of audio
 
   playback_device_config_t play_cfg;
   memset(&play_cfg, 0, sizeof(play_cfg));
