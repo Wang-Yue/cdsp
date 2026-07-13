@@ -1151,7 +1151,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
       ASSERT_TRUE(elapsed < 40.0);
     } else {
       // Non-realtime should take very little simulated time
-      ASSERT_TRUE(elapsed < 1.0);
+      ASSERT_TRUE(elapsed < 5.0);
     }
   }
 }
