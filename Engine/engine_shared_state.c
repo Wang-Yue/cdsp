@@ -47,14 +47,14 @@ struct engine_shared_state {
   audio_sync_queue_t* processed_queue;
 
   /**
-   * @brief External trigger flag instructing loops to stop.
+   * @brief Atomic flag instructing capture/processing loops to stop.
    */
-  _Atomic bool stop_requested;
+  _Atomic bool stop_capture_requested;
 
   /**
-   * @brief Atomic flag indicating that the processing loop has finished.
+   * @brief Atomic flag instructing playback loop to stop.
    */
-  _Atomic bool processing_done;
+  _Atomic bool stop_playback_requested;
 
   /**
    * @brief The reason the engine stopped. See file-level note for publication
@@ -98,9 +98,16 @@ spsc_queue_t* engine_shared_state_get_processed_queue(
   return state ? audio_sync_queue_get_spsc_queue(state->processed_queue) : NULL;
 }
 
-bool engine_shared_state_get_stop_requested(
+bool engine_shared_state_should_stop_capture(
     const engine_shared_state_t* state) {
-  return state ? atomic_load_explicit(&state->stop_requested,
+  return state ? atomic_load_explicit(&state->stop_capture_requested,
+                                      memory_order_acquire)
+               : false;
+}
+
+bool engine_shared_state_should_stop_playback(
+    const engine_shared_state_t* state) {
+  return state ? atomic_load_explicit(&state->stop_playback_requested,
                                       memory_order_acquire)
                : false;
 }
@@ -147,7 +154,8 @@ engine_shared_state_t* engine_shared_state_create(
       captured_queue_depth > 0 ? captured_queue_depth : 16);
   state->processed_queue = audio_sync_queue_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
-  atomic_init(&state->stop_requested, false);
+  atomic_init(&state->stop_capture_requested, false);
+  atomic_init(&state->stop_playback_requested, false);
   atomic_init(&state->resampler_ratio, 1.0);
   atomic_init(&state->active_threads, 3);
   atomic_init(&state->state_raw,
@@ -186,19 +194,21 @@ void engine_shared_state_signal_captured(engine_shared_state_t* state) {
   }
 }
 
-void engine_shared_state_set_processing_done(engine_shared_state_t* state) {
+void engine_shared_state_request_stop_playback(engine_shared_state_t* state) {
   if (!state) return;
-  atomic_store_explicit(&state->processing_done, true, memory_order_release);
+  atomic_store_explicit(&state->stop_playback_requested, true,
+                        memory_order_release);
   if (state->processed_queue) {
     audio_sync_queue_signal(state->processed_queue);
   }
 }
 
-void engine_shared_state_request_stop(engine_shared_state_t* state,
-                                      processing_stop_reason_t reason) {
+void engine_shared_state_request_stop_capture(engine_shared_state_t* state,
+                                              processing_stop_reason_t reason) {
   if (!state) return;
   state->stop_reason = reason;
-  atomic_store_explicit(&state->stop_requested, true, memory_order_release);
+  atomic_store_explicit(&state->stop_capture_requested, true,
+                        memory_order_release);
 
   // Signal captured queue to wake processing loop if waiting on sem
   engine_shared_state_signal_captured(state);
@@ -220,14 +230,14 @@ audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
   return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
-      state->captured_queue, &state->stop_requested);
+      state->captured_queue, &state->stop_capture_requested);
 }
 
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
   return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
-      state->processed_queue, &state->processing_done);
+      state->processed_queue, &state->stop_playback_requested);
 }
 
 processing_state_t engine_shared_state_get_state(

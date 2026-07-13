@@ -1148,7 +1148,7 @@ TEST(PipelineReload_AllocationFree) {
                                    reload_iter_c, &ctx);
 
   // Stop the thread
-  engine_shared_state_request_stop(
+  engine_shared_state_request_stop_capture(
       shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(thread, NULL);
 

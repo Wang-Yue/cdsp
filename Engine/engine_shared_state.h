@@ -81,11 +81,20 @@ spsc_queue_t* engine_shared_state_get_processed_queue(
     engine_shared_state_t* state);
 
 /**
- * @brief Checks if a stop has been requested on the shared state.
+ * @brief Checks if the capture stage should stop.
  * @param state Pointer to the shared state instance.
- * @return true if stop was requested, false otherwise.
+ * @return true if capture stop was requested, false otherwise.
  */
-bool engine_shared_state_get_stop_requested(const engine_shared_state_t* state);
+bool engine_shared_state_should_stop_capture(
+    const engine_shared_state_t* state);
+
+/**
+ * @brief Checks if the playback stage should stop.
+ * @param state Pointer to the shared state instance.
+ * @return true if playback stop was requested, false otherwise.
+ */
+bool engine_shared_state_should_stop_playback(
+    const engine_shared_state_t* state);
 
 /**
  * @brief Gets the current resampler relative ratio.
@@ -149,13 +158,13 @@ engine_shared_state_t* engine_shared_state_create(size_t captured_queue_depth,
 void engine_shared_state_free(engine_shared_state_t* state);
 
 /**
- * @brief Requests the engine loops to stop.
+ * @brief Requests the capture and processing stages to stop.
  *
  * @param state Pointer to the shared state.
  * @param reason The reason for stopping.
  */
-void engine_shared_state_request_stop(engine_shared_state_t* state,
-                                      processing_stop_reason_t reason);
+void engine_shared_state_request_stop_capture(engine_shared_state_t* state,
+                                              processing_stop_reason_t reason);
 
 /**
  * @brief Signals the captured sync queue.
@@ -164,10 +173,11 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
 void engine_shared_state_signal_captured(engine_shared_state_t* state);
 
 /**
- * @brief Signals the processed sync queue and marks processing completion.
+ * @brief Signals the processed sync queue and requests the playback stage to
+ * stop.
  * @param state Pointer to the shared state.
  */
-void engine_shared_state_set_processing_done(engine_shared_state_t* state);
+void engine_shared_state_request_stop_playback(engine_shared_state_t* state);
 
 /**
  * @brief Enqueues a chunk to the captured queue and signals the captured
