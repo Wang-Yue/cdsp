@@ -28,6 +28,11 @@
 
 #include "dsp_engine_core.h"
 
+#ifdef _WIN32
+#include <mmsystem.h>
+#include <windows.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -200,6 +205,10 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
   dsp_engine_core_t* core =
       (dsp_engine_core_t*)calloc(1, sizeof(dsp_engine_core_t));
   if (!core) return NULL;
+
+#ifdef _WIN32
+  timeBeginPeriod(1);
+#endif
 
   core->on_chunk_captured = on_captured;
   core->on_chunk_captured_ctx = captured_ctx;
@@ -673,6 +682,10 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
     dop_encoder_free(core->dop_encoder);
     core->dop_encoder = NULL;
   }
+
+#ifdef _WIN32
+  timeEndPeriod(1);
+#endif
 
   free(core);
 }
