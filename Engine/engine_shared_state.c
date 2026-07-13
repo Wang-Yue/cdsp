@@ -76,11 +76,6 @@ struct engine_shared_state {
    * @brief Atomic flag to ensure stop logic is executed only once.
    */
   _Atomic bool stop_once;
-
-  /**
-   * @brief Count of active audio-priority loop threads.
-   */
-  _Atomic int active_threads;
 };
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
@@ -125,10 +120,10 @@ pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
   return (pipeline_t*)spsc_queue_dequeue(state->pipeline_garbage_queue);
 }
 
-processing_stop_reason_t engine_shared_state_get_stop_reason(
+const processing_stop_reason_t* engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state) {
-  processing_stop_reason_t empty = {.type = STOP_REASON_NONE};
-  return state ? state->stop_reason : empty;
+  if (!state) return NULL;
+  return &state->stop_reason;
 }
 
 engine_shared_state_t* engine_shared_state_create(
@@ -143,7 +138,6 @@ engine_shared_state_t* engine_shared_state_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->stop_requested, false);
   atomic_init(&state->resampler_ratio, 1.0);
-  atomic_init(&state->active_threads, 3);
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));
   atomic_init(&state->stop_once, false);
@@ -183,9 +177,19 @@ void engine_shared_state_signal_captured(engine_shared_state_t* state) {
 void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
-  state->stop_reason = reason;
-  atomic_store_explicit(&state->stop_requested, true, memory_order_release);
-  audio_sync_queue_shutdown(state->captured_queue);
+
+  bool expected = false;
+  // Use compare-exchange (CAS) to ensure that only the first thread to request
+  // a stop succeeds. We write the stop reason and transition state to INACTIVE,
+  // then release-store stop_requested to true.
+  if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
+                                              true, memory_order_acq_rel,
+                                              memory_order_acquire)) {
+    state->stop_reason = reason;
+    engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
+    atomic_store_explicit(&state->stop_requested, true, memory_order_release);
+    audio_sync_queue_shutdown(state->captured_queue);
+  }
 }
 
 void engine_shared_state_shutdown_captured_queue(engine_shared_state_t* state) {
@@ -247,43 +251,4 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
   // the stop_reason written in begin_stop) are visible to any thread that
   // reads the state with acquire ordering and observes this new state.
   atomic_store_explicit(&state->state_raw, raw, memory_order_release);
-}
-
-bool engine_shared_state_begin_stop(engine_shared_state_t* state,
-                                    processing_stop_reason_t reason) {
-  if (!state) return false;
-  bool expected = false;
-  // Use compare-exchange (CAS) to ensure that only the first thread to request
-  // a stop succeeds. We use acq_rel ordering because we are performing a
-  // read-modify-write operation that needs to synchronize with other threads.
-  bool exchanged = atomic_compare_exchange_strong_explicit(
-      &state->stop_once, &expected, true, memory_order_acq_rel,
-      memory_order_acquire);
-  if (!exchanged) return false;
-
-  logger_t logger = logger_create("dsp.engine.state");
-  logger_info(&logger, "Engine begin_stop triggered with reason type %d",
-              reason.type);
-
-  // The winner thread writes the stop reason. This write is synchronized with
-  // other threads via the state change to INACTIVE using set_state(...,
-  // INACTIVE).
-  state->stop_reason = reason;
-  return true;
-}
-
-const processing_stop_reason_t* engine_shared_state_get_stop_reason_ref(
-    const engine_shared_state_t* state) {
-  if (!state) return NULL;
-  return &state->stop_reason;
-}
-
-void engine_shared_state_thread_exited(engine_shared_state_t* state) {
-  if (!state) return;
-  int remaining = atomic_fetch_sub_explicit(&state->active_threads, 1,
-                                            memory_order_acq_rel) -
-                  1;
-  if (remaining == 0) {
-    engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
-  }
 }

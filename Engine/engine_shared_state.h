@@ -128,7 +128,12 @@ pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
  * @param state Pointer to the shared state instance.
  * @return The processing stop reason structure.
  */
-processing_stop_reason_t engine_shared_state_get_stop_reason(
+/**
+ * @brief Gets a pointer to the current stop reason.
+ * @param state Pointer to the shared state instance.
+ * @return Pointer to the processing stop reason structure.
+ */
+const processing_stop_reason_t* engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state);
 
 /**
@@ -238,46 +243,5 @@ processing_state_t engine_shared_state_get_state(
  */
 void engine_shared_state_set_state(engine_shared_state_t* state,
                                    processing_state_t new_state);
-
-/**
- * @brief Attempts to transition the shared state to a stopping state.
- *
- * CAS-guarded "first caller wins". The winner gets to set the stop reason
- * and proceeds with teardown; subsequent concurrent callers see `false`
- * and return without disturbing state.
- *
- * The reason is written before any subsequent state transition to inactive
- * release, which is what makes it safely observable by other threads that
- * acquire-load the state.
- *
- * @param state Pointer to the shared state instance.
- * @param reason The reason for stopping.
- * @return true if this call initiated the stop, false otherwise.
- */
-bool engine_shared_state_begin_stop(engine_shared_state_t* state,
-                                    processing_stop_reason_t reason);
-
-/**
- * @brief Gets a pointer to the stop reason.
- *
- * Stop reason set by the most recent `engine_shared_state_begin_stop` winner.
- * Only guaranteed visible to readers that have observed inactive state via
- * acquire-load.
- *
- * @param state Pointer to the shared state instance.
- * @return A pointer to the stop reason, or NULL if not set.
- */
-const processing_stop_reason_t* engine_shared_state_get_stop_reason_ref(
-    const engine_shared_state_t* state);
-
-/**
- * @brief Reports that an engine loop thread has exited.
- *
- * Decrements the active thread count. The thread that decrements it to 0
- * transitions the state machine state to PROCESSING_STATE_INACTIVE.
- *
- * @param state Pointer to the shared state instance.
- */
-void engine_shared_state_thread_exited(engine_shared_state_t* state);
 
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

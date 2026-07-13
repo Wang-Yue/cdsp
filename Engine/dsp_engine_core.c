@@ -134,7 +134,9 @@ bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
   if (!core || !core->shared) return false;
   bool req = engine_shared_state_should_stop(core->shared);
   if (req && out_reason) {
-    *out_reason = engine_shared_state_get_stop_reason(core->shared);
+    const processing_stop_reason_t* r =
+        engine_shared_state_get_stop_reason(core->shared);
+    if (r) *out_reason = *r;
   }
   return req;
 }
@@ -568,17 +570,13 @@ processing_state_t dsp_engine_core_get_state(const dsp_engine_core_t* core) {
 const processing_stop_reason_t* dsp_engine_core_get_stop_reason(
     const dsp_engine_core_t* core) {
   return core && core->shared
-             ? engine_shared_state_get_stop_reason_ref(core->shared)
+             ? engine_shared_state_get_stop_reason(core->shared)
              : NULL;
 }
 
 void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
                                    processing_stop_reason_t reason) {
   if (!core) return;
-
-  // Idempotent. Only the first caller drives teardown.
-  if (core->shared && !engine_shared_state_begin_stop(core->shared, reason))
-    return;
 
   logger_t logger = logger_create("dsp.engine.core");
   logger_info(&logger, "Stopping and destroying engine core session");
