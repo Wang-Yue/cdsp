@@ -578,65 +578,61 @@ static uint64_t get_time_ms(void) {
 }
 
 /**
- * @brief Formats a processing stop reason into a quoted JSON string.
- *
- * Writes a description of why processing stopped (e.g. format change, error)
- * into the output buffer.
+ * @brief Serializes a processing stop reason into a cJSON string node.
  *
  * @param reason Pointer to the stop reason structure.
- * @param out Output buffer to write the string into.
- * @param max_len Maximum length of the output buffer.
+ * @return cJSON string node representing the stop reason.
  */
-static void stop_reason_to_string(const processing_stop_reason_t* reason,
-                                  char* out, size_t max_len) {
-  if (!reason || !out || max_len == 0) return;
-  switch (reason->type) {
-    case STOP_REASON_NONE:
-      snprintf(out, max_len, "\"None\"");
-      break;
-    case STOP_REASON_DONE:
-      snprintf(out, max_len, "\"Done\"");
-      break;
-    case STOP_REASON_CAPTURE_ERROR:
-      snprintf(out, max_len, "\"CaptureError: %s\"", reason->message);
-      break;
-    case STOP_REASON_PLAYBACK_ERROR:
-      snprintf(out, max_len, "\"PlaybackError: %s\"", reason->message);
-      break;
-    case STOP_REASON_CAPTURE_FORMAT_CHANGE:
-      snprintf(out, max_len, "\"CaptureFormatChange(%d)\"",
-               reason->format_change_rate);
-      break;
-    case STOP_REASON_PLAYBACK_FORMAT_CHANGE:
-      snprintf(out, max_len, "\"PlaybackFormatChange(%d)\"",
-               reason->format_change_rate);
-      break;
-    case STOP_REASON_UNKNOWN_ERROR:
-      snprintf(out, max_len, "\"UnknownError: %s\"", reason->message);
-      break;
-    default:
-      snprintf(out, max_len, "\"None\"");
-      break;
+static cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
+  char reason_str[512] = "None";
+  if (reason) {
+    switch (reason->type) {
+      case STOP_REASON_NONE:
+        snprintf(reason_str, sizeof(reason_str), "None");
+        break;
+      case STOP_REASON_DONE:
+        snprintf(reason_str, sizeof(reason_str), "Done");
+        break;
+      case STOP_REASON_CAPTURE_ERROR:
+        snprintf(reason_str, sizeof(reason_str), "CaptureError: %s", reason->message);
+        break;
+      case STOP_REASON_PLAYBACK_ERROR:
+        snprintf(reason_str, sizeof(reason_str), "PlaybackError: %s", reason->message);
+        break;
+      case STOP_REASON_CAPTURE_FORMAT_CHANGE:
+        snprintf(reason_str, sizeof(reason_str), "CaptureFormatChange(%d)",
+                 reason->format_change_rate);
+        break;
+      case STOP_REASON_PLAYBACK_FORMAT_CHANGE:
+        snprintf(reason_str, sizeof(reason_str), "PlaybackFormatChange(%d)",
+                 reason->format_change_rate);
+        break;
+      case STOP_REASON_UNKNOWN_ERROR:
+        snprintf(reason_str, sizeof(reason_str), "UnknownError: %s", reason->message);
+        break;
+      default:
+        snprintf(reason_str, sizeof(reason_str), "None");
+        break;
+    }
   }
+  return cJSON_CreateString(reason_str);
 }
 
 /**
- * @brief Formats the payload for a state event into a JSON object string.
+ * @brief Serializes state event payload into a cJSON object.
  *
  * Generates an object like: `{"state":"Running","stop_reason":"None"}`.
  *
  * @param state The current processing state.
  * @param reason The stop reason.
- * @param out Output buffer.
- * @param max_len Maximum length of the output buffer.
+ * @return cJSON object representing state event payload.
  */
-static void format_state_event_payload(processing_state_t state,
-                                       const processing_stop_reason_t* reason,
-                                       char* out, size_t max_len) {
-  char reason_str[512] = "\"None\"";
-  stop_reason_to_string(reason, reason_str, sizeof(reason_str));
-  snprintf(out, max_len, "{\"state\":\"%s\",\"stop_reason\":%s}",
-           processing_state_to_string(state), reason_str);
+static cJSON* create_state_event_value(processing_state_t state,
+                                       const processing_stop_reason_t* reason) {
+  cJSON* val = cJSON_CreateObject();
+  cJSON_AddStringToObject(val, "state", processing_state_to_string(state));
+  cJSON_AddItemToObject(val, "stop_reason", serialize_stop_reason(reason));
+  return val;
 }
 
 static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
@@ -913,27 +909,6 @@ static const char* get_websocket_device_error_key(device_error_type_t type) {
   }
 }
 
-/**
- * @brief Constructs a standard JSON reply string for the control protocol.
- *
- * Formats a reply of the form:
- * `{"Command":{"result":RESULT_STR,"value":VALUE_STR}}`.
- *
- * @param cmd The command name.
- * @param res_str The result status string (e.g. `"Ok"` or error string).
- * @param val_str Optional payload value string (can be NULL or empty).
- * @param out Output buffer.
- * @param max_len Maximum length of the output buffer.
- */
-static void json_reply(const char* cmd, const char* res_str,
-                       const char* val_str, dyn_string_t* ds) {
-  if (val_str && val_str[0]) {
-    dyn_string_printf(ds, "{\"%s\":{\"result\":%s,\"value\":%s}}", cmd, res_str,
-                      val_str);
-  } else {
-    dyn_string_printf(ds, "{\"%s\":{\"result\":%s}}", cmd, res_str);
-  }
-}
 
 /**
  * @brief Reads a file into a dynamically allocated string (server helper).
@@ -2994,15 +2969,17 @@ static void handle_cmd_get_stop_reason(websocket_server_t* server,
                                        cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  char reason_str[512] = "None";
+  cJSON* val = NULL;
   if (server && server->engine && server->engine->get_status) {
-    state_update_t status;
+    state_update_t status = {0};
     if (server->engine->get_status(server->engine->ctx, &status)) {
-      stop_reason_to_string(&status.stop_reason, reason_str,
-                            sizeof(reason_str));
+      val = serialize_stop_reason(&status.stop_reason);
     }
   }
-  reply_ok(cmd_name, cJSON_CreateString(reason_str), ds);
+  if (!val) {
+    val = cJSON_CreateString("None");
+  }
+  reply_ok(cmd_name, val, ds);
 }
 
 static void handle_cmd_get_capture_rate(websocket_server_t* server,
@@ -3159,7 +3136,9 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
 
   cJSON* root = cJSON_Parse(command_text);
   if (!root) {
-    json_reply("Invalid", "{\"error\":\"Invalid JSON\"}", NULL, ds);
+    cJSON* err_val = cJSON_CreateObject();
+    cJSON_AddStringToObject(err_val, "error", "Invalid JSON");
+    reply_error("Invalid", NULL, err_val, ds);
     return;
   }
 
@@ -3422,10 +3401,12 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
       handle_cmd_stop_subscription(server, client_idx, simple, arg, ds);
       break;
 
-    default:
-      dyn_string_printf(ds,
-                        "{\"Invalid\":{\"error\":\"Unsupported command\"}}");
+    default: {
+      cJSON* err_val = cJSON_CreateObject();
+      cJSON_AddStringToObject(err_val, "error", "Unsupported command");
+      reply_error("Invalid", NULL, err_val, ds);
       break;
+    }
   }
   pthread_mutex_unlock(&server->sessions_mutex);
   cJSON_Delete(root);
@@ -3625,14 +3606,15 @@ static void* server_thread_func(void* arg) {
         if (session->state_subscribed &&
             strcmp(last_state[i], state_str) != 0) {
           strncpy(last_state[i], state_str, sizeof(last_state[i]) - 1);
-          char payload[512];
-          format_state_event_payload(status.state, &status.stop_reason, payload,
-                                     sizeof(payload));
-          char msg_buf[1024];
-          snprintf(msg_buf, sizeof(msg_buf),
-                   "{\"StateEvent\":{\"result\":\"Ok\",\"value\":%s}}",
-                   payload);
-          QUEUE_PENDING(client_fds[i], strdup(msg_buf));
+          cJSON* root = cJSON_CreateObject();
+          cJSON* inner = cJSON_CreateObject();
+          cJSON_AddItemToObject(root, "StateEvent", inner);
+          cJSON_AddStringToObject(inner, "result", "Ok");
+          cJSON_AddItemToObject(
+              inner, "value",
+              create_state_event_value(status.state, &status.stop_reason));
+          QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
+          cJSON_Delete(root);
         }
 
         if (session->vu_subscribed && pb_channels > 0) {
