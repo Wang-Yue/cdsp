@@ -773,6 +773,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
            "    \"devices\": {\n"
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 256,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Generator\",\n"
            "            \"channels\": 2,\n"

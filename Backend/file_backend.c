@@ -1006,9 +1006,6 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
 
   size_t bytes_written =
       fwrite(playback->raw_buf, 1, required_bytes, playback->f);
-  if (bytes_written > 0) {
-    fflush(playback->f);
-  }
   playback->total_bytes_written += bytes_written;
 
   bool success = (bytes_written == required_bytes);
