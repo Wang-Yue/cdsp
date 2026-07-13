@@ -147,8 +147,7 @@ static void transfer_processor_state(const pipeline_exec_step_t* dest_step,
     if (src_step->type == EXEC_STEP_PROCESSOR && src_step->processor) {
       const char* sname = dsp_processor_get_name(src_step->processor);
       if (sname && strcmp(dname, sname) == 0) {
-        dsp_processor_transfer_state(dest_step->processor,
-                                     src_step->processor);
+        dsp_processor_transfer_state(dest_step->processor, src_step->processor);
         break;
       }
     }
@@ -670,7 +669,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
       memcpy(dst, src, valid_frames * sizeof(double));
     }
   }
-    audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
+  audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
 
   audio_chunk_t* current_chunk = pipeline->capture_scratch;
   // 3. Implicit main volume with smooth ramp.

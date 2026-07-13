@@ -852,7 +852,7 @@ bool pipewire_playback_pitch_control_supported(pipewire_playback_t* playback) {
 }
 
 void pipewire_playback_set_pitch(pipewire_playback_t* playback,
-                                double multiplier) {
+                                 double multiplier) {
   (void)playback;
   (void)multiplier;
 }

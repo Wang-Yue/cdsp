@@ -3,7 +3,6 @@
 #include "Audio/sample_conversion.h"
 #include "FFT/real_fft.h"
 
-
 struct convolution_filter {
   char name[64];
   size_t chunk_size;

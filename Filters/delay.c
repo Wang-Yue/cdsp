@@ -31,8 +31,7 @@ struct delay_filter {
  * coefficients were written.
  */
 static void build_delay(double delay_samples, bool subsample,
-                        int* out_integer_delay,
-                        biquad_parameters_t* out_params,
+                        int* out_integer_delay, biquad_parameters_t* out_params,
                         bool* out_has_coeffs) {
   *out_has_coeffs = false;
   out_params->type = BIQUAD_TYPE_FREE;
@@ -120,7 +119,8 @@ delay_filter_t* delay_filter_create(const char* name,
   int integer_delay = 0;
   biquad_parameters_t bq_params = {0};
   bool has_coeffs = false;
-  build_delay(delay_samples, subsample, &integer_delay, &bq_params, &has_coeffs);
+  build_delay(delay_samples, subsample, &integer_delay, &bq_params,
+              &has_coeffs);
 
   if (integer_delay > 0) {
     filter->queue = (double*)calloc(integer_delay, sizeof(double));
@@ -138,7 +138,8 @@ delay_filter_t* delay_filter_create(const char* name,
   }
   filter->read_index = 0;
   if (has_coeffs) {
-    filter->biquad = biquad_filter_create("delay_biquad", &bq_params, sample_rate, err);
+    filter->biquad =
+        biquad_filter_create("delay_biquad", &bq_params, sample_rate, err);
     if (!filter->biquad) {
       delay_filter_free(filter);
       return NULL;

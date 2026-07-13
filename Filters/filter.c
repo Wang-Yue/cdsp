@@ -64,8 +64,8 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   switch (config->type) {
     case FILTER_TYPE_BIQUAD: {
       filter->type = FILTER_INSTANCE_BIQUAD;
-      filter->instance = biquad_filter_create(
-          name, &config->parameters.biquad, sample_rate, err);
+      filter->instance = biquad_filter_create(name, &config->parameters.biquad,
+                                              sample_rate, err);
       break;
     }
     case FILTER_TYPE_BIQUAD_COMBO:
@@ -182,7 +182,8 @@ void filter_process(filter_t* filter, mutable_waveform_t waveform,
                               count);
       break;
     case FILTER_INSTANCE_VOLUME:
-      volume_filter_process((volume_filter_t*)filter->instance, waveform, count);
+      volume_filter_process((volume_filter_t*)filter->instance, waveform,
+                            count);
       break;
   }
 }

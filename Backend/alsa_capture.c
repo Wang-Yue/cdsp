@@ -589,7 +589,8 @@ bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
   snd_pcm_sframes_t rc =
       snd_pcm_readi(capture->pcm, capture->interleaved_buf, frames);
   if (rc < 0) {
-    // Attempt recovery on error (e.g., EPIPE for overrun) and retry read up to 3 times
+    // Attempt recovery on error (e.g., EPIPE for overrun) and retry read up to
+    // 3 times
     for (int retry = 0; retry < 3 && rc < 0; retry++) {
       rc = snd_pcm_recover(capture->pcm, rc, 0);
       if (rc < 0) {

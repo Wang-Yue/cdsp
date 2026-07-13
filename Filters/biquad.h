@@ -3,7 +3,8 @@
 
 /**
  * @file biquad.h
- * @brief Biquad filter creation, filtering operations, and lifecycle management.
+ * @brief Biquad filter creation, filtering operations, and lifecycle
+ * management.
  */
 
 #include <stdbool.h>
@@ -21,19 +22,20 @@ typedef struct biquad_filter biquad_filter_t;
 /**
  * @brief Creates a biquad filter instance directly from high-level parameters.
  *
- * Computes coefficients and validates filter stability. If params is NULL, creates a passthrough filter.
- * If the filter is unstable or parameters are invalid, sets err and returns NULL.
+ * Computes coefficients and validates filter stability. If params is NULL,
+ * creates a passthrough filter. If the filter is unstable or parameters are
+ * invalid, sets err and returns NULL.
  *
  * @param name The name of the filter (for debugging/identification).
- * @param params High-level biquad parameters (NULL for passthrough identity filter).
+ * @param params High-level biquad parameters (NULL for passthrough identity
+ * filter).
  * @param sample_rate Sample rate in Hz.
  * @param err Pointer to a config error struct to populate on failure.
  * @return A pointer to the created filter instance, or `NULL` on failure.
  */
 biquad_filter_t* biquad_filter_create(const char* name,
                                       const biquad_parameters_t* params,
-                                      int sample_rate,
-                                      config_error_t* err);
+                                      int sample_rate, config_error_t* err);
 
 /**
  * @brief Processes an array of samples through the biquad filter.
@@ -68,7 +70,8 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
                                      int sample_rate);
 
 /**
- * @brief Transfers internal history state (delay line registers) from src to dest.
+ * @brief Transfers internal history state (delay line registers) from src to
+ * dest.
  *
  * @param dest The destination biquad filter instance.
  * @param src The source biquad filter instance.

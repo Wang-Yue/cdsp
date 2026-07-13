@@ -182,7 +182,6 @@ TEST(ValidatePipelineFilterMissingNames) {
   ASSERT_TRUE(strstr(err.message, "must have 'names'") != NULL);
 }
 
-
 TEST(ValidatePipelineFilterUndefined) {
   dsp_config_t config;
   memset(&config, 0, sizeof(config));

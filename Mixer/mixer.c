@@ -188,7 +188,8 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
     return MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
-  // Process each output destination channel in a single pass to maximize L1 cache locality
+  // Process each output destination channel in a single pass to maximize L1
+  // cache locality
   for (size_t out_ch = 0; out_ch < mixer->channels_out; out_ch++) {
     mutable_waveform_t dst = audio_chunk_get_channel(output, out_ch);
     if (!dst) continue;

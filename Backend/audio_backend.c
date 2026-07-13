@@ -277,7 +277,8 @@ bool playback_backend_prefill_silence(playback_backend_t* backend,
 
 /// Get paused flag status.
 bool playback_backend_get_is_paused(playback_backend_t* backend) {
-  if (!backend || !backend->vtable || !backend->vtable->get_is_paused) return false;
+  if (!backend || !backend->vtable || !backend->vtable->get_is_paused)
+    return false;
   return backend->vtable->get_is_paused(backend->ctx);
 }
 

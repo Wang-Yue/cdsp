@@ -276,7 +276,8 @@ bool jack_capture_read(jack_capture_t* capture, size_t frames,
   }
 
   if (capture->scratch_capacity < frames) {
-    float* new_buf = (float*)realloc(capture->scratch_buf, frames * sizeof(float));
+    float* new_buf =
+        (float*)realloc(capture->scratch_buf, frames * sizeof(float));
     if (!new_buf) return false;
     capture->scratch_buf = new_buf;
     capture->scratch_capacity = frames;
@@ -645,7 +646,8 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
   }
 
   if (playback->scratch_capacity < frames) {
-    float* new_buf = (float*)realloc(playback->scratch_buf, frames * sizeof(float));
+    float* new_buf =
+        (float*)realloc(playback->scratch_buf, frames * sizeof(float));
     if (!new_buf) return false;
     playback->scratch_buf = new_buf;
     playback->scratch_capacity = frames;

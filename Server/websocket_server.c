@@ -594,10 +594,12 @@ static cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
         snprintf(reason_str, sizeof(reason_str), "Done");
         break;
       case STOP_REASON_CAPTURE_ERROR:
-        snprintf(reason_str, sizeof(reason_str), "CaptureError: %s", reason->message);
+        snprintf(reason_str, sizeof(reason_str), "CaptureError: %s",
+                 reason->message);
         break;
       case STOP_REASON_PLAYBACK_ERROR:
-        snprintf(reason_str, sizeof(reason_str), "PlaybackError: %s", reason->message);
+        snprintf(reason_str, sizeof(reason_str), "PlaybackError: %s",
+                 reason->message);
         break;
       case STOP_REASON_CAPTURE_FORMAT_CHANGE:
         snprintf(reason_str, sizeof(reason_str), "CaptureFormatChange(%d)",
@@ -608,7 +610,8 @@ static cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
                  reason->format_change_rate);
         break;
       case STOP_REASON_UNKNOWN_ERROR:
-        snprintf(reason_str, sizeof(reason_str), "UnknownError: %s", reason->message);
+        snprintf(reason_str, sizeof(reason_str), "UnknownError: %s",
+                 reason->message);
         break;
       default:
         snprintf(reason_str, sizeof(reason_str), "None");
@@ -908,7 +911,6 @@ static const char* get_websocket_device_error_key(device_error_type_t type) {
       return "DeviceError";
   }
 }
-
 
 /**
  * @brief Reads a file into a dynamically allocated string (server helper).
@@ -3495,18 +3497,18 @@ static void* server_thread_func(void* arg) {
     pending_send_t pending[128];
     size_t pending_count = 0;
 
-#define QUEUE_PENDING(target_fd, str)                 \
-  do {                                               \
-    char* m_ = (str);                                \
-    if (m_) {                                        \
-      if (pending_count < 128) {                     \
-        pending[pending_count].fd = (target_fd);      \
-        pending[pending_count].msg = m_;             \
-        pending_count++;                             \
-      } else {                                       \
-        free(m_);                                    \
-      }                                              \
-    }                                                \
+#define QUEUE_PENDING(target_fd, str)            \
+  do {                                           \
+    char* m_ = (str);                            \
+    if (m_) {                                    \
+      if (pending_count < 128) {                 \
+        pending[pending_count].fd = (target_fd); \
+        pending[pending_count].msg = m_;         \
+        pending_count++;                         \
+      } else {                                   \
+        free(m_);                                \
+      }                                          \
+    }                                            \
   } while (0)
 
     // Periodic broadcast tick

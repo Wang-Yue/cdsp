@@ -6,10 +6,12 @@
 
 /**
  * @struct biquad_coefficients_t
- * @brief Structure holding the transfer function coefficients of a biquad filter.
+ * @brief Structure holding the transfer function coefficients of a biquad
+ * filter.
  *
  * The transfer function is defined as:
- * \f$ H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}} \f$
+ * \f$ H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}
+ * \f$
  */
 typedef struct {
   double b0; /**< Numerator coefficient for \f$z^0\f$ */
@@ -22,7 +24,8 @@ typedef struct {
 /**
  * @brief Returns coefficients for a passthrough filter (identity / no effect).
  *
- * @return Biquad coefficients representing an identity filter (b0=1, all others 0).
+ * @return Biquad coefficients representing an identity filter (b0=1, all others
+ * 0).
  */
 static inline biquad_coefficients_t biquad_coefficients_passthrough(void) {
   return (biquad_coefficients_t){1.0, 0.0, 0.0, 0.0, 0.0};
@@ -49,7 +52,8 @@ struct biquad_filter {
 #endif
 
 /**
- * @brief Validates stability of a biquad filter using the Jury pole triangle condition.
+ * @brief Validates stability of a biquad filter using the Jury pole triangle
+ * condition.
  *
  * Checks if poles lie strictly inside the unit circle:
  * \f$ |a_2| < 1.0 \land |a_1| < a_2 + 1.0 \f$
@@ -63,15 +67,17 @@ static inline bool is_stable(const biquad_coefficients_t* coeffs) {
 }
 
 /**
- * @brief Computes low-level transfer function coefficients from high-level parameters.
+ * @brief Computes low-level transfer function coefficients from high-level
+ * parameters.
  *
- * Calculates b0, b1, b2, a1, a2 based on parameter type (lowpass, highpass, shelving,
- * peaking, allpass, notch, Linkwitz transform, etc.) and sample rate.
+ * Calculates b0, b1, b2, a1, a2 based on parameter type (lowpass, highpass,
+ * shelving, peaking, allpass, notch, Linkwitz transform, etc.) and sample rate.
  *
  * @param params High-level biquad parameters.
  * @param sample_rate Audio sample rate in Hz.
  * @param out_coeffs Pointer to store computed transfer coefficients.
- * @return true if computation succeeded and coefficients are stable, false otherwise.
+ * @return true if computation succeeded and coefficients are stable, false
+ * otherwise.
  */
 static bool biquad_coefficients_compute(const biquad_parameters_t* params,
                                         int sample_rate,
@@ -307,12 +313,9 @@ static bool biquad_coefficients_compute(const biquad_parameters_t* params,
   return is_stable(out_coeffs);
 }
 
-
-
 biquad_filter_t* biquad_filter_create(const char* name,
                                       const biquad_parameters_t* params,
-                                      int sample_rate,
-                                      config_error_t* err) {
+                                      int sample_rate, config_error_t* err) {
   biquad_filter_t* filter =
       (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
   if (!filter) {
@@ -331,9 +334,10 @@ biquad_filter_t* biquad_filter_create(const char* name,
     filter->coeffs = biquad_coefficients_passthrough();
   } else {
     if (!biquad_coefficients_compute(params, sample_rate, &filter->coeffs)) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Failed to compute coefficients or filter is unstable for '%s'",
-                       filter->name);
+      config_error_set(
+          err, CONFIG_ERR_INVALID_FILTER,
+          "Failed to compute coefficients or filter is unstable for '%s'",
+          filter->name);
       biquad_filter_free(filter);
       return NULL;
     }
@@ -361,12 +365,6 @@ biquad_filter_t* biquad_filter_create(const char* name,
 #endif
   return filter;
 }
-
-
-
-
-
-
 
 void biquad_filter_process(biquad_filter_t* filter, mutable_waveform_t waveform,
                            size_t count) {
