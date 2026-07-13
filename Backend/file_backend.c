@@ -744,6 +744,9 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
 
 #ifdef CDSP_TEST
   if (frames_read > 0) {
+    if (capture->total_frames_read == 0) {
+      capture->start_time_ns = get_time_ns();
+    }
     capture->total_frames_read += frames_read;
     if (capture->realtime) {
       uint64_t target_elapsed_ns = (uint64_t)capture->total_frames_read *
@@ -1022,6 +1025,9 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
   bool success = (bytes_written == required_bytes);
 #ifdef CDSP_TEST
   if (success && frames > 0) {
+    if (playback->total_frames_written == 0) {
+      playback->start_time_ns = get_time_ns();
+    }
     playback->total_frames_written += frames;
     if (playback->realtime) {
       uint64_t target_elapsed_ns = (uint64_t)playback->total_frames_written *
