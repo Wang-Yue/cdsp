@@ -14,7 +14,7 @@ def run_one_case(bin_path, case_name=None):
         cmd.extend(["--run", case_name])
         
     start_time = time.time()
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8")
     elapsed = time.time() - start_time
     
     return {
@@ -40,7 +40,7 @@ def main():
     # 1. Discover all test cases
     for b in bins:
         try:
-            res = subprocess.run([b, "--list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+            res = subprocess.run([b, "--list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=5)
             if res.returncode == 0:
                 cases = [line.strip() for line in res.stdout.splitlines() if line.strip()]
                 if cases:
