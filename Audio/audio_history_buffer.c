@@ -7,9 +7,6 @@
 struct audio_history_buffer {
   size_t channels;
   spsc_audio_ring_buffer_t** buffers;
-  /// Preallocated scratch used by the consumer to average channels
-  /// without per-call heap traffic. Sized to the ring's capacity.
-  float* averaging_scratch;
 };
 
 size_t audio_history_buffer_get_channels(
@@ -17,10 +14,6 @@ size_t audio_history_buffer_get_channels(
   return history ? history->channels : 0;
 }
 #include <string.h>
-
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 
 audio_history_buffer_t* audio_history_buffer_create(void) {
   audio_history_buffer_t* history =
@@ -38,10 +31,6 @@ static void audio_history_buffer_clear_internal(
     }
     free(history->buffers);
     history->buffers = NULL;
-  }
-  if (history->averaging_scratch) {
-    free(history->averaging_scratch);
-    history->averaging_scratch = NULL;
   }
   history->channels = 0;
 }
@@ -66,12 +55,6 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
       }
       spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch],
                                                        true);
-    }
-    history->averaging_scratch =
-        (float*)calloc(AUDIO_HISTORY_BUFFER_CAPACITY, sizeof(float));
-    if (!history->averaging_scratch) {
-      audio_history_buffer_clear_internal(history);
-      return;
     }
     history->channels = channels;
   }
@@ -168,34 +151,35 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
 
   // Step 2: Read subsequent channels into local stack scratch memory to prevent
   // data races on multi-threaded reads, then accumulate into dest.
-  float* local_scratch = history->averaging_scratch;
+  float stack_scratch[2048];
+  float* local_scratch = stack_scratch;
+  if (count > 2048) {
+    local_scratch = (float*)malloc(count * sizeof(float));
+    if (!local_scratch) return AUDIO_HISTORY_BUFFER_OK;
+  }
+
   for (size_t ch = 1; ch < history->channels; ch++) {
     ok = spsc_audio_ring_buffer_read_latest_at(
         history->buffers[ch], local_scratch, count, min_written);
-    if (!ok) return AUDIO_HISTORY_BUFFER_OK;
-#ifdef ENABLE_ACCELERATE
-    // Use Apple's Accelerate framework for hardware-accelerated vector
-    // addition.
-    vDSP_vadd(dest, 1, local_scratch, 1, dest, 1, count);
-#else
+    if (!ok) {
+      if (local_scratch != stack_scratch) free(local_scratch);
+      return AUDIO_HISTORY_BUFFER_OK;
+    }
     // Fallback naive loop if Accelerate is not available.
     for (size_t i = 0; i < count; i++) {
       dest[i] += local_scratch[i];
     }
-#endif
+  }
+  if (local_scratch != stack_scratch) {
+    free(local_scratch);
   }
 
   // Step 3: Scale the accumulated sum to get the average.
   float scale = 1.0f / (float)history->channels;
-#ifdef ENABLE_ACCELERATE
-  // Hardware-accelerated vector scaling.
-  vDSP_vsmul(dest, 1, &scale, dest, 1, count);
-#else
   // Fallback naive loop.
   for (size_t i = 0; i < count; i++) {
     dest[i] *= scale;
   }
-#endif
   if (enough_data) *enough_data = true;
   return AUDIO_HISTORY_BUFFER_OK;
 }

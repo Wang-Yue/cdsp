@@ -99,7 +99,8 @@ static void populate_mapping(audio_mixer_t* mixer,
       if (src->mute) continue;
 
       // Calculate linear gain from dB or linear configuration
-      double gain = src->has_gain ? src->gain : 0.0;
+      double default_gain = (src->scale == GAIN_SCALE_LINEAR) ? 1.0 : 0.0;
+      double gain = src->has_gain ? src->gain : default_gain;
       double lin_gain =
           (src->scale == GAIN_SCALE_LINEAR) ? gain : double_from_db(gain);
       // Invert phase if requested (represented as a negative linear gain
@@ -187,19 +188,20 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
     return MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
-  // Process each output destination channel
+  // Process each output destination channel in a single pass to maximize L1 cache locality
   for (size_t out_ch = 0; out_ch < mixer->channels_out; out_ch++) {
     mutable_waveform_t dst = audio_chunk_get_channel(output, out_ch);
-    // Clear destination buffer before accumulating source contributions
+    if (!dst) continue;
+
     dsp_ops_clear(dst, frames);
 
     prepared_source_list_t* list = &mixer->mapping[out_ch];
     for (size_t i = 0; i < list->count; i++) {
       prepared_source_t* src = &list->sources[i];
-      // Defensive check: skip if the mapped source channel is not present in
-      // the input chunk
+      // Skip if mapped source channel is not present in input chunk
       if (src->in_channel >= audio_chunk_get_channels(input)) continue;
       waveform_t src_ptr = audio_chunk_get_channel(input, src->in_channel);
+      if (!src_ptr) continue;
 
       // Optimize direct unity gain addition vs multiply-accumulate to save
       // instruction cycles
@@ -210,6 +212,7 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
       }
     }
   }
+
   audio_chunk_set_valid_frames(output, frames);
   return MIXER_OK;
 }
