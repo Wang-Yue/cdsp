@@ -10,7 +10,6 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Audio/lock_free_ring_buffer.h"
 
 /**
  * @def AUDIO_HISTORY_BUFFER_CAPACITY

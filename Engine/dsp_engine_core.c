@@ -28,6 +28,11 @@
 
 #include "Engine/dsp_engine_core.h"
 
+#ifdef _WIN32
+#include <mmsystem.h>
+#include <windows.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -4,6 +4,8 @@
 
 #include <stdlib.h>
 
+#include "Audio/lock_free_ring_buffer.h"
+
 struct audio_history_buffer {
   size_t channels;
   spsc_audio_ring_buffer_t** buffers;

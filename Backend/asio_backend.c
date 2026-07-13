@@ -514,7 +514,7 @@ static void release_shared_asio(bool is_input, IASIO* iasio) {
       if (g_asio_shared.combined_channel_infos)
         free(g_asio_shared.combined_channel_infos);
 
-      g_asio_shared = (asio_shared_backend_t){0};
+      g_asio_shared = (asio_shared_state_t){0};
       InitializeSRWLock(&g_asio_shared.lock);
       InitializeConditionVariable(&g_asio_shared.cond);
     }
