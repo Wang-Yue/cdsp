@@ -150,8 +150,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   // Rate-adjust state lives entirely on this thread.
   pi_rate_controller_t* rate_controller = NULL;
-  averager_t averager;
-  stopwatch_t stopwatch;
+  averager_t averager = {0};
+  stopwatch_t stopwatch = {0};
   double last_speed = 1.0;
 
   if (loop->rate_adjust_enabled) {
