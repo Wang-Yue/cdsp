@@ -169,7 +169,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
         snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
                  rerr);
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
       chunk = loop->resampler_scratch;
@@ -214,7 +214,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
       snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
                perr);
-      engine_shared_state_request_stop_capture(loop->shared, reason);
+      engine_shared_state_request_stop(loop->shared, reason);
       break;
     }
     chunk = current_scratch;
@@ -279,7 +279,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // If the queue is full (playback thread falling behind), we block-wait
     // using a short sleep to avoid spinning and wasting CPU.
     while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-      if (engine_shared_state_should_stop_capture(loop->shared)) {
+      if (engine_shared_state_should_stop(loop->shared)) {
         processing_stop_reason_t reason =
             engine_shared_state_get_stop_reason(loop->shared);
         if (reason.type != STOP_REASON_DONE) {
@@ -291,7 +291,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   }
 
   if (loop->shared) {
-    engine_shared_state_request_stop_playback(loop->shared);
+    engine_shared_state_shutdown_processed_queue(loop->shared);
   }
   logger_info(&logger, "Processing thread stopped");
   engine_shared_state_thread_exited(loop->shared);

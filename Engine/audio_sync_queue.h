@@ -70,16 +70,21 @@ void audio_sync_queue_signal(audio_sync_queue_t* queue);
 bool audio_sync_queue_enqueue(audio_sync_queue_t* queue, void* item);
 
 /**
+ * @brief Shuts down the queue, waking up any waiting threads.
+ *
+ * @param queue Pointer to the audio_sync_queue_t instance.
+ */
+void audio_sync_queue_shutdown(audio_sync_queue_t* queue);
+
+/**
  * @brief Dequeues an item from the queue, blocking on the semaphore if empty.
  *
- * Checks non-blocking dequeue first. If empty and stop_requested is true,
+ * Checks non-blocking dequeue first. If empty and the queue has been shut down,
  * returns NULL immediately. Otherwise blocks on the kernel semaphore.
  *
  * @param queue Pointer to the audio_sync_queue_t instance.
- * @param stop_requested Optional pointer to atomic stop flag.
- * @return Pointer to dequeued item, or NULL when stopping and queue is empty.
+ * @return Pointer to dequeued item, or NULL when shut down and queue is empty.
  */
-void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue,
-                                        const _Atomic bool* stop_requested);
+void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue);
 
 #endif  // CLIB_ENGINE_AUDIO_SYNC_QUEUE_H

@@ -174,7 +174,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
         processing_stop_reason_t reason = {
             .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
     }
@@ -213,7 +213,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       logger_error(&logger, "Playback error: %s", err.message);
       processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
       snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-      engine_shared_state_request_stop_capture(loop->shared, reason);
+      engine_shared_state_request_stop(loop->shared, reason);
       break;
     }
   }

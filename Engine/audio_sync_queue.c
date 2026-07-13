@@ -5,6 +5,7 @@
 struct audio_sync_queue {
   spsc_queue_t* queue;
   cdsp_sem_t semaphore;
+  _Atomic bool is_shutdown;
 };
 
 audio_sync_queue_t* audio_sync_queue_create(size_t depth) {
@@ -14,6 +15,7 @@ audio_sync_queue_t* audio_sync_queue_create(size_t depth) {
 
   queue->queue = spsc_queue_create(depth > 0 ? depth : 16);
   queue->semaphore = cdsp_sem_create();
+  atomic_init(&queue->is_shutdown, false);
 
   if (!queue->queue || !queue->semaphore) {
     audio_sync_queue_free(queue);
@@ -55,8 +57,14 @@ bool audio_sync_queue_enqueue(audio_sync_queue_t* queue, void* item) {
   return ok;
 }
 
-void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue,
-                                        const _Atomic bool* stop_requested) {
+void audio_sync_queue_shutdown(audio_sync_queue_t* queue) {
+  if (queue) {
+    atomic_store_explicit(&queue->is_shutdown, true, memory_order_release);
+    cdsp_sem_signal(queue->semaphore);
+  }
+}
+
+void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue) {
   if (!queue || !queue->queue || !queue->semaphore) return NULL;
 
   while (1) {
@@ -64,8 +72,7 @@ void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue,
     if (item) {
       return item;
     }
-    if (stop_requested &&
-        atomic_load_explicit(stop_requested, memory_order_acquire)) {
+    if (atomic_load_explicit(&queue->is_shutdown, memory_order_acquire)) {
       item = spsc_queue_dequeue(queue->queue);
       if (item) {
         return item;

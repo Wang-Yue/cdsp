@@ -131,7 +131,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   sample_rate_watcher_reset(loop->rate_watcher);
 
   while (1) {
-    if (engine_shared_state_should_stop_capture(loop->shared)) {
+    if (engine_shared_state_should_stop(loop->shared)) {
       break;
     }
 
@@ -157,7 +157,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(rate + 0.5)};
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
     }
@@ -177,7 +177,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
             "Capture reached End-of-Stream; stopping engine gracefully");
         processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
         snprintf(reason.message, sizeof(reason.message), "EOF");
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
       // If reading fails with an error, trigger an engine stop.
@@ -185,7 +185,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         logger_error(&logger, "Capture error: %s", err.message);
         processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
         snprintf(reason.message, sizeof(reason.message), "%s", err.message);
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       }
       // If the engine is in a PAUSED state (no active input signal), reset the
@@ -241,7 +241,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
             .format_change_rate = (int)(measured_rate + 0.5)};
-        engine_shared_state_request_stop_capture(loop->shared, reason);
+        engine_shared_state_request_stop(loop->shared, reason);
         break;
       } else {
         logger_info(
@@ -286,7 +286,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     if (engine_shared_state_get_state(loop->shared) !=
         PROCESSING_STATE_PAUSED) {
       while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        if (engine_shared_state_should_stop_capture(loop->shared)) {
+        if (engine_shared_state_should_stop(loop->shared)) {
           break;
         }
         engine_yield();
@@ -295,7 +295,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   }
 
   if (loop->shared) {
-    engine_shared_state_signal_captured(loop->shared);
+    engine_shared_state_shutdown_captured_queue(loop->shared);
   }
   logger_info(&logger, "Capture thread stopped");
   engine_shared_state_thread_exited(loop->shared);

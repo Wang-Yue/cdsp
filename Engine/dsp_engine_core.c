@@ -132,7 +132,7 @@ void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
 bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
                                        processing_stop_reason_t* out_reason) {
   if (!core || !core->shared) return false;
-  bool req = engine_shared_state_should_stop_capture(core->shared);
+  bool req = engine_shared_state_should_stop(core->shared);
   if (req && out_reason) {
     *out_reason = engine_shared_state_get_stop_reason(core->shared);
   }
@@ -542,11 +542,11 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
   return core;
 
 thread_error_2:
-  engine_shared_state_request_stop_capture(
+  engine_shared_state_request_stop(
       core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(core->processing_thread, NULL);
 thread_error_1:
-  engine_shared_state_request_stop_capture(
+  engine_shared_state_request_stop(
       core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
   pthread_join(core->capture_thread, NULL);
 thread_error_0:
@@ -585,9 +585,9 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
 
   // Dispatch in-band AudioMessage stop signal downstream
   if (core->shared) {
-    engine_shared_state_request_stop_capture(core->shared, reason);
+    engine_shared_state_request_stop(core->shared, reason);
     if (!core->threads_created) {
-      engine_shared_state_request_stop_playback(core->shared);
+      engine_shared_state_shutdown_processed_queue(core->shared);
     }
   }
 
