@@ -33,9 +33,12 @@ TEST(DoPDetectionAndBypass) {
 
       audio_chunk_t* part_chunk = audio_chunk_create(20, 2);
       for (int ch = 0; ch < 2; ch++) {
-        for (size_t t = 0; t < 20; t++) {
-          audio_chunk_get_channel(part_chunk, ch)[t] =
-              audio_chunk_get_channel(chunk, ch)[t];
+        mutable_waveform_t dst = audio_chunk_get_channel(part_chunk, ch);
+        mutable_waveform_t src = audio_chunk_get_channel(chunk, ch);
+        if (dst && src) {
+          for (size_t t = 0; t < 20; t++) {
+            dst[t] = src[t];
+          }
         }
       }
       bool is_decoded = dop_decoder_detect_and_process(decoder, part_chunk);
@@ -45,9 +48,12 @@ TEST(DoPDetectionAndBypass) {
 
       audio_chunk_t* part_chunk2 = audio_chunk_create(44, 2);
       for (int ch = 0; ch < 2; ch++) {
-        for (size_t t = 0; t < 44; t++) {
-          audio_chunk_get_channel(part_chunk2, ch)[t] =
-              audio_chunk_get_channel(chunk, ch)[t + 20];
+        mutable_waveform_t dst = audio_chunk_get_channel(part_chunk2, ch);
+        mutable_waveform_t src = audio_chunk_get_channel(chunk, ch);
+        if (dst && src) {
+          for (size_t t = 0; t < 44; t++) {
+            dst[t] = src[t + 20];
+          }
         }
       }
       is_decoded = dop_decoder_detect_and_process(decoder, part_chunk2);

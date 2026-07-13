@@ -33,7 +33,7 @@ struct volume_filter {
  * @return The current time in nanoseconds.
  */
 static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(clock_id, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }

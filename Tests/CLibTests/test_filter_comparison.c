@@ -2,7 +2,9 @@
 // reference. Drives the `cdsp_filter_compare` Rust harness.
 
 #if defined(__linux__)
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #endif
 #include <math.h>
 #include <stdio.h>

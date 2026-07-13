@@ -225,9 +225,11 @@ CLI_BIN := $(SRC_ROOT)/bin/dsp-cli
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all lib test bench cli clean format
+.PHONY: all build lib test run-test-runner bench cli clean format
 
 all: cli
+
+build: all
 
 lib: $(LIB_TARGET)
 
@@ -318,6 +320,9 @@ $(foreach bin,$(UNIT_TEST_BINS),\
 )
 
 test: test-rust-build $(UNIT_TEST_BINS)
+	+@$(MAKE) run-test-runner
+
+run-test-runner:
 	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"
 	+@$(MAKE) $(ALL_TEST_CASES)
 

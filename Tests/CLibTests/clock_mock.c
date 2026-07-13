@@ -12,7 +12,7 @@ static uint64_t s_mock_start_time_ns = 0;
 static void init_clock_mock(void) {
   if (s_real_start_time_ns != 0) return;
 
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   s_real_start_time_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
   s_mock_start_time_ns = s_real_start_time_ns;
@@ -23,7 +23,7 @@ int cdsp_clock_gettime(clockid_t clock_id, struct timespec* tp) {
     init_clock_mock();
   }
 
-  struct timespec real_ts;
+  struct timespec real_ts = {0};
   int ret = clock_gettime(clock_id, &real_ts);
   if (ret != 0) return ret;
 
@@ -47,7 +47,7 @@ uint64_t cdsp_clock_gettime_nsec_np(clockid_t clock_id) {
   return s_mock_start_time_ns + elapsed * 15;
 #else
   (void)clock_id;
-  struct timespec ts;
+  struct timespec ts = {0};
   cdsp_clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 #endif

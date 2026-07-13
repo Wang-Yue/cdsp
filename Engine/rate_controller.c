@@ -221,7 +221,7 @@ static uint64_t get_current_ns(void) {
 #ifdef __APPLE__
   return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #else
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 #endif

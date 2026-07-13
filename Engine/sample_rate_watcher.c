@@ -10,7 +10,7 @@ static const logger_t g_logger = {"dsp.engine.rate_watcher"};
 #ifndef __APPLE__
 #define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
 static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(clock_id, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }

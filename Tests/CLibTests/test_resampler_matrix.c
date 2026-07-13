@@ -1,5 +1,7 @@
 #if defined(__linux__)
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #endif
 #define _DARWIN_C_SOURCE
 #include <math.h>

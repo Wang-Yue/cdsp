@@ -5,7 +5,7 @@
 
 #include "Logging/app_logger.h"
 
-static const logger_t g_logger = {"dsp.fft"};
+__attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
 // Double-precision (double) FFTW context and implementation
 struct real_fft {

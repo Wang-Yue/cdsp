@@ -37,10 +37,6 @@ static bool is_close(double left, double right, double maxdiff) {
   return fabs(left - right) < maxdiff;
 }
 
-static bool is_close_relative(double left, double right, double maxdiff) {
-  return fabs(left / right - 1.0) < maxdiff;
-}
-
 TEST(ImpulseResponse) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 10000.0, .q = 0.5};

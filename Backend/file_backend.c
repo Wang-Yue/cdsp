@@ -23,7 +23,7 @@ static const logger_t g_logger = {"dsp.backend.file"};
  * @return Monotonic time in nanoseconds.
  */
 static uint64_t get_time_ns(void) {
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }

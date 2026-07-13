@@ -104,7 +104,7 @@ static inline void cdsp_sem_wait(cdsp_sem_t sem) {
 
 static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   if (!sem) return false;
-  struct timespec ts;
+  struct timespec ts = {0};
   if (clock_gettime(CLOCK_REALTIME, &ts) != 0) return false;
   uint64_t nsec = (uint64_t)ts.tv_nsec + (uint64_t)timeout_ms * 1000000ULL;
   ts.tv_sec += nsec / 1000000000ULL;

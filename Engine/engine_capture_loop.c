@@ -66,7 +66,7 @@ static const logger_t g_logger = {"dsp.capture"};
  * @return The current time value in nanoseconds.
  */
 static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(clock_id, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }

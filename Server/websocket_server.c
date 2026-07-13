@@ -572,7 +572,7 @@ void websocket_server_set_engine(websocket_server_t* server,
  * @return Current timestamp in milliseconds.
  */
 static uint64_t get_time_ms(void) {
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
