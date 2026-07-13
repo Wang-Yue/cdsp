@@ -193,13 +193,9 @@ void filter_process(filter_t* filter, mutable_waveform_t waveform,
       loudness_filter_process((loudness_filter_t*)filter->instance, waveform,
                               count);
       break;
-    case FILTER_INSTANCE_VOLUME: {
-      volume_filter_t* vf = (volume_filter_t*)filter->instance;
-      volume_filter_prepare_chunk(vf);
-      volume_filter_process(vf, waveform, count);
-      volume_filter_advance_ramp(vf);
+    case FILTER_INSTANCE_VOLUME:
+      volume_filter_process((volume_filter_t*)filter->instance, waveform, count);
       break;
-    }
   }
 }
 
