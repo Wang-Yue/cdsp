@@ -90,62 +90,86 @@ static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
   free(chains);
 }
 
+/// Transfer filter states between two filter chains matching the same channel.
+static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
+                                   const parallel_filter_chain_t* src_chain) {
+  bool used[128] = {0};
+  size_t max_src =
+      src_chain->filters_count < 128 ? src_chain->filters_count : 128;
+
+  for (size_t i = 0; i < dest_chain->filters_count; i++) {
+    filter_t* dest_f = dest_chain->filters[i];
+    const char* dname = filter_get_name(dest_f);
+    if (!dname) continue;
+
+    for (size_t j = 0; j < max_src; j++) {
+      if (used[j]) continue;
+      filter_t* src_f = src_chain->filters[j];
+      const char* sname = filter_get_name(src_f);
+      if (sname && strcmp(dname, sname) == 0) {
+        filter_transfer_state(dest_f, src_f);
+        used[j] = true;
+        break;
+      }
+    }
+  }
+}
+
+/// Transfer state for all filter chains in a parallel filter step.
+static void transfer_parallel_filters_state(
+    const pipeline_exec_step_t* dest_step, const pipeline_t* src) {
+  for (size_t dc = 0; dc < dest_step->chains_count; dc++) {
+    parallel_filter_chain_t* dest_chain = &dest_step->chains[dc];
+
+    for (size_t s = 0; s < src->steps_count; s++) {
+      const pipeline_exec_step_t* src_step = &src->steps[s];
+      if (src_step->type != EXEC_STEP_PARALLEL_FILTERS) continue;
+
+      for (size_t sc = 0; sc < src_step->chains_count; sc++) {
+        const parallel_filter_chain_t* src_chain = &src_step->chains[sc];
+        if (src_chain->channel == dest_chain->channel) {
+          transfer_chain_filters(dest_chain, src_chain);
+        }
+      }
+    }
+  }
+}
+
+/// Transfer state for a processor in a processor step.
+static void transfer_processor_state(const pipeline_exec_step_t* dest_step,
+                                     const pipeline_t* src) {
+  if (!dest_step->processor) return;
+  const char* dname = dsp_processor_get_name(dest_step->processor);
+  if (!dname) return;
+
+  for (size_t s = 0; s < src->steps_count; s++) {
+    const pipeline_exec_step_t* src_step = &src->steps[s];
+    if (src_step->type == EXEC_STEP_PROCESSOR && src_step->processor) {
+      const char* sname = dsp_processor_get_name(src_step->processor);
+      if (sname && strcmp(dname, sname) == 0) {
+        dsp_processor_transfer_state(dest_step->processor,
+                                     src_step->processor);
+        break;
+      }
+    }
+  }
+}
+
 void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
   if (!dest || !src) return;
 
-  // 1. Transfer master volume state
+  // 1. Transfer Master Volume state
   if (dest->master_volume && src->master_volume) {
     volume_filter_transfer_state(dest->master_volume, src->master_volume);
   }
 
   // 2. Transfer steps state
-  for (size_t d = 0; d < dest->steps_count; d++) {
-    pipeline_exec_step_t* dest_step = &dest->steps[d];
-
-    if (dest_step->type == EXEC_STEP_PARALLEL_FILTERS) {
-      for (size_t dc = 0; dc < dest_step->chains_count; dc++) {
-        parallel_filter_chain_t* dest_chain = &dest_step->chains[dc];
-        // Find matching filter chain in src steps by channel
-        for (size_t s = 0; s < src->steps_count; s++) {
-          const pipeline_exec_step_t* src_step = &src->steps[s];
-          if (src_step->type == EXEC_STEP_PARALLEL_FILTERS) {
-            for (size_t sc = 0; sc < src_step->chains_count; sc++) {
-              const parallel_filter_chain_t* src_chain = &src_step->chains[sc];
-              if (src_chain->channel == dest_chain->channel) {
-                // Transfer individual filters by name matching
-                for (size_t df = 0; df < dest_chain->filters_count; df++) {
-                  filter_t* dest_f = dest_chain->filters[df];
-                  const char* dest_name = filter_get_name(dest_f);
-                  for (size_t sf = 0; sf < src_chain->filters_count; sf++) {
-                    filter_t* src_f = src_chain->filters[sf];
-                    const char* src_name = filter_get_name(src_f);
-                    if (src_name && dest_name &&
-                        strcmp(src_name, dest_name) == 0) {
-                      filter_transfer_state(dest_f, src_f);
-                      break;
-                    }
-                  }
-                }
-                break;
-              }
-            }
-          }
-        }
-      }
-    } else if (dest_step->type == EXEC_STEP_PROCESSOR) {
-      // Find matching processor step by name
-      const char* dest_name = dsp_processor_get_name(dest_step->processor);
-      for (size_t s = 0; s < src->steps_count; s++) {
-        const pipeline_exec_step_t* src_step = &src->steps[s];
-        if (src_step->type == EXEC_STEP_PROCESSOR) {
-          const char* src_name = dsp_processor_get_name(src_step->processor);
-          if (src_name && dest_name && strcmp(src_name, dest_name) == 0) {
-            dsp_processor_transfer_state(dest_step->processor,
-                                         src_step->processor);
-            break;
-          }
-        }
-      }
+  for (size_t i = 0; i < dest->steps_count; i++) {
+    pipeline_exec_step_t* step = &dest->steps[i];
+    if (step->type == EXEC_STEP_PARALLEL_FILTERS) {
+      transfer_parallel_filters_state(step, src);
+    } else if (step->type == EXEC_STEP_PROCESSOR) {
+      transfer_processor_state(step, src);
     }
   }
 }
@@ -221,15 +245,14 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
               pipeline->expected_in_channels, pipeline->multithreaded ? 1 : 0);
 
   // Create the implicit master volume filter
-  volume_parameters_t vol_params;
-  memset(&vol_params, 0, sizeof(vol_params));
-  vol_params.ramp_time = config->devices.has_volume_ramp_time
-                             ? config->devices.volume_ramp_time
-                             : 400.0;
-  vol_params.has_ramp_time = true;
-  vol_params.limit =
-      config->devices.has_volume_limit ? config->devices.volume_limit : 50.0;
-  vol_params.has_limit = true;
+  volume_parameters_t vol_params = {
+      .ramp_time = config->devices.has_volume_ramp_time
+                       ? config->devices.volume_ramp_time
+                       : 400.0,
+      .has_ramp_time = true,
+      .limit = config->devices.has_volume_limit ? config->devices.volume_limit
+                                                : 50.0,
+      .has_limit = true};
   vol_params.fader = FADER_MAIN;
 
   pipeline->master_volume =
@@ -272,13 +295,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       const pipeline_step_t* step = &config->pipeline[i];
       if (step->bypassed) continue;
       if (step->type == PIPELINE_STEP_TYPE_FILTER) {
-        if (step->channels && step->channels_count > 0) {
-          total_exec_steps += step->channels_count;
-        } else if (step->has_channel) {
-          total_exec_steps += 1;
-        } else {
-          total_exec_steps += current_channels;
-        }
+        total_exec_steps += 1;
       } else if (step->type == PIPELINE_STEP_TYPE_MIXER) {
         total_exec_steps += 1;
         num_mixers += 1;
@@ -653,7 +670,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
       memcpy(dst, src, valid_frames * sizeof(double));
     }
   }
-  audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
+    audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
 
   audio_chunk_t* current_chunk = pipeline->capture_scratch;
   // 3. Implicit main volume with smooth ramp.
