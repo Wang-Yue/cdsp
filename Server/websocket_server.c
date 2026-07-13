@@ -2037,8 +2037,7 @@ static void handle_cmd_reload(websocket_server_t* server, int client_idx,
     char* json = server_read_file_to_string(path);
     free(path);
     if (json) {
-      audio_backend_error_t err;
-      memset(&err, 0, sizeof(err));
+      audio_backend_error_t err = {0};
       bool ok =
           server && server->engine && server->engine->set_config_json &&
           server->engine->set_config_json(server->engine->ctx, json, &err);
@@ -2112,8 +2111,7 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* new_json = arg->valuestring;
-    audio_backend_error_t err;
-    memset(&err, 0, sizeof(err));
+    audio_backend_error_t err = {0};
     bool ok =
         server && server->engine && server->engine->set_config_json &&
         server->engine->set_config_json(server->engine->ctx, new_json, &err);
@@ -2184,7 +2182,16 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
   (void)client_idx;
   char pointer[256] = "";
   char* trimmed_val = NULL;
-  if (arg && cJSON_IsObject(arg)) {
+  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
+    cJSON* p_node = cJSON_GetArrayItem(arg, 0);
+    cJSON* v_node = cJSON_GetArrayItem(arg, 1);
+    if (p_node && cJSON_IsString(p_node)) {
+      strncpy(pointer, p_node->valuestring, sizeof(pointer) - 1);
+    }
+    if (v_node) {
+      trimmed_val = cJSON_PrintUnformatted(v_node);
+    }
+  } else if (arg && cJSON_IsObject(arg)) {
     cJSON* p_node = cJSON_GetObjectItemCaseSensitive(arg, "pointer");
     cJSON* v_node = cJSON_GetObjectItemCaseSensitive(arg, "value");
     if (p_node && cJSON_IsString(p_node)) {
@@ -2213,8 +2220,7 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
       char* updated_json =
           server_set_value_at_pointer_str(active_json, pointer, trimmed_val);
       if (updated_json) {
-        audio_backend_error_t err;
-        memset(&err, 0, sizeof(err));
+        audio_backend_error_t err = {0};
         bool ok = server && server->engine && server->engine->set_config_json &&
                   server->engine->set_config_json(server->engine->ctx,
                                                   updated_json, &err);
@@ -2275,8 +2281,7 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
         cjson_merge_patch(target_root, arg);
         char* target_json = cJSON_PrintUnformatted(target_root);
         if (target_json) {
-          audio_backend_error_t err;
-          memset(&err, 0, sizeof(err));
+          audio_backend_error_t err = {0};
           bool ok = server && server->engine &&
                     server->engine->set_config_json &&
                     server->engine->set_config_json(server->engine->ctx,
@@ -2326,8 +2331,7 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* config_json = arg->valuestring;
     dsp_config_t* parsed = NULL;
-    config_error_t cerr;
-    memset(&cerr, 0, sizeof(cerr));
+    config_error_t cerr = {0};
     if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
       reply_ok(cmd_name, cJSON_CreateString(config_json), ds);
       dsp_config_free(parsed);
@@ -2348,8 +2352,7 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
                                             const char* cmd_name,
                                             bool is_capture, bool is_rms,
                                             dyn_string_t* ds) {
-  vu_levels_t vu;
-  memset(&vu, 0, sizeof(vu));
+  vu_levels_t vu = {0};
   if (server && server->engine && server->engine->get_vu_levels &&
       server->engine->get_vu_levels(server->engine->ctx, &vu)) {
     double* arr = NULL;
@@ -2563,8 +2566,7 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
                                          cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  vu_levels_t vu;
-  memset(&vu, 0, sizeof(vu));
+  vu_levels_t vu = {0};
   if (server && server->engine && server->engine->get_vu_levels &&
       server->engine->get_vu_levels(server->engine->ctx, &vu)) {
     cJSON* root = cJSON_CreateObject();
@@ -2774,8 +2776,7 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  vu_levels_t vu;
-  memset(&vu, 0, sizeof(vu));
+  vu_levels_t vu = {0};
   if (server && server->engine && server->engine->get_vu_levels &&
       server->engine->get_vu_levels(server->engine->ctx, &vu)) {
     size_t count = vu.playback_channels;
@@ -2817,8 +2818,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     ok = true;
   }
   if (ok) {
-    spectrum_t spec;
-    memset(&spec, 0, sizeof(spec));
+    spectrum_t spec = {0};
     bool spec_ok =
         server && server->engine && server->engine->get_spectrum &&
         server->engine->get_spectrum(server->engine->ctx, is_capture, channel,
@@ -2860,7 +2860,10 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
     if (ok && devs) {
       cJSON* arr = cJSON_CreateArray();
       for (size_t i = 0; i < count; i++) {
-        cJSON_AddItemToArray(arr, cJSON_CreateString(devs[i].name));
+        cJSON* tuple = cJSON_CreateArray();
+        cJSON_AddItemToArray(tuple, cJSON_CreateString(devs[i].name));
+        cJSON_AddItemToArray(tuple, cJSON_CreateString(devs[i].name));
+        cJSON_AddItemToArray(arr, tuple);
       }
       reply_ok(cmd_name, arr, ds);
       free(devs);
@@ -3007,8 +3010,7 @@ static void handle_cmd_get_capture_rate(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status;
-  memset(&status, 0, sizeof(status));
+  state_update_t status = {0};
   bool has_status = server && server->engine && server->engine->get_status &&
                     server->engine->get_status(server->engine->ctx, &status);
   int sr = 0;
@@ -3504,13 +3506,34 @@ static void* server_thread_func(void* arg) {
 
     pthread_mutex_lock(&server->sessions_mutex);
 
+    typedef struct {
+      socket_t fd;
+      char* msg;
+    } pending_send_t;
+
+    pending_send_t pending[128];
+    size_t pending_count = 0;
+
+#define QUEUE_PENDING(target_fd, str)                 \
+  do {                                               \
+    char* m_ = (str);                                \
+    if (m_) {                                        \
+      if (pending_count < 128) {                     \
+        pending[pending_count].fd = (target_fd);      \
+        pending[pending_count].msg = m_;             \
+        pending_count++;                             \
+      } else {                                       \
+        free(m_);                                    \
+      }                                              \
+    }                                                \
+  } while (0)
+
     // Periodic broadcast tick
     uint64_t now = get_time_ms();
     if (now - last_broadcast_time_ms >= server->update_interval) {
       last_broadcast_time_ms = now;
 
-      state_update_t status;
-      memset(&status, 0, sizeof(status));
+      state_update_t status = {0};
       bool has_status =
           server->engine && server->engine->get_status &&
           server->engine->get_status(server->engine->ctx, &status);
@@ -3527,8 +3550,7 @@ static void* server_thread_func(void* arg) {
       size_t cap_channels = 0;
       size_t pb_channels = 0;
 
-      vu_levels_t vu;
-      memset(&vu, 0, sizeof(vu));
+      vu_levels_t vu = {0};
       if (server->engine && server->engine->get_vu_levels &&
           server->engine->get_vu_levels(server->engine->ctx, &vu)) {
         cap_channels = vu.capture_channels;
@@ -3603,14 +3625,14 @@ static void* server_thread_func(void* arg) {
         if (session->state_subscribed &&
             strcmp(last_state[i], state_str) != 0) {
           strncpy(last_state[i], state_str, sizeof(last_state[i]) - 1);
-          char msg[1024];
           char payload[512];
           format_state_event_payload(status.state, &status.stop_reason, payload,
                                      sizeof(payload));
-          snprintf(msg, sizeof(msg),
+          char msg_buf[1024];
+          snprintf(msg_buf, sizeof(msg_buf),
                    "{\"StateEvent\":{\"result\":\"Ok\",\"value\":%s}}",
                    payload);
-          send_websocket_frame(client_fds[i], msg);
+          QUEUE_PENDING(client_fds[i], strdup(msg_buf));
         }
 
         if (session->vu_subscribed && pb_channels > 0) {
@@ -3746,11 +3768,7 @@ static void* server_thread_func(void* arg) {
             cJSON_AddItemToObject(val_value, "capture_peak",
                                   cJSON_CreateDoubleArray(session->vu_cap_peak,
                                                           (int)cap_channels));
-            char* msg = cJSON_PrintUnformatted(root);
-            if (msg) {
-              send_websocket_frame(client_fds[i], msg);
-              free(msg);
-            }
+            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
             session->last_vu_push_time = now;
           }
@@ -3776,11 +3794,7 @@ static void* server_thread_func(void* arg) {
             cJSON_AddItemToObject(
                 val_value, "peak",
                 cJSON_CreateDoubleArray(current_pb_peak, (int)pb_channels));
-            char* msg = cJSON_PrintUnformatted(root);
-            if (msg) {
-              send_websocket_frame(client_fds[i], msg);
-              free(msg);
-            }
+            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
           }
           if (send_cap && cap_channels > 0) {
@@ -3797,11 +3811,7 @@ static void* server_thread_func(void* arg) {
             cJSON_AddItemToObject(
                 val_value, "peak",
                 cJSON_CreateDoubleArray(current_cap_peak, (int)cap_channels));
-            char* msg = cJSON_PrintUnformatted(root);
-            if (msg) {
-              send_websocket_frame(client_fds[i], msg);
-              free(msg);
-            }
+            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
           }
         }
@@ -3811,8 +3821,7 @@ static void* server_thread_func(void* arg) {
                                 ? 1000.0 / session->spectrum_max_rate
                                 : 0.0;
           if (now - session->last_spectrum_push_time >= interval) {
-            spectrum_t spec;
-            memset(&spec, 0, sizeof(spec));
+            spectrum_t spec = {0};
             bool spec_ok =
                 server && server->engine && server->engine->get_spectrum &&
                 server->engine->get_spectrum(
@@ -3826,11 +3835,7 @@ static void* server_thread_func(void* arg) {
               cJSON_AddItemToObject(root, "SpectrumEvent", val);
               cJSON_AddStringToObject(val, "result", "Ok");
               cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
-              char* msg = cJSON_PrintUnformatted(root);
-              if (msg) {
-                send_websocket_frame(client_fds[i], msg);
-                free(msg);
-              }
+              QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
               if (spec.frequencies) free(spec.frequencies);
               if (spec.magnitudes) free(spec.magnitudes);
@@ -3844,6 +3849,11 @@ static void* server_thread_func(void* arg) {
     }
     pthread_mutex_unlock(&server->sessions_mutex);
 
+    for (size_t k = 0; k < pending_count; k++) {
+      send_websocket_frame(pending[k].fd, pending[k].msg);
+      free(pending[k].msg);
+    }
+
     if (ret > 0) {
       if (fds[0].revents & POLLIN) {
         socket_t cfd = accept(server->server_fd, NULL, NULL);
@@ -3855,7 +3865,7 @@ static void* server_thread_func(void* arg) {
 
           pthread_mutex_lock(&server->sessions_mutex);
           client_session_t* session = &server->client_sessions[num_clients];
-          memset(session, 0, sizeof(client_session_t));
+          *session = (client_session_t){0};
           uint64_t now_ms = get_time_ms();
           session->last_cap_peak_time = now_ms;
           session->last_cap_rms_time = now_ms;
@@ -3885,8 +3895,7 @@ static void* server_thread_func(void* arg) {
               strcpy(last_state[j], last_state[j + 1]);
               server->client_sessions[j] = server->client_sessions[j + 1];
             }
-            memset(&server->client_sessions[num_clients - 1], 0,
-                   sizeof(client_session_t));
+            server->client_sessions[num_clients - 1] = (client_session_t){0};
             pthread_mutex_unlock(&server->sessions_mutex);
             num_clients--;
             i--;
@@ -3950,8 +3959,8 @@ static void* server_thread_func(void* arg) {
                     strcpy(last_state[j], last_state[j + 1]);
                     server->client_sessions[j] = server->client_sessions[j + 1];
                   }
-                  memset(&server->client_sessions[num_clients - 1], 0,
-                         sizeof(client_session_t));
+                  server->client_sessions[num_clients - 1] =
+                      (client_session_t){0};
                   pthread_mutex_unlock(&server->sessions_mutex);
                   num_clients--;
                   i--;
@@ -3988,8 +3997,8 @@ static void* server_thread_func(void* arg) {
                     strcpy(last_state[j], last_state[j + 1]);
                     server->client_sessions[j] = server->client_sessions[j + 1];
                   }
-                  memset(&server->client_sessions[num_clients - 1], 0,
-                         sizeof(client_session_t));
+                  server->client_sessions[num_clients - 1] =
+                      (client_session_t){0};
                   pthread_mutex_unlock(&server->sessions_mutex);
                   num_clients--;
                   i--;
@@ -4018,8 +4027,8 @@ static void* server_thread_func(void* arg) {
                     strcpy(last_state[j], last_state[j + 1]);
                     server->client_sessions[j] = server->client_sessions[j + 1];
                   }
-                  memset(&server->client_sessions[num_clients - 1], 0,
-                         sizeof(client_session_t));
+                  server->client_sessions[num_clients - 1] =
+                      (client_session_t){0};
                   pthread_mutex_unlock(&server->sessions_mutex);
                   num_clients--;
                   i--;
@@ -4050,8 +4059,8 @@ static void* server_thread_func(void* arg) {
                     strcpy(last_state[j], last_state[j + 1]);
                     server->client_sessions[j] = server->client_sessions[j + 1];
                   }
-                  memset(&server->client_sessions[num_clients - 1], 0,
-                         sizeof(client_session_t));
+                  server->client_sessions[num_clients - 1] =
+                      (client_session_t){0};
                   pthread_mutex_unlock(&server->sessions_mutex);
                   num_clients--;
                   i--;
@@ -4141,8 +4150,7 @@ bool websocket_server_start(websocket_server_t* server) {
   setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
 
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
+  struct sockaddr_in addr = {0};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(server->port);
   inet_pton(AF_INET, server->host, &addr.sin_addr);
