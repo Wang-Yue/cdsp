@@ -78,6 +78,7 @@ struct wasapi_playback {
   UINT32 buffer_frame_count;
   _Atomic bool paused;
   HANDLE event;
+  bool started;
 };
 
 /**
@@ -1159,7 +1160,7 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
   }
 
   playback->paused = false;
-  IAudioClient_Start(playback->client);
+  playback->started = false;
 
   logger_t logger = logger_create("dsp.backend.wasapi");
   logger_info(
@@ -1214,6 +1215,21 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
           "Chunk channels count does not match playback channels");
     }
     return false;
+  }
+
+  if (!playback->started) {
+    HRESULT hr = IAudioClient_Start(playback->client);
+    if (FAILED(hr)) {
+      if (err) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "Failed to start IAudioClient in write: hr=0x%08lX",
+                 (unsigned long)hr);
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+      }
+      return false;
+    }
+    playback->started = true;
   }
 
   size_t frames_written = 0;
@@ -1294,6 +1310,8 @@ void wasapi_playback_close(wasapi_playback_t* playback) {
   SAFE_RELEASE(playback->mm_device);
   SAFE_RELEASE(playback->enumerator);
 
+  playback->started = false;
+
   if (playback->com_initialized) {
     CoUninitialize();
     playback->com_initialized = false;
@@ -1325,6 +1343,20 @@ bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
            frames * playback->channels * (playback->bits_per_sample / 8));
     IAudioRenderClient_ReleaseBuffer(playback->render_client, (UINT32)frames,
                                      0);
+    if (!playback->started) {
+      hr = IAudioClient_Start(playback->client);
+      if (FAILED(hr)) {
+        if (err) {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "Failed to start IAudioClient after prefill: hr=0x%08lX",
+                   (unsigned long)hr);
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+        }
+        return false;
+      }
+      playback->started = true;
+    }
     return true;
   }
   if (err)

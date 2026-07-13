@@ -1113,10 +1113,17 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
     if (status.state == PROCESSING_STATE_INACTIVE) {
       break;
     }
+#ifdef _WIN32
+    // Sleep for 10ms of real time (corresponds to 150ms of simulated time)
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};
+    nanosleep(&req, NULL);
+    elapsed_ms += 150;
+#else
     // Sleep for 0.33ms of real time (corresponds to 5ms of simulated time)
     struct timespec req = {.tv_sec = 0, .tv_nsec = 333333ULL};
     nanosleep(&req, NULL);
     elapsed_ms += 5;
+#endif
   }
 
   clock_gettime(CLOCK_MONOTONIC, &t1);
