@@ -170,12 +170,11 @@ bool pulse_capture_open(pulse_capture_t* capture, backend_error_t* err) {
   // setting them to -1. fragsize is set to the size of a single frame (channels
   // * sizeof(float)) to minimize latency by requesting small fragments from the
   // server.
-  pa_buffer_attr attr = {
-      .maxlength = (uint32_t)-1,
-      .tlength = (uint32_t)-1,
-      .prebuf = (uint32_t)-1,
-      .minreq = (uint32_t)-1,
-      .fragsize = (uint32_t)(capture->channels * sizeof(float))};
+  pa_buffer_attr attr = {.maxlength = (uint32_t)-1,
+                         .tlength = (uint32_t)-1,
+                         .prebuf = (uint32_t)-1,
+                         .minreq = (uint32_t)-1,
+                         .fragsize = (uint32_t)sizeof(float)};
 
   int error;
   capture->s =

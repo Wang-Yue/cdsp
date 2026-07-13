@@ -198,7 +198,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
       info->data_start_offset = ftell(f);
       return true;
     }
-    fseek(f, chunk_size, SEEK_CUR);
+    uint32_t pad = chunk_size & 1;
+    fseek(f, chunk_size + pad, SEEK_CUR);
   }
 
   snprintf(err_msg, err_msg_len, "Could not find 'data' chunk");

@@ -191,14 +191,8 @@ playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
       (alsa_playback_t*)calloc(1, sizeof(alsa_playback_t));
   if (!playback) return NULL;
 
-  // Clean up name
-  char clean_name[256];
-  snprintf(clean_name, sizeof(clean_name), "%s",
-           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
-  char* space = strchr(clean_name, ' ');
-  if (space) *space = '\0';
   snprintf(playback->device_name, sizeof(playback->device_name), "%s",
-           clean_name);
+           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
 
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.alsa.channels;

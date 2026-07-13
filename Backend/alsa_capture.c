@@ -117,14 +117,8 @@ capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
   alsa_capture_t* capture = (alsa_capture_t*)calloc(1, sizeof(alsa_capture_t));
   if (!capture) return NULL;
 
-  // Clean up name
-  char clean_name[256];
-  snprintf(clean_name, sizeof(clean_name), "%s",
-           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
-  char* space = strchr(clean_name, ' ');
-  if (space) *space = '\0';
   snprintf(capture->device_name, sizeof(capture->device_name), "%s",
-           clean_name);
+           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
 
   capture->sample_rate = sample_rate;
   capture->channels = config->cfg.alsa.channels;

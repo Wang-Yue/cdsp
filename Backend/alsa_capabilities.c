@@ -56,17 +56,11 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
   }
   snprintf(desc->name, sizeof(desc->name), "%s", device_name);
 
-  // Parse device name to get actual ALSA device string (e.g. "hw:0")
-  char clean_name[256];
-  snprintf(clean_name, sizeof(clean_name), "%s", device_name);
-  char* space = strchr(clean_name, ' ');
-  if (space) *space = '\0';
-
   snd_pcm_stream_t stream =
       is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
   snd_pcm_t* pcm = NULL;
   // Open device in non-blocking mode to avoid hangs
-  int open_res = snd_pcm_open(&pcm, clean_name, stream, SND_PCM_NONBLOCK);
+  int open_res = snd_pcm_open(&pcm, device_name, stream, SND_PCM_NONBLOCK);
   if (open_res < 0) {
     if (err) {
       if (open_res == -EBUSY) {
