@@ -2,6 +2,7 @@
 #include "audio_chunk.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "double_helpers.h"
 

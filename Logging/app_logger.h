@@ -112,6 +112,7 @@ typedef struct {
 /**
  * @brief Opaque struct representing the logger backend.
  */
+struct app_logger_s;
 typedef struct app_logger_s app_logger_t;
 
 /**
