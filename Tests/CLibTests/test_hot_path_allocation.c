@@ -536,10 +536,7 @@ static void filter_iter(int i, void* ctx) {
 TEST(Biquad_AllocationFree) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 1000.0, .q = 0.707};
-  biquad_coefficients_t coeffs = {
-      .b0 = 0.25, .b1 = 0.5, .b2 = 0.25, .a1 = -0.5, .a2 = 0.1};
-  (void)params;
-  biquad_filter_t* filter = biquad_filter_create("bq", &coeffs, NULL);
+  biquad_filter_t* filter = biquad_filter_create("bq", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);

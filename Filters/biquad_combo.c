@@ -88,13 +88,7 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
   bp.slope = slope;
   bp.bandwidth = bandwidth;
   bp.steepness_type = steepness_type;
-  biquad_coefficients_t coeffs;
-  if (!biquad_coefficients_compute(&bp, sample_rate, &coeffs)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Failed to compute section coefficients for biquad combo");
-    return NULL;
-  }
-  return biquad_filter_create("combo_sec", &coeffs, err);
+  return biquad_filter_create("combo_sec", &bp, sample_rate, err);
 }
 
 biquad_combo_filter_t* biquad_combo_filter_create(

@@ -7,10 +7,30 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static void gain_and_phase(const biquad_coefficients_t* coeffs, double f,
+static void gain_and_phase(const biquad_parameters_t* params, double f,
                            double fs, double* gain_db, double* phase_deg) {
-  *gain_db = biquad_coefficients_gain_db(coeffs, f, (int)fs);
-  *phase_deg = biquad_coefficients_phase_rad(coeffs, f, (int)fs) * 180.0 / M_PI;
+  biquad_filter_t* filter = biquad_filter_create("test", params, (int)fs, NULL);
+  if (!filter) {
+    *gain_db = 0.0;
+    *phase_deg = 0.0;
+    return;
+  }
+  size_t N = 8192;
+  double* wave = (double*)calloc(N, sizeof(double));
+  wave[0] = 1.0;
+  biquad_filter_process(filter, wave, N);
+  biquad_filter_free(filter);
+
+  double w = 2.0 * M_PI * f / fs;
+  double re = 0.0, im = 0.0;
+  for (size_t n = 0; n < N; n++) {
+    re += wave[n] * cos(w * (double)n);
+    im -= wave[n] * sin(w * (double)n);
+  }
+  free(wave);
+  double mag = sqrt(re * re + im * im);
+  *gain_db = 20.0 * log10(mag > 1e-12 ? mag : 1e-12);
+  *phase_deg = atan2(im, re) * 180.0 / M_PI;
 }
 
 static bool is_close(double left, double right, double maxdiff) {
@@ -21,18 +41,10 @@ static bool is_close_relative(double left, double right, double maxdiff) {
   return fabs(left / right - 1.0) < maxdiff;
 }
 
-static biquad_coefficients_t make_coeffs(biquad_parameters_t* params,
-                                         int sample_rate) {
-  biquad_coefficients_t coeffs = {0};
-  biquad_coefficients_compute(params, sample_rate, &coeffs);
-  return coeffs;
-}
-
 TEST(ImpulseResponse) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 10000.0, .q = 0.5};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
-  biquad_filter_t* filter = biquad_filter_create("biquad", &coeffs, NULL);
+  biquad_filter_t* filter = biquad_filter_create("biquad", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double wave[] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -49,11 +61,10 @@ TEST(ImpulseResponse) {
 TEST(Lowpass) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 100.0, .q = 1.0 / sqrt(2.0)};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 10.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 10.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -3.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, -24.0, 0.2));
@@ -62,11 +73,10 @@ TEST(Lowpass) {
 TEST(Highpass) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_HIGHPASS, .freq = 100.0, .q = 1.0 / sqrt(2.0)};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 25.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 25.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -3.0, 0.1));
   ASSERT_TRUE(is_close(glf, -24.0, 0.2));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -74,11 +84,10 @@ TEST(Highpass) {
 
 TEST(LowpassFO) {
   biquad_parameters_t params = {.type = BIQUAD_TYPE_LOWPASS_FO, .freq = 100.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 10.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 10.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -3.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, -12.3, 0.1));
@@ -86,11 +95,10 @@ TEST(LowpassFO) {
 
 TEST(HighpassFO) {
   biquad_parameters_t params = {.type = BIQUAD_TYPE_HIGHPASS_FO, .freq = 100.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 800.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 25.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 800.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 25.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -3.0, 0.1));
   ASSERT_TRUE(is_close(glf, -12.3, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -99,11 +107,10 @@ TEST(HighpassFO) {
 TEST(Peaking) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_PEAKING, .freq = 100.0, .q = 3.0, .gain = 7.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 25.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 25.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, 7.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -112,11 +119,10 @@ TEST(Peaking) {
 TEST(Bandpass) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_BANDPASS, .freq = 100.0, .q = 1.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 25.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 25.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, 0.0, 0.1));
   ASSERT_TRUE(is_close(glf, -12.0, 0.3));
   ASSERT_TRUE(is_close(ghf, -12.0, 0.3));
@@ -125,11 +131,10 @@ TEST(Bandpass) {
 TEST(Notch) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_NOTCH, .freq = 100.0, .q = 3.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 400.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 25.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 25.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(gf0 < -40.0);
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -138,11 +143,10 @@ TEST(Notch) {
 TEST(Allpass) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_ALLPASS, .freq = 100.0, .q = 3.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, 0.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -153,11 +157,10 @@ TEST(Allpass) {
 
 TEST(AllpassFO) {
   biquad_parameters_t params = {.type = BIQUAD_TYPE_ALLPASS_FO, .freq = 100.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, 0.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -172,13 +175,12 @@ TEST(Highshelf) {
                                 .gain = -24.0,
                                 .slope = 6.0,
                                 .steepness_type = STEEPNESS_TYPE_SLOPE};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, gf0h, pf0h, gf0l, pf0l, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 200.0, 44100.0, &gf0h, &pf0h);
-  gain_and_phase(&coeffs, 50.0, 44100.0, &gf0l, &pf0l);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 200.0, 44100.0, &gf0h, &pf0h);
+  gain_and_phase(&params, 50.0, 44100.0, &gf0l, &pf0l);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -12.0, 0.1));
   ASSERT_TRUE(is_close(gf0h, -18.0, 1.0));
   ASSERT_TRUE(is_close(gf0l, -6.0, 1.0));
@@ -192,13 +194,12 @@ TEST(Lowshelf) {
                                 .gain = -24.0,
                                 .slope = 6.0,
                                 .steepness_type = STEEPNESS_TYPE_SLOPE};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, gf0h, pf0h, gf0l, pf0l, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 200.0, 44100.0, &gf0h, &pf0h);
-  gain_and_phase(&coeffs, 50.0, 44100.0, &gf0l, &pf0l);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 200.0, 44100.0, &gf0h, &pf0h);
+  gain_and_phase(&params, 50.0, 44100.0, &gf0l, &pf0l);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -12.0, 0.1));
   ASSERT_TRUE(is_close(gf0h, -6.0, 1.0));
   ASSERT_TRUE(is_close(gf0l, -18.0, 1.0));
@@ -216,13 +217,11 @@ TEST(LowshelfSlopeVsQ) {
                             .freq = 100.0,
                             .q = 1.0 / sqrt(2.0),
                             .gain = -24.0};
-  biquad_coefficients_t cS = make_coeffs(&pS, 44100);
-  biquad_coefficients_t cQ = make_coeffs(&pQ, 44100);
-  ASSERT_TRUE(is_close_relative(cS.a1, cQ.a1, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.a2, cQ.a2, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b0, cQ.b0, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b1, cQ.b1, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b2, cQ.b2, 0.001));
+  double gS, pS_deg, gQ, pQ_deg;
+  gain_and_phase(&pS, 100.0, 44100.0, &gS, &pS_deg);
+  gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
+  ASSERT_TRUE(is_close(gS, gQ, 0.001));
+  ASSERT_TRUE(is_close(pS_deg, pQ_deg, 0.001));
 }
 
 TEST(HighshelfSlopeVsQ) {
@@ -235,13 +234,11 @@ TEST(HighshelfSlopeVsQ) {
                             .freq = 100.0,
                             .q = 1.0 / sqrt(2.0),
                             .gain = -24.0};
-  biquad_coefficients_t cS = make_coeffs(&pS, 44100);
-  biquad_coefficients_t cQ = make_coeffs(&pQ, 44100);
-  ASSERT_TRUE(is_close_relative(cS.a1, cQ.a1, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.a2, cQ.a2, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b0, cQ.b0, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b1, cQ.b1, 0.001));
-  ASSERT_TRUE(is_close_relative(cS.b2, cQ.b2, 0.001));
+  double gS, pS_deg, gQ, pQ_deg;
+  gain_and_phase(&pS, 100.0, 44100.0, &gS, &pS_deg);
+  gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
+  ASSERT_TRUE(is_close(gS, gQ, 0.001));
+  ASSERT_TRUE(is_close(pS_deg, pQ_deg, 0.001));
 }
 
 TEST(BandpassBWvsQ) {
@@ -251,13 +248,11 @@ TEST(BandpassBWvsQ) {
                              .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_parameters_t pQ = {
       .type = BIQUAD_TYPE_BANDPASS, .freq = 100.0, .q = sqrt(2.0)};
-  biquad_coefficients_t cBW = make_coeffs(&pBW, 44100);
-  biquad_coefficients_t cQ = make_coeffs(&pQ, 44100);
-  ASSERT_TRUE(is_close_relative(cBW.a1, cQ.a1, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.a2, cQ.a2, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b0, cQ.b0, 0.001));
-  ASSERT_TRUE(cBW.b1 == 0.0 && cQ.b1 == 0.0);
-  ASSERT_TRUE(is_close_relative(cBW.b2, cQ.b2, 0.001));
+  double gBW, pBW_deg, gQ, pQ_deg;
+  gain_and_phase(&pBW, 100.0, 44100.0, &gBW, &pBW_deg);
+  gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
+  ASSERT_TRUE(is_close(gBW, gQ, 0.001));
+  ASSERT_TRUE(is_close(pBW_deg, pQ_deg, 0.001));
 }
 
 TEST(NotchBWvsQ) {
@@ -267,13 +262,11 @@ TEST(NotchBWvsQ) {
                              .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_parameters_t pQ = {
       .type = BIQUAD_TYPE_NOTCH, .freq = 100.0, .q = sqrt(2.0)};
-  biquad_coefficients_t cBW = make_coeffs(&pBW, 44100);
-  biquad_coefficients_t cQ = make_coeffs(&pQ, 44100);
-  ASSERT_TRUE(is_close_relative(cBW.a1, cQ.a1, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.a2, cQ.a2, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b0, cQ.b0, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b1, cQ.b1, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b2, cQ.b2, 0.001));
+  double gBW, pBW_deg, gQ, pQ_deg;
+  gain_and_phase(&pBW, 200.0, 44100.0, &gBW, &pBW_deg);
+  gain_and_phase(&pQ, 200.0, 44100.0, &gQ, &pQ_deg);
+  ASSERT_TRUE(is_close(gBW, gQ, 0.001));
+  ASSERT_TRUE(is_close(pBW_deg, pQ_deg, 0.001));
 }
 
 TEST(AllpassBWvsQ) {
@@ -283,23 +276,20 @@ TEST(AllpassBWvsQ) {
                              .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_parameters_t pQ = {
       .type = BIQUAD_TYPE_ALLPASS, .freq = 100.0, .q = sqrt(2.0)};
-  biquad_coefficients_t cBW = make_coeffs(&pBW, 44100);
-  biquad_coefficients_t cQ = make_coeffs(&pQ, 44100);
-  ASSERT_TRUE(is_close_relative(cBW.a1, cQ.a1, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.a2, cQ.a2, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b0, cQ.b0, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b1, cQ.b1, 0.001));
-  ASSERT_TRUE(is_close_relative(cBW.b2, cQ.b2, 0.001));
+  double gBW, pBW_deg, gQ, pQ_deg;
+  gain_and_phase(&pBW, 100.0, 44100.0, &gBW, &pBW_deg);
+  gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
+  ASSERT_TRUE(is_close(gBW, gQ, 0.001));
+  ASSERT_TRUE(is_close(pBW_deg, pQ_deg, 0.001));
 }
 
 TEST(HighshelfFO) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_HIGHSHELF_FO, .freq = 100.0, .gain = -12.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -6.0, 0.1));
   ASSERT_TRUE(is_close(glf, 0.0, 0.1));
   ASSERT_TRUE(is_close(ghf, -12.0, 0.1));
@@ -308,11 +298,10 @@ TEST(HighshelfFO) {
 TEST(LowshelfFO) {
   biquad_parameters_t params = {
       .type = BIQUAD_TYPE_LOWSHELF_FO, .freq = 100.0, .gain = -12.0};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gf0, pf0, ghf, phf, glf, plf;
-  gain_and_phase(&coeffs, 100.0, 44100.0, &gf0, &pf0);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &ghf, &phf);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &glf, &plf);
+  gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
+  gain_and_phase(&params, 10000.0, 44100.0, &ghf, &phf);
+  gain_and_phase(&params, 1.0, 44100.0, &glf, &plf);
   ASSERT_TRUE(is_close(gf0, -6.0, 0.1));
   ASSERT_TRUE(is_close(glf, -12.0, 0.1));
   ASSERT_TRUE(is_close(ghf, 0.0, 0.1));
@@ -325,12 +314,11 @@ TEST(FreeBiquad) {
                                 .b0 = 0.25,
                                 .b1 = 0.5,
                                 .b2 = 0.25};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
-  ASSERT_DOUBLE_EQ(0.25, coeffs.b0);
-  ASSERT_DOUBLE_EQ(0.5, coeffs.b1);
-  ASSERT_DOUBLE_EQ(0.25, coeffs.b2);
-  ASSERT_DOUBLE_EQ(-0.5, coeffs.a1);
-  ASSERT_DOUBLE_EQ(0.1, coeffs.a2);
+  ASSERT_DOUBLE_EQ(0.25, params.b0);
+  ASSERT_DOUBLE_EQ(0.5, params.b1);
+  ASSERT_DOUBLE_EQ(0.25, params.b2);
+  ASSERT_DOUBLE_EQ(-0.5, params.a1);
+  ASSERT_DOUBLE_EQ(0.1, params.a2);
 }
 
 TEST(GeneralNotchHP) {
@@ -339,11 +327,10 @@ TEST(GeneralNotchHP) {
                                 .freq_notch = 1000.0,
                                 .freq_pole = 2000.0,
                                 .normalize_at_dc = false};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
-  gain_and_phase(&coeffs, 1000.0, 44100.0, &gain_fp, &p1);
-  gain_and_phase(&coeffs, 20000.0, 44100.0, &gain_hf, &p2);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &gain_lf, &p3);
+  gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
+  gain_and_phase(&params, 20000.0, 44100.0, &gain_hf, &p2);
+  gain_and_phase(&params, 1.0, 44100.0, &gain_lf, &p3);
   ASSERT_TRUE(gain_fp < -40.0);
   ASSERT_TRUE(is_close(gain_lf, -12.1, 0.1));
   ASSERT_TRUE(is_close(gain_hf, 0.0, 0.1));
@@ -355,11 +342,10 @@ TEST(GeneralNotchLP) {
                                 .freq_notch = 1000.0,
                                 .freq_pole = 500.0,
                                 .normalize_at_dc = true};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
-  gain_and_phase(&coeffs, 1000.0, 44100.0, &gain_fp, &p1);
-  gain_and_phase(&coeffs, 20000.0, 44100.0, &gain_hf, &p2);
-  gain_and_phase(&coeffs, 1.0, 44100.0, &gain_lf, &p3);
+  gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
+  gain_and_phase(&params, 20000.0, 44100.0, &gain_hf, &p2);
+  gain_and_phase(&params, 1.0, 44100.0, &gain_lf, &p3);
   ASSERT_TRUE(gain_fp < -40.0);
   ASSERT_TRUE(is_close(gain_lf, 0.0, 0.1));
   ASSERT_TRUE(is_close(gain_hf, -12.1, 0.1));
@@ -371,12 +357,11 @@ TEST(LinkwitzTransform) {
                                 .q_act = 1.2,
                                 .freq_target = 25.0,
                                 .q_target = 0.7};
-  biquad_coefficients_t coeffs = make_coeffs(&params, 44100);
   double gain10, p1, gain87, p2, gain123, p3, gain_hf, p4;
-  gain_and_phase(&coeffs, 10.0, 44100.0, &gain10, &p1);
-  gain_and_phase(&coeffs, 87.0, 44100.0, &gain87, &p2);
-  gain_and_phase(&coeffs, 123.0, 44100.0, &gain123, &p3);
-  gain_and_phase(&coeffs, 10000.0, 44100.0, &gain_hf, &p4);
+  gain_and_phase(&params, 10.0, 44100.0, &gain10, &p1);
+  gain_and_phase(&params, 87.0, 44100.0, &gain87, &p2);
+  gain_and_phase(&params, 123.0, 44100.0, &gain123, &p3);
+  gain_and_phase(&params, 10000.0, 44100.0, &gain_hf, &p4);
   ASSERT_TRUE(is_close(gain10, 23.9, 0.1));
   ASSERT_TRUE(is_close(gain87, 0.0, 0.1));
   ASSERT_TRUE(is_close(gain123, -2.4, 0.1));

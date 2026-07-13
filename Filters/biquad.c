@@ -4,6 +4,30 @@
 #include <Accelerate/Accelerate.h>
 #endif
 
+/**
+ * @struct biquad_coefficients_t
+ * @brief Structure holding the transfer function coefficients of a biquad filter.
+ *
+ * The transfer function is defined as:
+ * \f$ H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}} \f$
+ */
+typedef struct {
+  double b0; /**< Numerator coefficient for \f$z^0\f$ */
+  double b1; /**< Numerator coefficient for \f$z^{-1}\f$ */
+  double b2; /**< Numerator coefficient for \f$z^{-2}\f$ */
+  double a1; /**< Denominator coefficient for \f$z^{-1}\f$ */
+  double a2; /**< Denominator coefficient for \f$z^{-2}\f$ */
+} biquad_coefficients_t;
+
+/**
+ * @brief Returns coefficients for a passthrough filter (identity / no effect).
+ *
+ * @return Biquad coefficients representing an identity filter (b0=1, all others 0).
+ */
+static inline biquad_coefficients_t biquad_coefficients_passthrough(void) {
+  return (biquad_coefficients_t){1.0, 0.0, 0.0, 0.0, 0.0};
+}
+
 struct biquad_filter {
   char name[64];
   biquad_coefficients_t coeffs;
@@ -24,9 +48,34 @@ struct biquad_filter {
 #define M_PI 3.14159265358979323846
 #endif
 
-bool biquad_coefficients_compute(const biquad_parameters_t* params,
-                                 int sample_rate,
-                                 biquad_coefficients_t* out_coeffs) {
+/**
+ * @brief Validates stability of a biquad filter using the Jury pole triangle condition.
+ *
+ * Checks if poles lie strictly inside the unit circle:
+ * \f$ |a_2| < 1.0 \land |a_1| < a_2 + 1.0 \f$
+ *
+ * @param coeffs Pointer to the biquad coefficients structure.
+ * @return true if the filter is strictly stable, false otherwise.
+ */
+static inline bool is_stable(const biquad_coefficients_t* coeffs) {
+  if (!coeffs) return false;
+  return fabs(coeffs->a2) < 1.0 && (fabs(coeffs->a1) < (coeffs->a2 + 1.0));
+}
+
+/**
+ * @brief Computes low-level transfer function coefficients from high-level parameters.
+ *
+ * Calculates b0, b1, b2, a1, a2 based on parameter type (lowpass, highpass, shelving,
+ * peaking, allpass, notch, Linkwitz transform, etc.) and sample rate.
+ *
+ * @param params High-level biquad parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param out_coeffs Pointer to store computed transfer coefficients.
+ * @return true if computation succeeded and coefficients are stable, false otherwise.
+ */
+static bool biquad_coefficients_compute(const biquad_parameters_t* params,
+                                        int sample_rate,
+                                        biquad_coefficients_t* out_coeffs) {
   if (!params || !out_coeffs || sample_rate <= 0) return false;
 
   double fs = (double)sample_rate;
@@ -53,22 +102,19 @@ bool biquad_coefficients_compute(const biquad_parameters_t* params,
     if (fabs(sin_w0) < 1e-12) sin_w0 = 1e-12;
     if (A < 1e-12) A = 1e-12;
 
-    // Compute effective Q if bandwidth or slope is present
-    // Bandwidth to Q conversion: Q = 1 / (2 * sinh(ln(2)/2 * BW * w0 /
-    // sin(w0)))
+    // Compute alpha directly based on steepness_type (Bandwidth, Slope, or Q)
     if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
       double bw = params->bandwidth;
-      q = 1.0 / (2.0 * sinh(log(2.0) / 2.0 * bw * w0 / sin_w0));
+      alpha = sin_w0 * sinh(log(2.0) / 2.0 * bw * w0 / sin_w0);
     } else if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
-      // Slope to Q conversion: Q = 1 / sqrt((A + 1/A) * (1/S - 1) + 2)
       double slope_s = params->slope / 12.0;
       if (fabs(slope_s) < 1e-12) slope_s = 1e-12;
       double term = (A + 1.0 / A) * (1.0 / slope_s - 1.0) + 2.0;
-      q = 1.0 / sqrt(term > 1e-12 ? term : 1e-12);
+      alpha = sin_w0 / 2.0 * sqrt(term > 1e-12 ? term : 1e-12);
+    } else {
+      if (fabs(q) < 1e-12) q = 1e-12;
+      alpha = sin_w0 / (2.0 * q);
     }
-
-    if (fabs(q) < 1e-12) q = 1e-12;
-    alpha = sin_w0 / (2.0 * q);
   }
 
   double b0 = 0, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
@@ -257,65 +303,15 @@ bool biquad_coefficients_compute(const biquad_parameters_t* params,
   out_coeffs->b2 = b2 / a0;
   out_coeffs->a1 = a1 / a0;
   out_coeffs->a2 = a2 / a0;
-  return true;
+
+  return is_stable(out_coeffs);
 }
 
-/// Magnitude response in dB at frequency `f` (Hz). Uses the analytic
-/// transfer function H(z=e^{jω}) — no time-domain simulation needed.
-/// Returns 0 dB for the degenerate case where the denominator
-/// vanishes.
-double biquad_coefficients_gain_db(const biquad_coefficients_t* coeffs,
-                                   double f, int sample_rate) {
-  if (!coeffs || sample_rate <= 0) return 0.0;
-  // Calculate angular frequency w = 2*pi*f/Fs
-  double w = 2.0 * M_PI * f / (double)sample_rate;
-  double cos_w = cos(w);
-  double sin_w = sin(w);
-  double cos_2w = cos(2.0 * w);
-  double sin_2w = sin(2.0 * w);
-  // H(z) = (b0 + b1*z^-1 + b2*z^-2) / (1 + a1*z^-1 + a2*z^-2)
-  // Substitute z = e^(jw) = cos(w) + j*sin(w)
-  // z^-1 = cos(w) - j*sin(w)
-  // z^-2 = cos(2w) - j*sin(2w)
-  double num_re = coeffs->b0 + coeffs->b1 * cos_w + coeffs->b2 * cos_2w;
-  double num_im = -coeffs->b1 * sin_w - coeffs->b2 * sin_2w;
-  double den_re = 1.0 + coeffs->a1 * cos_w + coeffs->a2 * cos_2w;
-  double den_im = -coeffs->a1 * sin_w - coeffs->a2 * sin_2w;
-  double num_mag_sq = num_re * num_re + num_im * num_im;
-  double den_mag_sq = den_re * den_re + den_im * den_im;
-  return (den_mag_sq > 0.0) ? 10.0 * log10(num_mag_sq / den_mag_sq) : 0.0;
-}
 
-/// Phase response in radians at frequency `f` (Hz), wrapped to
-/// `(−π, π]`. Sign convention matches `atan2(Im(H), Re(H))`.
-double biquad_coefficients_phase_rad(const biquad_coefficients_t* coeffs,
-                                     double f, int sample_rate) {
-  if (!coeffs || sample_rate <= 0) return 0.0;
-  // Calculate angular frequency w = 2*pi*f/Fs
-  double w = 2.0 * M_PI * f / (double)sample_rate;
-  double cos_w = cos(w);
-  double sin_w = sin(w);
-  double cos_2w = cos(2.0 * w);
-  double sin_2w = sin(2.0 * w);
-  // H(z) = Num(z) / Den(z)
-  // Substitute z = e^(jw)
-  double num_re = coeffs->b0 + coeffs->b1 * cos_w + coeffs->b2 * cos_2w;
-  double num_im = -coeffs->b1 * sin_w - coeffs->b2 * sin_2w;
-  double den_re = 1.0 + coeffs->a1 * cos_w + coeffs->a2 * cos_2w;
-  double den_im = -coeffs->a1 * sin_w - coeffs->a2 * sin_2w;
-  double den_mag_sq = den_re * den_re + den_im * den_im;
-  if (den_mag_sq <= 0.0) return 0.0;
-  // H(e^(jw)) = (Num_re + j*Num_im) / (Den_re + j*Den_im)
-  //           = ((Num_re + j*Num_im) * (Den_re - j*Den_im)) / |Den|^2
-  //           = (Num_re*Den_re + Num_im*Den_im + j*(Num_im*Den_re -
-  //           Num_re*Den_im)) / |Den|^2
-  double h_re = (num_re * den_re + num_im * den_im) / den_mag_sq;
-  double h_im = (num_im * den_re - num_re * den_im) / den_mag_sq;
-  return atan2(h_im, h_re);
-}
 
 biquad_filter_t* biquad_filter_create(const char* name,
-                                      const biquad_coefficients_t* coeffs,
+                                      const biquad_parameters_t* params,
+                                      int sample_rate,
                                       config_error_t* err) {
   biquad_filter_t* filter =
       (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
@@ -330,7 +326,18 @@ biquad_filter_t* biquad_filter_create(const char* name,
   } else {
     strcpy(filter->name, "biquad");
   }
-  filter->coeffs = coeffs ? *coeffs : biquad_coefficients_passthrough();
+
+  if (!params) {
+    filter->coeffs = biquad_coefficients_passthrough();
+  } else {
+    if (!biquad_coefficients_compute(params, sample_rate, &filter->coeffs)) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Failed to compute coefficients or filter is unstable for '%s'",
+                       filter->name);
+      biquad_filter_free(filter);
+      return NULL;
+    }
+  }
 
 #ifdef ENABLE_ACCELERATE
   filter->coeffs_array[0] = filter->coeffs.b0;
@@ -341,8 +348,7 @@ biquad_filter_t* biquad_filter_create(const char* name,
   filter->setup = vDSP_biquadm_CreateSetupD(filter->coeffs_array, 1, 1);
   if (!filter->setup) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Failed to initialize vDSP biquad setup for filter '%s' "
-                     "(check coefficients)",
+                     "Failed to initialize vDSP biquad setup for filter '%s'",
                      filter->name);
     biquad_filter_free(filter);
     return NULL;
@@ -355,6 +361,12 @@ biquad_filter_t* biquad_filter_create(const char* name,
 #endif
   return filter;
 }
+
+
+
+
+
+
 
 void biquad_filter_process(biquad_filter_t* filter, mutable_waveform_t waveform,
                            size_t count) {

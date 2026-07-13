@@ -32,9 +32,10 @@ struct delay_filter {
  */
 static void build_delay(double delay_samples, bool subsample,
                         int* out_integer_delay,
-                        biquad_coefficients_t* out_coeffs,
+                        biquad_parameters_t* out_params,
                         bool* out_has_coeffs) {
   *out_has_coeffs = false;
+  out_params->type = BIQUAD_TYPE_FREE;
   if (subsample) {
     // If the delay is very small, we can't design a stable Thiran filter.
     if (delay_samples < 0.1) {
@@ -47,11 +48,11 @@ static void build_delay(double delay_samples, bool subsample,
       double coeff = (1.0 - delay_samples) / (1.0 + delay_samples);
       // 1st order Thiran allpass: coeffs a1 = coeff, b0 = coeff, b1 = 1.0, b2 =
       // 0.0, a2 = 0.0
-      out_coeffs->b0 = coeff;
-      out_coeffs->b1 = 1.0;
-      out_coeffs->b2 = 0.0;
-      out_coeffs->a1 = coeff;
-      out_coeffs->a2 = 0.0;
+      out_params->b0 = coeff;
+      out_params->b1 = 1.0;
+      out_params->b2 = 0.0;
+      out_params->a1 = coeff;
+      out_params->a2 = 0.0;
       *out_integer_delay = 0;
       *out_has_coeffs = true;
       return;
@@ -73,11 +74,11 @@ static void build_delay(double delay_samples, bool subsample,
     double coeff1 = 2.0 * (2.0 - fraction) / (1.0 + fraction);
     double coeff2 = ((2.0 - fraction) / (2.0 + fraction)) *
                     ((1.0 - fraction) / (1.0 + fraction));
-    out_coeffs->b0 = coeff2;
-    out_coeffs->b1 = coeff1;
-    out_coeffs->b2 = 1.0;
-    out_coeffs->a1 = coeff1;
-    out_coeffs->a2 = coeff2;
+    out_params->b0 = coeff2;
+    out_params->b1 = coeff1;
+    out_params->b2 = 1.0;
+    out_params->a1 = coeff1;
+    out_params->a2 = coeff2;
     *out_integer_delay = (int)samples;
     *out_has_coeffs = true;
   } else {
@@ -117,9 +118,9 @@ delay_filter_t* delay_filter_create(const char* name,
   }
 
   int integer_delay = 0;
-  biquad_coefficients_t coeffs;
+  biquad_parameters_t bq_params = {0};
   bool has_coeffs = false;
-  build_delay(delay_samples, subsample, &integer_delay, &coeffs, &has_coeffs);
+  build_delay(delay_samples, subsample, &integer_delay, &bq_params, &has_coeffs);
 
   if (integer_delay > 0) {
     filter->queue = (double*)calloc(integer_delay, sizeof(double));
@@ -137,7 +138,7 @@ delay_filter_t* delay_filter_create(const char* name,
   }
   filter->read_index = 0;
   if (has_coeffs) {
-    filter->biquad = biquad_filter_create("delay_biquad", &coeffs, err);
+    filter->biquad = biquad_filter_create("delay_biquad", &bq_params, sample_rate, err);
     if (!filter->biquad) {
       delay_filter_free(filter);
       return NULL;

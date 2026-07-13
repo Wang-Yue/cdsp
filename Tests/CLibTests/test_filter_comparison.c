@@ -230,9 +230,9 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_coefficients_t coeffs = {
-      .b0 = b0, .b1 = b1, .b2 = b2, .a1 = a1, .a2 = a2};
-  biquad_filter_t* filter = biquad_filter_create("test_bq", &coeffs, NULL);
+  biquad_parameters_t params = {
+      .type = BIQUAD_TYPE_FREE, .b0 = b0, .b1 = b1, .b2 = b2, .a1 = a1, .a2 = a2};
+  biquad_filter_t* filter = biquad_filter_create("test_bq", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));

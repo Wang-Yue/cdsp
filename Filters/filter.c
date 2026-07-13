@@ -63,21 +63,9 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
 
   switch (config->type) {
     case FILTER_TYPE_BIQUAD: {
-      biquad_coefficients_t coeffs;
-      if (!biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
-                                       &coeffs)) {
-        logger_error(&logger,
-                     "Failed to compute biquad coefficients for filter '%s'",
-                     filter->name);
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "Failed to compute biquad coefficients for filter '%s'",
-            filter->name);
-        free(filter);
-        return NULL;
-      }
       filter->type = FILTER_INSTANCE_BIQUAD;
-      filter->instance = biquad_filter_create(name, &coeffs, err);
+      filter->instance = biquad_filter_create(
+          name, &config->parameters.biquad, sample_rate, err);
       break;
     }
     case FILTER_TYPE_BIQUAD_COMBO:

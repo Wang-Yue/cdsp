@@ -118,16 +118,19 @@ loudness_filter_t* loudness_filter_create(const char* name,
     memset(&filter->params, 0, sizeof(loudness_parameters_t));
   }
   filter->processing_parameters = proc_params;
-  filter->last_volume = 0.0;
-  filter->is_processing_active = false;
-  filter->midband_attenuation_db = 0.0;
-
-  filter->low_shelf_filter = biquad_filter_create("loudness_ls", NULL, err);
-  filter->high_shelf_filter = biquad_filter_create("loudness_hs", NULL, err);
+  filter->low_shelf_filter =
+      biquad_filter_create("loudness_ls", NULL, sample_rate, err);
+  filter->high_shelf_filter =
+      biquad_filter_create("loudness_hs", NULL, sample_rate, err);
   if (!filter->low_shelf_filter || !filter->high_shelf_filter) {
     loudness_filter_free(filter);
     return NULL;
   }
+
+  double init_vol = processing_parameters_get_current_volume_for_fader(
+      filter->processing_parameters, filter->params.fader);
+  filter->last_volume = init_vol;
+  recompute_shelves(filter, init_vol);
 
   return filter;
 }
@@ -141,10 +144,7 @@ void loudness_filter_process(loudness_filter_t* filter,
       filter->processing_parameters, filter->params.fader);
 
   // Recompute filter coefficients only if the volume has changed significantly.
-  // This avoids expensive filter re-calculation (and potential audio glitches)
-  // for tiny volume fluctuations.
-  if (fabs(current_vol - filter->last_volume) > 0.01 ||
-      !filter->is_processing_active) {
+  if (fabs(current_vol - filter->last_volume) > 0.01) {
     filter->last_volume = current_vol;
     recompute_shelves(filter, current_vol);
   }

@@ -289,4 +289,39 @@ TEST(PartialChunk_AsyncSinc) {
   assert_accepts_partial_chunk(RESAMPLER_TYPE_ASYNC_SINC, NULL);
 }
 
+TEST(AsyncSinc_UnderrunBoundaryCheck) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+
+  size_t chunk_size = 1024;
+  audio_resampler_t* res = audio_resampler_create_from_config(
+      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t actual_cs = audio_resampler_get_chunk_size(res);
+  size_t max_out = audio_resampler_get_max_output_frames(res);
+  audio_chunk_t* empty_in = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* valid_in = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out, 2);
+
+  // Set 0 valid frames to simulate multiple underrun chunks
+  audio_chunk_set_valid_frames(empty_in, 0);
+  for (int i = 0; i < 10; i++) {
+    resampler_error_t err = audio_resampler_process(res, empty_in, out_chunk);
+    ASSERT_EQ(RESAMPLER_OK, err);
+  }
+
+  // Now process valid chunk when last_index is at minimum safe index boundary
+  audio_chunk_set_valid_frames(valid_in, actual_cs);
+  resampler_error_t err = audio_resampler_process(res, valid_in, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+
+  audio_chunk_free(empty_in);
+  audio_chunk_free(valid_in);
+  audio_chunk_free(out_chunk);
+  audio_resampler_free(res);
+}
+
 TEST_MAIN()
