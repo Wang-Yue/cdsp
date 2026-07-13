@@ -41,47 +41,6 @@ int alsa_capabilities_available_device_names(bool is_capture,
   return count;
 }
 
-bool alsa_capabilities_default_device_name(bool is_capture, char* out_name,
-                                           size_t max_len) {
-  (void)is_capture;
-  snprintf(out_name, max_len, "default");
-  return true;
-}
-
-int alsa_capabilities_channel_count(const char* device_name, bool is_capture) {
-  pthread_mutex_lock(&g_alsa_mutex);
-  snd_pcm_t* pcm = NULL;
-  snd_pcm_stream_t stream =
-      is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
-  // Parse device name: strip any extra info like "(card description)"
-  char clean_name[256];
-  snprintf(clean_name, sizeof(clean_name), "%s", device_name);
-  char* space = strchr(clean_name, ' ');
-  if (space) *space = '\0';
-
-  // Open the PCM device in non-blocking mode to probe capabilities
-  int err = snd_pcm_open(&pcm, clean_name, stream, SND_PCM_NONBLOCK);
-  if (err < 0) {
-    pthread_mutex_unlock(&g_alsa_mutex);
-    return 2;  // fallback default
-  }
-
-  snd_pcm_hw_params_t* params = NULL;
-  snd_pcm_hw_params_alloca(&params);
-  // Initialize hardware parameters structure
-  if (snd_pcm_hw_params_any(pcm, params) < 0) {
-    snd_pcm_close(pcm);
-    pthread_mutex_unlock(&g_alsa_mutex);
-    return 2;
-  }
-  // Retrieve maximum supported channels
-  unsigned int max_ch = 2;
-  snd_pcm_hw_params_get_channels_max(params, &max_ch);
-  snd_pcm_close(pcm);
-  pthread_mutex_unlock(&g_alsa_mutex);
-  return (int)max_ch;
-}
-
 audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {

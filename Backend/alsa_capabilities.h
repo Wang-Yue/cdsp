@@ -34,27 +34,6 @@ int alsa_capabilities_available_device_names(bool is_capture,
                                              int max_names);
 
 /**
- * @brief Gets the default ALSA device name.
- *
- * @param is_capture True for capture default, false for playback default.
- * @param out_name Buffer to store the default device name.
- * @param max_len Size of the out_name buffer.
- * @return True if the default device was found, false otherwise.
- */
-bool alsa_capabilities_default_device_name(bool is_capture, char* out_name,
-                                           size_t max_len);
-
-/**
- * @brief Queries the maximum channel count for a specific ALSA device.
- *
- * @param device_name The ALSA device name (e.g., "default", "hw:0,0").
- * @param is_capture True to query capture capabilities, false for playback.
- * @return The maximum number of channels supported, or a negative value on
- * error.
- */
-int alsa_capabilities_channel_count(const char* device_name, bool is_capture);
-
-/**
  * @brief Creates a detailed descriptor of an ALSA device's capabilities.
  *
  * @param device_name The ALSA device name.

@@ -38,11 +38,6 @@ void audio_chunk_set_valid_frames(audio_chunk_t* chunk, size_t valid_frames) {
   if (chunk) chunk->valid_frames = valid_frames;
 }
 
-audio_buffers_t* audio_chunk_get_buffers(audio_chunk_t* chunk) {
-  return chunk ? chunk->buffers : NULL;
-}
-
-/// Create a new silent audio chunk with freshly allocated storage.
 audio_chunk_t* audio_chunk_create(size_t frames, size_t channels) {
   audio_chunk_t* chunk = (audio_chunk_t*)calloc(1, sizeof(audio_chunk_t));
   if (!chunk) return NULL;
@@ -53,20 +48,6 @@ audio_chunk_t* audio_chunk_create(size_t frames, size_t channels) {
   }
   chunk->valid_frames = frames;
   chunk->owns_buffers = true;
-  return chunk;
-}
-
-/// Create an audio chunk that adopts the given `audio_buffers_t`. Zero-copy.
-audio_chunk_t* audio_chunk_from_buffers(audio_buffers_t* buffers,
-                                        size_t valid_frames) {
-  if (!buffers) return NULL;
-  audio_chunk_t* chunk = (audio_chunk_t*)calloc(1, sizeof(audio_chunk_t));
-  if (!chunk) return NULL;
-  chunk->buffers = buffers;
-  chunk->valid_frames = valid_frames;
-  // Mark as not owning the buffers. This chunk acts as a temporary view,
-  // and freeing this chunk will not free the underlying buffers.
-  chunk->owns_buffers = false;
   return chunk;
 }
 

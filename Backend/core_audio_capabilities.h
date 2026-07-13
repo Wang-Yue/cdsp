@@ -51,32 +51,6 @@ int core_audio_capabilities_available_device_names(bool is_capture,
                                                    int max_names);
 
 /**
- * @brief Get the name of the system-default device in the requested direction.
- *
- * @param is_capture True for capture default, false for playback default.
- * @param out_name Buffer to store the default device name.
- * @param max_len Size of the out_name buffer.
- * @return true if default device was found and name copied, false otherwise.
- */
-bool core_audio_capabilities_default_device_name(bool is_capture,
-                                                 char* out_name,
-                                                 size_t max_len);
-
-/**
- * @brief Get the maximum channel count the named device exposes.
- *
- * Derived from core_audio_capabilities_describe().
- * Used to populate per-channel pickers.
- *
- * @param device_name Name of the device. If NULL, the system default is
- * queried.
- * @param is_capture True for capture device, false for playback device.
- * @return Maximum channel count, or 0 if device not found.
- */
-int core_audio_capabilities_channel_count(const char* device_name,
-                                          bool is_capture);
-
-/**
  * @brief Build the capability descriptor for a named device.
  *
  * Delegates low-level HAL plumbing to `CoreAudioDevice`.
