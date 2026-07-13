@@ -212,7 +212,7 @@ void compressor_processor_process(compressor_processor_t* processor,
   // the envelope.
   for (size_t i = 0; i < count; i++) {
     double val = processor->scratch[i];
-    if (val > processor->threshold) {
+    if (val > processor->threshold && processor->factor > 1.0) {
       // Above threshold: attenuate according to compression ratio (factor).
       // The attenuation in dB is: -(excess_dB * (ratio - 1) / ratio).
       val = -(val - processor->threshold) * (processor->factor - 1.0) /

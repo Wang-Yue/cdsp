@@ -205,6 +205,9 @@ void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
     processor->feedback_b =
         gain_filter_process_single(processor->gain, processor->feedback_b);
 
+    if (!isfinite(processor->feedback_a)) processor->feedback_a = 0.0;
+    if (!isfinite(processor->feedback_b)) processor->feedback_b = 0.0;
+
     // Step 4: Output cross-talk cancelled samples in place
     base_a[i] = added_a;
     base_b[i] = added_b;

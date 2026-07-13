@@ -203,7 +203,12 @@ static void process_slice(lookahead_limiter_filter_t* filter,
   // Forward pass: Apply exponential release to the gain envelope.
   for (size_t i = 0; i < len; i++) {
     // Release gain exponentially towards 1.0 using pow() in the log/dB domain.
+    if (filter->release_gain <= 1e-12 || !isfinite(filter->release_gain)) {
+      filter->release_gain = 1e-12;
+    }
     filter->release_gain = pow(filter->release_gain, filter->release_coeff);
+    if (filter->release_gain > 1.0) filter->release_gain = 1.0;
+
     if (filter->output_buffer[i] < filter->release_gain) {
       // Instantaneous gain reduction if the peak requires it.
       filter->release_gain = filter->output_buffer[i];
