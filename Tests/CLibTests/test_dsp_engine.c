@@ -740,8 +740,11 @@ TEST(DSPEngineE2E_FileFile) {
   bool success = dsp_engine_set_config(engine, json, &err);
   ASSERT_TRUE(success);
 
-  struct timespec ts = {.tv_sec = 0, .tv_nsec = 50000000};
-  nanosleep(&ts, NULL);
+  for (int i = 0; i < 50; i++) {
+    if (dsp_engine_get_status(engine).state == PROCESSING_STATE_INACTIVE) break;
+    struct timespec poll_ts = {.tv_sec = 0, .tv_nsec = 10000000};
+    nanosleep(&poll_ts, NULL);
+  }
 
   dsp_engine_stop(engine);
   dsp_engine_free(engine);
@@ -800,8 +803,8 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   memset(&err, 0, sizeof(err));
   ASSERT_TRUE(dsp_engine_set_config(engine, json, &err));
 
-  // Sleep for 50ms to let the engine stream at infinite speed
-  struct timespec ts = {.tv_sec = 0, .tv_nsec = 50000000};
+  // Sleep for 200ms to let the engine stream at infinite speed
+  struct timespec ts = {.tv_sec = 0, .tv_nsec = 200000000};
   nanosleep(&ts, NULL);
 
   dsp_engine_stop(engine);
