@@ -149,6 +149,8 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
     } else if (pi->accumulated * pi->ki < min_val) {
       pi->accumulated = min_val / pi->ki;
     }
+  } else {
+    pi->accumulated = 0.0;
   }
 
   double proportional = pi->kp * rel_err;
