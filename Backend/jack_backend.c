@@ -28,6 +28,8 @@ struct jack_capture {
   bool active;
   double pending_rate;
   bool rate_changed;
+  float* scratch_buf;
+  size_t scratch_capacity;
   logger_t logger;
 };
 
@@ -273,7 +275,14 @@ bool jack_capture_read(jack_capture_t* capture, size_t frames,
     if (!capture->active) return false;
   }
 
-  float* temp = (float*)calloc(frames, sizeof(float));
+  if (capture->scratch_capacity < frames) {
+    float* new_buf = (float*)realloc(capture->scratch_buf, frames * sizeof(float));
+    if (!new_buf) return false;
+    capture->scratch_buf = new_buf;
+    capture->scratch_capacity = frames;
+  }
+
+  float* temp = capture->scratch_buf;
   for (int c = 0; c < capture->channels; c++) {
     size_t consumed =
         spsc_audio_ring_buffer_consume(capture->buffers[c], temp, frames);
@@ -343,6 +352,7 @@ void jack_capture_destroy(jack_capture_t* capture) {
   for (int c = 0; c < capture->channels; c++) {
     spsc_audio_ring_buffer_free(capture->buffers[c]);
   }
+  if (capture->scratch_buf) free(capture->scratch_buf);
   free(capture->buffers);
   free(capture);
 }
@@ -364,6 +374,8 @@ struct jack_playback {
   bool is_paused;
   double pending_rate;
   bool rate_changed;
+  float* scratch_buf;
+  size_t scratch_capacity;
   logger_t logger;
 };
 
@@ -632,7 +644,14 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
     if (!playback->active) return false;
   }
 
-  float* temp = (float*)calloc(frames, sizeof(float));
+  if (playback->scratch_capacity < frames) {
+    float* new_buf = (float*)realloc(playback->scratch_buf, frames * sizeof(float));
+    if (!new_buf) return false;
+    playback->scratch_buf = new_buf;
+    playback->scratch_capacity = frames;
+  }
+
+  float* temp = playback->scratch_buf;
   for (int c = 0; c < playback->channels; c++) {
     const double* src = audio_chunk_get_channel(chunk, c);
     for (size_t f = 0; f < frames; f++) {
@@ -640,7 +659,6 @@ bool jack_playback_write(jack_playback_t* playback, const audio_chunk_t* chunk,
     }
     spsc_audio_ring_buffer_write(playback->buffers[c], temp, frames, 1);
   }
-  free(temp);
 
   return true;
 }
@@ -699,6 +717,7 @@ void jack_playback_destroy(jack_playback_t* playback) {
   for (int c = 0; c < playback->channels; c++) {
     spsc_audio_ring_buffer_free(playback->buffers[c]);
   }
+  if (playback->scratch_buf) free(playback->scratch_buf);
   free(playback->buffers);
   free(playback);
 }

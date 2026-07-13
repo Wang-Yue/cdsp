@@ -88,12 +88,18 @@ static inline void cdsp_sem_destroy(cdsp_sem_t sem) {
   }
 }
 
+#include <errno.h>
+
 static inline void cdsp_sem_signal(cdsp_sem_t sem) {
   if (sem) sem_post(sem);
 }
 
 static inline void cdsp_sem_wait(cdsp_sem_t sem) {
-  if (sem) sem_wait(sem);
+  if (!sem) return;
+  int res;
+  do {
+    res = sem_wait(sem);
+  } while (res == -1 && errno == EINTR);
 }
 
 static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
@@ -103,7 +109,11 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   uint64_t nsec = (uint64_t)ts.tv_nsec + (uint64_t)timeout_ms * 1000000ULL;
   ts.tv_sec += nsec / 1000000000ULL;
   ts.tv_nsec = nsec % 1000000000ULL;
-  return sem_timedwait(sem, &ts) == 0;
+  int res;
+  do {
+    res = sem_timedwait(sem, &ts);
+  } while (res == -1 && errno == EINTR);
+  return res == 0;
 }
 
 #elif defined(_WIN32)

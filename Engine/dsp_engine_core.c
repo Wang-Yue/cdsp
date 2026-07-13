@@ -714,7 +714,10 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
   // 1. Perform configuration diffing.
   // Evaluate the changes between the running config and the new config.
   config_change_t* change = config_change_create();
-  if (!change) return false;
+  if (!change) {
+    dsp_config_free(new_config);
+    return false;
+  }
   config_change_type_t change_type =
       config_diff(old_config, new_config, change);
 

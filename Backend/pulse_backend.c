@@ -607,6 +607,16 @@ bool pulse_playback_get_is_paused(pulse_playback_t* playback) {
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
+void pulse_playback_set_pitch(pulse_playback_t* playback, double multiplier) {
+  (void)playback;
+  (void)multiplier;
+}
+
+bool pulse_playback_pitch_control_supported(pulse_playback_t* playback) {
+  (void)playback;
+  return false;
+}
+
 void pulse_playback_set_is_paused(pulse_playback_t* playback, bool paused) {
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);

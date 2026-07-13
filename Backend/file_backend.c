@@ -805,7 +805,11 @@ bool file_capture_wait(file_capture_t* capture, uint32_t timeout_ms) {
   return true;
 }
 
-void file_capture_destroy(file_capture_t* capture) { free(capture); }
+void file_capture_destroy(file_capture_t* capture) {
+  if (!capture) return;
+  file_capture_close(capture);
+  free(capture);
+}
 
 void file_capture_set_is_paused(file_capture_t* capture, bool paused) {
   if (capture) {

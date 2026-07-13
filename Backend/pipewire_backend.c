@@ -846,6 +846,17 @@ bool pipewire_playback_get_is_paused(pipewire_playback_t* playback) {
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
+bool pipewire_playback_pitch_control_supported(pipewire_playback_t* playback) {
+  (void)playback;
+  return false;
+}
+
+void pipewire_playback_set_pitch(pipewire_playback_t* playback,
+                                double multiplier) {
+  (void)playback;
+  (void)multiplier;
+}
+
 void pipewire_playback_set_is_paused(pipewire_playback_t* playback,
                                      bool paused) {
   if (!playback) return;

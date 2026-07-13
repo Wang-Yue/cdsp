@@ -185,18 +185,19 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       }
     }
 
-    // Calculate total buffer level: frames in the hardware playback buffer
-    // plus frames currently queued in the SPSC queue waiting to be written.
+    // Calculate total buffer level: frames in hardware playback buffer plus
+    // processed queue frames (matching upstream CamillaDSP).
     size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
-    size_t queued_frames =
+    size_t processed_queued =
         spsc_queue_get_count(
             engine_shared_state_get_processed_queue(loop->shared)) *
         loop->chunk_size;
+    double total_buffer_fill = (double)(ring_fill + processed_queued);
     processing_parameters_set_buffer_level(loop->processing_params,
-                                           (double)(ring_fill + queued_frames));
+                                           total_buffer_fill);
 
     if (loop->rate_adjust_enabled && rate_controller) {
-      averager_add(&averager, (double)(ring_fill + queued_frames));
+      averager_add(&averager, total_buffer_fill);
 
       // Only run the PI controller periodically to avoid rapid fluctuations
       // and allow the physical/resampler adjustments to take effect.

@@ -685,6 +685,10 @@ void core_audio_capture_close(core_audio_capture_t* capture) {
   }
   if (capture->audio_unit) {
     AudioOutputUnitStop(capture->audio_unit);
+    AURenderCallbackStruct null_cb = {0};
+    AudioUnitSetProperty(capture->audio_unit,
+                         kAudioOutputUnitProperty_SetInputCallback,
+                         kAudioUnitScope_Global, 0, &null_cb, sizeof(null_cb));
     AudioComponentInstanceDispose(capture->audio_unit);
     capture->audio_unit = NULL;
   }

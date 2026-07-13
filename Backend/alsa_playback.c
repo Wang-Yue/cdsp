@@ -550,11 +550,13 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
 
 void alsa_playback_close(alsa_playback_t* playback) {
   if (!playback) return;
+  pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm) {
     snd_pcm_drain(playback->pcm);
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
   }
+  pthread_mutex_unlock(&g_alsa_mutex);
   if (playback->interleaved_buf) {
     free(playback->interleaved_buf);
     playback->interleaved_buf = NULL;

@@ -145,6 +145,11 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
               loop->shared)) != NULL) {
     uint64_t res_start = 0;
     uint64_t res_end = 0;
+    if (engine_shared_state_get_state(loop->shared) ==
+        PROCESSING_STATE_PAUSED) {
+      continue;
+    }
+
     if (loop->resampler) {
       // Resample if configured. The desired ratio is published
       // by the rate-adjust controller via `shared.resamplerRatio`;
@@ -192,11 +197,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         }
       }
       loop->active_pipeline = next_pipeline;
-    }
-
-    if (engine_shared_state_get_state(loop->shared) ==
-        PROCESSING_STATE_PAUSED) {
-      continue;
     }
 
     // Retrieve a pre-allocated scratch chunk from the round-robin pool.
