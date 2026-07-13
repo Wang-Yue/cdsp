@@ -299,8 +299,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
 
   // Probe native sample format of the first channel.
   // ASIO usually expects all channels to share the same sample type.
-  ASIOChannelInfo chan_info;
-  memset(&chan_info, 0, sizeof(chan_info));
+  ASIOChannelInfo chan_info = {0};
   chan_info.channel = 0;
   chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
   iasio->lpVtbl->getChannelInfo(iasio, &chan_info);

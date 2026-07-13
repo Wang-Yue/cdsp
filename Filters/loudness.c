@@ -69,26 +69,24 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
   // Low shelf at 70 Hz, 12 dB/oct slope
   // Update coefficients in-place to preserve biquad delay-line state (no
   // clicks)
-  filter_config_t lp_cfg;
-  memset(&lp_cfg, 0, sizeof(lp_cfg));
-  lp_cfg.type = FILTER_TYPE_BIQUAD;
-  lp_cfg.parameters.biquad.type = BIQUAD_TYPE_LOWSHELF;
-  lp_cfg.parameters.biquad.freq = 70.0;
-  lp_cfg.parameters.biquad.gain = low_boost;
-  lp_cfg.parameters.biquad.slope = 12.0;
-  lp_cfg.parameters.biquad.steepness_type = STEEPNESS_TYPE_SLOPE;
+  filter_config_t lp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_LOWSHELF,
+                            .freq = 70.0,
+                            .gain = low_boost,
+                            .slope = 12.0,
+                            .steepness_type = STEEPNESS_TYPE_SLOPE}};
   biquad_filter_update_parameters(filter->low_shelf_filter, &lp_cfg,
                                   filter->sample_rate);
 
   // High shelf at 3500 Hz, 12 dB/oct slope
-  filter_config_t hp_cfg;
-  memset(&hp_cfg, 0, sizeof(hp_cfg));
-  hp_cfg.type = FILTER_TYPE_BIQUAD;
-  hp_cfg.parameters.biquad.type = BIQUAD_TYPE_HIGHSHELF;
-  hp_cfg.parameters.biquad.freq = 3500.0;
-  hp_cfg.parameters.biquad.gain = high_boost;
-  hp_cfg.parameters.biquad.slope = 12.0;
-  hp_cfg.parameters.biquad.steepness_type = STEEPNESS_TYPE_SLOPE;
+  filter_config_t hp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_HIGHSHELF,
+                            .freq = 3500.0,
+                            .gain = high_boost,
+                            .slope = 12.0,
+                            .steepness_type = STEEPNESS_TYPE_SLOPE}};
   biquad_filter_update_parameters(filter->high_shelf_filter, &hp_cfg,
                                   filter->sample_rate);
 }
@@ -115,7 +113,7 @@ loudness_filter_t* loudness_filter_create(const char* name,
   if (params) {
     filter->params = *params;
   } else {
-    memset(&filter->params, 0, sizeof(loudness_parameters_t));
+    filter->params = (loudness_parameters_t){0};
   }
   filter->processing_parameters = proc_params;
   filter->low_shelf_filter =

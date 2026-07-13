@@ -243,8 +243,7 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
   logger_info(&logger, "Set config: %s", s_json_log_buf);
 
   dsp_config_t* parsed = NULL;
-  config_error_t cerr;
-  memset(&cerr, 0, sizeof(cerr));
+  config_error_t cerr = {0};
   if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
     if (engine->core) {
       dsp_engine_core_stop_and_free(
@@ -338,10 +337,8 @@ static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine);
 
 state_update_t dsp_engine_get_status(const dsp_engine_t* engine) {
   if (!engine) {
-    state_update_t res;
-    memset(&res, 0, sizeof(res));
-    res.state = PROCESSING_STATE_INACTIVE;
-    res.stop_reason.type = STOP_REASON_NONE;
+    state_update_t res = {.state = PROCESSING_STATE_INACTIVE,
+                          .stop_reason = {.type = STOP_REASON_NONE}};
     return res;
   }
   pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
@@ -351,8 +348,7 @@ state_update_t dsp_engine_get_status(const dsp_engine_t* engine) {
 }
 
 static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine) {
-  state_update_t res;
-  memset(&res, 0, sizeof(res));
+  state_update_t res = {0};
   if (engine->core) {
     dsp_engine_core_collect_garbage((dsp_engine_core_t*)engine->core);
     res.state = dsp_engine_core_get_state(engine->core);
@@ -380,8 +376,7 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine);
 
 vu_levels_t dsp_engine_get_vu_levels(const dsp_engine_t* engine) {
   if (!engine) {
-    vu_levels_t res;
-    memset(&res, 0, sizeof(res));
+    vu_levels_t res = {0};
     return res;
   }
   pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
@@ -391,8 +386,7 @@ vu_levels_t dsp_engine_get_vu_levels(const dsp_engine_t* engine) {
 }
 
 static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine) {
-  vu_levels_t res;
-  memset(&res, 0, sizeof(res));
+  vu_levels_t res = {0};
   processing_parameters_t* p =
       dsp_engine_core_get_processing_params((dsp_engine_core_t*)engine->core);
   if (!p) return res;

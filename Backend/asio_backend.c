@@ -512,7 +512,7 @@ static void release_shared_asio(bool is_input, IASIO* iasio) {
       if (g_asio_shared.combined_channel_infos)
         free(g_asio_shared.combined_channel_infos);
 
-      memset(&g_asio_shared, 0, sizeof(g_asio_shared));
+      g_asio_shared = (asio_shared_backend_t){0};
       InitializeSRWLock(&g_asio_shared.lock);
       InitializeConditionVariable(&g_asio_shared.cond);
     }
@@ -559,8 +559,7 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
   }
 
   bool is_input = (num_out == 0);
-  ASIOBufferInfo dummy_buf;
-  memset(&dummy_buf, 0, sizeof(dummy_buf));
+  ASIOBufferInfo dummy_buf = {0};
   dummy_buf.isInput = is_input ? ASIOTrue : ASIOFalse;
   dummy_buf.channelNum = 0;
 

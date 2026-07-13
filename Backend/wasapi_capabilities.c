@@ -243,8 +243,7 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
         wasapi_sample_format_t fmt = PROBE_FORMATS[f_idx];
 
         // Configure WAVEFORMATEXTENSIBLE for probing.
-        WAVEFORMATEXTENSIBLE wfx;
-        memset(&wfx, 0, sizeof(wfx));
+        WAVEFORMATEXTENSIBLE wfx = {0};
         wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
         wfx.Format.nChannels = channels;
         wfx.Format.nSamplesPerSec = rate;

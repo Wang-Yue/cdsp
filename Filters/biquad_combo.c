@@ -79,15 +79,13 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
                                        double bandwidth,
                                        steepness_type_t steepness_type,
                                        int sample_rate, config_error_t* err) {
-  biquad_parameters_t bp;
-  memset(&bp, 0, sizeof(bp));
-  bp.type = type;
-  bp.freq = freq;
-  bp.q = q;
-  bp.gain = gain;
-  bp.slope = slope;
-  bp.bandwidth = bandwidth;
-  bp.steepness_type = steepness_type;
+  biquad_parameters_t bp = {.type = type,
+                            .freq = freq,
+                            .q = q,
+                            .gain = gain,
+                            .slope = slope,
+                            .bandwidth = bandwidth,
+                            .steepness_type = steepness_type};
   return biquad_filter_create("combo_sec", &bp, sample_rate, err);
 }
 

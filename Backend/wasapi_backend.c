@@ -416,8 +416,7 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
   // Set up the wave format structure.
   // We use WAVEFORMATEXTENSIBLE which is required for formats with >2 channels
   // or high precision sample types (>16-bit).
-  WAVEFORMATEXTENSIBLE wfx;
-  memset(&wfx, 0, sizeof(wfx));
+  WAVEFORMATEXTENSIBLE wfx = {0};
   wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
   wfx.Format.nChannels = capture->channels;
   wfx.Format.nSamplesPerSec = capture->sample_rate;
@@ -994,8 +993,7 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
   // Set up the wave format structure.
   // We use WAVEFORMATEXTENSIBLE which is required for formats with >2 channels
   // or high precision sample types (>16-bit).
-  WAVEFORMATEXTENSIBLE wfx;
-  memset(&wfx, 0, sizeof(wfx));
+  WAVEFORMATEXTENSIBLE wfx = {0};
   wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
   wfx.Format.nChannels = playback->channels;
   wfx.Format.nSamplesPerSec = playback->sample_rate;

@@ -261,8 +261,7 @@ typedef struct {
 static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
   if (!cJSON_IsObject(cap_obj)) return;
 
-  flat_capture_device_config_t temp;
-  memset(&temp, 0, sizeof(temp));
+  flat_capture_device_config_t temp = {0};
   flat_capture_device_config_t* cap = &temp;
 
   cJSON* item;
@@ -714,8 +713,7 @@ typedef struct {
 static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   if (!cJSON_IsObject(play_obj)) return;
 
-  flat_playback_device_config_t temp;
-  memset(&temp, 0, sizeof(temp));
+  flat_playback_device_config_t temp = {0};
   flat_playback_device_config_t* play = &temp;
 
   cJSON* item;
