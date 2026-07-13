@@ -75,6 +75,7 @@ typedef struct {
   void* on_chunk_captured_ctx;
   chunk_callback_t on_chunk_processed;
   void* on_chunk_processed_ctx;
+  bool is_realtime;
 } engine_processing_loop_config_t;
 
 /**

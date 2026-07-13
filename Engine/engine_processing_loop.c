@@ -52,6 +52,8 @@ struct engine_processing_loop {
   void* on_chunk_captured_ctx;
   chunk_callback_t on_chunk_processed;
   void* on_chunk_processed_ctx;
+  bool is_realtime;
+  uint64_t processed_drop_counter;
 };
 
 #include <string.h>
@@ -101,6 +103,8 @@ engine_processing_loop_t* engine_processing_loop_create(
   loop->on_chunk_captured_ctx = config->on_chunk_captured_ctx;
   loop->on_chunk_processed = config->on_chunk_processed;
   loop->on_chunk_processed_ctx = config->on_chunk_processed_ctx;
+  loop->is_realtime = config->is_realtime;
+  loop->processed_drop_counter = 0;
 
   atomic_store(&loop->next_pipeline, NULL);
 
@@ -336,22 +340,40 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     }
 
     // 9. Enqueue the processed chunk to the playback queue.
-    // If the queue is full (playback thread falling behind), we block-wait
-    // using a short sleep to avoid spinning and wasting CPU.
-    while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-      if (engine_shared_state_should_stop(loop->shared)) {
-        const processing_stop_reason_t* reason =
-            engine_shared_state_get_stop_reason(loop->shared);
-        if (reason && reason->type != STOP_REASON_DONE) {
-          break;
-        }
+    if (loop->is_realtime) {
+      // Real-time hardware stream: non-blocking single-try push to avoid audio
+      // hiccups.
+      if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+        loop->processed_drop_counter++;
+        logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
       }
-      engine_yield();
+    } else {
+      // Non-real-time file conversion: nanosleep wait while queue is full to
+      // preserve every sample frame.
+      while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+        if (engine_shared_state_should_stop(loop->shared)) {
+          const processing_stop_reason_t* reason =
+              engine_shared_state_get_stop_reason(loop->shared);
+          if (reason && reason->type != STOP_REASON_DONE) {
+            break;
+          }
+        }
+        struct timespec req = {.tv_sec = 0,
+                               .tv_nsec = 1000000ULL};  // 1ms sleep
+        nanosleep(&req, NULL);
+      }
     }
   }
 
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
   }
-  logger_info(&g_logger, "Processing thread stopped");
+  if (loop->processed_drop_counter > 0) {
+    logger_warn(
+        &g_logger,
+        "Processing thread stopped. Total dropped processed chunks: %llu",
+        (unsigned long long)loop->processed_drop_counter);
+  } else {
+    logger_info(&g_logger, "Processing thread stopped");
+  }
 }

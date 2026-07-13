@@ -261,6 +261,7 @@ static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
       .on_chunk_captured_ctx = core->on_chunk_captured_ctx,
       .on_chunk_processed = core->on_chunk_processed,
       .on_chunk_processed_ctx = core->on_chunk_processed_ctx,
+      .is_realtime = capture_backend_is_realtime(core->capture),
   };
   core->processing_loop = engine_processing_loop_create(&proc_cfg);
 
