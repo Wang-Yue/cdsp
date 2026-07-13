@@ -1,5 +1,6 @@
 #include <math.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 
 #include "Audio/lock_free_ring_buffer.h"
@@ -347,6 +348,7 @@ static void* spmc_producer_thread(void* arg) {
     spsc_audio_ring_buffer_append_converting_double_to_float(a->ring, chunk,
                                                              a->chunk_size);
     written += a->chunk_size;
+    sched_yield();
   }
   free(chunk);
   atomic_store_explicit(&a->producer_done, true, memory_order_release);
@@ -373,6 +375,7 @@ TEST(ConcurrentProducerConsumerSeesMonotonicSequence) {
       }
       snapshots_taken++;
     }
+    sched_yield();
   }
   pthread_join(th, NULL);
   free(dest);
