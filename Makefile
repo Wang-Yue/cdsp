@@ -257,6 +257,15 @@ $(TEST_LIB_TARGET): $(TEST_OBJS)
 	@rm -f $@
 	$(AR) rcs $@ $(TEST_OBJS)
 
+BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
+BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
+UNIT_TEST_BINS := $(filter-out $(BENCH_BINS), $(TEST_BINS))
+
+# Build benchmark binaries linked against main library (without clock_mock)
+$(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(LIB_TARGET)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
+
 # Build test binaries by linking against libdsp_test.a
 ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
 $(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
@@ -272,9 +281,6 @@ $(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(T
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS) -o $@
 
-BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
-BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
-UNIT_TEST_BINS := $(filter-out $(BENCH_BINS), $(TEST_BINS))
 
 RUST_HARNESS_DIR := $(ROOT_DIR)/Tests/RustHarnesses
 
