@@ -721,8 +721,8 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
               data + (size_t)to_copy * capture->channels * sample_size;
           UINT32 extra_frames = num_frames - to_copy;
 
-          if (extra_frames > capture->chunk_size * 4) {
-            extra_frames = capture->chunk_size * 4;
+          if (extra_frames > (UINT32)capture->chunk_size * 4) {
+            extra_frames = (UINT32)capture->chunk_size * 4;
           }
 
           decode_samples_from_wasapi(capture->residual_chunk, 0, extra_data,
