@@ -1209,6 +1209,9 @@ capture_backend_t* asio_capture_new(const capture_device_config_t* config,
  */
 static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
   asio_playback_t* playback = (asio_playback_t*)ctx;
+  logger_t logger = logger_create("dsp.backend.asio");
+  logger_info(&logger, "Opening ASIO playback: device=%s, rate=%d, channels=%d",
+              playback->device, playback->sample_rate, playback->channels);
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
 
@@ -1330,6 +1333,10 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
     }
   }
 
+  logger_info(&logger,
+              "ASIO playback successfully opened and started: buffer_size=%ld, "
+              "channels=%d",
+              playback->actual_buffer_size, playback->channels);
   playback->is_running = true;
   return true;
 
