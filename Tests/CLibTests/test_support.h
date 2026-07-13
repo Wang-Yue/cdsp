@@ -45,6 +45,9 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
   return ret;
 }
 
+#ifdef snprintf
+#undef snprintf
+#endif
 #define snprintf(buf, size, fmt, ...) \
   custom_snprintf(buf, size, fmt, ##__VA_ARGS__)
 
