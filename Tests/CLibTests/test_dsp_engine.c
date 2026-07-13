@@ -1074,6 +1074,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
            "    \"devices\": {\n"
            "        \"samplerate\": 16000,\n"
            "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 128,\n"
            "        \"capture\": {\n"
            "            \"type\": \"File\",\n"
            "            \"filename\": \"%s\",\n"
@@ -1126,12 +1127,13 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
 #endif
   }
 
+  // Stop the engine and wait for playback/processing threads to finish draining
+  dsp_engine_stop(engine);
+
   clock_gettime(CLOCK_MONOTONIC, &t1);
   double elapsed = (double)(t1.tv_sec - t0.tv_sec) +
                    (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
 
-  // Stop just in case it didn't finish gracefully
-  dsp_engine_stop(engine);
   dsp_engine_free(engine);
 
   // Verify the output content matches input
@@ -1157,8 +1159,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
     // should be close to 30.0s
     bool is_rt = capture_rt || playback_rt;
     if (is_rt) {
-      // should be at least 25.0s, and not more than 40.0s in simulated time
-      ASSERT_TRUE(elapsed >= 25.0);
+      ASSERT_TRUE(elapsed >= 28.0);
       ASSERT_TRUE(elapsed < 40.0);
     } else {
       // Non-realtime should take very little simulated time

@@ -1104,7 +1104,12 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  REFERENCE_TIME duration = 10000000;
+  REFERENCE_TIME duration = (REFERENCE_TIME)(((double)playback->chunk_size *
+                                              1.0 / playback->sample_rate) *
+                                             10000000.0);
+  if (mode == AUDCLNT_SHAREMODE_SHARED) {
+    duration = 10000000;
+  }
   DWORD flags = 0;
   if (!playback->polling) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
@@ -1283,7 +1288,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
     } else {
       // If buffer is full, wait before trying to write again.
       if (playback->polling) {
-        Sleep(1);
+        Sleep(10);
       } else {
         // Wait for the event signaled by WASAPI when it has processed some
         // data.
@@ -1334,14 +1339,17 @@ bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
 
 bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
                                      backend_error_t* err) {
+  (void)frames;
   if (!playback->render_client) return false;
   BYTE* data = NULL;
+  UINT32 prefill_frames = playback->buffer_frame_count;
   HRESULT hr = IAudioRenderClient_GetBuffer(playback->render_client,
-                                            (UINT32)frames, &data);
+                                            prefill_frames, &data);
   if (SUCCEEDED(hr) && data) {
-    memset(data, 0,
-           frames * playback->channels * (playback->bits_per_sample / 8));
-    IAudioRenderClient_ReleaseBuffer(playback->render_client, (UINT32)frames,
+    memset(
+        data, 0,
+        prefill_frames * playback->channels * (playback->bits_per_sample / 8));
+    IAudioRenderClient_ReleaseBuffer(playback->render_client, prefill_frames,
                                      0);
     if (!playback->started) {
       hr = IAudioClient_Start(playback->client);

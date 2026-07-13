@@ -235,8 +235,8 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-MOCK_TIME_FLAGS_LIB := -Dclock_gettime=cdsp_clock_gettime -Dclock_gettime_nsec_np=cdsp_clock_gettime_nsec_np -Dnanosleep=cdsp_nanosleep
-MOCK_TIME_FLAGS_TEST := -Dclock_gettime=cdsp_clock_gettime -Dclock_gettime_nsec_np=cdsp_clock_gettime_nsec_np
+MOCK_TIME_FLAGS_LIB := -include $(ROOT_DIR)/Tests/CLibTests/clock_mock.h -DCDSP_TEST_MOCK_NANOSLEEP
+MOCK_TIME_FLAGS_TEST := -include $(ROOT_DIR)/Tests/CLibTests/clock_mock.h
 
 # Compile library source files with CDSP_TEST define for tests
 $(TEST_OBJ_DIR)/%.o: $(ROOT_DIR)/%.c

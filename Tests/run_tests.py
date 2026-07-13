@@ -4,6 +4,13 @@ import subprocess
 import concurrent.futures
 import time
 
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 def run_one_case(bin_path, case_name=None):
     bin_name = os.path.basename(bin_path)
     display_name = f"{bin_name}:{case_name}" if case_name else bin_name

@@ -29,6 +29,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "Logging/app_logger.h"
 #include "thread_priority.h"
@@ -217,6 +221,43 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       break;
     }
   }
+
+  // Drain the hardware playback buffer before exiting.
+  // This prevents early cutoff of the end of the audio stream.
+  logger_info(&logger, "Draining playback hardware buffer...");
+  size_t last_level = 0;
+  struct timespec last_change_ts;
+  clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+
+  while (1) {
+    size_t level = playback_backend_get_buffer_level(loop->playback);
+    if (level == 0) {
+      break;
+    }
+
+    if (level != last_level) {
+      last_level = level;
+      clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+    } else {
+      struct timespec now_ts;
+      clock_gettime(CLOCK_MONOTONIC, &now_ts);
+      double elapsed =
+          (double)(now_ts.tv_sec - last_change_ts.tv_sec) +
+          (double)(now_ts.tv_nsec - last_change_ts.tv_nsec) / 1000000000.0;
+      if (elapsed > 3.0) {
+        logger_warn(&logger, "Playback drain timeout reached; aborting");
+        break;
+      }
+    }
+
+#ifdef _WIN32
+    Sleep(10);
+#else
+    struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};  // 10ms
+    nanosleep(&req, NULL);
+#endif
+  }
+  logger_info(&logger, "Playback hardware buffer drained");
 
   if (rate_controller) pi_rate_controller_free(rate_controller);
   logger_info(&logger, "Playback thread stopped");
