@@ -75,7 +75,7 @@ static pipeline_rust_results_t run_upstream_pipeline_benchmark(
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
            "cd %s/camilladsp && cargo bench --bench pipeline -- --sample-size "
-           "10 --warm-up-time 0.3 --measurement-time 0.5 2>&1",
+           "10 --warm-up-time 0.1 --measurement-time 0.2 2>&1",
            home);
   FILE* fp = popen(cmd, "r");
   if (!fp) return results;

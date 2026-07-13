@@ -33,7 +33,7 @@ static double fetch_rust_filter_benchmark(const char* rust_name) {
   snprintf(cmd, sizeof(cmd),
            "cd %s/camilladsp && RAYON_NUM_THREADS=1 cargo bench --bench "
            "filters -- %s --sample-size "
-           "10 --warm-up-time 0.3 --measurement-time 0.5 2>&1",
+           "10 --warm-up-time 0.1 --measurement-time 0.2 2>&1",
            home, rust_name);
   FILE* fp = popen(cmd, "r");
   if (!fp) return NAN;
