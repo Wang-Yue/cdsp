@@ -326,6 +326,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
+  loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 
   while (1) {
     if (engine_shared_state_should_stop(loop->shared)) {
