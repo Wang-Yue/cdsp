@@ -357,7 +357,6 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
 
     cJSON* params = cJSON_GetObjectItemCaseSensitive(proc_child, "parameters");
     if (cJSON_IsObject(params)) {
-      cJSON* item;
       switch (p_conf->type) {
         case PROCESSOR_TYPE_COMPRESSOR: {
           compressor_parameters_t* cp = &p_conf->parameters.compressor;

@@ -61,6 +61,15 @@ static inline bool parse_json_int(const cJSON* obj, const char* key, int* dest) 
   return false;
 }
 
+static inline bool parse_json_size_t(const cJSON* obj, const char* key, size_t* dest) {
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (cJSON_IsNumber(item) && item->valueint >= 0) {
+    *dest = (size_t)item->valueint;
+    return true;
+  }
+  return false;
+}
+
 static inline bool parse_json_bool(const cJSON* obj, const char* key, bool* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsBool(item)) {

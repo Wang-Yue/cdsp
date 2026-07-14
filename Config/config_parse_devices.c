@@ -679,8 +679,6 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   }
   devices_config_t* dev = &config->devices;
 
-  cJSON* item;
-
   int val_int = 0;
   if (parse_json_int(dev_obj, "samplerate", &val_int)) {
     dev->samplerate = val_int > 0 ? (size_t)val_int : 0;
