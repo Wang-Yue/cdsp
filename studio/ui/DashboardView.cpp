@@ -49,6 +49,10 @@ void DashboardView::updateVisibility() {
     if (!m_dspController || !m_dspController->settings())
         return;
     auto s = m_dspController->settings();
+    if (m_pipelineOverviewWidget)
+        m_pipelineOverviewWidget->setVisible(s->showSignalGraphInDashboard);
+    if (m_signalGraphCard)
+        m_signalGraphCard->setVisible(s->showSignalGraphInDashboard);
     if (m_levelMetersGroup)
         m_levelMetersGroup->setVisible(s->showLevelMetersInDashboard);
     if (m_analogVUGroup)
@@ -100,118 +104,10 @@ void DashboardView::updateFaderUi() {
 }
 
 void DashboardView::updateSignalChain() {
-    if (!m_chainLayout || !m_chainWidget)
-        return;
-    QLayoutItem* item;
-    while ((item = m_chainLayout->takeAt(0)) != nullptr) {
-        if (item->widget())
-            delete item->widget();
-        delete item;
-    }
-
-    bool isRunning = (m_dspController && m_dspController->status == ProcessingState::Running);
-    auto s = m_dspController ? m_dspController->settings() : nullptr;
-    auto pipe = m_dspController ? m_dspController->pipelineStore() : nullptr;
-
-    QString capDevName = "Input";
-    QString playDevName = "Output";
-    if (s) {
-        capDevName = QString::fromStdString(s->deviceConfig.capture.coreAudio.device.value_or("Input"));
-        playDevName = QString::fromStdString(s->deviceConfig.playback.coreAudio.device.value_or("Output"));
-    }
-
-    auto addChevron = [this]() {
-        auto chev = new QLabel("›", m_chainWidget);
-        chev->setStyleSheet("color: rgba(255, 255, 255, 0.4); font-size: 14px; font-weight: bold; padding: 0 4px;");
-        m_chainLayout->addWidget(chev);
-    };
-
-    // 1. Input Device Chip
-    auto capChip = new QPushButton(QString("🎤 %1").arg(capDevName), m_chainWidget);
-    capChip->setFlat(true);
-    if (isRunning) {
-        capChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, "
-                               "122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
-    } else {
-        capChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
-                               "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
-    }
-    m_chainLayout->addWidget(capChip);
-
-    addChevron();
-
-    // 2. Resampler Chip (Clickable Toggle)
-    bool resampEnabled = s ? s->resamplerEnabled : false;
-    auto resampChip = new QPushButton("🔄 Resampler", m_chainWidget);
-    resampChip->setCursor(Qt::PointingHandCursor);
-    resampChip->setCheckable(true);
-    resampChip->setChecked(resampEnabled);
-    if (resampEnabled) {
-        resampChip->setStyleSheet("background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, "
-                                  "122, 255, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
-    } else {
-        resampChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
-                                  "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
-    }
-    connect(resampChip, &QPushButton::clicked, [this]() {
-        if (m_dspController && m_dspController->settings()) {
-            bool enabled = !m_dspController->settings()->resamplerEnabled;
-            m_dspController->settings()->resamplerEnabled = enabled;
-            m_dspController->settings()->savePreferences();
-            m_dspController->applyConfig();
-            updateSignalChain();
-        }
-    });
-    m_chainLayout->addWidget(resampChip);
-
-    addChevron();
-
-    // 3. Pipeline Stages Chips (Clickable Toggles)
-    if (pipe) {
-        for (size_t i = 0; i < pipe->stages.size(); ++i) {
-            const auto& st = pipe->stages[i];
-            std::string icon = stageTypeToIcon(st.type);
-            auto stChip = new QPushButton(
-                QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(st.name)), m_chainWidget);
-            stChip->setCursor(Qt::PointingHandCursor);
-            stChip->setCheckable(true);
-            stChip->setChecked(st.isEnabled);
-            if (st.isEnabled) {
-                stChip->setStyleSheet(
-                    "background-color: rgba(0, 122, 255, 0.2); color: #007aff; border: 1px solid rgba(0, 122, 255, "
-                    "0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
-            } else {
-                stChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
-                                      "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
-            }
-
-            connect(stChip, &QPushButton::clicked, [this, i]() {
-                if (m_dspController && m_dspController->pipelineStore() &&
-                    i < m_dspController->pipelineStore()->stages.size()) {
-                    m_dspController->pipelineStore()->stages[i].isEnabled =
-                        !m_dspController->pipelineStore()->stages[i].isEnabled;
-                    m_dspController->pipelineStore()->save();
-                    emit m_dspController->pipelineStore()->pipelineChanged();
-                    updateSignalChain();
-                }
-            });
-            m_chainLayout->addWidget(stChip);
-
-            addChevron();
-        }
-    }
-
-    // 4. Output Device Chip
-    auto playChip = new QPushButton(QString("🔊 %1").arg(playDevName), m_chainWidget);
-    playChip->setFlat(true);
-    if (isRunning) {
-        playChip->setStyleSheet("background-color: rgba(52, 199, 89, 0.2); color: #34c759; border: 1px solid rgba(52, "
-                                "199, 89, 0.4); font-weight: bold; border-radius: 12px; padding: 4px 10px;");
-    } else {
-        playChip->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid "
-                                "transparent; font-weight: normal; border-radius: 12px; padding: 4px 10px;");
-    }
-    m_chainLayout->addWidget(playChip);
+    if (m_pipelineOverviewWidget)
+        m_pipelineOverviewWidget->rebuildOverview();
+    if (m_signalGraphCard)
+        m_signalGraphCard->updateCard();
 }
 
 void DashboardView::setupUi() {
@@ -223,24 +119,13 @@ void DashboardView::setupUi() {
     auto mainLayout = new QVBoxLayout(container);
     mainLayout->setSpacing(16);
 
-    // 1. Signal Chain Overview Card (Horizontal Scrollable)
-    auto chainGroup = new QGroupBox("Signal Chain", container);
-    auto chainGroupLayout = new QVBoxLayout(chainGroup);
-    chainGroupLayout->setContentsMargins(4, 4, 4, 4);
+    // 1. Signal Chain Overview Card
+    m_pipelineOverviewWidget = new PipelineOverviewWidget(m_dspController, container);
+    mainLayout->addWidget(m_pipelineOverviewWidget);
 
-    auto chainScroll = new QScrollArea(chainGroup);
-    chainScroll->setWidgetResizable(true);
-    chainScroll->setFrameShape(QFrame::NoFrame);
-    chainScroll->setFixedHeight(60);
-
-    m_chainWidget = new QWidget(chainScroll);
-    m_chainLayout = new QHBoxLayout(m_chainWidget);
-    m_chainLayout->setContentsMargins(8, 8, 8, 8);
-    m_chainLayout->setSpacing(4);
-
-    chainScroll->setWidget(m_chainWidget);
-    chainGroupLayout->addWidget(chainScroll);
-    mainLayout->addWidget(chainGroup);
+    // 2. Detailed DSP Signal Graph Card
+    m_signalGraphCard = new DSPDetailedSignalGraphCard(m_dspController, container);
+    mainLayout->addWidget(m_signalGraphCard);
 
     // 2. Level Meters Card
     m_levelMetersGroup = new QGroupBox("Level Meters", container);

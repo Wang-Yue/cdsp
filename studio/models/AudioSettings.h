@@ -59,6 +59,7 @@ public:
     bool showSpectrogramInDashboard = true;
     bool showVectorScopeInDashboard = true;
     bool showAnalogVUInDashboard = true;
+    bool showSignalGraphInDashboard = true;
     bool autoStartEngine = false;
     int logLevel = 2; // Default to Info level
 

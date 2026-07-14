@@ -7,7 +7,9 @@
 #include "models/SpectrumEngine.h"
 #include "models/VectorScopeEngine.h"
 #include "ui/AnalogVUMeterView.h"
+#include "ui/DSPDetailedSignalGraphCard.h"
 #include "ui/LevelMeterView.h"
+#include "ui/PipelineOverviewWidget.h"
 #include "ui/SpectrogramView.h"
 #include "ui/SpectrumView.h"
 #include "ui/VectorScopeView.h"
@@ -40,8 +42,8 @@ private:
     std::shared_ptr<SpectrogramEngine> m_spectrogramEngine;
     std::shared_ptr<VectorScopeEngine> m_vectorScopeEngine;
 
-    QWidget* m_chainWidget = nullptr;
-    QHBoxLayout* m_chainLayout = nullptr;
+    PipelineOverviewWidget* m_pipelineOverviewWidget = nullptr;
+    DSPDetailedSignalGraphCard* m_signalGraphCard = nullptr;
 
     QGroupBox* m_levelMetersGroup = nullptr;
     QGroupBox* m_analogVUGroup = nullptr;

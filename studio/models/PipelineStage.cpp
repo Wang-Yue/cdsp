@@ -1229,8 +1229,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
             }
         }
 
-        res.mixers[prefix] =
-            MixerConfig{channelCount, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
+        res.mixers[prefix] = MixerConfig{channelCount, stage.mixerChannelsOut, cleanedMapping, std::nullopt, {}};
         res.steps.push_back(PipelineStep{PipelineStepType::Mixer, std::nullopt, {}, prefix, {}, std::nullopt});
         break;
     }

@@ -64,6 +64,19 @@ int PipelineStore::channelCountBeforeStage(size_t index, int captureChannels) co
     return current;
 }
 
+int PipelineStore::incomingChannels(const QUuid& stageID, int captureChannels) const {
+    int count = captureChannels;
+    for (const auto& stage : stages) {
+        if (stage.id == stageID) {
+            return count;
+        }
+        if (stage.isActive() && stage.type == StageType::MatrixMixer) {
+            count = stage.mixerChannelsOut;
+        }
+    }
+    return count;
+}
+
 void PipelineStore::deleteStage(const QUuid& id) {
     stages.erase(std::remove_if(stages.begin(), stages.end(), [&id](const PipelineStage& s) { return s.id == id; }),
                  stages.end());

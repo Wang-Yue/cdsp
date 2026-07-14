@@ -299,8 +299,9 @@ void StageDetailView::buildStageOptionsUi() {
                         btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: "
                                            "4px; border: none; padding: 0px; margin: 0px;");
                     } else {
-                        btn->setStyleSheet("background-color: rgba(142, 142, 147, 0.15); color: palette(text); "
-                                           "font-weight: bold; border-radius: 4px; border: none; padding: 0px; margin: 0px;");
+                        btn->setStyleSheet(
+                            "background-color: rgba(142, 142, 147, 0.15); color: palette(text); "
+                            "font-weight: bold; border-radius: 4px; border: none; padding: 0px; margin: 0px;");
                     }
                 };
                 updateBtnStyle(isSelected);
@@ -1223,8 +1224,8 @@ void StageDetailView::buildStageOptionsUi() {
         auto inBox = new QVBoxLayout();
         inBox->addWidget(new QLabel("Input Channels", mmGroup));
         auto inLabel = new QLabel(QString("%1 Channels (Auto)").arg(incomingChannels), mmGroup);
-        inLabel->setStyleSheet(
-            "QLabel { background: rgba(128, 128, 128, 0.15); padding: 4px 8px; border-radius: 4px; color: #8e8e93; font-size: 13px; }");
+        inLabel->setStyleSheet("QLabel { background: rgba(128, 128, 128, 0.15); padding: 4px 8px; border-radius: 4px; "
+                               "color: #8e8e93; font-size: 13px; }");
         inBox->addWidget(inLabel);
         dimHBox->addLayout(inBox);
 

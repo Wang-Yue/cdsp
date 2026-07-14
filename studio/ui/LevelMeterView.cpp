@@ -117,13 +117,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int xStart = 28;
         int barW = w - xStart - rightMargin - 12;
 
-        // 1. Channel Label ("L", "R", "1", "2")
-        QString chLabel;
-        if (chCount == 2) {
-            chLabel = (i == 0) ? "L" : "R";
-        } else {
-            chLabel = (i == 0) ? "L" : ((i == 1) ? "R" : QString::number(i + 1));
-        }
+        // 1. Channel Label ("1", "2", "3"...)
+        QString chLabel = QString::number(i + 1);
 
         p.setFont(QFont("monospace", 10, QFont::Medium));
         p.setPen(StyleTheme::textSecondary());

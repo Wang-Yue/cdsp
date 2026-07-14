@@ -52,6 +52,13 @@ void GeneralSettingsView::setupUi() {
     });
     themeForm->addRow("Auto-Start Options:", m_autoStartCheck);
 
+    m_showSignalGraphCheck = new QCheckBox("Show DSP Signal Graph in Dashboard", themeGroup);
+    connect(m_showSignalGraphCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_settings->showSignalGraphInDashboard = checked;
+        m_settings->savePreferences();
+    });
+    themeForm->addRow("Dashboard Modules:", m_showSignalGraphCheck);
+
     mainLayout->addWidget(themeGroup);
 
     // Monitoring Refresh Group
@@ -147,6 +154,10 @@ void GeneralSettingsView::refreshUi() {
     m_autoStartCheck->blockSignals(true);
     m_autoStartCheck->setChecked(m_settings->autoStartEngine);
     m_autoStartCheck->blockSignals(false);
+
+    m_showSignalGraphCheck->blockSignals(true);
+    m_showSignalGraphCheck->setChecked(m_settings->showSignalGraphInDashboard);
+    m_showSignalGraphCheck->blockSignals(false);
 
     int pollRate = static_cast<int>(m_monitoring->pollingRate());
     m_pollingRateSlider->blockSignals(true);

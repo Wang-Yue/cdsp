@@ -138,6 +138,7 @@ void AudioSettings::loadPreferences() {
     showSpectrogramInDashboard = s.value("show_spectrogram_in_dashboard", true).toBool();
     showVectorScopeInDashboard = s.value("show_vectorscope_in_dashboard", true).toBool();
     showAnalogVUInDashboard = s.value("show_analog_vu_in_dashboard", true).toBool();
+    showSignalGraphInDashboard = s.value("show_signal_graph_in_dashboard", true).toBool();
 }
 
 void AudioSettings::savePreferences() {
@@ -189,5 +190,6 @@ void AudioSettings::savePreferences() {
     s.setValue("show_spectrogram_in_dashboard", showSpectrogramInDashboard);
     s.setValue("show_vectorscope_in_dashboard", showVectorScopeInDashboard);
     s.setValue("show_analog_vu_in_dashboard", showAnalogVUInDashboard);
+    s.setValue("show_signal_graph_in_dashboard", showSignalGraphInDashboard);
     emit settingsChanged();
 }

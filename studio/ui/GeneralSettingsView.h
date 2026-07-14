@@ -28,6 +28,7 @@ private:
     QComboBox* m_themeCombo;
     QComboBox* m_logLevelCombo;
     QCheckBox* m_autoStartCheck;
+    QCheckBox* m_showSignalGraphCheck;
 
     QSlider* m_pollingRateSlider;
     QLabel* m_pollingRateLabel;
