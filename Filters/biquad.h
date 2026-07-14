@@ -20,6 +20,17 @@
 typedef struct biquad_filter biquad_filter_t;
 
 /**
+ * @brief Checks if high-level biquad parameters produce valid and stable
+ * coefficients at the given sample rate.
+ *
+ * @param params High-level biquad parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @return true if parameters yield a stable filter, false otherwise.
+ */
+bool biquad_parameters_check_stability(const biquad_parameters_t* params,
+                                       int sample_rate);
+
+/**
  * @brief Creates a biquad filter instance directly from high-level parameters.
  *
  * Computes coefficients and validates filter stability. If params is NULL,

@@ -70,7 +70,7 @@ async_sinc_resampler_t* async_sinc_resampler_create(
     return NULL;
   }
   if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
-  if (chunk_size < 2 * sinc_len || chunk_size > SIZE_MAX - 2 * sinc_len) {
+  if (chunk_size > SIZE_MAX - 2 * sinc_len) {
     config_error_set(
         err, CONFIG_ERR_VALIDATION,
         "AsyncSincResampler: chunk_size %zu is out of bounds for sinc_len %zu",

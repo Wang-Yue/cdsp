@@ -13,6 +13,7 @@
  * \f$ H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}
  * \f$
  */
+
 typedef struct {
   double b0; /**< Numerator coefficient for \f$z^0\f$ */
   double b1; /**< Numerator coefficient for \f$z^{-1}\f$ */
@@ -311,6 +312,13 @@ static bool biquad_coefficients_compute(const biquad_parameters_t* params,
   out_coeffs->a2 = a2 / a0;
 
   return is_stable(out_coeffs);
+}
+
+bool biquad_parameters_check_stability(const biquad_parameters_t* params,
+                                       int sample_rate) {
+  if (!params || sample_rate <= 0) return false;
+  biquad_coefficients_t dummy_coeffs;
+  return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);
 }
 
 biquad_filter_t* biquad_filter_create(const char* name,

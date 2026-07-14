@@ -75,8 +75,7 @@ async_poly_resampler_t* async_poly_resampler_create(
       (size_t)poly_interpolation_nbr_points(interpolation);
   resampler->base_ratio = (double)output_rate / (double)input_rate;
 
-  if (chunk_size < 2 * resampler->interpolator_len ||
-      chunk_size > SIZE_MAX - 2 * resampler->interpolator_len) {
+  if (chunk_size > SIZE_MAX - 2 * resampler->interpolator_len) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncPolyResampler: chunk_size %zu is out of bounds for "
                      "interpolator length %zu",

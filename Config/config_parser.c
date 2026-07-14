@@ -106,6 +106,57 @@ int* parse_int_array(const cJSON* arr, size_t* out_count) {
   return values;
 }
 
+static void replace_tokens_in_json_node(cJSON* node, int samplerate,
+                                        int channels) {
+  if (!node) return;
+
+  if (cJSON_IsString(node) && node->valuestring) {
+    const char* str = node->valuestring;
+    if (strstr(str, "$samplerate$") != NULL ||
+        strstr(str, "$channels$") != NULL) {
+      char sr_buf[32];
+      char ch_buf[32];
+      snprintf(sr_buf, sizeof(sr_buf), "%d", samplerate);
+      snprintf(ch_buf, sizeof(ch_buf), "%d", channels);
+
+      char new_val[1024];
+      memset(new_val, 0, sizeof(new_val));
+      size_t out_len = 0;
+      size_t in_len = strlen(str);
+      for (size_t i = 0; i < in_len;) {
+        if (strncmp(str + i, "$samplerate$", 12) == 0) {
+          size_t len = strlen(sr_buf);
+          if (out_len + len < sizeof(new_val) - 1) {
+            memcpy(new_val + out_len, sr_buf, len);
+            out_len += len;
+          }
+          i += 12;
+        } else if (strncmp(str + i, "$channels$", 10) == 0) {
+          size_t len = strlen(ch_buf);
+          if (out_len + len < sizeof(new_val) - 1) {
+            memcpy(new_val + out_len, ch_buf, len);
+            out_len += len;
+          }
+          i += 10;
+        } else {
+          if (out_len < sizeof(new_val) - 1) {
+            new_val[out_len++] = str[i];
+          }
+          i++;
+        }
+      }
+      new_val[out_len] = '\0';
+      cJSON_SetValuestring(node, new_val);
+    }
+  }
+
+  cJSON* child = node->child;
+  while (child) {
+    replace_tokens_in_json_node(child, samplerate, channels);
+    child = child->next;
+  }
+}
+
 int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
                           config_error_t* err) {
   if (!json || !out_config) {
@@ -150,6 +201,14 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     logger_error(&g_logger, "Config parsing failed in devices section: %s",
                  err ? err->message : "");
     return -1;
+  }
+
+  int sr = config->devices.samplerate;
+  int cap_ch = capture_device_config_get_channels(&config->devices.capture);
+  int play_ch = playback_device_config_get_channels(&config->devices.playback);
+  int ch = cap_ch > 0 ? cap_ch : play_ch;
+  if (sr > 0 || ch > 0) {
+    replace_tokens_in_json_node(root, sr, ch);
   }
 
   cJSON* pipeline_arr = cJSON_GetObjectItemCaseSensitive(root, "pipeline");

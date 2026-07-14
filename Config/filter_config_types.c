@@ -513,6 +513,14 @@ int biquad_parameters_validate(const biquad_parameters_t* params,
       }
     }
   }
+  if (sample_rate > 0) {
+    if (!biquad_parameters_check_stability(params, sample_rate)) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Unstable or invalid biquad filter specified");
+      return -1;
+    }
+  }
   return 0;
 }
 
