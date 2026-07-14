@@ -178,17 +178,21 @@ std::string crossfeedLevelToString(CrossfeedLevel l) {
 }
 
 CrossfeedLevel stringToCrossfeedLevel(const std::string& str) {
-    if (str == "L1")
+    std::string s = str;
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    if (s == "l1" || s == "level1" || s == "1")
         return CrossfeedLevel::L1;
-    if (str == "L2")
+    if (s == "l2" || s == "level2" || s == "2")
         return CrossfeedLevel::L2;
-    if (str == "L3")
+    if (s == "l3" || s == "level3" || s == "3")
         return CrossfeedLevel::L3;
-    if (str == "L4")
+    if (s == "l4" || s == "level4" || s == "4")
         return CrossfeedLevel::L4;
-    if (str == "L5")
+    if (s == "l5" || s == "level5" || s == "5")
         return CrossfeedLevel::L5;
-    return CrossfeedLevel::Off;
+    if (s == "off" || s == "0")
+        return CrossfeedLevel::Off;
+    return CrossfeedLevel::L1;
 }
 
 std::string crossfeedLevelDescription(CrossfeedLevel l) {
@@ -877,9 +881,12 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         res.filters[prefix + "_lo"] = fLo;
         res.filters[prefix + "_lo_gain"] = fLoGain;
 
+        int leftCh = 0;
+        int rightCh = 1;
+
         std::vector<int> otherChannels;
         for (int i = 0; i < channelCount; ++i) {
-            if (i != stage.leftChannel && i != stage.rightChannel) {
+            if (i != leftCh && i != rightCh) {
                 otherChannels.push_back(i);
             }
         }
@@ -887,10 +894,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         MixerConfig m2to4;
         m2to4.channelsIn = channelCount;
         m2to4.channelsOut = channelCount + 2;
-        m2to4.mapping.push_back(MixerMapping{0, {MixerSource{stage.leftChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{1, {MixerSource{stage.leftChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{2, {MixerSource{stage.rightChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{3, {MixerSource{stage.rightChannel, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{0, {MixerSource{leftCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{1, {MixerSource{leftCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{2, {MixerSource{rightCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{3, {MixerSource{rightCh, 0.0, false}}});
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             m2to4.mapping.push_back(
                 MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
@@ -901,10 +908,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         m4to2.channelsIn = channelCount + 2;
         m4to2.channelsOut = channelCount;
         m4to2.mapping.resize(channelCount);
-        m4to2.mapping[stage.leftChannel] =
-            MixerMapping{stage.leftChannel, {MixerSource{0, 0.0, false}, MixerSource{2, 0.0, false}}};
-        m4to2.mapping[stage.rightChannel] =
-            MixerMapping{stage.rightChannel, {MixerSource{1, 0.0, false}, MixerSource{3, 0.0, false}}};
+        m4to2.mapping[leftCh] = MixerMapping{leftCh, {MixerSource{0, 0.0, false}, MixerSource{2, 0.0, false}}};
+        m4to2.mapping[rightCh] = MixerMapping{rightCh, {MixerSource{1, 0.0, false}, MixerSource{3, 0.0, false}}};
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             int ch = otherChannels[idx];
             m4to2.mapping[ch] = MixerMapping{ch, {MixerSource{static_cast<int>(idx + 4), 0.0, false}}};
