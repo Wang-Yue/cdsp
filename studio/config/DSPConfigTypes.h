@@ -652,7 +652,6 @@ struct DSPConfiguration {
     QJsonObject toJsonObject() const;
     static DSPConfiguration fromJsonObject(const QJsonObject& json);
     static DSPConfiguration fromJsonString(const std::string& jsonStr);
-    void validate() const;
 };
 
 #endif // DSP_CONFIG_TYPES_H
