@@ -148,6 +148,10 @@ struct IASIO {
   const IASIOVtbl* lpVtbl;
 };
 
+static bool init_asio_device(const char* device_name, double sample_rate,
+                             bool is_dsd, IASIO** out_iasio, long* out_buf_size,
+                             backend_error_t* err);
+
 // Internal structures
 struct asio_capture {
   char device[256];
@@ -303,74 +307,21 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
     g_asio_shared.combined_channel_infos = NULL;
     g_asio_shared.combined_channels = 0;
 
-    CLSID clsid;
-    if (!find_asio_driver_clsid(driver_name, &clsid)) {
+    long pref_sz = 0;
+    if (!init_asio_device(driver_name, sample_rate,
+                          format == ASIO_SAMPLE_FORMAT_DSD_INT8,
+                          &g_asio_shared.iasio, &pref_sz, err)) {
       g_asio_shared.initialized = false;
       ReleaseSRWLockExclusive(&g_asio_shared.lock);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "ASIO driver CLSID not found");
       return false;
     }
-
-    HRESULT hr = create_asio_com_instance(&clsid, &g_asio_shared.iasio);
-    if (FAILED(hr)) {
-      g_asio_shared.initialized = false;
-      ReleaseSRWLockExclusive(&g_asio_shared.lock);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to create CLSID instance");
-      return false;
-    }
-
-    if (!g_asio_shared.iasio->lpVtbl->init(g_asio_shared.iasio,
-                                           GetDesktopWindow())) {
-      g_asio_shared.iasio->lpVtbl->Release(g_asio_shared.iasio);
-      g_asio_shared.iasio = NULL;
-      g_asio_shared.initialized = false;
-      ReleaseSRWLockExclusive(&g_asio_shared.lock);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "ASIO init failed");
-      return false;
-    }
-
-    long min_sz, max_sz, pref_sz, granularity;
-    g_asio_shared.iasio->lpVtbl->getBufferSize(g_asio_shared.iasio, &min_sz,
-                                               &max_sz, &pref_sz, &granularity);
-    g_asio_shared.preferred_buf_size = pref_sz;
+    g_asio_shared.preferred_buf_size = (int)pref_sz;
 
     long num_in, num_out;
     g_asio_shared.iasio->lpVtbl->getChannels(g_asio_shared.iasio, &num_in,
                                              &num_out);
     g_asio_shared.num_inputs = num_in;
     g_asio_shared.num_outputs = num_out;
-
-    // Set requested sample rate
-    double rate = sample_rate;
-    double current_rate = 0.0;
-    if (g_asio_shared.iasio->lpVtbl->getSampleRate(g_asio_shared.iasio,
-                                                   &current_rate) == 0) {
-      if (fabs(current_rate - rate) > 0.5) {
-        if (g_asio_shared.iasio->lpVtbl->setSampleRate(g_asio_shared.iasio,
-                                                       rate) == 0) {
-          // Force sample rate change via dummy stream cycle
-          if (!force_sample_rate_with_dummy_cycle(
-                  driver_name, &g_asio_shared.iasio, rate, err)) {
-            g_asio_shared.initialized = false;
-            ReleaseSRWLockExclusive(&g_asio_shared.lock);
-            return false;
-          }
-        } else {
-          g_asio_shared.initialized = false;
-          ReleaseSRWLockExclusive(&g_asio_shared.lock);
-          if (err)
-            backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                               "Failed to set ASIO sample rate");
-          return false;
-        }
-      }
-    }
   } else {
     if (strcmp(g_asio_shared.driver_name, driver_name) != 0) {
       ReleaseSRWLockExclusive(&g_asio_shared.lock);
@@ -722,6 +673,78 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
   return found;
 }
 
+static bool init_asio_device(const char* device_name, double sample_rate,
+                             bool is_dsd, IASIO** out_iasio, long* out_buf_size,
+                             backend_error_t* err) {
+  CLSID clsid;
+  if (!find_asio_driver_clsid(device_name, &clsid)) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         "ASIO driver not found");
+    }
+    return false;
+  }
+
+  HRESULT hr = create_asio_com_instance(&clsid, out_iasio);
+  if (FAILED(hr)) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to instantiate ASIO driver");
+    }
+    return false;
+  }
+
+  IASIO* iasio = *out_iasio;
+  if (!iasio->lpVtbl->init(iasio, GetDesktopWindow())) {
+    SAFE_RELEASE(iasio);
+    *out_iasio = NULL;
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to initialize ASIO driver");
+    }
+    return false;
+  }
+
+  if (is_dsd) {
+    ASIOIoFormat dsd_format = {0};
+    dsd_format.FormatType = kASIOFormatDSD;
+    ASIOError io_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioSetIoFormat, &dsd_format);
+    if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
+      logger_info(&g_logger,
+                  "ASIO driver successfully set to Native DSD format");
+    } else {
+      logger_warn(
+          &g_logger,
+          "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
+          io_res, (long)dsd_format.FormatType);
+    }
+  }
+
+  double current_rate = 0.0;
+  if (iasio->lpVtbl->getSampleRate(iasio, &current_rate) == 0) {
+    if (fabs(current_rate - sample_rate) > 0.5) {
+      if (iasio->lpVtbl->setSampleRate(iasio, sample_rate) == 0) {
+        if (!force_sample_rate_with_dummy_cycle(device_name, out_iasio,
+                                                sample_rate, err)) {
+          return false;
+        }
+      } else {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                             "Failed to set ASIO sample rate");
+        }
+        return false;
+      }
+    }
+  }
+
+  long min_sz, max_sz, pref_sz, granularity;
+  iasio->lpVtbl->getBufferSize(iasio, &min_sz, &max_sz, &pref_sz, &granularity);
+  *out_buf_size = pref_sz;
+  return true;
+}
+
 // ASIO Callback implementation
 /**
  * @brief ASIO buffer switch callback.
@@ -952,53 +975,10 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   } else {
-    CLSID clsid;
-    if (!find_asio_driver_clsid(capture->device, &clsid)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                           "ASIO capture driver not found");
+    if (!init_asio_device(capture->device, capture->sample_rate, false,
+                          &capture->iasio, &capture->actual_buffer_size, err)) {
       goto error_cleanup;
     }
-
-    HRESULT hr = create_asio_com_instance(&clsid, &capture->iasio);
-    if (FAILED(hr)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to instantiate ASIO driver");
-      goto error_cleanup;
-    }
-
-    if (!capture->iasio->lpVtbl->init(capture->iasio, GetDesktopWindow())) {
-      SAFE_RELEASE(capture->iasio);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to initialize ASIO driver");
-      goto error_cleanup;
-    }
-
-    double rate = capture->sample_rate;
-    double current_rate = 0.0;
-    if (capture->iasio->lpVtbl->getSampleRate(capture->iasio, &current_rate) ==
-        0) {
-      if (fabs(current_rate - rate) > 0.5) {
-        if (capture->iasio->lpVtbl->setSampleRate(capture->iasio, rate) == 0) {
-          if (!force_sample_rate_with_dummy_cycle(capture->device,
-                                                  &capture->iasio, rate, err)) {
-            goto error_cleanup;
-          }
-        } else {
-          if (err)
-            backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                               "Failed to set ASIO sample rate");
-          goto error_cleanup;
-        }
-      }
-    }
-
-    long min_sz, max_sz, pref_sz, granularity;
-    capture->iasio->lpVtbl->getBufferSize(capture->iasio, &min_sz, &max_sz,
-                                          &pref_sz, &granularity);
-    capture->actual_buffer_size = pref_sz;
 
     int total_channels = capture->channels;
     capture->buffer_infos =
@@ -1268,70 +1248,11 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   } else {
-    CLSID clsid;
-    if (!find_asio_driver_clsid(playback->device, &clsid)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                           "ASIO playback driver not found");
+    if (!init_asio_device(playback->device, rate_to_set, playback->output_dsd,
+                          &playback->iasio, &playback->actual_buffer_size,
+                          err)) {
       goto error_cleanup;
     }
-
-    HRESULT hr = create_asio_com_instance(&clsid, &playback->iasio);
-    if (FAILED(hr)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to instantiate ASIO driver");
-      goto error_cleanup;
-    }
-
-    if (!playback->iasio->lpVtbl->init(playback->iasio, GetDesktopWindow())) {
-      SAFE_RELEASE(playback->iasio);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to initialize ASIO driver");
-      goto error_cleanup;
-    }
-
-    if (playback->output_dsd) {
-      ASIOIoFormat dsd_format = {0};
-      dsd_format.FormatType = kASIOFormatDSD;
-      ASIOError io_res = (ASIOError)(uintptr_t)playback->iasio->lpVtbl->future(
-          playback->iasio, kAsioSetIoFormat, &dsd_format);
-      if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
-        logger_info(&g_logger,
-                    "ASIO driver successfully set to Native DSD format");
-      } else {
-        logger_warn(
-            &g_logger,
-            "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
-            io_res, (long)dsd_format.FormatType);
-      }
-    }
-
-    double rate = rate_to_set;
-    double current_rate = 0.0;
-    if (playback->iasio->lpVtbl->getSampleRate(playback->iasio,
-                                               &current_rate) == 0) {
-      if (fabs(current_rate - rate) > 0.5) {
-        if (playback->iasio->lpVtbl->setSampleRate(playback->iasio, rate) ==
-            0) {
-          if (!force_sample_rate_with_dummy_cycle(
-                  playback->device, &playback->iasio, rate, err)) {
-            goto error_cleanup;
-          }
-        } else {
-          if (err)
-            backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                               "Failed to set ASIO sample rate");
-          goto error_cleanup;
-        }
-      }
-    }
-
-    long min_sz, max_sz, pref_sz, granularity;
-    playback->iasio->lpVtbl->getBufferSize(playback->iasio, &min_sz, &max_sz,
-                                           &pref_sz, &granularity);
-    playback->actual_buffer_size = pref_sz;
 
     long num_in = 0, num_out = 0;
     playback->iasio->lpVtbl->getChannels(playback->iasio, &num_in, &num_out);
