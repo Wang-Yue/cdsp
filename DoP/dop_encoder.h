@@ -77,15 +77,20 @@ void dop_encoder_encode(dop_encoder_t* encoder, audio_chunk_t* chunk);
 void dop_encoder_free(dop_encoder_t* encoder);
 
 /**
- * @brief Check if a carrier rate is supported for DoP encoding.
+ * @brief Check if a carrier rate is supported for DoP or native DSD encoding.
  *
- * Carrier sample rates that produce a valid DoP stream are DSD64/128/256
- * over the 44.1 kHz and 48 kHz rate families.
+ * For DoP encoding (DSD_MODE_DOP), container format is fixed at 16 DSD bits per
+ * 24-bit container frame, supporting carrier rates: 176.4k, 192k, 352.8k, 384k,
+ * 705.6k, 768k Hz (DSD64/128/256).
+ * For Native DSD encoding (DSD_MODE_NATIVE), container formats (8, 16, or 32 bits)
+ * support carrier rates: 88.2k, 96k, 176.4k, 192k, 352.8k, 384k, 705.6k, 768k,
+ * 1411.2k, 1536k Hz (DSD64/128/256).
  *
  * @param rate The carrier rate to check.
- * @return True if the rate is supported, false otherwise.
+ * @param mode DSD processing mode (DSD_MODE_DOP or DSD_MODE_NATIVE).
+ * @return True if the rate is supported for the given mode, false otherwise.
  */
-bool dop_encoder_is_supported_carrier_rate(int rate);
+bool dop_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode);
 
 /**
  * @brief Check if the DoP encoder is enabled.

@@ -91,19 +91,28 @@ struct dop_encoder {
 #define DOP_ENC_SUB_FILTER_TAPS 32
 #define DOP_ENC_FIFO_MASK 31
 
-// Carrier sample rates that produce a valid DoP stream — DSD64/128/256
-// over the 44.1 kHz and 48 kHz rate families. Anything outside this set
-// can't be DoP-encoded: the modulator's filter table only has entries
-// for these specific DSD rates, and a downstream DAC won't recognize
-// the marker pattern at any other carrier rate.
-static const int supported_carrier_rates[] = {176400, 352800, 705600,
-                                              192000, 384000, 768000};
+// Carrier sample rates that produce a valid DoP stream (16-bit DSD payload per frame).
+static const int supported_dop_carrier_rates[] = {176400, 352800, 705600,
+                                                  192000, 384000, 768000};
 
-bool dop_encoder_is_supported_carrier_rate(int rate) {
-  size_t count =
-      sizeof(supported_carrier_rates) / sizeof(supported_carrier_rates[0]);
-  for (size_t i = 0; i < count; i++) {
-    if (supported_carrier_rates[i] == rate) return true;
+// Carrier sample rates that produce a valid native DSD stream across 8-bit, 16-bit, and 32-bit containers.
+static const int supported_native_carrier_rates[] = {
+    88200,  96000,  176400, 192000,  352800,
+    384000, 705600, 768000, 1411200, 1536000};
+
+bool dop_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
+  if (mode == DSD_MODE_DOP) {
+    size_t count = sizeof(supported_dop_carrier_rates) /
+                   sizeof(supported_dop_carrier_rates[0]);
+    for (size_t i = 0; i < count; i++) {
+      if (supported_dop_carrier_rates[i] == rate) return true;
+    }
+  } else if (mode == DSD_MODE_NATIVE) {
+    size_t count = sizeof(supported_native_carrier_rates) /
+                   sizeof(supported_native_carrier_rates[0]);
+    for (size_t i = 0; i < count; i++) {
+      if (supported_native_carrier_rates[i] == rate) return true;
+    }
   }
   return false;
 }
@@ -200,7 +209,7 @@ dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
     return NULL;
   }
 
-  bool supported = dop_encoder_is_supported_carrier_rate((int)sample_rate);
+  bool supported = dop_encoder_is_supported_carrier_rate((int)sample_rate, mode);
   enc->mode = (supported && mode != DSD_MODE_PCM) ? mode : DSD_MODE_PCM;
   enc->enabled = (enc->mode != DSD_MODE_PCM);
 

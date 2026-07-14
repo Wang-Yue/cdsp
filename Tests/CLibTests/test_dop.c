@@ -369,4 +369,59 @@ TEST(NativeDSDBitDepthsEncodingTest) {
   }
 }
 
+TEST(SupportedCarrierRatesTest) {
+  int dop_valid_rates[] = {176400, 192000, 352800, 384000, 705600, 768000};
+  size_t dop_valid_count = sizeof(dop_valid_rates) / sizeof(dop_valid_rates[0]);
+
+  for (size_t i = 0; i < dop_valid_count; i++) {
+    ASSERT_TRUE(dop_encoder_is_supported_carrier_rate(dop_valid_rates[i],
+                                                      DSD_MODE_DOP));
+  }
+
+  int dop_invalid_rates[] = {0, 44100, 48000, 88200, 96000, 1411200, 1536000};
+  size_t dop_invalid_count =
+      sizeof(dop_invalid_rates) / sizeof(dop_invalid_rates[0]);
+
+  for (size_t i = 0; i < dop_invalid_count; i++) {
+    ASSERT_FALSE(dop_encoder_is_supported_carrier_rate(dop_invalid_rates[i],
+                                                       DSD_MODE_DOP));
+  }
+
+  int native_valid_rates[] = {88200,   96000,   176400,  192000, 352800,
+                              384000,  705600,  768000,  1411200, 1536000};
+  size_t native_valid_count =
+      sizeof(native_valid_rates) / sizeof(native_valid_rates[0]);
+
+  for (size_t i = 0; i < native_valid_count; i++) {
+    ASSERT_TRUE(dop_encoder_is_supported_carrier_rate(native_valid_rates[i],
+                                                      DSD_MODE_NATIVE));
+  }
+
+  int native_invalid_rates[] = {0, 44100, 48000, 80000, 441000, 960000, 2822400};
+  size_t native_invalid_count =
+      sizeof(native_invalid_rates) / sizeof(native_invalid_rates[0]);
+
+  for (size_t i = 0; i < native_invalid_count; i++) {
+    ASSERT_FALSE(dop_encoder_is_supported_carrier_rate(native_invalid_rates[i],
+                                                       DSD_MODE_NATIVE));
+  }
+
+  // PCM mode returns false for all rates
+  ASSERT_FALSE(dop_encoder_is_supported_carrier_rate(176400, DSD_MODE_PCM));
+  ASSERT_FALSE(dop_encoder_is_supported_carrier_rate(88200, DSD_MODE_PCM));
+
+  // Verify Native DSD encoding at 32-bit and 8-bit carrier rates
+  dop_encoder_t* enc_32bit_dsd64 = dop_encoder_create(
+      2, 88200, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_32bit_dsd64 != NULL);
+  ASSERT_TRUE(dop_encoder_is_enabled(enc_32bit_dsd64));
+  dop_encoder_free(enc_32bit_dsd64);
+
+  dop_encoder_t* enc_8bit_dsd256 = dop_encoder_create(
+      2, 1411200, DSD_MODE_NATIVE, 8, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_8bit_dsd256 != NULL);
+  ASSERT_TRUE(dop_encoder_is_enabled(enc_8bit_dsd256));
+  dop_encoder_free(enc_8bit_dsd256);
+}
+
 TEST_MAIN()
