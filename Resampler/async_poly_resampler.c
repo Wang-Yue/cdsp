@@ -395,7 +395,7 @@ resampler_error_t async_poly_resampler_process(
   }
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->chunk_size;
-    double min_safe_idx = -2.0 * (double)resampler->interpolator_len;
+    double min_safe_idx = -((double)(2 * resampler->interpolator_len - (resampler->interpolator_len / 2 - 1)));
     if (resampler->last_index < min_safe_idx) {
       resampler->last_index = min_safe_idx;
     }
@@ -473,7 +473,7 @@ resampler_error_t async_poly_resampler_process(
   }
 
   resampler->last_index = final_idx - (double)resampler->chunk_size;
-  double min_safe_idx = -2.0 * (double)resampler->interpolator_len;
+  double min_safe_idx = -((double)(2 * resampler->interpolator_len - (resampler->interpolator_len / 2 - 1)));
   if (resampler->last_index < min_safe_idx) {
     resampler->last_index = min_safe_idx;
   }

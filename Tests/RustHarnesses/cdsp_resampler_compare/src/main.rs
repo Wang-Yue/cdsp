@@ -86,7 +86,7 @@ fn make_resampler(
             window,
         };
         Box::new(
-            Async::<f64>::new_sinc(ratio, 1.1, &params, chunk_size, 1, FixedAsync::Input).unwrap(),
+            Async::<f64>::new_sinc(ratio, 1.1, &params, chunk_size, 1, FixedAsync::Output).unwrap(),
         )
     }
 
@@ -110,7 +110,7 @@ fn make_resampler(
                 PolynomialDegree::Linear,
                 chunk_size,
                 1,
-                FixedAsync::Input,
+                FixedAsync::Output,
             )
             .unwrap(),
         ),
@@ -121,7 +121,7 @@ fn make_resampler(
                 PolynomialDegree::Cubic,
                 chunk_size,
                 1,
-                FixedAsync::Input,
+                FixedAsync::Output,
             )
             .unwrap(),
         ),
@@ -132,7 +132,7 @@ fn make_resampler(
                 PolynomialDegree::Quintic,
                 chunk_size,
                 1,
-                FixedAsync::Input,
+                FixedAsync::Output,
             )
             .unwrap(),
         ),
@@ -143,7 +143,7 @@ fn make_resampler(
                 PolynomialDegree::Septic,
                 chunk_size,
                 1,
-                FixedAsync::Input,
+                FixedAsync::Output,
             )
             .unwrap(),
         ),

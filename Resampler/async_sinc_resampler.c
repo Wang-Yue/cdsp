@@ -520,7 +520,7 @@ resampler_error_t async_sinc_resampler_process(
   size_t output_frames = get_next_output_frames(resampler);
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->chunk_size;
-    double min_safe_idx = -2.0 * (double)resampler->sinc_len;
+    double min_safe_idx = -((double)(2 * resampler->sinc_len - 1));
     if (resampler->last_index < min_safe_idx) {
       resampler->last_index = min_safe_idx;
     }
@@ -604,7 +604,7 @@ resampler_error_t async_sinc_resampler_process(
 
   // Update state for next chunk.
   resampler->last_index = final_idx - (double)resampler->chunk_size;
-  double min_safe_idx = -2.0 * (double)resampler->sinc_len;
+  double min_safe_idx = -((double)(2 * resampler->sinc_len - 1));
   if (resampler->last_index < min_safe_idx) {
     resampler->last_index = min_safe_idx;
   }
