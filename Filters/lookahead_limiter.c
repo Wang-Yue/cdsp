@@ -101,7 +101,6 @@ lookahead_limiter_filter_t* lookahead_limiter_filter_create(
 
   size_t lookahead_len =
       (size_t)sample_rate > chunk_size ? (size_t)sample_rate : chunk_size;
-  if (lookahead_len < 1024) lookahead_len = 1024;
 
   if ((size_t)attack_samples >= lookahead_len) {
     lookahead_limiter_filter_free(filter);

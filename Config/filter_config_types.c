@@ -370,12 +370,10 @@ int lookahead_limiter_parameters_validate(
     return -1;
   }
   if (!params) return 0;
-  if (!isfinite(params->limit) || params->limit < -120.0 ||
-      params->limit > 20.0) {
-    config_error_set(
-        err, CONFIG_ERR_INVALID_FILTER,
-        "Lookahead Limiter limit must be between -120.0 dB and 20.0 dB, got %g",
-        params->limit);
+  if (!isfinite(params->limit)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter limit must be finite, got %g",
+                     params->limit);
     return -1;
   }
   if (params->attack < 0.0) {
