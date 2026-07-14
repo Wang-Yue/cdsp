@@ -591,8 +591,8 @@ typedef struct {
   bool has_output_dop;
   bool output_dsd;
   bool has_output_dsd;
-  sdm_filter_t dop_encoder_filter;
-  bool has_dop_encoder_filter;
+  sdm_filter_t dsd_encoder_filter;
+  bool has_dsd_encoder_filter;
   char filename[512];
   bool has_filename;
   binary_sample_format_t file_format;
@@ -738,11 +738,11 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
     play->has_output_dsd = true;
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "dop_encoder_filter");
+  item = cJSON_GetObjectItemCaseSensitive(play_obj, "dsd_encoder_filter");
   if (cJSON_IsString(item) && item->valuestring) {
-    play->dop_encoder_filter = sdm_filter_from_string(item->valuestring);
-    play->has_dop_encoder_filter =
-        (play->dop_encoder_filter != SDM_FILTER_INVALID);
+    play->dsd_encoder_filter = sdm_filter_from_string(item->valuestring);
+    play->has_dsd_encoder_filter =
+        (play->dsd_encoder_filter != SDM_FILTER_INVALID);
   }
 
 #ifdef CDSP_TEST
@@ -792,10 +792,10 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   final_play->has_is_wav = temp.has_is_wav;
   final_play->output_dop = temp.has_output_dop ? temp.output_dop : false;
   final_play->has_output_dop = temp.has_output_dop;
-  final_play->dop_encoder_filter = temp.has_dop_encoder_filter
-                                       ? temp.dop_encoder_filter
+  final_play->dsd_encoder_filter = temp.has_dsd_encoder_filter
+                                       ? temp.dsd_encoder_filter
                                        : SDM_FILTER_INVALID;
-  final_play->has_dop_encoder_filter = temp.has_dop_encoder_filter;
+  final_play->has_dsd_encoder_filter = temp.has_dsd_encoder_filter;
 
   switch (temp.type) {
 #if defined(ENABLE_COREAUDIO)

@@ -32,7 +32,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Config/configuration.h"
-#include "DoP/dop_encoder.h"
+#include "DoP/dsd_encoder.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
 #include "engine_shared_state.h"
@@ -67,7 +67,7 @@ typedef struct {
   size_t pipeline_rate;
   audio_resampler_t* resampler;
   pipeline_t* pipeline;
-  dop_encoder_t* dop_encoder;
+  dsd_encoder_t* dsd_encoder;
   audio_chunk_t* resampler_scratch;
   audio_chunk_t* pipeline_scratch;
   round_robin_chunk_pool_t* scratch_pool;

@@ -9,6 +9,8 @@
 
 #include "dsp_engine_core.h"
 
+#include "DoP/dsd_encoder.h"
+
 struct dsp_engine_core {
   // MARK: - Configuration
   /** Current configuration. */
@@ -33,8 +35,8 @@ struct dsp_engine_core {
   engine_playback_loop_t* playback_loop;
   /** DoP decoder instance. */
   dop_decoder_t* dop_decoder;
-  /** DoP encoder instance. */
-  dop_encoder_t* dop_encoder;
+  /** DSD encoder instance. */
+  dsd_encoder_t* dsd_encoder;
 
   /**
    * Playback-side chunk size — `resampler.maxOutputFrames` when a

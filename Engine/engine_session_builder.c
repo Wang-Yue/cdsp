@@ -15,7 +15,7 @@
 #include "Backend/audio_backend_factory.h"
 #include "Config/config_diff.h"
 #include "DoP/dop_decoder.h"
-#include "DoP/dop_encoder.h"
+#include "DoP/dsd_encoder.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
@@ -88,7 +88,7 @@ static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
 
   size_t playback_rate = config->devices.samplerate;
   sdm_filter_t dop_filter =
-      playback_device_config_get_dop_encoder_filter(&config->devices.playback);
+      playback_device_config_get_dsd_encoder_filter(&config->devices.playback);
   if (dop_filter == SDM_FILTER_INVALID) {
     dop_filter = SDM_FILTER_SDM6;
   }
@@ -113,12 +113,12 @@ static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
   size_t dsd_bit_depth =
       playback_device_config_calculate_carrier_bits(&config->devices.playback);
 
-  core->dop_encoder = dop_encoder_create(
+  core->dsd_encoder = dsd_encoder_create(
       playback_device_config_get_channels(&config->devices.playback),
       playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0);
 
   return (core->shared && core->processing_params && core->dop_decoder &&
-          core->dop_encoder);
+          core->dsd_encoder);
 }
 
 /**
@@ -272,7 +272,7 @@ static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
       .pipeline_rate = pipeline_rate,
       .resampler = core->resampler,
       .pipeline = core->pipeline,
-      .dop_encoder = core->dop_encoder,
+      .dsd_encoder = core->dsd_encoder,
       .resampler_scratch = core->resampler_scratch,
       .pipeline_scratch = core->pipeline_scratch,
       .scratch_pool = core->processing_scratch_pool,

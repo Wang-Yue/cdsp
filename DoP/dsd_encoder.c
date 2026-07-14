@@ -1,32 +1,31 @@
-// PCM → DoP encoder. Inverse of `DoPDecoder`: converts a chunk of PCM
-// audio at the carrier rate into DSD-over-PCM, in place. For each input
+// PCM → DSD (DoP / Native DSD) encoder. Inverse of `DoPDecoder`: converts a chunk of PCM
+// audio at the carrier rate into DSD-over-PCM (DoP) or Native DSD, in place. For each input
 // frame we
-//   1. interpolate 16× to the DSD rate using a 511-tap β=11 Kaiser-windowed
+//   1. interpolate to the DSD rate using a 511-tap β=11 Kaiser-windowed
 //      polyphase sinc (same shape as the decoder, normalized per phase
 //      for unit DC gain),
 //   2. modulate the oversampled signal with a per-channel sigma-delta
 //      modulator (using the configured `SDMFilter`, defaulting to `sdm-6`), and
-//   3. pack the 16 resulting DSD bits into the lower 16 bits of a 24-bit
-//      container, with an alternating `0x05` / `0xFA` marker in the
-//      upper byte.
+//   3. pack DSD bits into 8, 16, or 32-bit containers (or 24-bit DoP container
+//      with an alternating `0x05` / `0xFA` marker in the upper byte).
 //
 // The encoded chunk satisfies the strict-alternation detection state
-// machine in `DoPDecoder` and round-trips through any DAC that natively
-// understands DoP. To preserve the bit pattern through CoreAudio the
+// machine in `DoPDecoder` when in DoP mode and round-trips through any DAC that natively
+// understands DoP or Native DSD. To preserve the bit pattern through CoreAudio in DoP mode, the
 // playback format must be S24 or S32 (F32 will quantize the marker
-// away); the encoder itself just emits float-normalised 24-bit values
+// away); the encoder itself just emits float-normalised 24-bit or DSD values
 // and trusts the playback backend to forward them losslessly.
 //
 // SDM state per channel is carried by an embedded `SigmaDeltaModulator`;
 // the polyphase coefficient table is shared across channels and built
 // once at init.
 
-#include "dop_encoder.h"
+#include "dsd_encoder.h"
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
-static const logger_t g_logger = {"dsp.dop.encoder"};
+static const logger_t g_logger = {"dsp.dsd.encoder"};
 #include "sigma_delta_modulator.h"
 #if defined(ENABLE_BLAS)
 #include <cblas.h>
@@ -38,7 +37,7 @@ static const logger_t g_logger = {"dsp.dop.encoder"};
 #include <string.h>
 
 /**
- * @brief State for a single DoP encoder channel.
+ * @brief State for a single DSD encoder channel.
  */
 typedef struct {
   /** FIFO buffer for interpolation. Holds 32 * 2 doubles. */
@@ -49,9 +48,9 @@ typedef struct {
   uint8_t marker;
   /** Sigma-delta modulator instance for this channel. */
   sigma_delta_modulator_t* modulator;
-} dop_encoder_channel_state_t;
+} dsd_encoder_channel_state_t;
 
-struct dop_encoder {
+struct dsd_encoder {
   /** Number of audio channels. */
   int channels;
   /**
@@ -64,7 +63,7 @@ struct dop_encoder {
   /** DSD container bit depth per output frame (8, 16, or 32). */
   size_t dsd_bit_depth;
   /** Array of channel states. */
-  dop_encoder_channel_state_t* channel_states;
+  dsd_encoder_channel_state_t* channel_states;
   /**
    * Polyphase coefficient table laid out as `coeffs[phase * subFilterTaps +
    * tap]`. Each phase is normalized to unit DC gain.
@@ -86,10 +85,10 @@ struct dop_encoder {
 #include <Accelerate/Accelerate.h>
 #endif
 
-#define DOP_ENC_REAL_TAPS 511
-#define DOP_ENC_NUM_TAPS 512
-#define DOP_ENC_SUB_FILTER_TAPS 32
-#define DOP_ENC_FIFO_MASK 31
+#define DSD_ENC_REAL_TAPS 511
+#define DSD_ENC_NUM_TAPS 512
+#define DSD_ENC_SUB_FILTER_TAPS 32
+#define DSD_ENC_FIFO_MASK 31
 
 // Carrier sample rates that produce a valid DoP stream (16-bit DSD payload per frame).
 static const int supported_dop_carrier_rates[] = {176400, 352800, 705600,
@@ -100,7 +99,7 @@ static const int supported_native_carrier_rates[] = {
     88200,  96000,  176400, 192000,  352800,
     384000, 705600, 768000, 1411200, 1536000};
 
-bool dop_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
+bool dsd_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
   if (mode == DSD_MODE_DOP) {
     size_t count = sizeof(supported_dop_carrier_rates) /
                    sizeof(supported_dop_carrier_rates[0]);
@@ -141,12 +140,12 @@ static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth, double cut
   double beta = 11.0;
   double dsd_rate = (double)sample_rate * (double)dsd_bit_depth;
   double cutoff = cutoff_hz / dsd_rate;
-  double alpha = (double)(DOP_ENC_REAL_TAPS - 1) / 2.0;
+  double alpha = (double)(DSD_ENC_REAL_TAPS - 1) / 2.0;
   double i0_beta = double_bessel_i0(beta);
 
-  double taps[DOP_ENC_NUM_TAPS];
+  double taps[DSD_ENC_NUM_TAPS];
   memset(taps, 0, sizeof(taps));
-  for (int i = 0; i < DOP_ENC_REAL_TAPS; i++) {
+  for (int i = 0; i < DSD_ENC_REAL_TAPS; i++) {
     double t = (double)i - alpha;
     double sinc_val = 0.0;
     if (t == 0.0) {
@@ -162,41 +161,41 @@ static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth, double cut
   }
 
   size_t phases = dsd_bit_depth;
-  size_t total_elements = phases * DOP_ENC_SUB_FILTER_TAPS;
+  size_t total_elements = phases * DSD_ENC_SUB_FILTER_TAPS;
   double* p = (double*)calloc(total_elements, sizeof(double));
   if (!p) return NULL;
 
   for (size_t ph = 0; ph < phases; ph++) {
     double sub_sum = 0.0;
-    for (int m = 0; m < DOP_ENC_SUB_FILTER_TAPS; m++) {
+    for (int m = 0; m < DSD_ENC_SUB_FILTER_TAPS; m++) {
       sub_sum += taps[m * phases + ph];
     }
     double scale = (sub_sum != 0.0) ? (1.0 / sub_sum) : 0.0;
-    for (int m = 0; m < DOP_ENC_SUB_FILTER_TAPS; m++) {
+    for (int m = 0; m < DSD_ENC_SUB_FILTER_TAPS; m++) {
       double v = taps[m * phases + ph] * scale;
       int store_idx =
-          (int)(ph * DOP_ENC_SUB_FILTER_TAPS + (DOP_ENC_SUB_FILTER_TAPS - 1 - m));
+          (int)(ph * DSD_ENC_SUB_FILTER_TAPS + (DSD_ENC_SUB_FILTER_TAPS - 1 - m));
       p[store_idx] = v;
     }
   }
   return p;
 }
 
-dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
+dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                                   dsd_mode_t mode, size_t dsd_bit_depth,
                                   sdm_filter_t filter_name,
                                   double cutoff_hz) {
   if (channels <= 0) {
-    logger_error(&g_logger, "Invalid channel count for DoP/DSD encoder: %d",
+    logger_error(&g_logger, "Invalid channel count for DSD encoder: %d",
                  channels);
     return NULL;
   }
   if (dsd_bit_depth != 8 && dsd_bit_depth != 16 && dsd_bit_depth != 32) {
     dsd_bit_depth = 16;
   }
-  dop_encoder_t* enc = (dop_encoder_t*)calloc(1, sizeof(dop_encoder_t));
+  dsd_encoder_t* enc = (dsd_encoder_t*)calloc(1, sizeof(dsd_encoder_t));
   if (!enc) {
-    logger_error(&g_logger, "Memory allocation failed for dop_encoder_t");
+    logger_error(&g_logger, "Memory allocation failed for dsd_encoder_t");
     return NULL;
   }
   enc->channels = channels;
@@ -204,12 +203,12 @@ dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
   enc->coeffs = build_coeffs(sample_rate, dsd_bit_depth, cutoff_hz);
   if (!enc->coeffs) {
     logger_error(&g_logger,
-                 "Failed to build polyphase coefficients for DoP/DSD encoder");
-    dop_encoder_free(enc);
+                 "Failed to build polyphase coefficients for DSD encoder");
+    dsd_encoder_free(enc);
     return NULL;
   }
 
-  bool supported = dop_encoder_is_supported_carrier_rate((int)sample_rate, mode);
+  bool supported = dsd_encoder_is_supported_carrier_rate((int)sample_rate, mode);
   enc->mode = (supported && mode != DSD_MODE_PCM) ? mode : DSD_MODE_PCM;
   enc->enabled = (enc->mode != DSD_MODE_PCM);
 
@@ -221,12 +220,12 @@ dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
     return enc;
   }
 
-  enc->channel_states = (dop_encoder_channel_state_t*)calloc(
-      channels, sizeof(dop_encoder_channel_state_t));
+  enc->channel_states = (dsd_encoder_channel_state_t*)calloc(
+      channels, sizeof(dsd_encoder_channel_state_t));
   if (!enc->channel_states) {
     logger_error(&g_logger,
                  "Memory allocation failed for DSD encoder channel states");
-    dop_encoder_free(enc);
+    dsd_encoder_free(enc);
     return NULL;
   }
 
@@ -239,7 +238,7 @@ dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
     if (!enc->channel_states[ch].modulator) {
       logger_error(&g_logger,
                    "Failed to create Sigma-Delta modulator for channel %d", ch);
-      dop_encoder_free(enc);
+      dsd_encoder_free(enc);
       return NULL;
     }
   }
@@ -261,7 +260,7 @@ dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
  * 3. Feeds each interpolated sample to the Sigma-Delta Modulator.
  * 4. Packs DSD bits into 8, 16, or 32-bit container normalized float [-1.0, 1.0].
  */
-static void encode_channel(dop_encoder_channel_state_t* state,
+static void encode_channel(dsd_encoder_channel_state_t* state,
                             mutable_waveform_t buf, size_t frames,
                             const double* coeffs, dsd_mode_t mode,
                             size_t dsd_bit_depth) {
@@ -275,7 +274,7 @@ static void encode_channel(dop_encoder_channel_state_t* state,
   for (size_t t = 0; t < frames; t++) {
     double sample_val = buf[t];
     fifo[pos] = sample_val;
-    fifo[pos + DOP_ENC_SUB_FILTER_TAPS] = sample_val;
+    fifo[pos + DSD_ENC_SUB_FILTER_TAPS] = sample_val;
 
     int base_idx = pos + 1;
     const double* fifo_p = fifo + base_idx;
@@ -330,14 +329,14 @@ static void encode_channel(dop_encoder_channel_state_t* state,
         marker = (marker == 0x05) ? 0xFA : 0x05;
       }
     }
-    pos = (pos + 1) & DOP_ENC_FIFO_MASK;
+    pos = (pos + 1) & DSD_ENC_FIFO_MASK;
   }
 
   state->fifo_pos = pos;
   state->marker = marker;
 }
 
-void dop_encoder_encode(dop_encoder_t* encoder, audio_chunk_t* chunk) {
+void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (!encoder || !encoder->enabled || !chunk) return;
   size_t n = audio_chunk_get_valid_frames(chunk);
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != encoder->channels)
@@ -349,7 +348,7 @@ void dop_encoder_encode(dop_encoder_t* encoder, audio_chunk_t* chunk) {
   }
 }
 
-void dop_encoder_free(dop_encoder_t* encoder) {
+void dsd_encoder_free(dsd_encoder_t* encoder) {
   if (!encoder) return;
   if (encoder->channel_states) {
     for (int ch = 0; ch < encoder->channels; ch++) {
@@ -361,6 +360,6 @@ void dop_encoder_free(dop_encoder_t* encoder) {
   free(encoder);
 }
 
-bool dop_encoder_is_enabled(const dop_encoder_t* encoder) {
+bool dsd_encoder_is_enabled(const dsd_encoder_t* encoder) {
   return encoder ? encoder->enabled : false;
 }

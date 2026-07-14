@@ -42,7 +42,7 @@ struct engine_processing_loop {
   size_t pipeline_rate;
   audio_resampler_t* resampler;
   pipeline_t* active_pipeline;
-  dop_encoder_t* dop_encoder;
+  dsd_encoder_t* dsd_encoder;
   _Atomic(pipeline_t*) next_pipeline;
   audio_chunk_t* resampler_scratch;
   audio_chunk_t* pipeline_scratch;
@@ -95,7 +95,7 @@ engine_processing_loop_t* engine_processing_loop_create(
   loop->pipeline_rate = config->pipeline_rate;
   loop->resampler = config->resampler;
   loop->active_pipeline = config->pipeline;
-  loop->dop_encoder = config->dop_encoder;
+  loop->dsd_encoder = config->dsd_encoder;
   loop->resampler_scratch = config->resampler_scratch;
   loop->pipeline_scratch = config->pipeline_scratch;
   loop->scratch_pool = config->scratch_pool;
@@ -334,9 +334,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
     }
 
-    // 8. Encode PCM to DoP in place if enabled
-    if (loop->dop_encoder) {
-      dop_encoder_encode(loop->dop_encoder, chunk);
+    // 8. Encode PCM to DSD (DoP / Native DSD) in place if enabled
+    if (loop->dsd_encoder) {
+      dsd_encoder_encode(loop->dsd_encoder, chunk);
     }
 
     // 9. Enqueue the processed chunk to the playback queue.

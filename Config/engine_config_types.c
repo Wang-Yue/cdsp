@@ -917,9 +917,9 @@ size_t playback_device_config_calculate_carrier_bits(
   return 16;
 }
 
-sdm_filter_t playback_device_config_get_dop_encoder_filter(
+sdm_filter_t playback_device_config_get_dsd_encoder_filter(
     const playback_device_config_t* config) {
-  return config->dop_encoder_filter;
+  return config->dsd_encoder_filter;
 }
 
 const char* playback_device_config_get_filename(

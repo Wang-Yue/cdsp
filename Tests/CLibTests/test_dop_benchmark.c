@@ -7,19 +7,19 @@
 #include <time.h>
 
 #include "DoP/dop_decoder.h"
-#include "DoP/dop_encoder.h"
+#include "DoP/dsd_encoder.h"
 #include "test_support.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-TEST(DoPEncoder_Benchmark) {
+TEST(DSDEncoder_Benchmark) {
   size_t carrier_rate = 768000;
-  dop_encoder_t* encoder = dop_encoder_create(
+  dsd_encoder_t* encoder = dsd_encoder_create(
       2, carrier_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
   ASSERT_TRUE(encoder != NULL);
-  ASSERT_TRUE(dop_encoder_is_enabled(encoder));
+  ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
 
   int frames = 1024;
   int channels = 2;
@@ -39,7 +39,7 @@ TEST(DoPEncoder_Benchmark) {
       memcpy(audio_chunk_get_channel(temp_chunk, ch),
              audio_chunk_get_channel(pcm_source, ch), frames * sizeof(double));
     }
-    dop_encoder_encode(encoder, temp_chunk);
+    dsd_encoder_encode(encoder, temp_chunk);
   }
 
   int iters = 2000;
@@ -50,7 +50,7 @@ TEST(DoPEncoder_Benchmark) {
       memcpy(audio_chunk_get_channel(temp_chunk, ch),
              audio_chunk_get_channel(pcm_source, ch), frames * sizeof(double));
     }
-    dop_encoder_encode(encoder, temp_chunk);
+    dsd_encoder_encode(encoder, temp_chunk);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
   double elapsed_ns = (double)(end.tv_sec - start.tv_sec) * 1e9 +
@@ -58,22 +58,22 @@ TEST(DoPEncoder_Benchmark) {
   double ns_per_frame = elapsed_ns / (double)(frames * iters);
   double real_time_ratio = (1.0 / ((double)carrier_rate * 1e-9)) / ns_per_frame;
 
-  printf("=== DoP Encoder Throughput ===\n");
+  printf("=== DSD Encoder Throughput ===\n");
   printf("Throughput: %8.2f ns/frame\n", ns_per_frame);
   printf("Real-time ratio: %8.2fx\n", real_time_ratio);
 
   audio_chunk_free(temp_chunk);
   audio_chunk_free(pcm_source);
-  dop_encoder_free(encoder);
+  dsd_encoder_free(encoder);
 }
 
 TEST(DoPDecoder_Benchmark) {
   size_t carrier_rate = 768000;
-  dop_encoder_t* encoder = dop_encoder_create(
+  dsd_encoder_t* encoder = dsd_encoder_create(
       2, carrier_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
   dop_decoder_t* decoder = dop_decoder_create(2, (double)carrier_rate, false, 20000.0);
   ASSERT_TRUE(encoder != NULL);
-  ASSERT_TRUE(dop_encoder_is_enabled(encoder));
+  ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
   ASSERT_TRUE(decoder != NULL);
 
   int frames = 1024;
@@ -92,7 +92,7 @@ TEST(DoPDecoder_Benchmark) {
     memcpy(audio_chunk_get_channel(encoded_source, ch),
            audio_chunk_get_channel(pcm_source, ch), frames * sizeof(double));
   }
-  dop_encoder_encode(encoder, encoded_source);
+  dsd_encoder_encode(encoder, encoded_source);
 
   audio_chunk_t* temp_chunk = audio_chunk_create(frames, channels);
 
@@ -132,7 +132,7 @@ TEST(DoPDecoder_Benchmark) {
   audio_chunk_free(encoded_source);
   audio_chunk_free(pcm_source);
   dop_decoder_free(decoder);
-  dop_encoder_free(encoder);
+  dsd_encoder_free(encoder);
 }
 
 TEST_MAIN()

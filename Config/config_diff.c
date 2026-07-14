@@ -694,9 +694,9 @@ bool devices_config_equal(const devices_config_t* a,
   if (a->playback.has_is_wav != b->playback.has_is_wav) return false;
   if (a->playback.output_dop != b->playback.output_dop) return false;
   if (a->playback.has_output_dop != b->playback.has_output_dop) return false;
-  if (a->playback.dop_encoder_filter != b->playback.dop_encoder_filter)
+  if (a->playback.dsd_encoder_filter != b->playback.dsd_encoder_filter)
     return false;
-  if (a->playback.has_dop_encoder_filter != b->playback.has_dop_encoder_filter)
+  if (a->playback.has_dsd_encoder_filter != b->playback.has_dsd_encoder_filter)
     return false;
 
   if (a->playback.has_labels != b->playback.has_labels) return false;

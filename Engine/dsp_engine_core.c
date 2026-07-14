@@ -193,9 +193,9 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
     dop_decoder_free(core->dop_decoder);
     core->dop_decoder = NULL;
   }
-  if (core->dop_encoder) {
-    dop_encoder_free(core->dop_encoder);
-    core->dop_encoder = NULL;
+  if (core->dsd_encoder) {
+    dsd_encoder_free(core->dsd_encoder);
+    core->dsd_encoder = NULL;
   }
 
 #ifdef _WIN32

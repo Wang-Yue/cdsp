@@ -12,7 +12,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "DoP/dop_decoder.h"
-#include "DoP/dop_encoder.h"
+#include "DoP/dsd_encoder.h"
 #include "Engine/cdsp_sem.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
@@ -884,14 +884,14 @@ TEST(Mixer_2to4_AllocationFree) {
 // MARK: - DoP
 
 typedef struct {
-  dop_encoder_t* encoder;
+  dsd_encoder_t* encoder;
   audio_chunk_t** chunks;
   int chunk_count;
-} dop_enc_test_ctx_t;
+} dsd_enc_test_ctx_t;
 
-static void dop_enc_iter(int i, void* ctx) {
-  dop_enc_test_ctx_t* c = (dop_enc_test_ctx_t*)ctx;
-  dop_encoder_encode(c->encoder, c->chunks[i % c->chunk_count]);
+static void dsd_enc_iter(int i, void* ctx) {
+  dsd_enc_test_ctx_t* c = (dsd_enc_test_ctx_t*)ctx;
+  dsd_encoder_encode(c->encoder, c->chunks[i % c->chunk_count]);
 }
 
 #if defined(ENABLE_BLAS)
@@ -902,20 +902,20 @@ TEST(DoPEncoder_AllocationFree) {
 #if defined(ENABLE_BLAS)
   openblas_set_num_threads(1);
 #endif
-  dop_encoder_t* encoder = dop_encoder_create(
+  dsd_encoder_t* encoder = dsd_encoder_create(
       2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0);
   ASSERT_TRUE(encoder != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 0.5);
-  dop_enc_test_ctx_t ctx = {encoder, inputs, 32};
-  assert_allocation_free("DoP encoder",
+  dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};
+  assert_allocation_free("DSD encoder",
 #if defined(ENABLE_BLAS)
                          1,
 #else
                          0,
 #endif
-                         30, dop_enc_iter, &ctx);
+                         30, dsd_enc_iter, &ctx);
   free_chunks(inputs, 32);
-  dop_encoder_free(encoder);
+  dsd_encoder_free(encoder);
 }
 
 typedef struct {
@@ -1113,7 +1113,7 @@ TEST(PipelineReload_AllocationFree) {
       .pipeline_rate = 44100,
       .resampler = NULL,
       .pipeline = initial_pipeline,
-      .dop_encoder = NULL,
+      .dsd_encoder = NULL,
       .resampler_scratch = resampler_scratch,
       .pipeline_scratch = pipeline_scratch,
       .scratch_pool = scratch_pool,

@@ -819,8 +819,8 @@ typedef struct {
   bool has_is_wav;                 /**< True if is_wav is specified. */
   bool output_dop;                 /**< Enable DoP output. */
   bool has_output_dop;             /**< True if output_dop is specified. */
-  sdm_filter_t dop_encoder_filter; /**< SDM filter for DoP encoding. */
-  bool has_dop_encoder_filter; /**< True if dop_encoder_filter is specified. */
+  sdm_filter_t dsd_encoder_filter; /**< SDM filter for DSD encoding. */
+  bool has_dsd_encoder_filter; /**< True if dsd_encoder_filter is specified. */
   union {
 #if defined(ENABLE_COREAUDIO)
     coreaudio_playback_config_t coreaudio; /**< CoreAudio config. */
@@ -1054,11 +1054,11 @@ size_t playback_device_config_calculate_carrier_bits(
     const playback_device_config_t* config);
 
 /**
- * @brief Gets DoP encoder filter from a playback device configuration.
+ * @brief Gets DSD encoder filter from a playback device configuration.
  * @param config Pointer to the configuration.
  * @return SDM filter type.
  */
-sdm_filter_t playback_device_config_get_dop_encoder_filter(
+sdm_filter_t playback_device_config_get_dsd_encoder_filter(
     const playback_device_config_t* config);
 
 /**
