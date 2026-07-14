@@ -7,6 +7,7 @@
 #include "wasapi_backend.h"
 
 #include <audioclient.h>
+#include <audiopolicy.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>

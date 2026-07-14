@@ -17,9 +17,33 @@ CC ?= clang
 AR ?= ar
 CFLAGS ?= -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging
 UNAME_S := $(shell uname -s)
+TARGET_OS ?= $(UNAME_S)
 
-# Setup Default Feature Flags
-ifeq ($(UNAME_S),Darwin)
+ifneq (,$(filter %mingw32-gcc %mingw32-clang Windows_NT Windows Win32 MINGW% MSYS% CYGWIN%,$(TARGET_OS) $(CC)))
+    IS_WINDOWS := 1
+endif
+
+ifeq ($(IS_WINDOWS),1)
+    ifneq ($(UNAME_S),Windows_NT)
+        ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
+            CROSS_PREFIX ?=
+        else
+            CROSS_PREFIX ?= x86_64-w64-mingw32-
+        endif
+    endif
+    CC := $(CROSS_PREFIX)gcc
+    AR := $(CROSS_PREFIX)gcc-ar
+    ENABLE_COREAUDIO ?= 0
+    ENABLE_ACCELERATE ?= 0
+    ENABLE_ALSA ?= 0
+    ENABLE_PIPEWIRE ?= 0
+    ENABLE_FFTW ?= 0
+    ENABLE_BLAS ?= 0
+    ENABLE_WASAPI ?= 1
+    ENABLE_ASIO ?= 1
+    ENABLE_OPENMP ?= 0
+    CLI_BIN_EXT := .exe
+else ifeq ($(UNAME_S),Darwin)
     CFLAGS += -mcpu=native
     LDFLAGS += -flto
     ENABLE_COREAUDIO ?= 1
@@ -32,29 +56,16 @@ ifeq ($(UNAME_S),Darwin)
     ENABLE_ASIO ?= 0
     ENABLE_OPENMP ?= 0
 else
-    ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-        # Native Windows (MSYS2/MinGW)
-        ENABLE_COREAUDIO ?= 0
-        ENABLE_ACCELERATE ?= 0
-        ENABLE_ALSA ?= 0
-        ENABLE_PIPEWIRE ?= 0
-        ENABLE_FFTW ?= 1
-        ENABLE_BLAS ?= 0
-        ENABLE_WASAPI ?= 1
-        ENABLE_ASIO ?= 1
-        ENABLE_OPENMP ?= 0
-    else
-        # Linux (Default)
-        ENABLE_COREAUDIO ?= 0
-        ENABLE_ACCELERATE ?= 0
-        ENABLE_ALSA ?= 1
-        ENABLE_PIPEWIRE ?= 1
-        ENABLE_FFTW ?= 1
-        ENABLE_BLAS ?= 1
-        ENABLE_WASAPI ?= 0
-        ENABLE_ASIO ?= 0
-        ENABLE_OPENMP ?= 1
-    endif
+    # Linux (Default)
+    ENABLE_COREAUDIO ?= 0
+    ENABLE_ACCELERATE ?= 0
+    ENABLE_ALSA ?= 1
+    ENABLE_PIPEWIRE ?= 1
+    ENABLE_FFTW ?= 1
+    ENABLE_BLAS ?= 1
+    ENABLE_WASAPI ?= 0
+    ENABLE_ASIO ?= 0
+    ENABLE_OPENMP ?= 1
 endif
 
 # Map Flags to CFLAGS preprocessor definitions
@@ -86,7 +97,17 @@ endif
 
 # Map Flags to link options (LDFLAGS)
 LDFLAGS := -lm -lpthread
-ifeq ($(UNAME_S),Darwin)
+ifeq ($(IS_WINDOWS),1)
+    # Windows Setup
+    CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES
+    ifeq ($(ENABLE_FFTW),1)
+        LDFLAGS += -lfftw3 -lfftw3f
+    endif
+    ifeq ($(ENABLE_BLAS),1)
+        LDFLAGS += -lopenblas
+    endif
+    LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid
+else ifeq ($(UNAME_S),Darwin)
     ifeq ($(ENABLE_COREAUDIO),1)
         LDFLAGS += -framework CoreAudio -framework AudioToolbox
     endif
@@ -95,45 +116,33 @@ ifeq ($(UNAME_S),Darwin)
     endif
     LDFLAGS += -framework CoreFoundation
 else
-    ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-        # Windows Native Setup
-        CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES
-        ifeq ($(ENABLE_FFTW),1)
-            LDFLAGS += -lfftw3 -lfftw3f
-        endif
-        ifeq ($(ENABLE_BLAS),1)
-            LDFLAGS += -lopenblas
-        endif
-        LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid
+    # Linux
+    CFLAGS += -march=native -D_GNU_SOURCE
+    ifeq ($(USE_LIBDISPATCH),1)
+        CFLAGS += -DUSE_LIBDISPATCH -I/usr/libexec/swift/lib/swift
+        LDFLAGS += -L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux
     else
-        # Linux
-        CFLAGS += -march=native -D_GNU_SOURCE
-        ifeq ($(USE_LIBDISPATCH),1)
-            CFLAGS += -DUSE_LIBDISPATCH -I/usr/libexec/swift/lib/swift
-            LDFLAGS += -L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux
-        else
-            ifeq ($(ENABLE_OPENMP),1)
-                CFLAGS += -fopenmp -DUSE_OPENMP
-            endif
+        ifeq ($(ENABLE_OPENMP),1)
+            CFLAGS += -fopenmp -DUSE_OPENMP
         endif
-        ifeq ($(ENABLE_ALSA),1)
-            LDFLAGS += -lasound
-        endif
-        ifeq ($(ENABLE_PIPEWIRE),1)
-            LDFLAGS += -lpipewire-0.3
-            CFLAGS += $(shell pkg-config --cflags libpipewire-0.3 2>/dev/null || echo "")
-        endif
-        ifeq ($(ENABLE_FFTW),1)
-            LDFLAGS += -lfftw3 -lfftw3f
-        endif
-        ifeq ($(ENABLE_BLAS),1)
-            LDFLAGS += -lopenblas
-        endif
-        LDFLAGS += -lrt
-        ifneq ($(USE_LIBDISPATCH),1)
-            ifeq ($(ENABLE_OPENMP),1)
-                LDFLAGS += -fopenmp
-            endif
+    endif
+    ifeq ($(ENABLE_ALSA),1)
+        LDFLAGS += -lasound
+    endif
+    ifeq ($(ENABLE_PIPEWIRE),1)
+        LDFLAGS += -lpipewire-0.3
+        CFLAGS += $(shell pkg-config --cflags libpipewire-0.3 2>/dev/null || echo "")
+    endif
+    ifeq ($(ENABLE_FFTW),1)
+        LDFLAGS += -lfftw3 -lfftw3f
+    endif
+    ifeq ($(ENABLE_BLAS),1)
+        LDFLAGS += -lopenblas
+    endif
+    LDFLAGS += -lrt
+    ifneq ($(USE_LIBDISPATCH),1)
+        ifeq ($(ENABLE_OPENMP),1)
+            LDFLAGS += -fopenmp
         endif
     endif
 endif
@@ -182,14 +191,17 @@ TEST_LIB_TARGET := $(SRC_ROOT)/libdsp_test.a
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
 SERVER_SRCS := $(wildcard $(SRC_ROOT)/Server/*.c)
 CLI_SRC := $(SRC_ROOT)/main.c
-CLI_BIN := $(SRC_ROOT)/bin/dsp-cli
+CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all build lib test run-test-runner bench cli clean format
+.PHONY: all build lib test run-test-runner bench cli clean format windows
 
 all: cli
+
+windows:
+	+$(MAKE) TARGET_OS=Windows
 
 build: all
 
@@ -301,7 +313,9 @@ cli: $(CLI_BIN)
 
 $(CLI_BIN): $(CLI_SRC) $(SERVER_SRCS) $(LIB_TARGET)
 	@mkdir -p $(dir $@)
-ifeq ($(UNAME_S),Darwin)
+ifeq ($(IS_WINDOWS),1)
+	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
+else ifeq ($(UNAME_S),Darwin)
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,-force_load $(LIB_TARGET) $(LDFLAGS) -o $@
 else
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
