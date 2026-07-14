@@ -86,17 +86,24 @@ static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
       capture_device_config_get_bypass_dop(&config->devices.capture),
       capture_device_config_get_dop_cutoff_hz(&config->devices.capture));
 
-  double playback_rate = (double)config->devices.samplerate;
+  size_t playback_rate = config->devices.samplerate;
   sdm_filter_t dop_filter =
       playback_device_config_get_dop_encoder_filter(&config->devices.playback);
   if (dop_filter == SDM_FILTER_INVALID) {
     dop_filter = SDM_FILTER_SDM6;
   }
+  dsd_mode_t dsd_mode = DSD_MODE_PCM;
+  if (config->devices.playback.output_dsd) {
+    dsd_mode = DSD_MODE_NATIVE;
+  } else if (config->devices.playback.output_dop) {
+    dsd_mode = DSD_MODE_DOP;
+  }
+  size_t dsd_bit_depth =
+      playback_device_config_calculate_carrier_bits(&config->devices.playback);
+
   core->dop_encoder = dop_encoder_create(
       playback_device_config_get_channels(&config->devices.playback),
-      playback_rate,
-      playback_device_config_get_output_dop(&config->devices.playback),
-      dop_filter, 20000.0);
+      playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0);
 
   return (core->shared && core->processing_params && core->dop_decoder &&
           core->dop_encoder);

@@ -278,6 +278,21 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_F64_LE) {
       formats[0] = SND_PCM_FORMAT_FLOAT64_LE;
       num_formats = 1;
+#if defined(SND_PCM_FORMAT_DSD_U8)
+    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U8) {
+      formats[0] = SND_PCM_FORMAT_DSD_U8;
+      num_formats = 1;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U16_LE)
+    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U16_LE;
+      num_formats = 1;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U32_LE;
+      num_formats = 1;
+#endif
     }
   } else {
     formats[0] = SND_PCM_FORMAT_FLOAT_LE;
@@ -373,6 +388,18 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     sample_size = 4;
   } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
     sample_size = 8;
+#if defined(SND_PCM_FORMAT_DSD_U8)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
+    sample_size = 1;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U16_LE)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
+    sample_size = 2;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
+    sample_size = 4;
+#endif
   }
   playback->interleaved_buf_size =
       playback->chunk_size * playback->channels * sample_size;
@@ -507,6 +534,36 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
         dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
       }
     }
+#if defined(SND_PCM_FORMAT_DSD_U8)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
+    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
+    for (size_t f = 0; f < frames; f++) {
+      for (size_t c = 0; c < (size_t)playback->channels; c++) {
+        double val = audio_chunk_get_channel(chunk, c)[f];
+        dst[f * playback->channels + c] = pcm_sample_encode_dsd_u8(val);
+      }
+    }
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U16_LE)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
+    uint16_t* dst = (uint16_t*)playback->interleaved_buf;
+    for (size_t f = 0; f < frames; f++) {
+      for (size_t c = 0; c < (size_t)playback->channels; c++) {
+        double val = audio_chunk_get_channel(chunk, c)[f];
+        dst[f * playback->channels + c] = (uint16_t)pcm_sample_encode_s16(val);
+      }
+    }
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
+    uint32_t* dst = (uint32_t*)playback->interleaved_buf;
+    for (size_t f = 0; f < frames; f++) {
+      for (size_t c = 0; c < (size_t)playback->channels; c++) {
+        double val = audio_chunk_get_channel(chunk, c)[f];
+        dst[f * playback->channels + c] = (uint32_t)pcm_sample_encode_s32(val);
+      }
+    }
+#endif
   }
 
   bool paused = atomic_load_explicit(&playback->paused, memory_order_acquire);

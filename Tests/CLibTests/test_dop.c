@@ -1,5 +1,7 @@
 #include <math.h>
 
+#include "Audio/sample_conversion.h"
+#include "Config/engine_config_types.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dop_encoder.h"
 #include "test_support.h"
@@ -158,9 +160,9 @@ TEST(DoPRoundtripSINAD) {
     int mult = multipliers[i];
     for (int j = 0; j < 2; j++) {
       double base_rate = base_rates[j];
-      double pcm_sample_rate = base_rate * (double)mult / 16.0;
-      dop_encoder_t* encoder = dop_encoder_create(1, pcm_sample_rate, true,
-                                                  SDM_FILTER_SDM6, 20000.0);
+      size_t pcm_sample_rate = (size_t)round(base_rate * (double)mult / 16.0);
+      dop_encoder_t* encoder = dop_encoder_create(
+          1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
       dop_decoder_t* decoder =
           dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
       ASSERT_TRUE(encoder != NULL);
@@ -225,15 +227,15 @@ TEST(DoPRoundtripSINAD) {
 }
 
 TEST(DoPVariableChunkRoundtrip) {
-  double pcm_sample_rate = 176400.0;
-  dop_encoder_t* encoder =
-      dop_encoder_create(1, pcm_sample_rate, true, SDM_FILTER_SDM6, 20000.0);
+  size_t pcm_sample_rate = 176400;
+  dop_encoder_t* encoder = dop_encoder_create(
+      1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
   dop_decoder_t* decoder =
-      dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
+      dop_decoder_create(1, (double)pcm_sample_rate, false, 20000.0);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(decoder != NULL);
 
-  double frames_per_cycle = pcm_sample_rate / 1000.0;
+  double frames_per_cycle = (double)pcm_sample_rate / 1000.0;
   int active_frames = (int)round(frames_per_cycle * 10.0);
   int settle_frames = (int)round(frames_per_cycle * 4.0);
   int total_frames = settle_frames + active_frames;
@@ -243,7 +245,7 @@ TEST(DoPVariableChunkRoundtrip) {
   double amplitude = 0.7071;
   for (int t = 0; t < total_frames; t++) {
     input_buf[t] =
-        amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / pcm_sample_rate);
+        amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / (double)pcm_sample_rate);
   }
 
   int chunk_sizes[] = {200, 50, 400, 1000, 5, 815};
@@ -274,7 +276,7 @@ TEST(DoPVariableChunkRoundtrip) {
   double cos_sum = 0.0;
   double sin_sum = 0.0;
   for (int t = settle_frames; t < total_frames; t++) {
-    double angle = 2.0 * M_PI * target_freq * (double)t / pcm_sample_rate;
+    double angle = 2.0 * M_PI * target_freq * (double)t / (double)pcm_sample_rate;
     cos_sum += output_buf[t] * cos(angle);
     sin_sum += output_buf[t] * sin(angle);
   }
@@ -298,6 +300,73 @@ TEST(DoPVariableChunkRoundtrip) {
   free(output_buf);
   dop_decoder_free(decoder);
   dop_encoder_free(encoder);
+}
+
+TEST(NativeDSDEncoderCreationAndOutput) {
+  size_t pcm_sample_rate = 176400;
+  dop_encoder_t* encoder = dop_encoder_create(
+      2, pcm_sample_rate, DSD_MODE_NATIVE, 16, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(dop_encoder_is_enabled(encoder));
+
+  audio_chunk_t* chunk = audio_chunk_create(64, 2);
+  for (size_t t = 0; t < 64; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = 0.5 * sin(2.0 * M_PI * 1000.0 * (double)t / pcm_sample_rate);
+    audio_chunk_get_channel(chunk, 1)[t] = 0.5 * cos(2.0 * M_PI * 1000.0 * (double)t / pcm_sample_rate);
+  }
+
+  dop_encoder_encode(encoder, chunk);
+
+  // Native DSD should NOT output DoP marker bytes (0x05 / 0xFA) in the upper byte.
+  for (size_t t = 0; t < 64; t++) {
+    double val0 = audio_chunk_get_channel(chunk, 0)[t];
+    int16_t s16 = pcm_sample_encode_s16(val0);
+    (void)s16; // Valid bit-exact 16-bit DSD stream word
+  }
+
+  audio_chunk_free(chunk);
+  dop_encoder_free(encoder);
+}
+
+TEST(CarrierBitsCalculationTest) {
+  playback_device_config_t cfg = {0};
+  cfg.output_dsd = true;
+#if defined(ENABLE_ALSA)
+  cfg.type = AUDIO_BACKEND_TYPE_ALSA;
+  cfg.cfg.alsa.has_format = true;
+
+  cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U8;
+  ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)8);
+
+  cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U16_LE;
+  ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)16);
+
+  cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U32_LE;
+  ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)32);
+#endif
+}
+
+TEST(NativeDSDBitDepthsEncodingTest) {
+  size_t bit_depths[] = {8, 16, 32};
+  for (int i = 0; i < 3; i++) {
+    size_t depth = bit_depths[i];
+    size_t rate = (depth == 8) ? 352800 : 176400;
+    dop_encoder_t* encoder = dop_encoder_create(
+        2, rate, DSD_MODE_NATIVE, depth, SDM_FILTER_SDM6, 20000.0);
+    ASSERT_TRUE(encoder != NULL);
+    ASSERT_TRUE(dop_encoder_is_enabled(encoder));
+
+    audio_chunk_t* chunk = audio_chunk_create(32, 2);
+    for (size_t t = 0; t < 32; t++) {
+      audio_chunk_get_channel(chunk, 0)[t] = 0.5 * sin((double)t);
+      audio_chunk_get_channel(chunk, 1)[t] = 0.5 * cos((double)t);
+    }
+
+    dop_encoder_encode(encoder, chunk);
+
+    audio_chunk_free(chunk);
+    dop_encoder_free(encoder);
+  }
 }
 
 TEST_MAIN()

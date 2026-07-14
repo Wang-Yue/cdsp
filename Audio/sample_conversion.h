@@ -9,6 +9,7 @@
 #define CLIB_AUDIO_SAMPLE_CONVERSION_H
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -137,6 +138,13 @@ static inline void pcm_sample_encode_f32_bytes(double val, uint8_t* dst) {
 }
 
 /**
+ * @brief Encode a normalized double sample to a 64-bit float.
+ */
+static inline double pcm_sample_encode_f64(double val) {
+  return pcm_clamp_sample(val);
+}
+
+/**
  * @brief Encode a normalized double sample into an 8-byte double buffer.
  */
 static inline void pcm_sample_encode_f64_bytes(double val, uint8_t* dst) {
@@ -145,10 +153,60 @@ static inline void pcm_sample_encode_f64_bytes(double val, uint8_t* dst) {
 }
 
 /**
+ * @brief Reverse bit order of an 8-bit unsigned integer.
+ */
+static inline uint8_t pcm_reverse_bits_u8(uint8_t b) {
+  b = (uint8_t)(((b & 0xF0) >> 4) | ((b & 0x0F) << 4));
+  b = (uint8_t)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
+  b = (uint8_t)(((b & 0xAA) >> 1) | ((b & 0x55) << 1));
+  return b;
+}
+
+/**
+ * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes.
+ * @param val The double-precision sample containing packed 32 DSD bits.
+ * @param dst Target 4-byte buffer.
+ * @param reverse_bits If true, reverses bit order per byte for LSB formats.
+ */
+static inline void pcm_sample_encode_dsd_u32_bytes(double val, uint8_t* dst,
+                                                    bool reverse_bits) {
+  uint32_t u32 = (uint32_t)pcm_sample_encode_s32(val);
+  uint8_t b0 = (uint8_t)(u32 >> 24);
+  uint8_t b1 = (uint8_t)((u32 >> 16) & 0xFF);
+  uint8_t b2 = (uint8_t)((u32 >> 8) & 0xFF);
+  uint8_t b3 = (uint8_t)(u32 & 0xFF);
+  if (reverse_bits) {
+    b0 = pcm_reverse_bits_u8(b0);
+    b1 = pcm_reverse_bits_u8(b1);
+    b2 = pcm_reverse_bits_u8(b2);
+    b3 = pcm_reverse_bits_u8(b3);
+  }
+  dst[0] = b0;
+  dst[1] = b1;
+  dst[2] = b2;
+  dst[3] = b3;
+}
+
+/**
+ * @brief Encode a normalized double sample to an 8-bit DSD byte (MSB upper byte).
+ */
+static inline uint8_t pcm_sample_encode_dsd_u8(double val) {
+  int16_t s16 = pcm_sample_encode_s16(val);
+  return (uint8_t)((uint16_t)s16 >> 8);
+}
+
+/**
  * @brief Decode a 16-bit signed integer to a normalized double sample.
  */
 static inline double pcm_sample_decode_s16(int16_t val) {
   return (double)val / 32768.0;
+}
+
+/**
+ * @brief Decode an 8-bit DSD byte (MSB upper byte) to normalized double [-1.0, 1.0].
+ */
+static inline double pcm_sample_decode_dsd_u8(uint8_t u8) {
+  return pcm_sample_decode_s16((int16_t)((uint16_t)u8 << 8));
 }
 
 /**

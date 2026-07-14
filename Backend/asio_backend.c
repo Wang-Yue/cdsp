@@ -55,6 +55,9 @@ typedef enum {
   ASIOSTInt32LSB18 = 25,
   ASIOSTInt32LSB20 = 26,
   ASIOSTInt32LSB24 = 27,
+  ASIOTSDSDInt8LSB = 32,
+  ASIOTSDSDInt8MSB = 33,
+  ASIOTSDSDInt8NER8 = 34,
 } ASIOSampleType;
 
 typedef struct {
@@ -739,11 +742,6 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
 
         for (long f = 0; f < frames; f++) {
           float val = interleaved_buf[f * channels + c];
-          // Clip float sample to [-1.0, 1.0] before conversion.
-          if (val > 1.0f)
-            val = 1.0f;
-          else if (val < -1.0f)
-            val = -1.0f;
 
           // Convert sample based on the ASIO channel's native format.
           if (type == ASIOSTInt16LSB) {
@@ -755,10 +753,15 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
           } else if (type == ASIOSTFloat32LSB) {
             ((float*)dst)[f] = pcm_sample_encode_f32(val);
           } else if (type == ASIOSTFloat64LSB) {
-            ((double*)dst)[f] = pcm_clamp_sample(val);
+            ((double*)dst)[f] = pcm_sample_encode_f64(val);
           } else if (type == ASIOSTInt24LSB) {
             // ASIOSTInt24LSB uses packed 3-byte samples.
             pcm_sample_encode_s24_3bytes(val, &((uint8_t*)dst)[f * 3]);
+          } else if (type == ASIOTSDSDInt8LSB || type == ASIOTSDSDInt8MSB ||
+                     type == ASIOTSDSDInt8NER8) {
+            bool reverse_bits = (type == ASIOTSDSDInt8LSB);
+            pcm_sample_encode_dsd_u32_bytes(val, &((uint8_t*)dst)[4 * f],
+                                            reverse_bits);
           }
         }
       }

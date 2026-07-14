@@ -46,6 +46,9 @@ typedef enum {
   ASIOSTInt32LSB18 = 25,
   ASIOSTInt32LSB20 = 26,
   ASIOSTInt32LSB24 = 27,
+  ASIOTSDSDInt8LSB = 32,
+  ASIOTSDSDInt8MSB = 33,
+  ASIOTSDSDInt8NER8 = 34,
 } ASIOSampleType;
 
 typedef struct {
@@ -322,6 +325,10 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     native_fmt_name = "F32_LE";
   else if (chan_info.type == ASIOSTFloat64LSB)
     native_fmt_name = "F64_LE";
+  else if (chan_info.type == ASIOTSDSDInt8LSB ||
+           chan_info.type == ASIOTSDSDInt8MSB ||
+           chan_info.type == ASIOTSDSDInt8NER8)
+    native_fmt_name = "DSD_INT8";
 
   for (size_t r = 0; r < PROBE_RATES_COUNT; r++) {
     double rate = PROBE_RATES[r];

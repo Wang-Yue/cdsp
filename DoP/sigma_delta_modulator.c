@@ -331,7 +331,7 @@ sigma_delta_modulator_t* sigma_delta_modulator_create(sdm_filter_t filter_name,
  * @param x The input analog-like sample.
  * @return The quantized 1-bit DSD-like sample representation (+1.0 or -1.0).
  */
-static inline double sdm_sample4(sigma_delta_modulator_t* mod, double x) {
+static inline bool sdm_sample4(sigma_delta_modulator_t* mod, double x) {
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
   double* d = &mod->non_trellis_state[(current_idx ^ 1) * 8];
@@ -351,17 +351,17 @@ static inline double sdm_sample4(sigma_delta_modulator_t* mod, double x) {
   d[3] = s[3] + s[2];
   v += a[3] * d[3];
 
-  double y_new = (v < 0.0) ? -1.0 : 1.0;
+  bool bit = (v >= 0.0);
   mod->idx = current_idx ^ 1;
-  mod->prev_y = y_new;
-  return y_new;
+  mod->prev_y = bit ? 1.0 : -1.0;
+  return bit;
 }
 
 /**
  * @brief Performs 5th-order Sigma-Delta modulation on a single sample.
  * @see sdm_sample4 for details on the structure and ping-pong buffering.
  */
-static inline double sdm_sample5(sigma_delta_modulator_t* mod, double x) {
+static inline bool sdm_sample5(sigma_delta_modulator_t* mod, double x) {
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
   double* d = &mod->non_trellis_state[(current_idx ^ 1) * 8];
@@ -384,17 +384,17 @@ static inline double sdm_sample5(sigma_delta_modulator_t* mod, double x) {
   d[4] = s[4] + s[3];
   v += a[4] * d[4];
 
-  double y_new = (v < 0.0) ? -1.0 : 1.0;
+  bool bit = (v >= 0.0);
   mod->idx = current_idx ^ 1;
-  mod->prev_y = y_new;
-  return y_new;
+  mod->prev_y = bit ? 1.0 : -1.0;
+  return bit;
 }
 
 /**
  * @brief Performs 6th-order Sigma-Delta modulation on a single sample.
  * @see sdm_sample4 for details on the structure and ping-pong buffering.
  */
-static inline double sdm_sample6(sigma_delta_modulator_t* mod, double x) {
+static inline bool sdm_sample6(sigma_delta_modulator_t* mod, double x) {
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
   double* d = &mod->non_trellis_state[(current_idx ^ 1) * 8];
@@ -420,17 +420,17 @@ static inline double sdm_sample6(sigma_delta_modulator_t* mod, double x) {
   d[5] = s[5] + s[4];
   v += a[5] * d[5];
 
-  double y_new = (v < 0.0) ? -1.0 : 1.0;
+  bool bit = (v >= 0.0);
   mod->idx = current_idx ^ 1;
-  mod->prev_y = y_new;
-  return y_new;
+  mod->prev_y = bit ? 1.0 : -1.0;
+  return bit;
 }
 
 /**
  * @brief Performs 7th-order Sigma-Delta modulation on a single sample.
  * @see sdm_sample4 for details on the structure and ping-pong buffering.
  */
-static inline double sdm_sample7(sigma_delta_modulator_t* mod, double x) {
+static inline bool sdm_sample7(sigma_delta_modulator_t* mod, double x) {
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
   double* d = &mod->non_trellis_state[(current_idx ^ 1) * 8];
@@ -459,17 +459,17 @@ static inline double sdm_sample7(sigma_delta_modulator_t* mod, double x) {
   d[6] = s[6] + s[5];
   v += a[6] * d[6];
 
-  double y_new = (v < 0.0) ? -1.0 : 1.0;
+  bool bit = (v >= 0.0);
   mod->idx = current_idx ^ 1;
-  mod->prev_y = y_new;
-  return y_new;
+  mod->prev_y = bit ? 1.0 : -1.0;
+  return bit;
 }
 
 /**
  * @brief Performs 8th-order Sigma-Delta modulation on a single sample.
  * @see sdm_sample4 for details on the structure and ping-pong buffering.
  */
-static inline double sdm_sample8(sigma_delta_modulator_t* mod, double x) {
+static inline bool sdm_sample8(sigma_delta_modulator_t* mod, double x) {
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
   double* d = &mod->non_trellis_state[(current_idx ^ 1) * 8];
@@ -501,14 +501,14 @@ static inline double sdm_sample8(sigma_delta_modulator_t* mod, double x) {
   d[7] = s[7] + s[6];
   v += a[7] * d[7];
 
-  double y_new = (v < 0.0) ? -1.0 : 1.0;
+  bool bit = (v >= 0.0);
   mod->idx = current_idx ^ 1;
-  mod->prev_y = y_new;
-  return y_new;
+  mod->prev_y = bit ? 1.0 : -1.0;
+  return bit;
 }
 
-double sigma_delta_modulator_sample(sigma_delta_modulator_t* mod, double x) {
-  if (!mod) return 0.0;
+bool sigma_delta_modulator_sample(sigma_delta_modulator_t* mod, double x) {
+  if (!mod) return false;
   switch (mod->cached_order) {
     case 4:
       return sdm_sample4(mod, x);
@@ -543,10 +543,10 @@ double sigma_delta_modulator_sample(sigma_delta_modulator_t* mod, double x) {
       d[i] = s[i] + s[i - 1];
       v += a[i] * d[i];
 
-      double y_new = (v < 0.0) ? -1.0 : 1.0;
+      bool bit = (v >= 0.0);
       mod->idx = current_idx ^ 1;
-      mod->prev_y = y_new;
-      return y_new;
+      mod->prev_y = bit ? 1.0 : -1.0;
+      return bit;
     }
   }
 }

@@ -589,6 +589,8 @@ typedef struct {
   bool has_exclusive;
   bool output_dop;
   bool has_output_dop;
+  bool output_dsd;
+  bool has_output_dsd;
   sdm_filter_t dop_encoder_filter;
   bool has_dop_encoder_filter;
   char filename[512];
@@ -730,6 +732,12 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
     play->has_output_dop = true;
   }
 
+  item = cJSON_GetObjectItemCaseSensitive(play_obj, "output_dsd");
+  if (cJSON_IsBool(item)) {
+    play->output_dsd = cJSON_IsTrue(item);
+    play->has_output_dsd = true;
+  }
+
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "dop_encoder_filter");
   if (cJSON_IsString(item) && item->valuestring) {
     play->dop_encoder_filter = sdm_filter_from_string(item->valuestring);
@@ -784,6 +792,8 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   final_play->has_is_wav = temp.has_is_wav;
   final_play->output_dop = temp.has_output_dop ? temp.output_dop : false;
   final_play->has_output_dop = temp.has_output_dop;
+  final_play->output_dsd = temp.has_output_dsd ? temp.output_dsd : false;
+  final_play->has_output_dsd = temp.has_output_dsd;
   final_play->dop_encoder_filter = temp.has_dop_encoder_filter
                                        ? temp.dop_encoder_filter
                                        : SDM_FILTER_INVALID;

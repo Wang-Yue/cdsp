@@ -47,9 +47,9 @@ void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
  *
  * @param mod Pointer to the modulator instance.
  * @param x Input sample.
- * @return Modulated output sample.
+ * @return True if modulated DSD bit is high (1), false if low (0).
  */
-double sigma_delta_modulator_sample(sigma_delta_modulator_t* mod, double x);
+bool sigma_delta_modulator_sample(sigma_delta_modulator_t* mod, double x);
 
 /**
  * @brief Free the sigma-delta modulator.

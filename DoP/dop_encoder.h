@@ -38,26 +38,28 @@
 typedef struct dop_encoder dop_encoder_t;
 
 /**
- * @brief Construct a DoP encoder.
+ * @brief Construct a DSD/DoP encoder.
  *
- * Always succeeds, but only actually encodes when `output_dop` is true and
- * `sample_rate` is a supported carrier rate. Otherwise, the encoder is
+ * Encodes when `mode` is `DSD_MODE_DOP` or `DSD_MODE_NATIVE` and `sample_rate` is
+ * a supported carrier rate. When `mode` is `DSD_MODE_PCM`, the encoder is
  * disabled and `dop_encoder_encode` becomes a no-op.
  *
  * @param channels Number of audio channels.
- * @param sample_rate The PCM sample rate (carrier rate).
- * @param output_dop If true, enables DoP encoding.
+ * @param sample_rate The input PCM audio sample rate.
+ * @param mode DSD processing mode (DSD_MODE_PCM, DSD_MODE_DOP, or DSD_MODE_NATIVE).
+ * @param dsd_bit_depth DSD container bit depth per output frame (8, 16, or 32).
  * @param filter_name Noise-shaper filter name.
  * @param cutoff_hz Passband cutoff of the interpolation filter.
  *                  Ignored when `enabled` is false.
  * @return Pointer to the created dop_encoder_t instance.
  */
-dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
-                                  bool output_dop, sdm_filter_t filter_name,
+dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
+                                  dsd_mode_t mode, size_t dsd_bit_depth,
+                                  sdm_filter_t filter_name,
                                   double cutoff_hz);
 
 /**
- * @brief Encode the chunk's PCM samples into DoP, in place.
+ * @brief Encode the chunk's PCM samples into DoP/DSD, in place.
  *
  * No-op when `enabled` is false, the chunk is empty, or the channel
  * count doesn't match what the encoder was constructed with.

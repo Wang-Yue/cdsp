@@ -142,6 +142,12 @@ const char* alsa_sample_format_to_string(alsa_sample_format_t fmt) {
       return "F32_LE";
     case ALSA_SAMPLE_FORMAT_F64_LE:
       return "F64_LE";
+    case ALSA_SAMPLE_FORMAT_DSD_U8:
+      return "DSD_U8";
+    case ALSA_SAMPLE_FORMAT_DSD_U16_LE:
+      return "DSD_U16_LE";
+    case ALSA_SAMPLE_FORMAT_DSD_U32_LE:
+      return "DSD_U32_LE";
     default:
       return "Invalid";
   }
@@ -155,6 +161,9 @@ alsa_sample_format_t alsa_sample_format_from_string(const char* str) {
   if (strcmp(str, "S32_LE") == 0) return ALSA_SAMPLE_FORMAT_S32_LE;
   if (strcmp(str, "F32_LE") == 0) return ALSA_SAMPLE_FORMAT_F32_LE;
   if (strcmp(str, "F64_LE") == 0) return ALSA_SAMPLE_FORMAT_F64_LE;
+  if (strcmp(str, "DSD_U8") == 0) return ALSA_SAMPLE_FORMAT_DSD_U8;
+  if (strcmp(str, "DSD_U16_LE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U16_LE;
+  if (strcmp(str, "DSD_U32_LE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U32_LE;
   return ALSA_SAMPLE_FORMAT_INVALID;
 }
 #endif
@@ -316,6 +325,26 @@ sdm_filter_t sdm_filter_from_string(const char* str) {
   return SDM_FILTER_INVALID;
 }
 
+const char* dsd_mode_to_string(dsd_mode_t mode) {
+  switch (mode) {
+    case DSD_MODE_DOP:
+      return "dop";
+    case DSD_MODE_NATIVE:
+      return "dsd";
+    case DSD_MODE_PCM:
+    default:
+      return "pcm";
+  }
+}
+
+dsd_mode_t dsd_mode_from_string(const char* str) {
+  if (!str) return DSD_MODE_PCM;
+  if (strcasecmp(str, "dop") == 0) return DSD_MODE_DOP;
+  if (strcasecmp(str, "dsd") == 0 || strcasecmp(str, "native") == 0)
+    return DSD_MODE_NATIVE;
+  return DSD_MODE_PCM;
+}
+
 const char* binary_sample_format_to_string(binary_sample_format_t fmt) {
   switch (fmt) {
     case BINARY_SAMPLE_FORMAT_S16_LE:
@@ -390,6 +419,8 @@ const char* asio_sample_format_to_string(asio_sample_format_t fmt) {
       return "F32_LE";
     case ASIO_SAMPLE_FORMAT_F64_LE:
       return "F64_LE";
+    case ASIO_SAMPLE_FORMAT_DSD_INT8:
+      return "DSD_INT8";
     default:
       return "Invalid";
   }
@@ -403,6 +434,7 @@ asio_sample_format_t asio_sample_format_from_string(const char* str) {
   if (strcmp(str, "S32_LE") == 0) return ASIO_SAMPLE_FORMAT_S32_LE;
   if (strcmp(str, "F32_LE") == 0) return ASIO_SAMPLE_FORMAT_F32_LE;
   if (strcmp(str, "F64_LE") == 0) return ASIO_SAMPLE_FORMAT_F64_LE;
+  if (strcmp(str, "DSD_INT8") == 0) return ASIO_SAMPLE_FORMAT_DSD_INT8;
   return ASIO_SAMPLE_FORMAT_INVALID;
 }
 #endif
@@ -837,9 +869,41 @@ bool playback_device_config_get_exclusive(
   }
 }
 
-bool playback_device_config_get_output_dop(
+size_t playback_device_config_calculate_carrier_bits(
     const playback_device_config_t* config) {
-  return config->output_dop;
+  if (!config) return 16;
+
+  bool is_dsd = config->output_dsd;
+  bool is_dop = config->output_dop;
+  if (!is_dsd && !is_dop) {
+    return 16;
+  }
+
+  if (is_dop) {
+    return 16;
+  }
+
+  // Native DSD mode container bit calculations
+#if defined(ENABLE_ALSA)
+  if (config->type == AUDIO_BACKEND_TYPE_ALSA && config->cfg.alsa.has_format) {
+    alsa_sample_format_t alsa_fmt = config->cfg.alsa.format;
+    if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U8) {
+      return 8;
+    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
+      return 16;
+    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
+      return 32;
+    }
+  }
+#endif
+
+#if defined(ENABLE_ASIO)
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO) {
+    return 32;
+  }
+#endif
+
+  return 16;
 }
 
 sdm_filter_t playback_device_config_get_dop_encoder_filter(

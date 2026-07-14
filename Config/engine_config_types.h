@@ -297,6 +297,29 @@ const char* sdm_filter_to_string(sdm_filter_t filter);
  */
 sdm_filter_t sdm_filter_from_string(const char* str);
 
+/**
+ * @brief DSD output processing modes.
+ */
+typedef enum {
+  DSD_MODE_PCM = 0,   /**< PCM output mode (disabled / passthrough). */
+  DSD_MODE_DOP = 1,   /**< DoP output mode (DSD over PCM with markers). */
+  DSD_MODE_NATIVE = 2 /**< Native DSD output mode (raw stream). */
+} dsd_mode_t;
+
+/**
+ * @brief Converts DSD mode to string.
+ * @param mode The DSD mode.
+ * @return String representation.
+ */
+const char* dsd_mode_to_string(dsd_mode_t mode);
+
+/**
+ * @brief Parses DSD mode from string.
+ * @param str The string representation.
+ * @return The DSD mode.
+ */
+dsd_mode_t dsd_mode_from_string(const char* str);
+
 #if defined(ENABLE_ALSA)
 /**
  * @brief ALSA sample formats.
@@ -308,6 +331,9 @@ typedef enum {
   ALSA_SAMPLE_FORMAT_S32_LE,      /**< Signed 32-bit Little Endian. */
   ALSA_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   ALSA_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
+  ALSA_SAMPLE_FORMAT_DSD_U8,      /**< Native DSD 8-bit Unsigned. */
+  ALSA_SAMPLE_FORMAT_DSD_U16_LE,  /**< Native DSD 16-bit Unsigned Little Endian. */
+  ALSA_SAMPLE_FORMAT_DSD_U32_LE,  /**< Native DSD 32-bit Unsigned Little Endian. */
   ALSA_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
 } alsa_sample_format_t;
 
@@ -364,6 +390,7 @@ typedef enum {
   ASIO_SAMPLE_FORMAT_S32_LE,      /**< Signed 32-bit Little Endian. */
   ASIO_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   ASIO_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
+  ASIO_SAMPLE_FORMAT_DSD_INT8,    /**< Native DSD 8-bit (ASIOTSDSDInt8). */
   ASIO_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
 } asio_sample_format_t;
 
@@ -788,6 +815,8 @@ typedef struct {
   bool has_is_wav;                 /**< True if is_wav is specified. */
   bool output_dop;                 /**< Enable DoP output. */
   bool has_output_dop;             /**< True if output_dop is specified. */
+  bool output_dsd;                 /**< Enable Native DSD output. */
+  bool has_output_dsd;             /**< True if output_dsd is specified. */
   sdm_filter_t dop_encoder_filter; /**< SDM filter for DoP encoding. */
   bool has_dop_encoder_filter; /**< True if dop_encoder_filter is specified. */
   union {
@@ -1015,11 +1044,11 @@ bool playback_device_config_get_exclusive(
     const playback_device_config_t* config);
 
 /**
- * @brief Gets output DoP setting from a playback device configuration.
- * @param config Pointer to the configuration.
- * @return True if DoP output is enabled.
+ * @brief Calculates the DSD carrier bits per container frame for a playback device configuration.
+ * @param config Pointer to playback_device_config_t structure.
+ * @return The carrier bits (8, 16, or 32).
  */
-bool playback_device_config_get_output_dop(
+size_t playback_device_config_calculate_carrier_bits(
     const playback_device_config_t* config);
 
 /**

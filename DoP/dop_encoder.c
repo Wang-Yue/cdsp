@@ -37,14 +37,6 @@ static const logger_t g_logger = {"dsp.dop.encoder"};
 #include <stdlib.h>
 #include <string.h>
 
-typedef double double4 __attribute__((vector_size(32)));
-
-static inline double4 load_double4(const double* p) {
-  double4 v;
-  memcpy(&v, p, sizeof(double4));
-  return v;
-}
-
 /**
  * @brief State for a single DoP encoder channel.
  */
@@ -57,13 +49,6 @@ typedef struct {
   uint8_t marker;
   /** Sigma-delta modulator instance for this channel. */
   sigma_delta_modulator_t* modulator;
-#if defined(ENABLE_BLAS)
-  // Scratch buffers for batched BLAS processing
-  double* padded_buf;
-  double* scratch_X;
-  double* scratch_Y;
-  size_t scratch_capacity;
-#endif
 } dop_encoder_channel_state_t;
 
 struct dop_encoder {
@@ -74,6 +59,10 @@ struct dop_encoder {
    * AND the carrier rate is supported).
    */
   bool enabled;
+  /** Active DSD processing mode (DSD_MODE_PCM, DSD_MODE_DOP, or DSD_MODE_NATIVE). */
+  dsd_mode_t mode;
+  /** DSD container bit depth per output frame (8, 16, or 32). */
+  size_t dsd_bit_depth;
   /** Array of channel states. */
   dop_encoder_channel_state_t* channel_states;
   /**
@@ -97,7 +86,6 @@ struct dop_encoder {
 #include <Accelerate/Accelerate.h>
 #endif
 
-#define DOP_ENC_PHASES 16
 #define DOP_ENC_REAL_TAPS 511
 #define DOP_ENC_NUM_TAPS 512
 #define DOP_ENC_SUB_FILTER_TAPS 32
@@ -126,22 +114,23 @@ bool dop_encoder_is_supported_carrier_rate(int rate) {
 /// normalized to unit DC gain so a constant input passes through
 /// unchanged.
 /**
- * @brief Builds the polyphase coefficient table for the 16x interpolation
+ * @brief Builds the polyphase coefficient table for the interpolation
  * filter.
  *
- * Designs a 511-tap Kaiser-windowed sinc filter and decomposes it into 16
- * phases (polyphase representation) with 32 taps per phase. Each phase is
- * normalized to ensure unit DC gain, so a constant input passes through
- * unchanged.
+ * Designs a 511-tap Kaiser-windowed sinc filter and decomposes it into
+ * `dsd_bit_depth` phases (polyphase representation) with 32 taps per phase.
+ * Each phase is normalized to ensure unit DC gain, so a constant input passes
+ * through unchanged.
  *
  * @param sample_rate The PCM sample rate (carrier rate).
+ * @param dsd_bit_depth DSD container bit depth per output frame (8, 16, 32).
  * @param cutoff_hz The desired cutoff frequency in Hz.
- * @return A pointer to the allocated flat array of polyphase coefficients (size
- * 16 * 32 doubles), or NULL on allocation failure.
+ * @return A pointer to the allocated flat array of polyphase coefficients, or
+ * NULL on allocation failure.
  */
-static double* build_coeffs(double sample_rate, double cutoff_hz) {
+static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth, double cutoff_hz) {
   double beta = 11.0;
-  double dsd_rate = sample_rate * 16.0;
+  double dsd_rate = (double)sample_rate * (double)dsd_bit_depth;
   double cutoff = cutoff_hz / dsd_rate;
   double alpha = (double)(DOP_ENC_REAL_TAPS - 1) / 2.0;
   double i0_beta = double_bessel_i0(beta);
@@ -163,33 +152,38 @@ static double* build_coeffs(double sample_rate, double cutoff_hz) {
     taps[i] = sinc_val * window_val;
   }
 
-  size_t total_elements = DOP_ENC_PHASES * DOP_ENC_SUB_FILTER_TAPS;
+  size_t phases = dsd_bit_depth;
+  size_t total_elements = phases * DOP_ENC_SUB_FILTER_TAPS;
   double* p = (double*)calloc(total_elements, sizeof(double));
   if (!p) return NULL;
 
-  for (int ph = 0; ph < DOP_ENC_PHASES; ph++) {
+  for (size_t ph = 0; ph < phases; ph++) {
     double sub_sum = 0.0;
     for (int m = 0; m < DOP_ENC_SUB_FILTER_TAPS; m++) {
-      sub_sum += taps[m * DOP_ENC_PHASES + ph];
+      sub_sum += taps[m * phases + ph];
     }
     double scale = (sub_sum != 0.0) ? (1.0 / sub_sum) : 0.0;
     for (int m = 0; m < DOP_ENC_SUB_FILTER_TAPS; m++) {
-      double v = taps[m * DOP_ENC_PHASES + ph] * scale;
+      double v = taps[m * phases + ph] * scale;
       int store_idx =
-          ph * DOP_ENC_SUB_FILTER_TAPS + (DOP_ENC_SUB_FILTER_TAPS - 1 - m);
+          (int)(ph * DOP_ENC_SUB_FILTER_TAPS + (DOP_ENC_SUB_FILTER_TAPS - 1 - m));
       p[store_idx] = v;
     }
   }
   return p;
 }
 
-dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
-                                  bool output_dop, sdm_filter_t filter_name,
+dop_encoder_t* dop_encoder_create(int channels, size_t sample_rate,
+                                  dsd_mode_t mode, size_t dsd_bit_depth,
+                                  sdm_filter_t filter_name,
                                   double cutoff_hz) {
   if (channels <= 0) {
-    logger_error(&g_logger, "Invalid channel count for DoP encoder: %d",
+    logger_error(&g_logger, "Invalid channel count for DoP/DSD encoder: %d",
                  channels);
     return NULL;
+  }
+  if (dsd_bit_depth != 8 && dsd_bit_depth != 16 && dsd_bit_depth != 32) {
+    dsd_bit_depth = 16;
   }
   dop_encoder_t* enc = (dop_encoder_t*)calloc(1, sizeof(dop_encoder_t));
   if (!enc) {
@@ -197,23 +191,24 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
     return NULL;
   }
   enc->channels = channels;
-  enc->coeffs = build_coeffs(sample_rate, cutoff_hz);
+  enc->dsd_bit_depth = dsd_bit_depth;
+  enc->coeffs = build_coeffs(sample_rate, dsd_bit_depth, cutoff_hz);
   if (!enc->coeffs) {
     logger_error(&g_logger,
-                 "Failed to build polyphase coefficients for DoP encoder");
+                 "Failed to build polyphase coefficients for DoP/DSD encoder");
     dop_encoder_free(enc);
     return NULL;
   }
 
-  int rate_int = (int)round(sample_rate);
-  bool supported = dop_encoder_is_supported_carrier_rate(rate_int);
-  enc->enabled = output_dop && supported;
+  bool supported = dop_encoder_is_supported_carrier_rate((int)sample_rate);
+  enc->mode = (supported && mode != DSD_MODE_PCM) ? mode : DSD_MODE_PCM;
+  enc->enabled = (enc->mode != DSD_MODE_PCM);
 
   if (!enc->enabled) {
     logger_debug(
         &g_logger,
-        "DoP encoder created (disabled: output_dop=%d, rate_supported=%d)",
-        output_dop ? 1 : 0, supported ? 1 : 0);
+        "DSD encoder created (disabled: mode=%s, rate_supported=%d)",
+        dsd_mode_to_string(mode), supported ? 1 : 0);
     return enc;
   }
 
@@ -221,12 +216,12 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
       channels, sizeof(dop_encoder_channel_state_t));
   if (!enc->channel_states) {
     logger_error(&g_logger,
-                 "Memory allocation failed for DoP encoder channel states");
+                 "Memory allocation failed for DSD encoder channel states");
     dop_encoder_free(enc);
     return NULL;
   }
 
-  double dsd_rate = sample_rate * 16.0;
+  double dsd_rate = (double)sample_rate * (double)dsd_bit_depth;
   uint32_t freq = (uint32_t)round(dsd_rate);
   for (int ch = 0; ch < channels; ch++) {
     enc->channel_states[ch].modulator =
@@ -241,274 +236,91 @@ dop_encoder_t* dop_encoder_create(int channels, double sample_rate,
   }
   logger_debug(
       &g_logger,
-      "DoP encoder created and enabled (channels=%d, sample_rate=%.0f, "
-      "dsd_rate=%.0f)",
-      channels, sample_rate, dsd_rate);
+      "DSD encoder created and enabled (channels=%d, sample_rate=%zu, "
+      "bit_depth=%zu, mode=%s)",
+      channels, sample_rate, dsd_bit_depth, dsd_mode_to_string(enc->mode));
   return enc;
 }
 
 /**
- * @brief Encodes a single channel's PCM buffer to DoP in-place.
+ * @brief Encodes a single channel's PCM buffer to DSD/DoP in-place.
  *
  * For each input PCM frame, this function:
  * 1. Pushes the sample into a duplicate-history FIFO.
- * 2. Runs a 16-phase polyphase interpolation filter.
- * 3. Feeds each interpolated sample to the Sigma-Delta Modulator (scaled by 0.5
- *    for headroom).
- * 4. Packs the 16 resulting DSD bits into a 16-bit word (MSB to LSB matching
- * the phase order).
- * 5. Combines the DSD word with the alternating DoP marker (0x05 / 0xFA) into a
- *    24-bit integer container.
- * 6. Sign-extends the 24-bit integer to 32-bit and normalizes it to a float
- * [-1.0, 1.0] to overwrite the input buffer.
- *
- * @param state Pointer to the per-channel encoder state.
- * @param buf The audio buffer to process in-place.
- * @param frames Number of frames in the buffer.
- * @param coeffs Polyphase filter coefficients.
+ * 2. Runs a polyphase interpolation filter for `dsd_bit_depth` phases via
+ *    cblas_dgemv (or fallback dot product).
+ * 3. Feeds each interpolated sample to the Sigma-Delta Modulator.
+ * 4. Packs DSD bits into 8, 16, or 32-bit container normalized float [-1.0, 1.0].
  */
-#if defined(ENABLE_BLAS)
-static bool ensure_scratch_capacity(dop_encoder_channel_state_t* state,
-                                    size_t capacity) {
-  if (state->scratch_capacity >= capacity) return true;
-
-  double* p =
-      (double*)realloc(state->padded_buf, (32 + capacity) * sizeof(double));
-  if (!p) return false;
-  state->padded_buf = p;
-
-  p = (double*)realloc(state->scratch_X, capacity * 32 * sizeof(double));
-  if (!p) return false;
-  state->scratch_X = p;
-
-  p = (double*)realloc(state->scratch_Y, capacity * 16 * sizeof(double));
-  if (!p) return false;
-  state->scratch_Y = p;
-
-  state->scratch_capacity = capacity;
-  return true;
-}
-
 static void encode_channel(dop_encoder_channel_state_t* state,
-                           mutable_waveform_t buf, size_t frames,
-                           const double* coeffs);
-
-static void encode_channel_batched(dop_encoder_channel_state_t* state,
-                                   mutable_waveform_t buf, size_t frames,
-                                   const double* coeffs) {
-  if (!buf || frames == 0) return;
-  if (!ensure_scratch_capacity(state, frames)) {
-    encode_channel(state, buf, frames, coeffs);
-    return;
-  }
-
-  double* padded_buf = state->padded_buf;
-  double* X = state->scratch_X;
-  double* Y = state->scratch_Y;
-
-  // Copy history from FIFO
-  memcpy(padded_buf, state->fifo + state->fifo_pos, 32 * sizeof(double));
-
-  // Copy current frames
-  memcpy(padded_buf + 32, buf, frames * sizeof(double));
-
-  // Populate X matrix
-  for (size_t t = 0; t < frames; t++) {
-    memcpy(X + t * 32, padded_buf + t + 1, 32 * sizeof(double));
-  }
-
-  // Perform matrix multiplication
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, (int)frames, 16, 32, 1.0,
-              X, 32, coeffs, 32, 0.0, Y, 16);
-
-  uint8_t marker = state->marker;
-  sigma_delta_modulator_t* mod = state->modulator;
-  for (size_t t = 0; t < frames; t++) {
-    uint16_t word = 0;
-    for (int p = 0; p < 16; p++) {
-      double acc = Y[t * 16 + p];
-      double dsd = sigma_delta_modulator_sample(mod, acc * 0.5);
-      if (dsd > 0.0) {
-        word |= (uint16_t)(1 << (15 - p));
-      }
-    }
-
-    uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
-    int32_t int_val =
-        (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
-    buf[t] = pcm_sample_decode_s24(int_val);
-
-    marker = (marker == 0x05) ? 0xFA : 0x05;
-  }
-
-  // Update history in FIFO
-  memcpy(state->fifo, padded_buf + frames, 32 * sizeof(double));
-  memcpy(state->fifo + 32, padded_buf + frames, 32 * sizeof(double));
-  state->fifo_pos = 0;
-  state->marker = marker;
-}
-#endif
-
-static void encode_channel(dop_encoder_channel_state_t* state,
-                           mutable_waveform_t buf, size_t frames,
-                           const double* coeffs) {
+                            mutable_waveform_t buf, size_t frames,
+                            const double* coeffs, dsd_mode_t mode,
+                            size_t dsd_bit_depth) {
   if (!buf) return;
   double* fifo = state->fifo;
   int pos = state->fifo_pos;
   uint8_t marker = state->marker;
   sigma_delta_modulator_t* mod = state->modulator;
+  int phases = (int)dsd_bit_depth;
 
   for (size_t t = 0; t < frames; t++) {
-    // Push the new PCM sample into both halves of the polyphase FIR's history.
-    // By duplicating the history buffer, we can perform the convolution on a
-    // contiguous block of memory without checking for ring buffer wrap-around
-    // in the inner loop.
     double sample_val = buf[t];
     fifo[pos] = sample_val;
     fifo[pos + DOP_ENC_SUB_FILTER_TAPS] = sample_val;
 
-    // For each of the 16 oversampled phases, compute the interpolated
-    // sample and feed it through the SDM. Phase p=0 is the oldest
-    // sample within this frame's 16-sample window and ends up in the
-    // MSB of the packed word; phase p=15 is the newest and ends up in
-    // the LSB. This matches the bit ordering used by `DoPDecoder`.
-    uint16_t word = 0;
     int base_idx = pos + 1;
     const double* fifo_p = fifo + base_idx;
-#if defined(ENABLE_BLAS)
-    double acc[16];
-    cblas_dgemv(CblasRowMajor, CblasNoTrans, 16, 32, 1.0, coeffs, 32, fifo_p, 1,
-                0.0, acc, 1);
-    for (int p = 0; p < 16; p++) {
-      double dsd = sigma_delta_modulator_sample(mod, acc[p] * 0.5);
-      if (dsd > 0.0) {
-        word |= (uint16_t)(1 << (15 - p));
-      }
-    }
+    double Y[32];
+
+#if defined(ENABLE_ACCELERATE)
+    vDSP_mmulD(coeffs, 1, fifo_p, 1, Y, 1, (vDSP_Length)phases, 1, 32);
+#elif defined(ENABLE_BLAS)
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, phases, 32, 1.0, coeffs, 32,
+                fifo_p, 1, 0.0, Y, 1);
 #else
-    double4 f0 = load_double4(fifo_p);
-    double4 f1 = load_double4(fifo_p + 4);
-    double4 f2 = load_double4(fifo_p + 8);
-    double4 f3 = load_double4(fifo_p + 12);
-    double4 f4 = load_double4(fifo_p + 16);
-    double4 f5 = load_double4(fifo_p + 20);
-    double4 f6 = load_double4(fifo_p + 24);
-    double4 f7 = load_double4(fifo_p + 28);
-
-    for (int p = 0; p < 16; p += 4) {
-      const double* coeff_p0 = coeffs + p * 32;
-      const double* coeff_p1 = coeffs + (p + 1) * 32;
-      const double* coeff_p2 = coeffs + (p + 2) * 32;
-      const double* coeff_p3 = coeffs + (p + 3) * 32;
-
-      double4 c0_0 = load_double4(coeff_p0);
-      double4 c0_1 = load_double4(coeff_p0 + 4);
-      double4 c0_2 = load_double4(coeff_p0 + 8);
-      double4 c0_3 = load_double4(coeff_p0 + 12);
-      double4 c0_4 = load_double4(coeff_p0 + 16);
-      double4 c0_5 = load_double4(coeff_p0 + 20);
-      double4 c0_6 = load_double4(coeff_p0 + 24);
-      double4 c0_7 = load_double4(coeff_p0 + 28);
-
-      double4 c1_0 = load_double4(coeff_p1);
-      double4 c1_1 = load_double4(coeff_p1 + 4);
-      double4 c1_2 = load_double4(coeff_p1 + 8);
-      double4 c1_3 = load_double4(coeff_p1 + 12);
-      double4 c1_4 = load_double4(coeff_p1 + 16);
-      double4 c1_5 = load_double4(coeff_p1 + 20);
-      double4 c1_6 = load_double4(coeff_p1 + 24);
-      double4 c1_7 = load_double4(coeff_p1 + 28);
-
-      double4 c2_0 = load_double4(coeff_p2);
-      double4 c2_1 = load_double4(coeff_p2 + 4);
-      double4 c2_2 = load_double4(coeff_p2 + 8);
-      double4 c2_3 = load_double4(coeff_p2 + 12);
-      double4 c2_4 = load_double4(coeff_p2 + 16);
-      double4 c2_5 = load_double4(coeff_p2 + 20);
-      double4 c2_6 = load_double4(coeff_p2 + 24);
-      double4 c2_7 = load_double4(coeff_p2 + 28);
-
-      double4 c3_0 = load_double4(coeff_p3);
-      double4 c3_1 = load_double4(coeff_p3 + 4);
-      double4 c3_2 = load_double4(coeff_p3 + 8);
-      double4 c3_3 = load_double4(coeff_p3 + 12);
-      double4 c3_4 = load_double4(coeff_p3 + 16);
-      double4 c3_5 = load_double4(coeff_p3 + 20);
-      double4 c3_6 = load_double4(coeff_p3 + 24);
-      double4 c3_7 = load_double4(coeff_p3 + 28);
-
-      double4 sum0 = c0_0 * f0;
-      double4 sum1 = c1_0 * f0;
-      double4 sum2 = c2_0 * f0;
-      double4 sum3 = c3_0 * f0;
-
-      sum0 += c0_1 * f1;
-      sum1 += c1_1 * f1;
-      sum2 += c2_1 * f1;
-      sum3 += c3_1 * f1;
-
-      sum0 += c0_2 * f2;
-      sum1 += c1_2 * f2;
-      sum2 += c2_2 * f2;
-      sum3 += c3_2 * f2;
-
-      sum0 += c0_3 * f3;
-      sum1 += c1_3 * f3;
-      sum2 += c2_3 * f3;
-      sum3 += c3_3 * f3;
-
-      sum0 += c0_4 * f4;
-      sum1 += c1_4 * f4;
-      sum2 += c2_4 * f4;
-      sum3 += c3_4 * f4;
-
-      sum0 += c0_5 * f5;
-      sum1 += c1_5 * f5;
-      sum2 += c2_5 * f5;
-      sum3 += c3_5 * f5;
-
-      sum0 += c0_6 * f6;
-      sum1 += c1_6 * f6;
-      sum2 += c2_6 * f6;
-      sum3 += c3_6 * f6;
-
-      sum0 += c0_7 * f7;
-      sum1 += c1_7 * f7;
-      sum2 += c2_7 * f7;
-      sum3 += c3_7 * f7;
-
-      double acc0 = sum0[0] + sum0[1] + sum0[2] + sum0[3];
-      double acc1 = sum1[0] + sum1[1] + sum1[2] + sum1[3];
-      double acc2 = sum2[0] + sum2[1] + sum2[2] + sum2[3];
-      double acc3 = sum3[0] + sum3[1] + sum3[2] + sum3[3];
-
-      if (sigma_delta_modulator_sample(mod, acc0 * 0.5) > 0.0) {
-        word |= (uint16_t)(1 << (15 - p));
+    for (int p = 0; p < phases; p++) {
+      const double* cp = coeffs + p * 32;
+      double acc = 0.0;
+      for (int m = 0; m < 32; m++) {
+        acc += cp[m] * fifo_p[m];
       }
-      if (sigma_delta_modulator_sample(mod, acc1 * 0.5) > 0.0) {
-        word |= (uint16_t)(1 << (15 - (p + 1)));
-      }
-      if (sigma_delta_modulator_sample(mod, acc2 * 0.5) > 0.0) {
-        word |= (uint16_t)(1 << (15 - (p + 2)));
-      }
-      if (sigma_delta_modulator_sample(mod, acc3 * 0.5) > 0.0) {
-        word |= (uint16_t)(1 << (15 - (p + 3)));
-      }
+      Y[p] = acc;
     }
 #endif
 
-    // 24-bit DoP container: marker in bits 23..16, DSD word in bits 15..0.
-    // Sign-extend from int24 and normalize back to ±1.0 float for the
-    // playback backend, which will re-quantize to the device format
-    // (must be S24 or S32 to preserve the bit pattern).
-    uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
-    // Sign-extend 24-bit to 32-bit: shift left by 8, then arithmetic shift
-    // right by 8.
-    int32_t int_val =
-        (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
-    buf[t] = pcm_sample_decode_s24(int_val);
-
-    marker = (marker == 0x05) ? 0xFA : 0x05;
+    if (dsd_bit_depth == 32) {
+      uint32_t word = 0;
+      for (int p = 0; p < 32; p++) {
+        if (sigma_delta_modulator_sample(mod, Y[p] * 0.5)) {
+          word |= ((uint32_t)1 << (31 - p));
+        }
+      }
+      buf[t] = pcm_sample_decode_s32((int32_t)word);
+    } else if (dsd_bit_depth == 8) {
+      uint8_t word = 0;
+      for (int p = 0; p < 8; p++) {
+        if (sigma_delta_modulator_sample(mod, Y[p] * 0.5)) {
+          word |= (uint8_t)(1 << (7 - p));
+        }
+      }
+      buf[t] = pcm_sample_decode_dsd_u8(word);
+    } else {
+      uint16_t word = 0;
+      for (int p = 0; p < 16; p++) {
+        if (sigma_delta_modulator_sample(mod, Y[p] * 0.5)) {
+          word |= (uint16_t)(1 << (15 - p));
+        }
+      }
+      if (mode == DSD_MODE_NATIVE) {
+        buf[t] = pcm_sample_decode_s16((int16_t)word);
+      } else {
+        uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
+        int32_t int_val =
+            (val24 & 0x800000) ? (int32_t)(val24 | 0xFF000000) : (int32_t)val24;
+        buf[t] = pcm_sample_decode_s24(int_val);
+        marker = (marker == 0x05) ? 0xFA : 0x05;
+      }
+    }
     pos = (pos + 1) & DOP_ENC_FIFO_MASK;
   }
 
@@ -522,14 +334,9 @@ void dop_encoder_encode(dop_encoder_t* encoder, audio_chunk_t* chunk) {
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != encoder->channels)
     return;
   for (int ch = 0; ch < encoder->channels; ch++) {
-#if defined(ENABLE_BLAS)
-    encode_channel_batched(&encoder->channel_states[ch],
-                           audio_chunk_get_channel(chunk, ch), n,
-                           encoder->coeffs);
-#else
     encode_channel(&encoder->channel_states[ch],
-                   audio_chunk_get_channel(chunk, ch), n, encoder->coeffs);
-#endif
+                   audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
+                   encoder->mode, encoder->dsd_bit_depth);
   }
 }
 
@@ -538,14 +345,6 @@ void dop_encoder_free(dop_encoder_t* encoder) {
   if (encoder->channel_states) {
     for (int ch = 0; ch < encoder->channels; ch++) {
       sigma_delta_modulator_free(encoder->channel_states[ch].modulator);
-#if defined(ENABLE_BLAS)
-      if (encoder->channel_states[ch].padded_buf)
-        free(encoder->channel_states[ch].padded_buf);
-      if (encoder->channel_states[ch].scratch_X)
-        free(encoder->channel_states[ch].scratch_X);
-      if (encoder->channel_states[ch].scratch_Y)
-        free(encoder->channel_states[ch].scratch_Y);
-#endif
     }
     free(encoder->channel_states);
   }
