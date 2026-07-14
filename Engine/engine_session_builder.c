@@ -93,7 +93,19 @@ static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
     dop_filter = SDM_FILTER_SDM6;
   }
   dsd_mode_t dsd_mode = DSD_MODE_PCM;
-  if (config->devices.playback.output_dsd) {
+  bool is_dsd = false;
+#if defined(ENABLE_ALSA)
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
+    is_dsd = config->devices.playback.cfg.alsa.output_dsd;
+  }
+#endif
+#if defined(ENABLE_ASIO)
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
+    is_dsd = config->devices.playback.cfg.asio.output_dsd;
+  }
+#endif
+
+  if (is_dsd) {
     dsd_mode = DSD_MODE_NATIVE;
   } else if (config->devices.playback.output_dop) {
     dsd_mode = DSD_MODE_DOP;

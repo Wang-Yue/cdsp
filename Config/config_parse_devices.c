@@ -792,8 +792,6 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   final_play->has_is_wav = temp.has_is_wav;
   final_play->output_dop = temp.has_output_dop ? temp.output_dop : false;
   final_play->has_output_dop = temp.has_output_dop;
-  final_play->output_dsd = temp.has_output_dsd ? temp.output_dsd : false;
-  final_play->has_output_dsd = temp.has_output_dsd;
   final_play->dop_encoder_filter = temp.has_dop_encoder_filter
                                        ? temp.dop_encoder_filter
                                        : SDM_FILTER_INVALID;
@@ -819,6 +817,9 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
                "%s", temp.device);
       final_play->cfg.alsa.format = temp.alsa_format;
       final_play->cfg.alsa.has_format = temp.has_alsa_format;
+      final_play->cfg.alsa.output_dsd =
+          temp.has_output_dsd ? temp.output_dsd : false;
+      final_play->cfg.alsa.has_output_dsd = temp.has_output_dsd;
       break;
 #endif
 #if defined(ENABLE_PULSE)
@@ -900,6 +901,9 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
                "%s", temp.device);
       final_play->cfg.asio.format = temp.asio_format;
       final_play->cfg.asio.has_format = temp.has_asio_format;
+      final_play->cfg.asio.output_dsd =
+          temp.has_output_dsd ? temp.output_dsd : false;
+      final_play->cfg.asio.has_output_dsd = temp.has_output_dsd;
       break;
 #endif
     default:

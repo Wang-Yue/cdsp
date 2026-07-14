@@ -524,6 +524,8 @@ typedef struct {
   char device[256];            /**< Device name. */
   alsa_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
+  bool output_dsd;             /**< Enable Native DSD output. */
+  bool has_output_dsd;         /**< True if output_dsd is specified. */
 } alsa_playback_config_t;
 #endif
 
@@ -676,6 +678,8 @@ typedef struct {
   char device[256];            /**< Device name. */
   asio_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
+  bool output_dsd;             /**< Enable Native DSD output. */
+  bool has_output_dsd;         /**< True if output_dsd is specified. */
 } asio_playback_config_t;
 #endif
 
@@ -815,8 +819,6 @@ typedef struct {
   bool has_is_wav;                 /**< True if is_wav is specified. */
   bool output_dop;                 /**< Enable DoP output. */
   bool has_output_dop;             /**< True if output_dop is specified. */
-  bool output_dsd;                 /**< Enable Native DSD output. */
-  bool has_output_dsd;             /**< True if output_dsd is specified. */
   sdm_filter_t dop_encoder_filter; /**< SDM filter for DoP encoding. */
   bool has_dop_encoder_filter; /**< True if dop_encoder_filter is specified. */
   union {

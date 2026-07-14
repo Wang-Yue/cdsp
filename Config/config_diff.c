@@ -694,8 +694,6 @@ bool devices_config_equal(const devices_config_t* a,
   if (a->playback.has_is_wav != b->playback.has_is_wav) return false;
   if (a->playback.output_dop != b->playback.output_dop) return false;
   if (a->playback.has_output_dop != b->playback.has_output_dop) return false;
-  if (a->playback.output_dsd != b->playback.output_dsd) return false;
-  if (a->playback.has_output_dsd != b->playback.has_output_dsd) return false;
   if (a->playback.dop_encoder_filter != b->playback.dop_encoder_filter)
     return false;
   if (a->playback.has_dop_encoder_filter != b->playback.has_dop_encoder_filter)
@@ -728,6 +726,11 @@ bool devices_config_equal(const devices_config_t* a,
       if (strcmp(a->playback.cfg.alsa.device, b->playback.cfg.alsa.device) != 0)
         return false;
       if (a->playback.cfg.alsa.format != b->playback.cfg.alsa.format)
+        return false;
+      if (a->playback.cfg.alsa.output_dsd != b->playback.cfg.alsa.output_dsd)
+        return false;
+      if (a->playback.cfg.alsa.has_output_dsd !=
+          b->playback.cfg.alsa.has_output_dsd)
         return false;
       break;
 #endif
@@ -816,6 +819,11 @@ bool devices_config_equal(const devices_config_t* a,
       if (strcmp(a->playback.cfg.asio.device, b->playback.cfg.asio.device) != 0)
         return false;
       if (a->playback.cfg.asio.format != b->playback.cfg.asio.format)
+        return false;
+      if (a->playback.cfg.asio.output_dsd != b->playback.cfg.asio.output_dsd)
+        return false;
+      if (a->playback.cfg.asio.has_output_dsd !=
+          b->playback.cfg.asio.has_output_dsd)
         return false;
       break;
 #endif

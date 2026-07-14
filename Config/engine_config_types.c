@@ -873,7 +873,18 @@ size_t playback_device_config_calculate_carrier_bits(
     const playback_device_config_t* config) {
   if (!config) return 16;
 
-  bool is_dsd = config->output_dsd;
+  bool is_dsd = false;
+#if defined(ENABLE_ALSA)
+  if (config->type == AUDIO_BACKEND_TYPE_ALSA) {
+    is_dsd = config->cfg.alsa.output_dsd;
+  }
+#endif
+#if defined(ENABLE_ASIO)
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO) {
+    is_dsd = config->cfg.asio.output_dsd;
+  }
+#endif
+
   bool is_dop = config->output_dop;
   if (!is_dsd && !is_dop) {
     return 16;
