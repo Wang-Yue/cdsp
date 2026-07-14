@@ -261,6 +261,9 @@ size_t async_sinc_resampler_get_channels(
  */
 static inline size_t get_next_output_frames(
     const async_sinc_resampler_t* resampler) {
+  if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
+    return resampler->chunk_size;
+  }
   // Calculate output size for input
   // — note `.floor()`, not `.ceil()`. Using ceil
   // here was the source of the off-by-one frame discrepancy.

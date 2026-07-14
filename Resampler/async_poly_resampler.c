@@ -185,6 +185,9 @@ size_t async_poly_resampler_get_channels(
  */
 static inline size_t get_next_output_frames(
     const async_poly_resampler_t* resampler) {
+  if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
+    return resampler->chunk_size;
+  }
   // Calculate output size for input
   // — `.floor()`, not `.ceil()`.
   double avg_ratio =
