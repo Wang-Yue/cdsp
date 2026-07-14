@@ -245,6 +245,13 @@ void StageDetailView::buildStageOptionsUi() {
             auto leftBox = new QVBoxLayout();
             leftBox->addWidget(new QLabel("Left Input", chanGroup));
             auto leftCombo = new QComboBox(chanGroup);
+            if (stage.leftChannel >= incomingChannels) {
+                stage.leftChannel = 0;
+            }
+            if (stage.rightChannel >= incomingChannels) {
+                stage.rightChannel = std::min(1, incomingChannels - 1);
+            }
+
             for (int c = 0; c < incomingChannels; ++c) {
                 leftCombo->addItem(QString("Channel %1").arg(c + 1), c);
             }

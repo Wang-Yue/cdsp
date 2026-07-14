@@ -728,17 +728,38 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     if (!stage.isActive())
         return res;
 
+    int leftCh = (stage.leftChannel < channelCount) ? stage.leftChannel : 0;
+    int rightCh = (stage.rightChannel < channelCount && stage.rightChannel != leftCh)
+                      ? stage.rightChannel
+                      : (channelCount > 1 ? 1 : 0);
+
     if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
         stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
-        if (stage.leftChannel >= channelCount || stage.rightChannel >= channelCount) {
+        if (leftCh >= channelCount || rightCh >= channelCount) {
             return res;
         }
     }
 
     std::string prefix = QString::fromStdString(stageTypeToString(stage.type)).toLower().toStdString() + "_" +
                          stage.id.toString(QUuid::WithoutBraces).left(8).toStdString();
-    std::vector<int> chList = stage.channels;
+    std::vector<int> chList;
+    for (int c : stage.channels) {
+        if (c < channelCount) {
+            chList.push_back(c);
+        }
+    }
     std::sort(chList.begin(), chList.end());
+
+    std::vector<int> monitorList;
+    for (int c : stage.monitorChannels) {
+        if (c < channelCount) {
+            monitorList.push_back(c);
+        }
+    }
+    std::sort(monitorList.begin(), monitorList.end());
+    if (monitorList.empty()) {
+        monitorList = chList;
+    }
 
     switch (stage.type) {
     case StageType::Balance: {
@@ -753,10 +774,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         for (int i = 0; i < channelCount; ++i) {
             MixerMapping m;
             m.dest = i;
-            if (i == stage.leftChannel) {
-                m.sources.push_back(MixerSource{stage.leftChannel, leftDB, false});
-            } else if (i == stage.rightChannel) {
-                m.sources.push_back(MixerSource{stage.rightChannel, rightDB, false});
+            if (i == leftCh) {
+                m.sources.push_back(MixerSource{leftCh, leftDB, false});
+            } else if (i == rightCh) {
+                m.sources.push_back(MixerSource{rightCh, rightDB, false});
             } else {
                 m.sources.push_back(MixerSource{i, 0.0, false});
             }
@@ -777,13 +798,13 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         double lr = (1.0 - w) / 2.0;
         double threshold = 1e-6;
 
-        auto makeSources = [&stage, threshold](double ch0, double ch1) {
+        auto makeSources = [leftCh, rightCh, threshold](double ch0, double ch1) {
             std::vector<MixerSource> sources;
             if (std::abs(ch0) > threshold) {
-                sources.push_back(MixerSource{stage.leftChannel, 20.0 * std::log10(std::abs(ch0)), ch0 < 0});
+                sources.push_back(MixerSource{leftCh, 20.0 * std::log10(std::abs(ch0)), ch0 < 0});
             }
             if (std::abs(ch1) > threshold) {
-                sources.push_back(MixerSource{stage.rightChannel, 20.0 * std::log10(std::abs(ch1)), ch1 < 0});
+                sources.push_back(MixerSource{rightCh, 20.0 * std::log10(std::abs(ch1)), ch1 < 0});
             }
             return sources;
         };
@@ -794,9 +815,9 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         for (int i = 0; i < channelCount; ++i) {
             MixerMapping m;
             m.dest = i;
-            if (i == stage.leftChannel) {
+            if (i == leftCh) {
                 m.sources = makeSources(ll, lr);
-            } else if (i == stage.rightChannel) {
+            } else if (i == rightCh) {
                 m.sources = makeSources(lr, ll);
             } else {
                 m.sources.push_back(MixerSource{i, 0.0, false});
@@ -819,12 +840,12 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         for (int i = 0; i < channelCount; ++i) {
             MixerMapping m;
             m.dest = i;
-            if (i == stage.leftChannel) {
-                m.sources.push_back(MixerSource{stage.leftChannel, -6.02, false});
-                m.sources.push_back(MixerSource{stage.rightChannel, -6.02, false});
-            } else if (i == stage.rightChannel) {
-                m.sources.push_back(MixerSource{stage.leftChannel, -6.02, false});
-                m.sources.push_back(MixerSource{stage.rightChannel, -6.02, true});
+            if (i == leftCh) {
+                m.sources.push_back(MixerSource{leftCh, -6.02, false});
+                m.sources.push_back(MixerSource{rightCh, -6.02, false});
+            } else if (i == rightCh) {
+                m.sources.push_back(MixerSource{leftCh, -6.02, false});
+                m.sources.push_back(MixerSource{rightCh, -6.02, true});
             } else {
                 m.sources.push_back(MixerSource{i, 0.0, false});
             }
@@ -858,7 +879,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::Crossfeed: {
-        if (stage.crossfeedLevel == CrossfeedLevel::Off && !stage.cxCustomEnabled)
+        if ((stage.crossfeedLevel == CrossfeedLevel::Off && !stage.cxCustomEnabled) || channelCount < 2)
             break;
         auto cx = stage.activeCrossfeedParams();
 
@@ -932,6 +953,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::SplitWidth: {
+        if (channelCount < 2)
+            break;
         FilterConfig fLp, fHp;
         fLp.type = FilterType::BiquadCombo;
         fLp.comboParams.type = BiquadComboType::LinkwitzRileyLowpass;
@@ -948,7 +971,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
 
         std::vector<int> otherChannels;
         for (int i = 0; i < channelCount; ++i) {
-            if (i != stage.leftChannel && i != stage.rightChannel) {
+            if (i != leftCh && i != rightCh) {
                 otherChannels.push_back(i);
             }
         }
@@ -956,10 +979,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         MixerConfig m2to4;
         m2to4.channelsIn = channelCount;
         m2to4.channelsOut = channelCount + 2;
-        m2to4.mapping.push_back(MixerMapping{0, {MixerSource{stage.leftChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{1, {MixerSource{stage.rightChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{2, {MixerSource{stage.leftChannel, 0.0, false}}});
-        m2to4.mapping.push_back(MixerMapping{3, {MixerSource{stage.rightChannel, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{0, {MixerSource{leftCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{1, {MixerSource{rightCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{2, {MixerSource{leftCh, 0.0, false}}});
+        m2to4.mapping.push_back(MixerMapping{3, {MixerSource{rightCh, 0.0, false}}});
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             m2to4.mapping.push_back(
                 MixerMapping{static_cast<int>(idx + 4), {MixerSource{otherChannels[idx], 0.0, false}}});
@@ -980,10 +1003,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         m4to2.channelsIn = channelCount + 2;
         m4to2.channelsOut = channelCount;
         m4to2.mapping.resize(channelCount);
-        m4to2.mapping[stage.leftChannel] = MixerMapping{
-            stage.leftChannel, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
-        m4to2.mapping[stage.rightChannel] = MixerMapping{
-            stage.rightChannel, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
+        m4to2.mapping[leftCh] = MixerMapping{
+            leftCh, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
+        m4to2.mapping[rightCh] = MixerMapping{
+            rightCh, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             int ch = otherChannels[idx];
             m4to2.mapping[ch] = MixerMapping{ch, {MixerSource{static_cast<int>(idx + 4), 0.0, false}}};
@@ -1240,10 +1263,12 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::Compressor: {
+        if (chList.empty())
+            break;
         ProcessorConfig p;
         p.type = ProcessorType::Compressor;
         p.compressorParams.channels = channelCount;
-        p.compressorParams.monitorChannels = stage.monitorChannels;
+        p.compressorParams.monitorChannels = monitorList;
         p.compressorParams.processChannels = chList;
         p.compressorParams.attack = stage.compressorAttack;
         p.compressorParams.release = stage.compressorRelease;
@@ -1259,10 +1284,12 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::NoiseGate: {
+        if (chList.empty())
+            break;
         ProcessorConfig p;
         p.type = ProcessorType::NoiseGate;
         p.noiseGateParams.channels = channelCount;
-        p.noiseGateParams.monitorChannels = stage.monitorChannels;
+        p.noiseGateParams.monitorChannels = monitorList;
         p.noiseGateParams.processChannels = chList;
         p.noiseGateParams.attack = stage.gateAttack;
         p.noiseGateParams.release = stage.gateRelease;
@@ -1275,11 +1302,13 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::RACE: {
+        if (leftCh >= channelCount || rightCh >= channelCount)
+            break;
         ProcessorConfig p;
         p.type = ProcessorType::RACE;
         p.raceParams.channels = channelCount;
-        p.raceParams.channelA = stage.leftChannel;
-        p.raceParams.channelB = stage.rightChannel;
+        p.raceParams.channelA = leftCh;
+        p.raceParams.channelB = rightCh;
         p.raceParams.delay = stage.raceDelay;
         p.raceParams.subsampleDelay = stage.raceSubsampleDelay;
         p.raceParams.delayUnit = stage.raceDelayUnit;

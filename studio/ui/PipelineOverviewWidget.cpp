@@ -480,6 +480,11 @@ void PipelineOverviewWidget::rebuildOverview() {
                         chList = step.channels;
                     } else if (step.channel.has_value()) {
                         chList = {step.channel.value()};
+                    } else if (step.type == PipelineStepType::Processor) {
+                        for (int c : stage.channels) {
+                            if (c < inCh) chList.push_back(c);
+                        }
+                        std::sort(chList.begin(), chList.end());
                     } else {
                         for (int c = 0; c < inCh; ++c)
                             chList.push_back(c);
