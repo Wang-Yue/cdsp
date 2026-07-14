@@ -972,6 +972,8 @@ static inline void encode_float_samples_to_wasapi(BYTE* dst, const float* src,
 
 static void* wasapi_playback_thread_func(void* arg) {
   wasapi_playback_t* playback = (wasapi_playback_t*)arg;
+  HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+  bool com_ok = SUCCEEDED(init_hr);
 #ifdef _WIN32
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 #endif
@@ -992,19 +994,23 @@ static void* wasapi_playback_thread_func(void* arg) {
     }
 
     UINT32 padding = 0;
-    HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
-    if (FAILED(hr)) continue;
+    if (!playback->exclusive) {
+      HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
+      if (FAILED(hr)) continue;
+    }
 
-    UINT32 available_frames = playback->buffer_frame_count - padding;
-    if (available_frames == 0) continue;
+    UINT32 to_write = playback->exclusive
+                          ? playback->buffer_frame_count
+                          : (playback->buffer_frame_count - padding);
+    if (to_write == 0) continue;
 
     size_t ring_avail =
         spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) /
         playback->channels;
-    UINT32 to_write = available_frames;
 
     BYTE* data = NULL;
-    hr = IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
+    HRESULT hr =
+        IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
     if (SUCCEEDED(hr) && data) {
       static DWORD last_write_time = 0;
       DWORD now = GetTickCount();
@@ -1044,6 +1050,10 @@ static void* wasapi_playback_thread_func(void* arg) {
 
       IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
     }
+  }
+
+  if (com_ok) {
+    CoUninitialize();
   }
   return NULL;
 }
@@ -1425,7 +1435,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
 
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
 
-  if (playback->polling) {
+  if (playback->polling || !playback->started) {
     if (total_frames > playback->buffer_frame_count) {
       logger_error(&g_logger,
                    "Input chunk size %zu exceeds WASAPI buffer capacity %u",
@@ -1631,7 +1641,7 @@ bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
 bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
                                      backend_error_t* err) {
   (void)frames;
-  if (playback->polling) {
+  if (playback->polling || !playback->started) {
     if (!playback->render_client) return false;
     BYTE* data = NULL;
     UINT32 prefill_frames = playback->buffer_frame_count;
