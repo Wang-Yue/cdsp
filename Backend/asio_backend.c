@@ -638,6 +638,12 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
     return false;
   }
 
+  if (rate >= 1000000.0) {
+    ASIOIoFormat dsd_format = {0};
+    dsd_format.FormatType = kASIOFormatDSD;
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
+  }
+
   res = iasio->lpVtbl->setSampleRate(iasio, rate);
   if (res != 0) {
     SAFE_RELEASE(iasio);
@@ -1251,9 +1257,12 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
 
+  int rate_to_set =
+      playback->output_dsd ? playback->sample_rate * 32 : playback->sample_rate;
+
   if (playback->full_duplex) {
     if (!register_and_wait_asio(
-            false, playback->device, playback->sample_rate, playback->channels,
+            false, playback->device, rate_to_set, playback->channels,
             playback->format, &playback->iasio, &playback->buffer_infos,
             &playback->channel_infos, &playback->actual_buffer_size, err)) {
       goto error_cleanup;
@@ -1283,7 +1292,23 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
 
-    double rate = playback->sample_rate;
+    if (playback->output_dsd) {
+      ASIOIoFormat dsd_format = {0};
+      dsd_format.FormatType = kASIOFormatDSD;
+      ASIOError io_res = (ASIOError)(uintptr_t)playback->iasio->lpVtbl->future(
+          playback->iasio, kAsioSetIoFormat, &dsd_format);
+      if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
+        logger_info(&g_logger,
+                    "ASIO driver successfully set to Native DSD format");
+      } else {
+        logger_warn(
+            &g_logger,
+            "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
+            io_res, (long)dsd_format.FormatType);
+      }
+    }
+
+    double rate = rate_to_set;
     double current_rate = 0.0;
     if (playback->iasio->lpVtbl->getSampleRate(playback->iasio,
                                                &current_rate) == 0) {
@@ -1300,22 +1325,6 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
                                "Failed to set ASIO sample rate");
           goto error_cleanup;
         }
-      }
-    }
-
-    if (playback->output_dsd) {
-      ASIOIoFormat dsd_format = {0};
-      dsd_format.FormatType = kASIOFormatDSD;
-      ASIOError io_res = (ASIOError)(uintptr_t)playback->iasio->lpVtbl->future(
-          playback->iasio, kAsioSetIoFormat, &dsd_format);
-      if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
-        logger_info(&g_logger,
-                    "ASIO driver successfully set to Native DSD format");
-      } else {
-        logger_warn(
-            &g_logger,
-            "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
-            io_res, (long)dsd_format.FormatType);
       }
     }
 
