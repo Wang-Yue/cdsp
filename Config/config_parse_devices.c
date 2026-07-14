@@ -147,14 +147,17 @@ typedef struct {
   bool has_asio_format;
 #endif
 
-  // ALSA / Pulse / PipeWire Capture fields
+#if defined(ENABLE_ALSA)
+  // ALSA Capture fields
   bool stop_on_inactive;
   bool has_stop_on_inactive;
   char link_volume_control[256];
   bool has_link_volume_control;
   char link_mute_control[256];
   bool has_link_mute_control;
+#endif
 
+#if defined(ENABLE_PIPEWIRE)
   // PipeWire Capture fields
   char node_name[256];
   bool has_node_name;
@@ -164,7 +167,7 @@ typedef struct {
   bool has_node_group_name;
   char autoconnect_to[256];
   bool has_autoconnect_to;
-
+#endif
 } flat_capture_device_config_t;
 
 /**
@@ -573,6 +576,7 @@ typedef struct {
   bool has_asio_format;
 #endif
 
+#if defined(ENABLE_PIPEWIRE)
   // PipeWire fields
   char node_name[256];
   bool has_node_name;
@@ -582,6 +586,7 @@ typedef struct {
   bool has_node_group_name;
   char autoconnect_to[256];
   bool has_autoconnect_to;
+#endif
 } flat_playback_device_config_t;
 
 /**
