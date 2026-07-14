@@ -225,7 +225,7 @@ size_t async_poly_resampler_get_channels(
  * @param resampler Pointer to the resampler instance.
  * @return Estimated number of output frames.
  */
-static inline size_t get_next_output_frames(
+static inline size_t __attribute__((unused)) get_next_output_frames(
     const async_poly_resampler_t* resampler) {
   if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
     return resampler->chunk_size;

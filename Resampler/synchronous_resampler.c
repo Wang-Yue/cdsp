@@ -89,26 +89,28 @@ struct synchronous_resampler {
   /// `M = Fₒ / gcd(Fᵢ, Fₒ)`.
   size_t output_chunk_size;
   double ratio;
-  /// Length of the working FFT block on the input side (`= chunkSize`).
-  size_t input_block_len;
-  /// Length of the working FFT block on the output side (`= outputChunkSize`).
-  size_t output_block_len;
+  /// Length of the working FFT block on the input side (`sub_fft_in`).
+  size_t sub_fft_in;
+  /// Length of the working FFT block on the output side (`sub_fft_out`).
+  size_t sub_fft_out;
+  /// Number of sub-chunks processed per call.
+  size_t num_subchunks;
   /// Number of unique-bin frequencies common to the input and output
-  /// spectra: `min(inputBlockLen, outputBlockLen) + 1`. Bins above
+  /// spectra: `min(sub_fft_in, sub_fft_out) + 1`. Bins above
   /// this in the output spectrum are zeroed (band-limiting for
   /// downsampling, spectral zero-pad for upsampling).
   size_t shared_bins;
-  // Anti-aliasing filter, pre-FFT'd at init. `inputBlockLen + 1`
+  // Anti-aliasing filter, pre-FFT'd at init. `sub_fft_in + 1`
   // unique bins. Stored as raw pointer to bypass overhead.
   double* filter_spec_re;
   double* filter_spec_im;
   // Real-input FFT engines. The forward engine handles the zero-padded
-  // input block (length `2 · inputBlockLen`); the inverse engine
-  // reconstructs the output block (length `2 · outputBlockLen`).
+  // input block (length `2 · sub_fft_in`); the inverse engine
+  // reconstructs the output block (length `2 · sub_fft_out`).
   real_fft_t* input_fft;
   real_fft_t* output_fft;
   // Per-channel time-domain overlap-add carry. Each entry holds the
-  // tail of the previous chunk's IFFT result, length `outputBlockLen`.
+  // tail of the previous chunk's IFFT result, length `sub_fft_out`.
   double** carries;
   // Hot-path scratch buffers reused across channels. Unified to minimize
   // cache footprint and avoid intermediate allocations.
@@ -182,17 +184,32 @@ synchronous_resampler_t* synchronous_resampler_create(
   resampler->channels = channels;
   resampler->ratio = (double)output_rate / (double)input_rate;
 
-  // Block-size selection by rational decomposition.
+  // Match rubato synchro.rs sub-chunking: target a sub-chunk size of ~256
+  // frames. Block-size selection by rational decomposition.
   //   g = gcd(Fᵢ, Fₒ);   L = Fᵢ/g;   M = Fₒ/g
   //   K·L input samples ↔ K·M output samples (exactly, for any K ≥ 1)
   // Round the requested chunkSize up to the smallest valid K·L.
+  size_t sub_chunks = requested_chunk_size / 256;
+  if (sub_chunks < 1) sub_chunks = 1;
+
   size_t g = gcd_size(input_rate, output_rate);
-  size_t l = input_rate / g;
-  size_t m = output_rate / g;
-  size_t k = (size_t)ceil((double)requested_chunk_size / (double)l);
-  if (k < 1) k = 1;
-  size_t input_block = k * l;
-  size_t output_block = k * m;
+  size_t min_chunk_in = input_rate / g;
+  size_t min_chunk_out = output_rate / g;
+
+  size_t wanted_subsize = requested_chunk_size / sub_chunks;
+  size_t fft_chunks =
+      (size_t)ceil((double)wanted_subsize / (double)min_chunk_in);
+  if (fft_chunks < 1) fft_chunks = 1;
+
+  size_t sub_fft_in = fft_chunks * min_chunk_in;
+  size_t sub_fft_out = fft_chunks * min_chunk_out;
+
+  size_t num_subchunks =
+      (size_t)ceil((double)requested_chunk_size / (double)sub_fft_in);
+  if (num_subchunks < 1) num_subchunks = 1;
+
+  size_t input_block = num_subchunks * sub_fft_in;
+  size_t output_block = num_subchunks * sub_fft_out;
 
   if (input_block > SIZE_MAX / 2 || output_block > SIZE_MAX / 2) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
@@ -201,25 +218,27 @@ synchronous_resampler_t* synchronous_resampler_create(
     return NULL;
   }
 
-  resampler->input_block_len = input_block;
-  resampler->output_block_len = output_block;
+  resampler->sub_fft_in = sub_fft_in;
+  resampler->sub_fft_out = sub_fft_out;
+  resampler->num_subchunks = num_subchunks;
   resampler->chunk_size = input_block;
   resampler->output_chunk_size = output_block;
   resampler->shared_bins =
-      (input_block < output_block ? input_block : output_block) + 1;
+      (sub_fft_in < sub_fft_out ? sub_fft_in : sub_fft_out) + 1;
 
-  // Build the anti-aliasing kernel. The kernel is applied at input
-  // rate, so all frequencies are normalised to input Nyquist.
+  // Build the anti-aliasing kernel matching rubato's FftResampler.
+  // The kernel is applied at input rate, so all frequencies are normalised to
+  // input Nyquist.
   double cutoff;
   if (input_rate > output_rate) {
     double base_cut =
-        calculate_cutoff(output_block, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
-    cutoff = base_cut * (double)output_block / (double)input_block;
+        calculate_cutoff(sub_fft_out, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    cutoff = base_cut * (double)sub_fft_out / (double)sub_fft_in;
   } else {
-    cutoff = calculate_cutoff(input_block, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    cutoff = calculate_cutoff(sub_fft_in, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
   }
   double* kernel =
-      make_sinc_table(input_block, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
+      make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
   if (!kernel) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
@@ -233,8 +252,8 @@ synchronous_resampler_t* synchronous_resampler_create(
   // by 1/(2·N) folds the unnormalised forward + inverse FFT scale
   // factors into the filter so the resampler delivers unity gain to
   // its callers.
-  size_t two_n = 2 * input_block;
-  double* filter_time = (double*)calloc(two_n, sizeof(double));
+  size_t two_sub_in = 2 * sub_fft_in;
+  double* filter_time = (double*)calloc(two_sub_in, sizeof(double));
   if (!filter_time) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
@@ -243,25 +262,25 @@ synchronous_resampler_t* synchronous_resampler_create(
     synchronous_resampler_free(resampler);
     return NULL;
   }
-  double scale = 1.0 / (double)two_n;
-  for (size_t i = 0; i < input_block; i++) {
+  double scale = 1.0 / (double)two_sub_in;
+  for (size_t i = 0; i < sub_fft_in; i++) {
     filter_time[i] = kernel[i] * scale;
   }
   free(kernel);
 
-  resampler->input_fft = real_fft_create(two_n, err);
-  resampler->output_fft = real_fft_create(2 * output_block, err);
+  resampler->input_fft = real_fft_create(two_sub_in, err);
+  resampler->output_fft = real_fft_create(2 * sub_fft_out, err);
   if (!resampler->input_fft || !resampler->output_fft) {
     free(filter_time);
     synchronous_resampler_free(resampler);
     return NULL;
   }
 
-  // FFT the filter once at init; only the `inputBlock + 1` unique
+  // FFT the filter once at init; only the `sub_fft_in + 1` unique
   // bins are stored (real-input FFT has Hermitian symmetry, so the
   // upper half is redundant).
-  resampler->filter_spec_re = (double*)calloc(input_block + 1, sizeof(double));
-  resampler->filter_spec_im = (double*)calloc(input_block + 1, sizeof(double));
+  resampler->filter_spec_re = (double*)calloc(sub_fft_in + 1, sizeof(double));
+  resampler->filter_spec_im = (double*)calloc(sub_fft_in + 1, sizeof(double));
   if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
@@ -283,7 +302,7 @@ synchronous_resampler_t* synchronous_resampler_create(
     return NULL;
   }
   for (size_t ch = 0; ch < channels; ch++) {
-    resampler->carries[ch] = (double*)calloc(output_block, sizeof(double));
+    resampler->carries[ch] = (double*)calloc(sub_fft_out, sizeof(double));
     if (!resampler->carries[ch]) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "SynchronousResampler: Failed to allocate carry buffer "
@@ -294,7 +313,7 @@ synchronous_resampler_t* synchronous_resampler_create(
     }
   }
 
-  size_t max_len = input_block > output_block ? input_block : output_block;
+  size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
   resampler->working_time = (double*)calloc(2 * max_len, sizeof(double));
   resampler->working_spec_re = (double*)calloc(max_len + 1, sizeof(double));
   resampler->working_spec_im = (double*)calloc(max_len + 1, sizeof(double));
@@ -379,79 +398,85 @@ resampler_error_t synchronous_resampler_process(
     return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    const double* src_ptr = audio_chunk_get_channel(input, ch);
-    double* out_ptr = audio_chunk_get_channel(output, ch);
-    double* carry_ptr = resampler->carries[ch];
-    if (!src_ptr || !out_ptr || !carry_ptr) continue;
+  for (size_t s = 0; s < resampler->num_subchunks; s++) {
+    size_t in_offset = s * resampler->sub_fft_in;
+    size_t out_offset = s * resampler->sub_fft_out;
+    size_t sub_valid =
+        (valid_frames > in_offset) ? (valid_frames - in_offset) : 0;
+    if (sub_valid > resampler->sub_fft_in) sub_valid = resampler->sub_fft_in;
 
-    // Step 1. Place the input block at the start of a length-2N
-    // buffer, with the second half zero. The zero-pad is what makes
-    // the cyclic FFT convolution behave as a linear convolution
-    // (Oppenheim & Schafer §8.7). The upper half is cleared each call
-    // to ensure the zero-pad region for the forward FFT is clean.
-    memcpy(resampler->working_time, src_ptr, valid_frames * sizeof(double));
-    memset(resampler->working_time + valid_frames, 0,
-           (2 * resampler->input_block_len - valid_frames) * sizeof(double));
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      const double* src_ptr = audio_chunk_get_channel(input, ch) + in_offset;
+      double* out_ptr = audio_chunk_get_channel(output, ch) + out_offset;
+      double* carry_ptr = resampler->carries[ch];
 
-    // Step 2. Forward 2N-point real FFT.
-    real_fft_forward(resampler->input_fft, resampler->working_time,
-                     resampler->working_spec_re, resampler->working_spec_im);
+      // Step 1. Place the input block at the start of a length-2N
+      // buffer, with the second half zero. The zero-pad is what makes
+      // the cyclic FFT convolution behave as a linear convolution
+      // (Oppenheim & Schafer §8.7). The upper half is cleared each call
+      // to ensure the zero-pad region for the forward FFT is clean.
+      memcpy(resampler->working_time, src_ptr, sub_valid * sizeof(double));
+      memset(resampler->working_time + sub_valid, 0,
+             (2 * resampler->sub_fft_in - sub_valid) * sizeof(double));
 
-    // Step 3. Pointwise multiply input spectrum by the pre-FFT'd
-    // filter. Only the `sharedBins` matter since bins above are
-    // dropped on the output side; doing the multiply in place over
-    // that span avoids touching the upper half.
+      // Step 2. Forward 2N-point real FFT.
+      real_fft_forward(resampler->input_fft, resampler->working_time,
+                       resampler->working_spec_re, resampler->working_spec_im);
+
+      // Step 3. Pointwise multiply input spectrum by the pre-FFT'd
+      // filter. Only the `sharedBins` matter since bins above are
+      // dropped on the output side; doing the multiply in place over
+      // that span avoids touching the upper half.
 #ifdef ENABLE_ACCELERATE
-    DSPDoubleSplitComplex io_split = {resampler->working_spec_re,
-                                      resampler->working_spec_im};
-    DSPDoubleSplitComplex f_split = {resampler->filter_spec_re,
-                                     resampler->filter_spec_im};
-    vDSP_zvmulD(&io_split, 1, &f_split, 1, &io_split, 1, resampler->shared_bins,
-                1);
+      DSPDoubleSplitComplex io_split = {resampler->working_spec_re,
+                                        resampler->working_spec_im};
+      DSPDoubleSplitComplex f_split = {resampler->filter_spec_re,
+                                       resampler->filter_spec_im};
+      vDSP_zvmulD(&io_split, 1, &f_split, 1, &io_split, 1,
+                  resampler->shared_bins, 1);
 #else
-    for (size_t i = 0; i < resampler->shared_bins; i++) {
-      double re = resampler->working_spec_re[i];
-      double im = resampler->working_spec_im[i];
-      double fre = resampler->filter_spec_re[i];
-      double fim = resampler->filter_spec_im[i];
-      resampler->working_spec_re[i] = re * fre - im * fim;
-      resampler->working_spec_im[i] = re * fim + im * fre;
-    }
+      for (size_t i = 0; i < resampler->shared_bins; i++) {
+        double re = resampler->working_spec_re[i];
+        double im = resampler->working_spec_im[i];
+        double fre = resampler->filter_spec_re[i];
+        double fim = resampler->filter_spec_im[i];
+        resampler->working_spec_re[i] = re * fre - im * fim;
+        resampler->working_spec_im[i] = re * fim + im * fre;
+      }
 #endif
 
-    // Step 4. Build the output spectrum of length `2·outputBlockLen`:
-    // copy the filtered low bins and zero the rest. For upsampling
-    // (outputBlockLen > inputBlockLen) the zeros above input Nyquist
-    // are the spectral zero-pad that extends the bandwidth. For
-    // downsampling they discard everything above output Nyquist —
-    // the band-limiting step.
-    if (resampler->output_block_len + 1 > resampler->shared_bins) {
-      size_t zero_count =
-          resampler->output_block_len + 1 - resampler->shared_bins;
-      memset(resampler->working_spec_re + resampler->shared_bins, 0,
-             zero_count * sizeof(double));
-      memset(resampler->working_spec_im + resampler->shared_bins, 0,
-             zero_count * sizeof(double));
-    }
+      // Step 4. Build the output spectrum of length `2·outputBlockLen`:
+      // copy the filtered low bins and zero the rest. For upsampling
+      // (outputBlockLen > inputBlockLen) the zeros above input Nyquist
+      // are the spectral zero-pad that extends the bandwidth. For
+      // downsampling they discard everything above output Nyquist —
+      // the band-limiting step.
+      if (resampler->sub_fft_out + 1 > resampler->shared_bins) {
+        size_t zero_count = resampler->sub_fft_out + 1 - resampler->shared_bins;
+        memset(resampler->working_spec_re + resampler->shared_bins, 0,
+               zero_count * sizeof(double));
+        memset(resampler->working_spec_im + resampler->shared_bins, 0,
+               zero_count * sizeof(double));
+      }
 
-    // Step 5. Inverse 2P-point real FFT to time domain (P = outputBlockLen).
-    real_fft_inverse(resampler->output_fft, resampler->working_spec_re,
-                     resampler->working_spec_im, resampler->working_time);
+      // Step 5. Inverse 2P-point real FFT to time domain (P = outputBlockLen).
+      real_fft_inverse(resampler->output_fft, resampler->working_spec_re,
+                       resampler->working_spec_im, resampler->working_time);
 
-    // Step 6. Overlap-add: write `result[0..P) + carry` as the chunk's
-    // output samples, and save `result[P..2P)` for the next chunk's
-    // overlap.
+      // Step 6. Overlap-add: write `result[0..P) + carry` as the chunk's
+      // output samples, and save `result[P..2P)` for the next chunk's
+      // overlap.
 #ifdef ENABLE_ACCELERATE
-    vDSP_vaddD(resampler->working_time, 1, carry_ptr, 1, out_ptr, 1,
-               resampler->output_block_len);
+      vDSP_vaddD(resampler->working_time, 1, carry_ptr, 1, out_ptr, 1,
+                 resampler->sub_fft_out);
 #else
-    for (size_t i = 0; i < resampler->output_block_len; i++) {
-      out_ptr[i] = resampler->working_time[i] + carry_ptr[i];
-    }
+      for (size_t i = 0; i < resampler->sub_fft_out; i++) {
+        out_ptr[i] = resampler->working_time[i] + carry_ptr[i];
+      }
 #endif
-    memcpy(carry_ptr, resampler->working_time + resampler->output_block_len,
-           resampler->output_block_len * sizeof(double));
+      memcpy(carry_ptr, resampler->working_time + resampler->sub_fft_out,
+             resampler->sub_fft_out * sizeof(double));
+    }
   }
 
   size_t valid_out =

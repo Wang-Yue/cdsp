@@ -34,6 +34,9 @@ struct async_sinc_resampler {
   // accumulation.
   double* idx_scratch;
   double* frac_scratch;
+  // Pre-allocated buffer for combined sinc blending across multi-channel path.
+  // Sized at sinc_len + 1.
+  double* combined_scratch;
   // Maximum output frames the resampler can ever produce in one call. The
   // caller uses this to size the output AudioChunk once at startup.
   size_t max_output_frames;
@@ -193,7 +196,9 @@ async_sinc_resampler_t* async_sinc_resampler_create(
       (double*)calloc(resampler->max_output_frames, sizeof(double));
   resampler->frac_scratch =
       (double*)calloc(resampler->max_output_frames, sizeof(double));
-  if (!resampler->idx_scratch || !resampler->frac_scratch) {
+  resampler->combined_scratch = (double*)calloc(sinc_len + 1, sizeof(double));
+  if (!resampler->idx_scratch || !resampler->frac_scratch ||
+      !resampler->combined_scratch) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate AsyncSincResampler scratch buffers");
     async_sinc_resampler_free(resampler);
@@ -253,6 +258,7 @@ void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
   free(resampler->sinc_table);
   free(resampler->idx_scratch);
   free(resampler->frac_scratch);
+  free(resampler->combined_scratch);
   free(resampler);
 }
 
@@ -296,7 +302,7 @@ size_t async_sinc_resampler_get_channels(
  * @param resampler Pointer to the resampler instance.
  * @return The number of output frames expected.
  */
-static inline size_t get_next_output_frames(
+static inline size_t __attribute__((unused)) get_next_output_frames(
     const async_sinc_resampler_t* resampler) {
   if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
     return resampler->chunk_size;
@@ -390,7 +396,8 @@ static void run_nearest(async_sinc_resampler_t* resampler, size_t output_frames,
  * @brief Resamples the input using cubic interpolation across four adjacent
  * sinc filter phases.
  *
- * This is the highest quality but slowest interpolation mode.
+ * Employs multi-channel combined sinc blending when channels >= 2 to evaluate
+ * 1 dot product per channel.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -406,41 +413,91 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    const double* buf = audio_buffers_get_channel(resampler->input_buffer, ch);
-    double* out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out) continue;
+  if (resampler->channels >= 2) {
+    double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
       double idx_floor = floor(idx);
       int start_idx = (int)idx_floor;
       int frac = (int)floor((idx - idx_floor) * factor_d);
-      double frac_offset = frac_buf[frame];
+      double x = frac_buf[frame];
 
       // 4 (idx, sub) pairs at sub = -1, 0, 1, 2.
-      adjust_point_t p0t = adjust_point(start_idx, frac, -1, factor);
-      adjust_point_t p1t = adjust_point(start_idx, frac, 0, factor);
-      adjust_point_t p2t = adjust_point(start_idx, frac, 1, factor);
-      adjust_point_t p3t = adjust_point(start_idx, frac, 2, factor);
+      adjust_point_t pts[4] = {adjust_point(start_idx, frac, -1, factor),
+                               adjust_point(start_idx, frac, 0, factor),
+                               adjust_point(start_idx, frac, 1, factor),
+                               adjust_point(start_idx, frac, 2, factor)};
 
-      double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
-                                   table + p0t.sub * s_len, s_len);
-      double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
-                                   table + p1t.sub * s_len, s_len);
-      double p2 = sinc_dot_product(buf + p2t.idx + two_s_len,
-                                   table + p2t.sub * s_len, s_len);
-      double p3 = sinc_dot_product(buf + p3t.idx + two_s_len,
-                                   table + p3t.sub * s_len, s_len);
+      int min_idx = pts[0].idx;
+      if (pts[1].idx < min_idx) min_idx = pts[1].idx;
+      if (pts[2].idx < min_idx) min_idx = pts[2].idx;
+      if (pts[3].idx < min_idx) min_idx = pts[3].idx;
 
-      // interp_cubic (asynchro_sinc.rs:118-128).
-      double a0 = p1;
-      double a1 = -1.0 / 3.0 * p0 - 0.5 * p1 + p2 - 1.0 / 6.0 * p3;
-      double a2 = 0.5 * (p0 + p2) - p1;
-      double a3 = 0.5 * (p1 - p2) + 1.0 / 6.0 * (p3 - p0);
-      double x = frac_offset;
+      // interp_cubic weights (asynchro_sinc.rs:118-128).
       double x2 = x * x;
       double x3 = x2 * x;
-      out[frame] = a0 + a1 * x + a2 * x2 + a3 * x3;
+      double w[4] = {-1.0 / 3.0 * x + 0.5 * x2 - 1.0 / 6.0 * x3,
+                     1.0 - 0.5 * x - x2 + 0.5 * x3, x + 0.5 * x2 - 0.5 * x3,
+                     -1.0 / 6.0 * x + 1.0 / 6.0 * x3};
+
+      memset(combined, 0, (s_len + 1) * sizeof(double));
+      for (int k = 0; k < 4; k++) {
+        int shift = pts[k].idx - min_idx;
+        const double* sinc_row = table + pts[k].sub * s_len;
+        double weight = w[k];
+        for (size_t p = 0; p < s_len; p++) {
+          combined[shift + p] += weight * sinc_row[p];
+        }
+      }
+
+      size_t base_offset = (size_t)(min_idx + (int)two_s_len);
+      for (size_t ch = 0; ch < resampler->channels; ch++) {
+        const double* buf =
+            audio_buffers_get_channel(resampler->input_buffer, ch);
+        double* out = audio_chunk_get_channel(output, ch);
+        if (!buf || !out) continue;
+        double dot = sinc_dot_product(buf + base_offset, combined, s_len);
+        out[frame] = dot + combined[s_len] * buf[base_offset + s_len];
+      }
+    }
+  } else {
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      const double* buf =
+          audio_buffers_get_channel(resampler->input_buffer, ch);
+      double* out = audio_chunk_get_channel(output, ch);
+      if (!buf || !out) continue;
+      for (size_t frame = 0; frame < output_frames; frame++) {
+        double idx = idx_buf[frame];
+        double idx_floor = floor(idx);
+        int start_idx = (int)idx_floor;
+        int frac = (int)floor((idx - idx_floor) * factor_d);
+        double frac_offset = frac_buf[frame];
+
+        // 4 (idx, sub) pairs at sub = -1, 0, 1, 2.
+        adjust_point_t p0t = adjust_point(start_idx, frac, -1, factor);
+        adjust_point_t p1t = adjust_point(start_idx, frac, 0, factor);
+        adjust_point_t p2t = adjust_point(start_idx, frac, 1, factor);
+        adjust_point_t p3t = adjust_point(start_idx, frac, 2, factor);
+
+        double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
+                                     table + p0t.sub * s_len, s_len);
+        double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
+                                     table + p1t.sub * s_len, s_len);
+        double p2 = sinc_dot_product(buf + p2t.idx + two_s_len,
+                                     table + p2t.sub * s_len, s_len);
+        double p3 = sinc_dot_product(buf + p3t.idx + two_s_len,
+                                     table + p3t.sub * s_len, s_len);
+
+        // interp_cubic (asynchro_sinc.rs:118-128).
+        double a0 = p1;
+        double a1 = -1.0 / 3.0 * p0 - 0.5 * p1 + p2 - 1.0 / 6.0 * p3;
+        double a2 = 0.5 * (p0 + p2) - p1;
+        double a3 = 0.5 * (p1 - p2) + 1.0 / 6.0 * (p3 - p0);
+        double x = frac_offset;
+        double x2 = x * x;
+        double x3 = x2 * x;
+        out[frame] = a0 + a1 * x + a2 * x2 + a3 * x3;
+      }
     }
   }
 }
@@ -449,7 +506,7 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
  * @brief Resamples the input using quadratic interpolation across three
  * adjacent sinc filter phases.
  *
- * Balances speed and quality.
+ * Employs multi-channel combined sinc blending when channels > 2.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -465,36 +522,82 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    const double* buf = audio_buffers_get_channel(resampler->input_buffer, ch);
-    double* out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out) continue;
+  if (resampler->channels > 2) {
+    double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
       double idx_floor = floor(idx);
       int start_idx = (int)idx_floor;
       int frac = (int)floor((idx - idx_floor) * factor_d);
-      double frac_offset = frac_buf[frame];
+      double x = frac_buf[frame];
 
       // get_nearest_times_3: sub = 0, 1, 2.
-      adjust_point_t p0t = adjust_point(start_idx, frac, 0, factor);
-      adjust_point_t p1t = adjust_point(start_idx, frac, 1, factor);
-      adjust_point_t p2t = adjust_point(start_idx, frac, 2, factor);
+      adjust_point_t pts[3] = {adjust_point(start_idx, frac, 0, factor),
+                               adjust_point(start_idx, frac, 1, factor),
+                               adjust_point(start_idx, frac, 2, factor)};
 
-      double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
-                                   table + p0t.sub * s_len, s_len);
-      double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
-                                   table + p1t.sub * s_len, s_len);
-      double p2 = sinc_dot_product(buf + p2t.idx + two_s_len,
-                                   table + p2t.sub * s_len, s_len);
+      int min_idx = pts[0].idx;
+      if (pts[1].idx < min_idx) min_idx = pts[1].idx;
+      if (pts[2].idx < min_idx) min_idx = pts[2].idx;
 
-      // interp_quad (asynchro_sinc.rs:145-154).
-      double a2 = p0 - 2.0 * p1 + p2;
-      double a1 = -3.0 * p0 + 4.0 * p1 - p2;
-      double a0 = 2.0 * p0;
-      double x = frac_offset;
+      // interp_quad weights (asynchro_sinc.rs:145-154).
       double x2 = x * x;
-      out[frame] = 0.5 * (a0 + a1 * x + a2 * x2);
+      double w[3] = {0.5 * (2.0 - 3.0 * x + x2), 0.5 * (4.0 * x - 2.0 * x2),
+                     0.5 * (x2 - x)};
+
+      memset(combined, 0, (s_len + 1) * sizeof(double));
+      for (int k = 0; k < 3; k++) {
+        int shift = pts[k].idx - min_idx;
+        const double* sinc_row = table + pts[k].sub * s_len;
+        double weight = w[k];
+        for (size_t p = 0; p < s_len; p++) {
+          combined[shift + p] += weight * sinc_row[p];
+        }
+      }
+
+      size_t base_offset = (size_t)(min_idx + (int)two_s_len);
+      for (size_t ch = 0; ch < resampler->channels; ch++) {
+        const double* buf =
+            audio_buffers_get_channel(resampler->input_buffer, ch);
+        double* out = audio_chunk_get_channel(output, ch);
+        if (!buf || !out) continue;
+        double dot = sinc_dot_product(buf + base_offset, combined, s_len);
+        out[frame] = dot + combined[s_len] * buf[base_offset + s_len];
+      }
+    }
+  } else {
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      const double* buf =
+          audio_buffers_get_channel(resampler->input_buffer, ch);
+      double* out = audio_chunk_get_channel(output, ch);
+      if (!buf || !out) continue;
+      for (size_t frame = 0; frame < output_frames; frame++) {
+        double idx = idx_buf[frame];
+        double idx_floor = floor(idx);
+        int start_idx = (int)idx_floor;
+        int frac = (int)floor((idx - idx_floor) * factor_d);
+        double frac_offset = frac_buf[frame];
+
+        // get_nearest_times_3: sub = 0, 1, 2.
+        adjust_point_t p0t = adjust_point(start_idx, frac, 0, factor);
+        adjust_point_t p1t = adjust_point(start_idx, frac, 1, factor);
+        adjust_point_t p2t = adjust_point(start_idx, frac, 2, factor);
+
+        double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
+                                     table + p0t.sub * s_len, s_len);
+        double p1 = sinc_dot_product(buf + p0t.idx + two_s_len,
+                                     table + p1t.sub * s_len, s_len);
+        double p2 = sinc_dot_product(buf + p0t.idx + two_s_len,
+                                     table + p2t.sub * s_len, s_len);
+
+        // interp_quad (asynchro_sinc.rs:145-154).
+        double a2 = p0 - 2.0 * p1 + p2;
+        double a1 = -3.0 * p0 + 4.0 * p1 - p2;
+        double a0 = 2.0 * p0;
+        double x = frac_offset;
+        double x2 = x * x;
+        out[frame] = 0.5 * (a0 + a1 * x + a2 * x2);
+      }
     }
   }
 }
@@ -502,6 +605,8 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
 /**
  * @brief Resamples the input using linear interpolation between two adjacent
  * sinc filter phases.
+ *
+ * Employs multi-channel combined sinc blending when channels > 2.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -517,28 +622,70 @@ static void run_linear(async_sinc_resampler_t* resampler, size_t output_frames,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    const double* buf = audio_buffers_get_channel(resampler->input_buffer, ch);
-    double* out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out) continue;
+  if (resampler->channels > 2) {
+    double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
       double idx_floor = floor(idx);
       int start_idx = (int)idx_floor;
       int frac = (int)floor((idx - idx_floor) * factor_d);
-      double frac_offset = frac_buf[frame];
+      double x = frac_buf[frame];
 
       // get_nearest_times_2: sub = 0, 1.
-      adjust_point_t p0t = adjust_point(start_idx, frac, 0, factor);
-      adjust_point_t p1t = adjust_point(start_idx, frac, 1, factor);
+      adjust_point_t pts[2] = {adjust_point(start_idx, frac, 0, factor),
+                               adjust_point(start_idx, frac, 1, factor)};
 
-      double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
-                                   table + p0t.sub * s_len, s_len);
-      double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
-                                   table + p1t.sub * s_len, s_len);
+      int min_idx = pts[0].idx;
+      if (pts[1].idx < min_idx) min_idx = pts[1].idx;
 
-      // interp_lin: y0 + x * (y1 - y0).
-      out[frame] = p0 + frac_offset * (p1 - p0);
+      // interp_lin weights.
+      double w[2] = {1.0 - x, x};
+
+      memset(combined, 0, (s_len + 1) * sizeof(double));
+      for (int k = 0; k < 2; k++) {
+        int shift = pts[k].idx - min_idx;
+        const double* sinc_row = table + pts[k].sub * s_len;
+        double weight = w[k];
+        for (size_t p = 0; p < s_len; p++) {
+          combined[shift + p] += weight * sinc_row[p];
+        }
+      }
+
+      size_t base_offset = (size_t)(min_idx + (int)two_s_len);
+      for (size_t ch = 0; ch < resampler->channels; ch++) {
+        const double* buf =
+            audio_buffers_get_channel(resampler->input_buffer, ch);
+        double* out = audio_chunk_get_channel(output, ch);
+        if (!buf || !out) continue;
+        double dot = sinc_dot_product(buf + base_offset, combined, s_len);
+        out[frame] = dot + combined[s_len] * buf[base_offset + s_len];
+      }
+    }
+  } else {
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      const double* buf =
+          audio_buffers_get_channel(resampler->input_buffer, ch);
+      double* out = audio_chunk_get_channel(output, ch);
+      if (!buf || !out) continue;
+      for (size_t frame = 0; frame < output_frames; frame++) {
+        double idx = idx_buf[frame];
+        double idx_floor = floor(idx);
+        int start_idx = (int)idx_floor;
+        int frac = (int)floor((idx - idx_floor) * factor_d);
+        double frac_offset = frac_buf[frame];
+
+        // get_nearest_times_2: sub = 0, 1.
+        adjust_point_t p0t = adjust_point(start_idx, frac, 0, factor);
+        adjust_point_t p1t = adjust_point(start_idx, frac, 1, factor);
+
+        double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
+                                     table + p0t.sub * s_len, s_len);
+        double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
+                                     table + p1t.sub * s_len, s_len);
+
+        // interp_lin: y0 + x * (y1 - y0).
+        out[frame] = p0 + frac_offset * (p1 - p0);
+      }
     }
   }
 }
