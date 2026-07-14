@@ -329,8 +329,8 @@ TEST(NativeDSDEncoderCreationAndOutput) {
 }
 
 TEST(CarrierBitsCalculationTest) {
-  playback_device_config_t cfg = {0};
 #if defined(ENABLE_ALSA)
+  playback_device_config_t cfg = {0};
   cfg.type = AUDIO_BACKEND_TYPE_ALSA;
   cfg.cfg.alsa.output_dsd = true;
   cfg.cfg.alsa.has_format = true;
