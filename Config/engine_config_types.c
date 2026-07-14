@@ -180,14 +180,6 @@ const char* audio_backend_type_to_string(audio_backend_type_t type) {
     case AUDIO_BACKEND_TYPE_ALSA:
       return "Alsa";
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return "Pulse";
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AUDIO_BACKEND_TYPE_PIPEWIRE:
-      return "Pipewire";
-#endif
 #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return "Wasapi";
@@ -195,14 +187,6 @@ const char* audio_backend_type_to_string(audio_backend_type_t type) {
 #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       return "Asio";
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return "Jack";
-#endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      return "Bluez";
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       return "File";
@@ -225,10 +209,6 @@ audio_backend_type_t audio_backend_type_from_string(const char* str) {
   if (strcasecmp(str, "Alsa") == 0 || strcasecmp(str, "ALSA") == 0)
     return AUDIO_BACKEND_TYPE_ALSA;
 #endif
-#if defined(ENABLE_PULSE)
-  if (strcasecmp(str, "Pulse") == 0 || strcasecmp(str, "PulseAudio") == 0)
-    return AUDIO_BACKEND_TYPE_PULSE_AUDIO;
-#endif
 #if defined(ENABLE_PIPEWIRE)
   if (strcasecmp(str, "Pipewire") == 0 || strcasecmp(str, "PipeWire") == 0)
     return AUDIO_BACKEND_TYPE_PIPEWIRE;
@@ -240,14 +220,6 @@ audio_backend_type_t audio_backend_type_from_string(const char* str) {
 #if defined(ENABLE_ASIO)
   if (strcasecmp(str, "Asio") == 0 || strcasecmp(str, "ASIO") == 0)
     return AUDIO_BACKEND_TYPE_ASIO;
-#endif
-#if defined(ENABLE_JACK)
-  if (strcasecmp(str, "Jack") == 0 || strcasecmp(str, "JACK") == 0)
-    return AUDIO_BACKEND_TYPE_JACK;
-#endif
-#if defined(ENABLE_BLUEZ)
-  if (strcasecmp(str, "Bluez") == 0 || strcasecmp(str, "BLUEZ") == 0)
-    return AUDIO_BACKEND_TYPE_BLUEZ;
 #endif
   if (strcasecmp(str, "File") == 0 || strcasecmp(str, "RawFile") == 0 ||
       strcasecmp(str, "WavFile") == 0)
@@ -461,19 +433,9 @@ void capture_device_config_init(capture_device_config_t* config,
       config->cfg.alsa.channels = channels;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      config->cfg.pulse.channels = channels;
-      break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       config->cfg.pipewire.channels = channels;
-      break;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      config->cfg.jack.channels = channels;
       break;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
@@ -495,11 +457,7 @@ void capture_device_config_init(capture_device_config_t* config,
       config->cfg.asio.channels = channels;
       break;
 #endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      config->cfg.bluez.channels = channels;
-      break;
-#endif
+
     default:
       break;
   }
@@ -521,19 +479,9 @@ void playback_device_config_init(playback_device_config_t* config,
       config->cfg.alsa.channels = channels;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      config->cfg.pulse.channels = channels;
-      break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       config->cfg.pipewire.channels = channels;
-      break;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      config->cfg.jack.channels = channels;
       break;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
@@ -582,17 +530,9 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
     case AUDIO_BACKEND_TYPE_ALSA:
       return config->cfg.alsa.channels;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return config->cfg.pulse.channels;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return config->cfg.pipewire.channels;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return config->cfg.jack.channels;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       if (config->is_wav) {
@@ -627,10 +567,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
     case AUDIO_BACKEND_TYPE_ASIO:
       return config->cfg.asio.channels;
 #endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      return config->cfg.bluez.channels;
-#endif
+
     default:
       return 0;
   }
@@ -647,14 +584,7 @@ const char* capture_device_config_get_device(
     case AUDIO_BACKEND_TYPE_ALSA:
       return config->cfg.alsa.device;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return config->cfg.pulse.device;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return config->cfg.jack.device;
-#endif
+
 #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return config->cfg.wasapi.device;
@@ -779,17 +709,9 @@ int playback_device_config_get_channels(
     case AUDIO_BACKEND_TYPE_ALSA:
       return config->cfg.alsa.channels;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return config->cfg.pulse.channels;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return config->cfg.pipewire.channels;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return config->cfg.jack.channels;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       return config->cfg.raw_file.channels;
@@ -819,14 +741,7 @@ const char* playback_device_config_get_device(
     case AUDIO_BACKEND_TYPE_ALSA:
       return config->cfg.alsa.device;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return config->cfg.pulse.device;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return config->cfg.jack.device;
-#endif
+
 #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return config->cfg.wasapi.device;
@@ -965,19 +880,9 @@ void capture_device_config_set_channels(capture_device_config_t* config,
       config->cfg.alsa.channels = channels;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      config->cfg.pulse.channels = channels;
-      break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       config->cfg.pipewire.channels = channels;
-      break;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      config->cfg.jack.channels = channels;
       break;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
@@ -999,11 +904,7 @@ void capture_device_config_set_channels(capture_device_config_t* config,
       config->cfg.asio.channels = channels;
       break;
 #endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      config->cfg.bluez.channels = channels;
-      break;
-#endif
+
     default:
       break;
   }

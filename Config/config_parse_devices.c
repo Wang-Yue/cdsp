@@ -165,14 +165,6 @@ typedef struct {
   char autoconnect_to[256];
   bool has_autoconnect_to;
 
-  // Bluez Capture fields
-  char service[256];
-  bool has_service;
-  char dbus_path[256];
-  bool has_dbus_path;
-#if defined(ENABLE_BLUEZ)
-  binary_sample_format_t bluez_format;
-#endif
 } flat_capture_device_config_t;
 
 /**
@@ -253,10 +245,6 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
     } else if (cap->type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
       cap->format = coreaudio_sample_format_from_string(item->valuestring);
       cap->has_format = true;
-#endif
-#if defined(ENABLE_BLUEZ)
-    } else if (cap->type == AUDIO_BACKEND_TYPE_BLUEZ) {
-      cap->bluez_format = binary_sample_format_from_string(item->valuestring);
 #endif
     }
   }
@@ -348,18 +336,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
   parse_labels_array(cJSON_GetObjectItemCaseSensitive(cap_obj, "labels"),
                      &cap->labels, &cap->labels_count, &cap->has_labels);
 
-#if defined(ENABLE_BLUEZ)
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "service");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->service, item->valuestring, sizeof(cap->service) - 1);
-    cap->has_service = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "dbus_path");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->dbus_path, item->valuestring, sizeof(cap->dbus_path) - 1);
-    cap->has_dbus_path = true;
-  }
-#endif
+
 
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "bypass_dop");
   if (cJSON_IsBool(item)) {
@@ -448,13 +425,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.alsa.has_link_mute_control = temp.has_link_mute_control;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      final_cap->cfg.pulse.channels = temp.channels;
-      snprintf(final_cap->cfg.pulse.device, sizeof(final_cap->cfg.pulse.device),
-               "%s", temp.device);
-      break;
-#endif
+
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       final_cap->cfg.pipewire.channels = temp.channels;
@@ -478,13 +449,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.pipewire.has_autoconnect_to = temp.has_autoconnect_to;
       break;
 #endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      final_cap->cfg.jack.channels = temp.channels;
-      snprintf(final_cap->cfg.jack.device, sizeof(final_cap->cfg.jack.device),
-               "%s", temp.device);
-      break;
-#endif
+
     case AUDIO_BACKEND_TYPE_FILE:
       if (temp.is_wav) {
         snprintf(final_cap->cfg.wav_file.filename,
@@ -555,18 +520,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.asio.has_format = temp.has_asio_format;
       break;
 #endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      snprintf(final_cap->cfg.bluez.service,
-               sizeof(final_cap->cfg.bluez.service), "%s", temp.service);
-      final_cap->cfg.bluez.has_service = temp.has_service;
-      snprintf(final_cap->cfg.bluez.dbus_path,
-               sizeof(final_cap->cfg.bluez.dbus_path), "%s", temp.dbus_path);
-      final_cap->cfg.bluez.has_dbus_path = temp.has_dbus_path;
-      final_cap->cfg.bluez.format = temp.bluez_format;
-      final_cap->cfg.bluez.channels = temp.channels;
-      break;
-#endif
+
     default:
       break;
   }
@@ -822,13 +776,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.alsa.has_output_dsd = temp.has_output_dsd;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      final_play->cfg.pulse.channels = temp.channels;
-      snprintf(final_play->cfg.pulse.device,
-               sizeof(final_play->cfg.pulse.device), "%s", temp.device);
-      break;
-#endif
+
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       final_play->cfg.pipewire.channels = temp.channels;
@@ -853,13 +801,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.pipewire.has_autoconnect_to = temp.has_autoconnect_to;
       break;
 #endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      final_play->cfg.jack.channels = temp.channels;
-      snprintf(final_play->cfg.jack.device, sizeof(final_play->cfg.jack.device),
-               "%s", temp.device);
-      break;
-#endif
+
     case AUDIO_BACKEND_TYPE_FILE:
       snprintf(final_play->cfg.raw_file.filename,
                sizeof(final_play->cfg.raw_file.filename), "%s", temp.filename);

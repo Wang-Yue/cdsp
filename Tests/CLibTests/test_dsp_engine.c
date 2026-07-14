@@ -570,28 +570,7 @@ TEST(DSPEngineE2E_ALSA) {
 #endif
 }
 
-TEST(DSPEngineE2E_PulseAudio) {
-#if defined(__linux__)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Pulse\",\n"
-      "            \"device\": \"default\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Pulse\",\n"
-      "            \"device\": \"default\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-  run_e2e_test_config(json, "PulseAudio");
-#endif
-}
+
 
 TEST(DSPEngineE2E_PipeWire) {
 #if defined(__linux__)
@@ -637,28 +616,7 @@ TEST(DSPEngineE2E_CoreAudio) {
 #endif
 }
 
-TEST(DSPEngineE2E_JACK) {
-#if defined(ENABLE_JACK)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Jack\",\n"
-      "            \"channels\": 2,\n"
-      "            \"device\": \"camilladsp_c\"\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Jack\",\n"
-      "            \"channels\": 2,\n"
-      "            \"device\": \"camilladsp_p\"\n"
-      "        }\n"
-      "    }\n"
-      "}";
-  run_e2e_test_config(json, "JACK");
-#endif
-}
+
 
 TEST(DSPEngineE2E_GeneratorFile) {
   char out_file[256];

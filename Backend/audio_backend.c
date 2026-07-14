@@ -15,21 +15,13 @@
 #if defined(ENABLE_PIPEWIRE)
 #include "pipewire_backend.h"
 #endif
-#if defined(ENABLE_PULSE)
-#include "pulse_backend.h"
-#endif
 #if defined(ENABLE_ASIO)
 #include "asio_backend.h"
 #endif
 #if defined(ENABLE_WASAPI)
 #include "wasapi_backend.h"
 #endif
-#if defined(ENABLE_JACK)
-#include "jack_backend.h"
-#endif
-#if defined(ENABLE_BLUEZ)
-#include "bluez_backend.h"
-#endif
+
 #include <stdlib.h>
 
 #include "Logging/app_logger.h"
@@ -61,10 +53,6 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
     case AUDIO_BACKEND_TYPE_ALSA:
       return alsa_capture_create(config, sample_rate, chunk_size, params, err);
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return pulse_capture_create(config, sample_rate, chunk_size, params, err);
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return pipewire_capture_create(config, sample_rate, chunk_size, params,
@@ -79,14 +67,6 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
     case AUDIO_BACKEND_TYPE_ASIO:
       return asio_capture_new(config, sample_rate, chunk_size, full_duplex,
                               err);
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return jack_capture_create(config, sample_rate, chunk_size, params, err);
-#endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      return bluez_capture_create(config, sample_rate, chunk_size, params, err);
 #endif
     case AUDIO_BACKEND_TYPE_GENERATOR:
       return generator_capture_create(config, sample_rate, chunk_size, params,
@@ -126,11 +106,6 @@ playback_backend_t* create_playback_backend(
     case AUDIO_BACKEND_TYPE_ALSA:
       return alsa_playback_create(config, sample_rate, chunk_size, params, err);
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      return pulse_playback_create(config, sample_rate, chunk_size, params,
-                                   err);
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return pipewire_playback_create(config, sample_rate, chunk_size, params,
@@ -146,10 +121,7 @@ playback_backend_t* create_playback_backend(
       return asio_playback_new(config, sample_rate, chunk_size, full_duplex,
                                err);
 #endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      return jack_playback_create(config, sample_rate, chunk_size, params, err);
-#endif
+
     case AUDIO_BACKEND_TYPE_FILE:
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return file_playback_create(config, sample_rate, chunk_size, params, err);

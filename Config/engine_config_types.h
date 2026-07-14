@@ -228,9 +228,6 @@ typedef enum {
 #if defined(ENABLE_ALSA)
   AUDIO_BACKEND_TYPE_ALSA = 1, /**< ALSA (Linux). */
 #endif
-#if defined(ENABLE_PULSE)
-  AUDIO_BACKEND_TYPE_PULSE_AUDIO = 2, /**< PulseAudio. */
-#endif
 #if defined(ENABLE_PIPEWIRE)
   AUDIO_BACKEND_TYPE_PIPEWIRE = 3, /**< PipeWire. */
 #endif
@@ -239,12 +236,6 @@ typedef enum {
 #endif
 #if defined(ENABLE_ASIO)
   AUDIO_BACKEND_TYPE_ASIO = 8, /**< ASIO (Windows). */
-#endif
-#if defined(ENABLE_JACK)
-  AUDIO_BACKEND_TYPE_JACK = 9, /**< JACK. */
-#endif
-#if defined(ENABLE_BLUEZ)
-  AUDIO_BACKEND_TYPE_BLUEZ = 10, /**< Bluez (Bluetooth). */
 #endif
   AUDIO_BACKEND_TYPE_FILE = 5,      /**< File input/output. */
   AUDIO_BACKEND_TYPE_STDIN_OUT = 6, /**< Standard input/output. */
@@ -529,77 +520,7 @@ typedef struct {
 } alsa_playback_config_t;
 #endif
 
-#if defined(ENABLE_PULSE)
-/**
- * @brief PulseAudio capture configuration.
- */
-typedef struct {
-  int channels;     /**< Number of channels. */
-  char device[256]; /**< Device/source name. */
-} pulse_capture_config_t;
 
-/**
- * @brief PulseAudio playback configuration.
- */
-typedef struct {
-  int channels;     /**< Number of channels. */
-  char device[256]; /**< Device/sink name. */
-} pulse_playback_config_t;
-#endif
-
-#if defined(ENABLE_PIPEWIRE)
-/**
- * @brief PipeWire capture configuration.
- */
-typedef struct {
-  int channels;               /**< Number of channels. */
-  char device[256];           /**< Target device name. */
-  bool has_device;            /**< True if device is specified. */
-  char node_name[256];        /**< PipeWire node name. */
-  bool has_node_name;         /**< True if node_name is specified. */
-  char node_description[256]; /**< PipeWire node description. */
-  bool has_node_description;  /**< True if node_description is specified. */
-  char node_group_name[256];  /**< PipeWire node group name. */
-  bool has_node_group_name;   /**< True if node_group_name is specified. */
-  char autoconnect_to[256];   /**< Node to automatically connect to. */
-  bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
-} pipewire_capture_config_t;
-
-/**
- * @brief PipeWire playback configuration.
- */
-typedef struct {
-  int channels;               /**< Number of channels. */
-  char device[256];           /**< Target device name. */
-  bool has_device;            /**< True if device is specified. */
-  char node_name[256];        /**< PipeWire node name. */
-  bool has_node_name;         /**< True if node_name is specified. */
-  char node_description[256]; /**< PipeWire node description. */
-  bool has_node_description;  /**< True if node_description is specified. */
-  char node_group_name[256];  /**< PipeWire node group name. */
-  bool has_node_group_name;   /**< True if node_group_name is specified. */
-  char autoconnect_to[256];   /**< Node to automatically connect to. */
-  bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
-} pipewire_playback_config_t;
-#endif
-
-#if defined(ENABLE_JACK)
-/**
- * @brief JACK capture configuration.
- */
-typedef struct {
-  int channels;     /**< Number of channels. */
-  char device[256]; /**< Client name / ports. */
-} jack_capture_config_t;
-
-/**
- * @brief JACK playback configuration.
- */
-typedef struct {
-  int channels;     /**< Number of channels. */
-  char device[256]; /**< Client name / ports. */
-} jack_playback_config_t;
-#endif
 
 /**
  * @brief Standard input capture configuration.
@@ -683,19 +604,7 @@ typedef struct {
 } asio_playback_config_t;
 #endif
 
-#if defined(ENABLE_BLUEZ)
-/**
- * @brief Bluez (Bluetooth) capture configuration.
- */
-typedef struct {
-  char service[256];             /**< D-Bus service name. */
-  bool has_service;              /**< True if service is specified. */
-  char dbus_path[256];           /**< D-Bus object path. */
-  bool has_dbus_path;            /**< True if dbus_path is specified. */
-  binary_sample_format_t format; /**< Sample format. */
-  int channels;                  /**< Number of channels. */
-} bluez_capture_config_t;
-#endif
+
 
 /**
  * @brief WAV file capture configuration.
@@ -780,14 +689,8 @@ typedef struct {
 #if defined(ENABLE_ALSA)
     alsa_capture_config_t alsa; /**< ALSA config. */
 #endif
-#if defined(ENABLE_PULSE)
-    pulse_capture_config_t pulse; /**< PulseAudio config. */
-#endif
 #if defined(ENABLE_PIPEWIRE)
     pipewire_capture_config_t pipewire; /**< PipeWire config. */
-#endif
-#if defined(ENABLE_JACK)
-    jack_capture_config_t jack; /**< JACK config. */
 #endif
     raw_file_capture_config_t raw_file;   /**< Raw file config. */
     wav_file_capture_config_t wav_file;   /**< WAV file config. */
@@ -799,9 +702,7 @@ typedef struct {
 #if defined(ENABLE_ASIO)
     asio_capture_config_t asio; /**< ASIO config. */
 #endif
-#if defined(ENABLE_BLUEZ)
-    bluez_capture_config_t bluez; /**< Bluez config. */
-#endif
+
   } cfg; /**< Backend-specific configuration union. */
 } capture_device_config_t;
 
@@ -828,14 +729,8 @@ typedef struct {
 #if defined(ENABLE_ALSA)
     alsa_playback_config_t alsa; /**< ALSA config. */
 #endif
-#if defined(ENABLE_PULSE)
-    pulse_playback_config_t pulse; /**< PulseAudio config. */
-#endif
 #if defined(ENABLE_PIPEWIRE)
     pipewire_playback_config_t pipewire; /**< PipeWire config. */
-#endif
-#if defined(ENABLE_JACK)
-    jack_playback_config_t jack; /**< JACK config. */
 #endif
     raw_file_playback_config_t raw_file; /**< Raw file config. */
     stdout_playback_config_t stdout_out; /**< STDOUT config. */

@@ -555,14 +555,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      if (a->capture.cfg.pulse.channels != b->capture.cfg.pulse.channels)
-        return false;
-      if (strcmp(a->capture.cfg.pulse.device, b->capture.cfg.pulse.device) != 0)
-        return false;
-      break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       if (a->capture.cfg.pipewire.channels != b->capture.cfg.pipewire.channels)
@@ -581,14 +573,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       if (strcmp(a->capture.cfg.pipewire.autoconnect_to,
                  b->capture.cfg.pipewire.autoconnect_to) != 0)
-        return false;
-      break;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      if (a->capture.cfg.jack.channels != b->capture.cfg.jack.channels)
-        return false;
-      if (strcmp(a->capture.cfg.jack.device, b->capture.cfg.jack.device) != 0)
         return false;
       break;
 #endif
@@ -676,15 +660,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       break;
 #endif
-#if defined(ENABLE_BLUEZ)
-    case AUDIO_BACKEND_TYPE_BLUEZ:
-      if (a->capture.cfg.bluez.channels != b->capture.cfg.bluez.channels)
-        return false;
-      if (strcmp(a->capture.cfg.bluez.service, b->capture.cfg.bluez.service) !=
-          0)
-        return false;
-      break;
-#endif
     default:
       break;
   }
@@ -734,15 +709,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       break;
 #endif
-#if defined(ENABLE_PULSE)
-    case AUDIO_BACKEND_TYPE_PULSE_AUDIO:
-      if (a->playback.cfg.pulse.channels != b->playback.cfg.pulse.channels)
-        return false;
-      if (strcmp(a->playback.cfg.pulse.device, b->playback.cfg.pulse.device) !=
-          0)
-        return false;
-      break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       if (a->playback.cfg.pipewire.channels !=
@@ -762,14 +728,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       if (strcmp(a->playback.cfg.pipewire.autoconnect_to,
                  b->playback.cfg.pipewire.autoconnect_to) != 0)
-        return false;
-      break;
-#endif
-#if defined(ENABLE_JACK)
-    case AUDIO_BACKEND_TYPE_JACK:
-      if (a->playback.cfg.jack.channels != b->playback.cfg.jack.channels)
-        return false;
-      if (strcmp(a->playback.cfg.jack.device, b->playback.cfg.jack.device) != 0)
         return false;
       break;
 #endif

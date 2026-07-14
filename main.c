@@ -83,17 +83,8 @@ static void print_usage(void) {
 #if defined(ENABLE_ALSA)
       "ALSA, "
 #endif
-#if defined(ENABLE_PULSE)
-      "Pulse, "
-#endif
 #if defined(ENABLE_PIPEWIRE)
       "PipeWire, "
-#endif
-#if defined(ENABLE_JACK)
-      "JACK, "
-#endif
-#if defined(ENABLE_BLUEZ)
-      "Bluez, "
 #endif
 #if defined(ENABLE_WASAPI)
       "WASAPI, "
@@ -109,14 +100,8 @@ static void print_usage(void) {
 #if defined(ENABLE_ALSA)
       "ALSA, "
 #endif
-#if defined(ENABLE_PULSE)
-      "Pulse, "
-#endif
 #if defined(ENABLE_PIPEWIRE)
       "PipeWire, "
-#endif
-#if defined(ENABLE_JACK)
-      "JACK, "
 #endif
 #if defined(ENABLE_WASAPI)
       "WASAPI, "
@@ -518,19 +503,6 @@ int main(int argc, char** argv) {
           parsed->devices.capture.cfg.asio.has_format = true;
         } else {
           printf("Error: Invalid format '%s' for ASIO\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-#endif
-#if defined(ENABLE_BLUEZ)
-      } else if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_BLUEZ) {
-        binary_sample_format_t fmt =
-            binary_sample_format_from_string(format_override);
-        if (fmt != BINARY_SAMPLE_FORMAT_INVALID) {
-          parsed->devices.capture.cfg.bluez.format = fmt;
-        } else {
-          printf("Error: Invalid format '%s' for Bluez\n", format_override);
           dsp_config_free(parsed);
           free(config_json);
           return 1;

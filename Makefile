@@ -25,10 +25,7 @@ ifeq ($(UNAME_S),Darwin)
     ENABLE_COREAUDIO ?= 1
     ENABLE_ACCELERATE ?= 1
     ENABLE_ALSA ?= 0
-    ENABLE_PULSE ?= 0
     ENABLE_PIPEWIRE ?= 0
-    ENABLE_JACK ?= 0
-    ENABLE_BLUEZ ?= 0
     ENABLE_FFTW ?= 0
     ENABLE_BLAS ?= 0
     ENABLE_WASAPI ?= 0
@@ -40,10 +37,7 @@ else
         ENABLE_COREAUDIO ?= 0
         ENABLE_ACCELERATE ?= 0
         ENABLE_ALSA ?= 0
-        ENABLE_PULSE ?= 0
         ENABLE_PIPEWIRE ?= 0
-        ENABLE_JACK ?= 0
-        ENABLE_BLUEZ ?= 0
         ENABLE_FFTW ?= 1
         ENABLE_BLAS ?= 0
         ENABLE_WASAPI ?= 1
@@ -54,10 +48,7 @@ else
         ENABLE_COREAUDIO ?= 0
         ENABLE_ACCELERATE ?= 0
         ENABLE_ALSA ?= 1
-        ENABLE_PULSE ?= 1
         ENABLE_PIPEWIRE ?= 1
-        ENABLE_JACK ?= 1
-        ENABLE_BLUEZ ?= 1
         ENABLE_FFTW ?= 1
         ENABLE_BLAS ?= 1
         ENABLE_WASAPI ?= 0
@@ -76,9 +67,6 @@ endif
 ifeq ($(ENABLE_ALSA),1)
     CFLAGS += -DENABLE_ALSA
 endif
-ifeq ($(ENABLE_PULSE),1)
-    CFLAGS += -DENABLE_PULSE
-endif
 ifeq ($(ENABLE_PIPEWIRE),1)
     CFLAGS += -DENABLE_PIPEWIRE
 endif
@@ -93,9 +81,6 @@ ifeq ($(ENABLE_WASAPI),1)
 endif
 ifeq ($(ENABLE_ASIO),1)
     CFLAGS += -DENABLE_ASIO
-endif
-ifeq ($(ENABLE_JACK),1)
-    CFLAGS += -DENABLE_JACK
 endif
 
 
@@ -134,9 +119,6 @@ else
         ifeq ($(ENABLE_ALSA),1)
             LDFLAGS += -lasound
         endif
-        ifeq ($(ENABLE_PULSE),1)
-            LDFLAGS += -lpulse-simple -lpulse
-        endif
         ifeq ($(ENABLE_PIPEWIRE),1)
             LDFLAGS += -lpipewire-0.3
             CFLAGS += $(shell pkg-config --cflags libpipewire-0.3 2>/dev/null || echo "")
@@ -153,19 +135,9 @@ else
                 LDFLAGS += -fopenmp
             endif
         endif
-        ifeq ($(ENABLE_BLUEZ),1)
-            CFLAGS += -DENABLE_BLUEZ
-            LDFLAGS += $(shell pkg-config --libs dbus-1 2>/dev/null || echo "-ldbus-1")
-            CFLAGS += $(shell pkg-config --cflags dbus-1 2>/dev/null || echo "")
-        endif
     endif
 endif
 
-# Global settings for optional backends
-ifeq ($(ENABLE_JACK),1)
-    CFLAGS += $(shell pkg-config --cflags jack 2>/dev/null || echo "")
-    LDFLAGS += $(shell pkg-config --libs jack 2>/dev/null || echo "-ljack")
-endif
 
 # All library C source files across subdirectories of CDSP
 ALL_SRCS := $(wildcard $(SRC_ROOT)/*/*.c)
@@ -175,10 +147,6 @@ SRCS := $(ALL_SRCS)
 
 ifneq ($(ENABLE_ALSA),1)
     SRCS := $(filter-out %/alsa_capture.c %/alsa_playback.c %/alsa_device.c %/alsa_capabilities.c, $(SRCS))
-endif
-
-ifneq ($(ENABLE_PULSE),1)
-    SRCS := $(filter-out %/pulse_backend.c, $(SRCS))
 endif
 
 ifneq ($(ENABLE_PIPEWIRE),1)
@@ -197,13 +165,7 @@ ifneq ($(ENABLE_ASIO),1)
     SRCS := $(filter-out %/asio_backend.c %/asio_capabilities.c, $(SRCS))
 endif
 
-ifneq ($(ENABLE_JACK),1)
-    SRCS := $(filter-out %/jack_backend.c, $(SRCS))
-endif
 
-ifneq ($(ENABLE_BLUEZ),1)
-    SRCS := $(filter-out %/bluez_backend.c, $(SRCS))
-endif
 
 # Exclude Server directory files from libdsp.a
 SRCS := $(filter-out $(SRC_ROOT)/Server/%.c %/Server/%.c, $(SRCS))
