@@ -123,18 +123,19 @@ TEST(SampleConversion_DSD_U32) {
   uint8_t buf_msb[4];
   uint8_t buf_lsb[4];
 
-  // Encode positive full scale -> s32 0x7FFFFFFF -> bytes 0x7F, 0xFF, 0xFF, 0xFF
-  pcm_sample_encode_dsd_u32_bytes(1.0, buf_msb);
-  ASSERT_EQ(0x7F, buf_msb[0]);
-  ASSERT_EQ(0xFF, buf_msb[1]);
-  ASSERT_EQ(0xFF, buf_msb[2]);
-  ASSERT_EQ(0xFF, buf_msb[3]);
+  // Encode positive full scale -> float 1.0f (0x3f800000) -> bytes 0x3F, 0x80,
+  // 0x00, 0x00
+  pcm_sample_encode_dsd_u32_bytes(1.0f, buf_msb);
+  ASSERT_EQ(0x3F, buf_msb[0]);
+  ASSERT_EQ(0x80, buf_msb[1]);
+  ASSERT_EQ(0x00, buf_msb[2]);
+  ASSERT_EQ(0x00, buf_msb[3]);
 
-  pcm_sample_encode_dsd_u32_reversed_bytes(1.0, buf_lsb);
-  ASSERT_EQ(pcm_reverse_bits_u8(0x7F), buf_lsb[0]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[1]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[2]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[3]);
+  pcm_sample_encode_dsd_u32_reversed_bytes(1.0f, buf_lsb);
+  ASSERT_EQ(pcm_reverse_bits_u8(0x3F), buf_lsb[0]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0x80), buf_lsb[1]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0x00), buf_lsb[2]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0x00), buf_lsb[3]);
 }
 
 TEST_MAIN()

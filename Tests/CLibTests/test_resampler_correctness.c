@@ -52,33 +52,35 @@ static void assert_stereo_matches_mono(resampler_type_t type,
   ASSERT_TRUE(mono_l != NULL);
   ASSERT_TRUE(mono_r != NULL);
 
-  size_t actual_cs = audio_resampler_get_chunk_size(stereo);
   size_t max_out_st = audio_resampler_get_max_output_frames(stereo);
   size_t max_out_m = audio_resampler_get_max_output_frames(mono_l);
 
-  audio_chunk_t* st_in = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* st_in = audio_chunk_create(65536, 2);
   audio_chunk_t* st_out = audio_chunk_create(max_out_st, 2);
-  audio_chunk_t* ml_in = audio_chunk_create(actual_cs, 1);
+  audio_chunk_t* ml_in = audio_chunk_create(65536, 1);
   audio_chunk_t* ml_out = audio_chunk_create(max_out_m, 1);
-  audio_chunk_t* mr_in = audio_chunk_create(actual_cs, 1);
+  audio_chunk_t* mr_in = audio_chunk_create(65536, 1);
   audio_chunk_t* mr_out = audio_chunk_create(max_out_m, 1);
 
   size_t idx = 0;
-  while (idx + actual_cs <= nbr_in) {
+  while (true) {
+    size_t needed_in = audio_resampler_get_input_frames_next(stereo);
+    if (idx + needed_in > nbr_in) break;
+
     double* st_ch0 = audio_chunk_get_channel(st_in, 0);
     double* st_ch1 = audio_chunk_get_channel(st_in, 1);
     double* ml_ch0 = audio_chunk_get_channel(ml_in, 0);
     double* mr_ch0 = audio_chunk_get_channel(mr_in, 0);
 
-    for (size_t i = 0; i < actual_cs; i++) {
+    for (size_t i = 0; i < needed_in; i++) {
       st_ch0[i] = left[idx + i];
       st_ch1[i] = right[idx + i];
       ml_ch0[i] = left[idx + i];
       mr_ch0[i] = right[idx + i];
     }
-    audio_chunk_set_valid_frames(st_in, actual_cs);
-    audio_chunk_set_valid_frames(ml_in, actual_cs);
-    audio_chunk_set_valid_frames(mr_in, actual_cs);
+    audio_chunk_set_valid_frames(st_in, needed_in);
+    audio_chunk_set_valid_frames(ml_in, needed_in);
+    audio_chunk_set_valid_frames(mr_in, needed_in);
 
     resampler_error_t err_st = audio_resampler_process(stereo, st_in, st_out);
     resampler_error_t err_ml = audio_resampler_process(mono_l, ml_in, ml_out);
@@ -102,7 +104,7 @@ static void assert_stereo_matches_mono(resampler_type_t type,
       ASSERT_NEAR(st_o1[i], mr_o0[i], 1e-12);
     }
 
-    idx += chunk_size;
+    idx += needed_in;
   }
 
   audio_chunk_free(st_in);
@@ -139,20 +141,21 @@ static void assert_inout_matches(resampler_type_t type,
   ASSERT_TRUE(res_a != NULL);
   ASSERT_TRUE(res_b != NULL);
 
-  size_t actual_cs = audio_resampler_get_chunk_size(res_a);
   size_t max_out = audio_resampler_get_max_output_frames(res_a);
-  audio_chunk_t* in_chunk = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* in_chunk = audio_chunk_create(65536, 2);
   audio_chunk_t* out_a = audio_chunk_create(max_out, 2);
   audio_chunk_t* out_b = audio_chunk_create(max_out, 2);
 
+  size_t accum_in = 0;
   for (int c = 0; c < 8; c++) {
+    size_t needed_in = audio_resampler_get_input_frames_next(res_a);
     double* ch0 = audio_chunk_get_channel(in_chunk, 0);
     double* ch1 = audio_chunk_get_channel(in_chunk, 1);
-    for (size_t i = 0; i < actual_cs; i++) {
-      ch0[i] = sin(0.1 * (double)(c * actual_cs + i));
-      ch1[i] = cos(0.15 * (double)(c * actual_cs + i));
+    for (size_t i = 0; i < needed_in; i++) {
+      ch0[i] = sin(0.1 * (double)(accum_in + i));
+      ch1[i] = cos(0.15 * (double)(accum_in + i));
     }
-    audio_chunk_set_valid_frames(in_chunk, actual_cs);
+    audio_chunk_set_valid_frames(in_chunk, needed_in);
 
     ASSERT_EQ(RESAMPLER_OK, audio_resampler_process(res_a, in_chunk, out_a));
     ASSERT_EQ(RESAMPLER_OK, audio_resampler_process(res_b, in_chunk, out_b));
@@ -166,6 +169,7 @@ static void assert_inout_matches(resampler_type_t type,
         ASSERT_NEAR(o_a[i], o_b[i], 1e-12);
       }
     }
+    accum_in += needed_in;
   }
 
   audio_chunk_free(in_chunk);
@@ -193,9 +197,9 @@ static void assert_rejects_too_small(resampler_type_t type,
       &cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
-  size_t actual_cs = audio_resampler_get_chunk_size(res);
-  audio_chunk_t* in_chunk = audio_chunk_create(actual_cs, 2);
-  audio_chunk_set_valid_frames(in_chunk, actual_cs);
+  size_t needed_in = audio_resampler_get_input_frames_next(res);
+  audio_chunk_t* in_chunk = audio_chunk_create(needed_in, 2);
+  audio_chunk_set_valid_frames(in_chunk, needed_in);
   audio_chunk_t* too_small = audio_chunk_create(64, 2);
 
   resampler_error_t err = audio_resampler_process(res, in_chunk, too_small);
@@ -260,12 +264,12 @@ static void assert_accepts_partial_chunk(resampler_type_t type,
       &cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
-  size_t actual_cs = audio_resampler_get_chunk_size(res);
+  size_t needed_in = audio_resampler_get_input_frames_next(res);
   size_t max_out = audio_resampler_get_max_output_frames(res);
-  audio_chunk_t* in_chunk = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* in_chunk = audio_chunk_create(65536, 2);
   audio_chunk_t* out_chunk = audio_chunk_create(max_out, 2);
 
-  size_t partial_valid = 500;
+  size_t partial_valid = needed_in / 2;
   audio_chunk_set_valid_frames(in_chunk, partial_valid);
 
   resampler_error_t err = audio_resampler_process(res, in_chunk, out_chunk);
@@ -302,10 +306,9 @@ TEST(AsyncSinc_UnderrunBoundaryCheck) {
       &cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
-  size_t actual_cs = audio_resampler_get_chunk_size(res);
   size_t max_out = audio_resampler_get_max_output_frames(res);
-  audio_chunk_t* empty_in = audio_chunk_create(actual_cs, 2);
-  audio_chunk_t* valid_in = audio_chunk_create(actual_cs, 2);
+  audio_chunk_t* empty_in = audio_chunk_create(65536, 2);
+  audio_chunk_t* valid_in = audio_chunk_create(65536, 2);
   audio_chunk_t* out_chunk = audio_chunk_create(max_out, 2);
 
   // Set 0 valid frames to simulate multiple underrun chunks
@@ -316,7 +319,8 @@ TEST(AsyncSinc_UnderrunBoundaryCheck) {
   }
 
   // Now process valid chunk when last_index is at minimum safe index boundary
-  audio_chunk_set_valid_frames(valid_in, actual_cs);
+  size_t needed_in = audio_resampler_get_input_frames_next(res);
+  audio_chunk_set_valid_frames(valid_in, needed_in);
   resampler_error_t err = audio_resampler_process(res, valid_in, out_chunk);
   ASSERT_EQ(RESAMPLER_OK, err);
 

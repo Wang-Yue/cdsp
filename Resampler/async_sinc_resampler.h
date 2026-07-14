@@ -154,4 +154,23 @@ size_t async_sinc_resampler_get_chunk_size(
 size_t async_sinc_resampler_get_channels(
     const async_sinc_resampler_t* resampler);
 
+/**
+ * @brief Gets the number of input frames required for the next process call.
+ *
+ * @param resampler The resampler instance.
+ * @return The required input frame count.
+ */
+size_t async_sinc_resampler_get_input_frames_next(
+    const async_sinc_resampler_t* resampler);
+
+/**
+ * @brief Gets the number of output frames that will be generated in the next
+ * process call.
+ *
+ * @param resampler The resampler instance.
+ * @return The expected output frame count.
+ */
+size_t async_sinc_resampler_get_output_frames_next(
+    const async_sinc_resampler_t* resampler);
+
 #endif  // CLIB_RESAMPLER_ASYNC_SINC_RESAMPLER_H

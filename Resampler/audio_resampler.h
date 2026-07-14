@@ -163,6 +163,25 @@ size_t audio_resampler_get_max_output_frames(
 size_t audio_resampler_get_chunk_size(const audio_resampler_t* resampler);
 
 /**
+ * @brief Gets the number of input frames required for the next process call.
+ *
+ * @param resampler The resampler instance.
+ * @return The required input frame count.
+ */
+size_t audio_resampler_get_input_frames_next(
+    const audio_resampler_t* resampler);
+
+/**
+ * @brief Gets the number of output frames that will be generated in the next
+ * process call.
+ *
+ * @param resampler The resampler instance.
+ * @return The expected output frame count.
+ */
+size_t audio_resampler_get_output_frames_next(
+    const audio_resampler_t* resampler);
+
+/**
  * @brief Gets the number of channels the resampler is configured for.
  *
  * @param resampler The resampler instance.

@@ -21,6 +21,8 @@ struct audio_resampler {
   double (*get_ratio)(const struct audio_resampler* self);
   size_t (*get_max_output_frames)(const struct audio_resampler* self);
   size_t (*get_chunk_size)(const struct audio_resampler* self);
+  size_t (*get_input_frames_next)(const struct audio_resampler* self);
+  size_t (*get_output_frames_next)(const struct audio_resampler* self);
   size_t (*get_channels)(const struct audio_resampler* self);
   void (*free)(struct audio_resampler* self);
 };
@@ -100,6 +102,16 @@ static size_t sync_get_cs(const audio_resampler_t* self) {
       (const synchronous_resampler_t*)self->impl);
 }
 
+static size_t sync_get_in_next(const audio_resampler_t* self) {
+  return synchronous_resampler_get_chunk_size(
+      (const synchronous_resampler_t*)self->impl);
+}
+
+static size_t sync_get_out_next(const audio_resampler_t* self) {
+  return synchronous_resampler_get_max_output_frames(
+      (const synchronous_resampler_t*)self->impl);
+}
+
 /**
  * @brief get_channels wrapper for synchronous resampler.
  * @param self Pointer to the audio_resampler wrapper.
@@ -136,6 +148,8 @@ audio_resampler_t* audio_resampler_wrap_synchronous(
   wrap->get_ratio = sync_get_ratio;
   wrap->get_max_output_frames = sync_get_max;
   wrap->get_chunk_size = sync_get_cs;
+  wrap->get_input_frames_next = sync_get_in_next;
+  wrap->get_output_frames_next = sync_get_out_next;
   wrap->get_channels = sync_get_ch;
   wrap->free = sync_free;
   return wrap;
@@ -195,6 +209,16 @@ static size_t sinc_get_cs(const audio_resampler_t* self) {
       (const async_sinc_resampler_t*)self->impl);
 }
 
+static size_t sinc_get_in_next(const audio_resampler_t* self) {
+  return async_sinc_resampler_get_input_frames_next(
+      (const async_sinc_resampler_t*)self->impl);
+}
+
+static size_t sinc_get_out_next(const audio_resampler_t* self) {
+  return async_sinc_resampler_get_output_frames_next(
+      (const async_sinc_resampler_t*)self->impl);
+}
+
 /**
  * @brief get_channels wrapper for async sinc resampler.
  * @param self Pointer to the audio_resampler wrapper.
@@ -231,6 +255,8 @@ audio_resampler_t* audio_resampler_wrap_async_sinc(
   wrap->get_ratio = sinc_get_ratio;
   wrap->get_max_output_frames = sinc_get_max;
   wrap->get_chunk_size = sinc_get_cs;
+  wrap->get_input_frames_next = sinc_get_in_next;
+  wrap->get_output_frames_next = sinc_get_out_next;
   wrap->get_channels = sinc_get_ch;
   wrap->free = sinc_free;
   return wrap;
@@ -290,6 +316,16 @@ static size_t poly_get_cs(const audio_resampler_t* self) {
       (const async_poly_resampler_t*)self->impl);
 }
 
+static size_t poly_get_in_next(const audio_resampler_t* self) {
+  return async_poly_resampler_get_input_frames_next(
+      (const async_poly_resampler_t*)self->impl);
+}
+
+static size_t poly_get_out_next(const audio_resampler_t* self) {
+  return async_poly_resampler_get_output_frames_next(
+      (const async_poly_resampler_t*)self->impl);
+}
+
 /**
  * @brief get_channels wrapper for async poly resampler.
  * @param self Pointer to the audio_resampler wrapper.
@@ -326,6 +362,8 @@ audio_resampler_t* audio_resampler_wrap_async_poly(
   wrap->get_ratio = poly_get_ratio;
   wrap->get_max_output_frames = poly_get_max;
   wrap->get_chunk_size = poly_get_cs;
+  wrap->get_input_frames_next = poly_get_in_next;
+  wrap->get_output_frames_next = poly_get_out_next;
   wrap->get_channels = poly_get_ch;
   wrap->free = poly_free;
   return wrap;
@@ -382,6 +420,15 @@ static size_t apple_get_cs(const audio_resampler_t* self) {
   return apple_resampler_get_chunk_size((const apple_resampler_t*)self->impl);
 }
 
+static size_t apple_get_in_next(const audio_resampler_t* self) {
+  return apple_resampler_get_chunk_size((const apple_resampler_t*)self->impl);
+}
+
+static size_t apple_get_out_next(const audio_resampler_t* self) {
+  return apple_resampler_get_max_output_frames(
+      (const apple_resampler_t*)self->impl);
+}
+
 /**
  * @brief get_channels wrapper for Apple resampler.
  * @param self Pointer to the audio_resampler wrapper.
@@ -415,6 +462,8 @@ audio_resampler_t* audio_resampler_wrap_apple(apple_resampler_t* res) {
   wrap->get_ratio = apple_get_ratio;
   wrap->get_max_output_frames = apple_get_max;
   wrap->get_chunk_size = apple_get_cs;
+  wrap->get_input_frames_next = apple_get_in_next;
+  wrap->get_output_frames_next = apple_get_out_next;
   wrap->get_channels = apple_get_ch;
   wrap->free = apple_free_fn;
   return wrap;
@@ -594,6 +643,20 @@ size_t audio_resampler_get_max_output_frames(
 size_t audio_resampler_get_chunk_size(const audio_resampler_t* resampler) {
   return (resampler && resampler->get_chunk_size)
              ? resampler->get_chunk_size(resampler)
+             : 0;
+}
+
+size_t audio_resampler_get_input_frames_next(
+    const audio_resampler_t* resampler) {
+  return (resampler && resampler->get_input_frames_next)
+             ? resampler->get_input_frames_next(resampler)
+             : 0;
+}
+
+size_t audio_resampler_get_output_frames_next(
+    const audio_resampler_t* resampler) {
+  return (resampler && resampler->get_output_frames_next)
+             ? resampler->get_output_frames_next(resampler)
              : 0;
 }
 

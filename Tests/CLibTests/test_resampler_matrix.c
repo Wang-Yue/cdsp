@@ -317,7 +317,6 @@ static double* read_raw_f64(const char* path, size_t* out_count) {
 
 static double* run_resampler_full(audio_resampler_t* res, const double* input,
                                   size_t input_count, size_t* out_count) {
-  size_t cs = audio_resampler_get_chunk_size(res);
   size_t max_out_per_chunk = audio_resampler_get_max_output_frames(res);
   double ratio = audio_resampler_get_ratio(res);
 
@@ -325,15 +324,18 @@ static double* run_resampler_full(audio_resampler_t* res, const double* input,
   double* output = (double*)calloc(estimated_out, sizeof(double));
   if (!output) return NULL;
 
-  audio_chunk_t* in_chunk = audio_chunk_create(cs, 1);
+  audio_chunk_t* in_chunk = audio_chunk_create(65536, 1);
   audio_chunk_t* out_chunk = audio_chunk_create(max_out_per_chunk, 1);
 
   size_t idx = 0;
   size_t total_out = 0;
-  while (idx + cs <= input_count) {
+  while (true) {
+    size_t needed_in = audio_resampler_get_input_frames_next(res);
+    if (idx + needed_in > input_count) break;
+
     double* ch0 = audio_chunk_get_channel(in_chunk, 0);
-    memcpy(ch0, input + idx, cs * sizeof(double));
-    audio_chunk_set_valid_frames(in_chunk, cs);
+    memcpy(ch0, input + idx, needed_in * sizeof(double));
+    audio_chunk_set_valid_frames(in_chunk, needed_in);
 
     if (audio_resampler_process(res, in_chunk, out_chunk) == RESAMPLER_OK) {
       size_t produced = audio_chunk_get_valid_frames(out_chunk);
@@ -353,7 +355,7 @@ static double* run_resampler_full(audio_resampler_t* res, const double* input,
       memcpy(output + total_out, out_ch0, produced * sizeof(double));
       total_out += produced;
     }
-    idx += cs;
+    idx += needed_in;
   }
 
   audio_chunk_free(in_chunk);
