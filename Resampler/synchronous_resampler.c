@@ -189,24 +189,18 @@ synchronous_resampler_t* synchronous_resampler_create(
   //   g = gcd(Fᵢ, Fₒ);   L = Fᵢ/g;   M = Fₒ/g
   //   K·L input samples ↔ K·M output samples (exactly, for any K ≥ 1)
   // Round the requested chunkSize up to the smallest valid K·L.
-  size_t sub_chunks = requested_chunk_size / 256;
-  if (sub_chunks < 1) sub_chunks = 1;
-
   size_t g = gcd_size(input_rate, output_rate);
   size_t min_chunk_in = input_rate / g;
   size_t min_chunk_out = output_rate / g;
 
-  size_t wanted_subsize = requested_chunk_size / sub_chunks;
   size_t fft_chunks =
-      (size_t)ceil((double)wanted_subsize / (double)min_chunk_in);
+      (size_t)ceil((double)requested_chunk_size / (double)min_chunk_in);
   if (fft_chunks < 1) fft_chunks = 1;
 
   size_t sub_fft_in = fft_chunks * min_chunk_in;
   size_t sub_fft_out = fft_chunks * min_chunk_out;
 
-  size_t num_subchunks =
-      (size_t)ceil((double)requested_chunk_size / (double)sub_fft_in);
-  if (num_subchunks < 1) num_subchunks = 1;
+  size_t num_subchunks = 1;
 
   size_t input_block = num_subchunks * sub_fft_in;
   size_t output_block = num_subchunks * sub_fft_out;
@@ -231,11 +225,12 @@ synchronous_resampler_t* synchronous_resampler_create(
   // input Nyquist.
   double cutoff;
   if (input_rate > output_rate) {
-    double base_cut =
-        calculate_cutoff(sub_fft_out, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    double base_cut = (double)calculate_cutoff_f32(
+        sub_fft_out, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
     cutoff = base_cut * (double)sub_fft_out / (double)sub_fft_in;
   } else {
-    cutoff = calculate_cutoff(sub_fft_in, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    cutoff = (double)calculate_cutoff_f32(sub_fft_in,
+                                          WINDOW_FUNCTION_BLACKMAN_HARRIS2);
   }
   double* kernel =
       make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
