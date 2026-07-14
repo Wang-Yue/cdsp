@@ -530,16 +530,20 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
       (REFERENCE_TIME)(((double)capture->chunk_size / capture->sample_rate) *
                        10000000.0);
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    duration = 10000000;
+    REFERENCE_TIME def_time = 0, min_time = 0;
+    if (SUCCEEDED(IAudioClient_GetDevicePeriod(capture->client, &def_time,
+                                               &min_time)) &&
+        def_time > 0) {
+      duration = 8 * def_time;
+    } else {
+      duration = 0;
+    }
   }
   DWORD flags = (capture->loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0);
   if (!capture->polling) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
-  if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-             AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
-  }
+  // Autoconvert disabled to match CamillaDSP bit-exact output
 
   hr = IAudioClient_Initialize(
       capture->client, mode, flags, duration,
@@ -1108,16 +1112,20 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
                                               1.0 / playback->sample_rate) *
                                              10000000.0);
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    duration = 10000000;
+    REFERENCE_TIME def_time = 0, min_time = 0;
+    if (SUCCEEDED(IAudioClient_GetDevicePeriod(playback->client, &def_time,
+                                               &min_time)) &&
+        def_time > 0) {
+      duration = 8 * def_time;
+    } else {
+      duration = 0;
+    }
   }
   DWORD flags = 0;
   if (!playback->polling) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
-  if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-             AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
-  }
+  // Autoconvert disabled to match CamillaDSP bit-exact output
 
   hr = IAudioClient_Initialize(playback->client, mode, flags, duration,
                                playback->exclusive ? duration : 0,
