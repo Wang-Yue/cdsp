@@ -57,8 +57,25 @@ typedef enum {
   ASIOSTInt32LSB24 = 27,
   ASIOTSDSDInt8LSB = 32,
   ASIOTSDSDInt8MSB = 33,
-  ASIOTSDSDInt8NER8 = 34,
+  ASIOTSDSDInt8NER8 = 40,
 } ASIOSampleType;
+
+// ASIO DSD Future Selectors (Steinberg ASIO SDK 2.3)
+#define kAsioSetIoFormat 0x23111961L
+#define kAsioGetIoFormat 0x23111983L
+#define kAsioCanDoIoFormat 0x23112004L
+#define ASE_SUCCESS 0x3f4847a0L
+
+typedef enum {
+  kASIOFormatInvalid = -1,
+  kASIOFormatPCM = 0,
+  kASIOFormatDSD = 1
+} ASIOSampleFormatType;
+
+typedef struct ASIOIoFormat {
+  ASIOSampleFormatType FormatType;
+  char future[512 - sizeof(ASIOSampleFormatType)];
+} ASIOIoFormat;
 
 typedef struct {
   int32_t channel;
@@ -172,6 +189,7 @@ struct asio_playback {
   long actual_buffer_size;
   bool is_running;
   bool full_duplex;
+  bool output_dsd;
   bool com_initialized;
 
   float* callback_buf;
@@ -721,16 +739,33 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
 
     float* interleaved_buf = g_active_playback->callback_buf;
     if (interleaved_buf) {
-      size_t read_samples = spsc_audio_ring_buffer_consume(
-          g_active_playback->ring_buffer, interleaved_buf, frames * channels);
-      if (read_samples < (size_t)(frames * channels)) {
-        memset(interleaved_buf + read_samples, 0,
-               (frames * channels - read_samples) * sizeof(float));
-      }
-
       long num_in = 0, num_out = 0;
       g_active_playback->iasio->lpVtbl->getChannels(g_active_playback->iasio,
                                                     &num_in, &num_out);
+
+      int first_buf_idx = g_active_playback->full_duplex ? 0 : num_in;
+      int first_type = g_active_playback->channel_infos[first_buf_idx].type;
+      bool is_native_dsd =
+          (first_type == ASIOTSDSDInt8LSB || first_type == ASIOTSDSDInt8MSB ||
+           first_type == ASIOTSDSDInt8NER8);
+
+      size_t needed_samples =
+          is_native_dsd ? (frames / 32) * channels : frames * channels;
+      size_t read_samples = spsc_audio_ring_buffer_consume(
+          g_active_playback->ring_buffer, interleaved_buf, needed_samples);
+      if (read_samples < needed_samples) {
+        if (is_native_dsd) {
+          uint32_t silence_u32 = 0x55555555;
+          float silence_fval;
+          memcpy(&silence_fval, &silence_u32, sizeof(float));
+          for (size_t i = read_samples; i < needed_samples; i++) {
+            interleaved_buf[i] = silence_fval;
+          }
+        } else {
+          memset(interleaved_buf + read_samples, 0,
+                 (needed_samples - read_samples) * sizeof(float));
+        }
+      }
 
       for (int c = 0; c < channels; c++) {
         // Output channel indexes start after the input channels in
@@ -740,9 +775,9 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
             g_active_playback->buffer_infos[buf_idx].buffers[doubleBufferIndex];
         int type = g_active_playback->channel_infos[buf_idx].type;
 
-        for (long f = 0; f < frames; f++) {
+        long loop_frames = is_native_dsd ? (frames / 32) : frames;
+        for (long f = 0; f < loop_frames; f++) {
           float val = interleaved_buf[f * channels + c];
-
           // Convert sample based on the ASIO channel's native format.
           if (type == ASIOSTInt16LSB) {
             ((int16_t*)dst)[f] = pcm_sample_encode_s16(val);
@@ -1268,6 +1303,22 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       }
     }
 
+    if (playback->output_dsd) {
+      ASIOIoFormat dsd_format = {0};
+      dsd_format.FormatType = kASIOFormatDSD;
+      ASIOError io_res = (ASIOError)(uintptr_t)playback->iasio->lpVtbl->future(
+          playback->iasio, kAsioSetIoFormat, &dsd_format);
+      if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
+        logger_info(&g_logger,
+                    "ASIO driver successfully set to Native DSD format");
+      } else {
+        logger_warn(
+            &g_logger,
+            "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
+            io_res, (long)dsd_format.FormatType);
+      }
+    }
+
     long min_sz, max_sz, pref_sz, granularity;
     playback->iasio->lpVtbl->getBufferSize(playback->iasio, &min_sz, &max_sz,
                                            &pref_sz, &granularity);
@@ -1295,6 +1346,9 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       playback->channel_infos[idx].isInput = ASIOFalse;
       playback->iasio->lpVtbl->getChannelInfo(playback->iasio,
                                               &playback->channel_infos[idx]);
+      logger_info(&g_logger, "ASIO playback channel %d info: type=%ld, name=%s",
+                  i, (long)playback->channel_infos[idx].type,
+                  playback->channel_infos[idx].name);
     }
 
     ASIOError create_buf_res = playback->iasio->lpVtbl->createBuffers(
@@ -1379,8 +1433,15 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
 
   for (size_t f = 0; f < audio_chunk_get_valid_frames(chunk); f++) {
     for (int c = 0; c < playback->channels; c++) {
-      playback->encode_buf[f * playback->channels + c] =
-          pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
+      if (playback->output_dsd) {
+        double dval = audio_chunk_get_channel(chunk, c)[f];
+        float fval;
+        memcpy(&fval, &dval, sizeof(float));
+        playback->encode_buf[f * playback->channels + c] = fval;
+      } else {
+        playback->encode_buf[f * playback->channels + c] =
+            pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
+      }
     }
   }
 
@@ -1508,6 +1569,7 @@ playback_backend_t* asio_playback_new(const playback_device_config_t* config,
   playback->sample_rate = sample_rate;
   playback->chunk_size = chunk_size;
   playback->format = config->cfg.asio.format;
+  playback->output_dsd = config->cfg.asio.output_dsd;
   playback->full_duplex = full_duplex;
 
   playback_backend_t* backend =

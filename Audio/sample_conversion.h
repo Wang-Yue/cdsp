@@ -45,7 +45,8 @@ static inline uint8_t pcm_reverse_bits_u8(uint8_t b) {
 // MARK: - 16-Bit Signed Integer Format (S16)
 
 /**
- * @brief Encode a normalized double sample to a 16-bit signed integer [-32768, 32767].
+ * @brief Encode a normalized double sample to a 16-bit signed integer [-32768,
+ * 32767].
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 16-bit signed integer.
@@ -71,7 +72,8 @@ static inline double pcm_sample_decode_s16(int16_t val) {
 }
 
 /**
- * @brief Encode a normalized double sample into a 2-byte 16-bit little-endian buffer.
+ * @brief Encode a normalized double sample into a 2-byte 16-bit little-endian
+ * buffer.
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @param dst Target 2-byte output buffer.
@@ -123,7 +125,8 @@ static inline double pcm_sample_decode_s32(int32_t val) {
 }
 
 /**
- * @brief Encode a normalized double sample into a 4-byte 32-bit little-endian buffer.
+ * @brief Encode a normalized double sample into a 4-byte 32-bit little-endian
+ * buffer.
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @param dst Target 4-byte output buffer.
@@ -149,7 +152,8 @@ static inline double pcm_sample_decode_s32_bytes(const uint8_t* src) {
 // MARK: - 24-Bit Signed Integer Format (S24)
 
 /**
- * @brief Encode a normalized double sample to a 24-bit signed integer [-8388608, 8388607].
+ * @brief Encode a normalized double sample to a 24-bit signed integer
+ * [-8388608, 8388607].
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 24-bit signed integer (right-justified in 32-bit output).
@@ -188,7 +192,8 @@ static inline int32_t pcm_sample_encode_s24_msb(double val) {
 }
 
 /**
- * @brief Encode a normalized double sample into a 3-byte packed little-endian buffer.
+ * @brief Encode a normalized double sample into a 3-byte packed little-endian
+ * buffer.
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @param dst Target 3-byte output buffer.
@@ -357,7 +362,8 @@ static inline double pcm_sample_decode_f64_bytes(const uint8_t* src) {
 // MARK: - Direct Stream Digital Format (DSD)
 
 /**
- * @brief Encode a normalized double sample to an 8-bit DSD byte (MSB upper byte).
+ * @brief Encode a normalized double sample to an 8-bit DSD byte (MSB upper
+ * byte).
  *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 8-bit DSD byte.
@@ -368,7 +374,8 @@ static inline uint8_t pcm_sample_encode_dsd_u8(double val) {
 }
 
 /**
- * @brief Decode an 8-bit DSD byte (MSB upper byte) to normalized double [-1.0, 1.0].
+ * @brief Decode an 8-bit DSD byte (MSB upper byte) to normalized double
+ * [-1.0, 1.0].
  *
  * @param u8 Input 8-bit DSD byte.
  * @return Normalized double sample in [-1.0, 1.0].
@@ -378,13 +385,15 @@ static inline double pcm_sample_decode_dsd_u8(uint8_t u8) {
 }
 
 /**
- * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes (MSB bit order).
+ * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes
+ * (MSB bit order).
  *
  * @param val The double-precision sample containing packed 32 DSD bits.
  * @param dst Target 4-byte buffer.
  */
-static inline void pcm_sample_encode_dsd_u32_bytes(double val, uint8_t* dst) {
-  uint32_t u32 = (uint32_t)pcm_sample_encode_s32(val);
+static inline void pcm_sample_encode_dsd_u32_bytes(float val, uint8_t* dst) {
+  uint32_t u32;
+  memcpy(&u32, &val, sizeof(uint32_t));
   dst[0] = (uint8_t)(u32 >> 24);
   dst[1] = (uint8_t)((u32 >> 16) & 0xFF);
   dst[2] = (uint8_t)((u32 >> 8) & 0xFF);
@@ -395,12 +404,13 @@ static inline void pcm_sample_encode_dsd_u32_bytes(double val, uint8_t* dst) {
  * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes
  * with bit order reversed per byte (LSB bit order).
  *
- * @param val The double-precision sample containing packed 32 DSD bits.
+ * @param val The single-precision sample containing packed 32 DSD bits.
  * @param dst Target 4-byte buffer.
  */
-static inline void pcm_sample_encode_dsd_u32_reversed_bytes(double val,
-                                                             uint8_t* dst) {
-  uint32_t u32 = (uint32_t)pcm_sample_encode_s32(val);
+static inline void pcm_sample_encode_dsd_u32_reversed_bytes(float val,
+                                                            uint8_t* dst) {
+  uint32_t u32;
+  memcpy(&u32, &val, sizeof(uint32_t));
   dst[0] = pcm_reverse_bits_u8((uint8_t)(u32 >> 24));
   dst[1] = pcm_reverse_bits_u8((uint8_t)((u32 >> 16) & 0xFF));
   dst[2] = pcm_reverse_bits_u8((uint8_t)((u32 >> 8) & 0xFF));
