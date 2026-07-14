@@ -80,13 +80,15 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   // Increment silent chunk count, bounding it to the limit.
   if (counter->silent_chunks < counter->limit_chunks) {
     counter->silent_chunks++;
+    if (counter->silent_chunks == counter->limit_chunks) {
+      logger_info(&g_logger,
+                  "Silence timeout reached (silent_chunks=%zu, "
+                  "limit_chunks=%zu), requesting pause",
+                  counter->silent_chunks, counter->limit_chunks);
+    }
   }
   // Transition to PAUSED state if silence duration exceeds the limit.
   if (counter->silent_chunks >= counter->limit_chunks) {
-    logger_info(&g_logger,
-                "Silence timeout reached (silent_chunks=%zu, "
-                "limit_chunks=%zu), requesting pause",
-                counter->silent_chunks, counter->limit_chunks);
     return PROCESSING_STATE_PAUSED;
   }
   return PROCESSING_STATE_RUNNING;

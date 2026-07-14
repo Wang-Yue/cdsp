@@ -255,7 +255,8 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
     if (atomic_compare_exchange_weak_explicit(&state->state_raw, &expected,
                                               desired_raw, memory_order_release,
                                               memory_order_acquire)) {
-      logger_info(&g_logger, "Engine state transitioning to %d", new_state);
+      logger_info(&g_logger, "Engine state transitioning to %s",
+                  processing_state_to_string(new_state));
       break;
     }
   }
