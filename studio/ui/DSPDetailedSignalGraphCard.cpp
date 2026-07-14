@@ -308,8 +308,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
                         totalLength = std::max(totalLength, chStep);
                         stageFilterBlockCounts[chNbr] = countInStage + 1;
 
-                        bool isPassthrough = chNbr >= 4;
-                        qreal y = yPos(chNbr, activeChannels, isPassthrough);
+                        qreal y = yPos(chNbr, activeChannels, false);
                         qreal x = xPos(chStep);
 
                         GraphBlock b{
