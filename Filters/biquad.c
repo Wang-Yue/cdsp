@@ -399,6 +399,8 @@ void biquad_filter_process(biquad_filter_t* filter, mutable_waveform_t waveform,
     z2 = b2 * in + neg_a2 * out;
     waveform[i] = out;
   }
+  if (!isnormal(z1)) z1 = 0.0;
+  if (!isnormal(z2)) z2 = 0.0;
   filter->z1 = z1;
   filter->z2 = z2;
 #endif
@@ -422,6 +424,8 @@ double biquad_filter_process_single(biquad_filter_t* filter, double sample) {
   double tmp = b1 * sample + filter->z2;
   filter->z1 = filter->neg_a1 * out + tmp;
   filter->z2 = b2 * sample + filter->neg_a2 * out;
+  if (!isnormal(filter->z1)) filter->z1 = 0.0;
+  if (!isnormal(filter->z2)) filter->z2 = 0.0;
   return out;
 #endif
 }
