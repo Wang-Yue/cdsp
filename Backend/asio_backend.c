@@ -757,11 +757,11 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
           } else if (type == ASIOSTInt24LSB) {
             // ASIOSTInt24LSB uses packed 3-byte samples.
             pcm_sample_encode_s24_3bytes(val, &((uint8_t*)dst)[f * 3]);
-          } else if (type == ASIOTSDSDInt8LSB || type == ASIOTSDSDInt8MSB ||
-                     type == ASIOTSDSDInt8NER8) {
-            bool reverse_bits = (type == ASIOTSDSDInt8LSB);
-            pcm_sample_encode_dsd_u32_bytes(val, &((uint8_t*)dst)[4 * f],
-                                            reverse_bits);
+          } else if (type == ASIOTSDSDInt8LSB) {
+            pcm_sample_encode_dsd_u32_reversed_bytes(val,
+                                                     &((uint8_t*)dst)[4 * f]);
+          } else if (type == ASIOTSDSDInt8MSB || type == ASIOTSDSDInt8NER8) {
+            pcm_sample_encode_dsd_u32_bytes(val, &((uint8_t*)dst)[4 * f]);
           }
         }
       }

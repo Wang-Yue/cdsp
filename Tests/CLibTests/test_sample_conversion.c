@@ -104,6 +104,37 @@ TEST(SampleConversion_NaN_Infinity_Handling) {
 
   double dec_inf_f32 = pcm_sample_decode_f32((float)inf_val);
   ASSERT_NEAR(0.0, dec_inf_f32, 1e-15);
+
+  double dec_nan_f64 = pcm_sample_decode_f64(nan_val);
+  ASSERT_NEAR(0.0, dec_nan_f64, 1e-15);
+
+  double dec_inf_f64 = pcm_sample_decode_f64(inf_val);
+  ASSERT_NEAR(0.0, dec_inf_f64, 1e-15);
+}
+
+TEST(SampleConversion_Utilities) {
+  ASSERT_EQ((uint8_t)0b10100011, pcm_reverse_bits_u8(0b11000101));
+  ASSERT_NEAR(1.0, pcm_clamp_sample(1.5), 1e-15);
+  ASSERT_NEAR(-1.0, pcm_clamp_sample(-2.0), 1e-15);
+  ASSERT_NEAR(0.0, pcm_clamp_sample(NAN), 1e-15);
+}
+
+TEST(SampleConversion_DSD_U32) {
+  uint8_t buf_msb[4];
+  uint8_t buf_lsb[4];
+
+  // Encode positive full scale -> s32 0x7FFFFFFF -> bytes 0x7F, 0xFF, 0xFF, 0xFF
+  pcm_sample_encode_dsd_u32_bytes(1.0, buf_msb);
+  ASSERT_EQ(0x7F, buf_msb[0]);
+  ASSERT_EQ(0xFF, buf_msb[1]);
+  ASSERT_EQ(0xFF, buf_msb[2]);
+  ASSERT_EQ(0xFF, buf_msb[3]);
+
+  pcm_sample_encode_dsd_u32_reversed_bytes(1.0, buf_lsb);
+  ASSERT_EQ(pcm_reverse_bits_u8(0x7F), buf_lsb[0]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[1]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[2]);
+  ASSERT_EQ(pcm_reverse_bits_u8(0xFF), buf_lsb[3]);
 }
 
 TEST_MAIN()
