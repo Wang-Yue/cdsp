@@ -118,6 +118,21 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
                           config_error_t* err);
 
 /**
+ * @brief Parses a DSP configuration from JSON with a base directory for
+ * resolving relative file paths.
+ *
+ * @param json The JSON string to parse.
+ * @param config_dir Base directory path for resolving relative file paths (e.g.
+ * IR files).
+ * @param out_config Pointer to receive the allocated configuration.
+ * @param err Pointer to receive error details.
+ * @return 0 on success, non-zero on failure.
+ */
+int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
+                                   dsp_config_t** out_config,
+                                   config_error_t* err);
+
+/**
  * @brief Frees a DSP configuration.
  *
  * Deallocates the configuration structure and all associated nested structures.

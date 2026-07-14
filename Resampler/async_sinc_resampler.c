@@ -218,7 +218,8 @@ void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
 void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
                                              double multiplier) {
   if (!resampler) return;
-  if (multiplier < 0.000001) multiplier = 0.000001;
+  double min_ratio = 1.0 / resampler->max_relative_ratio;
+  if (multiplier < min_ratio) multiplier = min_ratio;
   if (multiplier > resampler->max_relative_ratio)
     multiplier = resampler->max_relative_ratio;
   resampler->target_ratio = resampler->base_ratio * multiplier;

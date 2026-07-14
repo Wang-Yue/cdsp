@@ -157,8 +157,39 @@ static void replace_tokens_in_json_node(cJSON* node, int samplerate,
   }
 }
 
+static void resolve_relative_paths_in_json_node(cJSON* node,
+                                                const char* config_dir) {
+  if (!node || !config_dir || config_dir[0] == '\0') return;
+
+  if (cJSON_IsString(node) && node->valuestring && node->string &&
+      strcmp(node->string, "filename") == 0) {
+    const char* str = node->valuestring;
+    if (str[0] != '\0' && str[0] != '/' &&
+        !(strlen(str) >= 2 && str[1] == ':')) {
+      char resolved[1024];
+      size_t dir_len = strlen(config_dir);
+      bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/');
+      snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
+               needs_slash ? "/" : "", str);
+      cJSON_SetValuestring(node, resolved);
+    }
+  }
+
+  cJSON* child = node->child;
+  while (child) {
+    resolve_relative_paths_in_json_node(child, config_dir);
+    child = child->next;
+  }
+}
+
 int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
                           config_error_t* err) {
+  return dsp_config_parse_json_with_dir(json, NULL, out_config, err);
+}
+
+int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
+                                   dsp_config_t** out_config,
+                                   config_error_t* err) {
   if (!json || !out_config) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "JSON string or output pointer is NULL");
@@ -183,6 +214,10 @@ int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
     logger_error(&g_logger,
                  "Config parsing failed: Syntax error or invalid JSON");
     return -1;
+  }
+
+  if (config_dir && config_dir[0] != '\0') {
+    resolve_relative_paths_in_json_node(root, config_dir);
   }
 
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
