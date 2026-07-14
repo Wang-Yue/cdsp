@@ -131,8 +131,12 @@ apple_resampler_t* apple_resampler_create(
     apple_resampler_free(resampler);
     return NULL;
   }
+  size_t buf_capacity = chunk_size * 16;
+  if (buf_capacity < 16384) {
+    buf_capacity = 16384;
+  }
   resampler->fill_context->buffers =
-      audio_buffers_create(channels, chunk_size * 8);
+      audio_buffers_create(channels, buf_capacity);
   if (!resampler->fill_context->buffers) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate AppleResampler AudioBuffers");
@@ -288,14 +292,14 @@ resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
   }
 
   apple_resampler_fill_context_t* context = resampler->fill_context;
-  // Check if we have space in ringBuffers
-  size_t available_space =
-      audio_buffers_get_capacity(context->buffers) - context->write_offset;
+  size_t current_cap = audio_buffers_get_capacity(context->buffers);
+  size_t available_space = current_cap - context->write_offset;
   if (available_space < resampler->chunk_size) {
     /* Shift remaining unread data to the beginning of the buffer to free up
        capacity for incoming chunk size. This avoids using a circular ring
        buffer index and allows feeding contiguous memory chunks to Apple's
-       AudioConverter callback. */
+       AudioConverter callback. Zero heap allocations are performed here
+       on the real-time audio thread. */
     if (context->read_offset > 0) {
       size_t remaining = context->write_offset - context->read_offset;
       for (size_t ch = 0; ch < resampler->channels; ch++) {
@@ -305,11 +309,10 @@ resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
       }
       context->write_offset = remaining;
       context->read_offset = 0;
+      available_space = current_cap - context->write_offset;
     }
-    // If still not enough space, we fail.
-    if (audio_buffers_get_capacity(context->buffers) - context->write_offset <
-        resampler->chunk_size) {
-      return RESAMPLER_ERR_INVALID_PARAMETER;  // Overflow
+    if (available_space < resampler->chunk_size) {
+      return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
     }
   }
 
