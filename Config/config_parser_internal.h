@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "cJSON.h"
 
@@ -40,5 +41,42 @@ double* parse_double_array(const cJSON* arr, size_t* out_count);
  * @return Dynamically allocated integer array or NULL.
  */
 int* parse_int_array(const cJSON* arr, size_t* out_count);
+
+static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest, size_t dest_sz) {
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (cJSON_IsString(item) && item->valuestring) {
+    strncpy(dest, item->valuestring, dest_sz - 1);
+    dest[dest_sz - 1] = '\0';
+    return true;
+  }
+  return false;
+}
+
+static inline bool parse_json_int(const cJSON* obj, const char* key, int* dest) {
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (cJSON_IsNumber(item)) {
+    *dest = item->valueint;
+    return true;
+  }
+  return false;
+}
+
+static inline bool parse_json_bool(const cJSON* obj, const char* key, bool* dest) {
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (cJSON_IsBool(item)) {
+    *dest = cJSON_IsTrue(item);
+    return true;
+  }
+  return false;
+}
+
+static inline bool parse_json_double(const cJSON* obj, const char* key, double* dest) {
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (cJSON_IsNumber(item)) {
+    *dest = item->valuedouble;
+    return true;
+  }
+  return false;
+}
 
 #endif  // CDSP_CONFIG_PARSER_INTERNAL_H

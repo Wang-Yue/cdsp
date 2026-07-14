@@ -11,83 +11,44 @@
 #include "config_parser_internal.h"
 #include "configuration.h"
 
-/**
- * @brief Parses the "resampler" JSON object and populates the devices
- * configuration.
- *
- * @param res_obj The cJSON object containing resampler settings.
- * @param devices Pointer to the devices configuration structure to populate.
- */
+
+
 static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (!cJSON_IsObject(res_obj)) return;
   resampler_config_t* res = &devices->resampler;
   devices->has_resampler = true;
 
-  cJSON* item;
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "type");
-  if (cJSON_IsString(item) && item->valuestring) {
-    res->type = resampler_type_from_string(item->valuestring);
+  char str_buf[64];
+  if (parse_json_str(res_obj, "type", str_buf, sizeof(str_buf))) {
+    res->type = resampler_type_from_string(str_buf);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "profile");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(res->profile, item->valuestring, sizeof(res->profile) - 1);
-    res->has_profile = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "interpolation");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(res->interpolation, item->valuestring,
-            sizeof(res->interpolation) - 1);
-    res->has_interpolation = true;
-  }
+  res->has_profile = parse_json_str(res_obj, "profile", res->profile, sizeof(res->profile));
+  res->has_interpolation = parse_json_str(res_obj, "interpolation", res->interpolation, sizeof(res->interpolation));
 
 #if defined(ENABLE_COREAUDIO)
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "apple_quality");
-  if (cJSON_IsString(item) && item->valuestring) {
-    res->apple_quality = apple_resampler_quality_from_string(item->valuestring);
+  if (parse_json_str(res_obj, "apple_quality", str_buf, sizeof(str_buf))) {
+    res->apple_quality = apple_resampler_quality_from_string(str_buf);
     res->has_apple_quality = true;
   }
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "apple_complexity");
-  if (cJSON_IsString(item) && item->valuestring) {
-    res->apple_complexity =
-        apple_resampler_complexity_from_string(item->valuestring);
+  if (parse_json_str(res_obj, "apple_complexity", str_buf, sizeof(str_buf))) {
+    res->apple_complexity = apple_resampler_complexity_from_string(str_buf);
     res->has_apple_complexity = true;
   }
 #endif
 
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "sinc_len");
-  if (cJSON_IsNumber(item)) {
-    res->sinc_len = item->valueint;
+  if (parse_json_int(res_obj, "sinc_len", &res->sinc_len)) {
     res->has_sinc_len = (res->sinc_len > 0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "oversampling_factor");
-  if (cJSON_IsNumber(item)) {
-    res->oversampling_factor = item->valueint;
+  if (parse_json_int(res_obj, "oversampling_factor", &res->oversampling_factor)) {
     res->has_oversampling_factor = (res->oversampling_factor > 0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "window");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(res->window, item->valuestring, sizeof(res->window) - 1);
-    res->has_window = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "f_cutoff");
-  if (cJSON_IsNumber(item)) {
-    res->f_cutoff = item->valuedouble;
+  res->has_window = parse_json_str(res_obj, "window", res->window, sizeof(res->window));
+  if (parse_json_double(res_obj, "f_cutoff", &res->f_cutoff)) {
     res->has_f_cutoff = (res->f_cutoff > 0.0);
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(res_obj, "fixed");
-  if (cJSON_IsString(item) && item->valuestring) {
-    if (strcasecmp(item->valuestring, "output") == 0) {
-      res->fixed = FIXED_ASYNC_OUTPUT;
-    } else {
-      res->fixed = FIXED_ASYNC_INPUT;
-    }
+  if (parse_json_str(res_obj, "fixed", str_buf, sizeof(str_buf))) {
+    res->fixed = (strcasecmp(str_buf, "output") == 0) ? FIXED_ASYNC_OUTPUT : FIXED_ASYNC_INPUT;
     res->has_fixed = true;
   }
 }
@@ -185,10 +146,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 
   cJSON* item;
 
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "channels");
-  if (cJSON_IsNumber(item)) {
-    cap->channels = item->valueint;
-  }
+  parse_json_int(cap_obj, "channels", &cap->channels);
 
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "type");
   char type_str[64] = "";
@@ -211,17 +169,8 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 #endif
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "device");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->device, item->valuestring, sizeof(cap->device) - 1);
-    cap->has_device = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "filename");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->filename, item->valuestring, sizeof(cap->filename) - 1);
-    cap->has_filename = true;
-  }
+  cap->has_device = parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
+  cap->has_filename = parse_json_str(cap_obj, "filename", cap->filename, sizeof(cap->filename));
 
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -252,106 +201,34 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
     }
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "skip_bytes");
-  if (cJSON_IsNumber(item)) {
-    cap->skip_bytes = item->valueint;
-    cap->has_skip_bytes = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "read_bytes");
-  if (cJSON_IsNumber(item)) {
-    cap->read_bytes = item->valueint;
-    cap->has_read_bytes = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "extra_samples");
-  if (cJSON_IsNumber(item)) {
-    cap->extra_samples = item->valueint;
-    cap->has_extra_samples = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "exclusive");
-  if (cJSON_IsBool(item)) {
-    cap->exclusive = cJSON_IsTrue(item);
-    cap->has_exclusive = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "loopback");
-  if (cJSON_IsBool(item)) {
-    cap->loopback = cJSON_IsTrue(item);
-    cap->has_loopback = true;
-  }
+  cap->has_skip_bytes = parse_json_int(cap_obj, "skip_bytes", &cap->skip_bytes);
+  cap->has_read_bytes = parse_json_int(cap_obj, "read_bytes", &cap->read_bytes);
+  cap->has_extra_samples = parse_json_int(cap_obj, "extra_samples", &cap->extra_samples);
+  cap->has_exclusive = parse_json_bool(cap_obj, "exclusive", &cap->exclusive);
+  cap->has_loopback = parse_json_bool(cap_obj, "loopback", &cap->loopback);
 
 #if defined(_WIN32)
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "polling");
-  if (cJSON_IsBool(item)) {
-    cap->polling = cJSON_IsTrue(item);
-    cap->has_polling = true;
-  }
+  cap->has_polling = parse_json_bool(cap_obj, "polling", &cap->polling);
 #endif
 
 #if defined(ENABLE_ALSA)
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "stop_on_inactive");
-  if (cJSON_IsBool(item)) {
-    cap->stop_on_inactive = cJSON_IsTrue(item);
-    cap->has_stop_on_inactive = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "link_volume_control");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->link_volume_control, item->valuestring,
-            sizeof(cap->link_volume_control) - 1);
-    cap->has_link_volume_control = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "link_mute_control");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->link_mute_control, item->valuestring,
-            sizeof(cap->link_mute_control) - 1);
-    cap->has_link_mute_control = true;
-  }
+  cap->has_stop_on_inactive = parse_json_bool(cap_obj, "stop_on_inactive", &cap->stop_on_inactive);
+  cap->has_link_volume_control = parse_json_str(cap_obj, "link_volume_control", cap->link_volume_control, sizeof(cap->link_volume_control));
+  cap->has_link_mute_control = parse_json_str(cap_obj, "link_mute_control", cap->link_mute_control, sizeof(cap->link_mute_control));
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "node_name");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->node_name, item->valuestring, sizeof(cap->node_name) - 1);
-    cap->has_node_name = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "node_description");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->node_description, item->valuestring,
-            sizeof(cap->node_description) - 1);
-    cap->has_node_description = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "node_group_name");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->node_group_name, item->valuestring,
-            sizeof(cap->node_group_name) - 1);
-    cap->has_node_group_name = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "autoconnect_to");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(cap->autoconnect_to, item->valuestring,
-            sizeof(cap->autoconnect_to) - 1);
-    cap->has_autoconnect_to = true;
-  }
+  cap->has_node_name = parse_json_str(cap_obj, "node_name", cap->node_name, sizeof(cap->node_name));
+  cap->has_node_description = parse_json_str(cap_obj, "node_description", cap->node_description, sizeof(cap->node_description));
+  cap->has_node_group_name = parse_json_str(cap_obj, "node_group_name", cap->node_group_name, sizeof(cap->node_group_name));
+  cap->has_autoconnect_to = parse_json_str(cap_obj, "autoconnect_to", cap->autoconnect_to, sizeof(cap->autoconnect_to));
 #endif
 
   parse_labels_array(cJSON_GetObjectItemCaseSensitive(cap_obj, "labels"),
                      &cap->labels, &cap->labels_count, &cap->has_labels);
 
-
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "bypass_dop");
-  if (cJSON_IsBool(item)) {
-    cap->bypass_dop = cJSON_IsTrue(item);
-    cap->has_bypass_dop = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "dop_cutoff_hz");
-  if (cJSON_IsNumber(item)) {
-    cap->dop_cutoff_hz = item->valuedouble;
-    cap->has_dop_cutoff_hz = true;
-  }
+  cap->has_bypass_dop = parse_json_bool(cap_obj, "bypass_dop", &cap->bypass_dop);
+  cap->has_dop_cutoff_hz = parse_json_double(cap_obj, "dop_cutoff_hz", &cap->dop_cutoff_hz);
 
 #ifdef CDSP_TEST
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "realtime");
@@ -363,22 +240,16 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 
   cJSON* sig_obj = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
   if (cJSON_IsObject(sig_obj)) {
-    cJSON* sig_type = cJSON_GetObjectItemCaseSensitive(sig_obj, "type");
-    if (cJSON_IsString(sig_type) && sig_type->valuestring) {
-      cap->generator.type = signal_type_from_string(sig_type->valuestring);
+    char sig_str[64];
+    if (parse_json_str(sig_obj, "type", sig_str, sizeof(sig_str))) {
+      cap->generator.type = signal_type_from_string(sig_str);
     } else {
       cap->generator.type = SIGNAL_TYPE_SINE;
     }
-    cJSON* freq = cJSON_GetObjectItemCaseSensitive(sig_obj, "freq");
-    if (cJSON_IsNumber(freq)) {
-      cap->generator.frequency = freq->valuedouble;
-    } else {
+    if (!parse_json_double(sig_obj, "freq", &cap->generator.frequency)) {
       cap->generator.frequency = 1000.0;
     }
-    cJSON* level = cJSON_GetObjectItemCaseSensitive(sig_obj, "level");
-    if (cJSON_IsNumber(level)) {
-      cap->generator.level = level->valuedouble;
-    } else {
+    if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
       cap->generator.level = 0.0;
     }
   }
@@ -604,10 +475,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 
   cJSON* item;
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "channels");
-  if (cJSON_IsNumber(item)) {
-    play->channels = item->valueint;
-  }
+  parse_json_int(play_obj, "channels", &play->channels);
 
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "type");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -624,17 +492,8 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 #endif
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "device");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->device, item->valuestring, sizeof(play->device) - 1);
-    play->has_device = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "filename");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->filename, item->valuestring, sizeof(play->filename) - 1);
-    play->has_filename = true;
-  }
+  play->has_device = parse_json_str(play_obj, "device", play->device, sizeof(play->device));
+  play->has_filename = parse_json_str(play_obj, "filename", play->filename, sizeof(play->filename));
 
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -665,77 +524,31 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
     }
   }
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "wav_header");
-  if (cJSON_IsBool(item)) {
-    play->is_wav = cJSON_IsTrue(item);
-    play->has_is_wav = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "exclusive");
-  if (cJSON_IsBool(item)) {
-    play->exclusive = cJSON_IsTrue(item);
-    play->has_exclusive = true;
-  }
+  play->has_is_wav = parse_json_bool(play_obj, "wav_header", &play->is_wav);
+  play->has_exclusive = parse_json_bool(play_obj, "exclusive", &play->exclusive);
 
 #if defined(_WIN32)
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "polling");
-  if (cJSON_IsBool(item)) {
-    play->polling = cJSON_IsTrue(item);
-    play->has_polling = true;
-  }
+  play->has_polling = parse_json_bool(play_obj, "polling", &play->polling);
 #endif
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "output_dop");
-  if (cJSON_IsBool(item)) {
-    play->output_dop = cJSON_IsTrue(item);
-    play->has_output_dop = true;
-  }
+  play->has_output_dop = parse_json_bool(play_obj, "output_dop", &play->output_dop);
+  play->has_output_dsd = parse_json_bool(play_obj, "output_dsd", &play->output_dsd);
 
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "output_dsd");
-  if (cJSON_IsBool(item)) {
-    play->output_dsd = cJSON_IsTrue(item);
-    play->has_output_dsd = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "dsd_encoder_filter");
-  if (cJSON_IsString(item) && item->valuestring) {
-    play->dsd_encoder_filter = sdm_filter_from_string(item->valuestring);
-    play->has_dsd_encoder_filter =
-        (play->dsd_encoder_filter != SDM_FILTER_INVALID);
+  char dsd_filter_buf[64];
+  if (parse_json_str(play_obj, "dsd_encoder_filter", dsd_filter_buf, sizeof(dsd_filter_buf))) {
+    play->dsd_encoder_filter = sdm_filter_from_string(dsd_filter_buf);
+    play->has_dsd_encoder_filter = (play->dsd_encoder_filter != SDM_FILTER_INVALID);
   }
 
 #ifdef CDSP_TEST
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "realtime");
-  if (cJSON_IsBool(item)) {
-    play->realtime = cJSON_IsTrue(item);
-    play->has_realtime = true;
-  }
+  play->has_realtime = parse_json_bool(play_obj, "realtime", &play->realtime);
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "node_name");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->node_name, item->valuestring, sizeof(play->node_name) - 1);
-    play->has_node_name = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "node_description");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->node_description, item->valuestring,
-            sizeof(play->node_description) - 1);
-    play->has_node_description = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "node_group_name");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->node_group_name, item->valuestring,
-            sizeof(play->node_group_name) - 1);
-    play->has_node_group_name = true;
-  }
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "autoconnect_to");
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(play->autoconnect_to, item->valuestring,
-            sizeof(play->autoconnect_to) - 1);
-    play->has_autoconnect_to = true;
-  }
+  play->has_node_name = parse_json_str(play_obj, "node_name", play->node_name, sizeof(play->node_name));
+  play->has_node_description = parse_json_str(play_obj, "node_description", play->node_description, sizeof(play->node_description));
+  play->has_node_group_name = parse_json_str(play_obj, "node_group_name", play->node_group_name, sizeof(play->node_group_name));
+  play->has_autoconnect_to = parse_json_str(play_obj, "autoconnect_to", play->autoconnect_to, sizeof(play->autoconnect_to));
 #endif
 
   parse_labels_array(cJSON_GetObjectItemCaseSensitive(play_obj, "labels"),
@@ -868,91 +681,45 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
 
   cJSON* item;
 
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "samplerate");
-  if (cJSON_IsNumber(item)) {
-    dev->samplerate = item->valueint > 0 ? (size_t)item->valueint : 0;
+  int val_int = 0;
+  if (parse_json_int(dev_obj, "samplerate", &val_int)) {
+    dev->samplerate = val_int > 0 ? (size_t)val_int : 0;
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "chunksize");
-  if (cJSON_IsNumber(item)) {
-    dev->chunksize = item->valueint > 0 ? (size_t)item->valueint : 0;
+  if (parse_json_int(dev_obj, "chunksize", &val_int)) {
+    dev->chunksize = val_int > 0 ? (size_t)val_int : 0;
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "queuelimit");
-  if (cJSON_IsNumber(item)) {
-    dev->queuelimit = item->valueint;
+  if (parse_json_int(dev_obj, "queuelimit", &dev->queuelimit)) {
     dev->has_queuelimit = (dev->queuelimit > 0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "enable_rate_adjust");
-  if (cJSON_IsBool(item)) {
-    dev->enable_rate_adjust = cJSON_IsTrue(item);
-    dev->has_enable_rate_adjust = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "target_level");
-  if (cJSON_IsNumber(item)) {
-    dev->target_level = item->valueint;
+  dev->has_enable_rate_adjust = parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);
+  if (parse_json_int(dev_obj, "target_level", &dev->target_level)) {
     dev->has_target_level = (dev->target_level > 0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "adjust_period");
-  if (cJSON_IsNumber(item)) {
-    dev->adjust_period = item->valuedouble;
+  if (parse_json_double(dev_obj, "adjust_period", &dev->adjust_period)) {
     dev->has_adjust_period = (dev->adjust_period > 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "silence_threshold");
-  if (cJSON_IsNumber(item)) {
-    dev->silence_threshold = item->valuedouble;
+  if (parse_json_double(dev_obj, "silence_threshold", &dev->silence_threshold)) {
     dev->has_silence_threshold = (dev->silence_threshold != 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "silence_timeout");
-  if (cJSON_IsNumber(item)) {
-    dev->silence_timeout = item->valuedouble;
+  if (parse_json_double(dev_obj, "silence_timeout", &dev->silence_timeout)) {
     dev->has_silence_timeout = (dev->silence_timeout > 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "capture_samplerate");
-  if (cJSON_IsNumber(item)) {
-    dev->capture_samplerate = item->valueint > 0 ? (size_t)item->valueint : 0;
+  if (parse_json_int(dev_obj, "capture_samplerate", &val_int)) {
+    dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;
     dev->has_capture_samplerate = (dev->capture_samplerate > 0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "volume_ramp_time");
-  if (cJSON_IsNumber(item)) {
-    dev->volume_ramp_time = item->valuedouble;
+  if (parse_json_double(dev_obj, "volume_ramp_time", &dev->volume_ramp_time)) {
     dev->has_volume_ramp_time = (dev->volume_ramp_time > 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "volume_limit");
-  if (cJSON_IsNumber(item)) {
-    dev->volume_limit = item->valuedouble;
+  if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {
     dev->has_volume_limit = (dev->volume_limit > 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "stop_on_rate_change");
-  if (cJSON_IsBool(item)) {
-    dev->stop_on_rate_change = cJSON_IsTrue(item);
-    dev->has_stop_on_rate_change = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "rate_measure_interval");
-  if (cJSON_IsNumber(item)) {
-    dev->rate_measure_interval = item->valuedouble;
+  dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change", &dev->stop_on_rate_change);
+  if (parse_json_double(dev_obj, "rate_measure_interval", &dev->rate_measure_interval)) {
     dev->has_rate_measure_interval = (dev->rate_measure_interval > 0.0);
   }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "multithreaded");
-  if (cJSON_IsBool(item)) {
-    dev->multithreaded = cJSON_IsTrue(item);
-    dev->has_multithreaded = true;
-  }
-
-  item = cJSON_GetObjectItemCaseSensitive(dev_obj, "worker_threads");
-  if (cJSON_IsNumber(item)) {
-    dev->worker_threads = item->valueint;
+  dev->has_multithreaded = parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);
+  if (parse_json_int(dev_obj, "worker_threads", &dev->worker_threads)) {
     dev->has_worker_threads = (dev->worker_threads > 0);
   }
 

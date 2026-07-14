@@ -34,34 +34,19 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
     }
     pipeline_step_t* step = &config->pipeline[s];
 
-    cJSON* item;
-
-    item = cJSON_GetObjectItemCaseSensitive(step_obj, "type");
-    if (cJSON_IsString(item) && item->valuestring) {
-      if (strcmp(item->valuestring, "Filter") == 0)
+    char type_str[64];
+    if (parse_json_str(step_obj, "type", type_str, sizeof(type_str))) {
+      if (strcmp(type_str, "Filter") == 0)
         step->type = PIPELINE_STEP_TYPE_FILTER;
-      else if (strcmp(item->valuestring, "Mixer") == 0)
+      else if (strcmp(type_str, "Mixer") == 0)
         step->type = PIPELINE_STEP_TYPE_MIXER;
-      else if (strcmp(item->valuestring, "Processor") == 0)
+      else if (strcmp(type_str, "Processor") == 0)
         step->type = PIPELINE_STEP_TYPE_PROCESSOR;
     }
 
-    item = cJSON_GetObjectItemCaseSensitive(step_obj, "name");
-    if (cJSON_IsString(item) && item->valuestring) {
-      strncpy(step->name, item->valuestring, sizeof(step->name) - 1);
-      step->has_name = true;
-    }
-
-    item = cJSON_GetObjectItemCaseSensitive(step_obj, "channel");
-    if (cJSON_IsNumber(item)) {
-      step->channel = item->valueint;
-      step->has_channel = true;
-    }
-
-    item = cJSON_GetObjectItemCaseSensitive(step_obj, "bypassed");
-    if (cJSON_IsBool(item)) {
-      step->bypassed = cJSON_IsTrue(item);
-    }
+    step->has_name = parse_json_str(step_obj, "name", step->name, sizeof(step->name));
+    step->has_channel = parse_json_int(step_obj, "channel", &step->channel);
+    parse_json_bool(step_obj, "bypassed", &step->bypassed);
 
     cJSON* names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
     bool dummy;

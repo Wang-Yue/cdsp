@@ -54,42 +54,21 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
       switch (f_conf->type) {
         case FILTER_TYPE_GAIN: {
           gain_parameters_t* gp = &f_conf->parameters.gain;
-          item = cJSON_GetObjectItemCaseSensitive(params, "gain");
-          if (cJSON_IsNumber(item)) {
-            gp->gain = item->valuedouble;
-            gp->has_gain = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "scale");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcasecmp(item->valuestring, "Linear") == 0)
-              gp->scale = GAIN_SCALE_LINEAR;
-            else
-              gp->scale = GAIN_SCALE_DB;
+          gp->has_gain = parse_json_double(params, "gain", &gp->gain);
+          char str_buf[64];
+          if (parse_json_str(params, "scale", str_buf, sizeof(str_buf))) {
+            gp->scale = (strcasecmp(str_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR : GAIN_SCALE_DB;
           } else {
             gp->scale = GAIN_SCALE_DB;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "inverted");
-          if (cJSON_IsBool(item)) {
-            gp->inverted = cJSON_IsTrue(item);
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "mute");
-          if (cJSON_IsBool(item)) {
-            gp->mute = cJSON_IsTrue(item);
-          }
+          parse_json_bool(params, "inverted", &gp->inverted);
+          parse_json_bool(params, "mute", &gp->mute);
           break;
         }
         case FILTER_TYPE_VOLUME: {
           volume_parameters_t* vp = &f_conf->parameters.volume;
-          item = cJSON_GetObjectItemCaseSensitive(params, "ramp_time");
-          if (cJSON_IsNumber(item)) {
-            vp->ramp_time = item->valuedouble;
-            vp->has_ramp_time = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "limit");
-          if (cJSON_IsNumber(item)) {
-            vp->limit = item->valuedouble;
-            vp->has_limit = true;
-          }
+          vp->has_ramp_time = parse_json_double(params, "ramp_time", &vp->ramp_time);
+          vp->has_limit = parse_json_double(params, "limit", &vp->limit);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {
             if (cJSON_IsString(item) && item->valuestring) {
@@ -104,25 +83,10 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_LOUDNESS: {
           loudness_parameters_t* lp = &f_conf->parameters.loudness;
-          item = cJSON_GetObjectItemCaseSensitive(params, "reference_level");
-          if (cJSON_IsNumber(item)) {
-            lp->reference_level = item->valuedouble;
-            lp->has_reference_level = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "high_boost");
-          if (cJSON_IsNumber(item)) {
-            lp->high_boost = item->valuedouble;
-            lp->has_high_boost = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "low_boost");
-          if (cJSON_IsNumber(item)) {
-            lp->low_boost = item->valuedouble;
-            lp->has_low_boost = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "attenuate_mid");
-          if (cJSON_IsBool(item)) {
-            lp->attenuate_mid = cJSON_IsTrue(item);
-          }
+          lp->has_reference_level = parse_json_double(params, "reference_level", &lp->reference_level);
+          lp->has_high_boost = parse_json_double(params, "high_boost", &lp->high_boost);
+          lp->has_low_boost = parse_json_double(params, "low_boost", &lp->low_boost);
+          parse_json_bool(params, "attenuate_mid", &lp->attenuate_mid);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {
             if (cJSON_IsString(item) && item->valuestring) {
@@ -172,107 +136,65 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
             else if (strcmp(item->valuestring, "LinkwitzTransform") == 0)
               bp->type = BIQUAD_TYPE_LINKWITZ_TRANSFORM;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq");
-          if (cJSON_IsNumber(item)) bp->freq = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "gain");
-          if (cJSON_IsNumber(item)) bp->gain = item->valuedouble;
+          parse_json_double(params, "freq", &bp->freq);
+          parse_json_double(params, "gain", &bp->gain);
 
-          item = cJSON_GetObjectItemCaseSensitive(params, "q");
-          if (cJSON_IsNumber(item)) {
-            bp->q = item->valuedouble;
+          if (parse_json_double(params, "q", &bp->q)) {
             bp->steepness_type = STEEPNESS_TYPE_Q;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "bandwidth");
-          if (cJSON_IsNumber(item)) {
-            bp->bandwidth = item->valuedouble;
+          if (parse_json_double(params, "bandwidth", &bp->bandwidth)) {
             bp->steepness_type = STEEPNESS_TYPE_BANDWIDTH;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "slope");
-          if (cJSON_IsNumber(item)) {
-            bp->slope = item->valuedouble;
+          if (parse_json_double(params, "slope", &bp->slope)) {
             bp->steepness_type = STEEPNESS_TYPE_SLOPE;
           }
 
-          item = cJSON_GetObjectItemCaseSensitive(params, "a1");
-          if (cJSON_IsNumber(item)) bp->a1 = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "a2");
-          if (cJSON_IsNumber(item)) bp->a2 = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "b0");
-          if (cJSON_IsNumber(item)) bp->b0 = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "b1");
-          if (cJSON_IsNumber(item)) bp->b1 = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "b2");
-          if (cJSON_IsNumber(item)) bp->b2 = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_z");
-          if (cJSON_IsNumber(item)) bp->freq_notch = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_p");
-          if (cJSON_IsNumber(item)) bp->freq_pole = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "q_p");
-          if (cJSON_IsNumber(item)) bp->q_p = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "normalize_at_dc");
-          if (cJSON_IsBool(item)) bp->normalize_at_dc = cJSON_IsTrue(item);
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_act");
-          if (cJSON_IsNumber(item)) bp->freq_act = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "q_act");
-          if (cJSON_IsNumber(item)) bp->q_act = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_target");
-          if (cJSON_IsNumber(item)) bp->freq_target = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "q_target");
-          if (cJSON_IsNumber(item)) bp->q_target = item->valuedouble;
+          parse_json_double(params, "a1", &bp->a1);
+          parse_json_double(params, "a2", &bp->a2);
+          parse_json_double(params, "b0", &bp->b0);
+          parse_json_double(params, "b1", &bp->b1);
+          parse_json_double(params, "b2", &bp->b2);
+          parse_json_double(params, "freq_z", &bp->freq_notch);
+          parse_json_double(params, "freq_p", &bp->freq_pole);
+          parse_json_double(params, "q_p", &bp->q_p);
+          parse_json_bool(params, "normalize_at_dc", &bp->normalize_at_dc);
+          parse_json_double(params, "freq_act", &bp->freq_act);
+          parse_json_double(params, "q_act", &bp->q_act);
+          parse_json_double(params, "freq_target", &bp->freq_target);
+          parse_json_double(params, "q_target", &bp->q_target);
           break;
         }
         case FILTER_TYPE_DELAY: {
           delay_parameters_t* dp = &f_conf->parameters.delay;
-          item = cJSON_GetObjectItemCaseSensitive(params, "delay");
-          if (cJSON_IsNumber(item)) dp->delay = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "unit");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "ms") == 0)
-              dp->unit = DELAY_UNIT_MS;
-            else if (strcmp(item->valuestring, "us") == 0)
-              dp->unit = DELAY_UNIT_US;
-            else if (strcmp(item->valuestring, "samples") == 0)
-              dp->unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(item->valuestring, "mm") == 0)
-              dp->unit = DELAY_UNIT_MM;
+          parse_json_double(params, "delay", &dp->delay);
+          char unit_buf[64];
+          if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
+            if (strcmp(unit_buf, "us") == 0) dp->unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0) dp->unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0) dp->unit = DELAY_UNIT_MM;
+            else dp->unit = DELAY_UNIT_MS;
           } else {
             dp->unit = DELAY_UNIT_MS;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "subsample");
-          if (cJSON_IsBool(item)) dp->subsample = cJSON_IsTrue(item);
+          parse_json_bool(params, "subsample", &dp->subsample);
           break;
         }
         case FILTER_TYPE_CONV: {
           conv_parameters_t* cp = &f_conf->parameters.conv;
-          item = cJSON_GetObjectItemCaseSensitive(params, "type");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "Values") == 0)
-              cp->type = CONV_TYPE_VALUES;
-            else if (strcmp(item->valuestring, "Wav") == 0)
-              cp->type = CONV_TYPE_WAV;
-            else if (strcmp(item->valuestring, "Raw") == 0)
-              cp->type = CONV_TYPE_RAW;
-            else
-              cp->type = CONV_TYPE_DUMMY;
+          char type_buf[64];
+          if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
+            if (strcmp(type_buf, "Values") == 0) cp->type = CONV_TYPE_VALUES;
+            else if (strcmp(type_buf, "Wav") == 0) cp->type = CONV_TYPE_WAV;
+            else if (strcmp(type_buf, "Raw") == 0) cp->type = CONV_TYPE_RAW;
+            else cp->type = CONV_TYPE_DUMMY;
           }
-          cJSON* val_arr = cJSON_GetObjectItemCaseSensitive(params, "values");
-          cp->values = parse_double_array(val_arr, &cp->values_count);
-          item = cJSON_GetObjectItemCaseSensitive(params, "filename");
-          if (cJSON_IsString(item) && item->valuestring) {
-            strncpy(cp->filename, item->valuestring, sizeof(cp->filename) - 1);
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "format");
-          if (cJSON_IsString(item) && item->valuestring) {
-            strncpy(cp->format, item->valuestring, sizeof(cp->format) - 1);
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "channel");
-          if (cJSON_IsNumber(item)) cp->channel = item->valueint;
-          item = cJSON_GetObjectItemCaseSensitive(params, "length");
-          if (cJSON_IsNumber(item)) cp->length = item->valueint;
-          item = cJSON_GetObjectItemCaseSensitive(params, "skip_bytes_lines");
-          if (cJSON_IsNumber(item)) cp->skip_bytes_lines = item->valueint;
-          item = cJSON_GetObjectItemCaseSensitive(params, "read_bytes_lines");
-          if (cJSON_IsNumber(item)) cp->read_bytes_lines = item->valueint;
+          cp->values = parse_double_array(cJSON_GetObjectItemCaseSensitive(params, "values"), &cp->values_count);
+          parse_json_str(params, "filename", cp->filename, sizeof(cp->filename));
+          parse_json_str(params, "format", cp->format, sizeof(cp->format));
+          parse_json_int(params, "channel", &cp->channel);
+          parse_json_int(params, "length", &cp->length);
+          parse_json_int(params, "skip_bytes_lines", &cp->skip_bytes_lines);
+          parse_json_int(params, "read_bytes_lines", &cp->read_bytes_lines);
           break;
         }
         case FILTER_TYPE_BIQUAD_COMBO: {
@@ -294,31 +216,11 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
             else if (strcmp(item->valuestring, "GraphicEqualizer") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq");
-          if (cJSON_IsNumber(item)) {
-            bcp->freq = item->valuedouble;
-            bcp->has_freq = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_min");
-          if (cJSON_IsNumber(item)) {
-            bcp->freq_min = item->valuedouble;
-            bcp->has_freq_min = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "freq_max");
-          if (cJSON_IsNumber(item)) {
-            bcp->freq_max = item->valuedouble;
-            bcp->has_freq_max = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "order");
-          if (cJSON_IsNumber(item)) {
-            bcp->order = item->valueint;
-            bcp->has_order = true;
-          }
-          item = cJSON_GetObjectItemCaseSensitive(params, "gain");
-          if (cJSON_IsNumber(item)) {
-            bcp->gain = item->valuedouble;
-            bcp->has_gain = true;
-          }
+          bcp->has_freq = parse_json_double(params, "freq", &bcp->freq);
+          bcp->has_freq_min = parse_json_double(params, "freq_min", &bcp->freq_min);
+          bcp->has_freq_max = parse_json_double(params, "freq_max", &bcp->freq_max);
+          bcp->has_order = parse_json_int(params, "order", &bcp->order);
+          bcp->has_gain = parse_json_double(params, "gain", &bcp->gain);
 #define PARSE_COMBO_DOUBLE(name, field)                   \
   item = cJSON_GetObjectItemCaseSensitive(params, #name); \
   if (cJSON_IsNumber(item)) {                             \
@@ -356,89 +258,52 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_DITHER: {
           dither_parameters_t* dp = &f_conf->parameters.dither;
-          item = cJSON_GetObjectItemCaseSensitive(params, "type");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "None") == 0)
-              dp->type = DITHER_TYPE_NONE;
-            else if (strcmp(item->valuestring, "Flat") == 0)
-              dp->type = DITHER_TYPE_FLAT;
-            else if (strcmp(item->valuestring, "Highpass") == 0)
-              dp->type = DITHER_TYPE_HIGHPASS;
-            else if (strcmp(item->valuestring, "Fweighted441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_441;
-            else if (strcmp(item->valuestring, "FweightedLong441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_LONG_441;
-            else if (strcmp(item->valuestring, "FweightedShort441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_SHORT_441;
-            else if (strcmp(item->valuestring, "Gesemann441") == 0)
-              dp->type = DITHER_TYPE_GESEMANN_441;
-            else if (strcmp(item->valuestring, "Gesemann48") == 0)
-              dp->type = DITHER_TYPE_GESEMANN_48;
-            else if (strcmp(item->valuestring, "Lipshitz441") == 0)
-              dp->type = DITHER_TYPE_LIPSHITZ_441;
-            else if (strcmp(item->valuestring, "LipshitzLong441") == 0)
-              dp->type = DITHER_TYPE_LIPSHITZ_LONG_441;
-            else if (strcmp(item->valuestring, "Shibata441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_441;
-            else if (strcmp(item->valuestring, "ShibataHigh441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_HIGH_441;
-            else if (strcmp(item->valuestring, "ShibataLow441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_441;
-            else if (strcmp(item->valuestring, "Shibata48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_48;
-            else if (strcmp(item->valuestring, "ShibataHigh48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_HIGH_48;
-            else if (strcmp(item->valuestring, "ShibataLow48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_48;
-            else if (strcmp(item->valuestring, "Shibata882") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_882;
-            else if (strcmp(item->valuestring, "ShibataLow882") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_882;
-            else if (strcmp(item->valuestring, "Shibata96") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_96;
-            else if (strcmp(item->valuestring, "ShibataLow96") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_96;
-            else if (strcmp(item->valuestring, "Shibata192") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_192;
-            else if (strcmp(item->valuestring, "ShibataLow192") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_192;
+          char type_buf[64];
+          if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
+            if (strcmp(type_buf, "None") == 0) dp->type = DITHER_TYPE_NONE;
+            else if (strcmp(type_buf, "Flat") == 0) dp->type = DITHER_TYPE_FLAT;
+            else if (strcmp(type_buf, "Highpass") == 0) dp->type = DITHER_TYPE_HIGHPASS;
+            else if (strcmp(type_buf, "Fweighted441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_441;
+            else if (strcmp(type_buf, "FweightedLong441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_LONG_441;
+            else if (strcmp(type_buf, "FweightedShort441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_SHORT_441;
+            else if (strcmp(type_buf, "Gesemann441") == 0) dp->type = DITHER_TYPE_GESEMANN_441;
+            else if (strcmp(type_buf, "Gesemann48") == 0) dp->type = DITHER_TYPE_GESEMANN_48;
+            else if (strcmp(type_buf, "Lipshitz441") == 0) dp->type = DITHER_TYPE_LIPSHITZ_441;
+            else if (strcmp(type_buf, "LipshitzLong441") == 0) dp->type = DITHER_TYPE_LIPSHITZ_LONG_441;
+            else if (strcmp(type_buf, "Shibata441") == 0) dp->type = DITHER_TYPE_SHIBATA_441;
+            else if (strcmp(type_buf, "ShibataHigh441") == 0) dp->type = DITHER_TYPE_SHIBATA_HIGH_441;
+            else if (strcmp(type_buf, "ShibataLow441") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_441;
+            else if (strcmp(type_buf, "Shibata48") == 0) dp->type = DITHER_TYPE_SHIBATA_48;
+            else if (strcmp(type_buf, "ShibataHigh48") == 0) dp->type = DITHER_TYPE_SHIBATA_HIGH_48;
+            else if (strcmp(type_buf, "ShibataLow48") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_48;
+            else if (strcmp(type_buf, "Shibata882") == 0) dp->type = DITHER_TYPE_SHIBATA_882;
+            else if (strcmp(type_buf, "ShibataLow882") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_882;
+            else if (strcmp(type_buf, "Shibata96") == 0) dp->type = DITHER_TYPE_SHIBATA_96;
+            else if (strcmp(type_buf, "ShibataLow96") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_96;
+            else if (strcmp(type_buf, "Shibata192") == 0) dp->type = DITHER_TYPE_SHIBATA_192;
+            else if (strcmp(type_buf, "ShibataLow192") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_192;
           }
-          item = cJSON_GetObjectItemCaseSensitive(params, "bits");
-          if (cJSON_IsNumber(item)) dp->bits = item->valueint;
-          item = cJSON_GetObjectItemCaseSensitive(params, "amplitude");
-          if (cJSON_IsNumber(item)) {
-            dp->amplitude = item->valuedouble;
-            dp->has_amplitude = true;
-          }
+          parse_json_int(params, "bits", &dp->bits);
+          dp->has_amplitude = parse_json_double(params, "amplitude", &dp->amplitude);
           break;
         }
         case FILTER_TYPE_LIMITER: {
           limiter_parameters_t* lp = &f_conf->parameters.limiter;
-          item = cJSON_GetObjectItemCaseSensitive(params, "clip_limit");
-          if (cJSON_IsNumber(item)) lp->clip_limit = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "soft_clip");
-          if (cJSON_IsBool(item)) lp->soft_clip = cJSON_IsTrue(item);
+          parse_json_double(params, "clip_limit", &lp->clip_limit);
+          parse_json_bool(params, "soft_clip", &lp->soft_clip);
           break;
         }
         case FILTER_TYPE_LOOKAHEAD_LIMITER: {
-          lookahead_limiter_parameters_t* llp =
-              &f_conf->parameters.lookahead_limiter;
-          item = cJSON_GetObjectItemCaseSensitive(params, "limit");
-          if (cJSON_IsNumber(item)) llp->limit = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "attack");
-          if (cJSON_IsNumber(item)) llp->attack = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "release");
-          if (cJSON_IsNumber(item)) llp->release = item->valuedouble;
-          item = cJSON_GetObjectItemCaseSensitive(params, "unit");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "ms") == 0)
-              llp->unit = DELAY_UNIT_MS;
-            else if (strcmp(item->valuestring, "us") == 0)
-              llp->unit = DELAY_UNIT_US;
-            else if (strcmp(item->valuestring, "samples") == 0)
-              llp->unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(item->valuestring, "mm") == 0)
-              llp->unit = DELAY_UNIT_MM;
+          lookahead_limiter_parameters_t* llp = &f_conf->parameters.lookahead_limiter;
+          parse_json_double(params, "limit", &llp->limit);
+          parse_json_double(params, "attack", &llp->attack);
+          parse_json_double(params, "release", &llp->release);
+          char unit_buf[64];
+          if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
+            if (strcmp(unit_buf, "us") == 0) llp->unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0) llp->unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0) llp->unit = DELAY_UNIT_MM;
+            else llp->unit = DELAY_UNIT_MS;
           } else {
             llp->unit = DELAY_UNIT_MS;
           }
@@ -496,96 +361,42 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
       switch (p_conf->type) {
         case PROCESSOR_TYPE_COMPRESSOR: {
           compressor_parameters_t* cp = &p_conf->parameters.compressor;
+          parse_json_int(params, "channels", &cp->channels);
+          parse_json_double(params, "attack", &cp->attack);
+          parse_json_double(params, "release", &cp->release);
+          parse_json_double(params, "threshold", &cp->threshold);
+          parse_json_double(params, "factor", &cp->factor);
+          cp->has_makeup_gain = parse_json_double(params, "makeup_gain", &cp->makeup_gain);
+          parse_json_bool(params, "soft_clip", &cp->soft_clip);
+          cp->has_clip_limit = parse_json_double(params, "clip_limit", &cp->clip_limit);
 
-          item = cJSON_GetObjectItemCaseSensitive(params, "channels");
-          if (cJSON_IsNumber(item)) cp->channels = item->valueint;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "attack");
-          if (cJSON_IsNumber(item)) cp->attack = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "release");
-          if (cJSON_IsNumber(item)) cp->release = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "threshold");
-          if (cJSON_IsNumber(item)) cp->threshold = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "factor");
-          if (cJSON_IsNumber(item)) cp->factor = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "makeup_gain");
-          if (cJSON_IsNumber(item)) {
-            cp->makeup_gain = item->valuedouble;
-            cp->has_makeup_gain = true;
-          }
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "soft_clip");
-          if (cJSON_IsBool(item)) cp->soft_clip = cJSON_IsTrue(item);
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "clip_limit");
-          if (cJSON_IsNumber(item)) {
-            cp->clip_limit = item->valuedouble;
-            cp->has_clip_limit = true;
-          }
-
-          cJSON* mon_arr =
-              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels");
-          cp->monitor_channels =
-              parse_int_array(mon_arr, &cp->monitor_channels_count);
-
-          cJSON* proc_arr =
-              cJSON_GetObjectItemCaseSensitive(params, "process_channels");
-          cp->process_channels =
-              parse_int_array(proc_arr, &cp->process_channels_count);
+          cp->monitor_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"), &cp->monitor_channels_count);
+          cp->process_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "process_channels"), &cp->process_channels_count);
           break;
         }
         case PROCESSOR_TYPE_NOISE_GATE: {
           noise_gate_parameters_t* ng = &p_conf->parameters.noise_gate;
+          parse_json_int(params, "channels", &ng->channels);
+          parse_json_double(params, "attack", &ng->attack);
+          parse_json_double(params, "release", &ng->release);
+          parse_json_double(params, "threshold", &ng->threshold);
+          parse_json_double(params, "attenuation", &ng->attenuation);
 
-          item = cJSON_GetObjectItemCaseSensitive(params, "channels");
-          if (cJSON_IsNumber(item)) ng->channels = item->valueint;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "attack");
-          if (cJSON_IsNumber(item)) ng->attack = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "release");
-          if (cJSON_IsNumber(item)) ng->release = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "threshold");
-          if (cJSON_IsNumber(item)) ng->threshold = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "attenuation");
-          if (cJSON_IsNumber(item)) ng->attenuation = item->valuedouble;
-
-          cJSON* mon_arr =
-              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels");
-          ng->monitor_channels =
-              parse_int_array(mon_arr, &ng->monitor_channels_count);
-
-          cJSON* proc_arr =
-              cJSON_GetObjectItemCaseSensitive(params, "process_channels");
-          ng->process_channels =
-              parse_int_array(proc_arr, &ng->process_channels_count);
+          ng->monitor_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"), &ng->monitor_channels_count);
+          ng->process_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "process_channels"), &ng->process_channels_count);
           break;
         }
         case PROCESSOR_TYPE_RACE: {
           race_parameters_t* rp = &p_conf->parameters.race;
+          parse_json_double(params, "attenuation", &rp->attenuation);
+          parse_json_double(params, "delay", &rp->delay);
 
-          item = cJSON_GetObjectItemCaseSensitive(params, "attenuation");
-          if (cJSON_IsNumber(item)) rp->attenuation = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "delay");
-          if (cJSON_IsNumber(item)) rp->delay = item->valuedouble;
-
-          item = cJSON_GetObjectItemCaseSensitive(params, "delay_unit");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "ms") == 0)
-              rp->delay_unit = DELAY_UNIT_MS;
-            else if (strcmp(item->valuestring, "us") == 0)
-              rp->delay_unit = DELAY_UNIT_US;
-            else if (strcmp(item->valuestring, "samples") == 0)
-              rp->delay_unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(item->valuestring, "mm") == 0)
-              rp->delay_unit = DELAY_UNIT_MM;
+          char unit_buf[64];
+          if (parse_json_str(params, "delay_unit", unit_buf, sizeof(unit_buf))) {
+            if (strcmp(unit_buf, "us") == 0) rp->delay_unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0) rp->delay_unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0) rp->delay_unit = DELAY_UNIT_MM;
+            else rp->delay_unit = DELAY_UNIT_MS;
             rp->has_delay_unit = true;
           }
           break;

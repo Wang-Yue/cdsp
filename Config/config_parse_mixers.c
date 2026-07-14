@@ -45,24 +45,11 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
     cJSON* channels_obj =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "channels");
     if (cJSON_IsObject(channels_obj)) {
-      cJSON* in = cJSON_GetObjectItemCaseSensitive(channels_obj, "in");
-      if (cJSON_IsNumber(in)) {
-        m_conf->channels_in = in->valueint;
-      }
-      cJSON* out = cJSON_GetObjectItemCaseSensitive(channels_obj, "out");
-      if (cJSON_IsNumber(out)) {
-        m_conf->channels_out = out->valueint;
-      }
+      parse_json_int(channels_obj, "in", &m_conf->channels_in);
+      parse_json_int(channels_obj, "out", &m_conf->channels_out);
     } else {
-      cJSON* in = cJSON_GetObjectItemCaseSensitive(mixer_child, "channels_in");
-      if (cJSON_IsNumber(in)) {
-        m_conf->channels_in = in->valueint;
-      }
-      cJSON* out =
-          cJSON_GetObjectItemCaseSensitive(mixer_child, "channels_out");
-      if (cJSON_IsNumber(out)) {
-        m_conf->channels_out = out->valueint;
-      }
+      parse_json_int(mixer_child, "channels_in", &m_conf->channels_in);
+      parse_json_int(mixer_child, "channels_out", &m_conf->channels_out);
     }
 
     cJSON* mapping_arr =
@@ -81,16 +68,8 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
         cJSON* map_el = cJSON_GetArrayItem(mapping_arr, mp);
         if (cJSON_IsObject(map_el)) {
           mixer_mapping_t* mapping = &m_conf->mapping[mp];
-
-          cJSON* dest = cJSON_GetObjectItemCaseSensitive(map_el, "dest");
-          if (cJSON_IsNumber(dest)) {
-            mapping->dest = dest->valueint;
-          }
-
-          cJSON* mute = cJSON_GetObjectItemCaseSensitive(map_el, "mute");
-          if (cJSON_IsBool(mute)) {
-            mapping->mute = cJSON_IsTrue(mute);
-          }
+          parse_json_int(map_el, "dest", &mapping->dest);
+          parse_json_bool(map_el, "mute", &mapping->mute);
 
           cJSON* sources_arr =
               cJSON_GetObjectItemCaseSensitive(map_el, "sources");
@@ -109,40 +88,16 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
               cJSON* src_el = cJSON_GetArrayItem(sources_arr, s);
               if (cJSON_IsObject(src_el)) {
                 mixer_source_t* src = &mapping->sources[s];
-
-                cJSON* chan =
-                    cJSON_GetObjectItemCaseSensitive(src_el, "channel");
-                if (cJSON_IsNumber(chan)) {
-                  src->channel = chan->valueint;
-                }
-
-                cJSON* gain = cJSON_GetObjectItemCaseSensitive(src_el, "gain");
-                if (cJSON_IsNumber(gain)) {
-                  src->gain = gain->valuedouble;
-                  src->has_gain = true;
-                }
-
-                cJSON* scale =
-                    cJSON_GetObjectItemCaseSensitive(src_el, "scale");
-                if (cJSON_IsString(scale) && scale->valuestring) {
-                  if (strcasecmp(scale->valuestring, "Linear") == 0)
-                    src->scale = GAIN_SCALE_LINEAR;
-                  else
-                    src->scale = GAIN_SCALE_DB;
+                parse_json_int(src_el, "channel", &src->channel);
+                src->has_gain = parse_json_double(src_el, "gain", &src->gain);
+                char scale_buf[64];
+                if (parse_json_str(src_el, "scale", scale_buf, sizeof(scale_buf))) {
+                  src->scale = (strcasecmp(scale_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR : GAIN_SCALE_DB;
                 } else {
                   src->scale = GAIN_SCALE_DB;
                 }
-
-                cJSON* inv =
-                    cJSON_GetObjectItemCaseSensitive(src_el, "inverted");
-                if (cJSON_IsBool(inv)) {
-                  src->inverted = cJSON_IsTrue(inv);
-                }
-
-                cJSON* smute = cJSON_GetObjectItemCaseSensitive(src_el, "mute");
-                if (cJSON_IsBool(smute)) {
-                  src->mute = cJSON_IsTrue(smute);
-                }
+                parse_json_bool(src_el, "inverted", &src->inverted);
+                parse_json_bool(src_el, "mute", &src->mute);
               }
             }
           }
