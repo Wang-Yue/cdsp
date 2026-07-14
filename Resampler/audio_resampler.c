@@ -454,7 +454,7 @@ audio_resampler_t* audio_resampler_create_from_config(
     }
     case RESAMPLER_TYPE_ASYNC_SINC: {
       fixed_async_t fixed_mode =
-          config->has_fixed ? config->fixed : FIXED_ASYNC_INPUT;
+          config->has_fixed ? config->fixed : FIXED_ASYNC_OUTPUT;
       if (config->has_sinc_len && config->has_oversampling_factor &&
           config->has_window && config->has_interpolation) {
         window_function_t wf = window_function_from_string(
@@ -506,7 +506,7 @@ audio_resampler_t* audio_resampler_create_from_config(
     }
     case RESAMPLER_TYPE_ASYNC_POLY: {
       fixed_async_t fixed_mode =
-          config->has_fixed ? config->fixed : FIXED_ASYNC_INPUT;
+          config->has_fixed ? config->fixed : FIXED_ASYNC_OUTPUT;
       poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
       if (config->has_interpolation) {
         interp = poly_interpolation_from_string(config->interpolation);

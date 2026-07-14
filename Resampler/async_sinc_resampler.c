@@ -207,7 +207,7 @@ async_sinc_resampler_t* async_sinc_resampler_create_from_profile(
   return async_sinc_resampler_create(
       channels, input_rate, output_rate, sinc_len, oversampling_factor,
       interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
-      FIXED_ASYNC_INPUT, err);
+      FIXED_ASYNC_OUTPUT, err);
 }
 
 void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
