@@ -133,21 +133,21 @@ QString PipelineOverviewWidget::readableFilterName(const std::string& rawName, c
     if (suffix == "lo")
         return "Lowpass Filter";
     if (suffix == "lo_gain")
-        return "Crossfeed Low Atten";
+        return "Crossfeed Low Attenuation";
     if (suffix == "lp")
-        return "Linkwitz-Riley LP (12dB/oct)";
+        return "Linkwitz-Riley Lowpass (12dB/oct)";
     if (suffix == "hp")
-        return "Linkwitz-Riley HP (12dB/oct)";
+        return "Linkwitz-Riley Highpass (12dB/oct)";
     if (suffix == "conv")
         return "Convolution IR Engine";
     if (suffix == "loudness")
-        return "Fader Loudness Comp";
+        return "Fader Loudness Compensation";
     if (suffix == "deemphasis")
         return "CD De-emphasis Filter";
     if (suffix == "preemphasis")
         return "Pre-emphasis Boost";
     if (suffix == "dcp")
-        return "DC Protection (7Hz)";
+        return "DC Protection Highpass (7Hz)";
     if (suffix == "gain")
         return QString("Gain (%1 dB)").arg(QString::asprintf("%+.1f", stage.gainValue));
     if (suffix == "delay")
