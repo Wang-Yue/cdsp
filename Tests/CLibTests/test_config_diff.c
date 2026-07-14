@@ -48,6 +48,7 @@ TEST(ConfigDiffEqual) {
   config_error_init(&err);
 
   int r1 = dsp_config_parse_json(base_json, &c1, &err);
+  if (r1 != 0) printf("PARSER FAIL MSG: %s\n", err.message);
   int r2 = dsp_config_parse_json(base_json, &c2, &err);
   ASSERT_EQ(0, r1);
   ASSERT_EQ(0, r2);

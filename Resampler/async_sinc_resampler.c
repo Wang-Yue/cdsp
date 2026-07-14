@@ -37,6 +37,7 @@ struct async_sinc_resampler {
   // Maximum output frames the resampler can ever produce in one call. The
   // caller uses this to size the output AudioChunk once at startup.
   size_t max_output_frames;
+  fixed_async_t fixed;
 };
 
 #include <math.h>
@@ -47,7 +48,8 @@ async_sinc_resampler_t* async_sinc_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
     size_t oversampling_factor, sinc_interpolation_type_t interpolation,
     window_function_t window, double f_cutoff, bool has_f_cutoff,
-    size_t chunk_size, double max_relative_ratio, config_error_t* err) {
+    size_t chunk_size, double max_relative_ratio, fixed_async_t fixed,
+    config_error_t* err) {
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncSincResampler: channels must be positive");
@@ -88,6 +90,7 @@ async_sinc_resampler_t* async_sinc_resampler_create(
 
   resampler->channels = channels;
   resampler->chunk_size = chunk_size;
+  resampler->fixed = fixed;
   resampler->sinc_len = sinc_len;
   resampler->oversampling_factor = oversampling_factor;
   resampler->interpolation = interpolation;
@@ -203,7 +206,8 @@ async_sinc_resampler_t* async_sinc_resampler_create_from_profile(
 
   return async_sinc_resampler_create(
       channels, input_rate, output_rate, sinc_len, oversampling_factor,
-      interpolation, window, 0.0, false, chunk_size, max_relative_ratio, err);
+      interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
+      FIXED_ASYNC_INPUT, err);
 }
 
 void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {

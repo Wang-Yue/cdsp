@@ -26,6 +26,14 @@ typedef enum {
   RESAMPLER_TYPE_ASYNC_POLY  /**< Asynchronous Polyphase resampler. */
 } resampler_type_t;
 
+/**
+ * @brief Fixed chunk side for asynchronous resamplers.
+ */
+typedef enum {
+  FIXED_ASYNC_INPUT = 0, /**< Input chunk size is fixed. */
+  FIXED_ASYNC_OUTPUT = 1 /**< Output chunk size is fixed. */
+} fixed_async_t;
+
 #if defined(ENABLE_COREAUDIO)
 /**
  * @brief Quality settings supported by Apple's AudioConverter.
@@ -84,7 +92,9 @@ typedef struct {
   char window[32];              /**< Window function name. */
   bool has_window;              /**< Flag indicating if window is specified. */
   double f_cutoff;              /**< Cutoff frequency. */
-  bool has_f_cutoff; /**< Flag indicating if f_cutoff is specified. */
+  bool has_f_cutoff;   /**< Flag indicating if f_cutoff is specified. */
+  fixed_async_t fixed; /**< Fixed side mode (Input or Output). */
+  bool has_fixed;      /**< Flag indicating if fixed is specified. */
 } resampler_config_t;
 
 /**

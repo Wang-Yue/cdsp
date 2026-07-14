@@ -33,6 +33,7 @@ struct async_poly_resampler {
   int* start_idx_scratch;
   double* frac_scratch;
   size_t max_output_frames;
+  fixed_async_t fixed;
 };
 
 #include <math.h>
@@ -42,7 +43,7 @@ struct async_poly_resampler {
 async_poly_resampler_t* async_poly_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     poly_interpolation_t interpolation, size_t chunk_size,
-    double max_relative_ratio, config_error_t* err) {
+    double max_relative_ratio, fixed_async_t fixed, config_error_t* err) {
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncPolyResampler: channels must be positive");
@@ -70,6 +71,7 @@ async_poly_resampler_t* async_poly_resampler_create(
 
   resampler->channels = channels;
   resampler->chunk_size = chunk_size;
+  resampler->fixed = fixed;
   resampler->interpolation = interpolation;
   resampler->interpolator_len =
       (size_t)poly_interpolation_nbr_points(interpolation);

@@ -68,7 +68,8 @@ async_sinc_resampler_t* async_sinc_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
     size_t oversampling_factor, sinc_interpolation_type_t interpolation,
     window_function_t window, double f_cutoff, bool has_f_cutoff,
-    size_t chunk_size, double max_relative_ratio, config_error_t* err);
+    size_t chunk_size, double max_relative_ratio, fixed_async_t fixed,
+    config_error_t* err);
 
 /**
  * @brief Creates an asynchronous windowed-sinc resampler using a quality

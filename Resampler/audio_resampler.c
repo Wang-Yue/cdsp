@@ -453,6 +453,8 @@ audio_resampler_t* audio_resampler_create_from_config(
       return wrap;
     }
     case RESAMPLER_TYPE_ASYNC_SINC: {
+      fixed_async_t fixed_mode =
+          config->has_fixed ? config->fixed : FIXED_ASYNC_INPUT;
       if (config->has_sinc_len && config->has_oversampling_factor &&
           config->has_window && config->has_interpolation) {
         window_function_t wf = window_function_from_string(
@@ -462,7 +464,7 @@ audio_resampler_t* audio_resampler_create_from_config(
         async_sinc_resampler_t* res = async_sinc_resampler_create(
             channels, input_rate, output_rate, (size_t)config->sinc_len,
             (size_t)config->oversampling_factor, interp, wf, config->f_cutoff,
-            config->has_f_cutoff, chunk_size, 1.1, err);
+            config->has_f_cutoff, chunk_size, 1.1, fixed_mode, err);
         if (!res) {
           logger_error(
               &g_logger,
@@ -503,12 +505,15 @@ audio_resampler_t* audio_resampler_create_from_config(
       }
     }
     case RESAMPLER_TYPE_ASYNC_POLY: {
+      fixed_async_t fixed_mode =
+          config->has_fixed ? config->fixed : FIXED_ASYNC_INPUT;
       poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
       if (config->has_interpolation) {
         interp = poly_interpolation_from_string(config->interpolation);
       }
-      async_poly_resampler_t* res = async_poly_resampler_create(
-          channels, input_rate, output_rate, interp, chunk_size, 1.1, err);
+      async_poly_resampler_t* res =
+          async_poly_resampler_create(channels, input_rate, output_rate, interp,
+                                      chunk_size, 1.1, fixed_mode, err);
       if (!res) {
         logger_error(
             &g_logger,

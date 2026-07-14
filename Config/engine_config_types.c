@@ -578,9 +578,9 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
             }
           }
           fclose(f);
-          return wav_channels;
+          if (wav_channels > 0) return wav_channels;
         }
-        return 0;
+        return config->cfg.raw_file.channels;
       }
       return config->cfg.raw_file.channels;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:

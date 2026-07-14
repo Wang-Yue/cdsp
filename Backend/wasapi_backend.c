@@ -52,6 +52,7 @@ struct wasapi_capture {
   IMMDevice* mm_device;
   IAudioClient* client;
   IAudioCaptureClient* capture_client;
+  IAudioSessionControl* session_control;
   UINT32 buffer_frame_count;
   HANDLE event;
   audio_chunk_t* residual_chunk;
@@ -77,6 +78,7 @@ struct wasapi_playback {
   IMMDevice* mm_device;
   IAudioClient* client;
   IAudioRenderClient* render_client;
+  IAudioSessionControl* session_control;
   UINT32 buffer_frame_count;
   _Atomic bool paused;
   HANDLE event;
@@ -591,6 +593,9 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
     goto error_cleanup;
   }
 
+  IAudioClient_GetService(capture->client, &IID_IAudioSessionControl,
+                          (void**)&capture->session_control);
+
   capture->residual_chunk =
       audio_chunk_create(capture->chunk_size * 4, capture->channels);
   if (!capture->residual_chunk) {
@@ -614,6 +619,9 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
   return true;
 
 error_cleanup:
+  if (capture->session_control) {
+    SAFE_RELEASE(capture->session_control);
+  }
   if (capture->capture_client) {
     SAFE_RELEASE(capture->capture_client);
   }
@@ -1172,6 +1180,9 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
     goto error_cleanup;
   }
 
+  IAudioClient_GetService(playback->client, &IID_IAudioSessionControl,
+                          (void**)&playback->session_control);
+
   playback->paused = false;
   playback->started = false;
 
@@ -1192,6 +1203,9 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
   return true;
 
 error_cleanup:
+  if (playback->session_control) {
+    SAFE_RELEASE(playback->session_control);
+  }
   if (playback->render_client) {
     SAFE_RELEASE(playback->render_client);
   }

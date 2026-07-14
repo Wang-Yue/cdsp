@@ -80,6 +80,16 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
     res->f_cutoff = item->valuedouble;
     res->has_f_cutoff = (res->f_cutoff > 0.0);
   }
+
+  item = cJSON_GetObjectItemCaseSensitive(res_obj, "fixed");
+  if (cJSON_IsString(item) && item->valuestring) {
+    if (strcasecmp(item->valuestring, "output") == 0) {
+      res->fixed = FIXED_ASYNC_OUTPUT;
+    } else {
+      res->fixed = FIXED_ASYNC_INPUT;
+    }
+    res->has_fixed = true;
+  }
 }
 
 typedef struct {
@@ -482,6 +492,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
         final_cap->cfg.wav_file.has_filename = temp.has_filename;
         final_cap->cfg.wav_file.extra_samples = temp.extra_samples;
         final_cap->cfg.wav_file.has_extra_samples = temp.has_extra_samples;
+        final_cap->cfg.raw_file.channels = temp.channels;
 #ifdef CDSP_TEST
         final_cap->cfg.wav_file.realtime = temp.realtime;
         final_cap->cfg.wav_file.has_realtime = temp.has_realtime;

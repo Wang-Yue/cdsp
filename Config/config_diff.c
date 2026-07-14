@@ -458,6 +458,8 @@ static bool resampler_config_equal(const resampler_config_t* a,
   if (a->has_window && strcmp(a->window, b->window) != 0) return false;
   if (a->has_f_cutoff != b->has_f_cutoff) return false;
   if (a->has_f_cutoff && a->f_cutoff != b->f_cutoff) return false;
+  if (a->has_fixed != b->has_fixed) return false;
+  if (a->has_fixed && a->fixed != b->fixed) return false;
 
 #if defined(ENABLE_COREAUDIO)
   if (a->has_apple_quality != b->has_apple_quality) return false;

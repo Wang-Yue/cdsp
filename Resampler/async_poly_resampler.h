@@ -79,7 +79,7 @@ typedef struct async_poly_resampler async_poly_resampler_t;
 async_poly_resampler_t* async_poly_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     poly_interpolation_t interpolation, size_t chunk_size,
-    double max_relative_ratio, config_error_t* err);
+    double max_relative_ratio, fixed_async_t fixed, config_error_t* err);
 
 /**
  * @brief Frees the polynomial resampler resources.

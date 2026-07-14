@@ -151,19 +151,33 @@ int conv_parameters_validate(const conv_parameters_t* params,
       }
       break;
     case CONV_TYPE_WAV:
+    case CONV_TYPE_RAW: {
       if (params->filename[0] == '\0') {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv 'Wav' missing filename");
+                         "Conv filter missing filename");
+        return -1;
+      }
+      FILE* f = fopen(params->filename, "rb");
+      if (!f) {
+        char msg[512];
+        snprintf(msg, sizeof(msg),
+                 "Conv file '%s' cannot be opened or does not exist",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      fseek(f, 0, SEEK_END);
+      long fsize = ftell(f);
+      fclose(f);
+      if (fsize <= 0) {
+        char msg[512];
+        snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
         return -1;
       }
       break;
-    case CONV_TYPE_RAW:
-      if (params->filename[0] == '\0') {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv 'Raw' missing filename");
-        return -1;
-      }
-      break;
+    }
     case CONV_TYPE_DUMMY:
       if (params->length <= 0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
