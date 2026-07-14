@@ -108,13 +108,17 @@ int gain_parameters_validate(const gain_parameters_t* params,
 int loudness_parameters_validate(const loudness_parameters_t* params,
                                  config_error_t* err) {
   if (!params) return 0;
-  if (params->has_reference_level) {
-    if (params->reference_level < -100.0 || params->reference_level > 20.0) {
+  if (!params->has_reference_level) {
+    if (err)
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "reference_level must be in [-100, 20], got %g",
-                       params->reference_level);
-      return -1;
-    }
+                       "Loudness filter requires 'reference_level'");
+    return -1;
+  }
+  if (params->reference_level < -100.0 || params->reference_level > 20.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "reference_level must be in [-100, 20], got %g",
+                     params->reference_level);
+    return -1;
   }
   if (params->has_high_boost) {
     if (params->high_boost < 0.0 || params->high_boost > 20.0) {

@@ -12,6 +12,7 @@ struct diffeq_filter {
   size_t idx_y;
 };
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -115,6 +116,14 @@ void diffeq_filter_process(diffeq_filter_t* filter, mutable_waveform_t waveform,
     y[idx_y] = out;
     waveform[i] = out;
   }
+
+  for (size_t k = 0; k < nb; k++) {
+    if (!isnormal(x[k])) x[k] = 0.0;
+  }
+  for (size_t k = 0; k < na; k++) {
+    if (!isnormal(y[k])) y[k] = 0.0;
+  }
+
   filter->idx_x = idx_x;
   filter->idx_y = idx_y;
 }
