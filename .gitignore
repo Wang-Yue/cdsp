@@ -6,3 +6,4 @@ bin/
 *.dSYM
 .DS_Store
 target/
+win_deps/

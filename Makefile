@@ -99,9 +99,11 @@ endif
 LDFLAGS := -lm -lpthread
 ifeq ($(IS_WINDOWS),1)
     # Windows Setup
-    CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES
+    CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
     ifeq ($(ENABLE_FFTW),1)
-        LDFLAGS += -lfftw3 -lfftw3f
+        LDFLAGS += -L$(ROOT_DIR)/win_deps/lib -lfftw3 -lfftw3f
+    else
+        LDFLAGS += -L$(ROOT_DIR)/win_deps/lib
     endif
     ifeq ($(ENABLE_BLAS),1)
         LDFLAGS += -lopenblas
@@ -201,7 +203,7 @@ TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/
 all: cli
 
 windows:
-	+$(MAKE) TARGET_OS=Windows
+	+$(MAKE) TARGET_OS=Windows ENABLE_FFTW=1 ENABLE_BLAS=1
 
 build: all
 
