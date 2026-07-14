@@ -25,7 +25,7 @@ struct DeviceConfig {
     bool bypassDoP = true;
     double dopCutoffHz = 20000.0;
     bool outputDoP = false;
-    SDMFilter dopEncoderFilter = SDMFilter::SDM6;
+    SDMFilter dsdEncoderFilter = SDMFilter::SDM6;
 
     // File Backend Settings
     std::string filename;

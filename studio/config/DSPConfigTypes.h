@@ -168,7 +168,7 @@ struct CoreAudioPlaybackConfig {
     std::optional<std::string> format;
     std::optional<bool> exclusive;
     std::optional<bool> outputDoP;
-    std::optional<SDMFilter> dopEncoderFilter;
+    std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
@@ -195,7 +195,7 @@ struct WASAPIPlaybackConfig {
     std::optional<bool> exclusive;
     std::optional<bool> polling;
     std::optional<bool> outputDoP;
-    std::optional<SDMFilter> dopEncoderFilter;
+    std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static WASAPIPlaybackConfig fromJson(const QJsonObject& json);
@@ -217,7 +217,7 @@ struct ASIOPlaybackConfig {
     std::optional<std::string> device;
     std::optional<std::string> format;
     std::optional<bool> outputDoP;
-    std::optional<SDMFilter> dopEncoderFilter;
+    std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ASIOPlaybackConfig fromJson(const QJsonObject& json);

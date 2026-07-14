@@ -1295,7 +1295,7 @@ void DevicePickerView::refreshUi() {
     m_pbWasapiPollingCheck->setVisible(m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
-    int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dopEncoderFilter));
+    int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));
     if (filterIdx >= 0)
         m_sdmFilterCombo->setCurrentIndex(filterIdx);
 
@@ -1442,7 +1442,7 @@ void DevicePickerView::applySettings() {
 
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {
-            pbCfg.dopEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
+            pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
         }
     } else if (pbCfg.backend == AudioBackendType::RawFile) {
         pbCfg.filename = m_pbRawFilePathEdit->text().toStdString();

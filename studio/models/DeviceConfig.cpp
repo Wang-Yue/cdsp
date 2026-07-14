@@ -208,21 +208,21 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.coreAudio.device = deviceName();
         pb.coreAudio.format = format;
         pb.coreAudio.outputDoP = outputDoP;
-        pb.coreAudio.dopEncoderFilter = dopEncoderFilter;
+        pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
         break;
     case AudioBackendType::WASAPI:
         pb.wasapi.channels = channels;
         pb.wasapi.device = deviceName();
         pb.wasapi.format = format;
         pb.wasapi.outputDoP = outputDoP;
-        pb.wasapi.dopEncoderFilter = dopEncoderFilter;
+        pb.wasapi.dsdEncoderFilter = dsdEncoderFilter;
         break;
     case AudioBackendType::ASIO:
         pb.asio.channels = channels;
         pb.asio.device = deviceName();
         pb.asio.format = format;
         pb.asio.outputDoP = outputDoP;
-        pb.asio.dopEncoderFilter = dopEncoderFilter;
+        pb.asio.dsdEncoderFilter = dsdEncoderFilter;
         break;
     case AudioBackendType::ALSA:
         pb.alsa.channels = channels;
@@ -257,7 +257,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["bypassDoP"] = bypassDoP;
     obj["dopCutoffHz"] = dopCutoffHz;
     obj["outputDoP"] = outputDoP;
-    obj["dopEncoderFilter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter));
+    obj["dsdEncoderFilter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter));
     obj["filename"] = QString::fromStdString(filename);
     obj["fileFormat"] = QString::fromStdString(fileFormat);
     obj["isWav"] = isWav;
@@ -297,8 +297,8 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
     if (json.contains("outputDoP"))
         cfg.outputDoP = json["outputDoP"].toBool();
-    if (json.contains("dopEncoderFilter"))
-        cfg.dopEncoderFilter = stringToSDMFilter(json["dopEncoderFilter"].toString().toStdString());
+    if (json.contains("dsdEncoderFilter"))
+        cfg.dsdEncoderFilter = stringToSDMFilter(json["dsdEncoderFilter"].toString().toStdString());
     if (json.contains("filename"))
         cfg.filename = json["filename"].toString().toStdString();
     if (json.contains("fileFormat"))
@@ -331,7 +331,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities.name == other.capabilities.name && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
-           dopEncoderFilter == other.dopEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
+           dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
            isWav == other.isWav && skipBytes == other.skipBytes && readBytes == other.readBytes &&
            extraSamples == other.extraSamples && generatorType == other.generatorType &&
            generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel;

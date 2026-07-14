@@ -640,8 +640,8 @@ CoreAudioPlaybackConfig CoreAudioPlaybackConfig::fromJson(const QJsonObject& jso
         cfg.exclusive = json["exclusive"].toBool();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
-    if (json.contains("dop_encoder_filter"))
-        cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("dsd_encoder_filter"))
+        cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
     if (json.contains("channel_labels")) {
         QJsonArray arr = json["channel_labels"].toArray();
         for (const auto& val : arr)
@@ -662,8 +662,8 @@ QJsonObject CoreAudioPlaybackConfig::toJson() const {
         obj["exclusive"] = exclusive.value();
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
-    if (dopEncoderFilter.has_value())
-        obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (dsdEncoderFilter.has_value())
+        obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)
@@ -874,8 +874,8 @@ WASAPIPlaybackConfig WASAPIPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.polling = json["polling"].toBool();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
-    if (json.contains("dop_encoder_filter"))
-        cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("dsd_encoder_filter"))
+        cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -897,8 +897,8 @@ QJsonObject WASAPIPlaybackConfig::toJson() const {
         obj["polling"] = polling.value();
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
-    if (dopEncoderFilter.has_value())
-        obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (dsdEncoderFilter.has_value())
+        obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)
@@ -958,8 +958,8 @@ ASIOPlaybackConfig ASIOPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.format = json["format"].toString().toStdString();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
-    if (json.contains("dop_encoder_filter"))
-        cfg.dopEncoderFilter = stringToSDMFilter(json["dop_encoder_filter"].toString().toStdString());
+    if (json.contains("dsd_encoder_filter"))
+        cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -977,8 +977,8 @@ QJsonObject ASIOPlaybackConfig::toJson() const {
         obj["format"] = QString::fromStdString(format.value());
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
-    if (dopEncoderFilter.has_value())
-        obj["dop_encoder_filter"] = QString::fromStdString(sdmFilterToString(dopEncoderFilter.value()));
+    if (dsdEncoderFilter.has_value())
+        obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)
