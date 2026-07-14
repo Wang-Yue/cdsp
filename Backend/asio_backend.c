@@ -785,8 +785,7 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
       if (read_samples < needed_samples) {
         if (is_native_dsd) {
           uint32_t silence_u32 = 0x55555555;
-          float silence_fval;
-          memcpy(&silence_fval, &silence_u32, sizeof(float));
+          float silence_fval = pcm_sample_f32_from_u32(silence_u32);
           for (size_t i = read_samples; i < needed_samples; i++) {
             interleaved_buf[i] = silence_fval;
           }
@@ -1365,9 +1364,8 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
     for (int c = 0; c < playback->channels; c++) {
       if (playback->output_dsd) {
         double dval = audio_chunk_get_channel(chunk, c)[f];
-        float fval;
-        memcpy(&fval, &dval, sizeof(float));
-        playback->encode_buf[f * playback->channels + c] = fval;
+        playback->encode_buf[f * playback->channels + c] =
+            pcm_sample_encode_f32(dval);
       } else {
         playback->encode_buf[f * playback->channels + c] =
             pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);

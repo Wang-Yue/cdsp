@@ -560,7 +560,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
-        dst[f * playback->channels + c] = (uint32_t)pcm_sample_encode_s32(val);
+        dst[f * playback->channels + c] = pcm_sample_encode_f32_u32(val);
       }
     }
 #endif

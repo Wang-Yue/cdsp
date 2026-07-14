@@ -312,6 +312,54 @@ static inline double pcm_sample_decode_f32_bytes(const uint8_t* src) {
   return pcm_sample_decode_f32(fval);
 }
 
+/**
+ * @brief Reinterpret a 32-bit uint32_t raw bit pattern as a 32-bit float.
+ *
+ * @param bits Raw uint32_t bit pattern.
+ * @return 32-bit float value.
+ */
+static inline float pcm_sample_f32_from_u32(uint32_t bits) {
+  float fval;
+  memcpy(&fval, &bits, sizeof(float));
+  return fval;
+}
+
+/**
+ * @brief Reinterpret a 32-bit float as a 32-bit uint32_t raw bit pattern.
+ *
+ * @param fval 32-bit float value.
+ * @return Raw uint32_t bit pattern.
+ */
+static inline uint32_t pcm_sample_u32_from_f32(float fval) {
+  uint32_t bits;
+  memcpy(&bits, &fval, sizeof(uint32_t));
+  return bits;
+}
+
+/**
+ * @brief Encode a normalized double sample to a 32-bit uint32_t raw bit pattern
+ * representing an IEEE 754 float.
+ *
+ * @param val Input double sample in [-1.0, 1.0].
+ * @return Encoded 32-bit uint32_t bit pattern.
+ */
+static inline uint32_t pcm_sample_encode_f32_u32(double val) {
+  float fval = pcm_sample_encode_f32(val);
+  return pcm_sample_u32_from_f32(fval);
+}
+
+/**
+ * @brief Decode a raw 32-bit uint32_t bit pattern representing an IEEE 754
+ * float to a normalized double sample. Non-finite values (NaN, Inf) are
+ * replaced with 0.0.
+ *
+ * @param bits Raw 32-bit uint32_t bit pattern.
+ * @return Normalized double sample in [-1.0, 1.0].
+ */
+static inline double pcm_sample_decode_f32_u32(uint32_t bits) {
+  return pcm_sample_decode_f32(pcm_sample_f32_from_u32(bits));
+}
+
 // MARK: - 64-Bit Floating-Point Format (F64)
 
 /**
