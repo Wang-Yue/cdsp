@@ -101,4 +101,15 @@ bool dsd_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode);
  */
 bool dsd_encoder_is_enabled(const dsd_encoder_t* encoder);
 
+/**
+ * @brief Fill an audio chunk with DSD silence.
+ *
+ * For Native DSD mode, fills with DSD silence pattern 0x69 decoded to samples.
+ * For DoP mode, fills with 16-bit DSD silence 0x6969 and alternating 0x05 / 0xFA markers.
+ *
+ * @param encoder Pointer to the encoder instance.
+ * @param chunk Pointer to the audio chunk to fill.
+ */
+void dsd_encoder_fill_silence(dsd_encoder_t* encoder, audio_chunk_t* chunk);
+
 #endif  // CLIB_DOP_DSD_ENCODER_H

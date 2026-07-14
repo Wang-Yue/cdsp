@@ -642,6 +642,26 @@ bool alsa_playback_get_pending_rate_change(alsa_playback_t* playback,
   return false;
 }
 
+static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
+#if defined(SND_PCM_FORMAT_DSD_U8)
+  if (format == SND_PCM_FORMAT_DSD_U8) return true;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U16_LE)
+  if (format == SND_PCM_FORMAT_DSD_U16_LE) return true;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U16_BE)
+  if (format == SND_PCM_FORMAT_DSD_U16_BE) return true;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+  if (format == SND_PCM_FORMAT_DSD_U32_LE) return true;
+#endif
+#if defined(SND_PCM_FORMAT_DSD_U32_BE)
+  if (format == SND_PCM_FORMAT_DSD_U32_BE) return true;
+#endif
+  (void)format;
+  return false;
+}
+
 bool alsa_playback_prefill_silence(alsa_playback_t* playback, size_t frames,
                                    backend_error_t* err) {
   if (!playback->pcm) return false;
@@ -650,8 +670,14 @@ bool alsa_playback_prefill_silence(alsa_playback_t* playback, size_t frames,
   size_t sample_size = (bits > 0) ? ((size_t)bits / 8) : 4;
 
   size_t zero_buf_size = frames * playback->channels * sample_size;
-  void* zero_buf = calloc(1, zero_buf_size);
+  void* zero_buf = malloc(zero_buf_size);
   if (!zero_buf) return false;
+
+  if (alsa_is_dsd_format(playback->format)) {
+    memset(zero_buf, 0x69, zero_buf_size);
+  } else {
+    memset(zero_buf, 0, zero_buf_size);
+  }
 
   snd_pcm_sframes_t rc = snd_pcm_writei(playback->pcm, zero_buf, frames);
   free(zero_buf);

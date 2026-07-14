@@ -159,7 +159,20 @@ static bool engine_session_build_backends(
                               : playback_chunk_size;
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-  playback_backend_prefill_silence(core->playback, prefill_frames, &berr);
+
+  if (dsd_encoder_is_enabled(core->dsd_encoder)) {
+    size_t channels =
+        playback_device_config_get_channels(&config->devices.playback);
+    audio_chunk_t* prefill_chunk =
+        audio_chunk_create(prefill_frames, channels);
+    if (prefill_chunk) {
+      dsd_encoder_fill_silence(core->dsd_encoder, prefill_chunk);
+      playback_backend_write(core->playback, prefill_chunk, &berr);
+      audio_chunk_free(prefill_chunk);
+    }
+  } else {
+    playback_backend_prefill_silence(core->playback, prefill_frames, &berr);
+  }
 
   return true;
 }

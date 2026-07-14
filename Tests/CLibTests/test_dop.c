@@ -424,4 +424,64 @@ TEST(SupportedCarrierRatesTest) {
   dsd_encoder_free(enc_8bit_dsd256);
 }
 
+TEST(DSDEncoderSilencePrefill) {
+  // Test Native DSD 8-bit
+  dsd_encoder_t* enc_nat8 =
+      dsd_encoder_create(2, 352800, DSD_MODE_NATIVE, 8, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_nat8 != NULL);
+  audio_chunk_t* chunk8 = audio_chunk_create(10, 2);
+  dsd_encoder_fill_silence(enc_nat8, chunk8);
+  for (size_t t = 0; t < 10; t++) {
+    uint8_t u8 = pcm_sample_encode_dsd_u8(audio_chunk_get_channel(chunk8, 0)[t]);
+    ASSERT_EQ((int)u8, 0x69);
+  }
+  audio_chunk_free(chunk8);
+  dsd_encoder_free(enc_nat8);
+
+  // Test Native DSD 16-bit
+  dsd_encoder_t* enc_nat16 =
+      dsd_encoder_create(2, 176400, DSD_MODE_NATIVE, 16, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_nat16 != NULL);
+  audio_chunk_t* chunk16 = audio_chunk_create(10, 2);
+  dsd_encoder_fill_silence(enc_nat16, chunk16);
+  for (size_t t = 0; t < 10; t++) {
+    uint16_t u16 =
+        (uint16_t)pcm_sample_encode_s16(audio_chunk_get_channel(chunk16, 0)[t]);
+    ASSERT_EQ((int)u16, 0x6969);
+  }
+  audio_chunk_free(chunk16);
+  dsd_encoder_free(enc_nat16);
+
+  // Test Native DSD 32-bit
+  dsd_encoder_t* enc_nat32 =
+      dsd_encoder_create(2, 88200, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_nat32 != NULL);
+  audio_chunk_t* chunk32 = audio_chunk_create(10, 2);
+  dsd_encoder_fill_silence(enc_nat32, chunk32);
+  for (size_t t = 0; t < 10; t++) {
+    uint32_t u32 =
+        (uint32_t)pcm_sample_encode_s32(audio_chunk_get_channel(chunk32, 0)[t]);
+    ASSERT_EQ((int)u32, 0x69696969);
+  }
+  audio_chunk_free(chunk32);
+  dsd_encoder_free(enc_nat32);
+
+  // Test DoP Mode (16-bit DSD payload, alternating 0x05 / 0xFA marker)
+  dsd_encoder_t* enc_dop =
+      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
+  ASSERT_TRUE(enc_dop != NULL);
+  audio_chunk_t* chunk_dop = audio_chunk_create(10, 2);
+  dsd_encoder_fill_silence(enc_dop, chunk_dop);
+  for (size_t t = 0; t < 10; t++) {
+    int32_t val24 = pcm_sample_encode_s24(audio_chunk_get_channel(chunk_dop, 0)[t]);
+    uint8_t marker = (uint8_t)((val24 >> 16) & 0xFF);
+    uint16_t payload = (uint16_t)(val24 & 0xFFFF);
+    uint8_t expected_marker = (t % 2 == 0) ? 0x05 : 0xFA;
+    ASSERT_EQ((int)marker, (int)expected_marker);
+    ASSERT_EQ((int)payload, 0x6969);
+  }
+  audio_chunk_free(chunk_dop);
+  dsd_encoder_free(enc_dop);
+}
+
 TEST_MAIN()
