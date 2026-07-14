@@ -11,9 +11,11 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 
+#include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "wasapi_capabilities.h"
@@ -84,6 +86,14 @@ struct wasapi_playback {
   _Atomic bool paused;
   HANDLE event;
   bool started;
+
+  spsc_audio_ring_buffer_t* ring_buffer;
+  pthread_t thread;
+  _Atomic bool thread_running;
+  float* transfer_buf;
+  size_t transfer_buf_cap;
+  float* write_buf;
+  size_t write_buf_cap;
 };
 
 /**
@@ -758,7 +768,7 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
         Sleep(1);
       } else {
         // Wait for the event to be signaled by WASAPI indicating data is ready.
-        if (WaitForSingleObject(capture->event, 100) != WAIT_OBJECT_0) {
+        if (WaitForSingleObject(capture->event, 2000) != WAIT_OBJECT_0) {
           // Timeout or error wait
         }
       }
@@ -928,6 +938,115 @@ static const playback_backend_vtable_t wasapi_playback_vtable = {
     .get_is_paused = play_vtable_get_is_paused,
     .set_is_paused = play_vtable_set_is_paused,
     .destroy = play_vtable_destroy};
+
+static inline void encode_float_samples_to_wasapi(BYTE* dst, const float* src,
+                                                  size_t frames, int channels,
+                                                  int bits_per_sample,
+                                                  int valid_bits,
+                                                  bool is_float) {
+  if (is_float) {
+    memcpy(dst, src, frames * channels * sizeof(float));
+    return;
+  }
+  if (bits_per_sample == 16) {
+    int16_t* s16 = (int16_t*)dst;
+    for (size_t i = 0; i < frames * channels; i++) {
+      s16[i] = pcm_sample_encode_s16(src[i]);
+    }
+  } else if (bits_per_sample == 24) {
+    for (size_t i = 0; i < frames * channels; i++) {
+      pcm_sample_encode_s24_3bytes(src[i], &dst[i * 3]);
+    }
+  } else if (bits_per_sample == 32 && valid_bits == 24) {
+    int32_t* s32 = (int32_t*)dst;
+    for (size_t i = 0; i < frames * channels; i++) {
+      s32[i] = pcm_sample_encode_s24_msb(src[i]);
+    }
+  } else if (bits_per_sample == 32 && valid_bits == 32) {
+    int32_t* s32 = (int32_t*)dst;
+    for (size_t i = 0; i < frames * channels; i++) {
+      s32[i] = pcm_sample_encode_s32(src[i]);
+    }
+  }
+}
+
+static void* wasapi_playback_thread_func(void* arg) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)arg;
+#ifdef _WIN32
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#endif
+
+  while (
+      atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
+    if (WaitForSingleObject(playback->event, 1000) != WAIT_OBJECT_0) {
+      continue;
+    }
+
+    if (!atomic_load_explicit(&playback->thread_running,
+                              memory_order_acquire)) {
+      break;
+    }
+
+    if (atomic_load_explicit(&playback->paused, memory_order_acquire)) {
+      continue;
+    }
+
+    UINT32 padding = 0;
+    HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
+    if (FAILED(hr)) continue;
+
+    UINT32 available_frames = playback->buffer_frame_count - padding;
+    if (available_frames == 0) continue;
+
+    size_t ring_avail =
+        spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) /
+        playback->channels;
+    UINT32 to_write = available_frames;
+
+    BYTE* data = NULL;
+    hr = IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
+    if (SUCCEEDED(hr) && data) {
+      static DWORD last_write_time = 0;
+      DWORD now = GetTickCount();
+      DWORD elapsed = (last_write_time == 0) ? 0 : (now - last_write_time);
+      last_write_time = now;
+      logger_debug(&g_logger,
+                   "Thread wrote to WASAPI: frames=%u, ring_avail=%zu, "
+                   "padding=%u, elapsed=%u ms",
+                   to_write, ring_avail, padding, (unsigned int)elapsed);
+      size_t to_read_from_ring =
+          (ring_avail < to_write) ? ring_avail : to_write;
+
+      // Expand transfer buffer if needed
+      if (to_write * playback->channels > playback->transfer_buf_cap) {
+        playback->transfer_buf_cap = to_write * playback->channels;
+        playback->transfer_buf = (float*)realloc(
+            playback->transfer_buf, playback->transfer_buf_cap * sizeof(float));
+      }
+
+      size_t consumed = spsc_audio_ring_buffer_consume(
+          playback->ring_buffer, playback->transfer_buf,
+          to_read_from_ring * playback->channels);
+      size_t consumed_frames = consumed / playback->channels;
+
+      encode_float_samples_to_wasapi(
+          data, playback->transfer_buf, consumed_frames, playback->channels,
+          playback->bits_per_sample, playback->valid_bits, playback->is_float);
+
+      if (consumed_frames < to_write) {
+        size_t silent_frames = to_write - consumed_frames;
+        BYTE* silence_start = data + consumed_frames * playback->channels *
+                                         (playback->bits_per_sample / 8);
+        memset(silence_start, 0,
+               silent_frames * playback->channels *
+                   (playback->bits_per_sample / 8));
+      }
+
+      IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
+    }
+  }
+  return NULL;
+}
 
 playback_backend_t* wasapi_playback_create(
     const playback_device_config_t* config, int sample_rate, int chunk_size,
@@ -1193,6 +1312,9 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
       playback->device[0] != '\0' ? playback->device : "default",
       playback->sample_rate, playback->channels, playback->exclusive);
 
+  logger_info(&g_logger, "WASAPI allocated buffer size: %u frames",
+              playback->buffer_frame_count);
+
   if (!playback->exclusive) {
     logger_warn(
         &g_logger,
@@ -1201,9 +1323,66 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
         "bit corruption");
   }
 
+  // Initialize ring buffer and background thread
+  size_t ring_size = playback->chunk_size * 8;
+  playback->ring_buffer =
+      spsc_audio_ring_buffer_create(ring_size * playback->channels);
+  if (!playback->ring_buffer) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to create ring buffer");
+    }
+    goto error_cleanup;
+  }
+
+  playback->transfer_buf_cap = playback->chunk_size * playback->channels;
+  playback->transfer_buf =
+      (float*)malloc(playback->transfer_buf_cap * sizeof(float));
+  playback->write_buf_cap = playback->chunk_size * playback->channels;
+  playback->write_buf = (float*)malloc(playback->write_buf_cap * sizeof(float));
+  if (!playback->transfer_buf || !playback->write_buf) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate temporary buffers");
+    }
+    goto error_cleanup;
+  }
+
+  if (!playback->polling) {
+    atomic_store_explicit(&playback->thread_running, true,
+                          memory_order_release);
+    int ret = pthread_create(&playback->thread, NULL,
+                             wasapi_playback_thread_func, playback);
+    if (ret != 0) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to create playback thread");
+      }
+      goto error_cleanup;
+    }
+  }
+
   return true;
 
 error_cleanup:
+  if (playback->thread_running) {
+    atomic_store_explicit(&playback->thread_running, false,
+                          memory_order_release);
+    if (playback->event) SetEvent(playback->event);
+    pthread_join(playback->thread, NULL);
+  }
+  if (playback->ring_buffer) {
+    spsc_audio_ring_buffer_free(playback->ring_buffer);
+    playback->ring_buffer = NULL;
+  }
+  if (playback->transfer_buf) {
+    free(playback->transfer_buf);
+    playback->transfer_buf = NULL;
+  }
+  if (playback->write_buf) {
+    free(playback->write_buf);
+    playback->write_buf = NULL;
+  }
   if (playback->session_control) {
     SAFE_RELEASE(playback->session_control);
   }
@@ -1244,6 +1423,130 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
     return false;
   }
 
+  size_t total_frames = audio_chunk_get_valid_frames(chunk);
+
+  if (playback->polling) {
+    if (total_frames > playback->buffer_frame_count) {
+      logger_error(&g_logger,
+                   "Input chunk size %zu exceeds WASAPI buffer capacity %u",
+                   total_frames, playback->buffer_frame_count);
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Input chunk size exceeds WASAPI buffer capacity");
+      }
+      return false;
+    }
+
+    size_t frames_written = 0;
+    DWORD start_time = GetTickCount();
+
+    while (frames_written < total_frames) {
+      if (GetTickCount() - start_time > 3000) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "WASAPI playback timeout (device stalled)");
+        }
+        return false;
+      }
+
+      UINT32 padding = 0;
+      HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
+      if (FAILED(hr)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to get padding");
+        return false;
+      }
+
+      UINT32 available_frames = playback->buffer_frame_count - padding;
+      UINT32 to_write = total_frames - frames_written;
+
+      if (available_frames < to_write) {
+        Sleep(1);
+        continue;
+      }
+
+      BYTE* data = NULL;
+      hr = IAudioRenderClient_GetBuffer(playback->render_client, to_write,
+                                        &data);
+      if (SUCCEEDED(hr) && data) {
+        start_time = GetTickCount();
+        encode_samples_to_wasapi(data, chunk, frames_written, to_write,
+                                 playback->channels, playback->bits_per_sample,
+                                 playback->valid_bits, playback->is_float);
+        IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
+        frames_written += to_write;
+      } else {
+        logger_error(&g_logger,
+                     "IAudioRenderClient_GetBuffer failed: hr=0x%08lX "
+                     "(to_write=%u, available=%u)",
+                     (unsigned long)hr, to_write, available_frames);
+        if (err) {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "IAudioRenderClient_GetBuffer failed: hr=0x%08lX",
+                   (unsigned long)hr);
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+        }
+        return false;
+      }
+    }
+  } else {
+    // Event-driven: write to ring buffer
+    if (total_frames * playback->channels > playback->write_buf_cap) {
+      playback->write_buf_cap = total_frames * playback->channels;
+      playback->write_buf = (float*)realloc(
+          playback->write_buf, playback->write_buf_cap * sizeof(float));
+      if (!playback->write_buf) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to allocate write buffer");
+        }
+        return false;
+      }
+    }
+
+    for (size_t f = 0; f < total_frames; f++) {
+      for (int c = 0; c < playback->channels; c++) {
+        playback->write_buf[f * playback->channels + c] =
+            (float)audio_chunk_get_channel(chunk, c)[f];
+      }
+    }
+
+    size_t written = 0;
+    size_t requested = total_frames * playback->channels;
+    DWORD start_time = GetTickCount();
+
+    while (written < requested) {
+      if (GetTickCount() - start_time > 3000) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "WASAPI write timeout (ring buffer full)");
+        }
+        return false;
+      }
+
+      size_t available_space =
+          spsc_audio_ring_buffer_get_capacity(playback->ring_buffer) -
+          spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
+      size_t to_write = requested - written;
+      if (to_write > available_space) to_write = available_space;
+
+      if (to_write > 0) {
+        spsc_audio_ring_buffer_write(
+            playback->ring_buffer, playback->write_buf + written, to_write, 1);
+        written += to_write;
+        start_time = GetTickCount();  // progress made
+      } else {
+        Sleep(1);
+        if (!atomic_load_explicit(&playback->thread_running,
+                                  memory_order_acquire)) {
+          return false;
+        }
+      }
+    }
+  }
+
   if (!playback->started) {
     HRESULT hr = IAudioClient_Start(playback->client);
     if (FAILED(hr)) {
@@ -1259,72 +1562,29 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
     playback->started = true;
   }
 
-  size_t frames_written = 0;
-  size_t total_frames = audio_chunk_get_valid_frames(chunk);
-  DWORD start_time = GetTickCount();
-
-  // Keep writing audio packets until all frames from the input chunk are
-  // written.
-  while (frames_written < total_frames) {
-    if (GetTickCount() - start_time > 3000) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "WASAPI playback timeout (device stalled)");
-      }
-      return false;
-    }
-
-    UINT32 padding = 0;
-    // Get the amount of data already buffered in the endpoint.
-    HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
-    if (FAILED(hr)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Failed to get padding");
-      return false;
-    }
-
-    // Calculate how much space is left in the endpoint buffer.
-    UINT32 available_frames = playback->buffer_frame_count - padding;
-    UINT32 to_write = total_frames - frames_written;
-    if (to_write > available_frames) {
-      to_write = available_frames;
-    }
-
-    if (to_write > 0) {
-      BYTE* data = NULL;
-      // Get a pointer to the buffer space where we can write the audio data.
-      hr = IAudioRenderClient_GetBuffer(playback->render_client, to_write,
-                                        &data);
-      if (SUCCEEDED(hr) && data) {
-        start_time = GetTickCount();  // progress made, reset timeout
-        // Encode and copy the samples from the audio chunk to the WASAPI
-        // buffer.
-        encode_samples_to_wasapi(data, chunk, frames_written, to_write,
-                                 playback->channels, playback->bits_per_sample,
-                                 playback->valid_bits, playback->is_float);
-        // Release the buffer back to WASAPI to be scheduled for playback.
-        IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
-        frames_written += to_write;
-      }
-    } else {
-      // If buffer is full, wait before trying to write again.
-      if (playback->polling) {
-        Sleep(10);
-      } else {
-        // Wait for the event signaled by WASAPI when it has processed some
-        // data.
-        if (WaitForSingleObject(playback->event, 100) != WAIT_OBJECT_0) {
-          // Timeout or error wait
-        }
-      }
-    }
-  }
   return true;
 }
 
 void wasapi_playback_close(wasapi_playback_t* playback) {
   if (!playback) return;
+  if (playback->thread_running) {
+    atomic_store_explicit(&playback->thread_running, false,
+                          memory_order_release);
+    if (playback->event) SetEvent(playback->event);
+    pthread_join(playback->thread, NULL);
+  }
+  if (playback->ring_buffer) {
+    spsc_audio_ring_buffer_free(playback->ring_buffer);
+    playback->ring_buffer = NULL;
+  }
+  if (playback->transfer_buf) {
+    free(playback->transfer_buf);
+    playback->transfer_buf = NULL;
+  }
+  if (playback->write_buf) {
+    free(playback->write_buf);
+    playback->write_buf = NULL;
+  }
   if (playback->client) {
     IAudioClient_Stop(playback->client);
     SAFE_RELEASE(playback->render_client);
@@ -1349,7 +1609,16 @@ size_t wasapi_playback_get_buffer_level(wasapi_playback_t* playback) {
   if (!playback->client) return 0;
   UINT32 padding = 0;
   IAudioClient_GetCurrentPadding(playback->client, &padding);
-  return padding;
+  if (playback->polling) {
+    return padding;
+  }
+  size_t ring_frames = 0;
+  if (playback->ring_buffer) {
+    ring_frames =
+        spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) /
+        playback->channels;
+  }
+  return padding + ring_frames;
 }
 
 bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
@@ -1362,19 +1631,48 @@ bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
 bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
                                      backend_error_t* err) {
   (void)frames;
-  if (!playback->render_client) return false;
-  BYTE* data = NULL;
-  UINT32 prefill_frames = playback->buffer_frame_count;
-  HRESULT hr = IAudioRenderClient_GetBuffer(playback->render_client,
-                                            prefill_frames, &data);
-  if (SUCCEEDED(hr) && data) {
-    memset(
-        data, 0,
-        prefill_frames * playback->channels * (playback->bits_per_sample / 8));
-    IAudioRenderClient_ReleaseBuffer(playback->render_client, prefill_frames,
-                                     0);
+  if (playback->polling) {
+    if (!playback->render_client) return false;
+    BYTE* data = NULL;
+    UINT32 prefill_frames = playback->buffer_frame_count;
+    HRESULT hr = IAudioRenderClient_GetBuffer(playback->render_client,
+                                              prefill_frames, &data);
+    if (SUCCEEDED(hr) && data) {
+      memset(data, 0,
+             prefill_frames * playback->channels *
+                 (playback->bits_per_sample / 8));
+      IAudioRenderClient_ReleaseBuffer(playback->render_client, prefill_frames,
+                                       0);
+      if (!playback->started) {
+        hr = IAudioClient_Start(playback->client);
+        if (FAILED(hr)) {
+          if (err) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "Failed to start IAudioClient after prefill: hr=0x%08lX",
+                     (unsigned long)hr);
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+          }
+          return false;
+        }
+        playback->started = true;
+      }
+      return true;
+    }
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Failed to prefill silence");
+    return false;
+  } else {
+    if (!playback->ring_buffer) return false;
+
+    // Prefill the ring buffer with silence of buffer_frame_count
+    spsc_audio_ring_buffer_write_silence(
+        playback->ring_buffer,
+        playback->buffer_frame_count * playback->channels);
+
     if (!playback->started) {
-      hr = IAudioClient_Start(playback->client);
+      HRESULT hr = IAudioClient_Start(playback->client);
       if (FAILED(hr)) {
         if (err) {
           char msg[256];
@@ -1389,10 +1687,6 @@ bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
     }
     return true;
   }
-  if (err)
-    backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                       "Failed to prefill silence");
-  return false;
 }
 
 bool wasapi_playback_get_is_paused(wasapi_playback_t* playback) {
