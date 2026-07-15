@@ -73,6 +73,7 @@ static filter_instance_type_t filter_instance_type_from_config(
     case FILTER_TYPE_VOLUME:
       return FILTER_INSTANCE_VOLUME;
   }
+  return FILTER_INSTANCE_BIQUAD;
 }
 
 filter_t* filter_create(const char* name, const filter_config_t* config,

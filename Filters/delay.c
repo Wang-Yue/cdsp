@@ -270,6 +270,7 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
       // Compute delay using speed of sound in air (approx. 343 m/s)
       return delay / 1000.0 * (double)sample_rate / 343.0;
   }
+  return 0.0;
 }
 
 static void delay_filter_transfer_state(delay_filter_t* dest,

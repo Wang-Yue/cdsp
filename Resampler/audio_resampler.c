@@ -53,6 +53,7 @@ static resampler_impl_type_t resampler_impl_type_from_config(
       return RESAMPLER_IMPL_APPLE;
 #endif
   }
+  return RESAMPLER_IMPL_SYNCHRONOUS;
 }
 
 resampler_t* resampler_create_from_config(const resampler_config_t* config,

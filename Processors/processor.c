@@ -41,6 +41,7 @@ static processor_impl_type_t processor_impl_type_from_config(
     case PROCESSOR_TYPE_RACE:
       return PROCESSOR_IMPL_RACE;
   }
+  return PROCESSOR_IMPL_COMPRESSOR;
 }
 
 void dsp_processor_process(dsp_processor_t* proc, audio_chunk_t* chunk) {
