@@ -373,6 +373,11 @@ resampler_t* apple_resampler_create(
   AudioConverterSetProperty(conv, kAudioConverterSampleRateConverterQuality,
                             sizeof(UInt32), &quality_val);
 
+  UInt32 complexity_val = (UInt32)apple_resampler_complexity_os_type(complexity);
+  AudioConverterSetProperty(conv,
+                            kAudioConverterSampleRateConverterComplexity,
+                            sizeof(UInt32), &complexity_val);
+
   resampler_t* wrap =
       (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
