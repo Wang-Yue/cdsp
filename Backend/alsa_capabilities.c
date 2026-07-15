@@ -132,44 +132,17 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
         rate_cap->samplerate = test_rate;
 
         // Formats we want to probe
-        const snd_pcm_format_t test_formats[] = {SND_PCM_FORMAT_S16_LE,
-                                                 SND_PCM_FORMAT_S24_3LE,
-                                                 SND_PCM_FORMAT_S24_LE,
-                                                 SND_PCM_FORMAT_S32_LE,
-                                                 SND_PCM_FORMAT_FLOAT_LE,
-                                                 SND_PCM_FORMAT_FLOAT64_LE
-#if defined(SND_PCM_FORMAT_DSD_U8)
-                                                 ,
-                                                 SND_PCM_FORMAT_DSD_U8
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
-                                                 ,
-                                                 SND_PCM_FORMAT_DSD_U16_LE
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
-                                                 ,
-                                                 SND_PCM_FORMAT_DSD_U32_LE
-#endif
-        };
-        const char* format_names[] = {"S16_LE",
-                                      "S24_3_LE",
-                                      "S24_4_LE",
-                                      "S32_LE",
-                                      "F32_LE",
-                                      "F64_LE"
-#if defined(SND_PCM_FORMAT_DSD_U8)
-                                      ,
-                                      "DSD_U8"
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
-                                      ,
-                                      "DSD_U16_LE"
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
-                                      ,
-                                      "DSD_U32_LE"
-#endif
-        };
+        const snd_pcm_format_t test_formats[] = {
+            SND_PCM_FORMAT_S16_LE,     SND_PCM_FORMAT_S24_3LE,
+            SND_PCM_FORMAT_S24_LE,     SND_PCM_FORMAT_S32_LE,
+            SND_PCM_FORMAT_FLOAT_LE,   SND_PCM_FORMAT_FLOAT64_LE,
+            SND_PCM_FORMAT_DSD_U8,     SND_PCM_FORMAT_DSD_U16_LE,
+            SND_PCM_FORMAT_DSD_U16_BE, SND_PCM_FORMAT_DSD_U32_LE,
+            SND_PCM_FORMAT_DSD_U32_BE};
+        const char* format_names[] = {"S16_LE",     "S24_3_LE",   "S24_4_LE",
+                                      "S32_LE",     "F32_LE",     "F64_LE",
+                                      "DSD_U8",     "DSD_U16_LE", "DSD_U16_BE",
+                                      "DSD_U32_LE", "DSD_U32_BE"};
         const size_t test_formats_count =
             sizeof(test_formats) / sizeof(test_formats[0]);
 
