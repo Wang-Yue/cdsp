@@ -41,8 +41,8 @@ static const logger_t g_logger = {"dsp.dsd.encoder"};
  * @brief State for a single DSD encoder channel.
  */
 typedef struct {
-  /** FIFO buffer for interpolation. Holds 32 * 2 doubles. */
-  double fifo[64];
+  /** FIFO buffer for interpolation. Holds 32 * 2 floats. */
+  float fifo[64];
   /** Current position in the FIFO buffer. */
   int fifo_pos;
   /** Alternating DoP marker byte (0x05 or 0xFA). */
@@ -68,9 +68,10 @@ struct dsd_encoder {
   dsd_encoder_channel_state_t* channel_states;
   /**
    * Polyphase coefficient table laid out as `coeffs[phase * subFilterTaps +
-   * tap]`. Each phase is normalized to unit DC gain.
+   * tap]`. Each phase is normalized to unit DC gain. Single-precision float
+   * representation for maximum SIMD (NEON) vectorization throughput and minimal cache footprint.
    */
-  double* coeffs;
+  float* coeffs;
 };
 
 #include <math.h>
@@ -127,7 +128,7 @@ bool dsd_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
 /// unchanged.
 /**
  * @brief Builds the polyphase coefficient table for the interpolation
- * filter.
+ * filter (float precision).
  *
  * Designs a 511-tap Kaiser-windowed sinc filter and decomposes it into
  * `dsd_bit_depth` phases (polyphase representation) with 32 taps per phase.
@@ -137,11 +138,11 @@ bool dsd_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
  * @param sample_rate The PCM sample rate (carrier rate).
  * @param dsd_bit_depth DSD container bit depth per output frame (8, 16, 32).
  * @param cutoff_hz The desired cutoff frequency in Hz.
- * @return A pointer to the allocated flat array of polyphase coefficients, or
+ * @return A pointer to the allocated flat array of single-precision polyphase coefficients, or
  * NULL on allocation failure.
  */
-static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
-                            double cutoff_hz) {
+static float* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
+                           double cutoff_hz) {
   double beta = 11.0;
   double dsd_rate = (double)sample_rate * (double)dsd_bit_depth;
   double cutoff = cutoff_hz / dsd_rate;
@@ -170,7 +171,7 @@ static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
   }
 
   size_t total_elements = phases * DSD_ENC_SUB_FILTER_TAPS;
-  double* p = (double*)calloc(total_elements, sizeof(double));
+  float* p = (float*)calloc(total_elements, sizeof(float));
   if (!p) {
     free(taps);
     return NULL;
@@ -186,7 +187,7 @@ static double* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
       double v = taps[m * phases + ph] * scale;
       int store_idx = (int)(ph * DSD_ENC_SUB_FILTER_TAPS +
                             (DSD_ENC_SUB_FILTER_TAPS - 1 - m));
-      p[store_idx] = v;
+      p[store_idx] = (float)v;
     }
   }
   free(taps);
@@ -274,8 +275,27 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
  */
 
 
-static inline double dot_product_32(const double* a, const double* b) {
-  double acc0 = 0.0, acc1 = 0.0, acc2 = 0.0, acc3 = 0.0;
+#if defined(__GNUC__) || defined(__clang__)
+typedef float v4sf __attribute__((vector_size(16)));
+
+static inline float dot_product_32(const float* a, const float* b) {
+  v4sf acc0 = {0.0f, 0.0f, 0.0f, 0.0f};
+  v4sf acc1 = {0.0f, 0.0f, 0.0f, 0.0f};
+
+  const v4sf* va = (const v4sf*)a;
+  const v4sf* vb = (const v4sf*)b;
+
+  for (int i = 0; i < 8; i += 2) {
+    acc0 += va[i + 0] * vb[i + 0];
+    acc1 += va[i + 1] * vb[i + 1];
+  }
+
+  v4sf acc = acc0 + acc1;
+  return acc[0] + acc[1] + acc[2] + acc[3];
+}
+#else
+static inline float dot_product_32(const float* a, const float* b) {
+  float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;
   for (int i = 0; i < 32; i += 4) {
     acc0 += a[i + 0] * b[i + 0];
     acc1 += a[i + 1] * b[i + 1];
@@ -284,6 +304,7 @@ static inline double dot_product_32(const double* a, const double* b) {
   }
   return (acc0 + acc1) + (acc2 + acc3);
 }
+#endif
 
 static inline double pack_dsd_sample(uint32_t word, size_t bit_depth,
                                     dsd_mode_t mode, uint8_t* marker) {
@@ -305,25 +326,25 @@ static inline double pack_dsd_sample(uint32_t word, size_t bit_depth,
 
 static void encode_channel(dsd_encoder_channel_state_t* state,
                            mutable_waveform_t buf, size_t frames,
-                           const double* coeffs, dsd_mode_t mode,
+                           const float* coeffs, dsd_mode_t mode,
                            size_t dsd_bit_depth) {
   if (!buf) return;
-  double* fifo = state->fifo;
+  float* fifo = state->fifo;
   int pos = state->fifo_pos;
   uint8_t marker = state->marker;
   sigma_delta_modulator_t* mod = state->modulator;
 
   for (size_t t = 0; t < frames; t++) {
-    double sample_val = buf[t];
+    float sample_val = (float)buf[t];
     fifo[pos] = sample_val;
     fifo[pos + DSD_ENC_SUB_FILTER_TAPS] = sample_val;
 
-    const double* fifo_p = fifo + pos + 1;
-    const double* cp = coeffs;
+    const float* fifo_p = fifo + pos + 1;
+    const float* cp = coeffs;
 
     uint32_t word = 0;
     for (size_t p = 0; p < dsd_bit_depth; p++) {
-      double Y_p = dot_product_32(cp, fifo_p);
+      float Y_p = dot_product_32(cp, fifo_p);
       cp += 32;
       if (sigma_delta_modulator_sample(mod, Y_p)) {
         word |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));
@@ -337,17 +358,19 @@ static void encode_channel(dsd_encoder_channel_state_t* state,
   state->marker = marker;
 }
 
+
+
 static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
                                  dsd_encoder_channel_state_t* state1,
                                  mutable_waveform_t buf0,
                                  mutable_waveform_t buf1,
                                  size_t frames,
-                                 const double* coeffs,
+                                 const float* coeffs,
                                  dsd_mode_t mode,
                                  size_t dsd_bit_depth) {
   if (!buf0 || !buf1) return;
-  double* fifo0 = state0->fifo;
-  double* fifo1 = state1->fifo;
+  float* fifo0 = state0->fifo;
+  float* fifo1 = state1->fifo;
   int pos0 = state0->fifo_pos;
   int pos1 = state1->fifo_pos;
   uint8_t marker0 = state0->marker;
@@ -356,19 +379,19 @@ static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
   sigma_delta_modulator_t* mod1 = state1->modulator;
 
   for (size_t t = 0; t < frames; t++) {
-    double val0 = buf0[t];
-    double val1 = buf1[t];
+    float val0 = (float)buf0[t];
+    float val1 = (float)buf1[t];
     fifo0[pos0] = val0; fifo0[pos0 + DSD_ENC_SUB_FILTER_TAPS] = val0;
     fifo1[pos1] = val1; fifo1[pos1 + DSD_ENC_SUB_FILTER_TAPS] = val1;
 
-    const double* fifo_p0 = fifo0 + pos0 + 1;
-    const double* fifo_p1 = fifo1 + pos1 + 1;
-    const double* cp = coeffs;
+    const float* fifo_p0 = fifo0 + pos0 + 1;
+    const float* fifo_p1 = fifo1 + pos1 + 1;
+    const float* cp = coeffs;
 
     uint32_t word0 = 0, word1 = 0;
     for (size_t p = 0; p < dsd_bit_depth; p++) {
-      double Y_p0 = dot_product_32(cp, fifo_p0);
-      double Y_p1 = dot_product_32(cp, fifo_p1);
+      float Y_p0 = dot_product_32(cp, fifo_p0);
+      float Y_p1 = dot_product_32(cp, fifo_p1);
       cp += 32;
       if (sigma_delta_modulator_sample(mod0, Y_p0)) {
         word0 |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));

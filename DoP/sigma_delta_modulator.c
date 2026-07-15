@@ -6,8 +6,8 @@
 #include <string.h>
 
 typedef struct {
-  double a[8];
-  double g[8];
+  float a[8];
+  float g[8];
   int32_t order;
   uint32_t freq;
   sdm_filter_t name;
@@ -276,7 +276,7 @@ void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
   mod->name = preset->name;
   mod->freq = preset->freq;
   mod->idx = 0;
-  mod->prev_y = 0.0;
+  mod->prev_y = 0.0f;
 }
 
 sigma_delta_modulator_t* sigma_delta_modulator_create(sdm_filter_t filter_name,
