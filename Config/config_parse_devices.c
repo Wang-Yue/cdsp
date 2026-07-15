@@ -48,12 +48,6 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (parse_json_double(res_obj, "f_cutoff", &res->f_cutoff)) {
     res->has_f_cutoff = (res->f_cutoff > 0.0);
   }
-
-  if (parse_json_str(res_obj, "fixed", str_buf, sizeof(str_buf))) {
-    res->fixed = (strcasecmp(str_buf, "output") == 0) ? FIXED_ASYNC_OUTPUT
-                                                      : FIXED_ASYNC_INPUT;
-    res->has_fixed = true;
-  }
 }
 
 typedef struct {

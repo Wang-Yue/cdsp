@@ -842,8 +842,7 @@ static void* async_sinc_resampler_create(const resampler_config_t* config,
                                          config_error_t* err) {
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_SINC) return NULL;
 
-  fixed_async_t fixed_mode =
-      config->has_fixed ? config->fixed : FIXED_ASYNC_OUTPUT;
+  fixed_async_t fixed_mode = FIXED_ASYNC_INPUT;
   if (config->has_sinc_len && config->has_oversampling_factor &&
       config->has_window && config->has_interpolation) {
     window_function_t wf = window_function_from_string(
