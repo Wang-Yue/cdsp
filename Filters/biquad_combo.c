@@ -20,11 +20,19 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
 #endif
 
 // MARK: - Butterworth & Linkwitz-Riley helper calculations
-// Calculates the Q factors for a Butterworth filter of a given order.
-// Butterworth poles are distributed on a semi-circle in the left-half s-plane.
-// For odd orders, there is one real pole (represented here as Q = -1.0,
-// indicating a first-order section). For even orders, all poles are complex
-// conjugate pairs with Q = 1 / (2 * sin(angle)).
+/**
+ * @brief Computes Q values for a Butterworth filter of a given order.
+ *
+ * Butterworth poles are distributed on a semi-circle in the left-half s-plane.
+ * For odd orders, there is one real pole (represented here as Q = -1.0,
+ * indicating a first-order section). For even orders, all poles are complex
+ * conjugate pairs with Q = 1 / (2 * sin(angle)).
+ *
+ * @param order The filter order (must be positive).
+ * @param out_q Array to store the computed Q values.
+ * @param max_q Maximum capacity of the `out_q` array.
+ * @return The number of Q values computed (number of biquad stages).
+ */
 size_t biquad_combo_butterworth_q(int order, double* out_q, size_t max_q) {
   if (order < 1 || !out_q || max_q == 0) return 0;
   size_t count = 0;
@@ -39,9 +47,17 @@ size_t biquad_combo_butterworth_q(int order, double* out_q, size_t max_q) {
   return count;
 }
 
-// Calculates Q factors for a Linkwitz-Riley filter.
-// An L-R filter is designed by cascading two Butterworth filters of half the
-// order. e.g., LR4 is two cascaded BW2.
+/**
+ * @brief Computes Q values for a Linkwitz-Riley filter of a given order.
+ *
+ * An L-R filter is designed by cascading two Butterworth filters of half the
+ * order. e.g., LR4 is two cascaded BW2.
+ *
+ * @param order The filter order (must be positive, typically even).
+ * @param out_q Array to store the computed Q values.
+ * @param max_q Maximum capacity of the `out_q` array.
+ * @return The number of Q values computed (number of biquad stages).
+ */
 size_t biquad_combo_linkwitz_riley_q(int order, double* out_q, size_t max_q) {
   if (order % 2 != 0 || order < 2 || !out_q || max_q == 0) return 0;
   double bw_q[16];

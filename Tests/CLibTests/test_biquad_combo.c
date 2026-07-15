@@ -2,6 +2,13 @@
 #include "Filters/filter.h"
 #include "test_support.h"
 
+// Declare internal helper functions to test them without public header
+// pollution
+extern size_t biquad_combo_butterworth_q(int order, double* out_q,
+                                         size_t max_q);
+extern size_t biquad_combo_linkwitz_riley_q(int order, double* out_q,
+                                            size_t max_q);
+
 static bool is_close(double left, double right, double maxdiff) {
   return fabs(left - right) < maxdiff;
 }
@@ -53,7 +60,6 @@ TEST(make_lr6) {
   ASSERT_EQ(5, count);
   ASSERT_TRUE(compare_vecs(q, expect, 5, 0.01));
 }
-
 TEST(check_lr) {
   int fs = 48000;
   biquad_combo_config_t okconf = {
