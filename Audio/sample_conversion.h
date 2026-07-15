@@ -442,10 +442,13 @@ static inline double pcm_sample_decode_dsd_u8(uint8_t u8) {
 static inline void pcm_sample_encode_dsd_u32_bytes(float val, uint8_t* dst) {
   uint32_t u32;
   memcpy(&u32, &val, sizeof(uint32_t));
-  dst[0] = (uint8_t)(u32 >> 24);
-  dst[1] = (uint8_t)((u32 >> 16) & 0xFF);
-  dst[2] = (uint8_t)((u32 >> 8) & 0xFF);
-  dst[3] = (uint8_t)(u32 & 0xFF);
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  uint32_t swapped = __builtin_bswap32(u32);
+#else
+  uint32_t swapped = u32;
+#endif
+  memcpy(dst, &swapped, sizeof(uint32_t));
 }
 
 /**
@@ -459,10 +462,17 @@ static inline void pcm_sample_encode_dsd_u32_reversed_bytes(float val,
                                                             uint8_t* dst) {
   uint32_t u32;
   memcpy(&u32, &val, sizeof(uint32_t));
-  dst[0] = pcm_reverse_bits_u8((uint8_t)(u32 >> 24));
-  dst[1] = pcm_reverse_bits_u8((uint8_t)((u32 >> 16) & 0xFF));
-  dst[2] = pcm_reverse_bits_u8((uint8_t)((u32 >> 8) & 0xFF));
-  dst[3] = pcm_reverse_bits_u8((uint8_t)(u32 & 0xFF));
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  uint32_t swapped = __builtin_bswap32(u32);
+#else
+  uint32_t swapped = u32;
+#endif
+  uint8_t* bytes = (uint8_t*)&swapped;
+  dst[0] = pcm_reverse_bits_u8(bytes[0]);
+  dst[1] = pcm_reverse_bits_u8(bytes[1]);
+  dst[2] = pcm_reverse_bits_u8(bytes[2]);
+  dst[3] = pcm_reverse_bits_u8(bytes[3]);
 }
 
 #endif  // CLIB_AUDIO_SAMPLE_CONVERSION_H
