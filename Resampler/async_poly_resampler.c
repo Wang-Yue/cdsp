@@ -36,6 +36,7 @@ struct async_poly_resampler {
   fixed_async_t fixed;
   size_t needed_input_size;
   size_t needed_output_size;
+  size_t current_buffer_fill;
   size_t max_input_frames;
 };
 
@@ -142,6 +143,7 @@ async_poly_resampler_t* async_poly_resampler_create(
   resampler->needed_output_size = calculate_output_size(
       chunk_size, resampler->resample_ratio, resampler->target_ratio,
       resampler->last_index, resampler->interpolator_len, fixed);
+  resampler->current_buffer_fill = resampler->needed_input_size;
 
   if (fixed == FIXED_ASYNC_OUTPUT) {
     resampler->max_output_frames = chunk_size;
@@ -437,11 +439,6 @@ resampler_error_t async_poly_resampler_process(
   }
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->needed_input_size;
-    double min_safe_idx = -((double)(2 * resampler->interpolator_len -
-                                     (resampler->interpolator_len / 2 - 1)));
-    if (resampler->last_index < min_safe_idx) {
-      resampler->last_index = min_safe_idx;
-    }
     resampler->resample_ratio = resampler->target_ratio;
 
     resampler->needed_input_size =
@@ -467,7 +464,7 @@ resampler_error_t async_poly_resampler_process(
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     double* base = audio_buffers_get_channel(resampler->input_buffer, ch);
     if (!base) continue;
-    memmove(base, base + resampler->needed_input_size,
+    memmove(base, base + resampler->current_buffer_fill,
             two_n_len * sizeof(double));
   }
   for (size_t ch = 0; ch < resampler->channels; ch++) {
@@ -480,6 +477,8 @@ resampler_error_t async_poly_resampler_process(
              (resampler->needed_input_size - valid_frames) * sizeof(double));
     }
   }
+
+  resampler->current_buffer_fill = resampler->needed_input_size;
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
   double t_ratio_end = 1.0 / resampler->target_ratio;
@@ -516,11 +515,6 @@ resampler_error_t async_poly_resampler_process(
   }
 
   resampler->last_index = final_idx - (double)resampler->needed_input_size;
-  double min_safe_idx = -((double)(2 * resampler->interpolator_len -
-                                   (resampler->interpolator_len / 2 - 1)));
-  if (resampler->last_index < min_safe_idx) {
-    resampler->last_index = min_safe_idx;
-  }
   resampler->resample_ratio = resampler->target_ratio;
 
   size_t prev_needed_input_size = resampler->needed_input_size;
