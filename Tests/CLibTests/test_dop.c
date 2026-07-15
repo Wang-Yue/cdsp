@@ -492,4 +492,89 @@ TEST(DSDEncoderSilencePrefill) {
   dsd_encoder_free(enc_dop);
 }
 
+TEST(DSDEncoderGoldenCorrectness) {
+  // Create input sine wave
+  audio_chunk_t* chunk = audio_chunk_create(64, 1);
+  double* ch = audio_chunk_get_channel(chunk, 0);
+  for (size_t i = 0; i < 64; i++) {
+    ch[i] = sin(2.0 * M_PI * (double)i / 16.0);
+  }
+
+  // 8-bit Native DSD encoder (352800 Hz * 8 = 2822400 Hz)
+  dsd_encoder_t* enc8 = dsd_encoder_create(1, 352800, DSD_MODE_NATIVE, 8,
+                                           SDM_FILTER_SDM6, 20000.0);
+  audio_chunk_t* chunk8 = audio_chunk_create(64, 1);
+  memcpy(audio_chunk_get_channel(chunk8, 0), ch, 64 * sizeof(double));
+  dsd_encoder_encode(enc8, chunk8);
+
+  const uint8_t golden8[64] = {
+      0x96, 0x69, 0x69, 0x96, 0x96, 0x69, 0x69, 0x66, 0x95, 0xA6, 0x59,
+      0xA6, 0x6A, 0xAA, 0xD5, 0x6A, 0xDA, 0xAD, 0xB6, 0xD6, 0x75, 0xB5,
+      0x9A, 0xCB, 0x2A, 0x56, 0x2A, 0x45, 0x4A, 0x4A, 0xAA, 0x4A, 0xD5,
+      0xAA, 0xDA, 0xD5, 0xB5, 0xAD, 0xAC, 0xAB, 0x25, 0x99, 0x49, 0x4A,
+      0x25, 0x92, 0xA5, 0x55, 0x53, 0x6B, 0x55, 0xDA, 0xCD, 0xB4, 0xEA,
+      0xB3, 0x2A, 0xA4, 0xA9, 0x29, 0x54, 0x89, 0x95, 0x4D};
+  for (size_t i = 0; i < 64; i++) {
+    uint8_t u8 =
+        pcm_sample_encode_dsd_u8(audio_chunk_get_channel(chunk8, 0)[i]);
+    ASSERT_EQ((int)u8, (int)golden8[i]);
+  }
+
+  // 16-bit Native DSD encoder (176400 Hz * 16 = 2822400 Hz)
+  dsd_encoder_t* enc16 = dsd_encoder_create(1, 176400, DSD_MODE_NATIVE, 16,
+                                            SDM_FILTER_SDM6, 20000.0);
+  audio_chunk_t* chunk16 = audio_chunk_create(64, 1);
+  memcpy(audio_chunk_get_channel(chunk16, 0), ch, 64 * sizeof(double));
+  dsd_encoder_encode(enc16, chunk16);
+
+  const uint16_t golden16[64] = {
+      0x9669, 0x6996, 0x9669, 0x9669, 0x6996, 0x9666, 0x9999, 0x6996,
+      0xA669, 0x669A, 0x6665, 0xA599, 0x5555, 0x3553, 0x34CD, 0x6569,
+      0xD55D, 0xB35D, 0x76ED, 0xBB7A, 0xEEEB, 0x7D6E, 0xB6AB, 0xAD54,
+      0xCAA9, 0x3148, 0xA249, 0x0908, 0xA481, 0x2514, 0x514A, 0x552D,
+      0x4D6A, 0xADDD, 0xAB7B, 0x776F, 0x75BD, 0xB7D5, 0xADD9, 0xAAB5,
+      0x4D29, 0x254A, 0x2145, 0x1111, 0x1142, 0x8512, 0x4A2A, 0xA4CB,
+      0x4D57, 0x56BB, 0x6BBB, 0x77AF, 0x5BDE, 0xDD5B, 0xD6B6, 0xAB2D,
+      0x52A9, 0x4A28, 0xA229, 0x2091, 0x0A44, 0x488A, 0x518A, 0x94B3};
+  for (size_t i = 0; i < 64; i++) {
+    uint16_t u16 =
+        (uint16_t)pcm_sample_encode_s16(audio_chunk_get_channel(chunk16, 0)[i]);
+    ASSERT_EQ((int)u16, (int)golden16[i]);
+  }
+
+  // 32-bit Native DSD encoder (88200 Hz * 32 = 2822400 Hz)
+  dsd_encoder_t* enc32 = dsd_encoder_create(1, 88200, DSD_MODE_NATIVE, 32,
+                                            SDM_FILTER_SDM6, 20000.0);
+  audio_chunk_t* chunk32 = audio_chunk_create(64, 1);
+  memcpy(audio_chunk_get_channel(chunk32, 0), ch, 64 * sizeof(double));
+  dsd_encoder_encode(enc32, chunk32);
+
+  const uint32_t golden32[64] = {
+      0x96696996, 0x96699669, 0x69996666, 0x99969966, 0x69969969, 0x66999965,
+      0xA9996696, 0x5A696696, 0x5A99969A, 0x5A59A5A9, 0x5A599996, 0x5699665A,
+      0x59A6669A, 0x6A9A69A6, 0x999A5595, 0x554E5953, 0x6A6CD5AC, 0xD75ABD5D,
+      0xAEEDB7AF, 0xAF76DEFB, 0x6F6EF6ED, 0xDF5B6DDB, 0xB6D5AEB9, 0xB555AB52,
+      0xACA994AA, 0x46492A24, 0x89129090, 0x88A24110, 0x92421114, 0x44851242,
+      0x92A25132, 0x552C9555, 0x356AD35A, 0xD5DB5B5D, 0xAF6EBD77, 0x76FAF75F,
+      0x5FB5F6DD, 0xEEBAF75B, 0x5ED6D6B5, 0xAB6AACAA, 0xCCC65544, 0xB15282A4,
+      0x91228508, 0x92209122, 0x40912242, 0x42292248, 0x524A9252, 0x55259699,
+      0x4D56D55A, 0xD6D7576D, 0xB6EED7AF, 0xBAF6EF76, 0xDFB5F6DD, 0xF5B776EB,
+      0xABD5D6D6, 0xACD9AB35, 0x2B2594AA, 0x50B12A28, 0x29444491, 0x0A112112,
+      0x20A22221, 0x24910944, 0xA4515232, 0x64C9994D};
+  for (size_t i = 0; i < 64; i++) {
+    float fval = (float)audio_chunk_get_channel(chunk32, 0)[i];
+    uint32_t u32;
+    memcpy(&u32, &fval, sizeof(uint32_t));
+    ASSERT_EQ((int)u32, (int)golden32[i]);
+  }
+
+  audio_chunk_free(chunk8);
+  audio_chunk_free(chunk16);
+  audio_chunk_free(chunk32);
+  dsd_encoder_free(enc8);
+  dsd_encoder_free(enc16);
+  dsd_encoder_free(enc32);
+  audio_chunk_free(chunk);
+}
+
 TEST_MAIN()
