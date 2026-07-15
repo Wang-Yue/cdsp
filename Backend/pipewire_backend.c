@@ -38,6 +38,7 @@ struct pipewire_capture {
   spsc_audio_ring_buffer_t* ring;
   float* decode_buf;
   size_t decode_buf_size;
+  bool stopped;
 };
 
 struct pipewire_playback {
@@ -63,6 +64,7 @@ struct pipewire_playback {
   float* encode_buf;
   size_t encode_buf_size;
   _Atomic bool paused;
+  bool stopped;
 };
 
 // MARK: - PipeWire Callbacks
@@ -208,6 +210,11 @@ static void cap_vtable_destroy(void* ctx) {
   pipewire_capture_destroy((pipewire_capture_t*)ctx);
 }
 
+static void cap_vtable_stop(void* ctx) {
+  void pipewire_capture_stop(pipewire_capture_t * capture);
+  pipewire_capture_stop((pipewire_capture_t*)ctx);
+}
+
 static const capture_backend_vtable_t pipewire_capture_vtable = {
     .open = cap_vtable_open,
     .read = cap_vtable_read,
@@ -216,6 +223,7 @@ static const capture_backend_vtable_t pipewire_capture_vtable = {
     .is_pitch_control_supported = cap_vtable_is_pitch_control_supported,
     .set_pitch = cap_vtable_set_pitch,
     .wait_for_data = cap_vtable_wait_for_data,
+    .stop = cap_vtable_stop,
     .destroy = cap_vtable_destroy};
 
 capture_backend_t* pipewire_capture_create(
@@ -559,6 +567,11 @@ static void play_vtable_destroy(void* ctx) {
   pipewire_playback_destroy((pipewire_playback_t*)ctx);
 }
 
+static void play_vtable_stop(void* ctx) {
+  void pipewire_playback_stop(pipewire_playback_t * playback);
+  pipewire_playback_stop((pipewire_playback_t*)ctx);
+}
+
 static const playback_backend_vtable_t pipewire_playback_vtable = {
     .open = play_vtable_open,
     .write = play_vtable_write,
@@ -568,6 +581,7 @@ static const playback_backend_vtable_t pipewire_playback_vtable = {
     .prefill_silence = play_vtable_prefill_silence,
     .get_is_paused = play_vtable_get_is_paused,
     .set_is_paused = play_vtable_set_is_paused,
+    .stop = play_vtable_stop,
     .destroy = play_vtable_destroy};
 
 playback_backend_t* pipewire_playback_create(
@@ -818,7 +832,7 @@ void pipewire_playback_close(pipewire_playback_t* playback) {
     // Wait for the ring buffer to drain before closing the stream,
     // ensuring all remaining audio is played back.
     int retries = 200;  // wait up to 200ms
-    while (playback->ring &&
+    while (!playback->stopped && playback->ring &&
            spsc_audio_ring_buffer_get_available_to_read(playback->ring) > 0 &&
            retries-- > 0) {
       struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};
@@ -894,6 +908,30 @@ void pipewire_playback_set_is_paused(pipewire_playback_t* playback,
                                      bool paused) {
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
+}
+
+void pipewire_capture_stop(pipewire_capture_t* capture) {
+  if (!capture) return;
+  if (capture->loop) {
+    pw_thread_loop_lock(capture->loop);
+    capture->stopped = true;
+    if (capture->stream) {
+      pw_stream_set_active(capture->stream, false);
+    }
+    pw_thread_loop_unlock(capture->loop);
+  }
+}
+
+void pipewire_playback_stop(pipewire_playback_t* playback) {
+  if (!playback) return;
+  if (playback->loop) {
+    pw_thread_loop_lock(playback->loop);
+    playback->stopped = true;
+    if (playback->stream) {
+      pw_stream_set_active(playback->stream, false);
+    }
+    pw_thread_loop_unlock(playback->loop);
+  }
 }
 
 void pipewire_playback_destroy(pipewire_playback_t* playback) {

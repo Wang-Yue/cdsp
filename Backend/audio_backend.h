@@ -103,6 +103,12 @@ typedef struct {
   void (*set_is_paused)(void* ctx, bool paused);
 
   /**
+   * @brief Stop the capture device immediately.
+   * @param ctx Pointer to the backend instance context.
+   */
+  void (*stop)(void* ctx);
+
+  /**
    * @brief Destroy the capture backend context.
    * @param ctx Pointer to the backend instance context to free.
    */
@@ -204,6 +210,12 @@ typedef struct {
    * @param multiplier The clock multiplier.
    */
   void (*set_pitch)(void* ctx, double multiplier);
+
+  /**
+   * @brief Stop the playback device immediately.
+   * @param ctx Pointer to the backend instance context.
+   */
+  void (*stop)(void* ctx);
 
   /**
    * @brief Destroy the playback backend context.
@@ -325,6 +337,12 @@ bool capture_backend_wait(capture_backend_t* backend, uint32_t timeout_ms);
 void capture_backend_set_is_paused(capture_backend_t* backend, bool paused);
 
 /**
+ * @brief Stop the capture device via wrapper.
+ * @param backend Pointer to the capture backend.
+ */
+void capture_backend_stop(capture_backend_t* backend);
+
+/**
  * @brief Free the capture backend and its context.
  * @param backend Pointer to the capture backend to free.
  */
@@ -416,6 +434,12 @@ bool playback_backend_pitch_control_supported(playback_backend_t* backend);
  * @param multiplier The pitch multiplier.
  */
 void playback_backend_set_pitch(playback_backend_t* backend, double multiplier);
+
+/**
+ * @brief Stop the playback device via wrapper.
+ * @param backend Pointer to the playback backend.
+ */
+void playback_backend_stop(playback_backend_t* backend);
 
 /**
  * @brief Free the playback backend and its context.

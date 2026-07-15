@@ -54,10 +54,10 @@ processing_parameters_t* dsp_session_get_processing_params(
 }
 
 void dsp_session_set_chunk_callbacks(dsp_session_t* core,
-                                         chunk_callback_t on_captured,
-                                         void* captured_ctx,
-                                         chunk_callback_t on_processed,
-                                         void* processed_ctx) {
+                                     chunk_callback_t on_captured,
+                                     void* captured_ctx,
+                                     chunk_callback_t on_processed,
+                                     void* processed_ctx) {
   if (!core) return;
   core->on_chunk_captured = on_captured;
   core->on_chunk_captured_ctx = captured_ctx;
@@ -66,7 +66,7 @@ void dsp_session_set_chunk_callbacks(dsp_session_t* core,
 }
 
 bool dsp_session_is_stop_requested(const dsp_session_t* core,
-                                       processing_stop_reason_t* out_reason) {
+                                   processing_stop_reason_t* out_reason) {
   if (!core || !core->shared) return false;
   bool req = engine_shared_state_should_stop(core->shared);
   if (req && out_reason) {
@@ -79,10 +79,12 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
 
 // MARK: - Lifecycle (RAII Option A)
 
-dsp_session_t* dsp_session_create_and_start(
-    dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
-    chunk_callback_t on_processed, void* processed_ctx,
-    audio_backend_error_t* err) {
+dsp_session_t* dsp_session_create_and_start(dsp_config_t* config,
+                                            chunk_callback_t on_captured,
+                                            void* captured_ctx,
+                                            chunk_callback_t on_processed,
+                                            void* processed_ctx,
+                                            audio_backend_error_t* err) {
   return engine_session_build_and_start(config, on_captured, captured_ctx,
                                         on_processed, processed_ctx, err);
 }
@@ -100,7 +102,7 @@ const processing_stop_reason_t* dsp_session_get_stop_reason(
 }
 
 void dsp_session_stop_and_free(dsp_session_t* core,
-                                   processing_stop_reason_t reason) {
+                               processing_stop_reason_t reason) {
   if (!core) return;
 
   logger_info(&g_logger, "Stopping and destroying DSP session");
@@ -111,6 +113,14 @@ void dsp_session_stop_and_free(dsp_session_t* core,
     if (!core->threads_created) {
       engine_shared_state_shutdown_processed_queue(core->shared);
     }
+  }
+
+  // Stop backends immediately to abort any blocking operations in threads.
+  if (core->capture) {
+    capture_backend_stop(core->capture);
+  }
+  if (core->playback) {
+    playback_backend_stop(core->playback);
   }
 
   // Wait for all audio threads to finish.
@@ -210,9 +220,8 @@ void dsp_session_stop_and_free(dsp_session_t* core,
 /// verifying that `newConfig.devices == currentConfig.devices` —
 /// the `DSPEngine` actor does this comparison and falls back to a
 /// full teardown when they differ.
-bool dsp_session_reload_config(dsp_session_t* core,
-                                   dsp_config_t* new_config,
-                                   audio_backend_error_t* err) {
+bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
+                               audio_backend_error_t* err) {
   if (!core || !new_config) return false;
 
   dsp_config_t* old_config = core->current_config;

@@ -191,6 +191,11 @@ void capture_backend_set_is_paused(capture_backend_t* backend, bool paused) {
   backend->vtable->set_is_paused(backend->ctx, paused);
 }
 
+void capture_backend_stop(capture_backend_t* backend) {
+  if (!backend || !backend->vtable || !backend->vtable->stop) return;
+  backend->vtable->stop(backend->ctx);
+}
+
 /// Destroy and free the capture backend.
 void capture_backend_free(capture_backend_t* backend) {
   if (!backend) return;
@@ -270,6 +275,11 @@ void playback_backend_set_pitch(playback_backend_t* backend,
                                 double multiplier) {
   if (!backend || !backend->vtable || !backend->vtable->set_pitch) return;
   backend->vtable->set_pitch(backend->ctx, multiplier);
+}
+
+void playback_backend_stop(playback_backend_t* backend) {
+  if (!backend || !backend->vtable || !backend->vtable->stop) return;
+  backend->vtable->stop(backend->ctx);
 }
 
 /// Destroy and free the playback backend.

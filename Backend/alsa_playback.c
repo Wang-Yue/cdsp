@@ -171,6 +171,11 @@ static void vtable_set_pitch(void* ctx, double mult) {
   alsa_playback_set_pitch((alsa_playback_t*)ctx, mult);
 }
 
+static void vtable_stop(void* ctx) {
+  void alsa_playback_stop(alsa_playback_t * playback);
+  alsa_playback_stop((alsa_playback_t*)ctx);
+}
+
 static const playback_backend_vtable_t ALSA_PLAYBACK_VTABLE = {
     .open = vtable_open,
     .write = vtable_write,
@@ -182,6 +187,7 @@ static const playback_backend_vtable_t ALSA_PLAYBACK_VTABLE = {
     .set_is_paused = vtable_set_paused,
     .pitch_control_supported = vtable_pitch_control_supported,
     .set_pitch = vtable_set_pitch,
+    .stop = vtable_stop,
     .destroy = vtable_destroy};
 
 playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
@@ -746,6 +752,15 @@ void alsa_playback_set_pitch(alsa_playback_t* playback, double multiplier) {
     snd_mixer_selem_set_capture_volume_all(playback->pitch_elem, value);
   }
   pthread_mutex_unlock(&playback->mixer_mutex);
+}
+
+void alsa_playback_stop(alsa_playback_t* playback) {
+  if (!playback) return;
+  pthread_mutex_lock(&g_alsa_mutex);
+  if (playback->pcm) {
+    snd_pcm_drop(playback->pcm);
+  }
+  pthread_mutex_unlock(&g_alsa_mutex);
 }
 
 void alsa_playback_destroy(alsa_playback_t* playback) {

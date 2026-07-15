@@ -97,6 +97,11 @@ static bool vtable_wait(void* ctx, uint32_t t) {
 /**
  * @brief Wrapper for destroying the ALSA capture backend instance.
  */
+static void vtable_stop(void* ctx) {
+  void alsa_capture_stop(alsa_capture_t * capture);
+  alsa_capture_stop((alsa_capture_t*)ctx);
+}
+
 static void vtable_destroy(void* ctx) {
   alsa_capture_destroy((alsa_capture_t*)ctx);
 }
@@ -109,6 +114,7 @@ static const capture_backend_vtable_t ALSA_CAPTURE_VTABLE = {
     .is_pitch_control_supported = vtable_pitch_supp,
     .set_pitch = vtable_set_pitch,
     .wait_for_data = vtable_wait,
+    .stop = vtable_stop,
     .destroy = vtable_destroy};
 
 capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
@@ -723,6 +729,15 @@ bool alsa_capture_wait(alsa_capture_t* capture, uint32_t timeout_ms) {
   if (!capture->pcm) return false;
   int err = snd_pcm_wait(capture->pcm, (int)timeout_ms);
   return err > 0;
+}
+
+void alsa_capture_stop(alsa_capture_t* capture) {
+  if (!capture) return;
+  pthread_mutex_lock(&g_alsa_mutex);
+  if (capture->pcm) {
+    snd_pcm_drop(capture->pcm);
+  }
+  pthread_mutex_unlock(&g_alsa_mutex);
 }
 
 void alsa_capture_destroy(alsa_capture_t* capture) {
