@@ -292,9 +292,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
         if (engine_shared_state_should_stop(loop->shared)) {
           break;
         }
-        struct timespec req = {.tv_sec = 0,
-                               .tv_nsec = 1000000ULL};  // 1ms sleep
-        nanosleep(&req, NULL);
+        cdsp_sleep_ms(1);
       }
     }
   }

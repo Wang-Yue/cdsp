@@ -62,6 +62,7 @@ struct wasapi_capture {
   audio_chunk_t* residual_chunk;
   size_t residual_frames;
   size_t residual_offset;
+  bool stopped;
 };
 
 struct wasapi_playback {
@@ -95,6 +96,7 @@ struct wasapi_playback {
   size_t transfer_buf_cap;
   float* write_buf;
   size_t write_buf_cap;
+  bool stopped;
 };
 
 /**
@@ -339,6 +341,11 @@ static void cap_vtable_destroy(void* ctx) {
   wasapi_capture_destroy((wasapi_capture_t*)ctx);
 }
 
+static void cap_vtable_stop(void* ctx) {
+  void wasapi_capture_stop(wasapi_capture_t * capture);
+  wasapi_capture_stop((wasapi_capture_t*)ctx);
+}
+
 static const capture_backend_vtable_t wasapi_capture_vtable = {
     .open = cap_vtable_open,
     .read = cap_vtable_read,
@@ -347,6 +354,7 @@ static const capture_backend_vtable_t wasapi_capture_vtable = {
     .is_pitch_control_supported = cap_vtable_is_pitch_control_supported,
     .set_pitch = cap_vtable_set_pitch,
     .wait_for_data = cap_vtable_wait_for_data,
+    .stop = cap_vtable_stop,
     .destroy = cap_vtable_destroy};
 
 capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
@@ -698,6 +706,9 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
 
   // 2. Loop to read packets from WASAPI device
   while (frames_read < frames) {
+    if (capture->stopped) {
+      return false;
+    }
     if (GetTickCount() - start_time > 1000) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -929,6 +940,11 @@ static void play_vtable_destroy(void* ctx) {
   wasapi_playback_destroy((wasapi_playback_t*)ctx);
 }
 
+static void play_vtable_stop(void* ctx) {
+  void wasapi_playback_stop(wasapi_playback_t * playback);
+  wasapi_playback_stop((wasapi_playback_t*)ctx);
+}
+
 static const playback_backend_vtable_t wasapi_playback_vtable = {
     .open = play_vtable_open,
     .write = play_vtable_write,
@@ -938,6 +954,7 @@ static const playback_backend_vtable_t wasapi_playback_vtable = {
     .prefill_silence = play_vtable_prefill_silence,
     .get_is_paused = play_vtable_get_is_paused,
     .set_is_paused = play_vtable_set_is_paused,
+    .stop = play_vtable_stop,
     .destroy = play_vtable_destroy};
 
 static inline void encode_float_samples_to_wasapi(BYTE* dst, const float* src,
@@ -1270,6 +1287,18 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
                                playback->exclusive ? duration : 0,
                                (WAVEFORMATEX*)&wfx, NULL);
   if (FAILED(hr)) {
+    WAVEFORMATEX* mix_wfx = NULL;
+    if (SUCCEEDED(IAudioClient_GetMixFormat(playback->client, &mix_wfx)) &&
+        mix_wfx) {
+      logger_error(&g_logger,
+                   "WASAPI playback device mix format: rate=%u, channels=%u, "
+                   "bits=%u, tag=%u",
+                   (unsigned int)mix_wfx->nSamplesPerSec,
+                   (unsigned int)mix_wfx->nChannels,
+                   (unsigned int)mix_wfx->wBitsPerSample,
+                   (unsigned int)mix_wfx->wFormatTag);
+      CoTaskMemFree(mix_wfx);
+    }
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
@@ -1529,6 +1558,13 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
     DWORD start_time = GetTickCount();
 
     while (written < requested) {
+      if (playback->stopped) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Playback stream stopped");
+        }
+        return false;
+      }
       if (GetTickCount() - start_time > 3000) {
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -1708,6 +1744,28 @@ bool wasapi_playback_get_is_paused(wasapi_playback_t* playback) {
 void wasapi_playback_set_is_paused(wasapi_playback_t* playback, bool paused) {
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
+}
+
+void wasapi_capture_stop(wasapi_capture_t* capture) {
+  if (!capture) return;
+  capture->stopped = true;
+  if (capture->client) {
+    IAudioClient_Stop(capture->client);
+  }
+  if (capture->event) {
+    SetEvent(capture->event);
+  }
+}
+
+void wasapi_playback_stop(wasapi_playback_t* playback) {
+  if (!playback) return;
+  playback->stopped = true;
+  if (playback->client) {
+    IAudioClient_Stop(playback->client);
+  }
+  if (playback->event) {
+    SetEvent(playback->event);
+  }
 }
 
 void wasapi_playback_destroy(wasapi_playback_t* playback) {

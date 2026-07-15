@@ -175,6 +175,7 @@ struct asio_capture {
 
   float* callback_buf;
   size_t callback_buf_size;
+  bool stopped;
 };
 
 struct asio_playback {
@@ -199,6 +200,7 @@ struct asio_playback {
 
   float* callback_buf;
   size_t callback_buf_size;
+  bool stopped;
 };
 
 // Global active backend references
@@ -1075,6 +1077,9 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
 
   while (spsc_audio_ring_buffer_get_available_to_read(capture->ring_buffer) <
          requested) {
+    if (capture->stopped) {
+      return false;
+    }
     if (WaitForSingleObject(g_capture_event, 100) != WAIT_OBJECT_0) {
       if (!capture->is_running) return false;
     }
@@ -1180,6 +1185,11 @@ static void asio_capture_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+static void asio_capture_stop_internal(void* ctx) {
+  void asio_capture_stop(asio_capture_t * capture);
+  asio_capture_stop((asio_capture_t*)ctx);
+}
+
 static const capture_backend_vtable_t asio_capture_vtable = {
     .open = asio_capture_open_internal,
     .read = asio_capture_read_internal,
@@ -1189,6 +1199,7 @@ static const capture_backend_vtable_t asio_capture_vtable = {
     .set_pitch = NULL,
     .wait_for_data = asio_capture_wait_for_data,
     .set_is_paused = NULL,
+    .stop = asio_capture_stop_internal,
     .destroy = asio_capture_destroy_internal};
 
 capture_backend_t* asio_capture_new(const capture_device_config_t* config,
@@ -1376,6 +1387,13 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
 
   size_t written = 0;
   while (written < requested) {
+    if (playback->stopped) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Playback stream stopped");
+      }
+      return false;
+    }
     // Since ring buffer holds flat interleaved float array, stride = 1
     size_t available_space =
         spsc_audio_ring_buffer_get_capacity(playback->ring_buffer) -
@@ -1471,6 +1489,11 @@ static void asio_playback_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+static void asio_playback_stop_internal(void* ctx) {
+  void asio_playback_stop(asio_playback_t * playback);
+  asio_playback_stop((asio_playback_t*)ctx);
+}
+
 static const playback_backend_vtable_t asio_playback_vtable = {
     .open = asio_playback_open_internal,
     .write = asio_playback_write_internal,
@@ -1482,6 +1505,7 @@ static const playback_backend_vtable_t asio_playback_vtable = {
     .set_is_paused = NULL,
     .pitch_control_supported = NULL,
     .set_pitch = NULL,
+    .stop = asio_playback_stop_internal,
     .destroy = asio_playback_destroy_internal};
 
 playback_backend_t* asio_playback_new(const playback_device_config_t* config,
@@ -1510,6 +1534,25 @@ playback_backend_t* asio_playback_new(const playback_device_config_t* config,
   backend->ctx = playback;
   backend->vtable = &asio_playback_vtable;
   return backend;
+}
+
+void asio_capture_stop(asio_capture_t* capture) {
+  if (!capture) return;
+  capture->stopped = true;
+  if (capture->iasio) {
+    capture->iasio->lpVtbl->stop(capture->iasio);
+  }
+  if (g_capture_event) {
+    SetEvent(g_capture_event);
+  }
+}
+
+void asio_playback_stop(asio_playback_t* playback) {
+  if (!playback) return;
+  playback->stopped = true;
+  if (playback->iasio) {
+    playback->iasio->lpVtbl->stop(playback->iasio);
+  }
 }
 
 #endif  // ENABLE_ASIO

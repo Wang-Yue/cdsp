@@ -52,6 +52,7 @@ struct core_audio_playback {
   _Atomic bool is_device_alive;
   _Atomic bool is_paused;
   bool is_interleaved;
+  bool stopped;
 };
 
 /**
@@ -191,9 +192,13 @@ static bool vtable_get_paused(void* ctx) {
 static void vtable_set_paused(void* ctx, bool paused) {
   core_audio_playback_set_is_paused((core_audio_playback_t*)ctx, paused);
 }
-/** @brief Vtable wrapper for core_audio_playback_destroy. */
 static void vtable_destroy(void* ctx) {
   core_audio_playback_destroy((core_audio_playback_t*)ctx);
+}
+
+static void vtable_stop(void* ctx) {
+  void core_audio_playback_stop(core_audio_playback_t * playback);
+  core_audio_playback_stop((core_audio_playback_t*)ctx);
 }
 
 static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
@@ -205,6 +210,7 @@ static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
     .prefill_silence = vtable_prefill,
     .get_is_paused = vtable_get_paused,
     .set_is_paused = vtable_set_paused,
+    .stop = vtable_stop,
     .destroy = vtable_destroy};
 
 /// Create a CoreAudio playback backend instance.
@@ -519,6 +525,13 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
   // to yield CPU. The consumer (CoreAudio render thread) remains lock-free.
   uint32_t elapsed_ms = 0;
   while (true) {
+    if (playback->stopped) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Playback stream stopped");
+      }
+      return false;
+    }
     bool space_available = true;
     for (int ch = 0; ch < usable_channels; ch++) {
       size_t free_space = spsc_audio_ring_buffer_get_available_to_write(
@@ -647,6 +660,14 @@ void core_audio_playback_set_is_paused(core_audio_playback_t* playback,
 }
 
 /// Destroy and free the CoreAudio playback backend.
+void core_audio_playback_stop(core_audio_playback_t* playback) {
+  if (!playback) return;
+  playback->stopped = true;
+  if (playback->audio_unit) {
+    AudioOutputUnitStop(playback->audio_unit);
+  }
+}
+
 void core_audio_playback_destroy(core_audio_playback_t* playback) {
   if (!playback) return;
   core_audio_playback_close(playback);

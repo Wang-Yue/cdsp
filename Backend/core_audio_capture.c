@@ -75,6 +75,7 @@ struct core_audio_capture {
   /// doesn't churn the heap.
   float* read_scratch;
   cdsp_sem_t semaphore;
+  bool stopped;
 };
 
 /**
@@ -323,11 +324,13 @@ static bool vtable_wait(void* ctx, uint32_t t) {
   return core_audio_capture_wait((core_audio_capture_t*)ctx, t);
 }
 
-/**
- * @brief VTable callback to destroy the backend context.
- */
 static void vtable_destroy(void* ctx) {
   core_audio_capture_destroy((core_audio_capture_t*)ctx);
+}
+
+static void vtable_stop(void* ctx) {
+  void core_audio_capture_stop(core_audio_capture_t * capture);
+  core_audio_capture_stop((core_audio_capture_t*)ctx);
 }
 
 static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
@@ -338,6 +341,7 @@ static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
     .is_pitch_control_supported = vtable_pitch_supp,
     .set_pitch = vtable_set_pitch,
     .wait_for_data = vtable_wait,
+    .stop = vtable_stop,
     .destroy = vtable_destroy};
 
 /// Create a CoreAudio capture backend instance.
@@ -725,7 +729,19 @@ void core_audio_capture_set_pitch(core_audio_capture_t* capture,
 bool core_audio_capture_wait(core_audio_capture_t* capture,
                              uint32_t timeout_ms) {
   if (!capture || !capture->semaphore) return false;
+  if (capture->stopped) return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+}
+
+void core_audio_capture_stop(core_audio_capture_t* capture) {
+  if (!capture) return;
+  capture->stopped = true;
+  if (capture->audio_unit) {
+    AudioOutputUnitStop(capture->audio_unit);
+  }
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
 }
 
 /// Destroy and free the CoreAudio capture backend.
