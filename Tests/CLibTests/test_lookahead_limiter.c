@@ -22,7 +22,7 @@ TEST(test_lookahead_limiter_basic) {
                                            .release = 1.0 / log(2.0),
                                            .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter = lookahead_limiter_filter_create(
-      "lookahead_limiter", &params, 48000, 1024);
+      "lookahead_limiter", &params, 48000, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double input[] = {1.0, 1.0, 1.0, 1.0, 1.0, 2.0, -2.0, 1.0, 1.0, 2.0,
@@ -57,12 +57,12 @@ TEST(test_lookahead_limiter_same_as_limiter) {
       .limit = 0.0, .attack = 0.0, .release = 0.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter_lookahead =
       lookahead_limiter_filter_create("lookahead", &params_lookahead, 48000,
-                                      1024);
+                                      1024, NULL);
   ASSERT_TRUE(filter_lookahead != NULL);
 
   limiter_config_t params_limiter = {.clip_limit = 0.0, .soft_clip = false};
   limiter_filter_t* filter_limiter =
-      limiter_filter_create("limiter", &params_limiter);
+      limiter_filter_create("limiter", &params_limiter, NULL);
   ASSERT_TRUE(filter_limiter != NULL);
 
   double lookahead_input[] = {0.5, 1.0, 2.0, -2.0, -1.0, -0.5, 1.5, -1.5, 0.0};
@@ -83,7 +83,7 @@ TEST(test_lookahead_limiter_zero_release) {
   lookahead_limiter_config_t params = {
       .limit = 0.0, .attack = 2.0, .release = 0.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
-      lookahead_limiter_filter_create("lookahead", &params, 48000, 1024);
+      lookahead_limiter_filter_create("lookahead", &params, 48000, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
   double input[] = {1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0};
   lookahead_limiter_filter_process(filter, input, 11);
@@ -99,7 +99,7 @@ TEST(test_lookahead_limiter_state_persistence) {
                                            .release = 1.0 / log(2.0),
                                            .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
-      lookahead_limiter_filter_create("lookahead", &params, 48000, 1024);
+      lookahead_limiter_filter_create("lookahead", &params, 48000, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double buf1[] = {1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0};
@@ -128,7 +128,7 @@ TEST(test_lookahead_limiter_chunksize_larger_than_samplerate) {
   lookahead_limiter_config_t params = {
       .limit = 0.0, .attack = 4.0, .release = 1.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
-      lookahead_limiter_filter_create("lookahead", &params, 4, 8);
+      lookahead_limiter_filter_create("lookahead", &params, 4, 8, NULL);
   ASSERT_TRUE(filter != NULL);
   double input[] = {1.0, 1.0, 2.0, 1.0, 1.0, -2.0, 1.0, 1.0};
   lookahead_limiter_filter_process(filter, input, 8);

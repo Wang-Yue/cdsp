@@ -221,12 +221,7 @@ void pipeline_free(pipeline_t* pipeline) {
 pipeline_t* pipeline_create(const dsp_config_t* config,
                             processing_parameters_t* proc_params,
                             size_t explicit_chunk_size, config_error_t* err) {
-  if (!config) {
-    logger_error(&g_logger, "Pipeline creation failed: Configuration is NULL");
-    config_error_set(err, CONFIG_ERR_VALIDATION, "Configuration is NULL");
-    return NULL;
-  }
-
+  if (pipeline_config_validate(config, err) != 0) return NULL;
   pipeline_t* pipeline = (pipeline_t*)calloc(1, sizeof(pipeline_t));
   if (!pipeline) {
     logger_error(&g_logger,
@@ -537,7 +532,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             return NULL;
           }
           mixer_t* m =
-              mixer_create(step->name, m_cfg, pipeline->frames_per_chunk);
+              mixer_create(step->name, m_cfg, pipeline->frames_per_chunk, err);
           if (!m) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Failed to create mixer '%s'", step->name);

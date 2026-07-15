@@ -371,11 +371,7 @@ convolution_filter_t* convolution_filter_create(const char* name,
                                                 const convolution_config_t* params,
                                                 size_t chunk_size,
                                                 config_error_t* err) {
-  if (!params) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Convolution params is NULL");
-    return NULL;
-  }
+  if (convolution_config_validate(params, err) != 0) return NULL;
   if (chunk_size == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "Convolution chunk_size must be positive");

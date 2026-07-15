@@ -41,12 +41,7 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                         int sample_rate, size_t chunk_size,
                         processing_parameters_t* proc_params,
                         config_error_t* err) {
-  if (!config) {
-    logger_error(&g_logger, "Filter config is NULL for '%s'",
-                 name ? name : "unnamed");
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter config is NULL");
-    return NULL;
-  }
+  if (filter_config_validate(config, sample_rate, err) != 0) return NULL;
   filter_t* filter = (filter_t*)calloc(1, sizeof(filter_t));
   if (!filter) {
     logger_error(&g_logger, "Failed to allocate filter wrapper for '%s'",
@@ -87,25 +82,25 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
     case FILTER_TYPE_DIFF_EQ:
       filter->type = FILTER_INSTANCE_DIFF_EQ;
       filter->instance =
-          diffeq_filter_create(name, &config->parameters.diff_eq);
+          diffeq_filter_create(name, &config->parameters.diff_eq, err);
       break;
     case FILTER_TYPE_DITHER:
       filter->type = FILTER_INSTANCE_DITHER;
-      filter->instance = dither_filter_create(name, &config->parameters.dither);
+      filter->instance = dither_filter_create(name, &config->parameters.dither, err);
       break;
     case FILTER_TYPE_GAIN:
       filter->type = FILTER_INSTANCE_GAIN;
-      filter->instance = gain_filter_create(name, &config->parameters.gain);
+      filter->instance = gain_filter_create(name, &config->parameters.gain, err);
       break;
     case FILTER_TYPE_LIMITER:
       filter->type = FILTER_INSTANCE_LIMITER;
       filter->instance =
-          limiter_filter_create(name, &config->parameters.limiter);
+          limiter_filter_create(name, &config->parameters.limiter, err);
       break;
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       filter->type = FILTER_INSTANCE_LOOKAHEAD_LIMITER;
       filter->instance = lookahead_limiter_filter_create(
-          name, &config->parameters.lookahead_limiter, sample_rate, chunk_size);
+          name, &config->parameters.lookahead_limiter, sample_rate, chunk_size, err);
       break;
     case FILTER_TYPE_LOUDNESS:
       filter->type = FILTER_INSTANCE_LOUDNESS;

@@ -80,12 +80,13 @@ int compressor_config_validate(const compressor_config_t* params,
  * threshold, factor, etc.).
  * @param sample_rate Audio sample rate in Hz.
  * @param chunk_size Maximum number of frames per processing chunk.
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to newly allocated compressor_processor_t, or NULL on
  * failure.
  */
 compressor_processor_t* compressor_processor_create(
     const char* name, const compressor_config_t* params, int sample_rate,
-    size_t chunk_size);
+    size_t chunk_size, config_error_t* err);
 
 /**
  * @brief Frees all resources associated with the compressor processor.

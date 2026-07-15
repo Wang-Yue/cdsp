@@ -40,12 +40,13 @@ int lookahead_limiter_config_validate(
  * @param params Pointer to the lookahead limiter parameters.
  * @param sample_rate The sample rate in Hz.
  * @param chunk_size The processing chunk size.
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to the allocated lookahead_limiter_filter_t, or NULL on
  * failure.
  */
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
     const char* name, const lookahead_limiter_config_t* params,
-    int sample_rate, size_t chunk_size);
+    int sample_rate, size_t chunk_size, config_error_t* err);
 
 /**
  * @brief Process a waveform buffer in-place by applying lookahead limiting.

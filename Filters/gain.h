@@ -24,10 +24,12 @@ typedef struct gain_filter gain_filter_t;
  *
  * @param name The name of the filter.
  * @param params Pointer to the gain parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to the allocated gain_filter_t, or NULL on failure.
  */
 gain_filter_t* gain_filter_create(const char* name,
-                                  const gain_config_t* params);
+                                  const gain_config_t* params,
+                                  config_error_t* err);
 
 /**
  * @brief Validates gain filter parameters.

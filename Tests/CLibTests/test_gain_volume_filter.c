@@ -7,7 +7,7 @@
 TEST(GainInvert) {
   gain_config_t params = {
       .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB, .inverted = true};
-  gain_filter_t* filter = gain_filter_create("gain", &params);
+  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5};
   gain_filter_process(filter, waveform, 3);
@@ -20,7 +20,7 @@ TEST(GainInvert) {
 TEST(GainAmplify) {
   gain_config_t params = {
       .gain = 20.0, .has_gain = true, .scale = GAIN_SCALE_DB};
-  gain_filter_t* filter = gain_filter_create("gain", &params);
+  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5};
   gain_filter_process(filter, waveform, 3);
@@ -32,7 +32,7 @@ TEST(GainAmplify) {
 
 TEST(GainMute) {
   gain_config_t params = {.gain = 0.0, .has_gain = true, .mute = true};
-  gain_filter_t* filter = gain_filter_create("gain", &params);
+  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5, 1.0, -1.0};
   gain_filter_process(filter, waveform, 5);
@@ -45,7 +45,7 @@ TEST(GainMute) {
 TEST(GainLinearScale) {
   gain_config_t params = {
       .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
-  gain_filter_t* filter = gain_filter_create("gain", &params);
+  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {1.0};
   gain_filter_process(filter, waveform, 1);

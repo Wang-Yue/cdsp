@@ -52,12 +52,9 @@ const char* race_processor_get_name(const race_processor_t* processor) {
 race_processor_t* race_processor_create(const char* name,
                                         const race_config_t* params,
                                         int sample_rate, config_error_t* err) {
-  if (!params) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "RACE params is NULL");
-    return NULL;
-  }
+  if (race_config_validate(params, err) != 0) return NULL;
   if (sample_rate <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE sample_rate must be positive");
     return NULL;
   }
@@ -135,7 +132,7 @@ race_processor_t* race_processor_create(const char* name,
   gparams.inverted = true;
   gparams.mute = false;
 
-  processor->gain = gain_filter_create("race-Gain", &gparams);
+  processor->gain = gain_filter_create("race-Gain", &gparams, err);
   processor->feedback_a = 0.0;
   processor->feedback_b = 0.0;
 

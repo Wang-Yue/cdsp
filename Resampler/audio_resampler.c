@@ -43,11 +43,7 @@ static poly_interpolation_t poly_interpolation_from_string(const char* str) {
 resampler_t* resampler_create_from_config(
     const resampler_config_t* config, size_t input_rate, size_t output_rate,
     size_t channels, size_t chunk_size, config_error_t* err) {
-  if (!config) {
-    logger_error(&g_logger, "Resampler config is NULL");
-    config_error_set(err, CONFIG_ERR_PARSE, "Resampler config is NULL");
-    return NULL;
-  }
+  if (resampler_config_validate(config, err) != 0) return NULL;
   logger_debug(&g_logger,
                "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
                config->type, input_rate, output_rate, channels);

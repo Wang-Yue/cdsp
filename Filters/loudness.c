@@ -96,6 +96,7 @@ loudness_filter_t* loudness_filter_create(const char* name,
                                           int sample_rate,
                                           processing_parameters_t* proc_params,
                                           config_error_t* err) {
+  if (loudness_config_validate(params, err) != 0) return NULL;
   loudness_filter_t* filter =
       (loudness_filter_t*)calloc(1, sizeof(loudness_filter_t));
   if (!filter) {

@@ -370,31 +370,13 @@ TEST(PipelineFilterChannelOutOfBounds) {
   config.pipeline_count = 1;
 
   processing_parameters_t* params = processing_parameters_create(2, 2);
-  pipeline_t* pipeline = pipeline_create(&config, params, 0, NULL);
-  ASSERT_TRUE(pipeline != NULL);
-
-  audio_chunk_t* chunk = audio_chunk_create(1024, 2);
-  for (size_t ch = 0; ch < 2; ch++) {
-    mutable_waveform_t buf = audio_chunk_get_channel(chunk, ch);
-    for (size_t t = 0; t < 1024; t++) {
-      buf[t] = 1.0;
-    }
-  }
-  audio_chunk_set_valid_frames(chunk, 1024);
-
-  audio_chunk_t* output = audio_chunk_create(1024, 2);
-  pipeline_error_t err = pipeline_process(pipeline, chunk, output);
-  ASSERT_EQ(PIPELINE_OK, err);
-
-  waveform_t out0 = audio_chunk_get_channel(output, 0);
-  waveform_t out1 = audio_chunk_get_channel(output, 1);
-  ASSERT_NEAR(1.0, out0[0], 1e-5);
-  ASSERT_NEAR(1.0, out1[0], 1e-5);
+  config_error_t cerr;
+  config_error_init(&cerr);
+  pipeline_t* pipeline = pipeline_create(&config, params, 0, &cerr);
+  ASSERT_TRUE(pipeline == NULL);
+  ASSERT_EQ(CONFIG_ERR_INVALID_PIPELINE, cerr.type);
 
   free(filter_name);
-  audio_chunk_free(chunk);
-  audio_chunk_free(output);
-  pipeline_free(pipeline);
   processing_parameters_free(params);
 }
 
@@ -522,7 +504,7 @@ TEST(PipelineInitFilterMissingNames) {
   pipeline_t* pipeline = pipeline_create(&config, params, 0, &err);
   ASSERT_TRUE(pipeline == NULL);
   ASSERT_EQ(CONFIG_ERR_INVALID_PIPELINE, err.type);
-  ASSERT_TRUE(strstr(err.message, "Filter step missing names") != NULL);
+  ASSERT_TRUE(strstr(err.message, "must have 'names'") != NULL);
 
   processing_parameters_free(params);
 }
@@ -635,7 +617,7 @@ TEST(PipelineInitMixerMissingName) {
   pipeline_t* pipeline = pipeline_create(&config, params, 0, &err);
   ASSERT_TRUE(pipeline == NULL);
   ASSERT_EQ(CONFIG_ERR_INVALID_PIPELINE, err.type);
-  ASSERT_TRUE(strstr(err.message, "Mixer step missing name or config") != NULL);
+  ASSERT_TRUE(strstr(err.message, "must have 'name'") != NULL);
 
   processing_parameters_free(params);
 }

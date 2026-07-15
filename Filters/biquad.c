@@ -324,6 +324,7 @@ static bool biquad_config_check_stability(const biquad_config_t* params,
 biquad_filter_t* biquad_filter_create(const char* name,
                                       const biquad_config_t* params,
                                       int sample_rate, config_error_t* err) {
+  if (biquad_config_validate(params, sample_rate, err) != 0) return NULL;
   biquad_filter_t* filter =
       (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
   if (!filter) {
@@ -482,7 +483,7 @@ void biquad_filter_free(biquad_filter_t* filter) {
 
 int biquad_config_validate(const biquad_config_t* params,
                             int sample_rate, config_error_t* err) {
-  if (!params) return -1;
+  if (!params) return 0;
   double nyquist = (double)sample_rate / 2.0;
   if (params->type != BIQUAD_TYPE_FREE &&
       params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM &&
@@ -500,7 +501,7 @@ int biquad_config_validate(const biquad_config_t* params,
         config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
       return -1;
     }
-    if (params->q_p <= 0.0) {
+    if (params->q_p <= 0.0 && params->q <= 0.0) {
       if (err)
         config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
       return -1;

@@ -10,7 +10,9 @@ struct gain_filter {
 #include <string.h>
 
 gain_filter_t* gain_filter_create(const char* name,
-                                  const gain_config_t* params) {
+                                  const gain_config_t* params,
+                                  config_error_t* err) {
+  if (gain_config_validate(params, err) != 0) return NULL;
   gain_filter_t* filter = (gain_filter_t*)calloc(1, sizeof(gain_filter_t));
   if (!filter) return NULL;
   if (name) {

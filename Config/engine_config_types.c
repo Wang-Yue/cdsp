@@ -910,6 +910,46 @@ void capture_device_config_set_channels(capture_device_config_t* config,
   }
 }
 
+void playback_device_config_set_channels(playback_device_config_t* config,
+                                         int channels) {
+  switch (config->type) {
+#if defined(ENABLE_COREAUDIO)
+    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+      config->cfg.coreaudio.channels = channels;
+      break;
+#endif
+#if defined(ENABLE_ALSA)
+    case AUDIO_BACKEND_TYPE_ALSA:
+      config->cfg.alsa.channels = channels;
+      break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AUDIO_BACKEND_TYPE_PIPEWIRE:
+      config->cfg.pipewire.channels = channels;
+      break;
+#endif
+    case AUDIO_BACKEND_TYPE_FILE:
+      config->cfg.raw_file.channels = channels;
+      break;
+    case AUDIO_BACKEND_TYPE_STDIN_OUT:
+      config->cfg.stdout_out.channels = channels;
+      break;
+#if defined(ENABLE_WASAPI)
+    case AUDIO_BACKEND_TYPE_WASAPI:
+      config->cfg.wasapi.channels = channels;
+      break;
+#endif
+#if defined(ENABLE_ASIO)
+    case AUDIO_BACKEND_TYPE_ASIO:
+      config->cfg.asio.channels = channels;
+      break;
+#endif
+
+    default:
+      break;
+  }
+}
+
 void capture_device_config_set_extra_samples(capture_device_config_t* config,
                                              int extra_samples) {
   switch (config->type) {

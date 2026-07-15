@@ -570,7 +570,7 @@ TEST(Convolution_AllocationFree) {
 TEST(Gain_AllocationFree) {
   gain_config_t params = {
       .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
-  gain_filter_t* filter = gain_filter_create("gain", &params);
+  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
@@ -680,7 +680,7 @@ TEST(DiffEq_AllocationFree) {
   double b[] = {0.004244741301241303, 0.008489482602482605,
                 0.004244741301241303};
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params);
+  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
@@ -692,7 +692,7 @@ TEST(DiffEq_AllocationFree) {
 
 TEST(Dither_AllocationFree) {
   dither_config_t params = {.type = DITHER_TYPE_GESEMANN_441, .bits = 16};
-  dither_filter_t* filter = dither_filter_create("dither", &params);
+  dither_filter_t* filter = dither_filter_create("dither", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
@@ -704,7 +704,7 @@ TEST(Dither_AllocationFree) {
 
 TEST(Limiter_AllocationFree) {
   limiter_config_t params = {.clip_limit = -1.5, .soft_clip = true};
-  limiter_filter_t* filter = limiter_filter_create("limiter", &params);
+  limiter_filter_t* filter = limiter_filter_create("limiter", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
@@ -720,7 +720,7 @@ TEST(LookaheadLimiter_AllocationFree) {
                                            .release = 20.0,
                                            .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
-      lookahead_limiter_filter_create("lookahead", &params, 44100, 1024);
+      lookahead_limiter_filter_create("lookahead", &params, 44100, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
@@ -772,7 +772,7 @@ TEST(Compressor_AllocationFree) {
                                     .clip_limit = -1.0,
                                     .has_clip_limit = true};
   compressor_processor_t* proc =
-      compressor_processor_create("comp", &params, 44100, 1024);
+      compressor_processor_create("comp", &params, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
   for (size_t f = 0; f < 1024; f++) {
@@ -799,7 +799,7 @@ TEST(NoiseGate_AllocationFree) {
                                     .threshold = -20.0,
                                     .attenuation = 12.0};
   noise_gate_processor_t* proc =
-      noise_gate_processor_create("gate", &params, 44100, 1024);
+      noise_gate_processor_create("gate", &params, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
   for (size_t f = 0; f < 1024; f++) {
@@ -870,7 +870,7 @@ TEST(Mixer_2to4_AllocationFree) {
       {.dest = 3, .sources_count = 1, .sources = &s31}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  mixer_t* mixer = mixer_create("mixer", &config, 1024);
+  mixer_t* mixer = mixer_create("mixer", &config, 1024, NULL);
   ASSERT_TRUE(mixer != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 1.0);
   audio_chunk_t* output = audio_chunk_create(1024, 4);

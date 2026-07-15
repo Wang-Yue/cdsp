@@ -1,4 +1,5 @@
 #include "lookahead_limiter.h"
+#include "delay.h"
 
 struct lookahead_limiter_filter {
   char name[64];
@@ -78,7 +79,8 @@ static inline double get_occupied(lookahead_limiter_filter_t* filter,
 
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
     const char* name, const lookahead_limiter_config_t* params,
-    int sample_rate, size_t chunk_size) {
+    int sample_rate, size_t chunk_size, config_error_t* err) {
+  if (lookahead_limiter_config_validate(params, sample_rate, err) != 0) return NULL;
   lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)calloc(
       1, sizeof(lookahead_limiter_filter_t));
   if (!filter) return NULL;

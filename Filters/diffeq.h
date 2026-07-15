@@ -25,11 +25,13 @@ typedef struct diffeq_filter diffeq_filter_t;
  * @param name The name of the filter.
  * @param params The difference equation parameters (coefficients feedforward
  * 'b' and feedback 'a').
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return A pointer to the created difference equation filter, or NULL on
  * failure.
  */
 diffeq_filter_t* diffeq_filter_create(const char* name,
-                                      const diffeq_config_t* params);
+                                      const diffeq_config_t* params,
+                                      config_error_t* err);
 
 /**
  * @brief Validates difference equation filter parameters.

@@ -78,11 +78,13 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err);
  * @param config Mixer configuration containing channel counts and mapping
  * matrix.
  * @param chunk_size Maximum number of frames per chunk for processing.
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to newly allocated mixer_t, or NULL on failure.
  */
 mixer_t* mixer_create(const char* name,
                      const mixer_config_t* config,
-                     size_t chunk_size);
+                     size_t chunk_size,
+                     config_error_t* err);
 
 /**
  * @brief Zero-allocation API for mixing an audio chunk.

@@ -120,12 +120,9 @@ static void populate_mapping(mixer_t* mixer,
 
 mixer_t* mixer_create(const char* name,
                      const mixer_config_t* config,
-                     size_t chunk_size) {
-  if (!config) {
-    logger_error(&g_logger, "Mixer config is NULL for '%s'",
-                 name ? name : "unnamed");
-    return NULL;
-  }
+                     size_t chunk_size,
+                     config_error_t* err) {
+  if (mixer_config_validate(config, err) != 0) return NULL;
   mixer_t* mixer = (mixer_t*)calloc(1, sizeof(mixer_t));
   if (!mixer) {
     logger_error(&g_logger, "Failed to allocate mixer_t for '%s'",

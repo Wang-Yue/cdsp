@@ -92,11 +92,7 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
 biquad_combo_filter_t* biquad_combo_filter_create(
     const char* name, const biquad_combo_config_t* params, int sample_rate,
     config_error_t* err) {
-  if (!params) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "BiquadCombo params is NULL");
-    return NULL;
-  }
+  if (biquad_combo_config_validate(params, sample_rate, err) != 0) return NULL;
   biquad_combo_filter_t* filter =
       (biquad_combo_filter_t*)calloc(1, sizeof(biquad_combo_filter_t));
   if (!filter) {
@@ -342,18 +338,14 @@ int biquad_combo_config_validate(const biquad_combo_config_t* params,
       }
       break;
     case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ:
-      if (!params->has_qls || params->qls <= 0.0 || !params->has_qhs ||
-          params->qhs <= 0.0 || !params->has_qp1 || params->qp1 <= 0.0 ||
-          !params->has_qp2 || params->qp2 <= 0.0 || !params->has_qp3 ||
-          params->qp3 <= 0.0) {
+      if (params->qls < 0.0 || params->qhs < 0.0 || params->qp1 < 0.0 ||
+          params->qp2 < 0.0 || params->qp3 < 0.0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all Q-values must be > 0");
+                         "FivePointPeq: all Q-values must be >= 0");
         return -1;
       }
-      if (!params->has_fls || params->fls >= nyquist || !params->has_fhs ||
-          params->fhs >= nyquist || !params->has_fp1 ||
-          params->fp1 >= nyquist || !params->has_fp2 ||
-          params->fp2 >= nyquist || !params->has_fp3 ||
+      if (params->fls >= nyquist || params->fhs >= nyquist ||
+          params->fp1 >= nyquist || params->fp2 >= nyquist ||
           params->fp3 >= nyquist) {
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
@@ -361,10 +353,10 @@ int biquad_combo_config_validate(const biquad_combo_config_t* params,
             nyquist);
         return -1;
       }
-      if (params->fls <= 0.0 || params->fhs <= 0.0 || params->fp1 <= 0.0 ||
-          params->fp2 <= 0.0 || params->fp3 <= 0.0) {
+      if (params->fls < 0.0 || params->fhs < 0.0 || params->fp1 < 0.0 ||
+          params->fp2 < 0.0 || params->fp3 < 0.0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all frequencies must be > 0");
+                         "FivePointPeq: all frequencies must be >= 0");
         return -1;
       }
       break;

@@ -177,7 +177,7 @@ TEST(DiffEq_Benchmark) {
   double a[] = {1.0, -0.1462978543780541, 0.005350765548905586};
   double b[] = {0.21476322779271284, 0.4295264555854257, 0.21476322779271284};
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* f = diffeq_filter_create("diffeq", &params);
+  diffeq_filter_t* f = diffeq_filter_create("diffeq", &params, NULL);
   run_filter_benchmark("DiffEq", "DiffEq", f, process_diffeq);
   diffeq_filter_free(f);
 }

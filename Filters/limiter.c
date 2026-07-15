@@ -15,7 +15,9 @@ struct limiter_filter {
 #endif
 
 limiter_filter_t* limiter_filter_create(const char* name,
-                                        const limiter_config_t* params) {
+                                        const limiter_config_t* params,
+                                        config_error_t* err) {
+  if (limiter_config_validate(params, err) != 0) return NULL;
   limiter_filter_t* filter =
       (limiter_filter_t*)calloc(1, sizeof(limiter_filter_t));
   if (!filter) return NULL;

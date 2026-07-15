@@ -526,8 +526,10 @@ TEST(DSPEngineSetConfigStruct) {
   parsed->devices.samplerate = 48000;
 #if defined(_WIN32)
   capture_device_config_set_channels(&parsed->devices.capture, 2);
+  playback_device_config_set_channels(&parsed->devices.playback, 2);
 #else
   capture_device_config_set_channels(&parsed->devices.capture, 4);
+  playback_device_config_set_channels(&parsed->devices.playback, 4);
 #endif
 
   audio_backend_error_t berr;

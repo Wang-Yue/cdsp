@@ -67,6 +67,7 @@ volume_filter_t* volume_filter_create(const char* name,
                                       int sample_rate, size_t chunk_size,
                                       processing_parameters_t* proc_params,
                                       config_error_t* err) {
+  if (volume_config_validate(params, err) != 0) return NULL;
   if (sample_rate <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "VolumeFilter: sample_rate must be positive");

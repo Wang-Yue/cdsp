@@ -24,10 +24,12 @@ typedef struct limiter_filter limiter_filter_t;
  *
  * @param name The name of the filter.
  * @param params Pointer to the limiter parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to the allocated limiter_filter_t, or NULL on failure.
  */
 limiter_filter_t* limiter_filter_create(const char* name,
-                                        const limiter_config_t* params);
+                                        const limiter_config_t* params,
+                                        config_error_t* err);
 
 /**
  * @brief Validates limiter filter parameters.

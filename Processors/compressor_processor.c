@@ -65,8 +65,9 @@ const char* compressor_processor_get_name(
 
 compressor_processor_t* compressor_processor_create(
     const char* name, const compressor_config_t* params, int sample_rate,
-    size_t chunk_size) {
-  if (!params || sample_rate <= 0 || chunk_size == 0) return NULL;
+    size_t chunk_size, config_error_t* err) {
+  if (compressor_config_validate(params, err) != 0) return NULL;
+  if (sample_rate <= 0 || chunk_size == 0) return NULL;
 
   compressor_processor_t* processor =
       (compressor_processor_t*)calloc(1, sizeof(compressor_processor_t));
@@ -133,7 +134,7 @@ compressor_processor_t* compressor_processor_create(
     limiter_config_t limit_params = {0};
     limit_params.clip_limit = params->clip_limit;
     limit_params.soft_clip = params->soft_clip;
-    processor->limiter = limiter_filter_create("limiter", &limit_params);
+    processor->limiter = limiter_filter_create("limiter", &limit_params, err);
     if (!processor->limiter) {
       compressor_processor_free(processor);
       return NULL;

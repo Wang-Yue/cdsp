@@ -55,8 +55,9 @@ const char* noise_gate_processor_get_name(
 
 noise_gate_processor_t* noise_gate_processor_create(
     const char* name, const noise_gate_config_t* params, int sample_rate,
-    size_t chunk_size) {
-  if (!params || sample_rate <= 0 || chunk_size == 0) return NULL;
+    size_t chunk_size, config_error_t* err) {
+  if (noise_gate_config_validate(params, err) != 0) return NULL;
+  if (sample_rate <= 0 || chunk_size == 0) return NULL;
 
   noise_gate_processor_t* processor =
       (noise_gate_processor_t*)calloc(1, sizeof(noise_gate_processor_t));

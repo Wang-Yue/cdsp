@@ -989,6 +989,14 @@ void capture_device_config_set_channels(capture_device_config_t* config,
                                         int channels);
 
 /**
+ * @brief Sets the number of channels in a playback device configuration.
+ * @param config Pointer to the configuration.
+ * @param channels Number of channels.
+ */
+void playback_device_config_set_channels(playback_device_config_t* config,
+                                         int channels);
+
+/**
  * @brief Sets extra samples in a capture device configuration.
  * @param config Pointer to the configuration.
  * @param extra_samples Number of extra samples.

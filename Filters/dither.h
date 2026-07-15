@@ -27,10 +27,12 @@ typedef struct dither_filter dither_filter_t;
  *
  * @param name The name of the filter.
  * @param params The dither parameters (type, bits, etc.).
+ * @param err Optional pointer to receive configuration error detail on failure.
  * @return A pointer to the created dither filter, or NULL on failure.
  */
 dither_filter_t* dither_filter_create(const char* name,
-                                      const dither_config_t* params);
+                                      const dither_config_t* params,
+                                      config_error_t* err);
 
 /**
  * @brief Validates dither filter parameters.

@@ -8,7 +8,7 @@ TEST(test_hard_clip) {
   limiter_config_t params = {
       .clip_limit = -6.020599913279624,  // -6.02 dB = 0.5 linear limit
       .soft_clip = false};
-  limiter_filter_t* filter = limiter_filter_create("limiter", &params);
+  limiter_filter_t* filter = limiter_filter_create("limiter", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   limiter_filter_process(filter, waveform, 6);
@@ -24,7 +24,7 @@ TEST(test_soft_clip) {
   double waveform[] = {-2.0, -0.5, 0.0, 0.5, 2.0};
   limiter_config_t params = {.clip_limit = 0.0,  // 0 dB = 1.0 linear limit
                                  .soft_clip = true};
-  limiter_filter_t* filter = limiter_filter_create("limiter", &params);
+  limiter_filter_t* filter = limiter_filter_create("limiter", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   limiter_filter_process(filter, waveform, 5);

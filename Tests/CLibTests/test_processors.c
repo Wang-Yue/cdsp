@@ -30,7 +30,7 @@ TEST(compressor_basic_compression) {
   params.has_clip_limit = false;
 
   compressor_processor_t* comp =
-      compressor_processor_create("compressor", &params, 48000, 1000);
+      compressor_processor_create("compressor", &params, 48000, 1000, NULL);
   ASSERT_TRUE(comp != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(1000, 2);
@@ -67,7 +67,7 @@ TEST(noisegate_basic_gate) {
   params.attenuation = 40.0;
 
   noise_gate_processor_t* gate =
-      noise_gate_processor_create("noisegate", &params, 48000, 100);
+      noise_gate_processor_create("noisegate", &params, 48000, 100, NULL);
   ASSERT_TRUE(gate != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(100, 1);

@@ -21,7 +21,7 @@ TEST(check_result) {
                      0.21476322779271284};
   diffeq_config_t params = {
       .a = a_vals, .a_count = 3, .b = b_vals, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params);
+  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double wave[] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};

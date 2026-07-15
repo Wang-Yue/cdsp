@@ -228,24 +228,16 @@ dsp_processor_t* dsp_processor_create(const char* name,
                                       const processor_config_t* config,
                                       int sample_rate, size_t chunk_size,
                                       config_error_t* err) {
-  if (!config) {
-    logger_error(&g_logger, "Processor config is NULL for '%s'",
-                 name ? name : "unnamed");
-    config_error_set(err, CONFIG_ERR_PARSE, "Processor config is NULL");
-    return NULL;
-  }
+  if (processor_config_validate(config, err) != 0) return NULL;
   switch (config->type) {
     case PROCESSOR_TYPE_COMPRESSOR: {
       compressor_processor_t* p = compressor_processor_create(
-          name, &config->parameters.compressor, sample_rate, chunk_size);
+          name, &config->parameters.compressor, sample_rate, chunk_size, err);
       if (!p) {
         logger_error(
             &g_logger,
             "Failed to create compressor processor '%s' (rate=%d, chunk=%zu)",
             name ? name : "", sample_rate, chunk_size);
-        config_error_set(err, CONFIG_ERR_PARSE,
-                         "Failed to create compressor processor '%s'",
-                         name ? name : "");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_compressor(p);
@@ -263,15 +255,12 @@ dsp_processor_t* dsp_processor_create(const char* name,
     }
     case PROCESSOR_TYPE_NOISE_GATE: {
       noise_gate_processor_t* p = noise_gate_processor_create(
-          name, &config->parameters.noise_gate, sample_rate, chunk_size);
+          name, &config->parameters.noise_gate, sample_rate, chunk_size, err);
       if (!p) {
         logger_error(
             &g_logger,
             "Failed to create noise gate processor '%s' (rate=%d, chunk=%zu)",
             name ? name : "", sample_rate, chunk_size);
-        config_error_set(err, CONFIG_ERR_PARSE,
-                         "Failed to create noise gate processor '%s'",
-                         name ? name : "");
         return NULL;
       }
       dsp_processor_t* wrap = dsp_processor_wrap_noise_gate(p);

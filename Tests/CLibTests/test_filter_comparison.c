@@ -326,7 +326,7 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
                               .scale = GAIN_SCALE_DB,
                               .inverted = inverted,
                               .mute = mute};
-  gain_filter_t* filter = gain_filter_create("test_gain", &params);
+  gain_filter_t* filter = gain_filter_create("test_gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -531,7 +531,7 @@ TEST(Mixer_Vs_AnalyticalReference_StereoToMono) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  mixer_t* mixer = mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048, NULL);
   ASSERT_TRUE(mixer != NULL);
 
   seeded_rng_t rng = {0xC0FFEE};
@@ -577,7 +577,7 @@ TEST(Mixer_Vs_AnalyticalReference_LinearScale) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  mixer_t* mixer = mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048, NULL);
   ASSERT_TRUE(mixer != NULL);
 
   double* l = (double*)malloc(128 * sizeof(double));
@@ -621,7 +621,7 @@ TEST(Mixer_MutedSource_ProducesSilenceFromThatSource) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  mixer_t* mixer = mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048, NULL);
   ASSERT_TRUE(mixer != NULL);
 
   double* l = (double*)malloc(64 * sizeof(double));
@@ -1163,7 +1163,7 @@ TEST(DiffEq_SimpleIIR) {
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("test_diffeq", &params);
+  diffeq_filter_t* filter = diffeq_filter_create("test_diffeq", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1213,7 +1213,7 @@ TEST(Dither_None) {
   dither_config_t params = {0};
   params.type = DITHER_TYPE_NONE;
   params.bits = 16;
-  dither_filter_t* filter = dither_filter_create("test_dither", &params);
+  dither_filter_t* filter = dither_filter_create("test_dither", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1266,7 +1266,7 @@ static void compare_limiter(double clip_limit, bool soft_clip,
 
   limiter_config_t params = {.clip_limit = clip_limit,
                                  .soft_clip = soft_clip};
-  limiter_filter_t* filter = limiter_filter_create("test_limiter", &params);
+  limiter_filter_t* filter = limiter_filter_create("test_limiter", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1328,7 +1328,7 @@ static void compare_lookahead_limiter(double limit, double attack,
   lookahead_limiter_config_t params = {
       .limit = limit, .attack = attack, .release = release, .unit = unit};
   lookahead_limiter_filter_t* filter = lookahead_limiter_filter_create(
-      "test_lookahead", &params, SAMPLE_RATE, CHUNK_SIZE);
+      "test_lookahead", &params, SAMPLE_RATE, CHUNK_SIZE, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1409,7 +1409,7 @@ TEST(Compressor_Vs_RustReference) {
   params.has_clip_limit = true;
 
   compressor_processor_t* comp = compressor_processor_create(
-      "compressor", &params, SAMPLE_RATE, NBR_FRAMES);
+      "compressor", &params, SAMPLE_RATE, NBR_FRAMES, NULL);
   ASSERT_TRUE(comp != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 1);
@@ -1470,7 +1470,7 @@ TEST(NoiseGate_Vs_RustReference) {
   params.attenuation = attenuation;
 
   noise_gate_processor_t* gate = noise_gate_processor_create(
-      "noisegate", &params, SAMPLE_RATE, NBR_FRAMES);
+      "noisegate", &params, SAMPLE_RATE, NBR_FRAMES, NULL);
   ASSERT_TRUE(gate != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 1);

@@ -417,7 +417,9 @@ static double sample_dither(dither_filter_t* filter) {
 
 // MARK: - DitherFilter
 dither_filter_t* dither_filter_create(const char* name,
-                                      const dither_config_t* params) {
+                                      const dither_config_t* params,
+                                      config_error_t* err) {
+  if (dither_config_validate(params, err) != 0) return NULL;
   dither_filter_t* filter =
       (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
   if (!filter) return NULL;
