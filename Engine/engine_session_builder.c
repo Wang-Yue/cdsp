@@ -19,7 +19,7 @@
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
-#include "dsp_engine_core_internal.h"
+#include "dsp_session_internal.h"
 #include "engine_capture_loop.h"
 #include "engine_playback_loop.h"
 #include "engine_processing_loop.h"
@@ -67,7 +67,7 @@ static void* playback_thread_func(void* arg) {
  * @brief Step 1: Allocates shared state queues, processing telemetry, and DoP
  * encoder/decoder codecs.
  */
-static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
+static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
                                                       dsp_config_t* config) {
   // 1. Shared state & DoP codec setup.
   int queue_limit =
@@ -126,7 +126,7 @@ static bool engine_session_build_shared_state_and_dop(dsp_engine_core_t* core,
  * factory and pre-fills playback silence.
  */
 static bool engine_session_build_backends(
-    dsp_engine_core_t* core, dsp_config_t* config, size_t capture_rate,
+    dsp_session_t* core, dsp_config_t* config, size_t capture_rate,
     size_t pipeline_rate, size_t capture_chunk_size, size_t playback_chunk_size,
     audio_backend_error_t* err) {
   // 2. Open audio capture and playback backends.
@@ -181,7 +181,7 @@ static bool engine_session_build_backends(
  * DSP pipeline, and allocates round-robin chunk pools.
  */
 static bool engine_session_build_pipeline_and_scratch(
-    dsp_engine_core_t* core, dsp_config_t* config, size_t capture_chunk_size,
+    dsp_session_t* core, dsp_config_t* config, size_t capture_chunk_size,
     size_t playback_chunk_size, audio_backend_error_t* err) {
   // 5. Allocate scratch chunks for temporary data storage during
   // processing/resampling.
@@ -244,7 +244,7 @@ static bool engine_session_build_pipeline_and_scratch(
  * @brief Step 8 & Step 9: Instantiates engine worker loop orchestrators and
  * spawns worker threads.
  */
-static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
+static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                                 dsp_config_t* config,
                                                 size_t capture_chunk_size,
                                                 size_t playback_chunk_size,
@@ -363,7 +363,7 @@ static bool engine_session_spawn_worker_threads(dsp_engine_core_t* core,
   return true;
 }
 
-dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
+dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                                                   chunk_callback_t on_captured,
                                                   void* captured_ctx,
                                                   chunk_callback_t on_processed,
@@ -371,8 +371,8 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
                                                   audio_backend_error_t* err) {
   if (!config) return NULL;
 
-  dsp_engine_core_t* core =
-      (dsp_engine_core_t*)calloc(1, sizeof(dsp_engine_core_t));
+  dsp_session_t* core =
+      (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
 
 #ifdef _WIN32
@@ -385,7 +385,7 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
   core->on_chunk_processed_ctx = processed_ctx;
 
   if (!engine_session_build_shared_state_and_dop(core, config)) {
-    dsp_engine_core_stop_and_free(
+    dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
   }
@@ -408,7 +408,7 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
         err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
         strncpy(err->message, cerr.message, sizeof(err->message) - 1);
       }
-      dsp_engine_core_stop_and_free(
+      dsp_session_stop_and_free(
           core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
       return NULL;
     }
@@ -426,14 +426,14 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
   if (!engine_session_build_backends(core, config, (size_t)capture_rate,
                                      pipeline_rate, capture_chunk_size,
                                      playback_chunk_size, err)) {
-    dsp_engine_core_stop_and_free(
+    dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
   }
 
   if (!engine_session_build_pipeline_and_scratch(
           core, config, capture_chunk_size, playback_chunk_size, err)) {
-    dsp_engine_core_stop_and_free(
+    dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
   }
@@ -441,12 +441,12 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
   if (!engine_session_spawn_worker_threads(core, config, capture_chunk_size,
                                            playback_chunk_size, pipeline_rate,
                                            err)) {
-    dsp_engine_core_stop_and_free(
+    dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
   }
 
-  logger_info(&g_logger, "DSP engine session started: %zuHz, chunk=%zu",
+  logger_info(&g_logger, "DSP session started: %zuHz, chunk=%zu",
               config->devices.samplerate, capture_chunk_size);
   return core;
 }

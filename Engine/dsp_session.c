@@ -26,7 +26,7 @@
 //   * The stall watchdog uses `clock_gettime_nsec_np` (vDSO read,
 //     no syscall) — no `Date()` on the hot path.
 
-#include "Engine/dsp_engine_core.h"
+#include "Engine/dsp_session.h"
 
 #ifdef _WIN32
 #include <mmsystem.h>
@@ -38,22 +38,22 @@
 #include <string.h>
 
 #include "Config/config_diff.h"
-#include "Engine/dsp_engine_core_internal.h"
+#include "Engine/dsp_session_internal.h"
 #include "Engine/engine_session_builder.h"
 #include "Logging/app_logger.h"
 
-static const logger_t g_logger = {"dsp.engine.core"};
+static const logger_t g_logger = {"dsp.session"};
 
-const dsp_config_t* dsp_engine_core_get_config(const dsp_engine_core_t* core) {
+const dsp_config_t* dsp_session_get_config(const dsp_session_t* core) {
   return core ? core->current_config : NULL;
 }
 
-processing_parameters_t* dsp_engine_core_get_processing_params(
-    dsp_engine_core_t* core) {
+processing_parameters_t* dsp_session_get_processing_params(
+    dsp_session_t* core) {
   return core ? core->processing_params : NULL;
 }
 
-void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
+void dsp_session_set_chunk_callbacks(dsp_session_t* core,
                                          chunk_callback_t on_captured,
                                          void* captured_ctx,
                                          chunk_callback_t on_processed,
@@ -65,7 +65,7 @@ void dsp_engine_core_set_chunk_callbacks(dsp_engine_core_t* core,
   core->on_chunk_processed_ctx = processed_ctx;
 }
 
-bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
+bool dsp_session_is_stop_requested(const dsp_session_t* core,
                                        processing_stop_reason_t* out_reason) {
   if (!core || !core->shared) return false;
   bool req = engine_shared_state_should_stop(core->shared);
@@ -79,7 +79,7 @@ bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
 
 // MARK: - Lifecycle (RAII Option A)
 
-dsp_engine_core_t* dsp_engine_core_create_and_start(
+dsp_session_t* dsp_session_create_and_start(
     dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
     chunk_callback_t on_processed, void* processed_ctx,
     audio_backend_error_t* err) {
@@ -87,23 +87,23 @@ dsp_engine_core_t* dsp_engine_core_create_and_start(
                                         on_processed, processed_ctx, err);
 }
 
-processing_state_t dsp_engine_core_get_state(const dsp_engine_core_t* core) {
+processing_state_t dsp_session_get_state(const dsp_session_t* core) {
   return core && core->shared ? engine_shared_state_get_state(core->shared)
                               : PROCESSING_STATE_INACTIVE;
 }
 
-const processing_stop_reason_t* dsp_engine_core_get_stop_reason(
-    const dsp_engine_core_t* core) {
+const processing_stop_reason_t* dsp_session_get_stop_reason(
+    const dsp_session_t* core) {
   return core && core->shared
              ? engine_shared_state_get_stop_reason(core->shared)
              : NULL;
 }
 
-void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
+void dsp_session_stop_and_free(dsp_session_t* core,
                                    processing_stop_reason_t reason) {
   if (!core) return;
 
-  logger_info(&g_logger, "Stopping and destroying engine core session");
+  logger_info(&g_logger, "Stopping and destroying DSP session");
 
   // Dispatch in-band AudioMessage stop signal downstream
   if (core->shared) {
@@ -210,14 +210,14 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
 /// verifying that `newConfig.devices == currentConfig.devices` —
 /// the `DSPEngine` actor does this comparison and falls back to a
 /// full teardown when they differ.
-bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
+bool dsp_session_reload_config(dsp_session_t* core,
                                    dsp_config_t* new_config,
                                    audio_backend_error_t* err) {
   if (!core || !new_config) return false;
 
   dsp_config_t* old_config = core->current_config;
 
-  if (dsp_engine_core_get_state(core) == PROCESSING_STATE_INACTIVE) {
+  if (dsp_session_get_state(core) == PROCESSING_STATE_INACTIVE) {
     if (old_config && old_config != new_config) {
       dsp_config_free(old_config);
     }
@@ -279,7 +279,7 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
   return true;
 }
 
-void dsp_engine_core_collect_garbage(dsp_engine_core_t* core) {
+void dsp_session_collect_garbage(dsp_session_t* core) {
   if (!core || !core->shared) return;
 
   pipeline_t* p = NULL;

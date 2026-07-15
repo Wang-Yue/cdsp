@@ -1,5 +1,5 @@
 /**
- * @file dsp_engine_core.h
+ * @file dsp_session.h
  * @brief Top-level engine orchestrator.
  *
  * This class owns the *shape* of an engine run — config, sizing,
@@ -28,8 +28,8 @@
  *   no syscall) — no `Date()` on the hot path.
  */
 
-#ifndef CLIB_ENGINE_DSP_ENGINE_CORE_H
-#define CLIB_ENGINE_DSP_ENGINE_CORE_H
+#ifndef CLIB_ENGINE_DSP_SESSION_H
+#define CLIB_ENGINE_DSP_SESSION_H
 
 #include <pthread.h>
 #include <stdbool.h>
@@ -45,85 +45,84 @@
 #include "engine_shared_state.h"
 
 /**
- * @brief Opaque structure representing the core DSP engine.
+ * @brief Opaque structure representing the active DSP session.
  *
  * Orchestrates the audio threads, backends, and processing pipeline.
  */
-typedef struct dsp_engine_core dsp_engine_core_t;
+typedef struct dsp_session dsp_session_t;
 
 /**
- * @brief Creates and starts a new DSP engine core session.
+ * @brief Creates and starts a new DSP session.
  *
  * Allocates all shared state, pre-allocates chunk pools, opens audio backends,
  * builds the processing pipeline, and spawns the 3 audio worker threads.
  *
- * @param config Configuration to initialize the core session with.
+ * @param config Configuration to initialize the session with.
  * @param on_captured Callback invoked after a chunk is captured.
  * @param captured_ctx Context pointer passed to on_captured.
  * @param on_processed Callback invoked after a chunk is processed.
  * @param processed_ctx Context pointer passed to on_processed.
  * @param err Optional pointer to receive error details on failure.
- * @return Pointer to the running core session, or NULL on failure.
+ * @return Pointer to the running session, or NULL on failure.
  */
-dsp_engine_core_t* dsp_engine_core_create_and_start(
+dsp_session_t* dsp_session_create_and_start(
     dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
     chunk_callback_t on_processed, void* processed_ctx,
     audio_backend_error_t* err);
 
 /**
- * @brief Get the current configuration of the engine core.
+ * @brief Get the current configuration of the DSP session.
  *
- * @param core Pointer to the core instance.
- * @return Pointer to the current configuration, or NULL if core is NULL.
+ * @param session Pointer to the session instance.
+ * @return Pointer to the current configuration, or NULL if session is NULL.
  */
-const dsp_config_t* dsp_engine_core_get_config(const dsp_engine_core_t* core);
+const dsp_config_t* dsp_session_get_config(const dsp_session_t* session);
 
 /**
- * @brief Get the processing parameters instance of the engine core.
+ * @brief Get the processing parameters instance of the DSP session.
  *
- * @param core Pointer to the core instance.
- * @return Pointer to the processing parameters, or NULL if core is NULL.
+ * @param session Pointer to the session instance.
+ * @return Pointer to the processing parameters, or NULL if session is NULL.
  */
-processing_parameters_t* dsp_engine_core_get_processing_params(
-    dsp_engine_core_t* core);
+processing_parameters_t* dsp_session_get_processing_params(
+    dsp_session_t* session);
 
 /**
  * @brief Checks if a stop has been requested by any engine loop thread or
  * caller.
  *
- * @param core Pointer to the core instance.
+ * @param session Pointer to the session instance.
  * @param out_reason Optional output pointer to store the stop reason if
  * requested.
  * @return true if a stop was requested, false otherwise.
  */
-bool dsp_engine_core_is_stop_requested(const dsp_engine_core_t* core,
+bool dsp_session_is_stop_requested(const dsp_session_t* session,
                                        processing_stop_reason_t* out_reason);
 
 /**
  * @brief Get the current processing state.
  *
- * @param core Pointer to the core instance.
+ * @param session Pointer to the session instance.
  * @return Current state.
  */
-processing_state_t dsp_engine_core_get_state(const dsp_engine_core_t* core);
+processing_state_t dsp_session_get_state(const dsp_session_t* session);
 
 /**
  * @brief Get the reason why processing stopped.
  *
- * @param core Pointer to the core instance.
+ * @param session Pointer to the session instance.
  * @return Pointer to the stop reason, or NULL if not stopped.
  */
-const processing_stop_reason_t* dsp_engine_core_get_stop_reason(
-    const dsp_engine_core_t* core);
+const processing_stop_reason_t* dsp_session_get_stop_reason(
+    const dsp_session_t* session);
 
 /**
- * @brief Stops audio threads, closes devices, and frees the DSP engine core
- * session.
+ * @brief Stops audio threads, closes devices, and frees the DSP session.
  *
- * @param core Pointer to the core session to stop and free.
+ * @param session Pointer to the session to stop and free.
  * @param reason Reason for stopping.
  */
-void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
+void dsp_session_stop_and_free(dsp_session_t* session,
                                    processing_stop_reason_t reason);
 
 /**
@@ -133,12 +132,12 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
  * touching the audio devices. The caller is responsible for verifying that
  * device configurations match.
  *
- * @param core Pointer to the core instance.
+ * @param session Pointer to the session instance.
  * @param new_config Pointer to the new configuration.
  * @param err Pointer to store backend errors if reload fails.
  * @return True on success, false on failure.
  */
-bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
+bool dsp_session_reload_config(dsp_session_t* session,
                                    dsp_config_t* new_config,
                                    audio_backend_error_t* err);
 
@@ -147,8 +146,8 @@ bool dsp_engine_core_reload_config(dsp_engine_core_t* core,
  *
  * Runs on the control plane.
  *
- * @param core Pointer to the core instance.
+ * @param session Pointer to the session instance.
  */
-void dsp_engine_core_collect_garbage(dsp_engine_core_t* core);
+void dsp_session_collect_garbage(dsp_session_t* session);
 
-#endif  // CLIB_ENGINE_DSP_ENGINE_CORE_H
+#endif  // CLIB_ENGINE_DSP_SESSION_H

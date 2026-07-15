@@ -1,16 +1,16 @@
-#ifndef ENGINE_DSP_ENGINE_CORE_INTERNAL_H
-#define ENGINE_DSP_ENGINE_CORE_INTERNAL_H
+#ifndef ENGINE_DSP_SESSION_INTERNAL_H
+#define ENGINE_DSP_SESSION_INTERNAL_H
 
 /**
- * @file dsp_engine_core_internal.h
- * @brief Internal structural layout of `struct dsp_engine_core` shared across
+ * @file dsp_session_internal.h
+ * @brief Internal structural layout of `struct dsp_session` shared across
  * Engine sub-modules.
  */
 
 #include "DoP/dsd_encoder.h"
-#include "dsp_engine_core.h"
+#include "dsp_session.h"
 
-struct dsp_engine_core {
+struct dsp_session {
   // MARK: - Configuration
   /** Current configuration. */
   dsp_config_t* current_config;
@@ -83,4 +83,4 @@ struct dsp_engine_core {
   void* on_chunk_processed_ctx;
 };
 
-#endif  // ENGINE_DSP_ENGINE_CORE_INTERNAL_H
+#endif  // ENGINE_DSP_SESSION_INTERNAL_H
