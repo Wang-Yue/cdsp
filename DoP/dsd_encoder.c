@@ -285,6 +285,24 @@ static inline double dot_product_32(const double* a, const double* b) {
   return (acc0 + acc1) + (acc2 + acc3);
 }
 
+static inline double pack_dsd_sample(uint32_t word, size_t bit_depth,
+                                    dsd_mode_t mode, uint8_t* marker) {
+  if (bit_depth == 16) {
+    if (mode == DSD_MODE_NATIVE) {
+      return pcm_sample_decode_s16((int16_t)word);
+    } else {
+      uint32_t val24 = ((uint32_t)(*marker) << 16) | (uint32_t)word;
+      int32_t int_val = (int32_t)(val24 << 8) >> 8;
+      *marker = (*marker == 0x05) ? 0xFA : 0x05;
+      return pcm_sample_decode_s24(int_val);
+    }
+  } else if (bit_depth == 32) {
+    return pcm_sample_decode_f32_u32(word);
+  } else {
+    return pcm_sample_decode_dsd_u8((uint8_t)word);
+  }
+}
+
 static void encode_channel(dsd_encoder_channel_state_t* state,
                            mutable_waveform_t buf, size_t frames,
                            const double* coeffs, dsd_mode_t mode,
@@ -301,42 +319,17 @@ static void encode_channel(dsd_encoder_channel_state_t* state,
     fifo[pos + DSD_ENC_SUB_FILTER_TAPS] = sample_val;
 
     const double* fifo_p = fifo + pos + 1;
+    const double* cp = coeffs;
 
-    if (dsd_bit_depth == 32) {
-      uint32_t word = 0;
-      for (int p = 0; p < 32; p++) {
-        double Y_p = dot_product_32(coeffs + p * 32, fifo_p);
-        if (sigma_delta_modulator_sample(mod, Y_p)) {
-          word |= ((uint32_t)1 << (31 - p));
-        }
-      }
-      buf[t] = pcm_sample_decode_f32_u32(word);
-    } else if (dsd_bit_depth == 8) {
-      uint8_t word = 0;
-      for (int p = 0; p < 8; p++) {
-        double Y_p = dot_product_32(coeffs + p * 32, fifo_p);
-        if (sigma_delta_modulator_sample(mod, Y_p)) {
-          word |= (uint8_t)(1 << (7 - p));
-        }
-      }
-      buf[t] = pcm_sample_decode_dsd_u8(word);
-    } else {
-      uint16_t word = 0;
-      for (int p = 0; p < 16; p++) {
-        double Y_p = dot_product_32(coeffs + p * 32, fifo_p);
-        if (sigma_delta_modulator_sample(mod, Y_p)) {
-          word |= (uint16_t)(1 << (15 - p));
-        }
-      }
-      if (mode == DSD_MODE_NATIVE) {
-        buf[t] = pcm_sample_decode_s16((int16_t)word);
-      } else {
-        uint32_t val24 = ((uint32_t)marker << 16) | (uint32_t)word;
-        int32_t int_val = (int32_t)(val24 << 8) >> 8;
-        buf[t] = pcm_sample_decode_s24(int_val);
-        marker = (marker == 0x05) ? 0xFA : 0x05;
+    uint32_t word = 0;
+    for (size_t p = 0; p < dsd_bit_depth; p++) {
+      double Y_p = dot_product_32(cp, fifo_p);
+      cp += 32;
+      if (sigma_delta_modulator_sample(mod, Y_p)) {
+        word |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));
       }
     }
+    buf[t] = pack_dsd_sample(word, dsd_bit_depth, mode, &marker);
     pos = (pos + 1) & DSD_ENC_FIFO_MASK;
   }
 
@@ -344,12 +337,76 @@ static void encode_channel(dsd_encoder_channel_state_t* state,
   state->marker = marker;
 }
 
+static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
+                                 dsd_encoder_channel_state_t* state1,
+                                 mutable_waveform_t buf0,
+                                 mutable_waveform_t buf1,
+                                 size_t frames,
+                                 const double* coeffs,
+                                 dsd_mode_t mode,
+                                 size_t dsd_bit_depth) {
+  if (!buf0 || !buf1) return;
+  double* fifo0 = state0->fifo;
+  double* fifo1 = state1->fifo;
+  int pos0 = state0->fifo_pos;
+  int pos1 = state1->fifo_pos;
+  uint8_t marker0 = state0->marker;
+  uint8_t marker1 = state1->marker;
+  sigma_delta_modulator_t* mod0 = state0->modulator;
+  sigma_delta_modulator_t* mod1 = state1->modulator;
+
+  for (size_t t = 0; t < frames; t++) {
+    double val0 = buf0[t];
+    double val1 = buf1[t];
+    fifo0[pos0] = val0; fifo0[pos0 + DSD_ENC_SUB_FILTER_TAPS] = val0;
+    fifo1[pos1] = val1; fifo1[pos1 + DSD_ENC_SUB_FILTER_TAPS] = val1;
+
+    const double* fifo_p0 = fifo0 + pos0 + 1;
+    const double* fifo_p1 = fifo1 + pos1 + 1;
+    const double* cp = coeffs;
+
+    uint32_t word0 = 0, word1 = 0;
+    for (size_t p = 0; p < dsd_bit_depth; p++) {
+      double Y_p0 = dot_product_32(cp, fifo_p0);
+      double Y_p1 = dot_product_32(cp, fifo_p1);
+      cp += 32;
+      if (sigma_delta_modulator_sample(mod0, Y_p0)) {
+        word0 |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));
+      }
+      if (sigma_delta_modulator_sample(mod1, Y_p1)) {
+        word1 |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));
+      }
+    }
+    buf0[t] = pack_dsd_sample(word0, dsd_bit_depth, mode, &marker0);
+    buf1[t] = pack_dsd_sample(word1, dsd_bit_depth, mode, &marker1);
+
+    pos0 = (pos0 + 1) & DSD_ENC_FIFO_MASK;
+    pos1 = (pos1 + 1) & DSD_ENC_FIFO_MASK;
+  }
+
+  state0->fifo_pos = pos0;
+  state0->marker = marker0;
+  state1->fifo_pos = pos1;
+  state1->marker = marker1;
+}
+
 void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (!encoder || !encoder->enabled || !chunk) return;
   size_t n = audio_chunk_get_valid_frames(chunk);
-  if (n == 0 || (int)audio_chunk_get_channels(chunk) != encoder->channels)
+  int chs = encoder->channels;
+  if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs)
     return;
-  for (int ch = 0; ch < encoder->channels; ch++) {
+
+  int ch = 0;
+  for (; ch + 1 < chs; ch += 2) {
+    encode_dual_channels(&encoder->channel_states[ch],
+                         &encoder->channel_states[ch + 1],
+                         audio_chunk_get_channel(chunk, ch),
+                         audio_chunk_get_channel(chunk, ch + 1),
+                         n, encoder->coeffs, encoder->mode,
+                         encoder->dsd_bit_depth);
+  }
+  for (; ch < chs; ch++) {
     encode_channel(&encoder->channel_states[ch],
                    audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
                    encoder->mode, encoder->dsd_bit_depth);
