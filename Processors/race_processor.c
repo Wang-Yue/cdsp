@@ -312,9 +312,15 @@ static void race_processor_process(race_processor_t* processor,
  */
 static void race_processor_transfer_state(race_processor_t* dest,
                                           const race_processor_t* src) {
-  if (!dest || !src) return;
+  if (!dest || !src || dest == src) return;
   dest->feedback_a = src->feedback_a;
   dest->feedback_b = src->feedback_b;
+  if (dest->delay_a && src->delay_a) {
+    g_delay_vtable.transfer_state(dest->delay_a, src->delay_a);
+  }
+  if (dest->delay_b && src->delay_b) {
+    g_delay_vtable.transfer_state(dest->delay_b, src->delay_b);
+  }
 }
 
 const processor_vtable_t g_race_vtable = {

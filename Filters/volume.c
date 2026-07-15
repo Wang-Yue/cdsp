@@ -271,13 +271,26 @@ void volume_filter_advance_ramp(volume_filter_t* filter) {
  */
 static void volume_filter_transfer_state(volume_filter_t* dest,
                                          const volume_filter_t* src) {
-  if (!dest || !src) return;
+  if (!dest || !src || dest == src) return;
   dest->current_volume = src->current_volume;
   dest->target_volume = src->target_volume;
   dest->target_linear_gain = src->target_linear_gain;
   dest->mute = src->mute;
   dest->ramp_start = src->ramp_start;
-  dest->ramp_step = src->ramp_step;
+
+  if (src->ramp_step > 0 && src->ramptime_in_chunks > 0 &&
+      dest->ramptime_in_chunks > 0) {
+    double progress = (double)src->ramp_step / (double)src->ramptime_in_chunks;
+    dest->ramp_step = (int)round(progress * dest->ramptime_in_chunks);
+    if (dest->ramp_step < 1) {
+      dest->ramp_step = 1;
+    } else if (dest->ramp_step > dest->ramptime_in_chunks) {
+      dest->ramp_step = dest->ramptime_in_chunks;
+    }
+  } else {
+    dest->ramp_step = 0;
+  }
+
   if (dest->chunk_size == src->chunk_size && dest->current_ramp_gains &&
       src->current_ramp_gains) {
     memcpy(dest->current_ramp_gains, src->current_ramp_gains,

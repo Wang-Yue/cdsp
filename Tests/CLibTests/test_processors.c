@@ -135,4 +135,75 @@ TEST(race_basic) {
   dsp_processor_free(race);
 }
 
+TEST(race_transfer_state) {
+  race_config_t params = {0};
+  params.channels = 2;
+  params.channel_a = 0;
+  params.channel_b = 1;
+  params.delay = 5.0;
+  params.subsample_delay = false;
+  params.has_subsample_delay = true;
+  params.delay_unit = DELAY_UNIT_SAMPLES;
+  params.has_delay_unit = true;
+  params.attenuation = 6.02;
+
+  processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
+                               .parameters.race = params};
+
+  dsp_processor_t* race1 =
+      dsp_processor_create("race1", &config, 48000, 0, NULL);
+  dsp_processor_t* race2 =
+      dsp_processor_create("race2", &config, 48000, 0, NULL);
+  ASSERT_TRUE(race1 != NULL);
+  ASSERT_TRUE(race2 != NULL);
+
+  // Send an impulse to race1 to populate state
+  audio_chunk_t* chunk_init = audio_chunk_create(10, 2);
+  double* ch0_init = audio_chunk_get_channel(chunk_init, 0);
+  double* ch1_init = audio_chunk_get_channel(chunk_init, 1);
+  ch0_init[0] = 1.0;
+  for (size_t i = 1; i < 10; i++) {
+    ch0_init[i] = 0.0;
+    ch1_init[i] = 0.0;
+  }
+  audio_chunk_set_valid_frames(chunk_init, 10);
+  dsp_processor_process(race1, chunk_init);
+  audio_chunk_free(chunk_init);
+
+  // Transfer state from race1 to race2
+  dsp_processor_transfer_state(race2, race1);
+
+  // Now process a second block with both and make sure they produce exactly the
+  // same results
+  audio_chunk_t* chunk1 = audio_chunk_create(10, 2);
+  audio_chunk_t* chunk2 = audio_chunk_create(10, 2);
+
+  double* ch0_1 = audio_chunk_get_channel(chunk1, 0);
+  double* ch1_1 = audio_chunk_get_channel(chunk1, 1);
+  double* ch0_2 = audio_chunk_get_channel(chunk2, 0);
+  double* ch1_2 = audio_chunk_get_channel(chunk2, 1);
+
+  for (size_t i = 0; i < 10; i++) {
+    ch0_1[i] = 0.25 * (i + 1);
+    ch1_1[i] = -0.1 * (i + 1);
+    ch0_2[i] = 0.25 * (i + 1);
+    ch1_2[i] = -0.1 * (i + 1);
+  }
+  audio_chunk_set_valid_frames(chunk1, 10);
+  audio_chunk_set_valid_frames(chunk2, 10);
+
+  dsp_processor_process(race1, chunk1);
+  dsp_processor_process(race2, chunk2);
+
+  for (size_t i = 0; i < 10; i++) {
+    ASSERT_DOUBLE_EQ(ch0_1[i], ch0_2[i]);
+    ASSERT_DOUBLE_EQ(ch1_1[i], ch1_2[i]);
+  }
+
+  audio_chunk_free(chunk1);
+  audio_chunk_free(chunk2);
+  dsp_processor_free(race1);
+  dsp_processor_free(race2);
+}
+
 TEST_MAIN()

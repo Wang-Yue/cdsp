@@ -191,10 +191,54 @@ static void diffeq_filter_process(diffeq_filter_t* filter,
   filter->idx_y = idx_y;
 }
 
+static void diffeq_filter_transfer_state(diffeq_filter_t* dest,
+                                         const diffeq_filter_t* src) {
+  if (!dest || !src || dest == src) return;
+
+  // Transfer input history x
+  if (dest->x && dest->b_count > 0 && src->x && src->b_count > 0) {
+    size_t dest_bc = dest->b_count;
+    size_t src_bc = src->b_count;
+    size_t copy_len = dest_bc < src_bc ? dest_bc : src_bc;
+
+    memset(dest->x, 0, dest_bc * sizeof(double));
+
+    size_t src_start_idx = (src->idx_x + src_bc - copy_len + 1) % src_bc;
+    size_t dest_start_idx = dest_bc - copy_len;
+
+    for (size_t i = 0; i < copy_len; i++) {
+      size_t src_idx = (src_start_idx + i) % src_bc;
+      size_t dest_idx = dest_start_idx + i;
+      dest->x[dest_idx] = src->x[src_idx];
+    }
+    dest->idx_x = dest_bc - 1;
+  }
+
+  // Transfer output history y
+  if (dest->y && dest->a_count > 0 && src->y && src->a_count > 0) {
+    size_t dest_ac = dest->a_count;
+    size_t src_ac = src->a_count;
+    size_t copy_len = dest_ac < src_ac ? dest_ac : src_ac;
+
+    memset(dest->y, 0, dest_ac * sizeof(double));
+
+    size_t src_start_idx = (src->idx_y + src_ac - copy_len + 1) % src_ac;
+    size_t dest_start_idx = dest_ac - copy_len;
+
+    for (size_t i = 0; i < copy_len; i++) {
+      size_t src_idx = (src_start_idx + i) % src_ac;
+      size_t dest_idx = dest_start_idx + i;
+      dest->y[dest_idx] = src->y[src_idx];
+    }
+    dest->idx_y = dest_ac - 1;
+  }
+}
+
 const filter_vtable_t g_diffeq_vtable = {
     .validate = diffeq_config_validate,
     .create = diffeq_filter_create,
     .process =
         (void (*)(void*, mutable_waveform_t, size_t))diffeq_filter_process,
-    .transfer_state = NULL,
+    .transfer_state =
+        (void (*)(void*, const void*))diffeq_filter_transfer_state,
     .free = (void (*)(void*))diffeq_filter_free};

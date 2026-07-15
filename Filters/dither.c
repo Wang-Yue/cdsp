@@ -558,10 +558,47 @@ static void dither_filter_process(dither_filter_t* filter,
   }
 }
 
+static void noise_shaper_transfer_state(noise_shaper_t* dest,
+                                        const noise_shaper_t* src) {
+  if (!dest || !src || dest == src) return;
+  if (dest->buffer && dest->filter_count > 0 && src->buffer &&
+      src->filter_count > 0) {
+    size_t dest_fc = dest->filter_count;
+    size_t src_fc = src->filter_count;
+    size_t copy_len = dest_fc < src_fc ? dest_fc : src_fc;
+
+    memset(dest->buffer, 0, dest_fc * sizeof(double));
+
+    size_t src_start_idx = src->write_index;
+    if (src_fc > copy_len) {
+      src_start_idx = (src->write_index + src_fc - copy_len) % src_fc;
+    }
+    size_t dest_start_idx = dest_fc - copy_len;
+
+    for (size_t i = 0; i < copy_len; i++) {
+      size_t src_idx = (src_start_idx + i) % src_fc;
+      size_t dest_idx = dest_start_idx + i;
+      dest->buffer[dest_idx] = src->buffer[src_idx];
+    }
+    dest->write_index = 0;
+  }
+}
+
+static void dither_filter_transfer_state(dither_filter_t* dest,
+                                         const dither_filter_t* src) {
+  if (!dest || !src || dest == src) return;
+  dest->previous_sample = src->previous_sample;
+  dest->rng_state = src->rng_state;
+  if (dest->shaper && src->shaper) {
+    noise_shaper_transfer_state(dest->shaper, src->shaper);
+  }
+}
+
 const filter_vtable_t g_dither_vtable = {
     .validate = dither_config_validate,
     .create = dither_filter_create,
     .process =
         (void (*)(void*, mutable_waveform_t, size_t))dither_filter_process,
-    .transfer_state = NULL,
+    .transfer_state =
+        (void (*)(void*, const void*))dither_filter_transfer_state,
     .free = (void (*)(void*))dither_filter_free};

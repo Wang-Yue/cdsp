@@ -764,10 +764,33 @@ static void convolution_filter_process(convolution_filter_t* filter,
   }
 }
 
+static void convolution_filter_transfer_state(convolution_filter_t* dest,
+                                              const convolution_filter_t* src) {
+  if (!dest || !src || dest == src) return;
+
+  if (dest->chunk_size == src->chunk_size &&
+      dest->num_segments == src->num_segments) {
+    size_t num_seg = dest->num_segments;
+    size_t spec_len = real_fft_get_spectrum_length(dest->fft);
+
+    // Copy overlap buffer
+    memcpy(dest->overlap_buffer, src->overlap_buffer,
+           dest->chunk_size * sizeof(double));
+
+    // Copy history segments
+    for (size_t s = 0; s < num_seg; s++) {
+      memcpy(dest->hist_re[s], src->hist_re[s], spec_len * sizeof(double));
+      memcpy(dest->hist_im[s], src->hist_im[s], spec_len * sizeof(double));
+    }
+    dest->write_idx = src->write_idx;
+  }
+}
+
 const filter_vtable_t g_convolution_vtable = {
     .validate = convolution_config_validate,
     .create = convolution_filter_create,
     .process =
         (void (*)(void*, mutable_waveform_t, size_t))convolution_filter_process,
-    .transfer_state = NULL,
+    .transfer_state =
+        (void (*)(void*, const void*))convolution_filter_transfer_state,
     .free = (void (*)(void*))convolution_filter_free};

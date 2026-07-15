@@ -361,10 +361,42 @@ static void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
   }
 }
 
+static void lookahead_limiter_filter_transfer_state(
+    lookahead_limiter_filter_t* dest, const lookahead_limiter_filter_t* src) {
+  if (!dest || !src || dest == src) return;
+
+  dest->release_gain = src->release_gain;
+
+  if (dest->lookahead_data && dest->lookahead_capacity > 0 &&
+      src->lookahead_data && src->lookahead_capacity > 0) {
+    size_t dest_cap = dest->lookahead_capacity;
+    size_t src_cap = src->lookahead_capacity;
+    size_t copy_len = dest_cap < src_cap ? dest_cap : src_cap;
+
+    memset(dest->lookahead_data, 0, dest_cap * sizeof(double));
+
+    size_t src_start_idx = src->lookahead_write_index;
+    if (src_cap > copy_len) {
+      src_start_idx =
+          (src->lookahead_write_index + src_cap - copy_len) % src_cap;
+    }
+    size_t dest_start_idx = dest_cap - copy_len;
+
+    for (size_t i = 0; i < copy_len; i++) {
+      size_t src_idx = (src_start_idx + i) % src_cap;
+      size_t dest_idx = dest_start_idx + i;
+      dest->lookahead_data[dest_idx] = src->lookahead_data[src_idx];
+    }
+    dest->lookahead_read_index = 0;
+    dest->lookahead_write_index = 0;
+  }
+}
+
 const filter_vtable_t g_lookahead_limiter_vtable = {
     .validate = lookahead_limiter_config_validate,
     .create = lookahead_limiter_filter_create,
     .process = (void (*)(void*, mutable_waveform_t,
                          size_t))lookahead_limiter_filter_process,
-    .transfer_state = NULL,
+    .transfer_state =
+        (void (*)(void*, const void*))lookahead_limiter_filter_transfer_state,
     .free = (void (*)(void*))lookahead_limiter_filter_free};

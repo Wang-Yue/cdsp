@@ -272,10 +272,40 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
   }
 }
 
+static void delay_filter_transfer_state(delay_filter_t* dest,
+                                        const delay_filter_t* src) {
+  if (!dest || !src || dest == src) return;
+
+  if (dest->biquad && src->biquad) {
+    g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
+  }
+
+  if (dest->queue && dest->queue_count > 0 && src->queue &&
+      src->queue_count > 0) {
+    size_t dest_qc = dest->queue_count;
+    size_t src_qc = src->queue_count;
+    size_t copy_len = dest_qc < src_qc ? dest_qc : src_qc;
+
+    // Clear dest queue
+    memset(dest->queue, 0, dest_qc * sizeof(double));
+
+    // Copy copy_len samples from src to the end of dest queue
+    size_t src_start_idx = (src->read_index + src_qc - copy_len) % src_qc;
+    size_t dest_start_idx = dest_qc - copy_len;
+
+    for (size_t i = 0; i < copy_len; i++) {
+      size_t src_idx = (src_start_idx + i) % src_qc;
+      size_t dest_idx = dest_start_idx + i;
+      dest->queue[dest_idx] = src->queue[src_idx];
+    }
+    dest->read_index = 0;
+  }
+}
+
 const filter_vtable_t g_delay_vtable = {
     .validate = delay_config_validate,
     .create = delay_filter_create,
     .process =
         (void (*)(void*, mutable_waveform_t, size_t))delay_filter_process,
-    .transfer_state = NULL,
+    .transfer_state = (void (*)(void*, const void*))delay_filter_transfer_state,
     .free = (void (*)(void*))delay_filter_free};
