@@ -34,7 +34,7 @@ uint64_t cdsp_time_now_ns(void) {
   QueryPerformanceCounter(&counter);
   return (uint64_t)((counter.QuadPart * 1000000000ULL) / freq.QuadPart);
 #else
-  struct timespec ts;
+  struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 #endif
@@ -44,7 +44,7 @@ void cdsp_sleep_ms(uint32_t ms) {
 #if defined(_WIN32)
   Sleep(ms);
 #else
-  struct timespec ts;
+  struct timespec ts = {0};
   ts.tv_sec = ms / 1000;
   ts.tv_nsec = (uint64_t)(ms % 1000) * 1000000ULL;
   nanosleep(&ts, NULL);
@@ -64,7 +64,7 @@ void cdsp_sleep_us(uint64_t us) {
     QueryPerformanceCounter(&now);
   } while ((uint64_t)(now.QuadPart - start.QuadPart) < target_ticks);
 #else
-  struct timespec ts;
+  struct timespec ts = {0};
   ts.tv_sec = us / 1000000ULL;
   ts.tv_nsec = (us % 1000000ULL) * 1000ULL;
   nanosleep(&ts, NULL);
