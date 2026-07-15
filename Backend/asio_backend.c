@@ -1376,8 +1376,7 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
     for (int c = 0; c < playback->channels; c++) {
       if (playback->output_dsd) {
         double dval = audio_chunk_get_channel(chunk, c)[f];
-        playback->encode_buf[f * playback->channels + c] =
-            pcm_sample_encode_f32(dval);
+        playback->encode_buf[f * playback->channels + c] = (float)dval;
       } else {
         playback->encode_buf[f * playback->channels + c] =
             pcm_sample_encode_f32(audio_chunk_get_channel(chunk, c)[f]);
