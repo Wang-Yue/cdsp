@@ -374,6 +374,7 @@ static double* run_rubato(const char* mode, int in_rate, int out_rate,
   snprintf(out_path, sizeof(out_path), "/tmp/cdsp_matrix_%s_%d_%d_%zu_out.raw",
            mode, in_rate, out_rate, input_count);
 
+  remove(out_path);
   if (!write_raw_f64(input, input_count, in_path)) return NULL;
 
   char cmd[1024];
@@ -387,7 +388,10 @@ static double* run_rubato(const char* mode, int in_rate, int out_rate,
            g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate, 1024);
 #endif
   int status = system(cmd);
-  if (status != 0) return NULL;
+  if (status != 0) {
+    printf("[DEBUG run_rubato mode=%s failed status=%d]\n", mode, status);
+    return NULL;
+  }
 
   return read_raw_f64(out_path, out_count);
 }

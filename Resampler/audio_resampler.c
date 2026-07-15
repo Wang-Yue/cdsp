@@ -37,6 +37,7 @@ static poly_interpolation_t poly_interpolation_from_string(const char* str) {
   if (strcmp(str, "Linear") == 0) return POLY_INTERPOLATION_LINEAR;
   if (strcmp(str, "Cubic") == 0) return POLY_INTERPOLATION_CUBIC;
   if (strcmp(str, "Quintic") == 0) return POLY_INTERPOLATION_QUINTIC;
+  if (strcmp(str, "Septic") == 0) return POLY_INTERPOLATION_SEPTIC;
   return POLY_INTERPOLATION_CUBIC;
 }
 
