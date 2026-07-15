@@ -115,7 +115,8 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
 
   core->dsd_encoder = dsd_encoder_create(
       playback_device_config_get_channels(&config->devices.playback),
-      playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0);
+      playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0,
+      config->devices.multithreaded);
 
   return (core->shared && core->processing_params && core->dop_decoder &&
           core->dsd_encoder);
@@ -364,15 +365,14 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
 }
 
 dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
-                                                  chunk_callback_t on_captured,
-                                                  void* captured_ctx,
-                                                  chunk_callback_t on_processed,
-                                                  void* processed_ctx,
-                                                  audio_backend_error_t* err) {
+                                              chunk_callback_t on_captured,
+                                              void* captured_ctx,
+                                              chunk_callback_t on_processed,
+                                              void* processed_ctx,
+                                              audio_backend_error_t* err) {
   if (!config) return NULL;
 
-  dsp_session_t* core =
-      (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
+  dsp_session_t* core = (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
 
 #ifdef _WIN32

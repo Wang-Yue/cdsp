@@ -51,6 +51,15 @@ typedef struct {
   sigma_delta_modulator_t* modulator;
 } dsd_encoder_channel_state_t;
 
+#include <pthread.h>
+
+typedef struct dsd_encoder dsd_encoder_t;
+
+typedef struct {
+  dsd_encoder_t* encoder;
+  int id;
+} dsd_encoder_worker_ctx_t;
+
 struct dsd_encoder {
   /** Number of audio channels. */
   int channels;
@@ -73,7 +82,34 @@ struct dsd_encoder {
    * cache footprint.
    */
   float* coeffs;
+
+  /* Helper threads for 4-core parallel encoding */
+  bool helper_created;
+  pthread_t workers[3];
+  bool worker_created[3];
+  pthread_mutex_t mutex;
+  pthread_cond_t cond_work;
+  pthread_cond_t cond_done;
+  bool worker_should_exit;
+
+  /* Stage synchronization */
+  int stage; /* 0: idle, 1: filtering, 2: modulating */
+  int stage_sequence;
+  int stage1_done_count;
+  bool stage2_done;
+
+  /* Pre-allocated scratch buffer for polyphase filter outputs */
+  float* upsampled_scratch;
+  size_t scratch_capacity; /* capacity in floats */
+
+  /* Parameters for worker threads */
+  mutable_waveform_t input_bufs[2];
+  size_t total_frames;
+
+  dsd_encoder_worker_ctx_t worker_ctxs[3];
 };
+
+static void* dsd_encoder_worker_thread(void* arg);
 
 #include <math.h>
 #include <stdlib.h>
@@ -197,7 +233,8 @@ static float* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
 
 dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                                   dsd_mode_t mode, size_t dsd_bit_depth,
-                                  sdm_filter_t filter_name, double cutoff_hz) {
+                                  sdm_filter_t filter_name, double cutoff_hz,
+                                  bool multithreaded) {
   if (channels <= 0) {
     logger_error(&g_logger, "Invalid channel count for DSD encoder: %d",
                  channels);
@@ -255,6 +292,51 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
       return NULL;
     }
   }
+  // Helper thread initialization for stereo channels
+  enc->helper_created = false;
+  if (multithreaded && channels == 2) {
+    pthread_mutex_init(&enc->mutex, NULL);
+    pthread_cond_init(&enc->cond_work, NULL);
+    pthread_cond_init(&enc->cond_done, NULL);
+    enc->worker_should_exit = false;
+    enc->stage = 0;
+    enc->stage_sequence = 0;
+    enc->stage1_done_count = 0;
+    enc->stage2_done = false;
+    enc->upsampled_scratch = NULL;
+    enc->scratch_capacity = 0;
+
+    bool all_ok = true;
+    for (int i = 0; i < 3; i++) {
+      enc->worker_created[i] = false;
+      enc->worker_ctxs[i].encoder = enc;
+      enc->worker_ctxs[i].id = i;
+      if (pthread_create(&enc->workers[i], NULL, dsd_encoder_worker_thread,
+                         &enc->worker_ctxs[i]) == 0) {
+        enc->worker_created[i] = true;
+      } else {
+        logger_error(&g_logger,
+                     "Failed to create helper thread %d for DSD encoder", i);
+        all_ok = false;
+        break;
+      }
+    }
+    if (all_ok) {
+      enc->helper_created = true;
+    } else {
+      enc->worker_should_exit = true;
+      pthread_cond_broadcast(&enc->cond_work);
+      for (int i = 0; i < 3; i++) {
+        if (enc->worker_created[i]) {
+          pthread_join(enc->workers[i], NULL);
+        }
+      }
+      pthread_mutex_destroy(&enc->mutex);
+      pthread_cond_destroy(&enc->cond_work);
+      pthread_cond_destroy(&enc->cond_done);
+    }
+  }
+
   logger_debug(&g_logger,
                "DSD encoder created and enabled (channels=%d, sample_rate=%zu, "
                "bit_depth=%zu, mode=%s)",
@@ -359,6 +441,171 @@ static void encode_channel(dsd_encoder_channel_state_t* state,
   state->marker = marker;
 }
 
+static void init_local_fifo(float* local_fifo, int* out_pos,
+                            const float* global_fifo, int global_pos,
+                            mutable_waveform_t buf, size_t t_start) {
+  if (t_start == 0) {
+    memcpy(local_fifo, global_fifo, sizeof(float) * 64);
+    *out_pos = global_pos;
+  } else {
+    memset(local_fifo, 0, sizeof(float) * 64);
+    int pos = 0;
+    size_t hist_len = 31;
+    size_t hist_start = (t_start >= hist_len) ? (t_start - hist_len) : 0;
+    size_t zero_pad = hist_len - (t_start - hist_start);
+
+    for (size_t i = 0; i < zero_pad; i++) {
+      local_fifo[pos] = 0.0f;
+      local_fifo[pos + 32] = 0.0f;
+      pos = (pos + 1) & 31;
+    }
+    for (size_t i = hist_start; i < t_start; i++) {
+      float val = (float)buf[i];
+      local_fifo[pos] = val;
+      local_fifo[pos + 32] = val;
+      pos = (pos + 1) & 31;
+    }
+    *out_pos = pos;
+  }
+}
+
+static void filter_range(const float* coeffs, mutable_waveform_t buf,
+                         float* out_upsampled, size_t t_start, size_t t_end,
+                         size_t dsd_bit_depth, const float* init_fifo,
+                         int init_pos, float* out_final_fifo,
+                         int* out_final_pos) {
+  float local_fifo[64];
+  int pos = 0;
+  init_local_fifo(local_fifo, &pos, init_fifo, init_pos, buf, t_start);
+
+  for (size_t t = t_start; t < t_end; t++) {
+    float val = (float)buf[t];
+    local_fifo[pos] = val;
+    local_fifo[pos + 32] = val;
+
+    const float* fifo_p = local_fifo + pos + 1;
+    const float* cp = coeffs;
+    float* out_p = out_upsampled + (t - t_start) * dsd_bit_depth;
+
+    for (size_t p = 0; p < dsd_bit_depth; p++) {
+      out_p[p] = dot_product_32(cp, fifo_p);
+      cp += 32;
+    }
+    pos = (pos + 1) & 31;
+  }
+
+  if (out_final_fifo && out_final_pos) {
+    memcpy(out_final_fifo, local_fifo, sizeof(float) * 64);
+    *out_final_pos = pos;
+  }
+}
+
+static void modulate_channel_from_precomputed(
+    dsd_encoder_channel_state_t* state, const float* in_upsampled,
+    mutable_waveform_t buf, size_t frames, size_t dsd_bit_depth,
+    dsd_mode_t mode) {
+  uint8_t marker = state->marker;
+  sigma_delta_modulator_t* modulator = state->modulator;
+
+  for (size_t t = 0; t < frames; t++) {
+    const float* Y_t = in_upsampled + t * dsd_bit_depth;
+    uint32_t word = 0;
+    for (size_t p = 0; p < dsd_bit_depth; p++) {
+      if (sigma_delta_modulator_sample(modulator, Y_t[p])) {
+        word |= ((uint32_t)1 << (dsd_bit_depth - 1 - p));
+      }
+    }
+    buf[t] = pack_dsd_sample(word, dsd_bit_depth, mode, &marker);
+  }
+  state->marker = marker;
+}
+
+static void* dsd_encoder_worker_thread(void* arg) {
+  dsd_encoder_worker_ctx_t* ctx = (dsd_encoder_worker_ctx_t*)arg;
+  dsd_encoder_t* enc = ctx->encoder;
+  int id = ctx->id;
+  int last_sequence = 0;
+
+  pthread_mutex_lock(&enc->mutex);
+  while (1) {
+    while ((enc->stage == 0 || enc->stage_sequence == last_sequence) &&
+           !enc->worker_should_exit) {
+      pthread_cond_wait(&enc->cond_work, &enc->mutex);
+    }
+    if (enc->worker_should_exit) {
+      break;
+    }
+
+    int current_stage = enc->stage;
+    last_sequence = enc->stage_sequence;
+    pthread_mutex_unlock(&enc->mutex);
+
+    if (current_stage == 1) {
+      // Stage 1: Polyphase FIR Filtering
+      size_t n = enc->total_frames;
+      size_t half = n / 2;
+      size_t depth = enc->dsd_bit_depth;
+
+      if (id == 0) {
+        // Channel 0, 2nd half: frames [half, n)
+        float* out = enc->upsampled_scratch + half * depth;
+        float final_fifo[64];
+        int final_pos = 0;
+        filter_range(enc->coeffs, enc->input_bufs[0], out, half, n, depth,
+                     enc->channel_states[0].fifo,
+                     enc->channel_states[0].fifo_pos, final_fifo, &final_pos);
+        // Write back final FIFO state to global channel state
+        memcpy(enc->channel_states[0].fifo, final_fifo, sizeof(float) * 64);
+        enc->channel_states[0].fifo_pos = final_pos;
+
+      } else if (id == 1) {
+        // Channel 1, 1st half: frames [0, half)
+        float* out = enc->upsampled_scratch + n * depth;
+        filter_range(enc->coeffs, enc->input_bufs[1], out, 0, half, depth,
+                     enc->channel_states[1].fifo,
+                     enc->channel_states[1].fifo_pos, NULL, NULL);
+
+      } else if (id == 2) {
+        // Channel 1, 2nd half: frames [half, n)
+        float* out = enc->upsampled_scratch + n * depth + half * depth;
+        float final_fifo[64];
+        int final_pos = 0;
+        filter_range(enc->coeffs, enc->input_bufs[1], out, half, n, depth,
+                     enc->channel_states[1].fifo,
+                     enc->channel_states[1].fifo_pos, final_fifo, &final_pos);
+        // Write back final FIFO state to global channel state
+        memcpy(enc->channel_states[1].fifo, final_fifo, sizeof(float) * 64);
+        enc->channel_states[1].fifo_pos = final_pos;
+      }
+
+      pthread_mutex_lock(&enc->mutex);
+      enc->stage1_done_count++;
+      if (enc->stage1_done_count == 3) {
+        pthread_cond_signal(&enc->cond_done);
+      }
+
+    } else if (current_stage == 2) {
+      // Stage 2: Modulation
+      if (id == 1) {
+        // Channel 1 sequential modulation
+        size_t n = enc->total_frames;
+        size_t depth = enc->dsd_bit_depth;
+        float* in_upsampled = enc->upsampled_scratch + n * depth;
+        modulate_channel_from_precomputed(&enc->channel_states[1], in_upsampled,
+                                          enc->input_bufs[1], n, depth,
+                                          enc->mode);
+        pthread_mutex_lock(&enc->mutex);
+        enc->stage2_done = true;
+        pthread_cond_signal(&enc->cond_done);
+      } else {
+        pthread_mutex_lock(&enc->mutex);
+      }
+    }
+  }
+  pthread_mutex_unlock(&enc->mutex);
+  return NULL;
+}
+
 static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
                                  dsd_encoder_channel_state_t* state1,
                                  mutable_waveform_t buf0,
@@ -418,23 +665,105 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   int chs = encoder->channels;
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
 
-  int ch = 0;
-  for (; ch + 1 < chs; ch += 2) {
-    encode_dual_channels(
-        &encoder->channel_states[ch], &encoder->channel_states[ch + 1],
-        audio_chunk_get_channel(chunk, ch),
-        audio_chunk_get_channel(chunk, ch + 1), n, encoder->coeffs,
-        encoder->mode, encoder->dsd_bit_depth);
-  }
-  for (; ch < chs; ch++) {
-    encode_channel(&encoder->channel_states[ch],
-                   audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
-                   encoder->mode, encoder->dsd_bit_depth);
+  if (chs == 2 && encoder->helper_created) {
+    // Parallel stereo encoding using 4 threads
+    size_t half = n / 2;
+    size_t depth = encoder->dsd_bit_depth;
+
+    // Set up inputs
+    encoder->input_bufs[0] = audio_chunk_get_channel(chunk, 0);
+    encoder->input_bufs[1] = audio_chunk_get_channel(chunk, 1);
+    encoder->total_frames = n;
+
+    // Resize scratch if needed
+    size_t required = 2 * n * depth;
+    if (required > encoder->scratch_capacity) {
+      encoder->upsampled_scratch =
+          (float*)realloc(encoder->upsampled_scratch, required * sizeof(float));
+      encoder->scratch_capacity = required;
+    }
+
+    // Start Stage 1 (Filtering)
+    pthread_mutex_lock(&encoder->mutex);
+    encoder->stage = 1;
+    encoder->stage_sequence++;
+    encoder->stage1_done_count = 0;
+    pthread_cond_broadcast(&encoder->cond_work);
+    pthread_mutex_unlock(&encoder->mutex);
+
+    // Main thread computes Channel 0, 1st half
+    float* out = encoder->upsampled_scratch;
+    filter_range(encoder->coeffs, encoder->input_bufs[0], out, 0, half, depth,
+                 encoder->channel_states[0].fifo,
+                 encoder->channel_states[0].fifo_pos, NULL, NULL);
+
+    // Wait for all 3 workers to finish Stage 1
+    pthread_mutex_lock(&encoder->mutex);
+    while (encoder->stage1_done_count < 3) {
+      pthread_cond_wait(&encoder->cond_done, &encoder->mutex);
+    }
+    pthread_mutex_unlock(&encoder->mutex);
+
+    // Start Stage 2 (Modulating)
+    pthread_mutex_lock(&encoder->mutex);
+    encoder->stage = 2;
+    encoder->stage_sequence++;
+    encoder->stage2_done = false;
+    pthread_cond_broadcast(&encoder->cond_work);
+    pthread_mutex_unlock(&encoder->mutex);
+
+    // Main thread modulates Channel 0 sequentially
+    modulate_channel_from_precomputed(
+        &encoder->channel_states[0], encoder->upsampled_scratch,
+        encoder->input_bufs[0], n, depth, encoder->mode);
+
+    // Wait for Worker 1 to finish modulating Channel 1
+    pthread_mutex_lock(&encoder->mutex);
+    while (!encoder->stage2_done) {
+      pthread_cond_wait(&encoder->cond_done, &encoder->mutex);
+    }
+    // Set to idle stage
+    encoder->stage = 0;
+    pthread_mutex_unlock(&encoder->mutex);
+
+  } else {
+    // Fallback/standard sequential processing
+    int ch = 0;
+    for (; ch + 1 < chs; ch += 2) {
+      encode_dual_channels(
+          &encoder->channel_states[ch], &encoder->channel_states[ch + 1],
+          audio_chunk_get_channel(chunk, ch),
+          audio_chunk_get_channel(chunk, ch + 1), n, encoder->coeffs,
+          encoder->mode, encoder->dsd_bit_depth);
+    }
+    for (; ch < chs; ch++) {
+      encode_channel(&encoder->channel_states[ch],
+                     audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
+                     encoder->mode, encoder->dsd_bit_depth);
+    }
   }
 }
 
 void dsd_encoder_free(dsd_encoder_t* encoder) {
   if (!encoder) return;
+
+  if (encoder->helper_created) {
+    pthread_mutex_lock(&encoder->mutex);
+    encoder->worker_should_exit = true;
+    encoder->stage = 1;  // Wake workers up to exit
+    pthread_cond_broadcast(&encoder->cond_work);
+    pthread_mutex_unlock(&encoder->mutex);
+
+    for (int i = 0; i < 3; i++) {
+      if (encoder->worker_created[i]) {
+        pthread_join(encoder->workers[i], NULL);
+      }
+    }
+    pthread_mutex_destroy(&encoder->mutex);
+    pthread_cond_destroy(&encoder->cond_work);
+    pthread_cond_destroy(&encoder->cond_done);
+  }
+
   if (encoder->channel_states) {
     for (int ch = 0; ch < encoder->channels; ch++) {
       sigma_delta_modulator_free(encoder->channel_states[ch].modulator);
@@ -442,6 +771,7 @@ void dsd_encoder_free(dsd_encoder_t* encoder) {
     free(encoder->channel_states);
   }
   if (encoder->coeffs) free(encoder->coeffs);
+  if (encoder->upsampled_scratch) free(encoder->upsampled_scratch);
   free(encoder);
 }
 

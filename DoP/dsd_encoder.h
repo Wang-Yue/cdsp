@@ -58,7 +58,8 @@ typedef struct dsd_encoder dsd_encoder_t;
  */
 dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                                   dsd_mode_t mode, size_t dsd_bit_depth,
-                                  sdm_filter_t filter_name, double cutoff_hz);
+                                  sdm_filter_t filter_name, double cutoff_hz,
+                                  bool multithreaded);
 
 /**
  * @brief Encode the chunk's PCM samples into DoP/DSD, in place.
