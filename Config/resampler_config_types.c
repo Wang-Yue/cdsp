@@ -123,12 +123,14 @@ const char* resampler_profile_to_string(resampler_profile_t profile) {
   }
 }
 
+#include <strings.h>
+
 resampler_profile_t resampler_profile_from_string(const char* str) {
   if (!str) return RESAMPLER_PROFILE_BALANCED;
-  if (strcmp(str, "VeryFast") == 0) return RESAMPLER_PROFILE_VERY_FAST;
-  if (strcmp(str, "Fast") == 0) return RESAMPLER_PROFILE_FAST;
-  if (strcmp(str, "Balanced") == 0) return RESAMPLER_PROFILE_BALANCED;
-  if (strcmp(str, "Accurate") == 0) return RESAMPLER_PROFILE_ACCURATE;
+  if (strcasecmp(str, "VeryFast") == 0) return RESAMPLER_PROFILE_VERY_FAST;
+  if (strcasecmp(str, "Fast") == 0) return RESAMPLER_PROFILE_FAST;
+  if (strcasecmp(str, "Balanced") == 0) return RESAMPLER_PROFILE_BALANCED;
+  if (strcasecmp(str, "Accurate") == 0) return RESAMPLER_PROFILE_ACCURATE;
   return RESAMPLER_PROFILE_BALANCED;
 }
 

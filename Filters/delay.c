@@ -1,6 +1,7 @@
 #include "delay.h"
 
 #include "biquad.h"
+#include "filter.h"
 
 struct delay_filter {
   char name[64];
@@ -9,6 +10,8 @@ struct delay_filter {
   size_t read_index;
   biquad_filter_t* biquad;
 };
+
+typedef struct delay_filter delay_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -86,10 +89,63 @@ static void build_delay(double delay_samples, bool subsample,
   }
 }
 
-delay_filter_t* delay_filter_create(const char* name,
-                                    const delay_config_t* params,
-                                    int sample_rate, config_error_t* err) {
-  if (delay_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Free the delay filter instance and its associated resources.
+ *
+ * @param filter The delay filter instance to free.
+ */
+static void delay_filter_free(delay_filter_t* filter) {
+  if (!filter) return;
+  if (filter->queue) free(filter->queue);
+  if (filter->biquad) g_biquad_vtable.free(filter->biquad);
+  free(filter);
+}
+
+/**
+ * @brief Validates delay filter parameters.
+ *
+ * @param config Pointer to the filter configuration to validate.
+ * @param sample_rate The audio sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int delay_config_validate(const filter_config_t* config, int sample_rate,
+                                 config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_DELAY) return -1;
+  const delay_config_t* params = &config->parameters.delay;
+  if (!params) return 0;
+  if (params->delay < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Delay cannot be negative, got %g", params->delay);
+    return -1;
+  }
+  return 0;
+}
+
+/**
+ * @brief Create a new delay filter.
+ *
+ * Builds the subsample biquad allpass filter if fractional delay is requested.
+ *
+ * @param name The name of the filter.
+ * @param config The filter configuration defining delay value, unit, etc.
+ * @param sample_rate The audio sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the created delay filter, or NULL on failure.
+ */
+static void* delay_filter_create(const char* name,
+                                 const filter_config_t* config, int sample_rate,
+                                 size_t chunk_size,
+                                 processing_parameters_t* proc_params,
+                                 config_error_t* err) {
+  (void)chunk_size;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_DELAY) return NULL;
+  const delay_config_t* params = &config->parameters.delay;
+  if (delay_config_validate(config, sample_rate, err) != 0) return NULL;
   delay_filter_t* filter = (delay_filter_t*)calloc(1, sizeof(delay_filter_t));
   if (!filter) {
     config_error_set(err, CONFIG_ERR_PARSE,
@@ -139,8 +195,10 @@ delay_filter_t* delay_filter_create(const char* name,
   }
   filter->read_index = 0;
   if (has_coeffs) {
-    filter->biquad =
-        biquad_filter_create("delay_biquad", &bq_params, sample_rate, err);
+    filter_config_t bq_cfg = {.type = FILTER_TYPE_BIQUAD,
+                              .parameters.biquad = bq_params};
+    filter->biquad = (biquad_filter_t*)g_biquad_vtable.create(
+        "delay_biquad", &bq_cfg, sample_rate, 0, NULL, err);
     if (!filter->biquad) {
       delay_filter_free(filter);
       return NULL;
@@ -151,8 +209,15 @@ delay_filter_t* delay_filter_create(const char* name,
   return filter;
 }
 
-void delay_filter_process(delay_filter_t* filter, mutable_waveform_t waveform,
-                          size_t count) {
+/**
+ * @brief Process a block of samples in-place.
+ *
+ * @param filter The delay filter instance.
+ * @param waveform The input/output waveform buffer.
+ * @param count The number of samples to process.
+ */
+static void delay_filter_process(delay_filter_t* filter,
+                                 mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   // Apply integer delay using the circular buffer.
   if (filter->queue && filter->queue_count > 0) {
@@ -170,7 +235,7 @@ void delay_filter_process(delay_filter_t* filter, mutable_waveform_t waveform,
   }
   // Apply fractional delay filter (Thiran allpass) if configured.
   if (filter->biquad) {
-    biquad_filter_process(filter->biquad, waveform, count);
+    g_biquad_vtable.process(filter->biquad, waveform, count);
   }
 }
 
@@ -193,23 +258,6 @@ double delay_filter_process_single(delay_filter_t* filter, double sample) {
   return out;
 }
 
-void delay_filter_free(delay_filter_t* filter) {
-  if (!filter) return;
-  if (filter->queue) free(filter->queue);
-  if (filter->biquad) biquad_filter_free(filter->biquad);
-  free(filter);
-}
-
-int delay_config_validate(const delay_config_t* params, config_error_t* err) {
-  if (!params) return 0;
-  if (params->delay < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Delay cannot be negative, got %g", params->delay);
-    return -1;
-  }
-  return 0;
-}
-
 double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
   switch (unit) {
     case DELAY_UNIT_MS:
@@ -221,7 +269,13 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
     case DELAY_UNIT_MM:
       // Compute delay using speed of sound in air (approx. 343 m/s)
       return delay / 1000.0 * (double)sample_rate / 343.0;
-    default:
-      return delay;
   }
 }
+
+const filter_vtable_t g_delay_vtable = {
+    .validate = delay_config_validate,
+    .create = delay_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))delay_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))delay_filter_free};

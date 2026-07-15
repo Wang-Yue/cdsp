@@ -238,8 +238,10 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
                             .b2 = b2,
                             .a1 = a1,
                             .a2 = a2};
-  biquad_filter_t* filter =
-      biquad_filter_create("test_bq", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  biquad_filter_t* filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "test_bq", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -248,7 +250,7 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    biquad_filter_process(filter, &swift_out[idx], end - idx);
+    g_biquad_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -263,7 +265,7 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
          rms, (size_t)NBR_FRAMES);
   ASSERT_TRUE(max_abs_diff < 1e-13);
 
-  biquad_filter_free(filter);
+  g_biquad_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -326,7 +328,8 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
                           .scale = GAIN_SCALE_DB,
                           .inverted = inverted,
                           .mute = mute};
-  gain_filter_t* filter = gain_filter_create("test_gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("test_gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -335,7 +338,7 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    gain_filter_process(filter, &swift_out[idx], end - idx);
+    g_gain_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -347,7 +350,7 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
          (size_t)NBR_FRAMES);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -396,8 +399,10 @@ static void compare_volume(double current_volume_db, bool mute,
                                 .limit = 50.0,
                                 .has_limit = true,
                                 .fader = FADER_MAIN};
-  volume_filter_t* filter = volume_filter_create(
-      "test_vol", &vol_params, SAMPLE_RATE, CHUNK_SIZE, params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = vol_params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "test_vol", &cfg, SAMPLE_RATE, CHUNK_SIZE, params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -407,7 +412,7 @@ static void compare_volume(double current_volume_db, bool mute,
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
     volume_filter_prepare_chunk(filter);
-    volume_filter_process(filter, &swift_out[idx], end - idx);
+    g_volume_vtable.process(filter, &swift_out[idx], end - idx);
     volume_filter_advance_ramp(filter);
   }
 
@@ -420,7 +425,7 @@ static void compare_volume(double current_volume_db, bool mute,
          (size_t)NBR_FRAMES);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(params);
   free(input);
   free(ref);
@@ -474,11 +479,13 @@ static void compare_loudness(double volume_db, double reference_db,
   processing_parameters_t* params = processing_parameters_create(1, 1);
   processing_parameters_set_current_volume(params, volume_db);
 
-  loudness_filter_t* filter =
-      loudness_filter_create("test_loud", &lp, SAMPLE_RATE, params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LOUDNESS,
+                         .parameters.loudness = lp};
+  void* filter =
+      g_loudness_vtable.create("test_loud", &cfg, SAMPLE_RATE, 0, params, NULL);
   ASSERT_TRUE(filter != NULL);
   double primer[8] = {0};
-  loudness_filter_process(filter, primer, 8);
+  g_loudness_vtable.process(filter, primer, 8);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
   memcpy(swift_out, input, NBR_FRAMES * sizeof(double));
@@ -486,7 +493,7 @@ static void compare_loudness(double volume_db, double reference_db,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    loudness_filter_process(filter, &swift_out[idx], end - idx);
+    g_loudness_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -501,7 +508,7 @@ static void compare_loudness(double volume_db, double reference_db,
          max_abs_diff, rms, (size_t)NBR_FRAMES);
   ASSERT_TRUE(max_abs_diff < 1e-9);
 
-  loudness_filter_free(filter);
+  g_loudness_vtable.free(filter);
   processing_parameters_free(params);
   free(input);
   free(ref);
@@ -689,8 +696,9 @@ TEST(Convolution_Vs_Rust_RandomIR) {
   params.values = coeffs;
   params.values_count = 2000;
 
-  convolution_filter_t* filter =
-      convolution_filter_create("test_conv", &params, CHUNK_SIZE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* filter =
+      g_convolution_vtable.create("test_conv", &cfg, 0, CHUNK_SIZE, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -699,7 +707,7 @@ TEST(Convolution_Vs_Rust_RandomIR) {
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    convolution_filter_process(filter, &swift_out[idx], end - idx);
+    g_convolution_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -714,7 +722,7 @@ TEST(Convolution_Vs_Rust_RandomIR) {
          rms, (size_t)NBR_FRAMES);
   ASSERT_TRUE(max_abs_diff < 1e-13);
 
-  convolution_filter_free(filter);
+  g_convolution_vtable.free(filter);
   free(input);
   free(coeffs);
   free(ref);
@@ -764,8 +772,9 @@ static void compare_delay(double delay, delay_unit_t unit, bool subsample,
 
   delay_config_t params = {
       .delay = delay, .unit = unit, .subsample = subsample};
-  delay_filter_t* filter =
-      delay_filter_create("test_delay", &params, SAMPLE_RATE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter =
+      g_delay_vtable.create("test_delay", &cfg, SAMPLE_RATE, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -774,7 +783,7 @@ static void compare_delay(double delay, delay_unit_t unit, bool subsample,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    delay_filter_process(filter, &swift_out[idx], end - idx);
+    g_delay_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -785,7 +794,7 @@ static void compare_delay(double delay, delay_unit_t unit, bool subsample,
   printf("[delay %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -840,8 +849,10 @@ static void compare_biquad_combo_filter(biquad_combo_type_t type, double freq,
   params.order = order;
   params.has_order = true;
 
-  biquad_combo_filter_t* filter =
-      biquad_combo_filter_create("test_combo", &params, SAMPLE_RATE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void* filter = g_biquad_combo_vtable.create("test_combo", &cfg, SAMPLE_RATE,
+                                              0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -850,7 +861,7 @@ static void compare_biquad_combo_filter(biquad_combo_type_t type, double freq,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    biquad_combo_filter_process(filter, &swift_out[idx], end - idx);
+    g_biquad_combo_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -861,7 +872,7 @@ static void compare_biquad_combo_filter(biquad_combo_type_t type, double freq,
   printf("[biquad_combo %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  biquad_combo_filter_free(filter);
+  g_biquad_combo_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -895,8 +906,10 @@ static void compare_biquad_combo_tilt(double gain, const char* label) {
   params.gain = gain;
   params.has_gain = true;
 
-  biquad_combo_filter_t* filter =
-      biquad_combo_filter_create("test_tilt", &params, SAMPLE_RATE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void* filter = g_biquad_combo_vtable.create("test_tilt", &cfg, SAMPLE_RATE, 0,
+                                              NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -905,7 +918,7 @@ static void compare_biquad_combo_tilt(double gain, const char* label) {
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    biquad_combo_filter_process(filter, &swift_out[idx], end - idx);
+    g_biquad_combo_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -916,7 +929,7 @@ static void compare_biquad_combo_tilt(double gain, const char* label) {
   printf("[biquad_combo %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  biquad_combo_filter_free(filter);
+  g_biquad_combo_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -966,8 +979,10 @@ static void compare_biquad_combo_geq(double freq_min, double freq_max,
   params.gains = (double*)gains;
   params.gains_count = gains_count;
 
-  biquad_combo_filter_t* filter =
-      biquad_combo_filter_create("test_geq", &params, SAMPLE_RATE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void* filter = g_biquad_combo_vtable.create("test_geq", &cfg, SAMPLE_RATE, 0,
+                                              NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -976,7 +991,7 @@ static void compare_biquad_combo_geq(double freq_min, double freq_max,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    biquad_combo_filter_process(filter, &swift_out[idx], end - idx);
+    g_biquad_combo_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -987,7 +1002,7 @@ static void compare_biquad_combo_geq(double freq_min, double freq_max,
   printf("[biquad_combo %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < epsilon);
 
-  biquad_combo_filter_free(filter);
+  g_biquad_combo_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1075,8 +1090,10 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   params.has_qhs = true;
   params.has_ghs = true;
 
-  biquad_combo_filter_t* filter =
-      biquad_combo_filter_create("test_peq5", &params, SAMPLE_RATE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void* filter = g_biquad_combo_vtable.create("test_peq5", &cfg, SAMPLE_RATE, 0,
+                                              NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1085,7 +1102,7 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    biquad_combo_filter_process(filter, &swift_out[idx], end - idx);
+    g_biquad_combo_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1096,7 +1113,7 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   printf("[biquad_combo %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  biquad_combo_filter_free(filter);
+  g_biquad_combo_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1163,7 +1180,9 @@ TEST(DiffEq_SimpleIIR) {
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("test_diffeq", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void* filter = g_diffeq_vtable.create("test_diffeq", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1172,7 +1191,7 @@ TEST(DiffEq_SimpleIIR) {
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    diffeq_filter_process(filter, &swift_out[idx], end - idx);
+    g_diffeq_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1183,7 +1202,7 @@ TEST(DiffEq_SimpleIIR) {
   printf("[diffeq] maxAbsDiff=%.3e\n", max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  diffeq_filter_free(filter);
+  g_diffeq_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1213,7 +1232,9 @@ TEST(Dither_None) {
   dither_config_t params = {0};
   params.type = DITHER_TYPE_NONE;
   params.bits = 16;
-  dither_filter_t* filter = dither_filter_create("test_dither", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* filter = g_dither_vtable.create("test_dither", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1222,7 +1243,7 @@ TEST(Dither_None) {
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    dither_filter_process(filter, &swift_out[idx], end - idx);
+    g_dither_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1233,7 +1254,7 @@ TEST(Dither_None) {
   printf("[dither none] maxAbsDiff=%.3e\n", max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  dither_filter_free(filter);
+  g_dither_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1265,8 +1286,10 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   limiter_config_t params = {.clip_limit = clip_limit, .soft_clip = soft_clip};
-  limiter_filter_t* filter =
-      limiter_filter_create("test_limiter", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LIMITER,
+                         .parameters.limiter = params};
+  void* filter =
+      g_limiter_vtable.create("test_limiter", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1275,7 +1298,7 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    limiter_filter_process(filter, &swift_out[idx], end - idx);
+    g_limiter_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1286,7 +1309,7 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   printf("[limiter %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  limiter_filter_free(filter);
+  g_limiter_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1327,8 +1350,10 @@ static void compare_lookahead_limiter(double limit, double attack,
 
   lookahead_limiter_config_t params = {
       .limit = limit, .attack = attack, .release = release, .unit = unit};
-  lookahead_limiter_filter_t* filter = lookahead_limiter_filter_create(
-      "test_lookahead", &params, SAMPLE_RATE, CHUNK_SIZE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+                         .parameters.lookahead_limiter = params};
+  void* filter = g_lookahead_limiter_vtable.create(
+      "test_lookahead", &cfg, SAMPLE_RATE, CHUNK_SIZE, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1337,7 +1362,7 @@ static void compare_lookahead_limiter(double limit, double attack,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    lookahead_limiter_filter_process(filter, &swift_out[idx], end - idx);
+    g_lookahead_limiter_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1348,7 +1373,7 @@ static void compare_lookahead_limiter(double limit, double attack,
   printf("[lookahead %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-5);
 
-  lookahead_limiter_filter_free(filter);
+  g_lookahead_limiter_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
@@ -1408,8 +1433,11 @@ TEST(Compressor_Vs_RustReference) {
   params.clip_limit = clip_limit;
   params.has_clip_limit = true;
 
-  compressor_processor_t* comp = compressor_processor_create(
-      "compressor", &params, SAMPLE_RATE, NBR_FRAMES, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+
+  dsp_processor_t* comp = dsp_processor_create("compressor", &config,
+                                               SAMPLE_RATE, NBR_FRAMES, NULL);
   ASSERT_TRUE(comp != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 1);
@@ -1417,7 +1445,7 @@ TEST(Compressor_Vs_RustReference) {
   memcpy(ch0, input, NBR_FRAMES * sizeof(double));
   audio_chunk_set_valid_frames(chunk, NBR_FRAMES);
 
-  compressor_processor_process(comp, chunk);
+  dsp_processor_process(comp, chunk);
 
   ASSERT_EQ(ref_count, audio_chunk_get_valid_frames(chunk));
   double max_abs_diff = 0.0;
@@ -1429,7 +1457,7 @@ TEST(Compressor_Vs_RustReference) {
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
   audio_chunk_free(chunk);
-  compressor_processor_free(comp);
+  dsp_processor_free(comp);
   free(input);
   free(ref);
 }
@@ -1469,8 +1497,11 @@ TEST(NoiseGate_Vs_RustReference) {
   params.threshold = threshold;
   params.attenuation = attenuation;
 
-  noise_gate_processor_t* gate = noise_gate_processor_create(
-      "noisegate", &params, SAMPLE_RATE, NBR_FRAMES, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_NOISE_GATE,
+                               .parameters.noise_gate = params};
+
+  dsp_processor_t* gate =
+      dsp_processor_create("noisegate", &config, SAMPLE_RATE, NBR_FRAMES, NULL);
   ASSERT_TRUE(gate != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 1);
@@ -1478,7 +1509,7 @@ TEST(NoiseGate_Vs_RustReference) {
   memcpy(ch0, input, NBR_FRAMES * sizeof(double));
   audio_chunk_set_valid_frames(chunk, NBR_FRAMES);
 
-  noise_gate_processor_process(gate, chunk);
+  dsp_processor_process(gate, chunk);
 
   ASSERT_EQ(ref_count, audio_chunk_get_valid_frames(chunk));
   double max_abs_diff = 0.0;
@@ -1490,7 +1521,7 @@ TEST(NoiseGate_Vs_RustReference) {
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
   audio_chunk_free(chunk);
-  noise_gate_processor_free(gate);
+  dsp_processor_free(gate);
   free(input);
   free(ref);
 }
@@ -1546,8 +1577,11 @@ TEST(RACE_Vs_RustReference) {
   params.has_delay_unit = true;
   params.attenuation = attenuation;
 
-  race_processor_t* race =
-      race_processor_create("race", &params, SAMPLE_RATE, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
+                               .parameters.race = params};
+
+  dsp_processor_t* race =
+      dsp_processor_create("race", &config, SAMPLE_RATE, 0, NULL);
   ASSERT_TRUE(race != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 2);
@@ -1557,7 +1591,7 @@ TEST(RACE_Vs_RustReference) {
   memcpy(ch1, input1, NBR_FRAMES * sizeof(double));
   audio_chunk_set_valid_frames(chunk, NBR_FRAMES);
 
-  race_processor_process(race, chunk);
+  dsp_processor_process(race, chunk);
 
   ASSERT_EQ(ref_count0, audio_chunk_get_valid_frames(chunk));
   double max_abs_diff0 = 0.0, max_abs_diff1 = 0.0;
@@ -1572,7 +1606,7 @@ TEST(RACE_Vs_RustReference) {
   ASSERT_TRUE(max_abs_diff1 < 1e-12);
 
   audio_chunk_free(chunk);
-  race_processor_free(race);
+  dsp_processor_free(race);
   free(input0);
   free(input1);
   free(ref0);

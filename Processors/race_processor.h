@@ -50,76 +50,7 @@
  * pre-allocated during initialization.
  */
 
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "Audio/audio_chunk.h"
-#include "Config/processor_config_types.h"
-#include "Filters/delay.h"
-#include "Filters/gain.h"
-#include "Utils/double_helpers.h"
-
-/**
- * @brief RACE cross-talk cancellation processor state structure.
- */
-typedef struct race_processor race_processor_t;
-
-/**
- * @brief Gets the name of the RACE processor.
- *
- * @param processor Pointer to the RACE processor.
- * @return The unique name of the processor instance.
- */
-const char* race_processor_get_name(const race_processor_t* processor);
-
-/**
- * @brief Validates RACE cross-talk cancellation processor parameters.
- *
- * @param params Pointer to the RACE parameters to validate.
- * @param err Pointer to a config error struct to populate on failure.
- * @return 0 on success, -1 on failure.
- */
-int race_config_validate(const race_config_t* params, config_error_t* err);
-
-/**
- * @brief Creates a new RACE cross-talk cancellation processor.
- *
- * @param name Unique name for this RACE instance.
- * @param params RACE configuration parameters (channel indices, delay,
- * attenuation, delay unit, subsample flag).
- * @param sample_rate Audio sample rate in Hz.
- * @param err Pointer to a config error struct to populate on failure.
- * @return Pointer to newly allocated race_processor_t, or NULL on failure.
- */
-race_processor_t* race_processor_create(const char* name,
-                                        const race_config_t* params,
-                                        int sample_rate, config_error_t* err);
-
-/**
- * @brief Frees all resources associated with the RACE processor.
- *
- * @param processor Pointer to RACE processor to free.
- */
-void race_processor_free(race_processor_t* processor);
-
-/**
- * @brief Applies RACE cross-talk cancellation to audio chunk in place.
- *
- * Evaluates sample-by-sample recursive feedback loop across channel A and
- * channel B.
- *
- * @param processor Pointer to RACE processor.
- * @param chunk Audio chunk to process in place.
- */
-void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk);
-
-/**
- * @brief Transfers recursive feedback loop registers from src to dest.
- *
- * @param dest The destination RACE processor instance.
- * @param src The source RACE processor instance.
- */
-void race_processor_transfer_state(race_processor_t* dest,
-                                   const race_processor_t* src);
+struct processor_vtable;
+extern const struct processor_vtable g_race_vtable;
 
 #endif  // CLIB_PROCESSORS_RACE_PROCESSOR_H

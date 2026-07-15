@@ -30,7 +30,8 @@ typedef enum {
   /** Blackman-Harris window. */
   WINDOW_FUNCTION_BLACKMAN_HARRIS,
   /** Squared Blackman-Harris window. */
-  WINDOW_FUNCTION_BLACKMAN_HARRIS2
+  WINDOW_FUNCTION_BLACKMAN_HARRIS2,
+  WINDOW_FUNCTION_LAST
 } window_function_t;
 
 /**

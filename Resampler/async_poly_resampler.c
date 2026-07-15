@@ -12,9 +12,29 @@
 
 #include "async_poly_resampler.h"
 
+#include <string.h>
+#include <strings.h>
+
 #include "Audio/audio_chunk.h"
 #include "audio_resampler.h"
 #include "resampler_error.h"
+
+typedef enum {
+  POLY_INTERPOLATION_LINEAR = 0,
+  POLY_INTERPOLATION_CUBIC,
+  POLY_INTERPOLATION_QUINTIC,
+  POLY_INTERPOLATION_SEPTIC,
+  POLY_INTERPOLATION_LAST
+} poly_interpolation_t;
+
+static poly_interpolation_t poly_interpolation_from_string(const char* str) {
+  if (!str) return POLY_INTERPOLATION_CUBIC;
+  if (strcasecmp(str, "Linear") == 0) return POLY_INTERPOLATION_LINEAR;
+  if (strcasecmp(str, "Cubic") == 0) return POLY_INTERPOLATION_CUBIC;
+  if (strcasecmp(str, "Quintic") == 0) return POLY_INTERPOLATION_QUINTIC;
+  if (strcasecmp(str, "Septic") == 0) return POLY_INTERPOLATION_SEPTIC;
+  return POLY_INTERPOLATION_LAST;
+}
 
 static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
   switch (interp) {
@@ -30,6 +50,11 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
       return 4;
   }
 }
+
+static void* async_poly_resampler_create_from_profile(
+    size_t channels, size_t input_rate, size_t output_rate,
+    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
+    fixed_async_t fixed, config_error_t* err);
 
 typedef struct async_poly_resampler async_poly_resampler_t;
 
@@ -428,7 +453,7 @@ static size_t async_poly_resampler_get_output_frames_next(
   return resampler ? resampler->needed_output_size : 0;
 }
 
-resampler_t* async_poly_resampler_create(
+static void* async_poly_resampler_create_impl(
     size_t channels, size_t input_rate, size_t output_rate,
     poly_interpolation_t interpolation, size_t chunk_size,
     double max_relative_ratio, fixed_async_t fixed, config_error_t* err) {
@@ -535,33 +560,99 @@ resampler_t* async_poly_resampler_create(
     return NULL;
   }
 
-  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
-  if (!wrap) {
-    async_poly_resampler_free(resampler);
-    return NULL;
-  }
-  wrap->type = RESAMPLER_IMPL_ASYNC_POLY;
-  wrap->impl = resampler;
-  wrap->process = (resampler_error_t (*)(
-      void*, const audio_chunk_t*, audio_chunk_t*))async_poly_resampler_process;
-  wrap->set_relative_ratio =
-      (void (*)(void*, double))async_poly_resampler_set_relative_ratio;
-  wrap->get_ratio = (double (*)(const void*))async_poly_resampler_get_ratio;
-  wrap->get_max_output_frames =
-      (size_t (*)(const void*))async_poly_resampler_get_max_output_frames;
-  wrap->get_chunk_size =
-      (size_t (*)(const void*))async_poly_resampler_get_chunk_size;
-  wrap->get_input_frames_next =
-      (size_t (*)(const void*))async_poly_resampler_get_input_frames_next;
-  wrap->get_output_frames_next =
-      (size_t (*)(const void*))async_poly_resampler_get_output_frames_next;
-  wrap->get_channels =
-      (size_t (*)(const void*))async_poly_resampler_get_channels;
-  wrap->free = (void (*)(void*))async_poly_resampler_free;
-  return wrap;
+  return resampler;
 }
 
-resampler_t* async_poly_resampler_create_from_profile(
+/**
+ * @brief Validates async polynomial resampler parameters.
+ *
+ * @param config Pointer to the resampler configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int async_poly_resampler_config_validate(
+    const resampler_config_t* config, config_error_t* err) {
+  if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY) return -1;
+  if (config->has_interpolation) {
+    if (poly_interpolation_from_string(config->interpolation) ==
+        POLY_INTERPOLATION_LAST) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncPoly: invalid interpolation type %s",
+                       config->interpolation);
+      return -1;
+    }
+  }
+  if (config->has_profile) {
+    if (strcasecmp(config->profile, "VeryFast") != 0 &&
+        strcasecmp(config->profile, "Fast") != 0 &&
+        strcasecmp(config->profile, "Balanced") != 0 &&
+        strcasecmp(config->profile, "Accurate") != 0) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncPoly: invalid profile %s", config->profile);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Creates a new async polynomial resampler.
+ *
+ * @param config Resampler configuration parameters.
+ * @param input_rate Input sample rate in Hz.
+ * @param output_rate Output sample rate in Hz.
+ * @param channels Number of audio channels.
+ * @param chunk_size Fixed number of input/output frames per processing chunk.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return Pointer to newly allocated audio_resampler_t wrapper, or NULL on
+ * failure.
+ */
+static void* async_poly_resampler_create(const resampler_config_t* config,
+                                         size_t input_rate, size_t output_rate,
+                                         size_t channels, size_t chunk_size,
+                                         config_error_t* err) {
+  if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY) return NULL;
+
+  fixed_async_t fixed_mode =
+      config->has_fixed ? config->fixed : FIXED_ASYNC_OUTPUT;
+  if (config->has_interpolation) {
+    poly_interpolation_t interp =
+        poly_interpolation_from_string(config->interpolation);
+    return async_poly_resampler_create_impl(channels, input_rate, output_rate,
+                                            interp, chunk_size, 1.1, fixed_mode,
+                                            err);
+  } else {
+    resampler_profile_t prof = RESAMPLER_PROFILE_BALANCED;
+    if (config->has_profile) {
+      prof = resampler_profile_from_string(config->profile);
+    }
+    return async_poly_resampler_create_from_profile(
+        channels, input_rate, output_rate, prof, chunk_size, 1.1, fixed_mode,
+        err);
+  }
+}
+
+const resampler_vtable_t g_async_poly_resampler_vtable = {
+    .validate = async_poly_resampler_config_validate,
+    .create = async_poly_resampler_create,
+    .process =
+        (resampler_error_t (*)(void*, const audio_chunk_t*,
+                               audio_chunk_t*))async_poly_resampler_process,
+    .set_relative_ratio =
+        (void (*)(void*, double))async_poly_resampler_set_relative_ratio,
+    .get_ratio = (double (*)(const void*))async_poly_resampler_get_ratio,
+    .get_max_output_frames =
+        (size_t (*)(const void*))async_poly_resampler_get_max_output_frames,
+    .get_chunk_size =
+        (size_t (*)(const void*))async_poly_resampler_get_chunk_size,
+    .get_input_frames_next =
+        (size_t (*)(const void*))async_poly_resampler_get_input_frames_next,
+    .get_output_frames_next =
+        (size_t (*)(const void*))async_poly_resampler_get_output_frames_next,
+    .get_channels = (size_t (*)(const void*))async_poly_resampler_get_channels,
+    .free = (void (*)(void*))async_poly_resampler_free};
+
+static void* async_poly_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
     fixed_async_t fixed, config_error_t* err) {
@@ -582,7 +673,7 @@ resampler_t* async_poly_resampler_create_from_profile(
     default:
       break;
   }
-  return async_poly_resampler_create(channels, input_rate, output_rate, interp,
-                                     chunk_size, max_relative_ratio, fixed,
-                                     err);
+  return async_poly_resampler_create_impl(channels, input_rate, output_rate,
+                                          interp, chunk_size,
+                                          max_relative_ratio, fixed, err);
 }

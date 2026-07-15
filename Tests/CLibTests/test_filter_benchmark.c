@@ -18,6 +18,7 @@
 #include "Filters/biquad.h"
 #include "Filters/convolution.h"
 #include "Filters/diffeq.h"
+#include "Filters/filter.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -117,25 +118,26 @@ static void run_filter_benchmark(const char* label, const char* rust_name,
 }
 
 static void process_conv(void* f, double* w, size_t n) {
-  convolution_filter_process((convolution_filter_t*)f, w, n);
+  g_convolution_vtable.process(f, w, n);
 }
 
 static void process_biquad(void* f, double* w, size_t n) {
-  biquad_filter_process((biquad_filter_t*)f, w, n);
+  g_biquad_vtable.process(f, w, n);
 }
 
 static void process_diffeq(void* f, double* w, size_t n) {
-  diffeq_filter_process((diffeq_filter_t*)f, w, n);
+  g_diffeq_vtable.process(f, w, n);
 }
 
 TEST(Convolution_1024_Benchmark) {
   double* coeffs = (double*)calloc(1024, sizeof(double));
   convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1024};
-  convolution_filter_t* f =
-      convolution_filter_create("conv-1024", &params, CHUNK_SIZE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* f =
+      g_convolution_vtable.create("conv-1024", &cfg, 0, CHUNK_SIZE, NULL, NULL);
   run_filter_benchmark("FftConv_1024", "Conv/FftConv/1024", f, process_conv);
-  convolution_filter_free(f);
+  g_convolution_vtable.free(f);
   free(coeffs);
 }
 
@@ -143,10 +145,11 @@ TEST(Convolution_4096_Benchmark) {
   double* coeffs = (double*)calloc(4096, sizeof(double));
   convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4096};
-  convolution_filter_t* f =
-      convolution_filter_create("conv-4096", &params, CHUNK_SIZE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* f =
+      g_convolution_vtable.create("conv-4096", &cfg, 0, CHUNK_SIZE, NULL, NULL);
   run_filter_benchmark("FftConv_4096", "Conv/FftConv/4096", f, process_conv);
-  convolution_filter_free(f);
+  g_convolution_vtable.free(f);
   free(coeffs);
 }
 
@@ -154,10 +157,11 @@ TEST(Convolution_16384_Benchmark) {
   double* coeffs = (double*)calloc(16384, sizeof(double));
   convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 16384};
-  convolution_filter_t* f =
-      convolution_filter_create("conv-16384", &params, CHUNK_SIZE, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* f = g_convolution_vtable.create("conv-16384", &cfg, 0, CHUNK_SIZE, NULL,
+                                        NULL);
   run_filter_benchmark("FftConv_16384", "Conv/FftConv/16384", f, process_conv);
-  convolution_filter_free(f);
+  g_convolution_vtable.free(f);
   free(coeffs);
 }
 
@@ -168,18 +172,22 @@ TEST(Biquad_Benchmark) {
                             .b2 = 0.21476322779271284,
                             .a1 = -0.1462978543780541,
                             .a2 = 0.005350765548905586};
-  biquad_filter_t* f = biquad_filter_create("biquad", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  void* f = g_biquad_vtable.create("biquad", &cfg, 44100, 0, NULL, NULL);
   run_filter_benchmark("Biquad", "Biquad", f, process_biquad);
-  biquad_filter_free(f);
+  g_biquad_vtable.free(f);
 }
 
 TEST(DiffEq_Benchmark) {
   double a[] = {1.0, -0.1462978543780541, 0.005350765548905586};
   double b[] = {0.21476322779271284, 0.4295264555854257, 0.21476322779271284};
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* f = diffeq_filter_create("diffeq", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void* f = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
   run_filter_benchmark("DiffEq", "DiffEq", f, process_diffeq);
-  diffeq_filter_free(f);
+  g_diffeq_vtable.free(f);
 }
 
 TEST_MAIN()

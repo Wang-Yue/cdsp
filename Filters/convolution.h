@@ -1,12 +1,6 @@
 #ifndef CLIB_FILTERS_CONVOLUTION_H
 #define CLIB_FILTERS_CONVOLUTION_H
 
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "Config/filter_config_types.h"
-#include "Utils/double_helpers.h"
-
 /**
  * @file convolution.h
  * @brief Uniform-partitioned overlap-save FIR convolution filter.
@@ -27,64 +21,7 @@
  *   Swift's Array CoW path that a [PrcFmt] field would.
  */
 
-/**
- * @brief Opaque handle to a convolution filter instance.
- */
-typedef struct convolution_filter convolution_filter_t;
-
-/**
- * @brief Build a convolution filter from raw IR samples.
- *
- * Resolve the parameters to a flat IR buffer. Only called from the
- * control plane (filter creation / hot-swap), never from
- * convolution_filter_process.
- *
- * @param name The name of the filter.
- * @param params The convolution parameters specifying the impulse response.
- *               Supported formats in params:
- *               - values: inline IR samples in values.
- *               - wav:    filename (24/16/32f/64f WAV), single channel channel.
- *               - raw:    filename of a flat sample stream, one of FLOAT64,
- *                         FLOAT32, S32_LE, S16_LE, or TEXT (newline-separated).
- *               - dummy:  generates a Kronecker delta of length length. Used
- *                         for sanity-checks; the filter becomes a pure delay.
- * @param chunk_size Per-call block length N. Must match the
- *                   validFrames the pipeline will hand to process.
- * @param err Pointer to a config error struct to populate on failure.
- * @return A pointer to the created convolution filter, or NULL on failure.
- */
-convolution_filter_t* convolution_filter_create(
-    const char* name, const convolution_config_t* params, size_t chunk_size,
-    config_error_t* err);
-
-/**
- * @brief Validates convolution filter parameters.
- *
- * @param params Pointer to the convolution parameters to validate.
- * @param err Pointer to a config error struct to populate on failure.
- * @return 0 on success, -1 on failure.
- */
-int convolution_config_validate(const convolution_config_t* params,
-                                config_error_t* err);
-
-/**
- * @brief Process one block in-place.
- *
- * The hot path is allocation-free in steady state; everything below is
- * pointer arithmetic over the preallocated storage from creation.
- *
- * @param filter The convolution filter instance.
- * @param waveform The input/output waveform buffer.
- * @param count The number of samples to process.
- */
-void convolution_filter_process(convolution_filter_t* filter,
-                                mutable_waveform_t waveform, size_t count);
-
-/**
- * @brief Free the convolution filter instance and its associated resources.
- *
- * @param filter The convolution filter instance to free.
- */
-void convolution_filter_free(convolution_filter_t* filter);
+struct filter_vtable;
+extern const struct filter_vtable g_convolution_vtable;
 
 #endif  // CLIB_FILTERS_CONVOLUTION_H

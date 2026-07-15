@@ -1,6 +1,7 @@
 #include <math.h>
 
 #include "Filters/diffeq.h"
+#include "Filters/filter.h"
 #include "test_support.h"
 
 static bool is_close(double left, double right, double maxdiff) {
@@ -21,16 +22,18 @@ TEST(check_result) {
                      0.21476322779271284};
   diffeq_config_t params = {
       .a = a_vals, .a_count = 3, .b = b_vals, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void* filter = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double wave[] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double expected[] = {0.215, 0.461, 0.281, 0.039, 0.004, 0.0, 0.0, 0.0};
 
-  diffeq_filter_process(filter, wave, 8);
+  g_diffeq_vtable.process(filter, wave, 8);
 
   ASSERT_TRUE(compare_waveforms(wave, expected, 8, 1e-3));
-  diffeq_filter_free(filter);
+  g_diffeq_vtable.free(filter);
 }
 
 TEST_MAIN()

@@ -2,6 +2,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "FFT/real_fft.h"
+#include "filter.h"
 
 struct convolution_filter {
   char name[64];
@@ -18,6 +19,8 @@ struct convolution_filter {
   double* spec_accum_re;
   double* spec_accum_im;
 };
+
+typedef struct convolution_filter convolution_filter_t;
 
 typedef double double4 __attribute__((vector_size(32), aligned(8)));
 
@@ -367,10 +370,121 @@ static double* load_raw_file(const char* path, const char* format_str,
   return result;
 }
 
-convolution_filter_t* convolution_filter_create(
-    const char* name, const convolution_config_t* params, size_t chunk_size,
-    config_error_t* err) {
-  if (convolution_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Free the convolution filter instance and its associated resources.
+ *
+ * @param filter The convolution filter instance to free.
+ */
+static void convolution_filter_free(convolution_filter_t* filter) {
+  if (!filter) return;
+  size_t num_seg = filter->num_segments;
+  for (size_t s = 0; s < num_seg; s++) {
+    if (filter->spec_re && filter->spec_re[s]) free(filter->spec_re[s]);
+    if (filter->spec_im && filter->spec_im[s]) free(filter->spec_im[s]);
+    if (filter->hist_re && filter->hist_re[s]) free(filter->hist_re[s]);
+    if (filter->hist_im && filter->hist_im[s]) free(filter->hist_im[s]);
+  }
+  if (filter->spec_re) free(filter->spec_re);
+  if (filter->spec_im) free(filter->spec_im);
+  if (filter->hist_re) free(filter->hist_re);
+  if (filter->hist_im) free(filter->hist_im);
+  if (filter->fft) {
+    real_fft_free(filter->fft);
+  }
+  if (filter->overlap_buffer) free(filter->overlap_buffer);
+  if (filter->time_buf) free(filter->time_buf);
+  if (filter->spec_accum_re) free(filter->spec_accum_re);
+  if (filter->spec_accum_im) free(filter->spec_accum_im);
+  free(filter);
+}
+
+/**
+ * @brief Validates convolution filter parameters.
+ *
+ * @param config High-level filter configuration.
+ * @param sample_rate The sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int convolution_config_validate(const filter_config_t* config,
+                                       int sample_rate, config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_CONV) return -1;
+  const convolution_config_t* params = &config->parameters.conv;
+  if (!params) return 0;
+  switch (params->type) {
+    case CONV_TYPE_VALUES:
+      if (!params->values || params->values_count == 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'values' must be non-empty");
+        return -1;
+      }
+      break;
+    case CONV_TYPE_WAV:
+    case CONV_TYPE_RAW: {
+      if (params->filename[0] == '\0') {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv filter missing filename");
+        return -1;
+      }
+      FILE* f = fopen(params->filename, "rb");
+      if (!f) {
+        char msg[512];
+        snprintf(msg, sizeof(msg),
+                 "Conv file '%s' cannot be opened or does not exist",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      fseek(f, 0, SEEK_END);
+      long fsize = ftell(f);
+      fclose(f);
+      if (fsize <= 0) {
+        char msg[512];
+        snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      break;
+    }
+    case CONV_TYPE_DUMMY:
+      if (params->length <= 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'dummy' length must be > 0");
+        return -1;
+      }
+      break;
+  }
+  return 0;
+}
+
+/**
+ * @brief Build a convolution filter from raw IR samples.
+ *
+ * Resolve the parameters to a flat IR buffer. Only called from the
+ * control plane (filter creation / hot-swap), never from
+ * convolution_filter_process.
+ *
+ * @param name The name of the filter.
+ * @param config High-level filter configuration.
+ * @param sample_rate The sample rate.
+ * @param chunk_size Per-call block length N. Must match the
+ *                   validFrames the pipeline will hand to process.
+ * @param proc_params Processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the created convolution filter, or NULL on failure.
+ */
+static void* convolution_filter_create(const char* name,
+                                       const filter_config_t* config,
+                                       int sample_rate, size_t chunk_size,
+                                       processing_parameters_t* proc_params,
+                                       config_error_t* err) {
+  (void)sample_rate;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_CONV) return NULL;
+  const convolution_config_t* params = &config->parameters.conv;
+  if (convolution_config_validate(config, 0, err) != 0) return NULL;
   if (chunk_size == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "Convolution chunk_size must be positive");
@@ -638,8 +752,9 @@ static void process_chunk(convolution_filter_t* filter,
 /// Process one block in-place. The hot path is allocation-free in
 /// steady state; everything below is pointer arithmetic over the
 /// preallocated storage from `init`.
-void convolution_filter_process(convolution_filter_t* filter,
-                                mutable_waveform_t waveform, size_t count) {
+static void convolution_filter_process(convolution_filter_t* filter,
+                                       mutable_waveform_t waveform,
+                                       size_t count) {
   if (!filter || !waveform || count == 0) return;
   size_t cs = filter->chunk_size;
   size_t processed = 0;
@@ -649,75 +764,10 @@ void convolution_filter_process(convolution_filter_t* filter,
   }
 }
 
-void convolution_filter_free(convolution_filter_t* filter) {
-  if (!filter) return;
-  size_t num_seg = filter->num_segments;
-  for (size_t s = 0; s < num_seg; s++) {
-    if (filter->spec_re && filter->spec_re[s]) free(filter->spec_re[s]);
-    if (filter->spec_im && filter->spec_im[s]) free(filter->spec_im[s]);
-    if (filter->hist_re && filter->hist_re[s]) free(filter->hist_re[s]);
-    if (filter->hist_im && filter->hist_im[s]) free(filter->hist_im[s]);
-  }
-  if (filter->spec_re) free(filter->spec_re);
-  if (filter->spec_im) free(filter->spec_im);
-  if (filter->hist_re) free(filter->hist_re);
-  if (filter->hist_im) free(filter->hist_im);
-  if (filter->fft) {
-    real_fft_free(filter->fft);
-  }
-  if (filter->overlap_buffer) free(filter->overlap_buffer);
-  if (filter->time_buf) free(filter->time_buf);
-  if (filter->spec_accum_re) free(filter->spec_accum_re);
-  if (filter->spec_accum_im) free(filter->spec_accum_im);
-  free(filter);
-}
-
-int convolution_config_validate(const convolution_config_t* params,
-                                config_error_t* err) {
-  if (!params) return 0;
-  switch (params->type) {
-    case CONV_TYPE_VALUES:
-      if (!params->values || params->values_count == 0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv 'values' must be non-empty");
-        return -1;
-      }
-      break;
-    case CONV_TYPE_WAV:
-    case CONV_TYPE_RAW: {
-      if (params->filename[0] == '\0') {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv filter missing filename");
-        return -1;
-      }
-      FILE* f = fopen(params->filename, "rb");
-      if (!f) {
-        char msg[512];
-        snprintf(msg, sizeof(msg),
-                 "Conv file '%s' cannot be opened or does not exist",
-                 params->filename);
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
-        return -1;
-      }
-      fseek(f, 0, SEEK_END);
-      long fsize = ftell(f);
-      fclose(f);
-      if (fsize <= 0) {
-        char msg[512];
-        snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
-                 params->filename);
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
-        return -1;
-      }
-      break;
-    }
-    case CONV_TYPE_DUMMY:
-      if (params->length <= 0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv 'dummy' length must be > 0");
-        return -1;
-      }
-      break;
-  }
-  return 0;
-}
+const filter_vtable_t g_convolution_vtable = {
+    .validate = convolution_config_validate,
+    .create = convolution_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))convolution_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))convolution_filter_free};

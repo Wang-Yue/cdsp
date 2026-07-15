@@ -20,7 +20,11 @@
 
 #include "race_processor.h"
 
+#include "Filters/delay.h"
+#include "Filters/filter.h"
+#include "Filters/gain.h"
 #include "Logging/app_logger.h"
+#include "processor.h"
 
 static const logger_t g_logger = {"race_processor"};
 
@@ -41,7 +45,15 @@ struct race_processor {
                                 ///< mismatch warning.
 };
 
-const char* race_processor_get_name(const race_processor_t* processor) {
+typedef struct race_processor race_processor_t;
+
+/**
+ * @brief Gets the name of the RACE processor.
+ *
+ * @param processor Pointer to the RACE processor.
+ * @return The unique name of the processor instance.
+ */
+static const char* race_processor_get_name(const race_processor_t* processor) {
   return processor ? processor->name : "";
 }
 
@@ -49,10 +61,84 @@ const char* race_processor_get_name(const race_processor_t* processor) {
 #include <stdlib.h>
 #include <string.h>
 
-race_processor_t* race_processor_create(const char* name,
-                                        const race_config_t* params,
-                                        int sample_rate, config_error_t* err) {
-  if (race_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Validates RACE cross-talk cancellation processor parameters.
+ *
+ * @param config Pointer to the RACE parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int race_config_validate(const processor_config_t* config,
+                                config_error_t* err) {
+  if (!config || config->type != PROCESSOR_TYPE_RACE) return -1;
+  const race_config_t* p = &config->parameters.race;
+  if (p->channels <= 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: channels must be > 0, got %d", p->channels);
+    return -1;
+  }
+  if (p->attenuation <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: attenuation must be > 0, got %g", p->attenuation);
+    return -1;
+  }
+  if (p->delay <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: delay must be > 0, got %g", p->delay);
+    return -1;
+  }
+  if (p->channel_a == p->channel_b) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: channels A and B must be different, got both %d",
+                     p->channel_a);
+    return -1;
+  }
+  if (p->channel_a < 0 || p->channel_a >= p->channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: channel A %d is invalid (max: %d)", p->channel_a,
+                     p->channels - 1);
+    return -1;
+  }
+  if (p->channel_b < 0 || p->channel_b >= p->channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: channel B %d is invalid (max: %d)", p->channel_b,
+                     p->channels - 1);
+    return -1;
+  }
+  return 0;
+}
+
+/**
+ * @brief Frees all resources associated with the RACE processor.
+ *
+ * @param processor Pointer to RACE processor to free.
+ */
+static void race_processor_free(race_processor_t* processor) {
+  if (!processor) return;
+  if (processor->delay_a) g_delay_vtable.free(processor->delay_a);
+  if (processor->delay_b) g_delay_vtable.free(processor->delay_b);
+  if (processor->gain) g_gain_vtable.free(processor->gain);
+  free(processor);
+}
+
+/**
+ * @brief Creates a new RACE cross-talk cancellation processor.
+ *
+ * @param name Unique name for this RACE instance.
+ * @param config RACE configuration parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return Pointer to newly allocated race_processor_t, or NULL on failure.
+ */
+static void* race_processor_create(const char* name,
+                                   const processor_config_t* config,
+                                   int sample_rate, size_t chunk_size,
+                                   config_error_t* err) {
+  (void)chunk_size;
+  if (!config || config->type != PROCESSOR_TYPE_RACE) return NULL;
+  const race_config_t* params = &config->parameters.race;
+  if (race_config_validate(config, err) != 0) return NULL;
   if (sample_rate <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE sample_rate must be positive");
@@ -120,10 +206,12 @@ race_processor_t* race_processor_create(const char* name,
   dparams.subsample =
       params->has_subsample_delay ? params->subsample_delay : false;
 
-  processor->delay_a =
-      delay_filter_create("race-DelayA", &dparams, sample_rate, err);
-  processor->delay_b =
-      delay_filter_create("race-DelayB", &dparams, sample_rate, err);
+  filter_config_t dcfg = {.type = FILTER_TYPE_DELAY,
+                          .parameters.delay = dparams};
+  processor->delay_a = (delay_filter_t*)g_delay_vtable.create(
+      "race-DelayA", &dcfg, sample_rate, 0, NULL, err);
+  processor->delay_b = (delay_filter_t*)g_delay_vtable.create(
+      "race-DelayB", &dcfg, sample_rate, 0, NULL, err);
 
   gain_config_t gparams = {0};
   gparams.gain = -params->attenuation;
@@ -132,7 +220,9 @@ race_processor_t* race_processor_create(const char* name,
   gparams.inverted = true;
   gparams.mute = false;
 
-  processor->gain = gain_filter_create("race-Gain", &gparams, err);
+  filter_config_t gcfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = gparams};
+  processor->gain =
+      (gain_filter_t*)g_gain_vtable.create("race-Gain", &gcfg, 0, 0, NULL, err);
   processor->feedback_a = 0.0;
   processor->feedback_b = 0.0;
 
@@ -150,15 +240,17 @@ race_processor_t* race_processor_create(const char* name,
   return processor;
 }
 
-void race_processor_free(race_processor_t* processor) {
-  if (!processor) return;
-  if (processor->delay_a) delay_filter_free(processor->delay_a);
-  if (processor->delay_b) delay_filter_free(processor->delay_b);
-  if (processor->gain) gain_filter_free(processor->gain);
-  free(processor);
-}
-
-void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
+/**
+ * @brief Applies RACE cross-talk cancellation to audio chunk in place.
+ *
+ * Evaluates sample-by-sample recursive feedback loop across channel A and
+ * channel B.
+ *
+ * @param processor Pointer to RACE processor.
+ * @param chunk Audio chunk to process in place.
+ */
+static void race_processor_process(race_processor_t* processor,
+                                   audio_chunk_t* chunk) {
   if (!processor || !chunk) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
   if (count == 0 || !processor->delay_a || !processor->delay_b ||
@@ -212,47 +304,24 @@ void race_processor_process(race_processor_t* processor, audio_chunk_t* chunk) {
   }
 }
 
-void race_processor_transfer_state(race_processor_t* dest,
-                                   const race_processor_t* src) {
+/**
+ * @brief Transfers recursive feedback loop registers from src to dest.
+ *
+ * @param dest The destination RACE processor instance.
+ * @param src The source RACE processor instance.
+ */
+static void race_processor_transfer_state(race_processor_t* dest,
+                                          const race_processor_t* src) {
   if (!dest || !src) return;
   dest->feedback_a = src->feedback_a;
   dest->feedback_b = src->feedback_b;
 }
 
-int race_config_validate(const race_config_t* p, config_error_t* err) {
-  if (!p) return 0;
-  if (p->channels <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channels must be > 0, got %d", p->channels);
-    return -1;
-  }
-  if (p->attenuation <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: attenuation must be > 0, got %g", p->attenuation);
-    return -1;
-  }
-  if (p->delay <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: delay must be > 0, got %g", p->delay);
-    return -1;
-  }
-  if (p->channel_a == p->channel_b) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channels A and B must be different, got both %d",
-                     p->channel_a);
-    return -1;
-  }
-  if (p->channel_a < 0 || p->channel_a >= p->channels) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channel A %d is invalid (max: %d)", p->channel_a,
-                     p->channels - 1);
-    return -1;
-  }
-  if (p->channel_b < 0 || p->channel_b >= p->channels) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channel B %d is invalid (max: %d)", p->channel_b,
-                     p->channels - 1);
-    return -1;
-  }
-  return 0;
-}
+const processor_vtable_t g_race_vtable = {
+    .validate = race_config_validate,
+    .create = race_processor_create,
+    .process = (void (*)(void*, audio_chunk_t*))race_processor_process,
+    .get_name = (const char* (*)(const void*))race_processor_get_name,
+    .transfer_state =
+        (void (*)(void*, const void*))race_processor_transfer_state,
+    .free = (void (*)(void*))race_processor_free};

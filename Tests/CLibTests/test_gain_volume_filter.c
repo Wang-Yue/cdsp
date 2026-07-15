@@ -1,5 +1,6 @@
 #include <math.h>
 
+#include "Filters/filter.h"
 #include "Filters/gain.h"
 #include "Filters/volume.h"
 #include "test_support.h"
@@ -7,56 +8,60 @@
 TEST(GainInvert) {
   gain_config_t params = {
       .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB, .inverted = true};
-  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5};
-  gain_filter_process(filter, waveform, 3);
+  g_gain_vtable.process(filter, waveform, 3);
   ASSERT_NEAR(0.5, waveform[0], 1e-10);
   ASSERT_NEAR(0.0, waveform[1], 1e-10);
   ASSERT_NEAR(-0.5, waveform[2], 1e-10);
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
 }
 
 TEST(GainAmplify) {
   gain_config_t params = {
       .gain = 20.0, .has_gain = true, .scale = GAIN_SCALE_DB};
-  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5};
-  gain_filter_process(filter, waveform, 3);
+  g_gain_vtable.process(filter, waveform, 3);
   ASSERT_NEAR(-5.0, waveform[0], 1e-6);
   ASSERT_NEAR(0.0, waveform[1], 1e-10);
   ASSERT_NEAR(5.0, waveform[2], 1e-6);
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
 }
 
 TEST(GainMute) {
   gain_config_t params = {.gain = 0.0, .has_gain = true, .mute = true};
-  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5, 1.0, -1.0};
-  gain_filter_process(filter, waveform, 5);
+  g_gain_vtable.process(filter, waveform, 5);
   for (size_t i = 0; i < 5; i++) {
     ASSERT_DOUBLE_EQ(0.0, waveform[i]);
   }
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
 }
 
 TEST(GainLinearScale) {
   gain_config_t params = {
       .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
-  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {1.0};
-  gain_filter_process(filter, waveform, 1);
+  g_gain_vtable.process(filter, waveform, 1);
   ASSERT_NEAR(0.5, waveform[0], 1e-10);
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
 }
 
 static void process_vol(volume_filter_t* filter, double* waveform,
                         size_t count) {
   volume_filter_prepare_chunk(filter);
-  volume_filter_process(filter, waveform, count);
+  g_volume_vtable.process(filter, waveform, count);
   volume_filter_advance_ramp(filter);
 }
 
@@ -69,8 +74,10 @@ TEST(VolumeUnityGain) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double waveform[] = {1.0, -0.5, 0.25, 0.0};
@@ -79,7 +86,7 @@ TEST(VolumeUnityGain) {
   for (size_t i = 0; i < 4; i++) {
     ASSERT_NEAR(original[i], waveform[i], 1e-10);
   }
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -92,8 +99,10 @@ TEST(VolumeAttenuation) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double waveform[] = {1.0, -1.0, 0.5, -0.5};
@@ -103,7 +112,7 @@ TEST(VolumeAttenuation) {
   ASSERT_NEAR(-1.0 * gain, waveform[1], 1e-10);
   ASSERT_NEAR(0.5 * gain, waveform[2], 1e-10);
   ASSERT_NEAR(-0.5 * gain, waveform[3], 1e-10);
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -117,8 +126,10 @@ TEST(VolumeMuteRampsToZero) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double waveform[] = {1.0, 0.5, -0.5, -1.0};
@@ -126,7 +137,7 @@ TEST(VolumeMuteRampsToZero) {
   for (size_t i = 0; i < 4; i++) {
     ASSERT_NEAR(0.0, waveform[i], 1e-10);
   }
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -143,8 +154,10 @@ TEST(VolumeRamp) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter = volume_filter_create("volume", &params, sample_rate,
-                                                 chunk_size, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, sample_rate, chunk_size, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double chunk0[] = {1.0, 1.0, 1.0, 1.0};
@@ -177,7 +190,7 @@ TEST(VolumeRamp) {
   for (size_t i = 0; i < chunk_size; i++) {
     ASSERT_NEAR(gain_m20db, chunk3[i], 1e-6);
   }
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -190,8 +203,10 @@ TEST(VolumeChangeThreshold) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double wave1[] = {1.0, 1.0, 1.0, 1.0};
@@ -213,7 +228,7 @@ TEST(VolumeChangeThreshold) {
   for (size_t i = 0; i < 4; i++) {
     ASSERT_NEAR(expected_gain, wave3[i], 1e-6);
   }
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -226,8 +241,10 @@ TEST(VolumeLimit) {
                             .limit = 10.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   processing_parameters_set_target_volume_for_fader(proc_params, 20.0,
@@ -239,7 +256,7 @@ TEST(VolumeLimit) {
   for (size_t i = 0; i < 4; i++) {
     ASSERT_NEAR(expected_gain, waveform[i], 1e-6);
   }
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 

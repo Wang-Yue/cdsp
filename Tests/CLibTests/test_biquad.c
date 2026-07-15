@@ -1,6 +1,7 @@
 #include <math.h>
 
 #include "Filters/biquad.h"
+#include "Filters/filter.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -9,7 +10,10 @@
 
 static void gain_and_phase(const biquad_config_t* params, double f, double fs,
                            double* gain_db, double* phase_deg) {
-  biquad_filter_t* filter = biquad_filter_create("test", params, (int)fs, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = *params};
+  biquad_filter_t* filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &cfg, (int)fs, 0, NULL, NULL);
   if (!filter) {
     *gain_db = 0.0;
     *phase_deg = 0.0;
@@ -18,8 +22,8 @@ static void gain_and_phase(const biquad_config_t* params, double f, double fs,
   size_t N = 8192;
   double* wave = (double*)calloc(N, sizeof(double));
   wave[0] = 1.0;
-  biquad_filter_process(filter, wave, N);
-  biquad_filter_free(filter);
+  g_biquad_vtable.process(filter, wave, N);
+  g_biquad_vtable.free(filter);
 
   double w = 2.0 * M_PI * f / fs;
   double re = 0.0, im = 0.0;
@@ -40,19 +44,21 @@ static bool is_close(double left, double right, double maxdiff) {
 TEST(ImpulseResponse) {
   biquad_config_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 10000.0, .q = 0.5};
-  biquad_filter_t* filter =
-      biquad_filter_create("biquad", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  biquad_filter_t* filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "biquad", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double wave[] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double expected[] = {0.215, 0.461, 0.281, 0.039, 0.004, 0.0, 0.0, 0.0};
 
-  biquad_filter_process(filter, wave, 8);
+  g_biquad_vtable.process(filter, wave, 8);
 
   for (size_t i = 0; i < 8; i++) {
     ASSERT_TRUE(is_close(wave[i], expected[i], 1e-3));
   }
-  biquad_filter_free(filter);
+  g_biquad_vtable.free(filter);
 }
 
 TEST(Lowpass) {
@@ -368,16 +374,20 @@ TEST(ValidateFreqQ) {
   int fs48 = 48000;
   biquad_config_t p1 = {
       .type = BIQUAD_TYPE_PEAKING, .freq = 1000.0, .q = 2.0, .gain = 1.23};
-  ASSERT_EQ(0, biquad_config_validate(&p1, fs48, NULL));
+  filter_config_t w1 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p1};
+  ASSERT_EQ(0, g_biquad_vtable.validate(&w1, fs48, NULL));
   biquad_config_t p2 = {
       .type = BIQUAD_TYPE_PEAKING, .freq = 1000.0, .q = 0.0, .gain = 1.23};
-  ASSERT_NE(0, biquad_config_validate(&p2, fs48, NULL));
+  filter_config_t w2 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p2};
+  ASSERT_NE(0, g_biquad_vtable.validate(&w2, fs48, NULL));
   biquad_config_t p3 = {
       .type = BIQUAD_TYPE_PEAKING, .freq = 25000.0, .q = 1.0, .gain = 1.23};
-  ASSERT_NE(0, biquad_config_validate(&p3, fs48, NULL));
+  filter_config_t w3 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p3};
+  ASSERT_NE(0, g_biquad_vtable.validate(&w3, fs48, NULL));
   biquad_config_t p4 = {
       .type = BIQUAD_TYPE_PEAKING, .freq = 0.0, .q = 1.0, .gain = 1.23};
-  ASSERT_NE(0, biquad_config_validate(&p4, fs48, NULL));
+  filter_config_t w4 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p4};
+  ASSERT_NE(0, g_biquad_vtable.validate(&w4, fs48, NULL));
 }
 
 TEST(ValidateSlope) {
@@ -387,19 +397,22 @@ TEST(ValidateSlope) {
                         .gain = 1.23,
                         .slope = 5.0,
                         .steepness_type = STEEPNESS_TYPE_SLOPE};
-  ASSERT_EQ(0, biquad_config_validate(&p1, fs48, NULL));
+  filter_config_t w1 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p1};
+  ASSERT_EQ(0, g_biquad_vtable.validate(&w1, fs48, NULL));
   biquad_config_t p2 = {.type = BIQUAD_TYPE_HIGHSHELF,
                         .freq = 1000.0,
                         .gain = 1.23,
                         .slope = 0.0,
                         .steepness_type = STEEPNESS_TYPE_SLOPE};
-  ASSERT_NE(0, biquad_config_validate(&p2, fs48, NULL));
+  filter_config_t w2 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p2};
+  ASSERT_NE(0, g_biquad_vtable.validate(&w2, fs48, NULL));
   biquad_config_t p3 = {.type = BIQUAD_TYPE_HIGHSHELF,
                         .freq = 1000.0,
                         .gain = 1.23,
                         .slope = 15.0,
                         .steepness_type = STEEPNESS_TYPE_SLOPE};
-  ASSERT_NE(0, biquad_config_validate(&p3, fs48, NULL));
+  filter_config_t w3 = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = p3};
+  ASSERT_NE(0, g_biquad_vtable.validate(&w3, fs48, NULL));
 }
 
 TEST_MAIN()

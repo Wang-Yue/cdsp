@@ -1,10 +1,14 @@
 #include "limiter.h"
 
+#include "filter.h"
+
 struct limiter_filter {
   char name[64];
   double clip_limit;
   bool soft_clip;
 };
+
+typedef struct limiter_filter limiter_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -14,10 +18,62 @@ struct limiter_filter {
 #include <Accelerate/Accelerate.h>
 #endif
 
-limiter_filter_t* limiter_filter_create(const char* name,
-                                        const limiter_config_t* params,
-                                        config_error_t* err) {
-  if (limiter_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Free the limiter filter instance.
+ *
+ * @param filter Pointer to the limiter filter instance to free.
+ */
+static void limiter_filter_free(limiter_filter_t* filter) {
+  if (filter) free(filter);
+}
+
+/**
+ * @brief Validates limiter filter parameters.
+ *
+ * @param config Pointer to the limiter parameters to validate.
+ * @param sample_rate The audio sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int limiter_config_validate(const filter_config_t* config,
+                                   int sample_rate, config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_LIMITER) return -1;
+  const limiter_config_t* params = &config->parameters.limiter;
+  if (!params) return 0;
+  if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
+      params->clip_limit > 20.0) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Limiter clip_limit must be between -120.0 dB and 20.0 dB, got %g",
+        params->clip_limit);
+    return -1;
+  }
+  return 0;
+}
+
+/**
+ * @brief Create a limiter filter.
+ *
+ * @param name The name of the filter.
+ * @param config Pointer to the filter configuration.
+ * @param sample_rate The audio sample rate.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return Pointer to the allocated limiter_filter_t, or NULL on failure.
+ */
+static void* limiter_filter_create(const char* name,
+                                   const filter_config_t* config,
+                                   int sample_rate, size_t chunk_size,
+                                   processing_parameters_t* proc_params,
+                                   config_error_t* err) {
+  (void)sample_rate;
+  (void)chunk_size;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_LIMITER) return NULL;
+  const limiter_config_t* params = &config->parameters.limiter;
+  if (limiter_config_validate(config, 0, err) != 0) return NULL;
   limiter_filter_t* filter =
       (limiter_filter_t*)calloc(1, sizeof(limiter_filter_t));
   if (!filter) return NULL;
@@ -38,8 +94,15 @@ limiter_filter_t* limiter_filter_create(const char* name,
   return filter;
 }
 
-void limiter_filter_process(limiter_filter_t* filter,
-                            mutable_waveform_t waveform, size_t count) {
+/**
+ * @brief Process a waveform buffer in-place by applying limiting.
+ *
+ * @param filter Pointer to the limiter filter instance.
+ * @param waveform The waveform data to process.
+ * @param count The number of samples to process.
+ */
+static void limiter_filter_process(limiter_filter_t* filter,
+                                   mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   if (filter->soft_clip) {
     double inv_limit = 1.0 / filter->clip_limit;
@@ -76,20 +139,10 @@ void limiter_filter_process(limiter_filter_t* filter,
   }
 }
 
-void limiter_filter_free(limiter_filter_t* filter) {
-  if (filter) free(filter);
-}
-
-int limiter_config_validate(const limiter_config_t* params,
-                            config_error_t* err) {
-  if (!params) return 0;
-  if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
-      params->clip_limit > 20.0) {
-    config_error_set(
-        err, CONFIG_ERR_INVALID_FILTER,
-        "Limiter clip_limit must be between -120.0 dB and 20.0 dB, got %g",
-        params->clip_limit);
-    return -1;
-  }
-  return 0;
-}
+const filter_vtable_t g_limiter_vtable = {
+    .validate = limiter_config_validate,
+    .create = limiter_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))limiter_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))limiter_filter_free};

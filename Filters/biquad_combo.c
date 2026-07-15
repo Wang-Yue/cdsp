@@ -1,12 +1,15 @@
 #include "biquad_combo.h"
 
 #include "biquad.h"
+#include "filter.h"
 
 struct biquad_combo_filter {
   char name[64];
   biquad_filter_t** sections;
   size_t num_sections;
 };
+
+typedef struct biquad_combo_filter biquad_combo_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -86,13 +89,176 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
                         .slope = slope,
                         .bandwidth = bandwidth,
                         .steepness_type = steepness_type};
-  return biquad_filter_create("combo_sec", &bp, sample_rate, err);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = bp};
+  return (biquad_filter_t*)g_biquad_vtable.create("combo_sec", &cfg,
+                                                  sample_rate, 0, NULL, err);
 }
 
-biquad_combo_filter_t* biquad_combo_filter_create(
-    const char* name, const biquad_combo_config_t* params, int sample_rate,
-    config_error_t* err) {
-  if (biquad_combo_config_validate(params, sample_rate, err) != 0) return NULL;
+/**
+ * @brief Validates combined biquad parameters.
+ *
+ * @param config High-level filter configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param err Pointer to store error details if validation fails.
+ * @return 0 on success, -1 on failure.
+ */
+static int biquad_combo_config_validate(const filter_config_t* config,
+                                        int sample_rate, config_error_t* err) {
+  if (sample_rate <= 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "BiquadCombo: sample_rate must be greater than 0, got %d",
+                     sample_rate);
+    return -1;
+  }
+  if (!config || config->type != FILTER_TYPE_BIQUAD_COMBO) return -1;
+  const biquad_combo_config_t* params = &config->parameters.biquad_combo;
+  if (!params) return 0;
+  double nyquist = (double)sample_rate / 2.0;
+  switch (params->type) {
+    case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
+    case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS:
+      if (!params->has_freq || params->freq <= 0.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "BiquadCombo: freq must be > 0, got %g", params->freq);
+        return -1;
+      }
+      if (params->freq >= nyquist) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "BiquadCombo: freq must be less than Nyquist (%g), got %g", nyquist,
+            params->freq);
+        return -1;
+      }
+      if (!params->has_order || params->order <= 0 || params->order > 64) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "BiquadCombo: order must be between 1 and 64, got %d",
+                         params->order);
+        return -1;
+      }
+      break;
+    case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
+    case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
+      if (!params->has_freq || params->freq <= 0.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "BiquadCombo: freq must be > 0, got %g", params->freq);
+        return -1;
+      }
+      if (params->freq >= nyquist) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "BiquadCombo: freq must be less than Nyquist (%g), got %g", nyquist,
+            params->freq);
+        return -1;
+      }
+      if (!params->has_order || params->order <= 0 || params->order > 64 ||
+          (params->order % 2) != 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Linkwitz-Riley order must be an even number between "
+                         "2 and 64, got %d",
+                         params->order);
+        return -1;
+      }
+      break;
+    case BIQUAD_COMBO_TYPE_TILT:
+      if (!params->has_gain) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Tilt: gain must be set");
+        return -1;
+      }
+      if (params->gain <= -100.0 || params->gain >= 100.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Tilt: gain must be between -100 and 100 dB, got %g",
+                         params->gain);
+        return -1;
+      }
+      break;
+    case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ:
+      if (params->qls < 0.0 || params->qhs < 0.0 || params->qp1 < 0.0 ||
+          params->qp2 < 0.0 || params->qp3 < 0.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "FivePointPeq: all Q-values must be >= 0");
+        return -1;
+      }
+      if (params->fls >= nyquist || params->fhs >= nyquist ||
+          params->fp1 >= nyquist || params->fp2 >= nyquist ||
+          params->fp3 >= nyquist) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "FivePointPeq: all frequencies must be less than Nyquist (%g)",
+            nyquist);
+        return -1;
+      }
+      if (params->fls < 0.0 || params->fhs < 0.0 || params->fp1 < 0.0 ||
+          params->fp2 < 0.0 || params->fp3 < 0.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "FivePointPeq: all frequencies must be >= 0");
+        return -1;
+      }
+      break;
+    case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
+      if (!params->gains || params->gains_count <= 0 ||
+          params->gains_count > 32) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "GraphicEqualizer: gains must be non-empty and have "
+                         "at most 32 bands, got %d",
+                         params->gains_count);
+        return -1;
+      }
+      if (!params->has_freq_min || params->freq_min <= 0.0 ||
+          !params->has_freq_max || params->freq_max <= 0.0) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "GraphicEqualizer: min and max frequencies must be > 0");
+        return -1;
+      }
+      if (params->freq_min >= nyquist || params->freq_max >= nyquist) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "GraphicEqualizer: min and max frequencies must be "
+                         "less than Nyquist (%g)",
+                         nyquist);
+        return -1;
+      }
+      if (params->freq_min >= params->freq_max) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "GraphicEqualizer: min frequency must be lower than max frequency");
+        return -1;
+      }
+      for (size_t i = 0; i < params->gains_count; i++) {
+        double g = params->gains[i];
+        if (g < -40.0 || g > 40.0) {
+          config_error_set(
+              err, CONFIG_ERR_INVALID_FILTER,
+              "GraphicEqualizer: gains must be within +- 40 dB, got %g", g);
+          return -1;
+        }
+      }
+      break;
+  }
+  return 0;
+}
+
+/**
+ * @brief Creates a combined biquad filter instance.
+ *
+ * @param name The name of the filter.
+ * @param config High-level filter configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the created filter instance, or `NULL` on failure.
+ */
+static void* biquad_combo_filter_create(const char* name,
+                                        const filter_config_t* config,
+                                        int sample_rate, size_t chunk_size,
+                                        processing_parameters_t* proc_params,
+                                        config_error_t* err) {
+  (void)chunk_size;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_BIQUAD_COMBO) return NULL;
+  const biquad_combo_config_t* params = &config->parameters.biquad_combo;
+  if (biquad_combo_config_validate(config, sample_rate, err) != 0) return NULL;
   biquad_combo_filter_t* filter =
       (biquad_combo_filter_t*)calloc(1, sizeof(biquad_combo_filter_t));
   if (!filter) {
@@ -238,164 +404,65 @@ biquad_combo_filter_t* biquad_combo_filter_create(
 
 cleanup_fail:
   for (size_t j = 0; j < num; j++) {
-    if (secs[j]) biquad_filter_free(secs[j]);
+    if (secs[j]) g_biquad_vtable.free(secs[j]);
   }
   if (filter) free(filter);
   return NULL;
 }
 
-void biquad_combo_filter_process(biquad_combo_filter_t* filter,
-                                 mutable_waveform_t waveform, size_t count) {
+/**
+ * @brief Processes an array of samples through the combined biquad filter.
+ *
+ * @param filter The filter instance.
+ * @param waveform The input/output waveform buffer.
+ * @param count The number of samples to process.
+ */
+static void biquad_combo_filter_process(biquad_combo_filter_t* filter,
+                                        mutable_waveform_t waveform,
+                                        size_t count) {
   if (!filter || !waveform || count == 0) return;
   for (size_t i = 0; i < filter->num_sections; i++) {
     if (filter->sections[i]) {
-      biquad_filter_process(filter->sections[i], waveform, count);
+      g_biquad_vtable.process(filter->sections[i], waveform, count);
     }
   }
 }
 
-void biquad_combo_filter_transfer_state(biquad_combo_filter_t* dest,
-                                        const biquad_combo_filter_t* src) {
+/**
+ * @brief Transfers history state of nested biquad sections from src to dest.
+ *
+ * @param dest The destination combo filter instance.
+ * @param src The source combo filter instance.
+ */
+static void biquad_combo_filter_transfer_state(
+    biquad_combo_filter_t* dest, const biquad_combo_filter_t* src) {
   if (!dest || !src) return;
   size_t count = dest->num_sections < src->num_sections ? dest->num_sections
                                                         : src->num_sections;
   for (size_t i = 0; i < count; i++) {
-    biquad_filter_transfer_state(dest->sections[i], src->sections[i]);
+    g_biquad_vtable.transfer_state(dest->sections[i], src->sections[i]);
   }
 }
 
-void biquad_combo_filter_free(biquad_combo_filter_t* filter) {
+/**
+ * @brief Frees the combined biquad filter instance.
+ *
+ * @param filter The filter instance to free.
+ */
+static void biquad_combo_filter_free(biquad_combo_filter_t* filter) {
   if (!filter) return;
   for (size_t i = 0; i < filter->num_sections; i++) {
-    if (filter->sections[i]) biquad_filter_free(filter->sections[i]);
+    if (filter->sections[i]) g_biquad_vtable.free(filter->sections[i]);
   }
   if (filter->sections) free(filter->sections);
   free(filter);
 }
-int biquad_combo_config_validate(const biquad_combo_config_t* params,
-                                 int sample_rate, config_error_t* err) {
-  if (!params) return 0;
-  double nyquist = (double)sample_rate / 2.0;
-  switch (params->type) {
-    case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
-    case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS:
-      if (!params->has_freq || params->freq <= 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "BiquadCombo: freq must be > 0, got %g", params->freq);
-        return -1;
-      }
-      if (params->freq >= nyquist) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "BiquadCombo: freq must be less than Nyquist (%g), got %g", nyquist,
-            params->freq);
-        return -1;
-      }
-      if (!params->has_order || params->order <= 0 || params->order > 64) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "BiquadCombo: order must be between 1 and 64, got %d",
-                         params->order);
-        return -1;
-      }
-      break;
-    case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
-    case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
-      if (!params->has_freq || params->freq <= 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "BiquadCombo: freq must be > 0, got %g", params->freq);
-        return -1;
-      }
-      if (params->freq >= nyquist) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "BiquadCombo: freq must be less than Nyquist (%g), got %g", nyquist,
-            params->freq);
-        return -1;
-      }
-      if (!params->has_order || params->order <= 0 || params->order > 64 ||
-          (params->order % 2) != 0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Linkwitz-Riley order must be an even number between "
-                         "2 and 64, got %d",
-                         params->order);
-        return -1;
-      }
-      break;
-    case BIQUAD_COMBO_TYPE_TILT:
-      if (!params->has_gain) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Tilt: gain must be set");
-        return -1;
-      }
-      if (params->gain <= -100.0 || params->gain >= 100.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Tilt: gain must be between -100 and 100 dB, got %g",
-                         params->gain);
-        return -1;
-      }
-      break;
-    case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ:
-      if (params->qls < 0.0 || params->qhs < 0.0 || params->qp1 < 0.0 ||
-          params->qp2 < 0.0 || params->qp3 < 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all Q-values must be >= 0");
-        return -1;
-      }
-      if (params->fls >= nyquist || params->fhs >= nyquist ||
-          params->fp1 >= nyquist || params->fp2 >= nyquist ||
-          params->fp3 >= nyquist) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "FivePointPeq: all frequencies must be less than Nyquist (%g)",
-            nyquist);
-        return -1;
-      }
-      if (params->fls < 0.0 || params->fhs < 0.0 || params->fp1 < 0.0 ||
-          params->fp2 < 0.0 || params->fp3 < 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all frequencies must be >= 0");
-        return -1;
-      }
-      break;
-    case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
-      if (!params->gains || params->gains_count <= 0 ||
-          params->gains_count > 32) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "GraphicEqualizer: gains must be non-empty and have "
-                         "at most 32 bands, got %d",
-                         params->gains_count);
-        return -1;
-      }
-      if (!params->has_freq_min || params->freq_min <= 0.0 ||
-          !params->has_freq_max || params->freq_max <= 0.0) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "GraphicEqualizer: min and max frequencies must be > 0");
-        return -1;
-      }
-      if (params->freq_min >= nyquist || params->freq_max >= nyquist) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "GraphicEqualizer: min and max frequencies must be "
-                         "less than Nyquist (%g)",
-                         nyquist);
-        return -1;
-      }
-      if (params->freq_min >= params->freq_max) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "GraphicEqualizer: min frequency must be lower than max frequency");
-        return -1;
-      }
-      for (size_t i = 0; i < params->gains_count; i++) {
-        double g = params->gains[i];
-        if (g < -40.0 || g > 40.0) {
-          config_error_set(
-              err, CONFIG_ERR_INVALID_FILTER,
-              "GraphicEqualizer: gains must be within +- 40 dB, got %g", g);
-          return -1;
-        }
-      }
-      break;
-  }
-  return 0;
-}
+
+const filter_vtable_t g_biquad_combo_vtable = {
+    .validate = biquad_combo_config_validate,
+    .create = biquad_combo_filter_create,
+    .process = (void (*)(void*, mutable_waveform_t,
+                         size_t))biquad_combo_filter_process,
+    .transfer_state =
+        (void (*)(void*, const void*))biquad_combo_filter_transfer_state,
+    .free = (void (*)(void*))biquad_combo_filter_free};

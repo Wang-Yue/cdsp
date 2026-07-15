@@ -1,6 +1,7 @@
 #include <math.h>
 
 #include "Filters/delay.h"
+#include "Filters/filter.h"
 #include "test_support.h"
 
 static bool is_close(double left, double right, double maxdiff) {
@@ -20,13 +21,14 @@ TEST(delay_small) {
   double waveform_delayed[] = {0.0, 0.0, 0.0, 0.0, -0.5, 1.0, 0.0, 0.0};
   delay_config_t params = {
       .delay = 3.0, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
-  delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter = g_delay_vtable.create("delay", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
-  delay_filter_process(filter, waveform, 8);
+  g_delay_vtable.process(filter, waveform, 8);
   for (size_t i = 0; i < 8; i++) {
     ASSERT_DOUBLE_EQ(waveform_delayed[i], waveform[i]);
   }
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
 }
 
 TEST(delay_supersmall) {
@@ -34,13 +36,14 @@ TEST(delay_supersmall) {
   double waveform_delayed[] = {0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   delay_config_t params = {
       .delay = 0.1, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
-  delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter = g_delay_vtable.create("delay", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
-  delay_filter_process(filter, waveform, 8);
+  g_delay_vtable.process(filter, waveform, 8);
   for (size_t i = 0; i < 8; i++) {
     ASSERT_DOUBLE_EQ(waveform_delayed[i], waveform[i]);
   }
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
 }
 
 TEST(delay_large) {
@@ -49,15 +52,16 @@ TEST(delay_large) {
   double waveform_delayed[] = {0.0, 0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0};
   delay_config_t params = {
       .delay = 9.0, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
-  delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter = g_delay_vtable.create("delay", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
-  delay_filter_process(filter, waveform1, 8);
-  delay_filter_process(filter, waveform2, 8);
+  g_delay_vtable.process(filter, waveform1, 8);
+  g_delay_vtable.process(filter, waveform2, 8);
   for (size_t i = 0; i < 8; i++) {
     ASSERT_DOUBLE_EQ(0.0, waveform1[i]);
     ASSERT_DOUBLE_EQ(waveform_delayed[i], waveform2[i]);
   }
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
 }
 
 TEST(delay_fraction) {
@@ -76,11 +80,12 @@ TEST(delay_fraction) {
   };
   delay_config_t params = {
       .delay = 1.7, .unit = DELAY_UNIT_SAMPLES, .subsample = true};
-  delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter = g_delay_vtable.create("delay", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
-  delay_filter_process(filter, waveform, 10);
+  g_delay_vtable.process(filter, waveform, 10);
   ASSERT_TRUE(compare_waveforms(waveform, expected_waveform, 10, 1.0e-6));
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
 }
 
 TEST_MAIN()

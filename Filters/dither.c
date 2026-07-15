@@ -1,5 +1,7 @@
 #include "dither.h"
 
+#include "filter.h"
+
 typedef struct noise_shaper noise_shaper_t;
 
 struct noise_shaper {
@@ -18,6 +20,8 @@ struct dither_filter {
   double previous_sample;
   uint32_t rng_state;
 };
+
+typedef struct dither_filter dither_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -417,10 +421,69 @@ static double sample_dither(dither_filter_t* filter) {
 }
 
 // MARK: - DitherFilter
-dither_filter_t* dither_filter_create(const char* name,
-                                      const dither_config_t* params,
-                                      config_error_t* err) {
-  if (dither_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Free the dither filter instance and its associated resources.
+ *
+ * @param filter The dither filter instance to free.
+ */
+static void dither_filter_free(dither_filter_t* filter) {
+  if (!filter) return;
+  if (filter->shaper) noise_shaper_free(filter->shaper);
+  free(filter);
+}
+
+/**
+ * @brief Validates dither filter parameters.
+ *
+ * @param config Pointer to the dither parameters to validate.
+ * @param sample_rate The audio sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int dither_config_validate(const filter_config_t* config,
+                                  int sample_rate, config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_DITHER) return -1;
+  const dither_config_t* params = &config->parameters.dither;
+  if (params->bits < 2) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Dither bit depth must be at least 2, got %d",
+                     params->bits);
+    return -1;
+  }
+  if (params->has_amplitude) {
+    if (params->amplitude < 0.0 || params->amplitude > 100.0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Dither amplitude must be in [0, 100], got %g",
+                       params->amplitude);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Create a new dither filter.
+ *
+ * @param name The name of the filter.
+ * @param config The dither parameters configuration.
+ * @param sample_rate The audio sample rate.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return A pointer to the created dither filter, or NULL on failure.
+ */
+static void* dither_filter_create(const char* name,
+                                  const filter_config_t* config,
+                                  int sample_rate, size_t chunk_size,
+                                  processing_parameters_t* proc_params,
+                                  config_error_t* err) {
+  (void)sample_rate;
+  (void)chunk_size;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_DITHER) return NULL;
+  const dither_config_t* params = &config->parameters.dither;
+  if (dither_config_validate(config, 0, err) != 0) return NULL;
   dither_filter_t* filter =
       (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
   if (!filter) return NULL;
@@ -471,8 +534,15 @@ dither_filter_t* dither_filter_create(const char* name,
   return filter;
 }
 
-void dither_filter_process(dither_filter_t* filter, mutable_waveform_t waveform,
-                           size_t count) {
+/**
+ * @brief Process a block of samples in-place, applying dither.
+ *
+ * @param filter The dither filter instance.
+ * @param waveform The input/output waveform buffer.
+ * @param count The number of samples to process.
+ */
+static void dither_filter_process(dither_filter_t* filter,
+                                  mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   double scalefact = filter->scalefact;
   for (size_t i = 0; i < count; i++) {
@@ -488,26 +558,10 @@ void dither_filter_process(dither_filter_t* filter, mutable_waveform_t waveform,
   }
 }
 
-void dither_filter_free(dither_filter_t* filter) {
-  if (!filter) return;
-  if (filter->shaper) noise_shaper_free(filter->shaper);
-  free(filter);
-}
-int dither_config_validate(const dither_config_t* params, config_error_t* err) {
-  if (!params) return 0;
-  if (params->bits < 2) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Dither bit depth must be at least 2, got %d",
-                     params->bits);
-    return -1;
-  }
-  if (params->has_amplitude) {
-    if (params->amplitude < 0.0 || params->amplitude > 100.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Dither amplitude must be in [0, 100], got %g",
-                       params->amplitude);
-      return -1;
-    }
-  }
-  return 0;
-}
+const filter_vtable_t g_dither_vtable = {
+    .validate = dither_config_validate,
+    .create = dither_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))dither_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))dither_filter_free};

@@ -29,7 +29,25 @@ typedef enum {
   PROCESSOR_IMPL_RACE             ///< RACE cross-talk cancellation processor.
 } processor_impl_type_t;
 
-typedef struct dsp_processor dsp_processor_t;
+/**
+ * @struct processor_vtable
+ * @brief Virtual method table for audio processor implementations.
+ */
+typedef struct processor_vtable {
+  int (*validate)(const processor_config_t* config, config_error_t* err);
+  void* (*create)(const char* name, const processor_config_t* config,
+                  int sample_rate, size_t chunk_size, config_error_t* err);
+  void (*process)(void* impl, audio_chunk_t* chunk);
+  const char* (*get_name)(const void* impl);
+  void (*transfer_state)(void* dest, const void* src);
+  void (*free)(void* impl);
+} processor_vtable_t;
+
+typedef struct dsp_processor {
+  processor_impl_type_t type;  ///< Concrete implementation type identifier.
+  void* impl;                  ///< Pointer to underlying processor structure.
+  const processor_vtable_t* vtable;  ///< Virtual table for dispatch.
+} dsp_processor_t;
 
 /**
  * @brief Factory function to create a processor instance based on
@@ -47,33 +65,6 @@ dsp_processor_t* dsp_processor_create(const char* name,
                                       const processor_config_t* config,
                                       int sample_rate, size_t chunk_size,
                                       config_error_t* err);
-
-/**
- * @brief Wraps an existing compressor processor into the generic
- * dsp_processor_t interface.
- *
- * @param p Pointer to compressor processor.
- * @return Pointer to generic processor wrapper, or NULL on failure.
- */
-dsp_processor_t* dsp_processor_wrap_compressor(compressor_processor_t* p);
-
-/**
- * @brief Wraps an existing noise gate processor into the generic
- * dsp_processor_t interface.
- *
- * @param p Pointer to noise gate processor.
- * @return Pointer to generic processor wrapper, or NULL on failure.
- */
-dsp_processor_t* dsp_processor_wrap_noise_gate(noise_gate_processor_t* p);
-
-/**
- * @brief Wraps an existing RACE processor into the generic dsp_processor_t
- * interface.
- *
- * @param p Pointer to RACE processor.
- * @return Pointer to generic processor wrapper, or NULL on failure.
- */
-dsp_processor_t* dsp_processor_wrap_race(race_processor_t* p);
 
 /**
  * @brief Applies the processor to all channels of the audio chunk in place.

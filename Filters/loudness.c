@@ -1,6 +1,7 @@
 #include "loudness.h"
 
 #include "biquad.h"
+#include "filter.h"
 
 struct loudness_filter {
   char name[64];
@@ -13,6 +14,8 @@ struct loudness_filter {
   double midband_attenuation_db;
   processing_parameters_t* processing_parameters;
 };
+
+typedef struct loudness_filter loudness_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -91,97 +94,32 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
                                   filter->sample_rate);
 }
 
-loudness_filter_t* loudness_filter_create(const char* name,
-                                          const loudness_config_t* params,
-                                          int sample_rate,
-                                          processing_parameters_t* proc_params,
-                                          config_error_t* err) {
-  if (loudness_config_validate(params, err) != 0) return NULL;
-  loudness_filter_t* filter =
-      (loudness_filter_t*)calloc(1, sizeof(loudness_filter_t));
-  if (!filter) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate loudness filter wrapper");
-    return NULL;
-  }
-  if (name) {
-    strncpy(filter->name, name, sizeof(filter->name) - 1);
-    filter->name[sizeof(filter->name) - 1] = '\0';
-  } else {
-    strcpy(filter->name, "loudness");
-  }
-  filter->sample_rate = sample_rate;
-  if (params) {
-    filter->params = *params;
-  } else {
-    filter->params = (loudness_config_t){0};
-  }
-  filter->processing_parameters = proc_params;
-  filter->low_shelf_filter =
-      biquad_filter_create("loudness_ls", NULL, sample_rate, err);
-  filter->high_shelf_filter =
-      biquad_filter_create("loudness_hs", NULL, sample_rate, err);
-  if (!filter->low_shelf_filter || !filter->high_shelf_filter) {
-    loudness_filter_free(filter);
-    return NULL;
-  }
-
-  double init_vol = processing_parameters_get_current_volume_for_fader(
-      filter->processing_parameters, filter->params.fader);
-  filter->last_volume = init_vol;
-  recompute_shelves(filter, init_vol);
-
-  return filter;
-}
-
-void loudness_filter_process(loudness_filter_t* filter,
-                             mutable_waveform_t waveform, size_t count) {
-  if (!filter || !waveform || count == 0) return;
-  if (!filter->processing_parameters) return;
-
-  double current_vol = processing_parameters_get_current_volume_for_fader(
-      filter->processing_parameters, filter->params.fader);
-
-  // Recompute filter coefficients only if the volume has changed significantly.
-  if (fabs(current_vol - filter->last_volume) > 0.01) {
-    filter->last_volume = current_vol;
-    recompute_shelves(filter, current_vol);
-  }
-
-  // If the volume is high enough that loudness compensation is not needed,
-  // bypass processing.
-  if (!filter->is_processing_active) return;
-
-  // Apply high-shelf and low-shelf filters.
-  biquad_filter_process(filter->high_shelf_filter, waveform, count);
-  biquad_filter_process(filter->low_shelf_filter, waveform, count);
-
-  // Apply midband attenuation if enabled to simulate bass/treble boost
-  // without exceeding 0 dBFS peak gain.
-  if (filter->params.attenuate_mid &&
-      fabs(filter->midband_attenuation_db) > 0.001) {
-    double factor = double_from_db(filter->midband_attenuation_db);
-    dsp_ops_scalar_multiply(waveform, factor, count);
-  }
-}
-
-void loudness_filter_transfer_state(loudness_filter_t* dest,
-                                    const loudness_filter_t* src) {
-  if (!dest || !src) return;
-  biquad_filter_transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
-  biquad_filter_transfer_state(dest->high_shelf_filter, src->high_shelf_filter);
-  dest->last_volume = src->last_volume;
-}
-
-void loudness_filter_free(loudness_filter_t* filter) {
+/**
+ * @brief Frees the resources allocated for the loudness filter instance.
+ *
+ * @param filter Pointer to the loudness filter instance to free.
+ */
+static void loudness_filter_free(loudness_filter_t* filter) {
   if (!filter) return;
-  if (filter->low_shelf_filter) biquad_filter_free(filter->low_shelf_filter);
-  if (filter->high_shelf_filter) biquad_filter_free(filter->high_shelf_filter);
+  if (filter->low_shelf_filter) g_biquad_vtable.free(filter->low_shelf_filter);
+  if (filter->high_shelf_filter)
+    g_biquad_vtable.free(filter->high_shelf_filter);
   free(filter);
 }
 
-int loudness_config_validate(const loudness_config_t* params,
-                             config_error_t* err) {
+/**
+ * @brief Validates loudness filter parameters.
+ *
+ * @param config Pointer to the loudness parameters configuration to validate.
+ * @param sample_rate The sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int loudness_config_validate(const filter_config_t* config,
+                                    int sample_rate, config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_LOUDNESS) return -1;
+  const loudness_config_t* params = &config->parameters.loudness;
   if (!params) return 0;
   if (!params->has_reference_level) {
     if (err)
@@ -213,3 +151,124 @@ int loudness_config_validate(const loudness_config_t* params,
   }
   return 0;
 }
+
+/**
+ * @brief Creates a new loudness filter instance.
+ *
+ * @param name The name of the filter.
+ * @param config Pointer to the loudness filter configuration.
+ * @param sample_rate The sample rate of the audio processing path.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Pointer to shared processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the newly created loudness_filter_t instance, or NULL on
+ * failure.
+ */
+static void* loudness_filter_create(const char* name,
+                                    const filter_config_t* config,
+                                    int sample_rate, size_t chunk_size,
+                                    processing_parameters_t* proc_params,
+                                    config_error_t* err) {
+  (void)chunk_size;
+  if (!config || config->type != FILTER_TYPE_LOUDNESS) return NULL;
+  const loudness_config_t* params = &config->parameters.loudness;
+  if (loudness_config_validate(config, sample_rate, err) != 0) return NULL;
+  loudness_filter_t* filter =
+      (loudness_filter_t*)calloc(1, sizeof(loudness_filter_t));
+  if (!filter) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate loudness filter wrapper");
+    return NULL;
+  }
+  if (name) {
+    strncpy(filter->name, name, sizeof(filter->name) - 1);
+    filter->name[sizeof(filter->name) - 1] = '\0';
+  } else {
+    strcpy(filter->name, "loudness");
+  }
+  filter->sample_rate = sample_rate;
+  if (params) {
+    filter->params = *params;
+  } else {
+    filter->params = (loudness_config_t){0};
+  }
+  filter->processing_parameters = proc_params;
+  filter->low_shelf_filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "loudness_ls", NULL, sample_rate, 0, NULL, err);
+  filter->high_shelf_filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "loudness_hs", NULL, sample_rate, 0, NULL, err);
+  if (!filter->low_shelf_filter || !filter->high_shelf_filter) {
+    loudness_filter_free(filter);
+    return NULL;
+  }
+
+  double init_vol = processing_parameters_get_current_volume_for_fader(
+      filter->processing_parameters, filter->params.fader);
+  filter->last_volume = init_vol;
+  recompute_shelves(filter, init_vol);
+
+  return filter;
+}
+
+/**
+ * @brief Processes a slice of waveform using the loudness filter.
+ *
+ * @param filter Pointer to the loudness filter instance.
+ * @param waveform The waveform containing the samples to be processed.
+ * @param count The number of samples to process.
+ */
+static void loudness_filter_process(loudness_filter_t* filter,
+                                    mutable_waveform_t waveform, size_t count) {
+  if (!filter || !waveform || count == 0) return;
+  if (!filter->processing_parameters) return;
+
+  double current_vol = processing_parameters_get_current_volume_for_fader(
+      filter->processing_parameters, filter->params.fader);
+
+  // Recompute filter coefficients only if the volume has changed significantly.
+  if (fabs(current_vol - filter->last_volume) > 0.01) {
+    filter->last_volume = current_vol;
+    recompute_shelves(filter, current_vol);
+  }
+
+  // If the volume is high enough that loudness compensation is not needed,
+  // bypass processing.
+  if (!filter->is_processing_active) return;
+
+  // Apply high-shelf and low-shelf filters.
+  g_biquad_vtable.process(filter->high_shelf_filter, waveform, count);
+  g_biquad_vtable.process(filter->low_shelf_filter, waveform, count);
+
+  // Apply midband attenuation if enabled to simulate bass/treble boost
+  // without exceeding 0 dBFS peak gain.
+  if (filter->params.attenuate_mid &&
+      fabs(filter->midband_attenuation_db) > 0.001) {
+    double factor = double_from_db(filter->midband_attenuation_db);
+    dsp_ops_scalar_multiply(waveform, factor, count);
+  }
+}
+
+/**
+ * @brief Transfers nested shelf filter states and last volume level from src to
+ * dest.
+ *
+ * @param dest The destination loudness filter instance.
+ * @param src The source loudness filter instance.
+ */
+static void loudness_filter_transfer_state(loudness_filter_t* dest,
+                                           const loudness_filter_t* src) {
+  if (!dest || !src) return;
+  g_biquad_vtable.transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
+  g_biquad_vtable.transfer_state(dest->high_shelf_filter,
+                                 src->high_shelf_filter);
+  dest->last_volume = src->last_volume;
+}
+
+const filter_vtable_t g_loudness_vtable = {
+    .validate = loudness_config_validate,
+    .create = loudness_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))loudness_filter_process,
+    .transfer_state =
+        (void (*)(void*, const void*))loudness_filter_transfer_state,
+    .free = (void (*)(void*))loudness_filter_free};

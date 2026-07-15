@@ -33,11 +33,31 @@ typedef enum {
 } filter_instance_type_t;
 
 /**
+ * @struct filter_vtable
+ * @brief Virtual method table for audio filter implementations.
+ */
+typedef struct filter_vtable {
+  int (*validate)(const filter_config_t* config, int sample_rate,
+                  config_error_t* err);
+  void* (*create)(const char* name, const filter_config_t* config,
+                  int sample_rate, size_t chunk_size,
+                  processing_parameters_t* proc_params, config_error_t* err);
+  void (*process)(void* instance, mutable_waveform_t waveform, size_t count);
+  void (*transfer_state)(void* dest, const void* src);
+  void (*free)(void* instance);
+} filter_vtable_t;
+
+/**
  * @brief Representation of a filter.
  *
  * Filters operate on one channel at a time.
  */
-typedef struct filter filter_t;
+typedef struct filter {
+  char name[64];
+  filter_instance_type_t type;
+  const filter_vtable_t* vtable;
+  void* instance;
+} filter_t;
 
 /**
  * @brief Factory to create filter instances from configuration.

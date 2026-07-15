@@ -21,7 +21,11 @@
 
 #include "compressor_processor.h"
 
+#include "Filters/filter.h"
+#include "Filters/limiter.h"
 #include "Logging/app_logger.h"
+#include "Utils/double_helpers.h"
+#include "processor.h"
 
 static const logger_t g_logger = {"compressor_processor"};
 
@@ -38,8 +42,7 @@ struct compressor_processor {
   double threshold;    ///< Compression threshold in dB.
   double factor;       ///< Compression ratio factor (e.g., 4.0 for 4:1).
   double makeup_gain;  ///< Post-compression makeup gain in dB.
-  limiter_filter_t*
-      limiter;  ///< Optional peak/soft limiter applied after compression.
+  void* limiter;  ///< Optional peak/soft limiter applied after compression.
   double*
       scratch;  ///< Pre-allocated scratch buffer for envelope/gain calculation.
   size_t scratch_capacity;  ///< Capacity of scratch buffer in frames (matches
@@ -50,7 +53,15 @@ struct compressor_processor {
                                 ///< mismatch warning.
 };
 
-const char* compressor_processor_get_name(
+typedef struct compressor_processor compressor_processor_t;
+
+/**
+ * @brief Get the name of the compressor processor.
+ *
+ * @param[in] processor Pointer to compressor processor.
+ * @return The name of the processor.
+ */
+static const char* compressor_processor_get_name(
     const compressor_processor_t* processor) {
   return processor ? processor->name : "";
 }
@@ -63,10 +74,83 @@ const char* compressor_processor_get_name(
 #include <Accelerate/Accelerate.h>
 #endif
 
-compressor_processor_t* compressor_processor_create(
-    const char* name, const compressor_config_t* params, int sample_rate,
-    size_t chunk_size, config_error_t* err) {
-  if (compressor_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Validates dynamic range compressor processor parameters.
+ *
+ * @param config Pointer to the processor configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int compressor_config_validate(const processor_config_t* config,
+                                      config_error_t* err) {
+  if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR) return -1;
+  const compressor_config_t* p = &config->parameters.compressor;
+  if (p->channels <= 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: channels must be > 0, got %d", p->channels);
+    return -1;
+  }
+  if (p->attack <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: attack must be > 0, got %g", p->attack);
+    return -1;
+  }
+  if (p->release <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: release must be > 0, got %g", p->release);
+    return -1;
+  }
+  for (size_t i = 0; i < p->monitor_channels_count; i++) {
+    if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                       "Compressor: monitor channel %d is invalid (max: %d)",
+                       p->monitor_channels[i], p->channels - 1);
+      return -1;
+    }
+  }
+  for (size_t i = 0; i < p->process_channels_count; i++) {
+    if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                       "Compressor: process channel %d is invalid (max: %d)",
+                       p->process_channels[i], p->channels - 1);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Frees all resources associated with the compressor processor.
+ *
+ * @param processor Pointer to compressor processor to free.
+ */
+static void compressor_processor_free(compressor_processor_t* processor) {
+  if (!processor) return;
+  free(processor->monitor_channels);
+  free(processor->process_channels);
+  free(processor->scratch);
+  if (processor->limiter) g_limiter_vtable.free(processor->limiter);
+  free(processor);
+}
+
+/**
+ * @brief Creates a new dynamic range compressor processor.
+ *
+ * @param name Unique name for this compressor instance.
+ * @param config Compressor configuration parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return Pointer to newly allocated compressor_processor_t, or NULL on
+ * failure.
+ */
+static void* compressor_processor_create(const char* name,
+                                         const processor_config_t* config,
+                                         int sample_rate, size_t chunk_size,
+                                         config_error_t* err) {
+  if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR) return NULL;
+  const compressor_config_t* params = &config->parameters.compressor;
+  if (compressor_config_validate(config, err) != 0) return NULL;
   if (sample_rate <= 0 || chunk_size == 0) return NULL;
 
   compressor_processor_t* processor =
@@ -134,7 +218,10 @@ compressor_processor_t* compressor_processor_create(
     limiter_config_t limit_params = {0};
     limit_params.clip_limit = params->clip_limit;
     limit_params.soft_clip = params->soft_clip;
-    processor->limiter = limiter_filter_create("limiter", &limit_params, err);
+    filter_config_t lcfg = {.type = FILTER_TYPE_LIMITER,
+                            .parameters.limiter = limit_params};
+    processor->limiter =
+        g_limiter_vtable.create("limiter", &lcfg, 0, 0, NULL, err);
     if (!processor->limiter) {
       compressor_processor_free(processor);
       return NULL;
@@ -146,17 +233,17 @@ compressor_processor_t* compressor_processor_create(
   return processor;
 }
 
-void compressor_processor_free(compressor_processor_t* processor) {
-  if (!processor) return;
-  free(processor->monitor_channels);
-  free(processor->process_channels);
-  free(processor->scratch);
-  if (processor->limiter) limiter_filter_free(processor->limiter);
-  free(processor);
-}
-
-void compressor_processor_process(compressor_processor_t* processor,
-                                  audio_chunk_t* chunk) {
+/**
+ * @brief Applies dynamic range compression to audio chunk in place.
+ *
+ * Evaluates monitored channels, computes envelope loudness and gain reduction
+ * curve, applies linear gain to processed channels, and runs optional limiter.
+ *
+ * @param processor Pointer to compressor processor.
+ * @param chunk Audio chunk to process in place.
+ */
+static void compressor_processor_process(compressor_processor_t* processor,
+                                         audio_chunk_t* chunk) {
   if (!processor || !chunk || !processor->scratch) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
   if (count > processor->scratch_capacity) count = processor->scratch_capacity;
@@ -241,51 +328,29 @@ void compressor_processor_process(compressor_processor_t* processor,
       int ch = processor->process_channels[ch_idx];
       double* wave = audio_chunk_get_channel(chunk, ch);
       if (wave) {
-        limiter_filter_process(processor->limiter, wave, count);
+        g_limiter_vtable.process(processor->limiter, wave, count);
       }
     }
   }
 }
 
-void compressor_processor_transfer_state(compressor_processor_t* dest,
-                                         const compressor_processor_t* src) {
+/**
+ * @brief Transfers running envelope loudness state from src to dest.
+ *
+ * @param dest The destination compressor processor instance.
+ * @param src The source compressor processor instance.
+ */
+static void compressor_processor_transfer_state(
+    compressor_processor_t* dest, const compressor_processor_t* src) {
   if (!dest || !src) return;
   dest->prev_loudness = src->prev_loudness;
 }
 
-int compressor_config_validate(const compressor_config_t* p,
-                               config_error_t* err) {
-  if (!p) return 0;
-  if (p->channels <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: channels must be > 0, got %d", p->channels);
-    return -1;
-  }
-  if (p->attack <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: attack must be > 0, got %g", p->attack);
-    return -1;
-  }
-  if (p->release <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: release must be > 0, got %g", p->release);
-    return -1;
-  }
-  for (size_t i = 0; i < p->monitor_channels_count; i++) {
-    if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
-      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "Compressor: monitor channel %d is invalid (max: %d)",
-                       p->monitor_channels[i], p->channels - 1);
-      return -1;
-    }
-  }
-  for (size_t i = 0; i < p->process_channels_count; i++) {
-    if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
-      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "Compressor: process channel %d is invalid (max: %d)",
-                       p->process_channels[i], p->channels - 1);
-      return -1;
-    }
-  }
-  return 0;
-}
+const processor_vtable_t g_compressor_vtable = {
+    .validate = compressor_config_validate,
+    .create = compressor_processor_create,
+    .process = (void (*)(void*, audio_chunk_t*))compressor_processor_process,
+    .get_name = (const char* (*)(const void*))compressor_processor_get_name,
+    .transfer_state =
+        (void (*)(void*, const void*))compressor_processor_transfer_state,
+    .free = (void (*)(void*))compressor_processor_free};

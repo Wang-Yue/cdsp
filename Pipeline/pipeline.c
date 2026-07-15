@@ -163,7 +163,7 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
 
   // 1. Transfer Master Volume state
   if (dest->master_volume && src->master_volume) {
-    volume_filter_transfer_state(dest->master_volume, src->master_volume);
+    g_volume_vtable.transfer_state(dest->master_volume, src->master_volume);
     logger_info(&g_logger, "Transferred master volume filter state");
   }
 
@@ -184,7 +184,7 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
 void pipeline_free(pipeline_t* pipeline) {
   if (!pipeline) return;
   if (pipeline->master_volume) {
-    volume_filter_free(pipeline->master_volume);
+    g_volume_vtable.free(pipeline->master_volume);
   }
   if (pipeline->capture_scratch) {
     audio_chunk_free(pipeline->capture_scratch);
@@ -230,6 +230,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     return NULL;
   }
 
+  int* all_chs = NULL;
+  parallel_filter_chain_t* new_chains = NULL;
+  size_t new_chains_count = 0;
+
   pipeline->frames_per_chunk =
       explicit_chunk_size > 0 ? explicit_chunk_size : config->devices.chunksize;
   pipeline->rate = config->devices.samplerate;
@@ -255,9 +259,11 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       .has_limit = true};
   vol_params.fader = FADER_MAIN;
 
-  pipeline->master_volume =
-      volume_filter_create("master_volume", &vol_params, pipeline->rate,
-                           pipeline->frames_per_chunk, proc_params, err);
+  filter_config_t vcfg = {.type = FILTER_TYPE_VOLUME,
+                          .parameters.volume = vol_params};
+  pipeline->master_volume = (volume_filter_t*)g_volume_vtable.create(
+      "master_volume", &vcfg, pipeline->rate, pipeline->frames_per_chunk,
+      proc_params, err);
   if (!pipeline->master_volume) {
     logger_error(
         &g_logger,
@@ -333,10 +339,6 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   current_channels = pipeline->expected_in_channels;
   size_t exec_idx = 0;
   size_t mixer_idx = 0;
-
-  int* all_chs = NULL;
-  parallel_filter_chain_t* new_chains = NULL;
-  size_t new_chains_count = 0;
 
   if (config->pipeline && config->pipeline_count > 0) {
     for (size_t i = 0; i < config->pipeline_count; i++) {
@@ -660,7 +662,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
     mutable_waveform_t buf = audio_chunk_get_channel(current_chunk, ch);
     if (buf && valid_frames > 0) {
-      volume_filter_process(pipeline->master_volume, buf, valid_frames);
+      g_volume_vtable.process(pipeline->master_volume, buf, valid_frames);
     }
   }
   volume_filter_advance_ramp(pipeline->master_volume);

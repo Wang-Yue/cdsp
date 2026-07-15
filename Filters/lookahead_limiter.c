@@ -1,6 +1,7 @@
 #include "lookahead_limiter.h"
 
 #include "delay.h"
+#include "filter.h"
 
 struct lookahead_limiter_filter {
   char name[64];
@@ -15,6 +16,8 @@ struct lookahead_limiter_filter {
   double* output_buffer;
   size_t output_buffer_capacity;
 };
+
+typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -78,10 +81,104 @@ static inline double get_occupied(lookahead_limiter_filter_t* filter,
   return filter->lookahead_data[real_idx];
 }
 
-lookahead_limiter_filter_t* lookahead_limiter_filter_create(
-    const char* name, const lookahead_limiter_config_t* params, int sample_rate,
-    size_t chunk_size, config_error_t* err) {
-  if (lookahead_limiter_config_validate(params, sample_rate, err) != 0)
+/**
+ * @brief Free the lookahead limiter filter instance.
+ *
+ * @param filter Pointer to the lookahead limiter filter instance to free.
+ */
+static void lookahead_limiter_filter_free(lookahead_limiter_filter_t* filter) {
+  if (!filter) return;
+  if (filter->lookahead_data) free(filter->lookahead_data);
+  if (filter->output_buffer) free(filter->output_buffer);
+  free(filter);
+}
+
+/**
+ * @brief Validates lookahead limiter filter parameters.
+ *
+ * @param config Pointer to the filter configuration to validate.
+ * @param sample_rate The sample rate in Hz.
+ * @param err Pointer to a config error structure to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int lookahead_limiter_config_validate(const filter_config_t* config,
+                                             int sample_rate,
+                                             config_error_t* err) {
+  if (sample_rate <= 0) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Lookahead Limiter: sample_rate must be greater than 0, got %d",
+        sample_rate);
+    return -1;
+  }
+  if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER) return -1;
+  const lookahead_limiter_config_t* params =
+      &config->parameters.lookahead_limiter;
+  if (!params) return 0;
+  if (!isfinite(params->limit)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter limit must be finite, got %g",
+                     params->limit);
+    return -1;
+  }
+  if (params->attack < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: attack cannot be negative, got %g",
+                     params->attack);
+    return -1;
+  }
+  if (params->release < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: release cannot be negative, got %g",
+                     params->release);
+    return -1;
+  }
+  double attack_samples = 0.0;
+  switch (params->unit) {
+    case DELAY_UNIT_MS:
+      attack_samples = params->attack / 1000.0 * (double)sample_rate;
+      break;
+    case DELAY_UNIT_US:
+      attack_samples = params->attack / 1000000.0 * (double)sample_rate;
+      break;
+    case DELAY_UNIT_SAMPLES:
+      attack_samples = params->attack;
+      break;
+    case DELAY_UNIT_MM:
+      attack_samples = params->attack / 1000.0 * (double)sample_rate / 343.0;
+      break;
+  }
+  if (attack_samples > (double)sample_rate) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: attack time cannot be longer than 1 "
+                     "second, got %g samples",
+                     attack_samples);
+    return -1;
+  }
+  return 0;
+}
+
+/**
+ * @brief Create a lookahead limiter filter.
+ *
+ * @param name The name of the filter.
+ * @param config Pointer to the filter configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The processing chunk size.
+ * @param proc_params Processing parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return Pointer to the allocated lookahead_limiter_filter_t, or NULL on
+ * failure.
+ */
+static void* lookahead_limiter_filter_create(
+    const char* name, const filter_config_t* config, int sample_rate,
+    size_t chunk_size, processing_parameters_t* proc_params,
+    config_error_t* err) {
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER) return NULL;
+  const lookahead_limiter_config_t* params =
+      &config->parameters.lookahead_limiter;
+  if (lookahead_limiter_config_validate(config, sample_rate, err) != 0)
     return NULL;
   lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)calloc(
       1, sizeof(lookahead_limiter_filter_t));
@@ -242,9 +339,16 @@ static void process_slice(lookahead_limiter_filter_t* filter,
   }
 }
 
-void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
-                                      mutable_waveform_t waveform,
-                                      size_t count) {
+/**
+ * @brief Process a waveform buffer in-place by applying lookahead limiting.
+ *
+ * @param filter Pointer to the lookahead limiter filter instance.
+ * @param waveform The waveform data to process.
+ * @param count The number of samples to process.
+ */
+static void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
+                                             mutable_waveform_t waveform,
+                                             size_t count) {
   if (!filter || !waveform || count == 0) return;
   size_t processed = 0;
   while (processed < count) {
@@ -257,62 +361,10 @@ void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
   }
 }
 
-void lookahead_limiter_filter_free(lookahead_limiter_filter_t* filter) {
-  if (!filter) return;
-  if (filter->lookahead_data) free(filter->lookahead_data);
-  if (filter->output_buffer) free(filter->output_buffer);
-  free(filter);
-}
-
-int lookahead_limiter_config_validate(const lookahead_limiter_config_t* params,
-                                      int sample_rate, config_error_t* err) {
-  if (sample_rate <= 0) {
-    config_error_set(
-        err, CONFIG_ERR_INVALID_FILTER,
-        "Lookahead Limiter: sample_rate must be greater than 0, got %d",
-        sample_rate);
-    return -1;
-  }
-  if (!params) return 0;
-  if (!isfinite(params->limit)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter limit must be finite, got %g",
-                     params->limit);
-    return -1;
-  }
-  if (params->attack < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: attack cannot be negative, got %g",
-                     params->attack);
-    return -1;
-  }
-  if (params->release < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: release cannot be negative, got %g",
-                     params->release);
-    return -1;
-  }
-  double attack_samples = 0.0;
-  switch (params->unit) {
-    case DELAY_UNIT_MS:
-      attack_samples = params->attack / 1000.0 * (double)sample_rate;
-      break;
-    case DELAY_UNIT_US:
-      attack_samples = params->attack / 1000000.0 * (double)sample_rate;
-      break;
-    case DELAY_UNIT_SAMPLES:
-      attack_samples = params->attack;
-      break;
-    case DELAY_UNIT_MM:
-      attack_samples = params->attack / 1000.0 * (double)sample_rate / 343.0;
-      break;
-  }
-  if (attack_samples > (double)sample_rate) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: attack time cannot be longer than 1 "
-                     "second, got %g samples",
-                     attack_samples);
-    return -1;
-  }
-  return 0;
-}
+const filter_vtable_t g_lookahead_limiter_vtable = {
+    .validate = lookahead_limiter_config_validate,
+    .create = lookahead_limiter_filter_create,
+    .process = (void (*)(void*, mutable_waveform_t,
+                         size_t))lookahead_limiter_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))lookahead_limiter_filter_free};

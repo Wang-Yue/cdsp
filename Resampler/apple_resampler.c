@@ -244,11 +244,42 @@ static resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
   return RESAMPLER_OK;
 }
 
-resampler_t* apple_resampler_create(size_t channels, size_t input_rate,
-                                    size_t output_rate,
-                                    apple_resampler_quality_t quality,
-                                    apple_resampler_complexity_t complexity,
-                                    size_t chunk_size, config_error_t* err) {
+/**
+ * @brief Validates Apple AudioConverter resampler parameters.
+ *
+ * @param config Pointer to the resampler configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int apple_resampler_config_validate(const resampler_config_t* config,
+                                           config_error_t* err) {
+  (void)err;
+  if (!config || config->type != RESAMPLER_TYPE_APPLE) return -1;
+  return 0;
+}
+
+/**
+ * @brief Creates a new Apple AudioConverter resampler.
+ *
+ * @param config Resampler configuration parameters.
+ * @param input_rate Input sample rate in Hz.
+ * @param output_rate Output sample rate in Hz.
+ * @param channels Number of audio channels.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return Pointer to newly allocated audio_resampler_t, or NULL on failure.
+ */
+static void* apple_resampler_create(const resampler_config_t* config,
+                                    size_t input_rate, size_t output_rate,
+                                    size_t channels, size_t chunk_size,
+                                    config_error_t* err) {
+  if (apple_resampler_config_validate(config, err) != 0) return NULL;
+  apple_resampler_quality_t quality = config->has_apple_quality
+                                          ? config->apple_quality
+                                          : APPLE_RESAMPLER_QUALITY_MAX;
+  apple_resampler_complexity_t complexity =
+      config->has_apple_complexity ? config->apple_complexity
+                                   : APPLE_RESAMPLER_COMPLEXITY_NORMAL;
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AppleResampler: channels must be positive");
@@ -378,29 +409,25 @@ resampler_t* apple_resampler_create(size_t channels, size_t input_rate,
   AudioConverterSetProperty(conv, kAudioConverterSampleRateConverterComplexity,
                             sizeof(UInt32), &complexity_val);
 
-  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
-  if (!wrap) {
-    apple_resampler_free(resampler);
-    return NULL;
-  }
-  wrap->type = RESAMPLER_IMPL_APPLE;
-  wrap->impl = resampler;
-  wrap->process = (resampler_error_t (*)(
-      void*, const audio_chunk_t*, audio_chunk_t*))apple_resampler_process;
-  wrap->set_relative_ratio =
-      (void (*)(void*, double))apple_resampler_set_relative_ratio;
-  wrap->get_ratio = (double (*)(const void*))apple_resampler_get_ratio;
-  wrap->get_max_output_frames =
-      (size_t (*)(const void*))apple_resampler_get_max_output_frames;
-  wrap->get_chunk_size =
-      (size_t (*)(const void*))apple_resampler_get_chunk_size;
-  wrap->get_input_frames_next =
-      (size_t (*)(const void*))apple_resampler_get_input_frames_next;
-  wrap->get_output_frames_next =
-      (size_t (*)(const void*))apple_resampler_get_output_frames_next;
-  wrap->get_channels = (size_t (*)(const void*))apple_resampler_get_channels;
-  wrap->free = (void (*)(void*))apple_resampler_free;
-  return wrap;
+  return resampler;
 }
+
+const resampler_vtable_t g_apple_resampler_vtable = {
+    .validate = apple_resampler_config_validate,
+    .create = apple_resampler_create,
+    .process = (resampler_error_t (*)(void*, const audio_chunk_t*,
+                                      audio_chunk_t*))apple_resampler_process,
+    .set_relative_ratio =
+        (void (*)(void*, double))apple_resampler_set_relative_ratio,
+    .get_ratio = (double (*)(const void*))apple_resampler_get_ratio,
+    .get_max_output_frames =
+        (size_t (*)(const void*))apple_resampler_get_max_output_frames,
+    .get_chunk_size = (size_t (*)(const void*))apple_resampler_get_chunk_size,
+    .get_input_frames_next =
+        (size_t (*)(const void*))apple_resampler_get_input_frames_next,
+    .get_output_frames_next =
+        (size_t (*)(const void*))apple_resampler_get_output_frames_next,
+    .get_channels = (size_t (*)(const void*))apple_resampler_get_channels,
+    .free = (void (*)(void*))apple_resampler_free};
 
 #endif  // ENABLE_COREAUDIO

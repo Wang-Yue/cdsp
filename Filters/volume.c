@@ -1,5 +1,7 @@
 #include "volume.h"
 
+#include "filter.h"
+
 struct volume_filter {
   char name[64];
   fader_t fader;
@@ -16,6 +18,8 @@ struct volume_filter {
   double* current_ramp_gains;
   processing_parameters_t* processing_parameters;
 };
+
+typedef struct volume_filter volume_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -46,12 +50,62 @@ static void fill_ramp(volume_filter_t* filter) {
   }
 }
 
-volume_filter_t* volume_filter_create(const char* name,
-                                      const volume_config_t* params,
-                                      int sample_rate, size_t chunk_size,
-                                      processing_parameters_t* proc_params,
-                                      config_error_t* err) {
-  if (volume_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Frees the resources allocated for the volume filter instance.
+ *
+ * @param filter Pointer to the volume filter instance to free.
+ */
+static void volume_filter_free(volume_filter_t* filter) {
+  if (!filter) return;
+  if (filter->current_ramp_gains) free(filter->current_ramp_gains);
+  free(filter);
+}
+
+/**
+ * @brief Validates volume filter parameters.
+ *
+ * @param config Pointer to the volume parameters to validate.
+ * @param sample_rate The audio sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int volume_config_validate(const filter_config_t* config,
+                                  int sample_rate, config_error_t* err) {
+  (void)sample_rate;
+  if (!config || config->type != FILTER_TYPE_VOLUME) return -1;
+  const volume_config_t* params = &config->parameters.volume;
+  if (!params) return 0;
+  if (params->has_ramp_time) {
+    if (params->ramp_time < 0.0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Volume ramp time cannot be negative, got %g",
+                       params->ramp_time);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Creates a new volume filter instance.
+ *
+ * @param name The name of the filter.
+ * @param config Pointer to the volume filter configuration.
+ * @param sample_rate The sample rate of the audio processing path.
+ * @param chunk_size The maximum size of an audio chunk in frames.
+ * @param proc_params Pointer to shared processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the newly created volume_filter_t instance, or NULL on
+ * failure.
+ */
+static void* volume_filter_create(const char* name,
+                                  const filter_config_t* config,
+                                  int sample_rate, size_t chunk_size,
+                                  processing_parameters_t* proc_params,
+                                  config_error_t* err) {
+  if (!config || config->type != FILTER_TYPE_VOLUME) return NULL;
+  const volume_config_t* params = &config->parameters.volume;
+  if (volume_config_validate(config, sample_rate, err) != 0) return NULL;
   if (sample_rate <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "VolumeFilter: sample_rate must be positive");
@@ -161,8 +215,8 @@ void volume_filter_prepare_chunk(volume_filter_t* filter) {
 }
 
 /// Conforms to `Filter`. Processes a single channel's waveform slice.
-void volume_filter_process(volume_filter_t* filter, mutable_waveform_t waveform,
-                           size_t count) {
+static void volume_filter_process(volume_filter_t* filter,
+                                  mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   if (filter->ramp_step == 0) {
     // Optimization: avoid multiplication if gain is 1.0, or clear if 0.0.
@@ -208,8 +262,15 @@ void volume_filter_advance_ramp(volume_filter_t* filter) {
   }
 }
 
-void volume_filter_transfer_state(volume_filter_t* dest,
-                                  const volume_filter_t* src) {
+/**
+ * @brief Transfers current volume, fader target level, and ramp state from src
+ * to dest.
+ *
+ * @param dest The destination volume filter instance.
+ * @param src The source volume filter instance.
+ */
+static void volume_filter_transfer_state(volume_filter_t* dest,
+                                         const volume_filter_t* src) {
   if (!dest || !src) return;
   dest->current_volume = src->current_volume;
   dest->target_volume = src->target_volume;
@@ -224,20 +285,11 @@ void volume_filter_transfer_state(volume_filter_t* dest,
   }
 }
 
-void volume_filter_free(volume_filter_t* filter) {
-  if (!filter) return;
-  if (filter->current_ramp_gains) free(filter->current_ramp_gains);
-  free(filter);
-}
-int volume_config_validate(const volume_config_t* params, config_error_t* err) {
-  if (!params) return 0;
-  if (params->has_ramp_time) {
-    if (params->ramp_time < 0.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Volume ramp time cannot be negative, got %g",
-                       params->ramp_time);
-      return -1;
-    }
-  }
-  return 0;
-}
+const filter_vtable_t g_volume_vtable = {
+    .validate = volume_config_validate,
+    .create = volume_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))volume_filter_process,
+    .transfer_state =
+        (void (*)(void*, const void*))volume_filter_transfer_state,
+    .free = (void (*)(void*))volume_filter_free};

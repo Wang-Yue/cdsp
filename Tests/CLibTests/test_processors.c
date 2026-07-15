@@ -29,8 +29,11 @@ TEST(compressor_basic_compression) {
   params.soft_clip = false;
   params.has_clip_limit = false;
 
-  compressor_processor_t* comp =
-      compressor_processor_create("compressor", &params, 48000, 1000, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+
+  dsp_processor_t* comp =
+      dsp_processor_create("compressor", &config, 48000, 1000, NULL);
   ASSERT_TRUE(comp != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(1000, 2);
@@ -43,13 +46,13 @@ TEST(compressor_basic_compression) {
   }
   audio_chunk_set_valid_frames(chunk, 1000);
 
-  compressor_processor_process(comp, chunk);
+  dsp_processor_process(comp, chunk);
 
   ASSERT_TRUE(ch0[999] < 0.8);
   ASSERT_TRUE(ch1[999] < 0.4);
 
   audio_chunk_free(chunk);
-  compressor_processor_free(comp);
+  dsp_processor_free(comp);
 }
 
 TEST(noisegate_basic_gate) {
@@ -66,8 +69,11 @@ TEST(noisegate_basic_gate) {
   params.threshold = -20.0;
   params.attenuation = 40.0;
 
-  noise_gate_processor_t* gate =
-      noise_gate_processor_create("noisegate", &params, 48000, 100, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_NOISE_GATE,
+                               .parameters.noise_gate = params};
+
+  dsp_processor_t* gate =
+      dsp_processor_create("noisegate", &config, 48000, 100, NULL);
   ASSERT_TRUE(gate != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(100, 1);
@@ -82,13 +88,13 @@ TEST(noisegate_basic_gate) {
   }
   audio_chunk_set_valid_frames(chunk, 100);
 
-  noise_gate_processor_process(gate, chunk);
+  dsp_processor_process(gate, chunk);
 
   ASSERT_TRUE(ch0[35] > 0.4);
   ASSERT_TRUE(ch0[60] < 0.00005);
 
   audio_chunk_free(chunk);
-  noise_gate_processor_free(gate);
+  dsp_processor_free(gate);
 }
 
 TEST(race_basic) {
@@ -103,7 +109,10 @@ TEST(race_basic) {
   params.has_delay_unit = true;
   params.attenuation = 6.02;
 
-  race_processor_t* race = race_processor_create("race", &params, 48000, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
+                               .parameters.race = params};
+
+  dsp_processor_t* race = dsp_processor_create("race", &config, 48000, 0, NULL);
   ASSERT_TRUE(race != NULL);
 
   audio_chunk_t* chunk = audio_chunk_create(10, 2);
@@ -117,13 +126,13 @@ TEST(race_basic) {
   }
   audio_chunk_set_valid_frames(chunk, 10);
 
-  race_processor_process(race, chunk);
+  dsp_processor_process(race, chunk);
 
   ASSERT_DOUBLE_EQ(1.0, ch0[0]);
   ASSERT_TRUE(is_close(ch1[5], -0.5, 1e-4));
 
   audio_chunk_free(chunk);
-  race_processor_free(race);
+  dsp_processor_free(race);
 }
 
 TEST_MAIN()

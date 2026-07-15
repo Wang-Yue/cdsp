@@ -1,5 +1,7 @@
 #include "biquad.h"
 
+#include "filter.h"
+
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
 #endif
@@ -43,6 +45,8 @@ struct biquad_filter {
   double neg_a1, neg_a2;
 #endif
 };
+
+typedef struct biquad_filter biquad_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -321,10 +325,135 @@ static bool biquad_config_check_stability(const biquad_config_t* params,
   return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);
 }
 
-biquad_filter_t* biquad_filter_create(const char* name,
-                                      const biquad_config_t* params,
-                                      int sample_rate, config_error_t* err) {
-  if (biquad_config_validate(params, sample_rate, err) != 0) return NULL;
+/**
+ * @brief Frees the biquad filter instance.
+ *
+ * @param filter The filter instance to free.
+ */
+static void biquad_filter_free(biquad_filter_t* filter) {
+  if (!filter) return;
+#ifdef ENABLE_ACCELERATE
+  if (filter->setup) {
+    vDSP_biquadm_DestroySetupD(filter->setup);
+  }
+#endif
+  free(filter);
+}
+
+/**
+ * @brief Validates high-level biquad filter parameters and checks stability.
+ *
+ * @param config High-level filter configuration.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int biquad_config_validate(const filter_config_t* config,
+                                  int sample_rate, config_error_t* err) {
+  if (!config || config->type != FILTER_TYPE_BIQUAD) return -1;
+  const biquad_config_t* params = &config->parameters.biquad;
+  double nyquist = (double)sample_rate / 2.0;
+  if (params->type != BIQUAD_TYPE_FREE &&
+      params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM &&
+      params->type != BIQUAD_TYPE_GENERAL_NOTCH) {
+    if (params->freq <= 0.0 || params->freq >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
+    if (params->freq_notch <= 0.0 || params->freq_notch >= nyquist ||
+        params->freq_pole <= 0.0 || params->freq_pole >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+    if (params->q_p <= 0.0 && params->q <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
+    if (params->freq_act <= 0.0 || params->freq_act >= nyquist ||
+        params->freq_target <= 0.0 || params->freq_target >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+    if (params->q_act <= 0.0 || params->q_target <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_PEAKING ||
+      params->type == BIQUAD_TYPE_LOWPASS ||
+      params->type == BIQUAD_TYPE_HIGHPASS ||
+      params->type == BIQUAD_TYPE_BANDPASS ||
+      params->type == BIQUAD_TYPE_NOTCH ||
+      params->type == BIQUAD_TYPE_ALLPASS ||
+      params->type == BIQUAD_TYPE_GENERAL_NOTCH ||
+      params->type == BIQUAD_TYPE_HIGHSHELF ||
+      params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->q <= 0.0 && params->bandwidth <= 0.0 && params->slope <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_HIGHSHELF ||
+      params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
+      if (params->slope <= 0.0 || params->slope > 12.0) {
+        if (err)
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "slope out of range");
+        return -1;
+      }
+    }
+  }
+  if (sample_rate > 0) {
+    if (!biquad_config_check_stability(params, sample_rate)) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Unstable or invalid biquad filter specified");
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Creates a biquad filter instance directly from filter configuration.
+ *
+ * Computes coefficients and validates filter stability. If config is NULL,
+ * creates a passthrough filter. If the filter is unstable or parameters are
+ * invalid, sets err and returns NULL.
+ *
+ * @param name The name of the filter (for debugging/identification).
+ * @param config High-level filter configuration (NULL for passthrough identity
+ * filter).
+ * @param sample_rate Sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the created filter instance, or `NULL` on failure.
+ */
+static void* biquad_filter_create(const char* name,
+                                  const filter_config_t* config,
+                                  int sample_rate, size_t chunk_size,
+                                  processing_parameters_t* proc_params,
+                                  config_error_t* err) {
+  (void)chunk_size;
+  (void)proc_params;
+  const biquad_config_t* params = NULL;
+  if (config) {
+    if (config->type != FILTER_TYPE_BIQUAD) return NULL;
+    params = &config->parameters.biquad;
+    if (biquad_config_validate(config, sample_rate, err) != 0) return NULL;
+  }
   biquad_filter_t* filter =
       (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
   if (!filter) {
@@ -375,8 +504,17 @@ biquad_filter_t* biquad_filter_create(const char* name,
   return filter;
 }
 
-void biquad_filter_process(biquad_filter_t* filter, mutable_waveform_t waveform,
-                           size_t count) {
+/**
+ * @brief Processes an array of samples through the biquad filter.
+ *
+ * In-place processing.
+ *
+ * @param filter The filter instance.
+ * @param waveform The input/output waveform buffer.
+ * @param count The number of samples to process.
+ */
+static void biquad_filter_process(biquad_filter_t* filter,
+                                  mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
 #ifdef ENABLE_ACCELERATE
   if (!filter->setup) return;
@@ -458,8 +596,15 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
   }
 }
 
-void biquad_filter_transfer_state(biquad_filter_t* dest,
-                                  const biquad_filter_t* src) {
+/**
+ * @brief Transfers internal history state (delay line registers) from src to
+ * dest.
+ *
+ * @param dest The destination biquad filter instance.
+ * @param src The source biquad filter instance.
+ */
+static void biquad_filter_transfer_state(biquad_filter_t* dest,
+                                         const biquad_filter_t* src) {
   if (!dest || !src) return;
 #ifdef ENABLE_ACCELERATE
   if (dest->setup && src->setup) {
@@ -471,88 +616,11 @@ void biquad_filter_transfer_state(biquad_filter_t* dest,
 #endif
 }
 
-void biquad_filter_free(biquad_filter_t* filter) {
-  if (!filter) return;
-#ifdef ENABLE_ACCELERATE
-  if (filter->setup) {
-    vDSP_biquadm_DestroySetupD(filter->setup);
-  }
-#endif
-  free(filter);
-}
-
-int biquad_config_validate(const biquad_config_t* params, int sample_rate,
-                           config_error_t* err) {
-  if (!params) return 0;
-  double nyquist = (double)sample_rate / 2.0;
-  if (params->type != BIQUAD_TYPE_FREE &&
-      params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM &&
-      params->type != BIQUAD_TYPE_GENERAL_NOTCH) {
-    if (params->freq <= 0.0 || params->freq >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
-    if (params->freq_notch <= 0.0 || params->freq_notch >= nyquist ||
-        params->freq_pole <= 0.0 || params->freq_pole >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-    if (params->q_p <= 0.0 && params->q <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
-    if (params->freq_act <= 0.0 || params->freq_act >= nyquist ||
-        params->freq_target <= 0.0 || params->freq_target >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-    if (params->q_act <= 0.0 || params->q_target <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_PEAKING ||
-      params->type == BIQUAD_TYPE_LOWPASS ||
-      params->type == BIQUAD_TYPE_HIGHPASS ||
-      params->type == BIQUAD_TYPE_BANDPASS ||
-      params->type == BIQUAD_TYPE_NOTCH ||
-      params->type == BIQUAD_TYPE_ALLPASS ||
-      params->type == BIQUAD_TYPE_GENERAL_NOTCH ||
-      params->type == BIQUAD_TYPE_HIGHSHELF ||
-      params->type == BIQUAD_TYPE_LOWSHELF) {
-    if (params->q <= 0.0 && params->bandwidth <= 0.0 && params->slope <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_HIGHSHELF ||
-      params->type == BIQUAD_TYPE_LOWSHELF) {
-    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
-      if (params->slope <= 0.0 || params->slope > 12.0) {
-        if (err)
-          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                           "slope out of range");
-        return -1;
-      }
-    }
-  }
-  if (sample_rate > 0) {
-    if (!biquad_config_check_stability(params, sample_rate)) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Unstable or invalid biquad filter specified");
-      return -1;
-    }
-  }
-  return 0;
-}
+const filter_vtable_t g_biquad_vtable = {
+    .validate = biquad_config_validate,
+    .create = biquad_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))biquad_filter_process,
+    .transfer_state =
+        (void (*)(void*, const void*))biquad_filter_transfer_state,
+    .free = (void (*)(void*))biquad_filter_free};

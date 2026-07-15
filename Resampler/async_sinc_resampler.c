@@ -9,12 +9,47 @@
 
 #include "async_sinc_resampler.h"
 
+#include <string.h>
+#include <strings.h>
+
 #include "Audio/audio_chunk.h"
 #include "audio_resampler.h"
 #include "resampler_error.h"
 #include "sinc_dot_product.h"
 
+typedef enum {
+  SINC_INTERPOLATION_NEAREST = 0,
+  SINC_INTERPOLATION_LINEAR,
+  SINC_INTERPOLATION_QUADRATIC,
+  SINC_INTERPOLATION_CUBIC,
+  SINC_INTERPOLATION_LAST
+} sinc_interpolation_type_t;
+
+static sinc_interpolation_type_t sinc_interpolation_type_from_string(
+    const char* str) {
+  if (!str) return SINC_INTERPOLATION_QUADRATIC;
+  if (strcasecmp(str, "Nearest") == 0) return SINC_INTERPOLATION_NEAREST;
+  if (strcasecmp(str, "Linear") == 0) return SINC_INTERPOLATION_LINEAR;
+  if (strcasecmp(str, "Quadratic") == 0) return SINC_INTERPOLATION_QUADRATIC;
+  if (strcasecmp(str, "Cubic") == 0) return SINC_INTERPOLATION_CUBIC;
+  return SINC_INTERPOLATION_LAST;
+}
+
 typedef struct async_sinc_resampler async_sinc_resampler_t;
+
+#include "sinc_window_function.h"
+
+static void* async_sinc_resampler_create_impl(
+    size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
+    size_t oversampling_factor, sinc_interpolation_type_t interpolation,
+    window_function_t window, double f_cutoff, bool has_f_cutoff,
+    size_t chunk_size, double max_relative_ratio, fixed_async_t fixed,
+    config_error_t* err);
+
+static void* async_sinc_resampler_create_from_profile(
+    size_t channels, size_t input_rate, size_t output_rate,
+    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
+    config_error_t* err);
 
 struct async_sinc_resampler {
   size_t channels;
@@ -615,7 +650,7 @@ static size_t async_sinc_resampler_get_output_frames_next(
   return resampler ? resampler->needed_output_size : 0;
 }
 
-resampler_t* async_sinc_resampler_create(
+static void* async_sinc_resampler_create_impl(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
     size_t oversampling_factor, sinc_interpolation_type_t interpolation,
     window_function_t window, double f_cutoff, bool has_f_cutoff,
@@ -746,33 +781,110 @@ resampler_t* async_sinc_resampler_create(
     return NULL;
   }
 
-  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
-  if (!wrap) {
-    async_sinc_resampler_free(resampler);
-    return NULL;
-  }
-  wrap->type = RESAMPLER_IMPL_ASYNC_SINC;
-  wrap->impl = resampler;
-  wrap->process = (resampler_error_t (*)(
-      void*, const audio_chunk_t*, audio_chunk_t*))async_sinc_resampler_process;
-  wrap->set_relative_ratio =
-      (void (*)(void*, double))async_sinc_resampler_set_relative_ratio;
-  wrap->get_ratio = (double (*)(const void*))async_sinc_resampler_get_ratio;
-  wrap->get_max_output_frames =
-      (size_t (*)(const void*))async_sinc_resampler_get_max_output_frames;
-  wrap->get_chunk_size =
-      (size_t (*)(const void*))async_sinc_resampler_get_chunk_size;
-  wrap->get_input_frames_next =
-      (size_t (*)(const void*))async_sinc_resampler_get_input_frames_next;
-  wrap->get_output_frames_next =
-      (size_t (*)(const void*))async_sinc_resampler_get_output_frames_next;
-  wrap->get_channels =
-      (size_t (*)(const void*))async_sinc_resampler_get_channels;
-  wrap->free = (void (*)(void*))async_sinc_resampler_free;
-  return wrap;
+  return resampler;
 }
 
-resampler_t* async_sinc_resampler_create_from_profile(
+/**
+ * @brief Validates async windowed-sinc resampler parameters.
+ *
+ * @param config Pointer to the resampler configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int async_sinc_resampler_config_validate(
+    const resampler_config_t* config, config_error_t* err) {
+  if (!config || config->type != RESAMPLER_TYPE_ASYNC_SINC) return -1;
+  if (config->has_window) {
+    if (window_function_from_string(config->window, WINDOW_FUNCTION_LAST) ==
+        WINDOW_FUNCTION_LAST) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncSinc: invalid window function %s", config->window);
+      return -1;
+    }
+  }
+  if (config->has_interpolation) {
+    if (sinc_interpolation_type_from_string(config->interpolation) ==
+        SINC_INTERPOLATION_LAST) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncSinc: invalid interpolation type %s",
+                       config->interpolation);
+      return -1;
+    }
+  }
+  if (config->has_profile) {
+    if (strcasecmp(config->profile, "VeryFast") != 0 &&
+        strcasecmp(config->profile, "Fast") != 0 &&
+        strcasecmp(config->profile, "Balanced") != 0 &&
+        strcasecmp(config->profile, "Accurate") != 0) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncSinc: invalid profile %s", config->profile);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Creates a new async windowed-sinc resampler.
+ *
+ * @param config Resampler configuration parameters.
+ * @param input_rate Input sample rate in Hz.
+ * @param output_rate Output sample rate in Hz.
+ * @param channels Number of audio channels.
+ * @param chunk_size Fixed number of input/output frames per processing chunk.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return Pointer to newly allocated audio_resampler_t wrapper, or NULL on
+ * failure.
+ */
+static void* async_sinc_resampler_create(const resampler_config_t* config,
+                                         size_t input_rate, size_t output_rate,
+                                         size_t channels, size_t chunk_size,
+                                         config_error_t* err) {
+  if (!config || config->type != RESAMPLER_TYPE_ASYNC_SINC) return NULL;
+
+  fixed_async_t fixed_mode =
+      config->has_fixed ? config->fixed : FIXED_ASYNC_OUTPUT;
+  if (config->has_sinc_len && config->has_oversampling_factor &&
+      config->has_window && config->has_interpolation) {
+    window_function_t wf = window_function_from_string(
+        config->window, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    sinc_interpolation_type_t interp =
+        sinc_interpolation_type_from_string(config->interpolation);
+    return async_sinc_resampler_create_impl(
+        channels, input_rate, output_rate, (size_t)config->sinc_len,
+        (size_t)config->oversampling_factor, interp, wf, config->f_cutoff,
+        config->has_f_cutoff, chunk_size, 1.1, fixed_mode, err);
+  } else {
+    resampler_profile_t prof = RESAMPLER_PROFILE_BALANCED;
+    if (config->has_profile) {
+      prof = resampler_profile_from_string(config->profile);
+    }
+    return async_sinc_resampler_create_from_profile(
+        channels, input_rate, output_rate, prof, chunk_size, 1.1, err);
+  }
+}
+
+const resampler_vtable_t g_async_sinc_resampler_vtable = {
+    .validate = async_sinc_resampler_config_validate,
+    .create = async_sinc_resampler_create,
+    .process =
+        (resampler_error_t (*)(void*, const audio_chunk_t*,
+                               audio_chunk_t*))async_sinc_resampler_process,
+    .set_relative_ratio =
+        (void (*)(void*, double))async_sinc_resampler_set_relative_ratio,
+    .get_ratio = (double (*)(const void*))async_sinc_resampler_get_ratio,
+    .get_max_output_frames =
+        (size_t (*)(const void*))async_sinc_resampler_get_max_output_frames,
+    .get_chunk_size =
+        (size_t (*)(const void*))async_sinc_resampler_get_chunk_size,
+    .get_input_frames_next =
+        (size_t (*)(const void*))async_sinc_resampler_get_input_frames_next,
+    .get_output_frames_next =
+        (size_t (*)(const void*))async_sinc_resampler_get_output_frames_next,
+    .get_channels = (size_t (*)(const void*))async_sinc_resampler_get_channels,
+    .free = (void (*)(void*))async_sinc_resampler_free};
+
+static void* async_sinc_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
     config_error_t* err) {
@@ -810,7 +922,7 @@ resampler_t* async_sinc_resampler_create_from_profile(
       break;
   }
 
-  return async_sinc_resampler_create(
+  return async_sinc_resampler_create_impl(
       channels, input_rate, output_rate, sinc_len, oversampling_factor,
       interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
       FIXED_ASYNC_OUTPUT, err);

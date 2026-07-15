@@ -36,12 +36,14 @@ typedef enum {
 } resampler_impl_type_t;
 
 /**
- * @struct resampler
- * @brief Polymorphic interface wrapper for resamplers.
+ * @struct resampler_vtable
+ * @brief Virtual method table for audio resampler implementations.
  */
-typedef struct resampler {
-  resampler_impl_type_t type;
-  void* impl;
+typedef struct resampler_vtable {
+  int (*validate)(const resampler_config_t* config, config_error_t* err);
+  void* (*create)(const resampler_config_t* config, size_t input_rate,
+                  size_t output_rate, size_t channels, size_t chunk_size,
+                  config_error_t* err);
   resampler_error_t (*process)(void* impl, const audio_chunk_t* input,
                                audio_chunk_t* output);
   void (*set_relative_ratio)(void* impl, double multiplier);
@@ -52,6 +54,16 @@ typedef struct resampler {
   size_t (*get_output_frames_next)(const void* impl);
   size_t (*get_channels)(const void* impl);
   void (*free)(void* impl);
+} resampler_vtable_t;
+
+/**
+ * @struct resampler
+ * @brief Polymorphic interface wrapper for resamplers.
+ */
+typedef struct resampler {
+  resampler_impl_type_t type;
+  void* impl;
+  const resampler_vtable_t* vtable;
 } resampler_t;
 
 /**

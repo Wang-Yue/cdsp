@@ -331,10 +331,11 @@ static resampler_error_t synchronous_resampler_process(
   return RESAMPLER_OK;
 }
 
-resampler_t* synchronous_resampler_create(size_t channels, size_t input_rate,
-                                          size_t output_rate,
-                                          size_t requested_chunk_size,
-                                          config_error_t* err) {
+static void* synchronous_resampler_create_impl(size_t channels,
+                                               size_t input_rate,
+                                               size_t output_rate,
+                                               size_t requested_chunk_size,
+                                               config_error_t* err) {
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "SynchronousResampler: channels must be positive");
@@ -485,29 +486,72 @@ resampler_t* synchronous_resampler_create(size_t channels, size_t input_rate,
     return NULL;
   }
 
-  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
-  if (!wrap) {
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-  wrap->type = RESAMPLER_IMPL_SYNCHRONOUS;
-  wrap->impl = resampler;
-  wrap->process =
-      (resampler_error_t (*)(void*, const audio_chunk_t*,
-                             audio_chunk_t*))synchronous_resampler_process;
-  wrap->set_relative_ratio =
-      (void (*)(void*, double))synchronous_resampler_set_relative_ratio;
-  wrap->get_ratio = (double (*)(const void*))synchronous_resampler_get_ratio;
-  wrap->get_max_output_frames =
-      (size_t (*)(const void*))synchronous_resampler_get_max_output_frames;
-  wrap->get_chunk_size =
-      (size_t (*)(const void*))synchronous_resampler_get_chunk_size;
-  wrap->get_input_frames_next =
-      (size_t (*)(const void*))synchronous_resampler_get_input_frames_next;
-  wrap->get_output_frames_next =
-      (size_t (*)(const void*))synchronous_resampler_get_output_frames_next;
-  wrap->get_channels =
-      (size_t (*)(const void*))synchronous_resampler_get_channels;
-  wrap->free = (void (*)(void*))synchronous_resampler_free;
-  return wrap;
+  return resampler;
 }
+
+/**
+ * @brief Validates synchronous resampler parameters.
+ *
+ * @param config Pointer to the resampler configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int synchronous_resampler_config_validate(
+    const resampler_config_t* config, config_error_t* err) {
+  (void)err;
+  if (!config || config->type != RESAMPLER_TYPE_SYNCHRONOUS) return -1;
+  return 0;
+}
+
+/**
+ * @brief Creates and initializes a synchronous resampler instance.
+ *
+ * Independently derived from textbook descriptions of FFT-based rate
+ * conversion via overlap-add convolution and spectral resampling.
+ *
+ * References
+ * ----------
+ *   * R. E. Crochiere and L. R. Rabiner (1983), "Multirate Digital
+ *     Signal Processing", Prentice-Hall.
+ *   * A. V. Oppenheim and R. W. Schafer, "Discrete-Time Signal
+ *     Processing", Prentice-Hall.
+ *
+ * @param config Resampler configuration parameters.
+ * @param input_rate The input sample rate in Hz.
+ * @param output_rate The output sample rate in Hz.
+ * @param channels The number of audio channels.
+ * @param chunk_size The desired size of input chunks (in frames).
+ *                             The resampler will round this up to a size
+ * matching the rational period.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A pointer to the created audio resampler instance, or NULL on
+ * failure.
+ */
+static void* synchronous_resampler_create(const resampler_config_t* config,
+                                          size_t input_rate, size_t output_rate,
+                                          size_t channels, size_t chunk_size,
+                                          config_error_t* err) {
+  if (!config || config->type != RESAMPLER_TYPE_SYNCHRONOUS) return NULL;
+  return synchronous_resampler_create_impl(channels, input_rate, output_rate,
+                                           chunk_size, err);
+}
+
+const resampler_vtable_t g_synchronous_resampler_vtable = {
+    .validate = synchronous_resampler_config_validate,
+    .create = synchronous_resampler_create,
+    .process =
+        (resampler_error_t (*)(void*, const audio_chunk_t*,
+                               audio_chunk_t*))synchronous_resampler_process,
+    .set_relative_ratio =
+        (void (*)(void*, double))synchronous_resampler_set_relative_ratio,
+    .get_ratio = (double (*)(const void*))synchronous_resampler_get_ratio,
+    .get_max_output_frames =
+        (size_t (*)(const void*))synchronous_resampler_get_max_output_frames,
+    .get_chunk_size =
+        (size_t (*)(const void*))synchronous_resampler_get_chunk_size,
+    .get_input_frames_next =
+        (size_t (*)(const void*))synchronous_resampler_get_input_frames_next,
+    .get_output_frames_next =
+        (size_t (*)(const void*))synchronous_resampler_get_output_frames_next,
+    .get_channels = (size_t (*)(const void*))synchronous_resampler_get_channels,
+    .free = (void (*)(void*))synchronous_resampler_free};

@@ -1,3 +1,6 @@
+#ifndef CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H
+#define CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H
+
 /**
  * @file synchronous_resampler.h
  * @brief FFT-based fixed-ratio sample-rate converter.
@@ -80,30 +83,7 @@
  * directly into the caller's pre-allocated `output` chunk.
  */
 
-#ifndef CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H
-#define CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H
-
-#include <stddef.h>
-
-#include "Config/config_error.h"
-#include "audio_resampler.h"
-
-/**
- * @brief Creates and initializes a synchronous resampler instance.
- *
- * @param channels The number of audio channels.
- * @param input_rate The input sample rate in Hz.
- * @param output_rate The output sample rate in Hz.
- * @param requested_chunk_size The desired size of input chunks (in frames).
- *                             The resampler will round this up to a size
- * matching the rational period.
- * @param err Pointer to a config error struct to populate on failure.
- * @return A pointer to the created audio resampler instance, or NULL on
- * failure.
- */
-resampler_t* synchronous_resampler_create(size_t channels, size_t input_rate,
-                                          size_t output_rate,
-                                          size_t requested_chunk_size,
-                                          config_error_t* err);
+struct resampler_vtable;
+extern const struct resampler_vtable g_synchronous_resampler_vtable;
 
 #endif  // CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H

@@ -1,5 +1,7 @@
 #include "diffeq.h"
 
+#include "filter.h"
+
 struct diffeq_filter {
   char name[64];
   double* x;
@@ -12,14 +14,66 @@ struct diffeq_filter {
   size_t idx_y;
 };
 
+typedef struct diffeq_filter diffeq_filter_t;
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-diffeq_filter_t* diffeq_filter_create(const char* name,
-                                      const diffeq_config_t* params,
-                                      config_error_t* err) {
-  if (diffeq_config_validate(params, err) != 0) return NULL;
+/**
+ * @brief Free the difference equation filter instance and its associated
+ * resources.
+ *
+ * @param filter The difference equation filter instance to free.
+ */
+static void diffeq_filter_free(diffeq_filter_t* filter) {
+  if (!filter) return;
+  if (filter->x) free(filter->x);
+  if (filter->y) free(filter->y);
+  if (filter->a) free(filter->a);
+  if (filter->b) free(filter->b);
+  free(filter);
+}
+
+/**
+ * @brief Validates difference equation filter parameters.
+ *
+ * @param config Pointer to the difference equation configuration to validate.
+ * @param sample_rate The sample rate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int diffeq_config_validate(const filter_config_t* config,
+                                  int sample_rate, config_error_t* err) {
+  (void)config;
+  (void)sample_rate;
+  (void)err;
+  return 0;
+}
+
+/**
+ * @brief Create a new difference equation filter.
+ *
+ * @param name The name of the filter.
+ * @param config The difference equation configuration.
+ * @param sample_rate The sample rate.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param proc_params Processing parameters.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return A pointer to the created difference equation filter, or NULL on
+ * failure.
+ */
+static void* diffeq_filter_create(const char* name,
+                                  const filter_config_t* config,
+                                  int sample_rate, size_t chunk_size,
+                                  processing_parameters_t* proc_params,
+                                  config_error_t* err) {
+  (void)sample_rate;
+  (void)chunk_size;
+  (void)proc_params;
+  if (!config || config->type != FILTER_TYPE_DIFF_EQ) return NULL;
+  const diffeq_config_t* params = &config->parameters.diff_eq;
+  if (diffeq_config_validate(config, 0, err) != 0) return NULL;
   diffeq_filter_t* filter =
       (diffeq_filter_t*)calloc(1, sizeof(diffeq_filter_t));
   if (!filter) return NULL;
@@ -71,8 +125,15 @@ diffeq_filter_t* diffeq_filter_create(const char* name,
   return filter;
 }
 
-void diffeq_filter_process(diffeq_filter_t* filter, mutable_waveform_t waveform,
-                           size_t count) {
+/**
+ * @brief Process a block of samples in-place.
+ *
+ * @param filter The difference equation filter instance.
+ * @param waveform The input/output waveform buffer.
+ * @param count The number of samples to process.
+ */
+static void diffeq_filter_process(diffeq_filter_t* filter,
+                                  mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   size_t nb = filter->b_count;
   size_t na = filter->a_count;
@@ -130,17 +191,10 @@ void diffeq_filter_process(diffeq_filter_t* filter, mutable_waveform_t waveform,
   filter->idx_y = idx_y;
 }
 
-void diffeq_filter_free(diffeq_filter_t* filter) {
-  if (!filter) return;
-  if (filter->x) free(filter->x);
-  if (filter->y) free(filter->y);
-  if (filter->a) free(filter->a);
-  if (filter->b) free(filter->b);
-  free(filter);
-}
-
-int diffeq_config_validate(const diffeq_config_t* params, config_error_t* err) {
-  (void)params;
-  (void)err;
-  return 0;
-}
+const filter_vtable_t g_diffeq_vtable = {
+    .validate = diffeq_config_validate,
+    .create = diffeq_filter_create,
+    .process =
+        (void (*)(void*, mutable_waveform_t, size_t))diffeq_filter_process,
+    .transfer_state = NULL,
+    .free = (void (*)(void*))diffeq_filter_free};

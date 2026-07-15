@@ -22,6 +22,7 @@
 #include "Filters/delay.h"
 #include "Filters/diffeq.h"
 #include "Filters/dither.h"
+#include "Filters/filter.h"
 #include "Filters/gain.h"
 #include "Filters/limiter.h"
 #include "Filters/lookahead_limiter.h"
@@ -32,7 +33,7 @@
 #include "Pipeline/pipeline.h"
 #include "Processors/compressor_processor.h"
 #include "Processors/noise_gate_processor.h"
-#include "Processors/race_processor.h"
+#include "Processors/processor.h"
 #include "Resampler/apple_resampler.h"
 #include "Resampler/async_poly_resampler.h"
 #include "Resampler/async_sinc_resampler.h"
@@ -496,34 +497,34 @@ typedef struct {
 } filter_test_ctx_t;
 
 static void bq_process_wrap(void* f, double* w, size_t n) {
-  biquad_filter_process((biquad_filter_t*)f, w, n);
+  g_biquad_vtable.process(f, w, n);
 }
 static void conv_process_wrap(void* f, double* w, size_t n) {
-  convolution_filter_process((convolution_filter_t*)f, w, n);
+  g_convolution_vtable.process(f, w, n);
 }
 static void gain_process_wrap(void* f, double* w, size_t n) {
-  gain_filter_process((gain_filter_t*)f, w, n);
+  g_gain_vtable.process(f, w, n);
 }
 static void loud_process_wrap(void* f, double* w, size_t n) {
-  loudness_filter_process((loudness_filter_t*)f, w, n);
+  g_loudness_vtable.process(f, w, n);
 }
 static void delay_process_wrap(void* f, double* w, size_t n) {
-  delay_filter_process((delay_filter_t*)f, w, n);
+  g_delay_vtable.process(f, w, n);
 }
 static void combo_process_wrap(void* f, double* w, size_t n) {
-  biquad_combo_filter_process((biquad_combo_filter_t*)f, w, n);
+  g_biquad_combo_vtable.process(f, w, n);
 }
 static void diffeq_process_wrap(void* f, double* w, size_t n) {
-  diffeq_filter_process((diffeq_filter_t*)f, w, n);
+  g_diffeq_vtable.process(f, w, n);
 }
 static void dither_process_wrap(void* f, double* w, size_t n) {
-  dither_filter_process((dither_filter_t*)f, w, n);
+  g_dither_vtable.process(f, w, n);
 }
 static void limit_process_wrap(void* f, double* w, size_t n) {
-  limiter_filter_process((limiter_filter_t*)f, w, n);
+  g_limiter_vtable.process(f, w, n);
 }
 static void look_process_wrap(void* f, double* w, size_t n) {
-  lookahead_limiter_filter_process((lookahead_limiter_filter_t*)f, w, n);
+  g_lookahead_limiter_vtable.process(f, w, n);
 }
 
 static void filter_iter(int i, void* ctx) {
@@ -535,14 +536,17 @@ static void filter_iter(int i, void* ctx) {
 TEST(Biquad_AllocationFree) {
   biquad_config_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 1000.0, .q = 0.707};
-  biquad_filter_t* filter = biquad_filter_create("bq", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  biquad_filter_t* filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "bq", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, bq_process_wrap, wave, 1024};
   assert_allocation_free("Biquad", 0, 30, filter_iter, &ctx);
   free(wave);
-  biquad_filter_free(filter);
+  g_biquad_vtable.free(filter);
 }
 
 TEST(Convolution_AllocationFree) {
@@ -554,8 +558,9 @@ TEST(Convolution_AllocationFree) {
   }
   convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = ir_len};
-  convolution_filter_t* filter =
-      convolution_filter_create("conv", &params, chunk_size, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* filter =
+      g_convolution_vtable.create("conv", &cfg, 0, chunk_size, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(chunk_size, sizeof(double));
   fill_sine(wave, chunk_size, 1000.0, 44100.0);
@@ -563,20 +568,21 @@ TEST(Convolution_AllocationFree) {
   assert_allocation_free("Convolution", 3, 30, filter_iter, &ctx);
   free(wave);
   free(ir);
-  convolution_filter_free(filter);
+  g_convolution_vtable.free(filter);
 }
 
 TEST(Gain_AllocationFree) {
   gain_config_t params = {
       .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
-  gain_filter_t* filter = gain_filter_create("gain", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void* filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, gain_process_wrap, wave, 1024};
   assert_allocation_free("Gain", 0, 30, filter_iter, &ctx);
   free(wave);
-  gain_filter_free(filter);
+  g_gain_vtable.free(filter);
 }
 
 static void vol_iter(int i, void* ctx) {
@@ -584,7 +590,7 @@ static void vol_iter(int i, void* ctx) {
   filter_test_ctx_t* c = (filter_test_ctx_t*)ctx;
   volume_filter_t* vf = (volume_filter_t*)c->filter;
   volume_filter_prepare_chunk(vf);
-  volume_filter_process(vf, c->wave, c->frames);
+  g_volume_vtable.process(vf, c->wave, c->frames);
   volume_filter_advance_ramp(vf);
 }
 
@@ -598,15 +604,17 @@ TEST(Volume_AllocationFree) {
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
-  volume_filter_t* filter =
-      volume_filter_create("vol", &params, 44100, 1024, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "vol", &cfg, 44100, 1024, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, NULL, wave, 1024};
   assert_allocation_free("Volume", 0, 30, vol_iter, &ctx);
   free(wave);
-  volume_filter_free(filter);
+  g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
@@ -621,29 +629,32 @@ TEST(Loudness_AllocationFree) {
                               .low_boost = 10.0,
                               .has_low_boost = true,
                               .attenuate_mid = false};
-  loudness_filter_t* filter =
-      loudness_filter_create("loud", &params, 44100, proc_params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LOUDNESS,
+                         .parameters.loudness = params};
+  void* filter =
+      g_loudness_vtable.create("loud", &cfg, 44100, 0, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, loud_process_wrap, wave, 1024};
   assert_allocation_free("Loudness", 0, 30, filter_iter, &ctx);
   free(wave);
-  loudness_filter_free(filter);
+  g_loudness_vtable.free(filter);
   processing_parameters_free(proc_params);
 }
 
 TEST(Delay_AllocationFree) {
   delay_config_t params = {
       .delay = 5.5, .unit = DELAY_UNIT_SAMPLES, .subsample = true};
-  delay_filter_t* filter = delay_filter_create("del", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* filter = g_delay_vtable.create("del", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, delay_process_wrap, wave, 1024};
   assert_allocation_free("Delay", 0, 30, filter_iter, &ctx);
   free(wave);
-  delay_filter_free(filter);
+  g_delay_vtable.free(filter);
 }
 
 TEST(BiquadCombo_AllocationFree) {
@@ -663,15 +674,17 @@ TEST(BiquadCombo_AllocationFree) {
                                   .fhs = 12000.0,
                                   .qhs = 0.707,
                                   .ghs = 2.5};
-  biquad_combo_filter_t* filter =
-      biquad_combo_filter_create("combo", &params, 44100, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void* filter =
+      g_biquad_combo_vtable.create("combo", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, combo_process_wrap, wave, 1024};
   assert_allocation_free("BiquadCombo", 0, 30, filter_iter, &ctx);
   free(wave);
-  biquad_combo_filter_free(filter);
+  g_biquad_combo_vtable.free(filter);
 }
 
 TEST(DiffEq_AllocationFree) {
@@ -679,38 +692,44 @@ TEST(DiffEq_AllocationFree) {
   double b[] = {0.004244741301241303, 0.008489482602482605,
                 0.004244741301241303};
   diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
-  diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void* filter = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, diffeq_process_wrap, wave, 1024};
   assert_allocation_free("DiffEq", 0, 30, filter_iter, &ctx);
   free(wave);
-  diffeq_filter_free(filter);
+  g_diffeq_vtable.free(filter);
 }
 
 TEST(Dither_AllocationFree) {
   dither_config_t params = {.type = DITHER_TYPE_GESEMANN_441, .bits = 16};
-  dither_filter_t* filter = dither_filter_create("dither", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* filter = g_dither_vtable.create("dither", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, dither_process_wrap, wave, 1024};
   assert_allocation_free("Dither", 0, 30, filter_iter, &ctx);
   free(wave);
-  dither_filter_free(filter);
+  g_dither_vtable.free(filter);
 }
 
 TEST(Limiter_AllocationFree) {
   limiter_config_t params = {.clip_limit = -1.5, .soft_clip = true};
-  limiter_filter_t* filter = limiter_filter_create("limiter", &params, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LIMITER,
+                         .parameters.limiter = params};
+  void* filter = g_limiter_vtable.create("limiter", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, limit_process_wrap, wave, 1024};
   assert_allocation_free("Limiter", 0, 30, filter_iter, &ctx);
   free(wave);
-  limiter_filter_free(filter);
+  g_limiter_vtable.free(filter);
 }
 
 TEST(LookaheadLimiter_AllocationFree) {
@@ -718,15 +737,17 @@ TEST(LookaheadLimiter_AllocationFree) {
                                        .attack = 4.0,
                                        .release = 20.0,
                                        .unit = DELAY_UNIT_SAMPLES};
-  lookahead_limiter_filter_t* filter =
-      lookahead_limiter_filter_create("lookahead", &params, 44100, 1024, NULL);
+  filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+                         .parameters.lookahead_limiter = params};
+  void* filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 44100,
+                                                   1024, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, look_process_wrap, wave, 1024};
   assert_allocation_free("LookaheadLimiter", 0, 30, filter_iter, &ctx);
   free(wave);
-  lookahead_limiter_filter_free(filter);
+  g_lookahead_limiter_vtable.free(filter);
 }
 
 // MARK: - Processors
@@ -737,14 +758,8 @@ typedef struct {
   audio_chunk_t* chunk;
 } proc_test_ctx_t;
 
-static void comp_proc_wrap(void* p, audio_chunk_t* c) {
-  compressor_processor_process((compressor_processor_t*)p, c);
-}
-static void gate_proc_wrap(void* p, audio_chunk_t* c) {
-  noise_gate_processor_process((noise_gate_processor_t*)p, c);
-}
-static void race_proc_wrap(void* p, audio_chunk_t* c) {
-  race_processor_process((race_processor_t*)p, c);
+static void dsp_proc_wrap(void* p, audio_chunk_t* c) {
+  dsp_processor_process((dsp_processor_t*)p, c);
 }
 
 static void proc_iter(int i, void* ctx) {
@@ -770,8 +785,10 @@ TEST(Compressor_AllocationFree) {
                                 .soft_clip = true,
                                 .clip_limit = -1.0,
                                 .has_clip_limit = true};
-  compressor_processor_t* proc =
-      compressor_processor_create("comp", &params, 44100, 1024, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+  dsp_processor_t* proc =
+      dsp_processor_create("comp", &config, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
   for (size_t f = 0; f < 1024; f++) {
@@ -779,10 +796,10 @@ TEST(Compressor_AllocationFree) {
     audio_chunk_get_channel(chunk, 1)[f] = 0.5;
   }
   audio_chunk_set_valid_frames(chunk, 1024);
-  proc_test_ctx_t ctx = {proc, comp_proc_wrap, chunk};
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
   assert_allocation_free("Compressor", 0, 30, proc_iter, &ctx);
   audio_chunk_free(chunk);
-  compressor_processor_free(proc);
+  dsp_processor_free(proc);
 }
 
 TEST(NoiseGate_AllocationFree) {
@@ -797,8 +814,10 @@ TEST(NoiseGate_AllocationFree) {
                                 .release = 0.05,
                                 .threshold = -20.0,
                                 .attenuation = 12.0};
-  noise_gate_processor_t* proc =
-      noise_gate_processor_create("gate", &params, 44100, 1024, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_NOISE_GATE,
+                               .parameters.noise_gate = params};
+  dsp_processor_t* proc =
+      dsp_processor_create("gate", &config, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
   for (size_t f = 0; f < 1024; f++) {
@@ -806,10 +825,10 @@ TEST(NoiseGate_AllocationFree) {
     audio_chunk_get_channel(chunk, 1)[f] = 0.5;
   }
   audio_chunk_set_valid_frames(chunk, 1024);
-  proc_test_ctx_t ctx = {proc, gate_proc_wrap, chunk};
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
   assert_allocation_free("NoiseGate", 0, 30, proc_iter, &ctx);
   audio_chunk_free(chunk);
-  noise_gate_processor_free(proc);
+  dsp_processor_free(proc);
 }
 
 TEST(RACE_AllocationFree) {
@@ -822,7 +841,9 @@ TEST(RACE_AllocationFree) {
                           .delay_unit = DELAY_UNIT_SAMPLES,
                           .has_delay_unit = true,
                           .attenuation = 6.0};
-  race_processor_t* proc = race_processor_create("race", &params, 44100, NULL);
+  processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
+                               .parameters.race = params};
+  dsp_processor_t* proc = dsp_processor_create("race", &config, 44100, 0, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
   for (size_t f = 0; f < 1024; f++) {
@@ -830,10 +851,10 @@ TEST(RACE_AllocationFree) {
     audio_chunk_get_channel(chunk, 1)[f] = 0.5;
   }
   audio_chunk_set_valid_frames(chunk, 1024);
-  proc_test_ctx_t ctx = {proc, race_proc_wrap, chunk};
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
   assert_allocation_free("RACE", 0, 30, proc_iter, &ctx);
   audio_chunk_free(chunk);
-  race_processor_free(proc);
+  dsp_processor_free(proc);
 }
 
 // MARK: - Mixer
