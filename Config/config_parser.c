@@ -21,6 +21,21 @@
 
 static const logger_t g_logger = {"dsp.config.parser"};
 
+static int compare_named_filters(const void* a, const void* b) {
+  return strcmp(((const named_filter_config_t*)a)->name,
+                ((const named_filter_config_t*)b)->name);
+}
+
+static int compare_named_mixers(const void* a, const void* b) {
+  return strcmp(((const named_mixer_config_t*)a)->name,
+                ((const named_mixer_config_t*)b)->name);
+}
+
+static int compare_named_processors(const void* a, const void* b) {
+  return strcmp(((const named_processor_config_t*)a)->name,
+                ((const named_processor_config_t*)b)->name);
+}
+
 /**
  * @brief Parses an array of string labels from a cJSON array.
  *
@@ -288,6 +303,20 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
                    err ? err->message : "");
       return -1;
     }
+  }
+
+  // Sort filters, mixers, and processors alphabetically by name to make config comparison order-independent.
+  if (config->filters && config->filters_count > 1) {
+    qsort(config->filters, config->filters_count, sizeof(named_filter_config_t),
+          compare_named_filters);
+  }
+  if (config->mixers && config->mixers_count > 1) {
+    qsort(config->mixers, config->mixers_count, sizeof(named_mixer_config_t),
+          compare_named_mixers);
+  }
+  if (config->processors && config->processors_count > 1) {
+    qsort(config->processors, config->processors_count, sizeof(named_processor_config_t),
+          compare_named_processors);
   }
 
   cJSON_Delete(root);
