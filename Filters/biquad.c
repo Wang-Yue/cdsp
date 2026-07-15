@@ -314,8 +314,8 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
   return is_stable(out_coeffs);
 }
 
-bool biquad_config_check_stability(const biquad_config_t* params,
-                                     int sample_rate) {
+static bool biquad_config_check_stability(const biquad_config_t* params,
+                                            int sample_rate) {
   if (!params || sample_rate <= 0) return false;
   biquad_coefficients_t dummy_coeffs;
   return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);

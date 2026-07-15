@@ -16,6 +16,21 @@
 #include "audio_resampler.h"
 #include "resampler_error.h"
 
+static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
+  switch (interp) {
+    case POLY_INTERPOLATION_LINEAR:
+      return 2;
+    case POLY_INTERPOLATION_CUBIC:
+      return 4;
+    case POLY_INTERPOLATION_QUINTIC:
+      return 6;
+    case POLY_INTERPOLATION_SEPTIC:
+      return 8;
+    default:
+      return 4;
+  }
+}
+
 typedef struct async_poly_resampler async_poly_resampler_t;
 
 struct async_poly_resampler {

@@ -1,5 +1,7 @@
 #include "dither.h"
 
+typedef struct noise_shaper noise_shaper_t;
+
 struct noise_shaper {
   double* filter;
   double* buffer;
@@ -22,7 +24,9 @@ struct dither_filter {
 #include <string.h>
 
 // MARK: - NoiseShaper
-noise_shaper_t* noise_shaper_create(const double* filter_coeffs, size_t count) {
+static void noise_shaper_free(noise_shaper_t* shaper);
+
+static noise_shaper_t* noise_shaper_create(const double* filter_coeffs, size_t count) {
   if (!filter_coeffs || count == 0) return NULL;
   noise_shaper_t* shaper = (noise_shaper_t*)calloc(1, sizeof(noise_shaper_t));
   if (!shaper) return NULL;
@@ -38,8 +42,8 @@ noise_shaper_t* noise_shaper_create(const double* filter_coeffs, size_t count) {
   return shaper;
 }
 
-double noise_shaper_process(noise_shaper_t* shaper, double scaled,
-                            double dither) {
+static double noise_shaper_process(noise_shaper_t* shaper, double scaled,
+                                   double dither) {
   if (!shaper || shaper->filter_count == 0) return round(scaled + dither);
   double filt_buf = 0.0;
   size_t count = shaper->filter_count;
@@ -67,7 +71,7 @@ double noise_shaper_process(noise_shaper_t* shaper, double scaled,
   return result_r;
 }
 
-void noise_shaper_free(noise_shaper_t* shaper) {
+static void noise_shaper_free(noise_shaper_t* shaper) {
   if (!shaper) return;
   if (shaper->filter) free(shaper->filter);
   if (shaper->buffer) free(shaper->buffer);
@@ -75,7 +79,7 @@ void noise_shaper_free(noise_shaper_t* shaper) {
 }
 
 // MARK: - Noise Shaper Factory
-noise_shaper_t* noise_shaper_create_for_type(dither_type_t type) {
+static noise_shaper_t* noise_shaper_create_for_type(dither_type_t type) {
   switch (type) {
     case DITHER_TYPE_FWEIGHTED_441: {
       const double c[] = {2.412,  -3.370, 3.937,  -4.174, 3.353,

@@ -15,52 +15,6 @@
  * to audio signals.
  */
 
-// MARK: - NoiseShaper
-
-/**
- * @brief Opaque handle to a noise shaper instance.
- */
-typedef struct noise_shaper noise_shaper_t;
-
-/**
- * @brief Create a noise shaper with custom filter coefficients.
- *
- * @param filter_coeffs Array of filter coefficients.
- * @param count Number of coefficients in the array.
- * @return A pointer to the created noise shaper, or NULL on failure.
- */
-noise_shaper_t* noise_shaper_create(const double* filter_coeffs, size_t count);
-
-/**
- * @brief Process a single sample through the noise shaper.
- *
- * @param shaper The noise shaper instance.
- * @param scaled The scaled input sample (typically quantized to target bit
- * depth but still as double).
- * @param dither The dither value to add.
- * @return The noise-shaped sample.
- */
-double noise_shaper_process(noise_shaper_t* shaper, double scaled,
-                            double dither);
-
-/**
- * @brief Free the noise shaper instance.
- *
- * @param shaper The noise shaper instance to free.
- */
-void noise_shaper_free(noise_shaper_t* shaper);
-
-// MARK: - Noise Shaper Factory
-
-/**
- * @brief Create a noise shaper for a predefined dither type.
- *
- * @param type The dither type (e.g., standard, shaped).
- * @return A pointer to the created noise shaper, or NULL if the type doesn't
- * use noise shaping or on failure.
- */
-noise_shaper_t* noise_shaper_create_for_type(dither_type_t type);
-
 // MARK: - DitherFilter
 
 /**

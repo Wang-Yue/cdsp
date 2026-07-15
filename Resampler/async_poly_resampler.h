@@ -31,28 +31,6 @@ typedef enum {
   POLY_INTERPOLATION_SEPTIC
 } poly_interpolation_t;
 
-/**
- * @brief Helper function to get the number of points needed for an
- * interpolation type.
- *
- * @param interp The interpolation type.
- * @return The number of input points required.
- */
-static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
-  switch (interp) {
-    case POLY_INTERPOLATION_LINEAR:
-      return 2;
-    case POLY_INTERPOLATION_CUBIC:
-      return 4;
-    case POLY_INTERPOLATION_QUINTIC:
-      return 6;
-    case POLY_INTERPOLATION_SEPTIC:
-      return 8;
-    default:
-      return 4;
-  }
-}
-
 #include "audio_resampler.h"
 
 /**
