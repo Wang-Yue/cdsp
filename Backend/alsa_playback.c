@@ -30,6 +30,7 @@ struct alsa_playback {
   snd_mixer_t* mixer;
   snd_mixer_elem_t* pitch_elem;
   pthread_mutex_t mixer_mutex;
+  bool stopped;
 };
 
 /**
@@ -641,7 +642,9 @@ void alsa_playback_close(alsa_playback_t* playback) {
   if (!playback) return;
   pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm) {
-    snd_pcm_drain(playback->pcm);
+    if (!playback->stopped) {
+      snd_pcm_drain(playback->pcm);
+    }
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
   }
@@ -757,6 +760,7 @@ void alsa_playback_set_pitch(alsa_playback_t* playback, double multiplier) {
 void alsa_playback_stop(alsa_playback_t* playback) {
   if (!playback) return;
   pthread_mutex_lock(&g_alsa_mutex);
+  playback->stopped = true;
   if (playback->pcm) {
     snd_pcm_drop(playback->pcm);
   }

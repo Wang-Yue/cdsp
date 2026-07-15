@@ -806,9 +806,10 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
   // oldest data. This blocks the writer thread (with a timeout) if the consumer
   // (PipeWire thread) is slower.
   int retries = 2000;
-  while (spsc_audio_ring_buffer_get_available_to_read(playback->ring) +
-             requested >
-         spsc_audio_ring_buffer_get_capacity(playback->ring)) {
+  while (!playback->stopped &&
+         spsc_audio_ring_buffer_get_available_to_read(playback->ring) +
+                 requested >
+             spsc_audio_ring_buffer_get_capacity(playback->ring)) {
     if (retries-- <= 0) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -819,6 +820,13 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
     }
     struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};  // 1ms
     nanosleep(&req, NULL);
+  }
+  if (playback->stopped) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Playback stream stopped");
+    }
+    return false;
   }
 
   spsc_audio_ring_buffer_write(playback->ring, playback->encode_buf, requested,
