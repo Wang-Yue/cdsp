@@ -7,3 +7,4 @@ bin/
 .DS_Store
 target/
 win_deps/
+linux_sysroot/
