@@ -79,88 +79,101 @@ static inline bool sigma_delta_modulator_sample(sigma_delta_modulator_t* mod,
   double y = mod->prev_y;
   bool bit;
 
-  if (mod->cached_order == 6) {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    d[1] = s[1] + s[0] - g[1] * s[2];
-    v += a[1] * d[1];
-    d[2] = s[2] + s[1] - g[2] * s[3];
-    v += a[2] * d[2];
-    d[3] = s[3] + s[2] - g[3] * s[4];
-    v += a[3] * d[3];
-    d[4] = s[4] + s[3] - g[4] * s[5];
-    v += a[4] * d[4];
-    d[5] = s[5] + s[4];
-    v += a[5] * d[5];
-    bit = (v >= 0.0);
-  } else if (mod->cached_order == 4) {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    d[1] = s[1] + s[0] - g[1] * s[2];
-    v += a[1] * d[1];
-    d[2] = s[2] + s[1] - g[2] * s[3];
-    v += a[2] * d[2];
-    d[3] = s[3] + s[2];
-    v += a[3] * d[3];
-    bit = (v >= 0.0);
-  } else if (mod->cached_order == 5) {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    d[1] = s[1] + s[0] - g[1] * s[2];
-    v += a[1] * d[1];
-    d[2] = s[2] + s[1] - g[2] * s[3];
-    v += a[2] * d[2];
-    d[3] = s[3] + s[2] - g[3] * s[4];
-    v += a[3] * d[3];
-    d[4] = s[4] + s[3];
-    v += a[4] * d[4];
-    bit = (v >= 0.0);
-  } else if (mod->cached_order == 7) {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    d[1] = s[1] + s[0] - g[1] * s[2];
-    v += a[1] * d[1];
-    d[2] = s[2] + s[1] - g[2] * s[3];
-    v += a[2] * d[2];
-    d[3] = s[3] + s[2] - g[3] * s[4];
-    v += a[3] * d[3];
-    d[4] = s[4] + s[3] - g[4] * s[5];
-    v += a[4] * d[4];
-    d[5] = s[5] + s[4] - g[5] * s[6];
-    v += a[5] * d[5];
-    d[6] = s[6] + s[5];
-    v += a[6] * d[6];
-    bit = (v >= 0.0);
-  } else if (mod->cached_order == 8) {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    d[1] = s[1] + s[0] - g[1] * s[2];
-    v += a[1] * d[1];
-    d[2] = s[2] + s[1] - g[2] * s[3];
-    v += a[2] * d[2];
-    d[3] = s[3] + s[2] - g[3] * s[4];
-    v += a[3] * d[3];
-    d[4] = s[4] + s[3] - g[4] * s[5];
-    v += a[4] * d[4];
-    d[5] = s[5] + s[4] - g[5] * s[6];
-    v += a[5] * d[5];
-    d[6] = s[6] + s[5] - g[6] * s[7];
-    v += a[6] * d[6];
-    d[7] = s[7] + s[6];
-    v += a[7] * d[7];
-    bit = (v >= 0.0);
-  } else {
-    d[0] = s[0] - g[0] * s[1] + x - y;
-    double v = x + a[0] * d[0];
-    int i = 1;
-    while (i < mod->cached_order - 1) {
-      d[i] = s[i] + s[i - 1] - g[i] * s[i + 1];
-      v += a[i] * d[i];
-      i++;
+  switch (mod->cached_order) {
+    case 6: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      d[1] = s[1] + s[0] - g[1] * s[2];
+      v += a[1] * d[1];
+      d[2] = s[2] + s[1] - g[2] * s[3];
+      v += a[2] * d[2];
+      d[3] = s[3] + s[2] - g[3] * s[4];
+      v += a[3] * d[3];
+      d[4] = s[4] + s[3] - g[4] * s[5];
+      v += a[4] * d[4];
+      d[5] = s[5] + s[4];
+      v += a[5] * d[5];
+      bit = (v >= 0.0);
+      break;
     }
-    d[i] = s[i] + s[i - 1];
-    v += a[i] * d[i];
-    bit = (v >= 0.0);
+    case 4: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      d[1] = s[1] + s[0] - g[1] * s[2];
+      v += a[1] * d[1];
+      d[2] = s[2] + s[1] - g[2] * s[3];
+      v += a[2] * d[2];
+      d[3] = s[3] + s[2];
+      v += a[3] * d[3];
+      bit = (v >= 0.0);
+      break;
+    }
+    case 5: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      d[1] = s[1] + s[0] - g[1] * s[2];
+      v += a[1] * d[1];
+      d[2] = s[2] + s[1] - g[2] * s[3];
+      v += a[2] * d[2];
+      d[3] = s[3] + s[2] - g[3] * s[4];
+      v += a[3] * d[3];
+      d[4] = s[4] + s[3];
+      v += a[4] * d[4];
+      bit = (v >= 0.0);
+      break;
+    }
+    case 7: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      d[1] = s[1] + s[0] - g[1] * s[2];
+      v += a[1] * d[1];
+      d[2] = s[2] + s[1] - g[2] * s[3];
+      v += a[2] * d[2];
+      d[3] = s[3] + s[2] - g[3] * s[4];
+      v += a[3] * d[3];
+      d[4] = s[4] + s[3] - g[4] * s[5];
+      v += a[4] * d[4];
+      d[5] = s[5] + s[4] - g[5] * s[6];
+      v += a[5] * d[5];
+      d[6] = s[6] + s[5];
+      v += a[6] * d[6];
+      bit = (v >= 0.0);
+      break;
+    }
+    case 8: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      d[1] = s[1] + s[0] - g[1] * s[2];
+      v += a[1] * d[1];
+      d[2] = s[2] + s[1] - g[2] * s[3];
+      v += a[2] * d[2];
+      d[3] = s[3] + s[2] - g[3] * s[4];
+      v += a[3] * d[3];
+      d[4] = s[4] + s[3] - g[4] * s[5];
+      v += a[4] * d[4];
+      d[5] = s[5] + s[4] - g[5] * s[6];
+      v += a[5] * d[5];
+      d[6] = s[6] + s[5] - g[6] * s[7];
+      v += a[6] * d[6];
+      d[7] = s[7] + s[6];
+      v += a[7] * d[7];
+      bit = (v >= 0.0);
+      break;
+    }
+    default: {
+      d[0] = s[0] - g[0] * s[1] + x - y;
+      double v = x + a[0] * d[0];
+      int i = 1;
+      while (i < mod->cached_order - 1) {
+        d[i] = s[i] + s[i - 1] - g[i] * s[i + 1];
+        v += a[i] * d[i];
+        i++;
+      }
+      d[i] = s[i] + s[i - 1];
+      v += a[i] * d[i];
+      bit = (v >= 0.0);
+      break;
+    }
   }
 
   mod->idx = current_idx ^ 1;
