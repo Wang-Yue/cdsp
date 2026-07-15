@@ -5,8 +5,8 @@
  * Default is Double (f64). Change to Float for 32-bit processing.
  */
 
-#ifndef CLIB_AUDIO_DOUBLE_HELPERS_H
-#define CLIB_AUDIO_DOUBLE_HELPERS_H
+#ifndef CLIB_UTILS_DOUBLE_HELPERS_H
+#define CLIB_UTILS_DOUBLE_HELPERS_H
 
 #include <math.h>
 #include <stdbool.h>
@@ -264,4 +264,4 @@ static inline double dsp_ops_rms(waveform_t buffer, size_t count) {
 #endif
 }
 
-#endif  // CLIB_AUDIO_DOUBLE_HELPERS_H
+#endif  // CLIB_UTILS_DOUBLE_HELPERS_H

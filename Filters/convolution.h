@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
 
 /**

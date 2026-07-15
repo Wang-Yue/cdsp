@@ -10,7 +10,7 @@
 #include <objbase.h>
 #endif
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Config/configuration.h"

@@ -9,7 +9,7 @@
 
 #include <stddef.h>
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Window functions usable for sinc-filter kernel design.

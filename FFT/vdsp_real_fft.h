@@ -14,7 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "real_fft.h"
 
 #if defined(ENABLE_ACCELERATE)

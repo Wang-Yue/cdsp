@@ -29,7 +29,7 @@
 
 #include <stddef.h>
 
-#include "double_helpers.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @struct audio_buffers

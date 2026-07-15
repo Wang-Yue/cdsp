@@ -3,8 +3,8 @@
  * @brief DSP helper functions and vectorized operations using float precision.
  */
 
-#ifndef CLIB_AUDIO_FLOAT_HELPERS_H
-#define CLIB_AUDIO_FLOAT_HELPERS_H
+#ifndef CLIB_UTILS_FLOAT_HELPERS_H
+#define CLIB_UTILS_FLOAT_HELPERS_H
 
 #include <math.h>
 #include <stdbool.h>
@@ -144,4 +144,4 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
 #endif
 }
 
-#endif  // CLIB_AUDIO_FLOAT_HELPERS_H
+#endif  // CLIB_UTILS_FLOAT_HELPERS_H

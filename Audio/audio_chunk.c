@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "double_helpers.h"
+#include "Utils/double_helpers.h"
 
 struct audio_chunk {
   audio_buffers_t* buffers;

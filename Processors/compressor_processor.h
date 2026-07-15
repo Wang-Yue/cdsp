@@ -44,7 +44,7 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "Config/processor_config_types.h"
 #include "Filters/limiter.h"
 

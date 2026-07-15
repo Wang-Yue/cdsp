@@ -12,7 +12,7 @@
 
 #include <stddef.h>
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options

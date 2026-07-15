@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 #include "Audio/audio_chunk.h"
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/convolution.h"

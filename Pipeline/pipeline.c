@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "Audio/audio_buffers.h"
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"

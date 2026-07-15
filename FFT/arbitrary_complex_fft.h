@@ -13,7 +13,7 @@
 
 #include <stdbool.h>
 
-#include "Audio/double_helpers.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Function pointer type for executing a complex FFT.
