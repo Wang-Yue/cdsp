@@ -210,7 +210,7 @@ void noise_gate_processor_transfer_state(noise_gate_processor_t* dest,
 }
 
 int noise_gate_config_validate(const noise_gate_config_t* p,
-                                    config_error_t* err) {
+                               config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,

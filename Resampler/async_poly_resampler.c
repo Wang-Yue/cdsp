@@ -100,8 +100,8 @@ static void async_poly_resampler_free(async_poly_resampler_t* resampler) {
   free(resampler);
 }
 
-static void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resampler,
-                                              double multiplier) {
+static void async_poly_resampler_set_relative_ratio(
+    async_poly_resampler_t* resampler, double multiplier) {
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
@@ -110,7 +110,8 @@ static void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resa
   resampler->target_ratio = resampler->base_ratio * multiplier;
 }
 
-static double async_poly_resampler_get_ratio(const async_poly_resampler_t* resampler) {
+static double async_poly_resampler_get_ratio(
+    const async_poly_resampler_t* resampler) {
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
@@ -128,8 +129,6 @@ static size_t async_poly_resampler_get_channels(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
 }
-
-
 
 /**
  * @brief Performs linear polynomial interpolation on input buffer.
@@ -536,17 +535,15 @@ resampler_t* async_poly_resampler_create(
     return NULL;
   }
 
-  resampler_t* wrap =
-      (resampler_t*)calloc(1, sizeof(resampler_t));
+  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     async_poly_resampler_free(resampler);
     return NULL;
   }
   wrap->type = RESAMPLER_IMPL_ASYNC_POLY;
   wrap->impl = resampler;
-  wrap->process =
-      (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
-          async_poly_resampler_process;
+  wrap->process = (resampler_error_t (*)(
+      void*, const audio_chunk_t*, audio_chunk_t*))async_poly_resampler_process;
   wrap->set_relative_ratio =
       (void (*)(void*, double))async_poly_resampler_set_relative_ratio;
   wrap->get_ratio = (double (*)(const void*))async_poly_resampler_get_ratio;
@@ -586,8 +583,6 @@ resampler_t* async_poly_resampler_create_from_profile(
       break;
   }
   return async_poly_resampler_create(channels, input_rate, output_rate, interp,
-                                      chunk_size, max_relative_ratio, fixed,
-                                      err);
+                                     chunk_size, max_relative_ratio, fixed,
+                                     err);
 }
-
-

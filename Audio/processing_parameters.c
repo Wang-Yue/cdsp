@@ -3,10 +3,11 @@
 // Every field is backed by lock-free atomics (`atomic_double_t` or `_Atomic
 // bool`) — no mutexes or locks.
 #include "Audio/processing_parameters.h"
-#include "Utils/cdsp_time.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+#include "Utils/cdsp_time.h"
 
 struct processing_parameters {
   /** Target volume (dB) for fader 0-4. UI thread writes; audio thread reads. */

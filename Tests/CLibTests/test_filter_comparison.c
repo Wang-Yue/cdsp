@@ -13,7 +13,6 @@
 #include <unistd.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/convolution.h"
@@ -31,6 +30,7 @@
 #include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
 #include "Processors/race_processor.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -233,11 +233,11 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
-                                .b0 = b0,
-                                .b1 = b1,
-                                .b2 = b2,
-                                .a1 = a1,
-                                .a2 = a2};
+                            .b0 = b0,
+                            .b1 = b1,
+                            .b2 = b2,
+                            .a1 = a1,
+                            .a2 = a2};
   biquad_filter_t* filter =
       biquad_filter_create("test_bq", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -322,10 +322,10 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   gain_config_t params = {.gain = gain_db,
-                              .has_gain = true,
-                              .scale = GAIN_SCALE_DB,
-                              .inverted = inverted,
-                              .mute = mute};
+                          .has_gain = true,
+                          .scale = GAIN_SCALE_DB,
+                          .inverted = inverted,
+                          .mute = mute};
   gain_filter_t* filter = gain_filter_create("test_gain", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
@@ -392,10 +392,10 @@ static void compare_volume(double current_volume_db, bool mute,
                                            mute ? -100.0 : current_volume_db);
 
   volume_config_t vol_params = {.ramp_time = 0.0,
-                                    .has_ramp_time = true,
-                                    .limit = 50.0,
-                                    .has_limit = true,
-                                    .fader = FADER_MAIN};
+                                .has_ramp_time = true,
+                                .limit = 50.0,
+                                .has_limit = true,
+                                .fader = FADER_MAIN};
   volume_filter_t* filter = volume_filter_create(
       "test_vol", &vol_params, SAMPLE_RATE, CHUNK_SIZE, params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -464,13 +464,13 @@ static void compare_loudness(double volume_db, double reference_db,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   loudness_config_t lp = {.reference_level = reference_db,
-                              .has_reference_level = true,
-                              .high_boost = high_boost,
-                              .has_high_boost = true,
-                              .low_boost = low_boost,
-                              .has_low_boost = true,
-                              .attenuate_mid = attenuate_mid,
-                              .fader = FADER_MAIN};
+                          .has_reference_level = true,
+                          .high_boost = high_boost,
+                          .has_high_boost = true,
+                          .low_boost = low_boost,
+                          .has_low_boost = true,
+                          .attenuate_mid = attenuate_mid,
+                          .fader = FADER_MAIN};
   processing_parameters_t* params = processing_parameters_create(1, 1);
   processing_parameters_set_current_volume(params, volume_db);
 
@@ -1264,9 +1264,9 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  limiter_config_t params = {.clip_limit = clip_limit,
-                                 .soft_clip = soft_clip};
-  limiter_filter_t* filter = limiter_filter_create("test_limiter", &params, NULL);
+  limiter_config_t params = {.clip_limit = clip_limit, .soft_clip = soft_clip};
+  limiter_filter_t* filter =
+      limiter_filter_create("test_limiter", &params, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));

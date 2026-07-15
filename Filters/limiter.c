@@ -81,7 +81,7 @@ void limiter_filter_free(limiter_filter_t* filter) {
 }
 
 int limiter_config_validate(const limiter_config_t* params,
-                             config_error_t* err) {
+                            config_error_t* err) {
   if (!params) return 0;
   if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
       params->clip_limit > 20.0) {

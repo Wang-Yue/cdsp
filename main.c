@@ -10,7 +10,6 @@
 #include <objbase.h>
 #endif
 
-#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Config/configuration.h"
@@ -22,6 +21,7 @@
 #include "Pipeline/state_file.h"
 #include "Server/websocket_server.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.main"};
 

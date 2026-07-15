@@ -200,8 +200,7 @@ void delay_filter_free(delay_filter_t* filter) {
   free(filter);
 }
 
-int delay_config_validate(const delay_config_t* params,
-                             config_error_t* err) {
+int delay_config_validate(const delay_config_t* params, config_error_t* err) {
   if (!params) return 0;
   if (params->delay < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,

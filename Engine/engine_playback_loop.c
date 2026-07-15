@@ -25,13 +25,13 @@
 //     negligible per chunk.
 
 #include "engine_playback_loop.h"
-#include "Utils/cdsp_time.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 #include "thread_priority.h"
 
 static const logger_t g_logger = {"dsp.playback"};

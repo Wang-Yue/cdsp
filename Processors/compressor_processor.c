@@ -254,7 +254,7 @@ void compressor_processor_transfer_state(compressor_processor_t* dest,
 }
 
 int compressor_config_validate(const compressor_config_t* p,
-                                 config_error_t* err) {
+                               config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,

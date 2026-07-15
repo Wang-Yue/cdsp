@@ -7,9 +7,8 @@
  * Engine sub-modules.
  */
 
-#include "dsp_engine_core.h"
-
 #include "DoP/dsd_encoder.h"
+#include "dsp_engine_core.h"
 
 struct dsp_engine_core {
   // MARK: - Configuration

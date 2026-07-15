@@ -42,7 +42,8 @@ double* parse_double_array(const cJSON* arr, size_t* out_count);
  */
 int* parse_int_array(const cJSON* arr, size_t* out_count);
 
-static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest, size_t dest_sz) {
+static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
+                                  size_t dest_sz) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsString(item) && item->valuestring) {
     strncpy(dest, item->valuestring, dest_sz - 1);
@@ -52,7 +53,8 @@ static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
   return false;
 }
 
-static inline bool parse_json_int(const cJSON* obj, const char* key, int* dest) {
+static inline bool parse_json_int(const cJSON* obj, const char* key,
+                                  int* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsNumber(item)) {
     *dest = item->valueint;
@@ -61,7 +63,8 @@ static inline bool parse_json_int(const cJSON* obj, const char* key, int* dest) 
   return false;
 }
 
-static inline bool parse_json_size_t(const cJSON* obj, const char* key, size_t* dest) {
+static inline bool parse_json_size_t(const cJSON* obj, const char* key,
+                                     size_t* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsNumber(item) && item->valueint >= 0) {
     *dest = (size_t)item->valueint;
@@ -70,7 +73,8 @@ static inline bool parse_json_size_t(const cJSON* obj, const char* key, size_t* 
   return false;
 }
 
-static inline bool parse_json_bool(const cJSON* obj, const char* key, bool* dest) {
+static inline bool parse_json_bool(const cJSON* obj, const char* key,
+                                   bool* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsBool(item)) {
     *dest = cJSON_IsTrue(item);
@@ -79,7 +83,8 @@ static inline bool parse_json_bool(const cJSON* obj, const char* key, bool* dest
   return false;
 }
 
-static inline bool parse_json_double(const cJSON* obj, const char* key, double* dest) {
+static inline bool parse_json_double(const cJSON* obj, const char* key,
+                                     double* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsNumber(item)) {
     *dest = item->valuedouble;

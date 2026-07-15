@@ -91,8 +91,11 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                 parse_json_size_t(src_el, "channel", &src->channel);
                 src->has_gain = parse_json_double(src_el, "gain", &src->gain);
                 char scale_buf[64];
-                if (parse_json_str(src_el, "scale", scale_buf, sizeof(scale_buf))) {
-                  src->scale = (strcasecmp(scale_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR : GAIN_SCALE_DB;
+                if (parse_json_str(src_el, "scale", scale_buf,
+                                   sizeof(scale_buf))) {
+                  src->scale = (strcasecmp(scale_buf, "Linear") == 0)
+                                   ? GAIN_SCALE_LINEAR
+                                   : GAIN_SCALE_DB;
                 } else {
                   src->scale = GAIN_SCALE_DB;
                 }

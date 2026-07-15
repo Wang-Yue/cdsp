@@ -11,9 +11,9 @@
 
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Types of filter instances.

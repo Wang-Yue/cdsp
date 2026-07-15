@@ -181,7 +181,7 @@ void loudness_filter_free(loudness_filter_t* filter) {
 }
 
 int loudness_config_validate(const loudness_config_t* params,
-                                 config_error_t* err) {
+                             config_error_t* err) {
   if (!params) return 0;
   if (!params->has_reference_level) {
     if (err)

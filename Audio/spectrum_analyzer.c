@@ -2,9 +2,9 @@
 
 #include <math.h>
 
-#include "Utils/float_helpers.h"
 #include "Audio/lock_free_ring_buffer.h"
 #include "FFT/real_fft.h"
+#include "Utils/float_helpers.h"
 
 typedef struct {
   int low_k;

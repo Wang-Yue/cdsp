@@ -572,8 +572,6 @@ TEST(DSPEngineE2E_ALSA) {
 #endif
 }
 
-
-
 TEST(DSPEngineE2E_PipeWire) {
 #if defined(__linux__)
   const char* json =
@@ -617,8 +615,6 @@ TEST(DSPEngineE2E_CoreAudio) {
   run_e2e_test_config(json, "CoreAudio");
 #endif
 }
-
-
 
 TEST(DSPEngineE2E_GeneratorFile) {
   char out_file[256];

@@ -69,7 +69,8 @@ struct dsd_encoder {
   /**
    * Polyphase coefficient table laid out as `coeffs[phase * subFilterTaps +
    * tap]`. Each phase is normalized to unit DC gain. Single-precision float
-   * representation for maximum SIMD (NEON) vectorization throughput and minimal cache footprint.
+   * representation for maximum SIMD (NEON) vectorization throughput and minimal
+   * cache footprint.
    */
   float* coeffs;
 };
@@ -138,8 +139,8 @@ bool dsd_encoder_is_supported_carrier_rate(int rate, dsd_mode_t mode) {
  * @param sample_rate The PCM sample rate (carrier rate).
  * @param dsd_bit_depth DSD container bit depth per output frame (8, 16, 32).
  * @param cutoff_hz The desired cutoff frequency in Hz.
- * @return A pointer to the allocated flat array of single-precision polyphase coefficients, or
- * NULL on allocation failure.
+ * @return A pointer to the allocated flat array of single-precision polyphase
+ * coefficients, or NULL on allocation failure.
  */
 static float* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
                            double cutoff_hz) {
@@ -274,7 +275,6 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
  * [-1.0, 1.0].
  */
 
-
 #if defined(__GNUC__) || defined(__clang__)
 typedef float v4sf __attribute__((vector_size(16)));
 typedef float v4sf_u __attribute__((vector_size(16), aligned(4)));
@@ -308,7 +308,7 @@ static inline float dot_product_32(const float* a, const float* b) {
 #endif
 
 static inline double pack_dsd_sample(uint32_t word, size_t bit_depth,
-                                    dsd_mode_t mode, uint8_t* marker) {
+                                     dsd_mode_t mode, uint8_t* marker) {
   if (bit_depth == 16) {
     if (mode == DSD_MODE_NATIVE) {
       return pcm_sample_decode_s16((int16_t)word);
@@ -359,15 +359,11 @@ static void encode_channel(dsd_encoder_channel_state_t* state,
   state->marker = marker;
 }
 
-
-
 static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
                                  dsd_encoder_channel_state_t* state1,
                                  mutable_waveform_t buf0,
-                                 mutable_waveform_t buf1,
-                                 size_t frames,
-                                 const float* coeffs,
-                                 dsd_mode_t mode,
+                                 mutable_waveform_t buf1, size_t frames,
+                                 const float* coeffs, dsd_mode_t mode,
                                  size_t dsd_bit_depth) {
   if (!buf0 || !buf1) return;
   float* fifo0 = state0->fifo;
@@ -382,8 +378,10 @@ static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
   for (size_t t = 0; t < frames; t++) {
     float val0 = (float)buf0[t];
     float val1 = (float)buf1[t];
-    fifo0[pos0] = val0; fifo0[pos0 + DSD_ENC_SUB_FILTER_TAPS] = val0;
-    fifo1[pos1] = val1; fifo1[pos1 + DSD_ENC_SUB_FILTER_TAPS] = val1;
+    fifo0[pos0] = val0;
+    fifo0[pos0 + DSD_ENC_SUB_FILTER_TAPS] = val0;
+    fifo1[pos1] = val1;
+    fifo1[pos1 + DSD_ENC_SUB_FILTER_TAPS] = val1;
 
     const float* fifo_p0 = fifo0 + pos0 + 1;
     const float* fifo_p1 = fifo1 + pos1 + 1;
@@ -418,17 +416,15 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (!encoder || !encoder->enabled || !chunk) return;
   size_t n = audio_chunk_get_valid_frames(chunk);
   int chs = encoder->channels;
-  if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs)
-    return;
+  if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
 
   int ch = 0;
   for (; ch + 1 < chs; ch += 2) {
-    encode_dual_channels(&encoder->channel_states[ch],
-                         &encoder->channel_states[ch + 1],
-                         audio_chunk_get_channel(chunk, ch),
-                         audio_chunk_get_channel(chunk, ch + 1),
-                         n, encoder->coeffs, encoder->mode,
-                         encoder->dsd_bit_depth);
+    encode_dual_channels(
+        &encoder->channel_states[ch], &encoder->channel_states[ch + 1],
+        audio_chunk_get_channel(chunk, ch),
+        audio_chunk_get_channel(chunk, ch + 1), n, encoder->coeffs,
+        encoder->mode, encoder->dsd_bit_depth);
   }
   for (; ch < chs; ch++) {
     encode_channel(&encoder->channel_states[ch],

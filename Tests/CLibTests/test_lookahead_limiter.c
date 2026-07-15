@@ -18,9 +18,9 @@ static bool compare_waveforms(const double* left, const double* right,
 
 TEST(test_lookahead_limiter_basic) {
   lookahead_limiter_config_t params = {.limit = 0.0,
-                                           .attack = 4.0,
-                                           .release = 1.0 / log(2.0),
-                                           .unit = DELAY_UNIT_SAMPLES};
+                                       .attack = 4.0,
+                                       .release = 1.0 / log(2.0),
+                                       .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter = lookahead_limiter_filter_create(
       "lookahead_limiter", &params, 48000, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -95,9 +95,9 @@ TEST(test_lookahead_limiter_zero_release) {
 
 TEST(test_lookahead_limiter_state_persistence) {
   lookahead_limiter_config_t params = {.limit = 0.0,
-                                           .attack = 5.0,
-                                           .release = 1.0 / log(2.0),
-                                           .unit = DELAY_UNIT_SAMPLES};
+                                       .attack = 5.0,
+                                       .release = 1.0 / log(2.0),
+                                       .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
       lookahead_limiter_filter_create("lookahead", &params, 48000, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -118,9 +118,9 @@ TEST(test_lookahead_limiter_state_persistence) {
 
 TEST(test_lookahead_limiter_attack_over_one_second_rejected) {
   lookahead_limiter_config_t params = {.limit = 0.0,
-                                           .attack = 48001.0,
-                                           .release = 4.0,
-                                           .unit = DELAY_UNIT_SAMPLES};
+                                       .attack = 48001.0,
+                                       .release = 4.0,
+                                       .unit = DELAY_UNIT_SAMPLES};
   ASSERT_NE(0, lookahead_limiter_config_validate(&params, 48000, NULL));
 }
 

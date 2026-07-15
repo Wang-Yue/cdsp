@@ -55,7 +55,8 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
   if (config->devices.chunksize == 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_DEVICE, "Chunk size must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "Chunk size must be positive");
     return -1;
   }
   if (!config->devices.capture.is_wav &&

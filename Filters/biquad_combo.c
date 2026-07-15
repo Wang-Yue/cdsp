@@ -80,12 +80,12 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
                                        steepness_type_t steepness_type,
                                        int sample_rate, config_error_t* err) {
   biquad_config_t bp = {.type = type,
-                            .freq = freq,
-                            .q = q,
-                            .gain = gain,
-                            .slope = slope,
-                            .bandwidth = bandwidth,
-                            .steepness_type = steepness_type};
+                        .freq = freq,
+                        .q = q,
+                        .gain = gain,
+                        .slope = slope,
+                        .bandwidth = bandwidth,
+                        .steepness_type = steepness_type};
   return biquad_filter_create("combo_sec", &bp, sample_rate, err);
 }
 
@@ -273,7 +273,7 @@ void biquad_combo_filter_free(biquad_combo_filter_t* filter) {
   free(filter);
 }
 int biquad_combo_config_validate(const biquad_combo_config_t* params,
-                                  int sample_rate, config_error_t* err) {
+                                 int sample_rate, config_error_t* err) {
   if (!params) return 0;
   double nyquist = (double)sample_rate / 2.0;
   switch (params->type) {

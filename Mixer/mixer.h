@@ -35,8 +35,8 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Config/mixer_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Error codes returned by mixer processing functions.
@@ -62,8 +62,8 @@ typedef struct mixer_s mixer_t;
 /**
  * @brief Validates mixer configuration.
  *
- * Checks that every dest is in range, no dest appears twice, and within a single
- * dest no source channel appears twice.
+ * Checks that every dest is in range, no dest appears twice, and within a
+ * single dest no source channel appears twice.
  *
  * @param mixer Pointer to mixer configuration to validate.
  * @param err Pointer to config error struct to populate on failure.
@@ -81,10 +81,8 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err);
  * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to newly allocated mixer_t, or NULL on failure.
  */
-mixer_t* mixer_create(const char* name,
-                     const mixer_config_t* config,
-                     size_t chunk_size,
-                     config_error_t* err);
+mixer_t* mixer_create(const char* name, const mixer_config_t* config,
+                      size_t chunk_size, config_error_t* err);
 
 /**
  * @brief Zero-allocation API for mixing an audio chunk.
@@ -105,8 +103,7 @@ mixer_t* mixer_create(const char* name,
  * @param output Pointer to the pre-allocated output audio chunk.
  * @return A mixer_error_t code representing success or failure.
  */
-mixer_error_t mixer_process(mixer_t* mixer,
-                            const audio_chunk_t* input,
+mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
                             audio_chunk_t* output);
 
 /**
@@ -120,8 +117,7 @@ mixer_error_t mixer_process(mixer_t* mixer,
  * @param input Input audio chunk to process.
  * @return Newly allocated output audio chunk, or NULL on failure.
  */
-audio_chunk_t* mixer_process_chunk(mixer_t* mixer,
-                                   const audio_chunk_t* input);
+audio_chunk_t* mixer_process_chunk(mixer_t* mixer, const audio_chunk_t* input);
 
 /**
  * @brief Frees all resources associated with the mixer.

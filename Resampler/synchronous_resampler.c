@@ -162,7 +162,6 @@ static inline size_t gcd_size(size_t a, size_t b) {
   return x;
 }
 
-
 static void synchronous_resampler_free(synchronous_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->input_fft) real_fft_free(resampler->input_fft);
@@ -332,9 +331,10 @@ static resampler_error_t synchronous_resampler_process(
   return RESAMPLER_OK;
 }
 
-resampler_t* synchronous_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    size_t requested_chunk_size, config_error_t* err) {
+resampler_t* synchronous_resampler_create(size_t channels, size_t input_rate,
+                                          size_t output_rate,
+                                          size_t requested_chunk_size,
+                                          config_error_t* err) {
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "SynchronousResampler: channels must be positive");
@@ -485,8 +485,7 @@ resampler_t* synchronous_resampler_create(
     return NULL;
   }
 
-  resampler_t* wrap =
-      (resampler_t*)calloc(1, sizeof(resampler_t));
+  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     synchronous_resampler_free(resampler);
     return NULL;
@@ -494,8 +493,8 @@ resampler_t* synchronous_resampler_create(
   wrap->type = RESAMPLER_IMPL_SYNCHRONOUS;
   wrap->impl = resampler;
   wrap->process =
-      (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
-          synchronous_resampler_process;
+      (resampler_error_t (*)(void*, const audio_chunk_t*,
+                             audio_chunk_t*))synchronous_resampler_process;
   wrap->set_relative_ratio =
       (void (*)(void*, double))synchronous_resampler_set_relative_ratio;
   wrap->get_ratio = (double (*)(const void*))synchronous_resampler_get_ratio;
@@ -512,5 +511,3 @@ resampler_t* synchronous_resampler_create(
   wrap->free = (void (*)(void*))synchronous_resampler_free;
   return wrap;
 }
-
-

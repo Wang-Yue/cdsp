@@ -728,6 +728,4 @@ TEST(ParseChannelLabels) {
   dsp_config_free(config);
 }
 
-
-
 TEST_MAIN()

@@ -14,9 +14,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque structure representing a combined biquad filter instance.
@@ -32,7 +32,7 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
  * @return 0 on success, -1 on failure.
  */
 int biquad_combo_config_validate(const biquad_combo_config_t* params,
-                                  int sample_rate, config_error_t* err);
+                                 int sample_rate, config_error_t* err);
 
 /**
  * @brief Computes Q values for a Butterworth filter of a given order.

@@ -98,10 +98,12 @@
  *                             The resampler will round this up to a size
  * matching the rational period.
  * @param err Pointer to a config error struct to populate on failure.
- * @return A pointer to the created audio resampler instance, or NULL on failure.
+ * @return A pointer to the created audio resampler instance, or NULL on
+ * failure.
  */
-resampler_t* synchronous_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    size_t requested_chunk_size, config_error_t* err);
+resampler_t* synchronous_resampler_create(size_t channels, size_t input_rate,
+                                          size_t output_rate,
+                                          size_t requested_chunk_size,
+                                          config_error_t* err);
 
 #endif  // CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H

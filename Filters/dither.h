@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @file dither.h
@@ -41,8 +41,7 @@ dither_filter_t* dither_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int dither_config_validate(const dither_config_t* params,
-                            config_error_t* err);
+int dither_config_validate(const dither_config_t* params, config_error_t* err);
 
 /**
  * @brief Process a block of samples in-place, applying dither.

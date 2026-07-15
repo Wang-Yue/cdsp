@@ -1,6 +1,5 @@
 #include "sigma_delta_modulator.h"
 
-
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

@@ -5,10 +5,10 @@
 #include <string.h>
 
 #include "Audio/audio_buffers.h"
-#include "Utils/double_helpers.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.pipeline"};
 #include "Mixer/mixer.h"
@@ -379,9 +379,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
 
           // Create chains for this filter step
           new_chains_count = channels_count;
-          new_chains =
-              (parallel_filter_chain_t*)calloc(new_chains_count,
-                                               sizeof(parallel_filter_chain_t));
+          new_chains = (parallel_filter_chain_t*)calloc(
+              new_chains_count, sizeof(parallel_filter_chain_t));
           if (!new_chains) {
             config_error_set(err, CONFIG_ERR_PARSE,
                              "Memory allocation failure");
@@ -555,7 +554,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           }
           dsp_processor_t* p =
               dsp_processor_create(step->name, p_cfg, pipeline->rate,
-                                    pipeline->frames_per_chunk, err);
+                                   pipeline->frames_per_chunk, err);
           if (!p) {
             goto cleanup_fail;
           }
@@ -724,8 +723,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
       case EXEC_STEP_MIXER: {
         if (mixer_idx >= pipeline->scratches_for_mixers_count) continue;
         audio_chunk_t* scratch = pipeline->scratches_for_mixers[mixer_idx];
-        mixer_error_t err =
-            mixer_process(step->mixer, current_chunk, scratch);
+        mixer_error_t err = mixer_process(step->mixer, current_chunk, scratch);
         if (err != MIXER_OK) {
           if (err == MIXER_ERR_INPUT_SIZE_MISMATCH) {
             pipeline->last_error_needed = pipeline->frames_per_chunk;
@@ -737,8 +735,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
             pipeline->last_error_got = audio_chunk_get_frames(scratch);
             return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
           }
-          pipeline->last_error_needed =
-              mixer_get_channels_in(step->mixer);
+          pipeline->last_error_needed = mixer_get_channels_in(step->mixer);
           pipeline->last_error_got = audio_chunk_get_channels(current_chunk);
           return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
         }

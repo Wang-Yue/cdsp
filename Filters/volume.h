@@ -12,9 +12,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque struct representing a volume filter instance.
@@ -46,8 +46,7 @@ volume_filter_t* volume_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int volume_config_validate(const volume_config_t* params,
-                               config_error_t* err);
+int volume_config_validate(const volume_config_t* params, config_error_t* err);
 
 /**
  * @brief Pre-calculates target volume levels and generates ramping array once

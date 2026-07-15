@@ -11,8 +11,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque structure representing a limiter filter.
@@ -39,7 +39,7 @@ limiter_filter_t* limiter_filter_create(const char* name,
  * @return 0 on success, -1 on failure.
  */
 int limiter_config_validate(const limiter_config_t* params,
-                             config_error_t* err);
+                            config_error_t* err);
 
 /**
  * @brief Process a waveform buffer in-place by applying limiting.

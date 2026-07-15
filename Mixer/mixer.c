@@ -68,8 +68,7 @@ struct mixer_s {
  * @param mixer Pointer to mixer instance.
  * @param config Configuration containing mapping rules.
  */
-static void populate_mapping(mixer_t* mixer,
-                             const mixer_config_t* config) {
+static void populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
   for (size_t i = 0; i < config->mapping_count; i++) {
     const mixer_mapping_t* map = &config->mapping[i];
     size_t dest = (size_t)map->dest;
@@ -118,10 +117,8 @@ static void populate_mapping(mixer_t* mixer,
   }
 }
 
-mixer_t* mixer_create(const char* name,
-                     const mixer_config_t* config,
-                     size_t chunk_size,
-                     config_error_t* err) {
+mixer_t* mixer_create(const char* name, const mixer_config_t* config,
+                      size_t chunk_size, config_error_t* err) {
   if (mixer_config_validate(config, err) != 0) return NULL;
   mixer_t* mixer = (mixer_t*)calloc(1, sizeof(mixer_t));
   if (!mixer) {
@@ -158,8 +155,7 @@ mixer_t* mixer_create(const char* name,
 /// `input` and `output` must reference distinct buffers — the mixer
 /// accumulates into the output and reads input concurrently, so aliasing
 /// would corrupt the result.
-mixer_error_t mixer_process(mixer_t* mixer,
-                            const audio_chunk_t* input,
+mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
                             audio_chunk_t* output) {
   if (!mixer || !input || !output) return MIXER_ERR_INPUT_SIZE_MISMATCH;
   size_t frames = audio_chunk_get_valid_frames(input);
@@ -214,8 +210,7 @@ mixer_error_t mixer_process(mixer_t* mixer,
   return MIXER_OK;
 }
 
-audio_chunk_t* mixer_process_chunk(mixer_t* mixer,
-                                   const audio_chunk_t* input) {
+audio_chunk_t* mixer_process_chunk(mixer_t* mixer, const audio_chunk_t* input) {
   if (!mixer || !input) return NULL;
   audio_chunk_t* output = audio_chunk_create(
       audio_chunk_get_valid_frames(input), mixer->channels_out);

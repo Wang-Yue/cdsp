@@ -134,10 +134,10 @@ static void assert_inout_matches(resampler_type_t type,
   }
 
   size_t chunk_size = 1024;
-  resampler_t* res_a = resampler_create_from_config(
-      &cfg, 44100, 48000, 2, chunk_size, NULL);
-  resampler_t* res_b = resampler_create_from_config(
-      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  resampler_t* res_a =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
+  resampler_t* res_b =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res_a != NULL);
   ASSERT_TRUE(res_b != NULL);
 
@@ -193,8 +193,8 @@ static void assert_rejects_too_small(resampler_type_t type,
   }
 
   size_t chunk_size = 1024;
-  resampler_t* res = resampler_create_from_config(
-      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
   size_t needed_in = resampler_get_input_frames_next(res);
@@ -260,8 +260,8 @@ static void assert_accepts_partial_chunk(resampler_type_t type,
   }
 
   size_t chunk_size = 1024;
-  resampler_t* res = resampler_create_from_config(
-      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
   size_t needed_in = resampler_get_input_frames_next(res);
@@ -302,8 +302,8 @@ TEST(AsyncSinc_UnderrunBoundaryCheck) {
   cfg.has_profile = true;
 
   size_t chunk_size = 1024;
-  resampler_t* res = resampler_create_from_config(
-      &cfg, 44100, 48000, 2, chunk_size, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
 
   size_t max_out = resampler_get_max_output_frames(res);

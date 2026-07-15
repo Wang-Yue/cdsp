@@ -11,8 +11,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque structure representing a gain filter.
@@ -27,8 +27,7 @@ typedef struct gain_filter gain_filter_t;
  * @param err Optional pointer to receive configuration error detail on failure.
  * @return Pointer to the allocated gain_filter_t, or NULL on failure.
  */
-gain_filter_t* gain_filter_create(const char* name,
-                                  const gain_config_t* params,
+gain_filter_t* gain_filter_create(const char* name, const gain_config_t* params,
                                   config_error_t* err);
 
 /**
@@ -38,8 +37,7 @@ gain_filter_t* gain_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int gain_config_validate(const gain_config_t* params,
-                          config_error_t* err);
+int gain_config_validate(const gain_config_t* params, config_error_t* err);
 
 /**
  * @brief Process a waveform buffer in-place by applying gain.

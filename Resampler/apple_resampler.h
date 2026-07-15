@@ -15,7 +15,6 @@
 
 #include "Config/config_error.h"
 #include "Config/resampler_config_types.h"
-
 #include "audio_resampler.h"
 
 /**
@@ -30,10 +29,11 @@
  * @param err Pointer to a config error struct to populate on failure.
  * @return Pointer to newly allocated audio_resampler_t, or NULL on failure.
  */
-resampler_t* apple_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    apple_resampler_quality_t quality, apple_resampler_complexity_t complexity,
-    size_t chunk_size, config_error_t* err);
+resampler_t* apple_resampler_create(size_t channels, size_t input_rate,
+                                    size_t output_rate,
+                                    apple_resampler_quality_t quality,
+                                    apple_resampler_complexity_t complexity,
+                                    size_t chunk_size, config_error_t* err);
 
 #endif  // ENABLE_COREAUDIO
 

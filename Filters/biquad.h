@@ -10,9 +10,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque structure representing a biquad filter instance (holds state).
@@ -27,8 +27,8 @@ typedef struct biquad_filter biquad_filter_t;
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int biquad_config_validate(const biquad_config_t* params,
-                            int sample_rate, config_error_t* err);
+int biquad_config_validate(const biquad_config_t* params, int sample_rate,
+                           config_error_t* err);
 
 /**
  * @brief Creates a biquad filter instance directly from high-level parameters.

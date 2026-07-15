@@ -323,8 +323,10 @@ typedef enum {
   ALSA_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   ALSA_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
   ALSA_SAMPLE_FORMAT_DSD_U8,      /**< Native DSD 8-bit Unsigned. */
-  ALSA_SAMPLE_FORMAT_DSD_U16_LE,  /**< Native DSD 16-bit Unsigned Little Endian. */
-  ALSA_SAMPLE_FORMAT_DSD_U32_LE,  /**< Native DSD 32-bit Unsigned Little Endian. */
+  ALSA_SAMPLE_FORMAT_DSD_U16_LE,  /**< Native DSD 16-bit Unsigned Little Endian.
+                                   */
+  ALSA_SAMPLE_FORMAT_DSD_U32_LE,  /**< Native DSD 32-bit Unsigned Little Endian.
+                                   */
   ALSA_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
 } alsa_sample_format_t;
 
@@ -556,8 +558,6 @@ typedef struct {
 } pipewire_playback_config_t;
 #endif
 
-
-
 /**
  * @brief Standard input capture configuration.
  */
@@ -639,8 +639,6 @@ typedef struct {
   bool has_output_dsd;         /**< True if output_dsd is specified. */
 } asio_playback_config_t;
 #endif
-
-
 
 /**
  * @brief WAV file capture configuration.
@@ -977,7 +975,8 @@ bool playback_device_config_get_exclusive(
     const playback_device_config_t* config);
 
 /**
- * @brief Calculates the DSD carrier bits per container frame for a playback device configuration.
+ * @brief Calculates the DSD carrier bits per container frame for a playback
+ * device configuration.
  * @param config Pointer to playback_device_config_t structure.
  * @return The carrier bits (8, 16, or 32).
  */

@@ -62,15 +62,16 @@ void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
                                 sdm_filter_t filter_name, uint32_t freq);
 
 /**
- * @brief Process a single sample through the modulator (inlined for performance).
+ * @brief Process a single sample through the modulator (inlined for
+ * performance).
  *
  * @param mod Pointer to the modulator instance.
  * @param x Input sample.
  * @return True if modulated DSD bit is high (1), false if low (0).
  */
 static inline __attribute__((always_inline)) bool sdm_step_direct(
-    int order, float* s, float* d, const float* a, const float* g,
-    float x, float* prev_y) {
+    int order, float* s, float* d, const float* a, const float* g, float x,
+    float* prev_y) {
   float y = *prev_y;
   bool bit;
   switch (order) {

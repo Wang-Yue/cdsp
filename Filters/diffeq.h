@@ -3,8 +3,8 @@
 
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @file diffeq.h
@@ -40,8 +40,7 @@ diffeq_filter_t* diffeq_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int diffeq_config_validate(const diffeq_config_t* params,
-                             config_error_t* err);
+int diffeq_config_validate(const diffeq_config_t* params, config_error_t* err);
 
 /**
  * @brief Process a block of samples in-place.

@@ -54,10 +54,10 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Config/processor_config_types.h"
 #include "Filters/delay.h"
 #include "Filters/gain.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief RACE cross-talk cancellation processor state structure.
@@ -79,8 +79,7 @@ const char* race_processor_get_name(const race_processor_t* processor);
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int race_config_validate(const race_config_t* params,
-                             config_error_t* err);
+int race_config_validate(const race_config_t* params, config_error_t* err);
 
 /**
  * @brief Creates a new RACE cross-talk cancellation processor.

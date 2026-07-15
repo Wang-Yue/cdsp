@@ -34,8 +34,8 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Config/processor_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Noise gate processor state structure.
@@ -59,7 +59,7 @@ const char* noise_gate_processor_get_name(
  * @return 0 on success, -1 on failure.
  */
 int noise_gate_config_validate(const noise_gate_config_t* params,
-                                    config_error_t* err);
+                               config_error_t* err);
 
 /**
  * @brief Creates a new noise gate processor.

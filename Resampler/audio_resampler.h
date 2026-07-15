@@ -19,8 +19,6 @@
 #include "Config/resampler_config_types.h"
 #include "resampler_error.h"
 
-
-
 /**
  * @brief Identifiers for the underlying resampler implementations.
  */
@@ -44,8 +42,7 @@ typedef enum {
 typedef struct resampler {
   resampler_impl_type_t type;
   void* impl;
-  resampler_error_t (*process)(void* impl,
-                               const audio_chunk_t* input,
+  resampler_error_t (*process)(void* impl, const audio_chunk_t* input,
                                audio_chunk_t* output);
   void (*set_relative_ratio)(void* impl, double multiplier);
   double (*get_ratio)(const void* impl);
@@ -78,9 +75,10 @@ int resampler_config_validate(const resampler_config_t* config,
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on error.
  */
-resampler_t* resampler_create_from_config(
-    const resampler_config_t* config, size_t input_rate, size_t output_rate,
-    size_t channels, size_t chunk_size, config_error_t* err);
+resampler_t* resampler_create_from_config(const resampler_config_t* config,
+                                          size_t input_rate, size_t output_rate,
+                                          size_t channels, size_t chunk_size,
+                                          config_error_t* err);
 
 /**
  * @brief Processes a chunk of audio data.
@@ -111,8 +109,7 @@ resampler_error_t resampler_process(resampler_t* resampler,
  * @param multiplier The correction factor (e.g. 1.0001 to slightly increase
  * output rate).
  */
-void resampler_set_relative_ratio(resampler_t* resampler,
-                                  double multiplier);
+void resampler_set_relative_ratio(resampler_t* resampler, double multiplier);
 
 /**
  * @brief Gets the current effective resampling ratio.
@@ -133,8 +130,7 @@ double resampler_get_ratio(const resampler_t* resampler);
  * @param resampler The resampler instance.
  * @return The maximum number of output frames.
  */
-size_t resampler_get_max_output_frames(
-    const resampler_t* resampler);
+size_t resampler_get_max_output_frames(const resampler_t* resampler);
 
 /**
  * @brief Gets the fixed input chunk size expected by the resampler.
@@ -150,8 +146,7 @@ size_t resampler_get_chunk_size(const resampler_t* resampler);
  * @param resampler The resampler instance.
  * @return The required input frame count.
  */
-size_t resampler_get_input_frames_next(
-    const resampler_t* resampler);
+size_t resampler_get_input_frames_next(const resampler_t* resampler);
 
 /**
  * @brief Gets the number of output frames that will be generated in the next
@@ -160,8 +155,7 @@ size_t resampler_get_input_frames_next(
  * @param resampler The resampler instance.
  * @return The expected output frame count.
  */
-size_t resampler_get_output_frames_next(
-    const resampler_t* resampler);
+size_t resampler_get_output_frames_next(const resampler_t* resampler);
 
 /**
  * @brief Gets the number of channels the resampler is configured for.

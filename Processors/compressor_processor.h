@@ -44,9 +44,9 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Config/processor_config_types.h"
 #include "Filters/limiter.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Dynamic range compressor processor state structure.
@@ -70,7 +70,7 @@ const char* compressor_processor_get_name(
  * @return 0 on success, -1 on failure.
  */
 int compressor_config_validate(const compressor_config_t* params,
-                                 config_error_t* err);
+                               config_error_t* err);
 
 /**
  * @brief Creates a new dynamic range compressor processor.

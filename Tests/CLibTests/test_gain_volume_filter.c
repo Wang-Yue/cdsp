@@ -65,10 +65,10 @@ TEST(VolumeUnityGain) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -88,10 +88,10 @@ TEST(VolumeAttenuation) {
   processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
                                                     FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -113,10 +113,10 @@ TEST(VolumeMuteRampsToZero) {
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -139,10 +139,10 @@ TEST(VolumeRamp) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   volume_config_t params = {.ramp_time = ramp_time_ms,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter = volume_filter_create("volume", &params, sample_rate,
                                                  chunk_size, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -186,10 +186,10 @@ TEST(VolumeChangeThreshold) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -222,10 +222,10 @@ TEST(VolumeLimit) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 10.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 10.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("volume", &params, 44100, 4, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);

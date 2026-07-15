@@ -32,9 +32,9 @@ TEST(test_flat) {
   double waveform[] = {-1.0, -0.5, -1.0 / 3.0, 0.0, 1.0 / 3.0, 0.5, 1.0};
   double waveform2[] = {-1.0, -0.5, -1.0 / 3.0, 0.0, 1.0 / 3.0, 0.5, 1.0};
   dither_config_t params = {.type = DITHER_TYPE_FLAT,
-                                .bits = 8,
-                                .amplitude = 2.0,
-                                .has_amplitude = true};
+                            .bits = 8,
+                            .amplitude = 2.0,
+                            .has_amplitude = true};
   dither_filter_t* filter = dither_filter_create("dither", &params, NULL);
   ASSERT_TRUE(filter != NULL);
   dither_filter_process(filter, waveform, 7);

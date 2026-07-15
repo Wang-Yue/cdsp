@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @file delay.h
@@ -44,11 +44,11 @@ delay_filter_t* delay_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int delay_config_validate(const delay_config_t* params,
-                             config_error_t* err);
+int delay_config_validate(const delay_config_t* params, config_error_t* err);
 
 /**
- * @brief Computes equivalent sample delay count given a delay duration, unit, and sample rate.
+ * @brief Computes equivalent sample delay count given a delay duration, unit,
+ * and sample rate.
  *
  * @param delay The numerical delay value.
  * @param unit The delay unit (ms, us, samples, mm).

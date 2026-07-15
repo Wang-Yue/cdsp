@@ -104,7 +104,8 @@ size_t pipeline_get_last_error_got(const pipeline_t* pipeline);
  * playback configuration.
  *
  * @param[in] config The top-level DSP configuration.
- * @param[out] err Pointer to a config error struct to receive error details on failure.
+ * @param[out] err Pointer to a config error struct to receive error details on
+ * failure.
  * @return 0 on success, -1 on failure.
  */
 int pipeline_config_validate(const dsp_config_t* config, config_error_t* err);

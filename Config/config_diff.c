@@ -78,7 +78,7 @@ static bool string_arrays_equal(char** a, size_t a_count, char** b,
  * @return true if parameters are equal, false otherwise.
  */
 static bool biquad_config_equal(const biquad_config_t* a,
-                                  const biquad_config_t* b) {
+                                const biquad_config_t* b) {
   if (a->type != b->type) return false;
   if (a->freq != b->freq) return false;
   if (a->gain != b->gain) return false;
@@ -106,7 +106,7 @@ static bool biquad_config_equal(const biquad_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool volume_config_equal(const volume_config_t* a,
-                                  const volume_config_t* b) {
+                                const volume_config_t* b) {
   if (a->ramp_time != b->ramp_time) return false;
   if (a->has_ramp_time != b->has_ramp_time) return false;
   if (a->limit != b->limit) return false;
@@ -122,7 +122,7 @@ static bool volume_config_equal(const volume_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool loudness_config_equal(const loudness_config_t* a,
-                                    const loudness_config_t* b) {
+                                  const loudness_config_t* b) {
   if (a->reference_level != b->reference_level) return false;
   if (a->has_reference_level != b->has_reference_level) return false;
   if (a->high_boost != b->high_boost) return false;
@@ -141,7 +141,7 @@ static bool loudness_config_equal(const loudness_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool convolution_config_equal(const convolution_config_t* a,
-                                       const convolution_config_t* b) {
+                                     const convolution_config_t* b) {
   if (a->type != b->type) return false;
   if (strcmp(a->filename, b->filename) != 0) return false;
   if (strcmp(a->format, b->format) != 0) return false;
@@ -162,7 +162,7 @@ static bool convolution_config_equal(const convolution_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool delay_config_equal(const delay_config_t* a,
-                                const delay_config_t* b) {
+                               const delay_config_t* b) {
   if (a->delay != b->delay) return false;
   if (a->unit != b->unit) return false;
   if (a->subsample != b->subsample) return false;
@@ -176,7 +176,7 @@ static bool delay_config_equal(const delay_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool biquad_combo_config_equal(const biquad_combo_config_t* a,
-                                       const biquad_combo_config_t* b) {
+                                      const biquad_combo_config_t* b) {
   if (a->type != b->type) return false;
   if (a->freq != b->freq) return false;
   if (a->has_freq != b->has_freq) return false;
@@ -232,7 +232,7 @@ static bool diffeq_config_equal(const diffeq_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool dither_config_equal(const dither_config_t* a,
-                                 const dither_config_t* b) {
+                                const dither_config_t* b) {
   if (a->type != b->type) return false;
   if (a->bits != b->bits) return false;
   if (a->amplitude != b->amplitude) return false;
@@ -247,7 +247,7 @@ static bool dither_config_equal(const dither_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool limiter_config_equal(const limiter_config_t* a,
-                                  const limiter_config_t* b) {
+                                 const limiter_config_t* b) {
   if (a->clip_limit != b->clip_limit) return false;
   if (a->soft_clip != b->soft_clip) return false;
   return true;
@@ -260,8 +260,7 @@ static bool limiter_config_equal(const limiter_config_t* a,
  * @return true if parameters are equal, false otherwise.
  */
 static bool lookahead_limiter_config_equal(
-    const lookahead_limiter_config_t* a,
-    const lookahead_limiter_config_t* b) {
+    const lookahead_limiter_config_t* a, const lookahead_limiter_config_t* b) {
   if (a->limit != b->limit) return false;
   if (a->attack != b->attack) return false;
   if (a->release != b->release) return false;
@@ -283,33 +282,30 @@ static bool filter_config_equal(const filter_config_t* a,
       return a->parameters.gain.gain == b->parameters.gain.gain &&
              a->parameters.gain.inverted == b->parameters.gain.inverted;
     case FILTER_TYPE_VOLUME:
-      return volume_config_equal(&a->parameters.volume,
-                                  &b->parameters.volume);
+      return volume_config_equal(&a->parameters.volume, &b->parameters.volume);
     case FILTER_TYPE_LOUDNESS:
       return loudness_config_equal(&a->parameters.loudness,
-                                    &b->parameters.loudness);
+                                   &b->parameters.loudness);
     case FILTER_TYPE_BIQUAD:
-      return biquad_config_equal(&a->parameters.biquad,
-                                  &b->parameters.biquad);
+      return biquad_config_equal(&a->parameters.biquad, &b->parameters.biquad);
     case FILTER_TYPE_CONV:
       return convolution_config_equal(&a->parameters.conv, &b->parameters.conv);
     case FILTER_TYPE_DELAY:
       return delay_config_equal(&a->parameters.delay, &b->parameters.delay);
     case FILTER_TYPE_BIQUAD_COMBO:
       return biquad_combo_config_equal(&a->parameters.biquad_combo,
-                                        &b->parameters.biquad_combo);
+                                       &b->parameters.biquad_combo);
     case FILTER_TYPE_DIFF_EQ:
       return diffeq_config_equal(&a->parameters.diff_eq,
                                  &b->parameters.diff_eq);
     case FILTER_TYPE_DITHER:
-      return dither_config_equal(&a->parameters.dither,
-                                  &b->parameters.dither);
+      return dither_config_equal(&a->parameters.dither, &b->parameters.dither);
     case FILTER_TYPE_LIMITER:
       return limiter_config_equal(&a->parameters.limiter,
-                                   &b->parameters.limiter);
+                                  &b->parameters.limiter);
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
-      return lookahead_limiter_config_equal(
-          &a->parameters.lookahead_limiter, &b->parameters.lookahead_limiter);
+      return lookahead_limiter_config_equal(&a->parameters.lookahead_limiter,
+                                            &b->parameters.lookahead_limiter);
     default:
       return false;
   }

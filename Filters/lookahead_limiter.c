@@ -1,4 +1,5 @@
 #include "lookahead_limiter.h"
+
 #include "delay.h"
 
 struct lookahead_limiter_filter {
@@ -28,9 +29,9 @@ struct lookahead_limiter_filter {
  * @param out_attack_samples Output pointer for attack time in samples.
  * @param out_release_coeff Output pointer for exponential release coefficient.
  */
-static void configure(const lookahead_limiter_config_t* params,
-                      int sample_rate, double* out_limit,
-                      int* out_attack_samples, double* out_release_coeff) {
+static void configure(const lookahead_limiter_config_t* params, int sample_rate,
+                      double* out_limit, int* out_attack_samples,
+                      double* out_release_coeff) {
   double limit_db = params ? params->limit : 0.0;
   *out_limit = double_from_db(limit_db);
   delay_unit_t unit = params ? params->unit : DELAY_UNIT_MS;
@@ -78,9 +79,10 @@ static inline double get_occupied(lookahead_limiter_filter_t* filter,
 }
 
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
-    const char* name, const lookahead_limiter_config_t* params,
-    int sample_rate, size_t chunk_size, config_error_t* err) {
-  if (lookahead_limiter_config_validate(params, sample_rate, err) != 0) return NULL;
+    const char* name, const lookahead_limiter_config_t* params, int sample_rate,
+    size_t chunk_size, config_error_t* err) {
+  if (lookahead_limiter_config_validate(params, sample_rate, err) != 0)
+    return NULL;
   lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)calloc(
       1, sizeof(lookahead_limiter_filter_t));
   if (!filter) return NULL;
@@ -262,9 +264,8 @@ void lookahead_limiter_filter_free(lookahead_limiter_filter_t* filter) {
   free(filter);
 }
 
-int lookahead_limiter_config_validate(
-    const lookahead_limiter_config_t* params, int sample_rate,
-    config_error_t* err) {
+int lookahead_limiter_config_validate(const lookahead_limiter_config_t* params,
+                                      int sample_rate, config_error_t* err) {
   if (sample_rate <= 0) {
     config_error_set(
         err, CONFIG_ERR_INVALID_FILTER,

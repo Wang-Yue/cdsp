@@ -4,6 +4,7 @@
 #endif
 #endif
 #include <math.h>
+
 #include "Engine/rate_controller.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"

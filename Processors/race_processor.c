@@ -219,8 +219,7 @@ void race_processor_transfer_state(race_processor_t* dest,
   dest->feedback_b = src->feedback_b;
 }
 
-int race_config_validate(const race_config_t* p,
-                             config_error_t* err) {
+int race_config_validate(const race_config_t* p, config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,

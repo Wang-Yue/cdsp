@@ -58,7 +58,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           gp->has_gain = parse_json_double(params, "gain", &gp->gain);
           char str_buf[64];
           if (parse_json_str(params, "scale", str_buf, sizeof(str_buf))) {
-            gp->scale = (strcasecmp(str_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR : GAIN_SCALE_DB;
+            gp->scale = (strcasecmp(str_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR
+                                                             : GAIN_SCALE_DB;
           } else {
             gp->scale = GAIN_SCALE_DB;
           }
@@ -68,7 +69,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_VOLUME: {
           volume_config_t* vp = &f_conf->parameters.volume;
-          vp->has_ramp_time = parse_json_double(params, "ramp_time", &vp->ramp_time);
+          vp->has_ramp_time =
+              parse_json_double(params, "ramp_time", &vp->ramp_time);
           vp->has_limit = parse_json_double(params, "limit", &vp->limit);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {
@@ -84,9 +86,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_LOUDNESS: {
           loudness_config_t* lp = &f_conf->parameters.loudness;
-          lp->has_reference_level = parse_json_double(params, "reference_level", &lp->reference_level);
-          lp->has_high_boost = parse_json_double(params, "high_boost", &lp->high_boost);
-          lp->has_low_boost = parse_json_double(params, "low_boost", &lp->low_boost);
+          lp->has_reference_level = parse_json_double(params, "reference_level",
+                                                      &lp->reference_level);
+          lp->has_high_boost =
+              parse_json_double(params, "high_boost", &lp->high_boost);
+          lp->has_low_boost =
+              parse_json_double(params, "low_boost", &lp->low_boost);
           parse_json_bool(params, "attenuate_mid", &lp->attenuate_mid);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {
@@ -170,10 +175,14 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           parse_json_double(params, "delay", &dp->delay);
           char unit_buf[64];
           if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
-            if (strcmp(unit_buf, "us") == 0) dp->unit = DELAY_UNIT_US;
-            else if (strcmp(unit_buf, "samples") == 0) dp->unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(unit_buf, "mm") == 0) dp->unit = DELAY_UNIT_MM;
-            else dp->unit = DELAY_UNIT_MS;
+            if (strcmp(unit_buf, "us") == 0)
+              dp->unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0)
+              dp->unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0)
+              dp->unit = DELAY_UNIT_MM;
+            else
+              dp->unit = DELAY_UNIT_MS;
           } else {
             dp->unit = DELAY_UNIT_MS;
           }
@@ -184,13 +193,20 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           convolution_config_t* cp = &f_conf->parameters.conv;
           char type_buf[64];
           if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
-            if (strcmp(type_buf, "Values") == 0) cp->type = CONV_TYPE_VALUES;
-            else if (strcmp(type_buf, "Wav") == 0) cp->type = CONV_TYPE_WAV;
-            else if (strcmp(type_buf, "Raw") == 0) cp->type = CONV_TYPE_RAW;
-            else cp->type = CONV_TYPE_DUMMY;
+            if (strcmp(type_buf, "Values") == 0)
+              cp->type = CONV_TYPE_VALUES;
+            else if (strcmp(type_buf, "Wav") == 0)
+              cp->type = CONV_TYPE_WAV;
+            else if (strcmp(type_buf, "Raw") == 0)
+              cp->type = CONV_TYPE_RAW;
+            else
+              cp->type = CONV_TYPE_DUMMY;
           }
-          cp->values = parse_double_array(cJSON_GetObjectItemCaseSensitive(params, "values"), &cp->values_count);
-          parse_json_str(params, "filename", cp->filename, sizeof(cp->filename));
+          cp->values = parse_double_array(
+              cJSON_GetObjectItemCaseSensitive(params, "values"),
+              &cp->values_count);
+          parse_json_str(params, "filename", cp->filename,
+                         sizeof(cp->filename));
           parse_json_str(params, "format", cp->format, sizeof(cp->format));
           parse_json_int(params, "channel", &cp->channel);
           parse_json_int(params, "length", &cp->length);
@@ -218,8 +234,10 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               bcp->type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;
           }
           bcp->has_freq = parse_json_double(params, "freq", &bcp->freq);
-          bcp->has_freq_min = parse_json_double(params, "freq_min", &bcp->freq_min);
-          bcp->has_freq_max = parse_json_double(params, "freq_max", &bcp->freq_max);
+          bcp->has_freq_min =
+              parse_json_double(params, "freq_min", &bcp->freq_min);
+          bcp->has_freq_max =
+              parse_json_double(params, "freq_max", &bcp->freq_max);
           bcp->has_order = parse_json_int(params, "order", &bcp->order);
           bcp->has_gain = parse_json_double(params, "gain", &bcp->gain);
 #define PARSE_COMBO_DOUBLE(name, field)                   \
@@ -261,31 +279,54 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           dither_config_t* dp = &f_conf->parameters.dither;
           char type_buf[64];
           if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
-            if (strcmp(type_buf, "None") == 0) dp->type = DITHER_TYPE_NONE;
-            else if (strcmp(type_buf, "Flat") == 0) dp->type = DITHER_TYPE_FLAT;
-            else if (strcmp(type_buf, "Highpass") == 0) dp->type = DITHER_TYPE_HIGHPASS;
-            else if (strcmp(type_buf, "Fweighted441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_441;
-            else if (strcmp(type_buf, "FweightedLong441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_LONG_441;
-            else if (strcmp(type_buf, "FweightedShort441") == 0) dp->type = DITHER_TYPE_FWEIGHTED_SHORT_441;
-            else if (strcmp(type_buf, "Gesemann441") == 0) dp->type = DITHER_TYPE_GESEMANN_441;
-            else if (strcmp(type_buf, "Gesemann48") == 0) dp->type = DITHER_TYPE_GESEMANN_48;
-            else if (strcmp(type_buf, "Lipshitz441") == 0) dp->type = DITHER_TYPE_LIPSHITZ_441;
-            else if (strcmp(type_buf, "LipshitzLong441") == 0) dp->type = DITHER_TYPE_LIPSHITZ_LONG_441;
-            else if (strcmp(type_buf, "Shibata441") == 0) dp->type = DITHER_TYPE_SHIBATA_441;
-            else if (strcmp(type_buf, "ShibataHigh441") == 0) dp->type = DITHER_TYPE_SHIBATA_HIGH_441;
-            else if (strcmp(type_buf, "ShibataLow441") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_441;
-            else if (strcmp(type_buf, "Shibata48") == 0) dp->type = DITHER_TYPE_SHIBATA_48;
-            else if (strcmp(type_buf, "ShibataHigh48") == 0) dp->type = DITHER_TYPE_SHIBATA_HIGH_48;
-            else if (strcmp(type_buf, "ShibataLow48") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_48;
-            else if (strcmp(type_buf, "Shibata882") == 0) dp->type = DITHER_TYPE_SHIBATA_882;
-            else if (strcmp(type_buf, "ShibataLow882") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_882;
-            else if (strcmp(type_buf, "Shibata96") == 0) dp->type = DITHER_TYPE_SHIBATA_96;
-            else if (strcmp(type_buf, "ShibataLow96") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_96;
-            else if (strcmp(type_buf, "Shibata192") == 0) dp->type = DITHER_TYPE_SHIBATA_192;
-            else if (strcmp(type_buf, "ShibataLow192") == 0) dp->type = DITHER_TYPE_SHIBATA_LOW_192;
+            if (strcmp(type_buf, "None") == 0)
+              dp->type = DITHER_TYPE_NONE;
+            else if (strcmp(type_buf, "Flat") == 0)
+              dp->type = DITHER_TYPE_FLAT;
+            else if (strcmp(type_buf, "Highpass") == 0)
+              dp->type = DITHER_TYPE_HIGHPASS;
+            else if (strcmp(type_buf, "Fweighted441") == 0)
+              dp->type = DITHER_TYPE_FWEIGHTED_441;
+            else if (strcmp(type_buf, "FweightedLong441") == 0)
+              dp->type = DITHER_TYPE_FWEIGHTED_LONG_441;
+            else if (strcmp(type_buf, "FweightedShort441") == 0)
+              dp->type = DITHER_TYPE_FWEIGHTED_SHORT_441;
+            else if (strcmp(type_buf, "Gesemann441") == 0)
+              dp->type = DITHER_TYPE_GESEMANN_441;
+            else if (strcmp(type_buf, "Gesemann48") == 0)
+              dp->type = DITHER_TYPE_GESEMANN_48;
+            else if (strcmp(type_buf, "Lipshitz441") == 0)
+              dp->type = DITHER_TYPE_LIPSHITZ_441;
+            else if (strcmp(type_buf, "LipshitzLong441") == 0)
+              dp->type = DITHER_TYPE_LIPSHITZ_LONG_441;
+            else if (strcmp(type_buf, "Shibata441") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_441;
+            else if (strcmp(type_buf, "ShibataHigh441") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_HIGH_441;
+            else if (strcmp(type_buf, "ShibataLow441") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_LOW_441;
+            else if (strcmp(type_buf, "Shibata48") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_48;
+            else if (strcmp(type_buf, "ShibataHigh48") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_HIGH_48;
+            else if (strcmp(type_buf, "ShibataLow48") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_LOW_48;
+            else if (strcmp(type_buf, "Shibata882") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_882;
+            else if (strcmp(type_buf, "ShibataLow882") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_LOW_882;
+            else if (strcmp(type_buf, "Shibata96") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_96;
+            else if (strcmp(type_buf, "ShibataLow96") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_LOW_96;
+            else if (strcmp(type_buf, "Shibata192") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_192;
+            else if (strcmp(type_buf, "ShibataLow192") == 0)
+              dp->type = DITHER_TYPE_SHIBATA_LOW_192;
           }
           parse_json_int(params, "bits", &dp->bits);
-          dp->has_amplitude = parse_json_double(params, "amplitude", &dp->amplitude);
+          dp->has_amplitude =
+              parse_json_double(params, "amplitude", &dp->amplitude);
           break;
         }
         case FILTER_TYPE_LIMITER: {
@@ -295,16 +336,21 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_LOOKAHEAD_LIMITER: {
-          lookahead_limiter_config_t* llp = &f_conf->parameters.lookahead_limiter;
+          lookahead_limiter_config_t* llp =
+              &f_conf->parameters.lookahead_limiter;
           parse_json_double(params, "limit", &llp->limit);
           parse_json_double(params, "attack", &llp->attack);
           parse_json_double(params, "release", &llp->release);
           char unit_buf[64];
           if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
-            if (strcmp(unit_buf, "us") == 0) llp->unit = DELAY_UNIT_US;
-            else if (strcmp(unit_buf, "samples") == 0) llp->unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(unit_buf, "mm") == 0) llp->unit = DELAY_UNIT_MM;
-            else llp->unit = DELAY_UNIT_MS;
+            if (strcmp(unit_buf, "us") == 0)
+              llp->unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0)
+              llp->unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0)
+              llp->unit = DELAY_UNIT_MM;
+            else
+              llp->unit = DELAY_UNIT_MS;
           } else {
             llp->unit = DELAY_UNIT_MS;
           }
@@ -366,12 +412,18 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           parse_json_double(params, "release", &cp->release);
           parse_json_double(params, "threshold", &cp->threshold);
           parse_json_double(params, "factor", &cp->factor);
-          cp->has_makeup_gain = parse_json_double(params, "makeup_gain", &cp->makeup_gain);
+          cp->has_makeup_gain =
+              parse_json_double(params, "makeup_gain", &cp->makeup_gain);
           parse_json_bool(params, "soft_clip", &cp->soft_clip);
-          cp->has_clip_limit = parse_json_double(params, "clip_limit", &cp->clip_limit);
+          cp->has_clip_limit =
+              parse_json_double(params, "clip_limit", &cp->clip_limit);
 
-          cp->monitor_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"), &cp->monitor_channels_count);
-          cp->process_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "process_channels"), &cp->process_channels_count);
+          cp->monitor_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+              &cp->monitor_channels_count);
+          cp->process_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+              &cp->process_channels_count);
           break;
         }
         case PROCESSOR_TYPE_NOISE_GATE: {
@@ -382,8 +434,12 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           parse_json_double(params, "threshold", &ng->threshold);
           parse_json_double(params, "attenuation", &ng->attenuation);
 
-          ng->monitor_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"), &ng->monitor_channels_count);
-          ng->process_channels = parse_int_array(cJSON_GetObjectItemCaseSensitive(params, "process_channels"), &ng->process_channels_count);
+          ng->monitor_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+              &ng->monitor_channels_count);
+          ng->process_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+              &ng->process_channels_count);
           break;
         }
         case PROCESSOR_TYPE_RACE: {
@@ -392,11 +448,16 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           parse_json_double(params, "delay", &rp->delay);
 
           char unit_buf[64];
-          if (parse_json_str(params, "delay_unit", unit_buf, sizeof(unit_buf))) {
-            if (strcmp(unit_buf, "us") == 0) rp->delay_unit = DELAY_UNIT_US;
-            else if (strcmp(unit_buf, "samples") == 0) rp->delay_unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(unit_buf, "mm") == 0) rp->delay_unit = DELAY_UNIT_MM;
-            else rp->delay_unit = DELAY_UNIT_MS;
+          if (parse_json_str(params, "delay_unit", unit_buf,
+                             sizeof(unit_buf))) {
+            if (strcmp(unit_buf, "us") == 0)
+              rp->delay_unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "samples") == 0)
+              rp->delay_unit = DELAY_UNIT_SAMPLES;
+            else if (strcmp(unit_buf, "mm") == 0)
+              rp->delay_unit = DELAY_UNIT_MM;
+            else
+              rp->delay_unit = DELAY_UNIT_MS;
             rp->has_delay_unit = true;
           }
           break;

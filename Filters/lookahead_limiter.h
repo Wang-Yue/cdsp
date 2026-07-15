@@ -12,9 +12,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque structure representing a lookahead limiter filter.
@@ -29,9 +29,8 @@ typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
  * @param err Pointer to a config error structure to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int lookahead_limiter_config_validate(
-    const lookahead_limiter_config_t* params, int sample_rate,
-    config_error_t* err);
+int lookahead_limiter_config_validate(const lookahead_limiter_config_t* params,
+                                      int sample_rate, config_error_t* err);
 
 /**
  * @brief Create a lookahead limiter filter.
@@ -45,8 +44,8 @@ int lookahead_limiter_config_validate(
  * failure.
  */
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
-    const char* name, const lookahead_limiter_config_t* params,
-    int sample_rate, size_t chunk_size, config_error_t* err);
+    const char* name, const lookahead_limiter_config_t* params, int sample_rate,
+    size_t chunk_size, config_error_t* err);
 
 /**
  * @brief Process a waveform buffer in-place by applying lookahead limiting.

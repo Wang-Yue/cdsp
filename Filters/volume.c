@@ -229,8 +229,7 @@ void volume_filter_free(volume_filter_t* filter) {
   if (filter->current_ramp_gains) free(filter->current_ramp_gains);
   free(filter);
 }
-int volume_config_validate(const volume_config_t* params,
-                               config_error_t* err) {
+int volume_config_validate(const volume_config_t* params, config_error_t* err) {
   if (!params) return 0;
   if (params->has_ramp_time) {
     if (params->ramp_time < 0.0) {

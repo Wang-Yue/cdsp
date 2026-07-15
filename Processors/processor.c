@@ -27,23 +27,21 @@ typedef struct processor_vtable {
 struct dsp_processor {
   processor_impl_type_t type;  ///< Concrete implementation type identifier.
   void* impl;                  ///< Pointer to underlying processor structure.
-  const processor_vtable_t* vtable; ///< Virtual table for dispatch.
+  const processor_vtable_t* vtable;  ///< Virtual table for dispatch.
 };
 
 /* --- Static VTable Definitions --- */
 
 static const processor_vtable_t g_comp_vtable = {
     .process = (void (*)(void*, audio_chunk_t*))compressor_processor_process,
-    .get_name =
-        (const char* (*)(const void*))compressor_processor_get_name,
+    .get_name = (const char* (*)(const void*))compressor_processor_get_name,
     .transfer_state =
         (void (*)(void*, const void*))compressor_processor_transfer_state,
     .free = (void (*)(void*))compressor_processor_free};
 
 static const processor_vtable_t g_gate_vtable = {
     .process = (void (*)(void*, audio_chunk_t*))noise_gate_processor_process,
-    .get_name =
-        (const char* (*)(const void*))noise_gate_processor_get_name,
+    .get_name = (const char* (*)(const void*))noise_gate_processor_get_name,
     .transfer_state =
         (void (*)(void*, const void*))noise_gate_processor_transfer_state,
     .free = (void (*)(void*))noise_gate_processor_free};
@@ -209,7 +207,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
 }
 
 int processor_config_validate(const processor_config_t* proc,
-                               config_error_t* err) {
+                              config_error_t* err) {
   if (!proc) return 0;
   switch (proc->type) {
     case PROCESSOR_TYPE_COMPRESSOR:

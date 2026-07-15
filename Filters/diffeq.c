@@ -139,8 +139,7 @@ void diffeq_filter_free(diffeq_filter_t* filter) {
   free(filter);
 }
 
-int diffeq_config_validate(const diffeq_config_t* params,
-                             config_error_t* err) {
+int diffeq_config_validate(const diffeq_config_t* params, config_error_t* err) {
   (void)params;
   (void)err;
   return 0;

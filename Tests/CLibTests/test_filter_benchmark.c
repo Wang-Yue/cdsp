@@ -163,11 +163,11 @@ TEST(Convolution_16384_Benchmark) {
 
 TEST(Biquad_Benchmark) {
   biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
-                                .b0 = 0.21476322779271284,
-                                .b1 = 0.4295264555854257,
-                                .b2 = 0.21476322779271284,
-                                .a1 = -0.1462978543780541,
-                                .a2 = 0.005350765548905586};
+                            .b0 = 0.21476322779271284,
+                            .b1 = 0.4295264555854257,
+                            .b2 = 0.21476322779271284,
+                            .a1 = -0.1462978543780541,
+                            .a2 = 0.005350765548905586};
   biquad_filter_t* f = biquad_filter_create("biquad", &params, 44100, NULL);
   run_filter_benchmark("Biquad", "Biquad", f, process_biquad);
   biquad_filter_free(f);

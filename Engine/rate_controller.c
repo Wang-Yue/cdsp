@@ -209,9 +209,7 @@ bool averager_get_average(const averager_t* avg, double* out_val) {
 /// audio chunk.
 #include "Utils/cdsp_time.h"
 
-static uint64_t get_current_ns(void) {
-  return cdsp_time_now_ns();
-}
+static uint64_t get_current_ns(void) { return cdsp_time_now_ns(); }
 
 void stopwatch_init(stopwatch_t* sw) {
   if (!sw) return;

@@ -7,8 +7,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static void gain_and_phase(const biquad_config_t* params, double f,
-                           double fs, double* gain_db, double* phase_deg) {
+static void gain_and_phase(const biquad_config_t* params, double f, double fs,
+                           double* gain_db, double* phase_deg) {
   biquad_filter_t* filter = biquad_filter_create("test", params, (int)fs, NULL);
   if (!filter) {
     *gain_db = 0.0;
@@ -126,8 +126,7 @@ TEST(Bandpass) {
 }
 
 TEST(Notch) {
-  biquad_config_t params = {
-      .type = BIQUAD_TYPE_NOTCH, .freq = 100.0, .q = 3.0};
+  biquad_config_t params = {.type = BIQUAD_TYPE_NOTCH, .freq = 100.0, .q = 3.0};
   double gf0, pf0, ghf, phf, glf, plf;
   gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
   gain_and_phase(&params, 400.0, 44100.0, &ghf, &phf);
@@ -168,10 +167,10 @@ TEST(AllpassFO) {
 
 TEST(Highshelf) {
   biquad_config_t params = {.type = BIQUAD_TYPE_HIGHSHELF,
-                                .freq = 100.0,
-                                .gain = -24.0,
-                                .slope = 6.0,
-                                .steepness_type = STEEPNESS_TYPE_SLOPE};
+                            .freq = 100.0,
+                            .gain = -24.0,
+                            .slope = 6.0,
+                            .steepness_type = STEEPNESS_TYPE_SLOPE};
   double gf0, pf0, gf0h, pf0h, gf0l, pf0l, ghf, phf, glf, plf;
   gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
   gain_and_phase(&params, 200.0, 44100.0, &gf0h, &pf0h);
@@ -187,10 +186,10 @@ TEST(Highshelf) {
 
 TEST(Lowshelf) {
   biquad_config_t params = {.type = BIQUAD_TYPE_LOWSHELF,
-                                .freq = 100.0,
-                                .gain = -24.0,
-                                .slope = 6.0,
-                                .steepness_type = STEEPNESS_TYPE_SLOPE};
+                            .freq = 100.0,
+                            .gain = -24.0,
+                            .slope = 6.0,
+                            .steepness_type = STEEPNESS_TYPE_SLOPE};
   double gf0, pf0, gf0h, pf0h, gf0l, pf0l, ghf, phf, glf, plf;
   gain_and_phase(&params, 100.0, 44100.0, &gf0, &pf0);
   gain_and_phase(&params, 200.0, 44100.0, &gf0h, &pf0h);
@@ -206,14 +205,14 @@ TEST(Lowshelf) {
 
 TEST(LowshelfSlopeVsQ) {
   biquad_config_t pS = {.type = BIQUAD_TYPE_LOWSHELF,
-                            .freq = 100.0,
-                            .gain = -24.0,
-                            .slope = 12.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE};
+                        .freq = 100.0,
+                        .gain = -24.0,
+                        .slope = 12.0,
+                        .steepness_type = STEEPNESS_TYPE_SLOPE};
   biquad_config_t pQ = {.type = BIQUAD_TYPE_LOWSHELF,
-                            .freq = 100.0,
-                            .q = 1.0 / sqrt(2.0),
-                            .gain = -24.0};
+                        .freq = 100.0,
+                        .q = 1.0 / sqrt(2.0),
+                        .gain = -24.0};
   double gS, pS_deg, gQ, pQ_deg;
   gain_and_phase(&pS, 100.0, 44100.0, &gS, &pS_deg);
   gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
@@ -223,14 +222,14 @@ TEST(LowshelfSlopeVsQ) {
 
 TEST(HighshelfSlopeVsQ) {
   biquad_config_t pS = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 100.0,
-                            .gain = -24.0,
-                            .slope = 12.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE};
+                        .freq = 100.0,
+                        .gain = -24.0,
+                        .slope = 12.0,
+                        .steepness_type = STEEPNESS_TYPE_SLOPE};
   biquad_config_t pQ = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 100.0,
-                            .q = 1.0 / sqrt(2.0),
-                            .gain = -24.0};
+                        .freq = 100.0,
+                        .q = 1.0 / sqrt(2.0),
+                        .gain = -24.0};
   double gS, pS_deg, gQ, pQ_deg;
   gain_and_phase(&pS, 100.0, 44100.0, &gS, &pS_deg);
   gain_and_phase(&pQ, 100.0, 44100.0, &gQ, &pQ_deg);
@@ -240,9 +239,9 @@ TEST(HighshelfSlopeVsQ) {
 
 TEST(BandpassBWvsQ) {
   biquad_config_t pBW = {.type = BIQUAD_TYPE_BANDPASS,
-                             .freq = 100.0,
-                             .bandwidth = 1.0,
-                             .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
+                         .freq = 100.0,
+                         .bandwidth = 1.0,
+                         .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_config_t pQ = {
       .type = BIQUAD_TYPE_BANDPASS, .freq = 100.0, .q = sqrt(2.0)};
   double gBW, pBW_deg, gQ, pQ_deg;
@@ -254,9 +253,9 @@ TEST(BandpassBWvsQ) {
 
 TEST(NotchBWvsQ) {
   biquad_config_t pBW = {.type = BIQUAD_TYPE_NOTCH,
-                             .freq = 100.0,
-                             .bandwidth = 1.0,
-                             .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
+                         .freq = 100.0,
+                         .bandwidth = 1.0,
+                         .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_config_t pQ = {
       .type = BIQUAD_TYPE_NOTCH, .freq = 100.0, .q = sqrt(2.0)};
   double gBW, pBW_deg, gQ, pQ_deg;
@@ -268,9 +267,9 @@ TEST(NotchBWvsQ) {
 
 TEST(AllpassBWvsQ) {
   biquad_config_t pBW = {.type = BIQUAD_TYPE_ALLPASS,
-                             .freq = 100.0,
-                             .bandwidth = 1.0,
-                             .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
+                         .freq = 100.0,
+                         .bandwidth = 1.0,
+                         .steepness_type = STEEPNESS_TYPE_BANDWIDTH};
   biquad_config_t pQ = {
       .type = BIQUAD_TYPE_ALLPASS, .freq = 100.0, .q = sqrt(2.0)};
   double gBW, pBW_deg, gQ, pQ_deg;
@@ -306,11 +305,11 @@ TEST(LowshelfFO) {
 
 TEST(FreeBiquad) {
   biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
-                                .a1 = -0.5,
-                                .a2 = 0.1,
-                                .b0 = 0.25,
-                                .b1 = 0.5,
-                                .b2 = 0.25};
+                            .a1 = -0.5,
+                            .a2 = 0.1,
+                            .b0 = 0.25,
+                            .b1 = 0.5,
+                            .b2 = 0.25};
   ASSERT_DOUBLE_EQ(0.25, params.b0);
   ASSERT_DOUBLE_EQ(0.5, params.b1);
   ASSERT_DOUBLE_EQ(0.25, params.b2);
@@ -320,10 +319,10 @@ TEST(FreeBiquad) {
 
 TEST(GeneralNotchHP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
-                                .q = 1.0,
-                                .freq_notch = 1000.0,
-                                .freq_pole = 2000.0,
-                                .normalize_at_dc = false};
+                            .q = 1.0,
+                            .freq_notch = 1000.0,
+                            .freq_pole = 2000.0,
+                            .normalize_at_dc = false};
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
   gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
   gain_and_phase(&params, 20000.0, 44100.0, &gain_hf, &p2);
@@ -335,10 +334,10 @@ TEST(GeneralNotchHP) {
 
 TEST(GeneralNotchLP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
-                                .q = 1.0,
-                                .freq_notch = 1000.0,
-                                .freq_pole = 500.0,
-                                .normalize_at_dc = true};
+                            .q = 1.0,
+                            .freq_notch = 1000.0,
+                            .freq_pole = 500.0,
+                            .normalize_at_dc = true};
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
   gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
   gain_and_phase(&params, 20000.0, 44100.0, &gain_hf, &p2);
@@ -350,10 +349,10 @@ TEST(GeneralNotchLP) {
 
 TEST(LinkwitzTransform) {
   biquad_config_t params = {.type = BIQUAD_TYPE_LINKWITZ_TRANSFORM,
-                                .freq_act = 100.0,
-                                .q_act = 1.2,
-                                .freq_target = 25.0,
-                                .q_target = 0.7};
+                            .freq_act = 100.0,
+                            .q_act = 1.2,
+                            .freq_target = 25.0,
+                            .q_target = 0.7};
   double gain10, p1, gain87, p2, gain123, p3, gain_hf, p4;
   gain_and_phase(&params, 10.0, 44100.0, &gain10, &p1);
   gain_and_phase(&params, 87.0, 44100.0, &gain87, &p2);
@@ -384,22 +383,22 @@ TEST(ValidateFreqQ) {
 TEST(ValidateSlope) {
   int fs48 = 48000;
   biquad_config_t p1 = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 1000.0,
-                            .gain = 1.23,
-                            .slope = 5.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE};
+                        .freq = 1000.0,
+                        .gain = 1.23,
+                        .slope = 5.0,
+                        .steepness_type = STEEPNESS_TYPE_SLOPE};
   ASSERT_EQ(0, biquad_config_validate(&p1, fs48, NULL));
   biquad_config_t p2 = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 1000.0,
-                            .gain = 1.23,
-                            .slope = 0.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE};
+                        .freq = 1000.0,
+                        .gain = 1.23,
+                        .slope = 0.0,
+                        .steepness_type = STEEPNESS_TYPE_SLOPE};
   ASSERT_NE(0, biquad_config_validate(&p2, fs48, NULL));
   biquad_config_t p3 = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 1000.0,
-                            .gain = 1.23,
-                            .slope = 15.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE};
+                        .freq = 1000.0,
+                        .gain = 1.23,
+                        .slope = 15.0,
+                        .steepness_type = STEEPNESS_TYPE_SLOPE};
   ASSERT_NE(0, biquad_config_validate(&p3, fs48, NULL));
 }
 

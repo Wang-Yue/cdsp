@@ -44,8 +44,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/config_error.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Function pointer type for the backend forward FFT execution.

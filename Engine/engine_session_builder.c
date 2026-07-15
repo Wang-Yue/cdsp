@@ -163,8 +163,7 @@ static bool engine_session_build_backends(
   if (dsd_encoder_is_enabled(core->dsd_encoder)) {
     size_t channels =
         playback_device_config_get_channels(&config->devices.playback);
-    audio_chunk_t* prefill_chunk =
-        audio_chunk_create(prefill_frames, channels);
+    audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
     if (prefill_chunk) {
       dsd_encoder_fill_silence(core->dsd_encoder, prefill_chunk);
       playback_backend_write(core->playback, prefill_chunk, &berr);
@@ -416,9 +415,9 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
   }
 
   size_t requested_chunk_size = config->devices.chunksize;
-  size_t capture_chunk_size =
-      core->resampler ? resampler_get_chunk_size(core->resampler)
-                      : requested_chunk_size;
+  size_t capture_chunk_size = core->resampler
+                                  ? resampler_get_chunk_size(core->resampler)
+                                  : requested_chunk_size;
   size_t playback_chunk_size =
       core->resampler ? resampler_get_max_output_frames(core->resampler)
                       : capture_chunk_size;

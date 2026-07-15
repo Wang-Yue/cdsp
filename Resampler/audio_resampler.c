@@ -18,12 +18,11 @@
 
 static const logger_t g_logger = {"dsp.resampler"};
 
-
-
 #include <stdlib.h>
 #include <string.h>
 
-static sinc_interpolation_type_t sinc_interpolation_type_from_string(const char* str) {
+static sinc_interpolation_type_t sinc_interpolation_type_from_string(
+    const char* str) {
   if (!str) return SINC_INTERPOLATION_QUADRATIC;
   if (strcmp(str, "Nearest") == 0) return SINC_INTERPOLATION_NEAREST;
   if (strcmp(str, "Linear") == 0) return SINC_INTERPOLATION_LINEAR;
@@ -41,9 +40,10 @@ static poly_interpolation_t poly_interpolation_from_string(const char* str) {
   return POLY_INTERPOLATION_CUBIC;
 }
 
-resampler_t* resampler_create_from_config(
-    const resampler_config_t* config, size_t input_rate, size_t output_rate,
-    size_t channels, size_t chunk_size, config_error_t* err) {
+resampler_t* resampler_create_from_config(const resampler_config_t* config,
+                                          size_t input_rate, size_t output_rate,
+                                          size_t channels, size_t chunk_size,
+                                          config_error_t* err) {
   if (resampler_config_validate(config, err) != 0) return NULL;
   logger_debug(&g_logger,
                "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
@@ -108,9 +108,9 @@ resampler_t* resampler_create_from_config(
       if (config->has_interpolation) {
         poly_interpolation_t interp =
             poly_interpolation_from_string(config->interpolation);
-        resampler_t* res =
-            async_poly_resampler_create(channels, input_rate, output_rate,
-                                        interp, chunk_size, 1.1, fixed_mode, err);
+        resampler_t* res = async_poly_resampler_create(
+            channels, input_rate, output_rate, interp, chunk_size, 1.1,
+            fixed_mode, err);
         if (!res) {
           logger_error(
               &g_logger,
@@ -175,8 +175,7 @@ resampler_error_t resampler_process(resampler_t* resampler,
   return resampler->process(resampler->impl, input, output);
 }
 
-void resampler_set_relative_ratio(resampler_t* resampler,
-                                  double multiplier) {
+void resampler_set_relative_ratio(resampler_t* resampler, double multiplier) {
   if (resampler && resampler->set_relative_ratio) {
     resampler->set_relative_ratio(resampler->impl, multiplier);
   }
@@ -188,8 +187,7 @@ double resampler_get_ratio(const resampler_t* resampler) {
              : 1.0;
 }
 
-size_t resampler_get_max_output_frames(
-    const resampler_t* resampler) {
+size_t resampler_get_max_output_frames(const resampler_t* resampler) {
   return (resampler && resampler->get_max_output_frames)
              ? resampler->get_max_output_frames(resampler->impl)
              : 0;
@@ -201,15 +199,13 @@ size_t resampler_get_chunk_size(const resampler_t* resampler) {
              : 0;
 }
 
-size_t resampler_get_input_frames_next(
-    const resampler_t* resampler) {
+size_t resampler_get_input_frames_next(const resampler_t* resampler) {
   return (resampler && resampler->get_input_frames_next)
              ? resampler->get_input_frames_next(resampler->impl)
              : 0;
 }
 
-size_t resampler_get_output_frames_next(
-    const resampler_t* resampler) {
+size_t resampler_get_output_frames_next(const resampler_t* resampler) {
   return (resampler && resampler->get_output_frames_next)
              ? resampler->get_output_frames_next(resampler->impl)
              : 0;

@@ -11,8 +11,6 @@
 #include "config_parser_internal.h"
 #include "configuration.h"
 
-
-
 static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (!cJSON_IsObject(res_obj)) return;
   resampler_config_t* res = &devices->resampler;
@@ -22,8 +20,10 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (parse_json_str(res_obj, "type", str_buf, sizeof(str_buf))) {
     res->type = resampler_type_from_string(str_buf);
   }
-  res->has_profile = parse_json_str(res_obj, "profile", res->profile, sizeof(res->profile));
-  res->has_interpolation = parse_json_str(res_obj, "interpolation", res->interpolation, sizeof(res->interpolation));
+  res->has_profile =
+      parse_json_str(res_obj, "profile", res->profile, sizeof(res->profile));
+  res->has_interpolation = parse_json_str(
+      res_obj, "interpolation", res->interpolation, sizeof(res->interpolation));
 
 #if defined(ENABLE_COREAUDIO)
   if (parse_json_str(res_obj, "apple_quality", str_buf, sizeof(str_buf))) {
@@ -39,16 +39,19 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (parse_json_int(res_obj, "sinc_len", &res->sinc_len)) {
     res->has_sinc_len = (res->sinc_len > 0);
   }
-  if (parse_json_int(res_obj, "oversampling_factor", &res->oversampling_factor)) {
+  if (parse_json_int(res_obj, "oversampling_factor",
+                     &res->oversampling_factor)) {
     res->has_oversampling_factor = (res->oversampling_factor > 0);
   }
-  res->has_window = parse_json_str(res_obj, "window", res->window, sizeof(res->window));
+  res->has_window =
+      parse_json_str(res_obj, "window", res->window, sizeof(res->window));
   if (parse_json_double(res_obj, "f_cutoff", &res->f_cutoff)) {
     res->has_f_cutoff = (res->f_cutoff > 0.0);
   }
 
   if (parse_json_str(res_obj, "fixed", str_buf, sizeof(str_buf))) {
-    res->fixed = (strcasecmp(str_buf, "output") == 0) ? FIXED_ASYNC_OUTPUT : FIXED_ASYNC_INPUT;
+    res->fixed = (strcasecmp(str_buf, "output") == 0) ? FIXED_ASYNC_OUTPUT
+                                                      : FIXED_ASYNC_INPUT;
     res->has_fixed = true;
   }
 }
@@ -169,8 +172,10 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 #endif
   }
 
-  cap->has_device = parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
-  cap->has_filename = parse_json_str(cap_obj, "filename", cap->filename, sizeof(cap->filename));
+  cap->has_device =
+      parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
+  cap->has_filename =
+      parse_json_str(cap_obj, "filename", cap->filename, sizeof(cap->filename));
 
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -203,7 +208,8 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 
   cap->has_skip_bytes = parse_json_int(cap_obj, "skip_bytes", &cap->skip_bytes);
   cap->has_read_bytes = parse_json_int(cap_obj, "read_bytes", &cap->read_bytes);
-  cap->has_extra_samples = parse_json_int(cap_obj, "extra_samples", &cap->extra_samples);
+  cap->has_extra_samples =
+      parse_json_int(cap_obj, "extra_samples", &cap->extra_samples);
   cap->has_exclusive = parse_json_bool(cap_obj, "exclusive", &cap->exclusive);
   cap->has_loopback = parse_json_bool(cap_obj, "loopback", &cap->loopback);
 
@@ -212,23 +218,37 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
 #endif
 
 #if defined(ENABLE_ALSA)
-  cap->has_stop_on_inactive = parse_json_bool(cap_obj, "stop_on_inactive", &cap->stop_on_inactive);
-  cap->has_link_volume_control = parse_json_str(cap_obj, "link_volume_control", cap->link_volume_control, sizeof(cap->link_volume_control));
-  cap->has_link_mute_control = parse_json_str(cap_obj, "link_mute_control", cap->link_mute_control, sizeof(cap->link_mute_control));
+  cap->has_stop_on_inactive =
+      parse_json_bool(cap_obj, "stop_on_inactive", &cap->stop_on_inactive);
+  cap->has_link_volume_control =
+      parse_json_str(cap_obj, "link_volume_control", cap->link_volume_control,
+                     sizeof(cap->link_volume_control));
+  cap->has_link_mute_control =
+      parse_json_str(cap_obj, "link_mute_control", cap->link_mute_control,
+                     sizeof(cap->link_mute_control));
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
-  cap->has_node_name = parse_json_str(cap_obj, "node_name", cap->node_name, sizeof(cap->node_name));
-  cap->has_node_description = parse_json_str(cap_obj, "node_description", cap->node_description, sizeof(cap->node_description));
-  cap->has_node_group_name = parse_json_str(cap_obj, "node_group_name", cap->node_group_name, sizeof(cap->node_group_name));
-  cap->has_autoconnect_to = parse_json_str(cap_obj, "autoconnect_to", cap->autoconnect_to, sizeof(cap->autoconnect_to));
+  cap->has_node_name = parse_json_str(cap_obj, "node_name", cap->node_name,
+                                      sizeof(cap->node_name));
+  cap->has_node_description =
+      parse_json_str(cap_obj, "node_description", cap->node_description,
+                     sizeof(cap->node_description));
+  cap->has_node_group_name =
+      parse_json_str(cap_obj, "node_group_name", cap->node_group_name,
+                     sizeof(cap->node_group_name));
+  cap->has_autoconnect_to =
+      parse_json_str(cap_obj, "autoconnect_to", cap->autoconnect_to,
+                     sizeof(cap->autoconnect_to));
 #endif
 
   parse_labels_array(cJSON_GetObjectItemCaseSensitive(cap_obj, "labels"),
                      &cap->labels, &cap->labels_count, &cap->has_labels);
 
-  cap->has_bypass_dop = parse_json_bool(cap_obj, "bypass_dop", &cap->bypass_dop);
-  cap->has_dop_cutoff_hz = parse_json_double(cap_obj, "dop_cutoff_hz", &cap->dop_cutoff_hz);
+  cap->has_bypass_dop =
+      parse_json_bool(cap_obj, "bypass_dop", &cap->bypass_dop);
+  cap->has_dop_cutoff_hz =
+      parse_json_double(cap_obj, "dop_cutoff_hz", &cap->dop_cutoff_hz);
 
 #ifdef CDSP_TEST
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "realtime");
@@ -492,8 +512,10 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 #endif
   }
 
-  play->has_device = parse_json_str(play_obj, "device", play->device, sizeof(play->device));
-  play->has_filename = parse_json_str(play_obj, "filename", play->filename, sizeof(play->filename));
+  play->has_device =
+      parse_json_str(play_obj, "device", play->device, sizeof(play->device));
+  play->has_filename = parse_json_str(play_obj, "filename", play->filename,
+                                      sizeof(play->filename));
 
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -525,19 +547,24 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   }
 
   play->has_is_wav = parse_json_bool(play_obj, "wav_header", &play->is_wav);
-  play->has_exclusive = parse_json_bool(play_obj, "exclusive", &play->exclusive);
+  play->has_exclusive =
+      parse_json_bool(play_obj, "exclusive", &play->exclusive);
 
 #if defined(_WIN32)
   play->has_polling = parse_json_bool(play_obj, "polling", &play->polling);
 #endif
 
-  play->has_output_dop = parse_json_bool(play_obj, "output_dop", &play->output_dop);
-  play->has_output_dsd = parse_json_bool(play_obj, "output_dsd", &play->output_dsd);
+  play->has_output_dop =
+      parse_json_bool(play_obj, "output_dop", &play->output_dop);
+  play->has_output_dsd =
+      parse_json_bool(play_obj, "output_dsd", &play->output_dsd);
 
   char dsd_filter_buf[64];
-  if (parse_json_str(play_obj, "dsd_encoder_filter", dsd_filter_buf, sizeof(dsd_filter_buf))) {
+  if (parse_json_str(play_obj, "dsd_encoder_filter", dsd_filter_buf,
+                     sizeof(dsd_filter_buf))) {
     play->dsd_encoder_filter = sdm_filter_from_string(dsd_filter_buf);
-    play->has_dsd_encoder_filter = (play->dsd_encoder_filter != SDM_FILTER_INVALID);
+    play->has_dsd_encoder_filter =
+        (play->dsd_encoder_filter != SDM_FILTER_INVALID);
   }
 
 #ifdef CDSP_TEST
@@ -545,10 +572,17 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
-  play->has_node_name = parse_json_str(play_obj, "node_name", play->node_name, sizeof(play->node_name));
-  play->has_node_description = parse_json_str(play_obj, "node_description", play->node_description, sizeof(play->node_description));
-  play->has_node_group_name = parse_json_str(play_obj, "node_group_name", play->node_group_name, sizeof(play->node_group_name));
-  play->has_autoconnect_to = parse_json_str(play_obj, "autoconnect_to", play->autoconnect_to, sizeof(play->autoconnect_to));
+  play->has_node_name = parse_json_str(play_obj, "node_name", play->node_name,
+                                       sizeof(play->node_name));
+  play->has_node_description =
+      parse_json_str(play_obj, "node_description", play->node_description,
+                     sizeof(play->node_description));
+  play->has_node_group_name =
+      parse_json_str(play_obj, "node_group_name", play->node_group_name,
+                     sizeof(play->node_group_name));
+  play->has_autoconnect_to =
+      parse_json_str(play_obj, "autoconnect_to", play->autoconnect_to,
+                     sizeof(play->autoconnect_to));
 #endif
 
   parse_labels_array(cJSON_GetObjectItemCaseSensitive(play_obj, "labels"),
@@ -689,14 +723,16 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   if (parse_json_int(dev_obj, "queuelimit", &dev->queuelimit)) {
     dev->has_queuelimit = (dev->queuelimit > 0);
   }
-  dev->has_enable_rate_adjust = parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);
+  dev->has_enable_rate_adjust =
+      parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);
   if (parse_json_int(dev_obj, "target_level", &dev->target_level)) {
     dev->has_target_level = (dev->target_level > 0);
   }
   if (parse_json_double(dev_obj, "adjust_period", &dev->adjust_period)) {
     dev->has_adjust_period = (dev->adjust_period > 0.0);
   }
-  if (parse_json_double(dev_obj, "silence_threshold", &dev->silence_threshold)) {
+  if (parse_json_double(dev_obj, "silence_threshold",
+                        &dev->silence_threshold)) {
     dev->has_silence_threshold = (dev->silence_threshold != 0.0);
   }
   if (parse_json_double(dev_obj, "silence_timeout", &dev->silence_timeout)) {
@@ -712,11 +748,14 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {
     dev->has_volume_limit = (dev->volume_limit > 0.0);
   }
-  dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change", &dev->stop_on_rate_change);
-  if (parse_json_double(dev_obj, "rate_measure_interval", &dev->rate_measure_interval)) {
+  dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change",
+                                                 &dev->stop_on_rate_change);
+  if (parse_json_double(dev_obj, "rate_measure_interval",
+                        &dev->rate_measure_interval)) {
     dev->has_rate_measure_interval = (dev->rate_measure_interval > 0.0);
   }
-  dev->has_multithreaded = parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);
+  dev->has_multithreaded =
+      parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);
   if (parse_json_int(dev_obj, "worker_threads", &dev->worker_threads)) {
     dev->has_worker_threads = (dev->worker_threads > 0);
   }

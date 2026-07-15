@@ -413,8 +413,7 @@ typedef struct {
 
 static void resampler_iter(int i, void* ctx) {
   resampler_test_ctx_t* c = (resampler_test_ctx_t*)ctx;
-  resampler_process(c->resampler, c->inputs[i % c->input_count],
-                    c->output);
+  resampler_process(c->resampler, c->inputs[i % c->input_count], c->output);
 }
 
 static void run_resampler_hot_path(resampler_t* resampler, int channels,
@@ -595,10 +594,10 @@ TEST(Volume_AllocationFree) {
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);
   volume_config_t params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
-                                .limit = 50.0,
-                                .has_limit = true,
-                                .fader = FADER_MAIN};
+                            .has_ramp_time = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
   volume_filter_t* filter =
       volume_filter_create("vol", &params, 44100, 1024, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -616,12 +615,12 @@ TEST(Loudness_AllocationFree) {
   processing_parameters_set_current_volume_for_fader(proc_params, -45.0,
                                                      FADER_MAIN);
   loudness_config_t params = {.reference_level = -25.0,
-                                  .has_reference_level = true,
-                                  .high_boost = 10.0,
-                                  .has_high_boost = true,
-                                  .low_boost = 10.0,
-                                  .has_low_boost = true,
-                                  .attenuate_mid = false};
+                              .has_reference_level = true,
+                              .high_boost = 10.0,
+                              .has_high_boost = true,
+                              .low_boost = 10.0,
+                              .has_low_boost = true,
+                              .attenuate_mid = false};
   loudness_filter_t* filter =
       loudness_filter_create("loud", &params, 44100, proc_params, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -649,21 +648,21 @@ TEST(Delay_AllocationFree) {
 
 TEST(BiquadCombo_AllocationFree) {
   biquad_combo_config_t params = {.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ,
-                                      .fls = 80.0,
-                                      .qls = 0.707,
-                                      .gls = 3.0,
-                                      .fp1 = 250.0,
-                                      .qp1 = 1.5,
-                                      .gp1 = -2.0,
-                                      .fp2 = 1000.0,
-                                      .qp2 = 2.0,
-                                      .gp2 = 1.5,
-                                      .fp3 = 4000.0,
-                                      .qp3 = 1.0,
-                                      .gp3 = -1.0,
-                                      .fhs = 12000.0,
-                                      .qhs = 0.707,
-                                      .ghs = 2.5};
+                                  .fls = 80.0,
+                                  .qls = 0.707,
+                                  .gls = 3.0,
+                                  .fp1 = 250.0,
+                                  .qp1 = 1.5,
+                                  .gp1 = -2.0,
+                                  .fp2 = 1000.0,
+                                  .qp2 = 2.0,
+                                  .gp2 = 1.5,
+                                  .fp3 = 4000.0,
+                                  .qp3 = 1.0,
+                                  .gp3 = -1.0,
+                                  .fhs = 12000.0,
+                                  .qhs = 0.707,
+                                  .ghs = 2.5};
   biquad_combo_filter_t* filter =
       biquad_combo_filter_create("combo", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -716,9 +715,9 @@ TEST(Limiter_AllocationFree) {
 
 TEST(LookaheadLimiter_AllocationFree) {
   lookahead_limiter_config_t params = {.limit = -1.0,
-                                           .attack = 4.0,
-                                           .release = 20.0,
-                                           .unit = DELAY_UNIT_SAMPLES};
+                                       .attack = 4.0,
+                                       .release = 20.0,
+                                       .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
       lookahead_limiter_filter_create("lookahead", &params, 44100, 1024, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -758,19 +757,19 @@ TEST(Compressor_AllocationFree) {
   int mon_ch[] = {0};
   int proc_ch[] = {0, 1};
   compressor_config_t params = {.channels = 2,
-                                    .monitor_channels = mon_ch,
-                                    .monitor_channels_count = 1,
-                                    .process_channels = proc_ch,
-                                    .process_channels_count = 2,
-                                    .attack = 0.005,
-                                    .release = 0.05,
-                                    .threshold = -10.0,
-                                    .factor = 3.0,
-                                    .makeup_gain = 2.0,
-                                    .has_makeup_gain = true,
-                                    .soft_clip = true,
-                                    .clip_limit = -1.0,
-                                    .has_clip_limit = true};
+                                .monitor_channels = mon_ch,
+                                .monitor_channels_count = 1,
+                                .process_channels = proc_ch,
+                                .process_channels_count = 2,
+                                .attack = 0.005,
+                                .release = 0.05,
+                                .threshold = -10.0,
+                                .factor = 3.0,
+                                .makeup_gain = 2.0,
+                                .has_makeup_gain = true,
+                                .soft_clip = true,
+                                .clip_limit = -1.0,
+                                .has_clip_limit = true};
   compressor_processor_t* proc =
       compressor_processor_create("comp", &params, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
@@ -790,14 +789,14 @@ TEST(NoiseGate_AllocationFree) {
   int mon_ch[] = {0};
   int proc_ch[] = {0, 1};
   noise_gate_config_t params = {.channels = 2,
-                                    .monitor_channels = mon_ch,
-                                    .monitor_channels_count = 1,
-                                    .process_channels = proc_ch,
-                                    .process_channels_count = 2,
-                                    .attack = 0.005,
-                                    .release = 0.05,
-                                    .threshold = -20.0,
-                                    .attenuation = 12.0};
+                                .monitor_channels = mon_ch,
+                                .monitor_channels_count = 1,
+                                .process_channels = proc_ch,
+                                .process_channels_count = 2,
+                                .attack = 0.005,
+                                .release = 0.05,
+                                .threshold = -20.0,
+                                .attenuation = 12.0};
   noise_gate_processor_t* proc =
       noise_gate_processor_create("gate", &params, 44100, 1024, NULL);
   ASSERT_TRUE(proc != NULL);
@@ -815,14 +814,14 @@ TEST(NoiseGate_AllocationFree) {
 
 TEST(RACE_AllocationFree) {
   race_config_t params = {.channels = 2,
-                              .channel_a = 0,
-                              .channel_b = 1,
-                              .delay = 12.0,
-                              .subsample_delay = false,
-                              .has_subsample_delay = true,
-                              .delay_unit = DELAY_UNIT_SAMPLES,
-                              .has_delay_unit = true,
-                              .attenuation = 6.0};
+                          .channel_a = 0,
+                          .channel_b = 1,
+                          .delay = 12.0,
+                          .subsample_delay = false,
+                          .has_subsample_delay = true,
+                          .delay_unit = DELAY_UNIT_SAMPLES,
+                          .has_delay_unit = true,
+                          .attenuation = 6.0};
   race_processor_t* proc = race_processor_create("race", &params, 44100, NULL);
   ASSERT_TRUE(proc != NULL);
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
@@ -902,8 +901,8 @@ TEST(DoPEncoder_AllocationFree) {
 #if defined(ENABLE_BLAS)
   openblas_set_num_threads(1);
 #endif
-  dsd_encoder_t* encoder = dsd_encoder_create(
-      2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0);
+  dsd_encoder_t* encoder =
+      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0);
   ASSERT_TRUE(encoder != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 0.5);
   dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};

@@ -1,8 +1,8 @@
 #include <math.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 TEST(ProcessingParametersGettersSetters) {

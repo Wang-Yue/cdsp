@@ -315,7 +315,7 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
 }
 
 static bool biquad_config_check_stability(const biquad_config_t* params,
-                                            int sample_rate) {
+                                          int sample_rate) {
   if (!params || sample_rate <= 0) return false;
   biquad_coefficients_t dummy_coeffs;
   return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);
@@ -481,8 +481,8 @@ void biquad_filter_free(biquad_filter_t* filter) {
   free(filter);
 }
 
-int biquad_config_validate(const biquad_config_t* params,
-                            int sample_rate, config_error_t* err) {
+int biquad_config_validate(const biquad_config_t* params, int sample_rate,
+                           config_error_t* err) {
   if (!params) return 0;
   double nyquist = (double)sample_rate / 2.0;
   if (params->type != BIQUAD_TYPE_FREE &&

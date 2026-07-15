@@ -17,8 +17,8 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
 #include "Audio/lock_free_ring_buffer.h"
+#include "Utils/double_helpers.h"
 
 #ifndef FADER_T_DEFINED
 #define FADER_T_DEFINED

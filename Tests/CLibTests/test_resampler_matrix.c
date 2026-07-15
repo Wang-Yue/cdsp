@@ -638,8 +638,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
     for (size_t c = 0; c < chunk_count; c++) {
       size_t needed_in = resampler_get_input_frames_next(resampler);
       audio_chunk_set_valid_frames(chunks[c], needed_in);
-      if (resampler_process(resampler, chunks[c], scratch) ==
-          RESAMPLER_OK) {
+      if (resampler_process(resampler, chunks[c], scratch) == RESAMPLER_OK) {
         out_frames += audio_chunk_get_valid_frames(scratch);
       }
     }

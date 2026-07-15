@@ -38,8 +38,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Config/config_error.h"
+#include "Utils/double_helpers.h"
 #include "arbitrary_complex_fft.h"
 
 #if defined(ENABLE_ACCELERATE)

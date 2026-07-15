@@ -14,9 +14,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Utils/double_helpers.h"
 #include "Audio/processing_parameters.h"
 #include "Config/filter_config_types.h"
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Opaque struct representing a loudness filter instance.
@@ -48,7 +48,7 @@ loudness_filter_t* loudness_filter_create(const char* name,
  * @return 0 on success, -1 on failure.
  */
 int loudness_config_validate(const loudness_config_t* params,
-                                 config_error_t* err);
+                             config_error_t* err);
 
 /**
  * @brief Processes a slice of waveform using the loudness filter.

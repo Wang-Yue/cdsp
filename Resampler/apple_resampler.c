@@ -91,8 +91,6 @@ static OSStatus input_data_proc(
   return noErr;
 }
 
-
-
 static void apple_resampler_free(apple_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->converter) {
@@ -114,7 +112,7 @@ static void apple_resampler_free(apple_resampler_t* resampler) {
 /// converter (returns `kAudioConverterErr_PropertyNotSupported`). We accept the
 /// multiplier without effect and log a warning once.
 static void apple_resampler_set_relative_ratio(apple_resampler_t* resampler,
-                                        double multiplier) {
+                                               double multiplier) {
   (void)resampler;
   (void)multiplier;
   // Fixed-ratio in Apple AudioConverter
@@ -129,7 +127,8 @@ static size_t apple_resampler_get_max_output_frames(
   return resampler ? resampler->max_output_frames : 0;
 }
 
-static size_t apple_resampler_get_chunk_size(const apple_resampler_t* resampler) {
+static size_t apple_resampler_get_chunk_size(
+    const apple_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
@@ -148,8 +147,8 @@ static size_t apple_resampler_get_channels(const apple_resampler_t* resampler) {
 }
 
 static resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
-                                          const audio_chunk_t* input,
-                                          audio_chunk_t* output) {
+                                                 const audio_chunk_t* input,
+                                                 audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
   if (valid_frames > resampler->chunk_size) {
@@ -245,10 +244,11 @@ static resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
   return RESAMPLER_OK;
 }
 
-resampler_t* apple_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    apple_resampler_quality_t quality, apple_resampler_complexity_t complexity,
-    size_t chunk_size, config_error_t* err) {
+resampler_t* apple_resampler_create(size_t channels, size_t input_rate,
+                                    size_t output_rate,
+                                    apple_resampler_quality_t quality,
+                                    apple_resampler_complexity_t complexity,
+                                    size_t chunk_size, config_error_t* err) {
   if (channels == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AppleResampler: channels must be positive");
@@ -373,22 +373,20 @@ resampler_t* apple_resampler_create(
   AudioConverterSetProperty(conv, kAudioConverterSampleRateConverterQuality,
                             sizeof(UInt32), &quality_val);
 
-  UInt32 complexity_val = (UInt32)apple_resampler_complexity_os_type(complexity);
-  AudioConverterSetProperty(conv,
-                            kAudioConverterSampleRateConverterComplexity,
+  UInt32 complexity_val =
+      (UInt32)apple_resampler_complexity_os_type(complexity);
+  AudioConverterSetProperty(conv, kAudioConverterSampleRateConverterComplexity,
                             sizeof(UInt32), &complexity_val);
 
-  resampler_t* wrap =
-      (resampler_t*)calloc(1, sizeof(resampler_t));
+  resampler_t* wrap = (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     apple_resampler_free(resampler);
     return NULL;
   }
   wrap->type = RESAMPLER_IMPL_APPLE;
   wrap->impl = resampler;
-  wrap->process =
-      (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
-          apple_resampler_process;
+  wrap->process = (resampler_error_t (*)(
+      void*, const audio_chunk_t*, audio_chunk_t*))apple_resampler_process;
   wrap->set_relative_ratio =
       (void (*)(void*, double))apple_resampler_set_relative_ratio;
   wrap->get_ratio = (double (*)(const void*))apple_resampler_get_ratio;
