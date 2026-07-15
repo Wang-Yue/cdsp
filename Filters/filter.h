@@ -102,4 +102,15 @@ const char* filter_get_name(const filter_t* filter);
  */
 void filter_free(filter_t* filter);
 
+/**
+ * @brief Validates a filter configuration.
+ *
+ * @param filter The filter configuration to validate.
+ * @param sample_rate The audio sample rate in Hz.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int filter_config_validate(const filter_config_t* filter, int sample_rate,
+                           config_error_t* err);
+
 #endif  // CLIB_FILTERS_FILTER_H

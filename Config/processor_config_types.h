@@ -105,15 +105,4 @@ typedef struct {
   } parameters;                         /**< Union of processor parameters. */
 } processor_config_t;
 
-/**
- * @brief Validate a processor configuration.
- *
- * @param proc Pointer to the processor configuration to validate.
- * @param err Pointer to config_error_t to store error details if validation
- * fails.
- * @return 0 if valid, non-zero error code otherwise.
- */
-int processor_config_validate(const processor_config_t* proc,
-                              config_error_t* err);
-
 #endif  // CLIB_CONFIG_PROCESSOR_CONFIG_TYPES_H

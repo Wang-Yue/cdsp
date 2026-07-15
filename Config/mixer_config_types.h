@@ -75,17 +75,4 @@ typedef struct {
  */
 double mixer_source_gain_value(const mixer_source_t* src);
 
-/**
- * @brief Validate the mapping is internally consistent.
- *
- * Checks that every dest is in range, no dest appears twice, and within
- * a single dest no source channel appears twice.
- *
- * @param mixer Pointer to the mixer configuration.
- * @param err Pointer to config_error_t to store error details if validation
- * fails.
- * @return 0 if valid, non-zero error code otherwise.
- */
-int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err);
-
 #endif  // CLIB_CONFIG_MIXER_CONFIG_TYPES_H

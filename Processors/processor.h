@@ -108,4 +108,14 @@ const char* dsp_processor_get_name(const dsp_processor_t* proc);
  */
 void dsp_processor_free(dsp_processor_t* proc);
 
+/**
+ * @brief Validates a processor configuration.
+ *
+ * @param proc Pointer to the processor configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int processor_config_validate(const processor_config_t* proc,
+                              config_error_t* err);
+
 #endif  // CLIB_PROCESSORS_PROCESSOR_H

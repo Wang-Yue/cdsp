@@ -68,6 +68,27 @@ typedef struct audio_resampler {
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new audio resampler instance, or NULL on error.
  */
+/**
+ * @brief Validates a resampler configuration.
+ *
+ * @param config Pointer to the resampler configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int resampler_config_validate(const resampler_config_t* config,
+                              config_error_t* err);
+
+/**
+ * @brief Creates an audio resampler based on the provided configuration.
+ *
+ * @param config Configuration parameters for the resampler.
+ * @param input_rate Input sample rate in Hz.
+ * @param output_rate Output sample rate in Hz.
+ * @param channels Number of audio channels.
+ * @param chunk_size Fixed number of input frames expected per process call.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return A new audio resampler instance, or NULL on error.
+ */
 audio_resampler_t* audio_resampler_create_from_config(
     const resampler_config_t* config, size_t input_rate, size_t output_rate,
     size_t channels, size_t chunk_size, config_error_t* err);

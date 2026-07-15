@@ -794,3 +794,139 @@ size_t pipeline_get_last_error_needed(const pipeline_t* pipeline) {
 size_t pipeline_get_last_error_got(const pipeline_t* pipeline) {
   return pipeline ? pipeline->last_error_got : 0;
 }
+
+int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
+  if (!config) return 0;
+
+  int num_channels =
+      capture_device_config_get_channels(&config->devices.capture);
+  for (size_t i = 0; i < config->pipeline_count; i++) {
+    const pipeline_step_t* step = &config->pipeline[i];
+    if (step->bypassed) continue;
+
+    switch (step->type) {
+      case PIPELINE_STEP_TYPE_FILTER: {
+        if (!step->names || step->names_count == 0) {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Filter step %zu must have 'names'", i);
+          return -1;
+        }
+        for (size_t j = 0; j < step->names_count; j++) {
+          if (!step->names[j] || step->names[j][0] == '\0') {
+            config_error_set(
+                err, CONFIG_ERR_INVALID_PIPELINE,
+                "Filter step %zu has invalid/empty filter name at index %zu", i,
+                j);
+            return -1;
+          }
+          if (!dsp_config_get_filter(config, step->names[j])) {
+            config_error_set(
+                err, CONFIG_ERR_INVALID_PIPELINE,
+                "Filter '%s' referenced in pipeline but not defined",
+                step->names[j]);
+            return -1;
+          }
+        }
+        if (step->has_channel) {
+          if (step->channel >= num_channels) {
+            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                             "Filter step %zu references channel %d but "
+                             "pipeline only has %d channel(s) at this point",
+                             i, step->channel, num_channels);
+            return -1;
+          }
+        }
+        for (size_t j = 0; j < step->channels_count; j++) {
+          if (step->channels[j] >= num_channels) {
+            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                             "Filter step %zu references channel %d but "
+                             "pipeline only has %d channel(s) at this point",
+                             i, step->channels[j], num_channels);
+            return -1;
+          }
+          for (size_t k = 0; k < j; k++) {
+            if (step->channels[j] == step->channels[k]) {
+              config_error_set(
+                  err, CONFIG_ERR_INVALID_PIPELINE,
+                  "Filter step %zu references duplicated channel %d", i,
+                  step->channels[j]);
+              return -1;
+            }
+          }
+        }
+        break;
+      }
+      case PIPELINE_STEP_TYPE_MIXER: {
+        if (!step->has_name || step->name[0] == '\0') {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Mixer step %zu must have 'name'", i);
+          return -1;
+        }
+        const mixer_config_t* mixer = dsp_config_get_mixer(config, step->name);
+        if (!mixer) {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Mixer '%s' referenced in pipeline but not defined",
+                           step->name);
+          return -1;
+        }
+        if (mixer->channels_in != (size_t)num_channels) {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Mixer '%s' expects %d input channel(s) but "
+                           "pipeline has %d at this point",
+                           step->name, mixer->channels_in, num_channels);
+          return -1;
+        }
+        num_channels = mixer->channels_out;
+        break;
+      }
+      case PIPELINE_STEP_TYPE_PROCESSOR: {
+        if (!step->has_name || step->name[0] == '\0') {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Processor step %zu must have 'name'", i);
+          return -1;
+        }
+        const processor_config_t* proc =
+            dsp_config_get_processor(config, step->name);
+        if (!proc) {
+          config_error_set(
+              err, CONFIG_ERR_INVALID_PIPELINE,
+              "Processor '%s' referenced in pipeline but not defined",
+              step->name);
+          return -1;
+        }
+        int expected_channels = 0;
+        switch (proc->type) {
+          case PROCESSOR_TYPE_COMPRESSOR:
+            expected_channels = proc->parameters.compressor.channels;
+            break;
+          case PROCESSOR_TYPE_NOISE_GATE:
+            expected_channels = proc->parameters.noise_gate.channels;
+            break;
+          case PROCESSOR_TYPE_RACE:
+            expected_channels = proc->parameters.race.channels;
+            break;
+        }
+        if (expected_channels != num_channels) {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Processor '%s' expects %d channel(s) but pipeline "
+                           "has %d at this point",
+                           step->name, expected_channels, num_channels);
+          return -1;
+        }
+        break;
+      }
+    }
+  }
+
+  int playback_channels =
+      playback_device_config_get_channels(&config->devices.playback);
+  if (num_channels != playback_channels) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_PIPELINE,
+        "Pipeline outputs %d channel(s) but playback device expects %d",
+        num_channels, playback_channels);
+    return -1;
+  }
+
+  return 0;
+}

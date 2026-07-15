@@ -91,36 +91,3 @@ filter_type_t filter_type_from_string(const char* str) {
     return FILTER_TYPE_LOOKAHEAD_LIMITER;
   return FILTER_TYPE_GAIN;
 }
-
-int filter_config_validate(const filter_config_t* filter, int sample_rate,
-                           config_error_t* err) {
-  if (!filter) return 0;
-  switch (filter->type) {
-    case FILTER_TYPE_GAIN:
-      return gain_parameters_validate(&filter->parameters.gain, err);
-    case FILTER_TYPE_VOLUME:
-      return volume_parameters_validate(&filter->parameters.volume, err);
-    case FILTER_TYPE_LOUDNESS:
-      return loudness_parameters_validate(&filter->parameters.loudness, err);
-    case FILTER_TYPE_BIQUAD:
-      return biquad_parameters_validate(&filter->parameters.biquad, sample_rate,
-                                        err);
-    case FILTER_TYPE_CONV:
-      return conv_parameters_validate(&filter->parameters.conv, err);
-    case FILTER_TYPE_DELAY:
-      return delay_parameters_validate(&filter->parameters.delay, err);
-    case FILTER_TYPE_BIQUAD_COMBO:
-      return biquad_combo_parameters_validate(&filter->parameters.biquad_combo,
-                                              sample_rate, err);
-    case FILTER_TYPE_DIFF_EQ:
-      return diff_eq_parameters_validate(&filter->parameters.diff_eq, err);
-    case FILTER_TYPE_DITHER:
-      return dither_parameters_validate(&filter->parameters.dither, err);
-    case FILTER_TYPE_LIMITER:
-      return limiter_parameters_validate(&filter->parameters.limiter, err);
-    case FILTER_TYPE_LOOKAHEAD_LIMITER:
-      return lookahead_limiter_parameters_validate(
-          &filter->parameters.lookahead_limiter, sample_rate, err);
-  }
-  return 0;
-}

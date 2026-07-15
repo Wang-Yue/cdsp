@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "Config/configuration.h"
+#include "Mixer/mixer.h"
 #include "test_support.h"
 
 static void set_test_channels(dsp_config_t* config, int cap_chs, int play_chs) {

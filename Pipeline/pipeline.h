@@ -96,4 +96,17 @@ size_t pipeline_get_last_error_needed(const pipeline_t* pipeline);
  */
 size_t pipeline_get_last_error_got(const pipeline_t* pipeline);
 
+/**
+ * @brief Validates pipeline configuration structure and channel tracking.
+ *
+ * Scans the pipeline steps, ensures referenced components exist and channel
+ * bounds match available channels, and verifies output channel count matches
+ * playback configuration.
+ *
+ * @param[in] config The top-level DSP configuration.
+ * @param[out] err Pointer to a config error struct to receive error details on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int pipeline_config_validate(const dsp_config_t* config, config_error_t* err);
+
 #endif  // CLIB_PIPELINE_PIPELINE_H

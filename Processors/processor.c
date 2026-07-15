@@ -318,3 +318,17 @@ dsp_processor_t* dsp_processor_create(const char* name,
       return NULL;
   }
 }
+
+int processor_config_validate(const processor_config_t* proc,
+                              config_error_t* err) {
+  if (!proc) return 0;
+  switch (proc->type) {
+    case PROCESSOR_TYPE_COMPRESSOR:
+      return compressor_parameters_validate(&proc->parameters.compressor, err);
+    case PROCESSOR_TYPE_NOISE_GATE:
+      return noise_gate_parameters_validate(&proc->parameters.noise_gate, err);
+    case PROCESSOR_TYPE_RACE:
+      return race_parameters_validate(&proc->parameters.race, err);
+  }
+  return 0;
+}
