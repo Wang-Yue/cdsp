@@ -855,7 +855,7 @@ TEST(ConfigLoaderParseAndValidate) {
   invalid_config.devices.samplerate = 0;
   res = dsp_config_validate(&invalid_config, &err);
   ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_VALIDATION, err.type);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
 }
 
 TEST(PipelineReload_StatePreserved) {

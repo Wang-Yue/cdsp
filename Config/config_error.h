@@ -18,9 +18,12 @@ typedef enum {
   CONFIG_ERR_PARSE,      /**< Error parsing the configuration (e.g., JSON syntax
                             error). */
   CONFIG_ERR_VALIDATION, /**< General validation error. */
-  CONFIG_ERR_INVALID_FILTER,  /**< Invalid filter configuration. */
-  CONFIG_ERR_INVALID_MIXER,   /**< Invalid mixer configuration. */
-  CONFIG_ERR_INVALID_PIPELINE /**< Invalid pipeline configuration. */
+  CONFIG_ERR_INVALID_FILTER,    /**< Invalid filter configuration. */
+  CONFIG_ERR_INVALID_MIXER,     /**< Invalid mixer configuration. */
+  CONFIG_ERR_INVALID_PROCESSOR, /**< Invalid processor configuration. */
+  CONFIG_ERR_INVALID_RESAMPLER, /**< Invalid resampler configuration. */
+  CONFIG_ERR_INVALID_DEVICE,    /**< Invalid device configuration. */
+  CONFIG_ERR_INVALID_PIPELINE   /**< Invalid pipeline configuration. */
 } config_error_type_t;
 
 /**

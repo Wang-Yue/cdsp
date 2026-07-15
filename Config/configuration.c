@@ -50,46 +50,46 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
 
   // Top level checks
   if (config->devices.samplerate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Sample rate must be positive");
     return -1;
   }
   if (config->devices.chunksize == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION, "Chunk size must be positive");
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE, "Chunk size must be positive");
     return -1;
   }
   if (!config->devices.capture.is_wav &&
       capture_device_config_get_channels(&config->devices.capture) <= 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Capture channels must be positive");
     return -1;
   }
   if (playback_device_config_get_channels(&config->devices.playback) <= 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Playback channels must be positive");
     return -1;
   }
 
   if (config->devices.has_silence_timeout &&
       config->devices.silence_timeout < 0.0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "silence_timeout cannot be negative");
     return -1;
   }
   if (config->devices.has_silence_threshold &&
       config->devices.silence_threshold > 0.0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "silence_threshold must be less than or equal to 0");
     return -1;
   }
   if (config->devices.has_volume_limit) {
     if (config->devices.volume_limit > 50.0) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                        "Volume limit cannot be above +50 dB");
       return -1;
     }
     if (config->devices.volume_limit < -150.0) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                        "Volume limit cannot be less than -150 dB");
       return -1;
     }
@@ -101,12 +101,12 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     int64_t qlimit_val =
         config->devices.has_queuelimit ? config->devices.queuelimit : 4;
     if (qlimit_val < 0 || qlimit_val > 1000) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                        "queuelimit must be between 0 and 1000");
       return -1;
     }
     if (config->devices.chunksize <= 0 || config->devices.chunksize > 1000000) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                        "chunksize must be between 1 and 1000000");
       return -1;
     }
@@ -122,21 +122,21 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
       char msg[128];
       snprintf(msg, sizeof(msg), "target_level must be between 1 and %lld",
                (long long)target_limit);
-      config_error_set(err, CONFIG_ERR_VALIDATION, msg);
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE, msg);
       return -1;
     }
   }
 
   if (config->devices.has_worker_threads &&
       config->devices.worker_threads <= 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "worker_threads must be positive");
     return -1;
   }
 
   if (config->devices.has_adjust_period &&
       config->devices.adjust_period < 0.1) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "adjust_period must be at least 0.1 seconds");
     return -1;
   }
@@ -170,7 +170,7 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     config_error_init(&sub_err);
     if (processor_config_validate(&config->processors[i].processor, &sub_err) !=
         0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Processor '%s': %s",
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR, "Processor '%s': %s",
                        config->processors[i].name, sub_err.message);
       return -1;
     }

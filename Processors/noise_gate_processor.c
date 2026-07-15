@@ -212,23 +212,23 @@ int noise_gate_config_validate(const noise_gate_config_t* p,
                                     config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: channels must be > 0, got %d", p->channels);
     return -1;
   }
   if (p->attack <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: attack must be > 0, got %g", p->attack);
     return -1;
   }
   if (p->release <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: release must be > 0, got %g", p->release);
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
     if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                        "NoiseGate: monitor channel %d is invalid (max: %d)",
                        p->monitor_channels[i], p->channels - 1);
       return -1;
@@ -236,7 +236,7 @@ int noise_gate_config_validate(const noise_gate_config_t* p,
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
     if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                        "NoiseGate: process channel %d is invalid (max: %d)",
                        p->process_channels[i], p->channels - 1);
       return -1;

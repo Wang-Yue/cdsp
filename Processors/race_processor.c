@@ -226,34 +226,34 @@ int race_config_validate(const race_config_t* p,
                              config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: channels must be > 0, got %d", p->channels);
     return -1;
   }
   if (p->attenuation <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: attenuation must be > 0, got %g", p->attenuation);
     return -1;
   }
   if (p->delay <= 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: delay must be > 0, got %g", p->delay);
     return -1;
   }
   if (p->channel_a == p->channel_b) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: channels A and B must be different, got both %d",
                      p->channel_a);
     return -1;
   }
   if (p->channel_a < 0 || p->channel_a >= p->channels) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: channel A %d is invalid (max: %d)", p->channel_a,
                      p->channels - 1);
     return -1;
   }
   if (p->channel_b < 0 || p->channel_b >= p->channels) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: channel B %d is invalid (max: %d)", p->channel_b,
                      p->channels - 1);
     return -1;

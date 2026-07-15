@@ -41,6 +41,15 @@ void config_error_description(const config_error_t* err, char* out_buf,
     case CONFIG_ERR_INVALID_MIXER:
       snprintf(out_buf, buf_len, "Invalid mixer: %s", err->message);
       break;
+    case CONFIG_ERR_INVALID_PROCESSOR:
+      snprintf(out_buf, buf_len, "Invalid processor: %s", err->message);
+      break;
+    case CONFIG_ERR_INVALID_RESAMPLER:
+      snprintf(out_buf, buf_len, "Invalid resampler: %s", err->message);
+      break;
+    case CONFIG_ERR_INVALID_DEVICE:
+      snprintf(out_buf, buf_len, "Invalid device: %s", err->message);
+      break;
     case CONFIG_ERR_INVALID_PIPELINE:
       snprintf(out_buf, buf_len, "Invalid pipeline: %s", err->message);
       break;

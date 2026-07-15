@@ -238,19 +238,19 @@ int resampler_config_validate(const resampler_config_t* config,
   if (!config) return 0;
 
   if (config->has_sinc_len && config->sinc_len <= 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
                      "sinc_len must be positive, got %d", config->sinc_len);
     return -1;
   }
   if (config->has_oversampling_factor && config->oversampling_factor <= 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
                      "oversampling_factor must be positive, got %d",
                      config->oversampling_factor);
     return -1;
   }
   if (config->has_f_cutoff &&
       (config->f_cutoff <= 0.0 || config->f_cutoff > 1.0)) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
                      "f_cutoff must be in (0.0, 1.0], got %g",
                      config->f_cutoff);
     return -1;

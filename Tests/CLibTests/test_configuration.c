@@ -122,7 +122,7 @@ TEST(ValidateSampleRate) {
   config_error_init(&err);
   int res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_VALIDATION, err.type);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
   ASSERT_TRUE(strstr(err.message, "Sample rate must be positive") != NULL);
 }
 
@@ -136,7 +136,7 @@ TEST(ValidateChunkSize) {
   config_error_init(&err);
   int res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_VALIDATION, err.type);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
   ASSERT_TRUE(strstr(err.message, "Chunk size must be positive") != NULL);
 }
 
@@ -150,13 +150,13 @@ TEST(ValidateChannels) {
   config_error_init(&err);
   int res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_VALIDATION, err.type);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
   ASSERT_TRUE(strstr(err.message, "Capture channels must be positive") != NULL);
 
   set_test_channels(&config, 2, 0);
   res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_VALIDATION, err.type);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
   ASSERT_TRUE(strstr(err.message, "Playback channels must be positive") !=
               NULL);
 }
