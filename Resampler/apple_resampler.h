@@ -108,6 +108,25 @@ size_t apple_resampler_get_max_output_frames(
 size_t apple_resampler_get_chunk_size(const apple_resampler_t* resampler);
 
 /**
+ * @brief Gets the number of input frames required for the next process call.
+ *
+ * @param resampler Pointer to the resampler.
+ * @return The required input frame count.
+ */
+size_t apple_resampler_get_input_frames_next(
+    const apple_resampler_t* resampler);
+
+/**
+ * @brief Gets the number of output frames that will be generated in the next
+ * process call.
+ *
+ * @param resampler Pointer to the resampler.
+ * @return The expected output frame count.
+ */
+size_t apple_resampler_get_output_frames_next(
+    const apple_resampler_t* resampler);
+
+/**
  * @brief Gets the number of channels configured for the resampler.
  *
  * @param resampler Pointer to the resampler.

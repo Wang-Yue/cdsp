@@ -217,31 +217,7 @@ size_t async_poly_resampler_get_channels(
   return resampler ? resampler->channels : 0;
 }
 
-/**
- * @brief Computes the number of output frames expected for the current block.
- *
- * It uses the average ratio between current and target resampling ratios,
- * and accounts for the current index offset (`last_index`) and filter group
- * delay.
- *
- * @param resampler Pointer to the resampler instance.
- * @return Estimated number of output frames.
- */
-static inline size_t __attribute__((unused)) get_next_output_frames(
-    const async_poly_resampler_t* resampler) {
-  if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
-    return resampler->chunk_size;
-  }
-  // Calculate output size for input
-  // — `.floor()`, not `.ceil()`.
-  double avg_ratio =
-      0.5 * resampler->resample_ratio + 0.5 * resampler->target_ratio;
-  double raw =
-      ((double)resampler->chunk_size -
-       (double)(resampler->interpolator_len + 1) - resampler->last_index) *
-      avg_ratio;
-  return (size_t)floor(raw);
-}
+
 
 /**
  * @brief Performs linear polynomial interpolation on input buffer.

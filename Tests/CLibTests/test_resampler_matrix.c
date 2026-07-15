@@ -583,29 +583,31 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       return false;
   }
 
-  size_t cs = 1024;
+  size_t base_cs = 1024;
   audio_resampler_t* resampler =
-      audio_resampler_create_from_config(&cfg, in_rate, out_rate, 1, cs, NULL);
+      audio_resampler_create_from_config(&cfg, in_rate, out_rate, 1, base_cs, NULL);
   if (!resampler) return false;
-  cs = audio_resampler_get_chunk_size(resampler);
 
   size_t chunk_count = 64;
-  size_t nbr_in = chunk_count * cs;
+  size_t max_in_buf = base_cs * 4;
+  size_t total_nbr_in = 0;
 
   audio_chunk_t* chunks[64];
   for (size_t c = 0; c < chunk_count; c++) {
-    chunks[c] = audio_chunk_create(cs, 1);
+    chunks[c] = audio_chunk_create(max_in_buf, 1);
     double* ch0 = audio_chunk_get_channel(chunks[c], 0);
-    for (size_t i = 0; i < cs; i++) {
+    for (size_t i = 0; i < max_in_buf; i++) {
       ch0[i] = ((double)rand() / (double)RAND_MAX) * 2.0 - 1.0;
     }
-    audio_chunk_set_valid_frames(chunks[c], cs);
   }
 
   size_t max_out = audio_resampler_get_max_output_frames(resampler);
   audio_chunk_t* scratch = audio_chunk_create(max_out, 1);
 
   for (size_t c = 0; c < chunk_count; c++) {
+    size_t needed_in = audio_resampler_get_input_frames_next(resampler);
+    audio_chunk_set_valid_frames(chunks[c], needed_in);
+    total_nbr_in += needed_in;
     audio_resampler_process(resampler, chunks[c], scratch);
   }
 
@@ -622,6 +624,8 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       break;
     }
     for (size_t c = 0; c < chunk_count; c++) {
+      size_t needed_in = audio_resampler_get_input_frames_next(resampler);
+      audio_chunk_set_valid_frames(chunks[c], needed_in);
       if (audio_resampler_process(resampler, chunks[c], scratch) ==
           RESAMPLER_OK) {
         out_frames += audio_chunk_get_valid_frames(scratch);
@@ -643,7 +647,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
   if (out_frames == 0 || iters == 0) return false;
 
   *out_ns_per_frame = elapsed_ns / (double)out_frames;
-  double in_sec = (double)nbr_in / (double)in_rate;
+  double in_sec = (double)total_nbr_in / (double)in_rate;
   *out_rtf = in_sec / (elapsed_ns * 1e-9 / (double)iters);
   return true;
 }

@@ -103,12 +103,12 @@ static size_t sync_get_cs(const audio_resampler_t* self) {
 }
 
 static size_t sync_get_in_next(const audio_resampler_t* self) {
-  return synchronous_resampler_get_chunk_size(
+  return synchronous_resampler_get_input_frames_next(
       (const synchronous_resampler_t*)self->impl);
 }
 
 static size_t sync_get_out_next(const audio_resampler_t* self) {
-  return synchronous_resampler_get_max_output_frames(
+  return synchronous_resampler_get_output_frames_next(
       (const synchronous_resampler_t*)self->impl);
 }
 
@@ -421,11 +421,12 @@ static size_t apple_get_cs(const audio_resampler_t* self) {
 }
 
 static size_t apple_get_in_next(const audio_resampler_t* self) {
-  return apple_resampler_get_chunk_size((const apple_resampler_t*)self->impl);
+  return apple_resampler_get_input_frames_next(
+      (const apple_resampler_t*)self->impl);
 }
 
 static size_t apple_get_out_next(const audio_resampler_t* self) {
-  return apple_resampler_get_max_output_frames(
+  return apple_resampler_get_output_frames_next(
       (const apple_resampler_t*)self->impl);
 }
 

@@ -267,6 +267,16 @@ size_t apple_resampler_get_chunk_size(const apple_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
+size_t apple_resampler_get_input_frames_next(
+    const apple_resampler_t* resampler) {
+  return resampler ? resampler->chunk_size : 0;
+}
+
+size_t apple_resampler_get_output_frames_next(
+    const apple_resampler_t* resampler) {
+  return resampler ? resampler->max_output_frames : 0;
+}
+
 size_t apple_resampler_get_channels(const apple_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
 }

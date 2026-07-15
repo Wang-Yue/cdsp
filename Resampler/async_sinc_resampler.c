@@ -293,32 +293,7 @@ size_t async_sinc_resampler_get_channels(
   return resampler ? resampler->channels : 0;
 }
 
-/**
- * @brief Calculates the number of output frames that will be generated in the
- * next process call.
- *
- * This function estimates the output frame count based on the average of the
- * current resample ratio and the target ratio, the chunk size, the sinc filter
- * length, and the last index from the previous chunk.
- *
- * @param resampler Pointer to the resampler instance.
- * @return The number of output frames expected.
- */
-static inline size_t __attribute__((unused)) get_next_output_frames(
-    const async_sinc_resampler_t* resampler) {
-  if (resampler->fixed == FIXED_ASYNC_OUTPUT) {
-    return resampler->chunk_size;
-  }
-  // Calculate output size for input
-  // — note `.floor()`, not `.ceil()`. Using ceil
-  // here was the source of the off-by-one frame discrepancy.
-  double avg_ratio =
-      0.5 * resampler->resample_ratio + 0.5 * resampler->target_ratio;
-  double raw = ((double)resampler->chunk_size -
-                (double)(resampler->sinc_len + 1) - resampler->last_index) *
-               avg_ratio;
-  return (size_t)floor(raw);
-}
+
 
 typedef struct {
   int idx;

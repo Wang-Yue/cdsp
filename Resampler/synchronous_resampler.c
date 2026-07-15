@@ -223,14 +223,16 @@ synchronous_resampler_t* synchronous_resampler_create(
   // Build the anti-aliasing kernel matching rubato's FftResampler.
   // The kernel is applied at input rate, so all frequencies are normalised to
   // input Nyquist.
+  double n = (double)sub_fft_in;
+  double margin = 13.5 / n + 50.0 / (n * n);
   double cutoff;
-  if (input_rate > output_rate) {
-    double base_cut = (double)calculate_cutoff_f32(
-        sub_fft_out, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
-    cutoff = base_cut * (double)sub_fft_out / (double)sub_fft_in;
+  if (sub_fft_in > sub_fft_out) {
+    double target_nyquist = (double)sub_fft_out / (double)sub_fft_in;
+    cutoff = target_nyquist - margin;
+    if (cutoff < 1e-6) cutoff = 1e-6;
   } else {
-    cutoff = (double)calculate_cutoff_f32(sub_fft_in,
-                                          WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    cutoff = 1.0 - margin;
+    if (cutoff < 1e-6) cutoff = 1e-6;
   }
   double* kernel =
       make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
@@ -367,6 +369,16 @@ size_t synchronous_resampler_get_chunk_size(
   return resampler ? resampler->chunk_size : 0;
 }
 
+size_t synchronous_resampler_get_input_frames_next(
+    const synchronous_resampler_t* resampler) {
+  return resampler ? resampler->chunk_size : 0;
+}
+
+size_t synchronous_resampler_get_output_frames_next(
+    const synchronous_resampler_t* resampler) {
+  return resampler ? resampler->output_chunk_size : 0;
+}
+
 size_t synchronous_resampler_get_channels(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
@@ -446,6 +458,9 @@ resampler_error_t synchronous_resampler_process(
       // are the spectral zero-pad that extends the bandwidth. For
       // downsampling they discard everything above output Nyquist —
       // the band-limiting step.
+      if (resampler->sub_fft_in > resampler->sub_fft_out) {
+        resampler->working_spec_im[resampler->sub_fft_out] = 0.0;
+      }
       if (resampler->sub_fft_out + 1 > resampler->shared_bins) {
         size_t zero_count = resampler->sub_fft_out + 1 - resampler->shared_bins;
         memset(resampler->working_spec_re + resampler->shared_bins, 0,
