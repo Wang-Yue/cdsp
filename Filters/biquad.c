@@ -479,3 +479,79 @@ void biquad_filter_free(biquad_filter_t* filter) {
 #endif
   free(filter);
 }
+
+int biquad_parameters_validate(const biquad_parameters_t* params,
+                               int sample_rate, config_error_t* err) {
+  if (!params) return -1;
+  double nyquist = (double)sample_rate / 2.0;
+  if (params->type != BIQUAD_TYPE_FREE &&
+      params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM &&
+      params->type != BIQUAD_TYPE_GENERAL_NOTCH) {
+    if (params->freq <= 0.0 || params->freq >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
+    if (params->freq_notch <= 0.0 || params->freq_notch >= nyquist ||
+        params->freq_pole <= 0.0 || params->freq_pole >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+    if (params->q_p <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
+    if (params->freq_act <= 0.0 || params->freq_act >= nyquist ||
+        params->freq_target <= 0.0 || params->freq_target >= nyquist) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
+      return -1;
+    }
+    if (params->q_act <= 0.0 || params->q_target <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_PEAKING ||
+      params->type == BIQUAD_TYPE_LOWPASS ||
+      params->type == BIQUAD_TYPE_HIGHPASS ||
+      params->type == BIQUAD_TYPE_BANDPASS ||
+      params->type == BIQUAD_TYPE_NOTCH ||
+      params->type == BIQUAD_TYPE_ALLPASS ||
+      params->type == BIQUAD_TYPE_GENERAL_NOTCH ||
+      params->type == BIQUAD_TYPE_HIGHSHELF ||
+      params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->q <= 0.0 && params->bandwidth <= 0.0 && params->slope <= 0.0) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      return -1;
+    }
+  }
+  if (params->type == BIQUAD_TYPE_HIGHSHELF ||
+      params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
+      if (params->slope <= 0.0 || params->slope > 12.0) {
+        if (err)
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "slope out of range");
+        return -1;
+      }
+    }
+  }
+  if (sample_rate > 0) {
+    if (!biquad_parameters_check_stability(params, sample_rate)) {
+      if (err)
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Unstable or invalid biquad filter specified");
+      return -1;
+    }
+  }
+  return 0;
+}

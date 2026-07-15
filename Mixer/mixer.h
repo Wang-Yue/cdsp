@@ -60,6 +60,18 @@ typedef enum {
 typedef struct audio_mixer_t audio_mixer_t;
 
 /**
+ * @brief Validates mixer configuration.
+ *
+ * Checks that every dest is in range, no dest appears twice, and within a single
+ * dest no source channel appears twice.
+ *
+ * @param mixer Pointer to mixer configuration to validate.
+ * @param err Pointer to config error struct to populate on failure.
+ * @return 0 if valid, -1 on failure.
+ */
+int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err);
+
+/**
  * @brief Creates a new audio mixer instance from a configuration.
  *
  * @param name Unique name for this mixer instance.

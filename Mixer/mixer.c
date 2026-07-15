@@ -254,3 +254,61 @@ size_t audio_mixer_get_channels_out(const audio_mixer_t* mixer) {
 const char* audio_mixer_get_name(const audio_mixer_t* mixer) {
   return mixer ? mixer->name : NULL;
 }
+
+int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
+  if (!mixer) return 0;
+
+  bool* seen_dests = (bool*)calloc(
+      mixer->channels_out > 0 ? mixer->channels_out : 1, sizeof(bool));
+  if (!seen_dests) return -1;
+
+  for (size_t i = 0; i < mixer->mapping_count; i++) {
+    int dest = mixer->mapping[i].dest;
+    if ((size_t)dest >= mixer->channels_out) {
+      config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                       "mixer dest %d >= channels_out %d", dest,
+                       mixer->channels_out);
+      free(seen_dests);
+      return -1;
+    }
+    if (seen_dests[dest]) {
+      config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                       "mixer dest %d mapped more than once", dest);
+      free(seen_dests);
+      return -1;
+    }
+    seen_dests[dest] = true;
+
+    bool* seen_sources = (bool*)calloc(
+        mixer->channels_in > 0 ? mixer->channels_in : 1, sizeof(bool));
+    if (!seen_sources) {
+      free(seen_dests);
+      return -1;
+    }
+    for (size_t j = 0; j < mixer->mapping[i].sources_count; j++) {
+      int src_ch = mixer->mapping[i].sources[j].channel;
+      if ((size_t)src_ch >= mixer->channels_in) {
+        config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                         "mixer source channel %d >= channels_in %d", src_ch,
+                         mixer->channels_in);
+        free(seen_sources);
+        free(seen_dests);
+        return -1;
+      }
+      if (seen_sources[src_ch]) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_MIXER,
+            "mixer source channel %d listed more than once for dest %d", src_ch,
+            dest);
+        free(seen_sources);
+        free(seen_dests);
+        return -1;
+      }
+      seen_sources[src_ch] = true;
+    }
+    free(seen_sources);
+  }
+
+  free(seen_dests);
+  return 0;
+}

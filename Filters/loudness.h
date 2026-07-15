@@ -41,6 +41,16 @@ loudness_filter_t* loudness_filter_create(const char* name,
                                           config_error_t* err);
 
 /**
+ * @brief Validates loudness filter parameters.
+ *
+ * @param params Pointer to the loudness parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int loudness_parameters_validate(const loudness_parameters_t* params,
+                                 config_error_t* err);
+
+/**
  * @brief Processes a slice of waveform using the loudness filter.
  *
  * @param filter Pointer to the loudness filter instance.

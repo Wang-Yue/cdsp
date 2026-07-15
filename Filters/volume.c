@@ -244,3 +244,16 @@ void volume_filter_free(volume_filter_t* filter) {
   if (filter->current_ramp_gains) free(filter->current_ramp_gains);
   free(filter);
 }
+int volume_parameters_validate(const volume_parameters_t* params,
+                               config_error_t* err) {
+  if (!params) return 0;
+  if (params->has_ramp_time) {
+    if (params->ramp_time < 0.0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Volume ramp time cannot be negative, got %g",
+                       params->ramp_time);
+      return -1;
+    }
+  }
+  return 0;
+}

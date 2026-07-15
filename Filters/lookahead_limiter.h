@@ -22,12 +22,12 @@
 typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
 
 /**
- * @brief Validate lookahead limiter parameters.
+ * @brief Validates lookahead limiter filter parameters.
  *
  * @param params Pointer to the parameters to validate.
  * @param sample_rate The sample rate in Hz.
  * @param err Pointer to a config error structure to populate on failure.
- * @return 0 on success, non-zero on failure.
+ * @return 0 on success, -1 on failure.
  */
 int lookahead_limiter_parameters_validate(
     const lookahead_limiter_parameters_t* params, int sample_rate,

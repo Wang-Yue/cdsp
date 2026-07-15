@@ -79,6 +79,16 @@ dither_filter_t* dither_filter_create(const char* name,
                                       const dither_parameters_t* params);
 
 /**
+ * @brief Validates dither filter parameters.
+ *
+ * @param params Pointer to the dither parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int dither_parameters_validate(const dither_parameters_t* params,
+                               config_error_t* err);
+
+/**
  * @brief Process a block of samples in-place, applying dither.
  *
  * @param filter The dither filter instance.

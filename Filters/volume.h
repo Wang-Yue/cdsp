@@ -40,6 +40,16 @@ volume_filter_t* volume_filter_create(const char* name,
                                       config_error_t* err);
 
 /**
+ * @brief Validates volume filter parameters.
+ *
+ * @param params Pointer to the volume parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int volume_parameters_validate(const volume_parameters_t* params,
+                               config_error_t* err);
+
+/**
  * @brief Pre-calculates target volume levels and generates ramping array once
  * per chunk.
  *

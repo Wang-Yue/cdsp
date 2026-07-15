@@ -29,7 +29,7 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
  * @param params The parameters to validate.
  * @param sample_rate The sample rate in Hz.
  * @param err Pointer to store error details if validation fails.
- * @return 0 if valid, non-zero error code otherwise.
+ * @return 0 on success, -1 on failure.
  */
 int biquad_combo_parameters_validate(const biquad_combo_parameters_t* params,
                                      int sample_rate, config_error_t* err);

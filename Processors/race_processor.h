@@ -73,6 +73,16 @@ typedef struct race_processor race_processor_t;
 const char* race_processor_get_name(const race_processor_t* processor);
 
 /**
+ * @brief Validates RACE cross-talk cancellation processor parameters.
+ *
+ * @param params Pointer to the RACE parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int race_parameters_validate(const race_parameters_t* params,
+                             config_error_t* err);
+
+/**
  * @brief Creates a new RACE cross-talk cancellation processor.
  *
  * @param name Unique name for this RACE instance.

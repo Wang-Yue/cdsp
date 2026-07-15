@@ -77,3 +77,17 @@ void limiter_filter_process(limiter_filter_t* filter,
 void limiter_filter_free(limiter_filter_t* filter) {
   if (filter) free(filter);
 }
+
+int limiter_parameters_validate(const limiter_parameters_t* params,
+                                config_error_t* err) {
+  if (!params) return 0;
+  if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
+      params->clip_limit > 20.0) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Limiter clip_limit must be between -120.0 dB and 20.0 dB, got %g",
+        params->clip_limit);
+    return -1;
+  }
+  return 0;
+}

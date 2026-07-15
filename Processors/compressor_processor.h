@@ -63,6 +63,16 @@ const char* compressor_processor_get_name(
     const compressor_processor_t* processor);
 
 /**
+ * @brief Validates dynamic range compressor processor parameters.
+ *
+ * @param params Pointer to the compressor parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int compressor_parameters_validate(const compressor_parameters_t* params,
+                                   config_error_t* err);
+
+/**
  * @brief Creates a new dynamic range compressor processor.
  *
  * @param name Unique name for this compressor instance.

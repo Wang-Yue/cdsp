@@ -259,3 +259,57 @@ void lookahead_limiter_filter_free(lookahead_limiter_filter_t* filter) {
   if (filter->output_buffer) free(filter->output_buffer);
   free(filter);
 }
+
+int lookahead_limiter_parameters_validate(
+    const lookahead_limiter_parameters_t* params, int sample_rate,
+    config_error_t* err) {
+  if (sample_rate <= 0) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Lookahead Limiter: sample_rate must be greater than 0, got %d",
+        sample_rate);
+    return -1;
+  }
+  if (!params) return 0;
+  if (!isfinite(params->limit)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter limit must be finite, got %g",
+                     params->limit);
+    return -1;
+  }
+  if (params->attack < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: attack cannot be negative, got %g",
+                     params->attack);
+    return -1;
+  }
+  if (params->release < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: release cannot be negative, got %g",
+                     params->release);
+    return -1;
+  }
+  double attack_samples = 0.0;
+  switch (params->unit) {
+    case DELAY_UNIT_MS:
+      attack_samples = params->attack / 1000.0 * (double)sample_rate;
+      break;
+    case DELAY_UNIT_US:
+      attack_samples = params->attack / 1000000.0 * (double)sample_rate;
+      break;
+    case DELAY_UNIT_SAMPLES:
+      attack_samples = params->attack;
+      break;
+    case DELAY_UNIT_MM:
+      attack_samples = params->attack / 1000.0 * (double)sample_rate / 343.0;
+      break;
+  }
+  if (attack_samples > (double)sample_rate) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: attack time cannot be longer than 1 "
+                     "second, got %g samples",
+                     attack_samples);
+    return -1;
+  }
+  return 0;
+}

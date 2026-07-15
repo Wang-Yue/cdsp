@@ -32,6 +32,16 @@ diffeq_filter_t* diffeq_filter_create(const char* name,
                                       const diff_eq_parameters_t* params);
 
 /**
+ * @brief Validates difference equation filter parameters.
+ *
+ * @param params Pointer to the difference equation parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int diff_eq_parameters_validate(const diff_eq_parameters_t* params,
+                                config_error_t* err);
+
+/**
  * @brief Process a block of samples in-place.
  *
  * @param filter The difference equation filter instance.

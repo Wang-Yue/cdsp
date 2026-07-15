@@ -198,3 +198,30 @@ void delay_filter_free(delay_filter_t* filter) {
   if (filter->biquad) biquad_filter_free(filter->biquad);
   free(filter);
 }
+
+int delay_parameters_validate(const delay_parameters_t* params,
+                              config_error_t* err) {
+  if (!params) return 0;
+  if (params->delay < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Delay cannot be negative, got %g", params->delay);
+    return -1;
+  }
+  return 0;
+}
+
+double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
+  switch (unit) {
+    case DELAY_UNIT_MS:
+      return delay / 1000.0 * (double)sample_rate;
+    case DELAY_UNIT_US:
+      return delay / 1000000.0 * (double)sample_rate;
+    case DELAY_UNIT_SAMPLES:
+      return delay;
+    case DELAY_UNIT_MM:
+      // Compute delay using speed of sound in air (approx. 343 m/s)
+      return delay / 1000.0 * (double)sample_rate / 343.0;
+    default:
+      return delay;
+  }
+}

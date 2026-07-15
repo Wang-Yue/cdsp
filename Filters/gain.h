@@ -30,6 +30,16 @@ gain_filter_t* gain_filter_create(const char* name,
                                   const gain_parameters_t* params);
 
 /**
+ * @brief Validates gain filter parameters.
+ *
+ * @param params Pointer to the gain parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int gain_parameters_validate(const gain_parameters_t* params,
+                             config_error_t* err);
+
+/**
  * @brief Process a waveform buffer in-place by applying gain.
  *
  * @param filter Pointer to the gain filter instance.

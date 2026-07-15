@@ -676,3 +676,53 @@ void convolution_filter_free(convolution_filter_t* filter) {
   if (filter->spec_accum_im) free(filter->spec_accum_im);
   free(filter);
 }
+
+int conv_parameters_validate(const conv_parameters_t* params,
+                             config_error_t* err) {
+  if (!params) return 0;
+  switch (params->type) {
+    case CONV_TYPE_VALUES:
+      if (!params->values || params->values_count == 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'values' must be non-empty");
+        return -1;
+      }
+      break;
+    case CONV_TYPE_WAV:
+    case CONV_TYPE_RAW: {
+      if (params->filename[0] == '\0') {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv filter missing filename");
+        return -1;
+      }
+      FILE* f = fopen(params->filename, "rb");
+      if (!f) {
+        char msg[512];
+        snprintf(msg, sizeof(msg),
+                 "Conv file '%s' cannot be opened or does not exist",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      fseek(f, 0, SEEK_END);
+      long fsize = ftell(f);
+      fclose(f);
+      if (fsize <= 0) {
+        char msg[512];
+        snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      break;
+    }
+    case CONV_TYPE_DUMMY:
+      if (params->length <= 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'dummy' length must be > 0");
+        return -1;
+      }
+      break;
+  }
+  return 0;
+}

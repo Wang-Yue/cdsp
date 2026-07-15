@@ -55,3 +55,26 @@ double gain_filter_process_single(gain_filter_t* filter, double sample) {
 void gain_filter_free(gain_filter_t* filter) {
   if (filter) free(filter);
 }
+
+int gain_parameters_validate(const gain_parameters_t* params,
+                             config_error_t* err) {
+  if (!params) return 0;
+  if (params->has_gain) {
+    if (params->scale == GAIN_SCALE_LINEAR) {
+      if (params->gain < -10.0 || params->gain > 10.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "linear gain must be in [-10, 10], got %g",
+                         params->gain);
+        return -1;
+      }
+    } else {
+      if (params->gain < -150.0 || params->gain > 150.0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "gain must be in [-150, 150] dB, got %g",
+                         params->gain);
+        return -1;
+      }
+    }
+  }
+  return 0;
+}

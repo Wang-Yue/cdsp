@@ -486,3 +486,22 @@ void dither_filter_free(dither_filter_t* filter) {
   if (filter->shaper) noise_shaper_free(filter->shaper);
   free(filter);
 }
+int dither_parameters_validate(const dither_parameters_t* params,
+                               config_error_t* err) {
+  if (!params) return 0;
+  if (params->bits < 2) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Dither bit depth must be at least 2, got %d",
+                     params->bits);
+    return -1;
+  }
+  if (params->has_amplitude) {
+    if (params->amplitude < 0.0 || params->amplitude > 100.0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Dither amplitude must be in [0, 100], got %g",
+                       params->amplitude);
+      return -1;
+    }
+  }
+  return 0;
+}

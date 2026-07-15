@@ -59,6 +59,16 @@ convolution_filter_t* convolution_filter_create(const char* name,
                                                 config_error_t* err);
 
 /**
+ * @brief Validates convolution filter parameters.
+ *
+ * @param params Pointer to the convolution parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int conv_parameters_validate(const conv_parameters_t* params,
+                             config_error_t* err);
+
+/**
  * @brief Process one block in-place.
  *
  * The hot path is allocation-free in steady state; everything below is

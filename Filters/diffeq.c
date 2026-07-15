@@ -136,3 +136,10 @@ void diffeq_filter_free(diffeq_filter_t* filter) {
   if (filter->b) free(filter->b);
   free(filter);
 }
+
+int diff_eq_parameters_validate(const diff_eq_parameters_t* params,
+                                config_error_t* err) {
+  (void)params;
+  (void)err;
+  return 0;
+}

@@ -38,6 +38,26 @@ delay_filter_t* delay_filter_create(const char* name,
                                     int sample_rate, config_error_t* err);
 
 /**
+ * @brief Validates delay filter parameters.
+ *
+ * @param params Pointer to the delay parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int delay_parameters_validate(const delay_parameters_t* params,
+                              config_error_t* err);
+
+/**
+ * @brief Computes equivalent sample delay count given a delay duration, unit, and sample rate.
+ *
+ * @param delay The numerical delay value.
+ * @param unit The delay unit (ms, us, samples, mm).
+ * @param sample_rate Audio sample rate in Hz.
+ * @return Computed delay value in audio samples.
+ */
+double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate);
+
+/**
  * @brief Process a block of samples in-place.
  *
  * @param filter The delay filter instance.

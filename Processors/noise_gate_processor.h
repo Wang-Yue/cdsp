@@ -52,6 +52,16 @@ const char* noise_gate_processor_get_name(
     const noise_gate_processor_t* processor);
 
 /**
+ * @brief Validates noise gate processor parameters.
+ *
+ * @param params Pointer to the noise gate parameters to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int noise_gate_parameters_validate(const noise_gate_parameters_t* params,
+                                    config_error_t* err);
+
+/**
  * @brief Creates a new noise gate processor.
  *
  * @param name Unique name for this noise gate instance.

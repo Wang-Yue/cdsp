@@ -31,6 +31,17 @@ bool biquad_parameters_check_stability(const biquad_parameters_t* params,
                                        int sample_rate);
 
 /**
+ * @brief Validates high-level biquad filter parameters and checks stability.
+ *
+ * @param params High-level biquad parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+int biquad_parameters_validate(const biquad_parameters_t* params,
+                               int sample_rate, config_error_t* err);
+
+/**
  * @brief Creates a biquad filter instance directly from high-level parameters.
  *
  * Computes coefficients and validates filter stability. If params is NULL,
