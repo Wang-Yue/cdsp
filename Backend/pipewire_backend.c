@@ -97,8 +97,20 @@ static void on_capture_process(void* data) {
   pw_stream_queue_buffer(c->stream, b);
 }
 
+static void on_capture_stream_state_changed(void* data,
+                                            enum pw_stream_state old,
+                                            enum pw_stream_state state,
+                                            const char* error) {
+  (void)data;
+  logger_info(&g_logger,
+              "Capture stream state changed from %s to %s (error: %s)",
+              pw_stream_state_as_string(old), pw_stream_state_as_string(state),
+              error ? error : "none");
+}
+
 static const struct pw_stream_events capture_stream_events = {
     PW_VERSION_STREAM_EVENTS,
+    .state_changed = on_capture_stream_state_changed,
     .process = on_capture_process,
 };
 
@@ -120,6 +132,7 @@ static void on_playback_process(void* data) {
 
   struct spa_buffer* buf = b->buffer;
   float* dst = (float*)buf->datas[0].data;
+
   if (dst) {
     size_t max_bytes = buf->datas[0].maxsize;
     size_t frame_size = sizeof(float) * p->channels;
@@ -141,8 +154,20 @@ static void on_playback_process(void* data) {
   pw_stream_queue_buffer(p->stream, b);
 }
 
+static void on_playback_stream_state_changed(void* data,
+                                             enum pw_stream_state old,
+                                             enum pw_stream_state state,
+                                             const char* error) {
+  (void)data;
+  logger_info(&g_logger,
+              "Playback stream state changed from %s to %s (error: %s)",
+              pw_stream_state_as_string(old), pw_stream_state_as_string(state),
+              error ? error : "none");
+}
+
 static const struct pw_stream_events playback_stream_events = {
     PW_VERSION_STREAM_EVENTS,
+    .state_changed = on_playback_stream_state_changed,
     .process = on_playback_process,
 };
 
@@ -301,9 +326,10 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
     snprintf(latency_str, sizeof(latency_str), "%d/%d", capture->chunk_size,
              capture->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_LATENCY, latency_str);
-    if (capture->device[0] != '\0') {
+    if (capture->device[0] != '\0' && strcmp(capture->device, "default") != 0) {
       pw_properties_set(props, "target.object", capture->device);
-    } else if (capture->has_autoconnect_to) {
+    } else if (capture->has_autoconnect_to &&
+               capture->autoconnect_to[0] != '\0') {
       pw_properties_set(props, "target.object", capture->autoconnect_to);
     }
   }
@@ -358,7 +384,7 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
 
   // Create large SPSC ring buffer (8 blocks headroom)
   capture->ring = spsc_audio_ring_buffer_create(capture->chunk_size *
-                                                capture->channels * 8);
+                                                capture->channels * 64);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
   capture->decode_buf = (float*)calloc(capture->decode_buf_size, sizeof(float));
 
@@ -653,9 +679,11 @@ bool pipewire_playback_open(pipewire_playback_t* playback,
     snprintf(latency_str, sizeof(latency_str), "%d/%d", playback->chunk_size,
              playback->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_LATENCY, latency_str);
-    if (playback->device[0] != '\0') {
+    if (playback->device[0] != '\0' &&
+        strcmp(playback->device, "default") != 0) {
       pw_properties_set(props, "target.object", playback->device);
-    } else if (playback->has_autoconnect_to) {
+    } else if (playback->has_autoconnect_to &&
+               playback->autoconnect_to[0] != '\0') {
       pw_properties_set(props, "target.object", playback->autoconnect_to);
     }
   }
@@ -709,7 +737,7 @@ bool pipewire_playback_open(pipewire_playback_t* playback,
   }
 
   playback->ring = spsc_audio_ring_buffer_create(playback->chunk_size *
-                                                 playback->channels * 8);
+                                                 playback->channels * 64);
   playback->encode_buf_size = playback->chunk_size * playback->channels;
   playback->encode_buf =
       (float*)calloc(playback->encode_buf_size, sizeof(float));
@@ -763,11 +791,16 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
   // Wait until there is space in the SPSC ring buffer to prevent overwriting
   // oldest data. This blocks the writer thread (with a timeout) if the consumer
   // (PipeWire thread) is slower.
-  int retries = 100;
+  int retries = 2000;
   while (spsc_audio_ring_buffer_get_available_to_read(playback->ring) +
              requested >
          spsc_audio_ring_buffer_get_capacity(playback->ring)) {
     if (retries-- <= 0) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "PipeWire ring buffer write timeout (PipeWire "
+                           "thread not consuming samples)");
+      }
       return false;
     }
     struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};  // 1ms
