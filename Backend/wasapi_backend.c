@@ -15,10 +15,10 @@
 #include <stdatomic.h>
 #include <stdio.h>
 
-#include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "wasapi_capabilities.h"
 
 static const logger_t g_logger = {"dsp.backend.wasapi"};

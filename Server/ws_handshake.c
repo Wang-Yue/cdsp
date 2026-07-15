@@ -1,7 +1,8 @@
 #include "ws_handshake.h"
-#include <string.h>
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -106,7 +107,8 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
       }
       key[k] = '\0';
       char concat[128];
-      snprintf(concat, sizeof(concat), "%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", key);
+      snprintf(concat, sizeof(concat), "%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+               key);
       unsigned char hash[CC_SHA1_DIGEST_LENGTH];
       CC_SHA1(concat, (CC_LONG)strlen(concat), hash);
 
@@ -127,7 +129,9 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
 
       char reply[512];
       snprintf(reply, sizeof(reply),
-               "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n",
+               "HTTP/1.1 101 Switching Protocols\r\nUpgrade: "
+               "websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
+               "%s\r\n\r\n",
                b64_hash);
       send(client_fd, reply, (int)strlen(reply), 0);
     }

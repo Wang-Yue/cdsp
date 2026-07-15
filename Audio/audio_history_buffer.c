@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 
-#include "Audio/lock_free_ring_buffer.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 struct audio_history_buffer {
   size_t channels;

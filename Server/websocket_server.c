@@ -1,23 +1,24 @@
 // WebSocket control server
-// Provides runtime control API compatible with the CamillaDSP monitor control protocol
+// Provides runtime control API compatible with the CamillaDSP monitor control
+// protocol
 
 #include "websocket_server.h"
+
+#include <math.h>
+#include <pthread.h>
+#include <stdarg.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "Config/cJSON.h"
+#include "Logging/app_logger.h"
 #include "websocket_server_internal.h"
 #include "ws_framing.h"
 #include "ws_handshake.h"
 #include "ws_rpc_dispatcher.h"
-
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <time.h>
-#include <pthread.h>
-#include <stdatomic.h>
-
-#include "Logging/app_logger.h"
-#include "Config/cJSON.h"
 
 static const logger_t server_logger = {"dsp.server.websocket"};
 
@@ -171,7 +172,7 @@ static void level_history_append(level_history_t* history, const double* levels,
 }
 
 void level_history_get_max_since(const level_history_t* history,
-                                        uint64_t since_ms, double* out_levels) {
+                                 uint64_t since_ms, double* out_levels) {
   size_t channels = history->channels;
   for (size_t c = 0; c < channels; c++) {
     out_levels[c] = -1000.0;
@@ -191,7 +192,7 @@ void level_history_get_max_since(const level_history_t* history,
 }
 
 void level_history_get_rms_since(const level_history_t* history,
-                                        uint64_t since_ms, double* out_levels) {
+                                 uint64_t since_ms, double* out_levels) {
   size_t channels = history->channels;
   for (size_t c = 0; c < channels; c++) {
     out_levels[c] = -1000.0;
@@ -688,8 +689,9 @@ static void* server_thread_func(void* arg) {
               size_t header_len = 0;
               unsigned char* mask = NULL;
               uint8_t opcode = 0;
-              if (ws_parse_frame_header((const unsigned char*)&buf[offset], (size_t)(n - offset),
-                                        &payload_len, &header_len, &mask, &opcode)) {
+              if (ws_parse_frame_header((const unsigned char*)&buf[offset],
+                                        (size_t)(n - offset), &payload_len,
+                                        &header_len, &mask, &opcode)) {
                 if (opcode == 0x08) {
                   CLOSE_SOCKET(client_fds[i]);
                   pthread_mutex_lock(&server->sessions_mutex);
@@ -904,7 +906,7 @@ bool websocket_server_start(websocket_server_t* server) {
   }
 
   logger_info(&server_logger, "WebSocket control server listening on %s:%d",
-               server->host, server->port);
+              server->host, server->port);
   return true;
 }
 

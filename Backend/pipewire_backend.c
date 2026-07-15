@@ -10,9 +10,9 @@
 #include <string.h>
 #include <time.h>
 
-#include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
 

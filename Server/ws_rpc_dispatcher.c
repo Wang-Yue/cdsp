@@ -1,15 +1,16 @@
 #include "ws_rpc_dispatcher.h"
-#include "websocket_server_internal.h"
-#include "Logging/app_logger.h"
-#include "Config/cJSON.h"
-#include "Audio/processing_parameters.h"
-#include "Pipeline/config_loader.h"
-#include <string.h>
+
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
+#include <string.h>
 
+#include "Audio/processing_parameters.h"
+#include "Config/cJSON.h"
+#include "Logging/app_logger.h"
+#include "Pipeline/config_loader.h"
+#include "websocket_server_internal.h"
 
 cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
   char reason_str[512] = "None";
@@ -50,7 +51,7 @@ cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
 }
 
 cJSON* create_state_event_value(processing_state_t state,
-                                       const processing_stop_reason_t* reason) {
+                                const processing_stop_reason_t* reason) {
   cJSON* val = cJSON_CreateObject();
   cJSON_AddStringToObject(val, "state", processing_state_to_string(state));
   cJSON_AddItemToObject(val, "stop_reason", serialize_stop_reason(reason));
@@ -400,7 +401,7 @@ static cJSON* cjson_locate_pointer(cJSON* root, const char* pointer,
 }
 
 static bool server_get_value_at_pointer(const char* json, const char* pointer,
-                                         char* out_val, size_t max_len) {
+                                        char* out_val, size_t max_len) {
   cJSON* root = cJSON_Parse(json);
   if (!root) return false;
   cJSON* node = cjson_locate_pointer(root, pointer, NULL, NULL, NULL);
@@ -1160,9 +1161,9 @@ static void handle_cmd_stop_subscription(websocket_server_t* server,
 }
 
 static void handle_cmd_get_config_file_path(websocket_server_t* server,
-                                             int client_idx,
-                                             const char* cmd_name, cJSON* arg,
-                                             dyn_string_t* ds) {
+                                            int client_idx,
+                                            const char* cmd_name, cJSON* arg,
+                                            dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   char* path = NULL;
@@ -1211,9 +1212,9 @@ static void handle_cmd_get_state_file_path(websocket_server_t* server,
 }
 
 static void handle_cmd_get_state_file_updated(websocket_server_t* server,
-                                               int client_idx,
-                                               const char* cmd_name, cJSON* arg,
-                                               dyn_string_t* ds) {
+                                              int client_idx,
+                                              const char* cmd_name, cJSON* arg,
+                                              dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   bool updated = server && server->engine && server->engine->is_state_dirty
@@ -1620,9 +1621,9 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
 }
 
 static void handle_get_signal_single_helper(websocket_server_t* server,
-                                             const char* cmd_name,
-                                             bool is_capture, bool is_rms,
-                                             dyn_string_t* ds) {
+                                            const char* cmd_name,
+                                            bool is_capture, bool is_rms,
+                                            dyn_string_t* ds) {
   vu_levels_t vu = {0};
   if (server && server->engine && server->engine->get_vu_levels &&
       server->engine->get_vu_levels(server->engine->ctx, &vu)) {
@@ -1643,46 +1644,46 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
 }
 
 static void handle_cmd_get_capture_signal_rms(websocket_server_t* server,
-                                               int client_idx,
-                                               const char* cmd_name, cJSON* arg,
-                                               dyn_string_t* ds) {
+                                              int client_idx,
+                                              const char* cmd_name, cJSON* arg,
+                                              dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   handle_get_signal_single_helper(server, cmd_name, true, true, ds);
 }
 
 static void handle_cmd_get_capture_signal_peak(websocket_server_t* server,
-                                                int client_idx,
-                                                const char* cmd_name, cJSON* arg,
-                                                dyn_string_t* ds) {
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   handle_get_signal_single_helper(server, cmd_name, true, false, ds);
 }
 
 static void handle_cmd_get_playback_signal_rms(websocket_server_t* server,
-                                                int client_idx,
-                                                const char* cmd_name, cJSON* arg,
-                                                dyn_string_t* ds) {
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   handle_get_signal_single_helper(server, cmd_name, false, true, ds);
 }
 
 static void handle_cmd_get_playback_signal_peak(websocket_server_t* server,
-                                                 int client_idx,
-                                                 const char* cmd_name,
-                                                 cJSON* arg, dyn_string_t* ds) {
+                                                int client_idx,
+                                                const char* cmd_name,
+                                                cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   handle_get_signal_single_helper(server, cmd_name, false, false, ds);
 }
 
 static void handle_get_signal_since_last_helper(websocket_server_t* server,
-                                                 int client_idx,
-                                                 const char* cmd_name,
-                                                 bool is_capture, bool is_rms,
-                                                 dyn_string_t* ds) {
+                                                int client_idx,
+                                                const char* cmd_name,
+                                                bool is_capture, bool is_rms,
+                                                dyn_string_t* ds) {
   state_update_t status;
   if (server && server->engine && server->engine->get_status &&
       server->engine->get_status(server->engine->ctx, &status) &&
@@ -1758,9 +1759,9 @@ static void handle_cmd_get_playback_signal_peak_since_last(
 }
 
 static void handle_get_signal_since_helper(websocket_server_t* server,
-                                            const char* cmd_name, cJSON* arg,
-                                            bool is_capture, bool is_rms,
-                                            dyn_string_t* ds) {
+                                           const char* cmd_name, cJSON* arg,
+                                           bool is_capture, bool is_rms,
+                                           dyn_string_t* ds) {
   double secs = 0;
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
@@ -1799,19 +1800,19 @@ static void handle_get_signal_since_helper(websocket_server_t* server,
 }
 
 static void handle_cmd_get_capture_signal_rms_since(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
   (void)client_idx;
   handle_get_signal_since_helper(server, cmd_name, arg, true, true, ds);
 }
 
 static void handle_cmd_get_capture_signal_peak_since(websocket_server_t* server,
-                                                      int client_idx,
-                                                      const char* cmd_name,
-                                                      cJSON* arg,
-                                                      dyn_string_t* ds) {
+                                                     int client_idx,
+                                                     const char* cmd_name,
+                                                     cJSON* arg,
+                                                     dyn_string_t* ds) {
   (void)client_idx;
   handle_get_signal_since_helper(server, cmd_name, arg, true, false, ds);
 }
@@ -1833,8 +1834,8 @@ static void handle_cmd_get_playback_signal_peak_since(
 }
 
 static void handle_cmd_get_signal_levels(websocket_server_t* server,
-                                          int client_idx, const char* cmd_name,
-                                          cJSON* arg, dyn_string_t* ds) {
+                                         int client_idx, const char* cmd_name,
+                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   vu_levels_t vu = {0};
@@ -1861,10 +1862,10 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
 }
 
 static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
   (void)arg;
   state_update_t status;
   if (server && server->engine && server->engine->get_status &&
@@ -1922,9 +1923,9 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
 }
 
 static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
-                                                int client_idx,
-                                                const char* cmd_name, cJSON* arg,
-                                                dyn_string_t* ds) {
+                                               int client_idx,
+                                               const char* cmd_name, cJSON* arg,
+                                               dyn_string_t* ds) {
   (void)client_idx;
   double secs = 0;
   if (arg && cJSON_IsNumber(arg)) {
@@ -1976,10 +1977,10 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
 }
 
 static void handle_cmd_get_signal_peaks_since_start(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
+                                                    int client_idx,
+                                                    const char* cmd_name,
+                                                    cJSON* arg,
+                                                    dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   cJSON* root = cJSON_CreateObject();
@@ -2009,8 +2010,8 @@ static void handle_cmd_reset_signal_peaks_since_start(
 }
 
 static void handle_cmd_get_channel_labels(websocket_server_t* server,
-                                           int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                          int client_idx, const char* cmd_name,
+                                          cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   char* json = NULL;
@@ -2043,8 +2044,8 @@ static void handle_cmd_get_channel_labels(websocket_server_t* server,
 }
 
 static void handle_cmd_get_signal_range(websocket_server_t* server,
-                                         int client_idx, const char* cmd_name,
-                                         cJSON* arg, dyn_string_t* ds) {
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
   vu_levels_t vu = {0};
@@ -2065,8 +2066,8 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
 }
 
 static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
-                                     const char* cmd_name, cJSON* arg,
-                                     dyn_string_t* ds) {
+                                    const char* cmd_name, cJSON* arg,
+                                    dyn_string_t* ds) {
   (void)client_idx;
   bool is_capture = true;
   uint32_t channel = 0;
@@ -2117,9 +2118,9 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 }
 
 static void handle_get_available_devices_helper(websocket_server_t* server,
-                                                 const char* cmd_name,
-                                                 cJSON* arg, bool is_capture,
-                                                 dyn_string_t* ds) {
+                                                const char* cmd_name,
+                                                cJSON* arg, bool is_capture,
+                                                dyn_string_t* ds) {
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* backend = arg->valuestring;
     audio_device_t* devs = NULL;
@@ -2151,10 +2152,10 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
 }
 
 static void handle_cmd_get_available_capture_devices(websocket_server_t* server,
-                                                      int client_idx,
-                                                      const char* cmd_name,
-                                                      cJSON* arg,
-                                                      dyn_string_t* ds) {
+                                                     int client_idx,
+                                                     const char* cmd_name,
+                                                     cJSON* arg,
+                                                     dyn_string_t* ds) {
   (void)client_idx;
   handle_get_available_devices_helper(server, cmd_name, arg, true, ds);
 }
@@ -2167,9 +2168,9 @@ static void handle_cmd_get_available_playback_devices(
 }
 
 static void handle_get_device_capabilities_helper(websocket_server_t* server,
-                                                   const char* cmd_name,
-                                                   cJSON* arg, bool is_capture,
-                                                   dyn_string_t* ds) {
+                                                  const char* cmd_name,
+                                                  cJSON* arg, bool is_capture,
+                                                  dyn_string_t* ds) {
   char backend[128] = "";
   char device[256] = "";
   bool ok = false;

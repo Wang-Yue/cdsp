@@ -2,9 +2,9 @@
 #define CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdatomic.h>
 
 #include "websocket_server.h"
 
@@ -91,12 +91,15 @@ uint64_t get_time_ms(void);
 double db_to_amplitude(double db);
 double amplitude_to_db(double amp);
 void level_history_clear(level_history_t* history);
-void level_history_get_max_since(const level_history_t* history, uint64_t since_ms, double* out_levels);
-void level_history_get_rms_since(const level_history_t* history, uint64_t since_ms, double* out_levels);
+void level_history_get_max_since(const level_history_t* history,
+                                 uint64_t since_ms, double* out_levels);
+void level_history_get_rms_since(const level_history_t* history,
+                                 uint64_t since_ms, double* out_levels);
 void client_session_clear(client_session_t* session);
 void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...);
 void free_vu_levels_arrays(vu_levels_t* vu);
 cJSON* serialize_stop_reason(const processing_stop_reason_t* reason);
-cJSON* create_state_event_value(processing_state_t state, const processing_stop_reason_t* reason);
+cJSON* create_state_event_value(processing_state_t state,
+                                const processing_stop_reason_t* reason);
 
-#endif // CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H
+#endif  // CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H

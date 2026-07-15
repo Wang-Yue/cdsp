@@ -19,4 +19,4 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
 cJSON* serialize_spectrum(const spectrum_t* spec);
 cJSON* serialize_stop_reason(const processing_stop_reason_t* reason);
 
-#endif // CLIB_SERVER_WS_RPC_DISPATCHER_H
+#endif  // CLIB_SERVER_WS_RPC_DISPATCHER_H

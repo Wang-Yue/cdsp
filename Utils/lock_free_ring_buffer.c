@@ -1,6 +1,6 @@
 // Single-producer / single-consumer lock-free primitives used by the audio
 // thread.
-#include "Audio/lock_free_ring_buffer.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 #include <stdlib.h>
 

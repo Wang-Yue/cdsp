@@ -36,7 +36,7 @@
  */
 
 #include "Audio/audio_chunk.h"
-#include "Audio/lock_free_ring_buffer.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "audio_sync_queue.h"
 
 /**

@@ -3,7 +3,7 @@
 #include <sched.h>
 #include <stdatomic.h>
 
-#include "Audio/lock_free_ring_buffer.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"
 
 TEST(CapacityRoundsUpToPowerOfTwo) {

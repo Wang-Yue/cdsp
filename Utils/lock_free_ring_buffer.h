@@ -16,8 +16,8 @@
  * lock-based design's drop-on-overflow behaviour).
  */
 
-#ifndef CLIB_AUDIO_LOCK_FREE_RING_BUFFER_H
-#define CLIB_AUDIO_LOCK_FREE_RING_BUFFER_H
+#ifndef CLIB_UTILS_LOCK_FREE_RING_BUFFER_H
+#define CLIB_UTILS_LOCK_FREE_RING_BUFFER_H
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -432,4 +432,4 @@ atomic_double_t* atomic_double_create(double value);
  */
 void atomic_double_free(atomic_double_t* a);
 
-#endif  // CLIB_AUDIO_LOCK_FREE_RING_BUFFER_H
+#endif  // CLIB_UTILS_LOCK_FREE_RING_BUFFER_H

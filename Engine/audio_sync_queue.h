@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Audio/lock_free_ring_buffer.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "cdsp_sem.h"
 
 /**
