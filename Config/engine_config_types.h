@@ -520,6 +520,42 @@ typedef struct {
 } alsa_playback_config_t;
 #endif
 
+#if defined(ENABLE_PIPEWIRE)
+/**
+ * @brief PipeWire capture configuration.
+ */
+typedef struct {
+  int channels;               /**< Number of channels. */
+  char device[256];           /**< Target device name. */
+  bool has_device;            /**< True if device is specified. */
+  char node_name[256];        /**< PipeWire node name. */
+  bool has_node_name;         /**< True if node_name is specified. */
+  char node_description[256]; /**< PipeWire node description. */
+  bool has_node_description;  /**< True if node_description is specified. */
+  char node_group_name[256];  /**< PipeWire node group name. */
+  bool has_node_group_name;   /**< True if node_group_name is specified. */
+  char autoconnect_to[256];   /**< Node to automatically connect to. */
+  bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
+} pipewire_capture_config_t;
+
+/**
+ * @brief PipeWire playback configuration.
+ */
+typedef struct {
+  int channels;               /**< Number of channels. */
+  char device[256];           /**< Target device name. */
+  bool has_device;            /**< True if device is specified. */
+  char node_name[256];        /**< PipeWire node name. */
+  bool has_node_name;         /**< True if node_name is specified. */
+  char node_description[256]; /**< PipeWire node description. */
+  bool has_node_description;  /**< True if node_description is specified. */
+  char node_group_name[256];  /**< PipeWire node group name. */
+  bool has_node_group_name;   /**< True if node_group_name is specified. */
+  char autoconnect_to[256];   /**< Node to automatically connect to. */
+  bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
+} pipewire_playback_config_t;
+#endif
+
 
 
 /**
