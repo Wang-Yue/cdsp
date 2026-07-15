@@ -21,6 +21,7 @@
 #include "Pipeline/config_loader.h"
 #include "Pipeline/state_file.h"
 #include "Server/websocket_server.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.main"};
 
@@ -593,7 +594,7 @@ int main(int argc, char** argv) {
   printf("Press Ctrl+C to stop.\n");
   bool started = (config_path != NULL);
   while (keep_running) {
-    usleep(100000);  // 100ms
+    cdsp_sleep_ms(100);
     dsp_engine_poll(engine);
     if (started) {
       state_update_t status = dsp_engine_get_status(engine);

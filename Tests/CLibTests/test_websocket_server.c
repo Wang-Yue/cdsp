@@ -3,7 +3,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #define CLOSE_SOCKET(s) closesocket(s)
-#define sleep_ms(ms) Sleep(ms)
 #define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
 typedef SOCKET socket_t;
 #else
@@ -12,11 +11,13 @@ typedef SOCKET socket_t;
 #include <sys/socket.h>
 #include <unistd.h>
 #define CLOSE_SOCKET(s) close(s)
-#define sleep_ms(ms) usleep((ms) * 1000)
 #define IS_INVALID_SOCKET(s) ((s) < 0)
 typedef int socket_t;
 #endif
 #include <string.h>
+
+#include "Utils/cdsp_time.h"
+#define sleep_ms(ms) cdsp_sleep_ms(ms)
 
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"

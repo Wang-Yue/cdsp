@@ -64,24 +64,7 @@ struct engine_processing_loop {
 
 static const logger_t g_logger = {"dsp.processing"};
 
-#ifndef __APPLE__
-#define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
-
-/**
- * @brief Helper to get the current time in nanoseconds for non-Apple platforms.
- *
- * Provides an equivalent to Apple's clock_gettime_nsec_np for measuring elapsed
- * time.
- *
- * @param clock_id The clock identifier to use (e.g., CLOCK_MONOTONIC).
- * @return The current time in nanoseconds.
- */
-static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts = {0};
-  clock_gettime(clock_id, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-#endif
+#include "Utils/cdsp_time.h"
 
 engine_processing_loop_t* engine_processing_loop_create(
     const engine_processing_loop_config_t* config) {
@@ -166,10 +149,10 @@ static audio_chunk_t* processing_loop_resample(engine_processing_loop_t* loop,
   // resampler has different input/output chunk sizes, so
   // swapping would leave scratch holding a too-small array
   // on the next iteration.
-  *out_res_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  *out_res_start = cdsp_time_now_ns();
   resampler_error_t rerr =
       resampler_process(loop->resampler, chunk, loop->resampler_scratch);
-  *out_res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  *out_res_end = cdsp_time_now_ns();
 
   if (rerr != RESAMPLER_OK) {
     logger_error(&g_logger, "Processing error: resampler error %d", rerr);
@@ -307,10 +290,10 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         round_robin_chunk_pool_next(loop->scratch_pool);
 
     // 5. Execute DSP filtering and mixing pipeline
-    uint64_t pipe_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    uint64_t pipe_start = cdsp_time_now_ns();
     pipeline_error_t perr =
         pipeline_process(loop->active_pipeline, chunk, current_scratch);
-    uint64_t pipe_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    uint64_t pipe_end = cdsp_time_now_ns();
 
     if (perr != PIPELINE_OK) {
       logger_error(&g_logger, "Processing error: pipeline error %d", perr);

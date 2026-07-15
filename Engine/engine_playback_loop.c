@@ -25,14 +25,11 @@
 //     negligible per chunk.
 
 #include "engine_playback_loop.h"
+#include "Utils/cdsp_time.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 #include "Logging/app_logger.h"
 #include "thread_priority.h"
@@ -225,8 +222,7 @@ static void playback_loop_update_rate_adjust(
 static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
   logger_info(&g_logger, "Draining playback hardware buffer...");
   size_t last_level = 0;
-  struct timespec last_change_ts;
-  clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+  uint64_t last_change_ns = cdsp_time_now_ns();
 
   while (1) {
     size_t level = playback_backend_get_buffer_level(loop->playback);
@@ -236,25 +232,17 @@ static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
 
     if (level != last_level) {
       last_level = level;
-      clock_gettime(CLOCK_MONOTONIC, &last_change_ts);
+      last_change_ns = cdsp_time_now_ns();
     } else {
-      struct timespec now_ts;
-      clock_gettime(CLOCK_MONOTONIC, &now_ts);
-      double elapsed =
-          (double)(now_ts.tv_sec - last_change_ts.tv_sec) +
-          (double)(now_ts.tv_nsec - last_change_ts.tv_nsec) / 1000000000.0;
+      uint64_t now_ns = cdsp_time_now_ns();
+      double elapsed = (double)(now_ns - last_change_ns) / 1000000000.0;
       if (elapsed > 3.0) {
         logger_warn(&g_logger, "Playback drain timeout reached; aborting");
         break;
       }
     }
 
-#ifdef _WIN32
-    Sleep(10);
-#else
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 10000000ULL};  // 10ms
-    nanosleep(&req, NULL);
-#endif
+    cdsp_sleep_ms(10);
   }
   logger_info(&g_logger, "Playback hardware buffer drained");
 }

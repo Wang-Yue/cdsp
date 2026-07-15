@@ -3,27 +3,10 @@
 // Every field is backed by lock-free atomics (`atomic_double_t` or `_Atomic
 // bool`) — no mutexes or locks.
 #include "Audio/processing_parameters.h"
+#include "Utils/cdsp_time.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-
-#ifndef __APPLE__
-#define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
-/**
- * @brief Helper to get the current time in nanoseconds.
- *
- * Fallback implementation for non-Apple platforms using clock_gettime.
- *
- * @param clock_id The clock identifier (e.g., CLOCK_MONOTONIC).
- * @return Current time in nanoseconds.
- */
-static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts = {0};
-  clock_gettime(clock_id, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-#endif
 
 struct processing_parameters {
   /** Target volume (dB) for fader 0-4. UI thread writes; audio thread reads. */
@@ -208,7 +191,7 @@ void processing_parameters_set_target_volume_for_fader(
     processing_parameters_t* params, double value, fader_t fader) {
   if (!params || fader < 0 || fader >= FADER_COUNT) return;
   atomic_double_set(&params->target_volumes[fader], value);
-  uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  uint64_t now = cdsp_time_now_ns();
   atomic_store_explicit(&params->target_volume_set_at[fader], now,
                         memory_order_release);
 }

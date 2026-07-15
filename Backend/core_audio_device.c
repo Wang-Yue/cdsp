@@ -5,6 +5,7 @@
 // backends don't carry near-identical copies of every enumeration helper.
 
 #include "core_audio_device.h"
+#include "Utils/cdsp_time.h"
 #if defined(ENABLE_COREAUDIO)
 #include <CoreFoundation/CoreFoundation.h>
 #include <math.h>
@@ -219,7 +220,7 @@ bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
     if (core_audio_device_get_nominal_sample_rate(device_id, &current)) {
       if (fabs(current - rate) < 0.5) return true;
     }
-    usleep(5000);
+    cdsp_sleep_us(5000);
   }
   return false;
 }

@@ -14,6 +14,7 @@
 #include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.asio"};
 
@@ -555,14 +556,14 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
     return false;
   }
 
-  Sleep(50);
+  cdsp_sleep_ms(50);
 
   iasio->lpVtbl->stop(iasio);
   iasio->lpVtbl->disposeBuffers(iasio);
   SAFE_RELEASE(iasio);
   *p_iasio = NULL;
 
-  Sleep(50);
+  cdsp_sleep_ms(50);
 
   CLSID clsid;
   if (!find_asio_driver_clsid(driver_name, &clsid)) {
@@ -1387,7 +1388,7 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
                                    playback->encode_buf + written, to_write, 1);
       written += to_write;
     } else {
-      Sleep(1);
+      cdsp_sleep_ms(1);
       if (!playback->is_running) return false;
     }
   }

@@ -48,30 +48,12 @@ struct engine_capture_loop {
   uint64_t captured_drop_counter;
 };
 #include <stdlib.h>
-#include <time.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 #include "thread_priority.h"
 
 static const logger_t g_logger = {"dsp.capture"};
-
-#ifndef __APPLE__
-#define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
-/**
- * @brief Helper function to retrieve the raw system uptime in nanoseconds.
- * Used for the watchdog stall detector. On non-Apple platforms, this wraps
- * clock_gettime(CLOCK_MONOTONIC).
- *
- * @param clock_id The system clock identifier.
- * @return The current time value in nanoseconds.
- */
-static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts = {0};
-  clock_gettime(clock_id, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-
-#endif
 
 engine_capture_loop_t* engine_capture_loop_create(
     const engine_capture_loop_config_t* config) {
@@ -107,7 +89,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   }
 
   loop->watchdog_timeout_seconds = 0.5;
-  loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  loop->watchdog_last_success_ns = cdsp_time_now_ns();
   loop->watchdog_triggered = false;
   loop->captured_drop_counter = 0;
 
@@ -190,7 +172,7 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   // If the engine is in a PAUSED state (no active input signal), reset the
   // watchdog timer to avoid triggering stall warnings while waiting for signal.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
-    loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    loop->watchdog_last_success_ns = cdsp_time_now_ns();
     capture_backend_wait(loop->capture, 20);
     return false;
   }
@@ -200,7 +182,7 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   // for more than watchdog_timeout_seconds, set state to STALLED and log a
   // warning.
   if (!loop->watchdog_triggered) {
-    uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    uint64_t now = cdsp_time_now_ns();
     double elapsed =
         (double)(now - loop->watchdog_last_success_ns) / 1000000000.0;
     if (elapsed > loop->watchdog_timeout_seconds) {
@@ -233,7 +215,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                              audio_chunk_t* chunk) {
   // Watchdog Stall Recovery:
   // Reset the watchdog status if we successfully read data after a stall.
-  loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  loop->watchdog_last_success_ns = cdsp_time_now_ns();
   if (loop->watchdog_triggered) {
     loop->watchdog_triggered = false;
     logger_info(&g_logger, "Capture recovered from stall");
@@ -326,7 +308,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
-  loop->watchdog_last_success_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  loop->watchdog_last_success_ns = cdsp_time_now_ns();
 
   while (1) {
     if (engine_shared_state_should_stop(loop->shared)) {

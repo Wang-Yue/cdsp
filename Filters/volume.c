@@ -20,24 +20,8 @@ struct volume_filter {
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-#ifndef __APPLE__
-#define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
-/**
- * @brief Helper to get the current time in nanoseconds.
- *
- * Used for checking if volume ramp requests are stale.
- *
- * @param clock_id The clock ID to query.
- * @return The current time in nanoseconds.
- */
-static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts = {0};
-  clock_gettime(clock_id, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-#endif
+#include "Utils/cdsp_time.h"
 
 /**
  * @brief Pre-calculates the gain values for the current step of a volume ramp.
@@ -150,7 +134,7 @@ void volume_filter_prepare_chunk(volume_filter_t* filter) {
       filter->mute != shared_mute) {
     uint64_t set_at = processing_parameters_get_target_volume_set_at_for_fader(
         filter->processing_parameters, filter->fader);
-    uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    uint64_t now = cdsp_time_now_ns();
     // Determine if the volume change request is stale.
     // If the request is stale (e.g. after a long pause or block), we skip the
     // ramp to prevent volume changes from lagging behind user interaction.

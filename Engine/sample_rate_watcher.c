@@ -1,20 +1,11 @@
 #include "sample_rate_watcher.h"
 
 #include <stdlib.h>
-#include <time.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.engine.rate_watcher"};
-
-#ifndef __APPLE__
-#define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
-static inline uint64_t clock_gettime_nsec_np(int clock_id) {
-  struct timespec ts = {0};
-  clock_gettime(clock_id, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-#endif
 
 struct sample_rate_watcher {
   double target_rate;
@@ -45,7 +36,7 @@ void sample_rate_watcher_free(sample_rate_watcher_t* watcher) { free(watcher); }
 void sample_rate_watcher_reset(sample_rate_watcher_t* watcher) {
   if (!watcher) return;
   watcher->captured_frames = 0;
-  watcher->last_reset_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  watcher->last_reset_ns = cdsp_time_now_ns();
   watcher->deviation_count = 0;
 }
 
@@ -53,10 +44,10 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
                               double* out_measured_rate) {
   if (!watcher) return false;
   if (watcher->last_reset_ns == 0) {
-    watcher->last_reset_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    watcher->last_reset_ns = cdsp_time_now_ns();
   }
   watcher->captured_frames += frames;
-  uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  uint64_t now = cdsp_time_now_ns();
   double elapsed = (double)(now - watcher->last_reset_ns) / 1000000000.0;
 
   if (elapsed <= 0.0 || elapsed < watcher->measure_interval) {

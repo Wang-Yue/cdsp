@@ -4,9 +4,8 @@
 #endif
 #endif
 #include <math.h>
-#include <unistd.h>
-
 #include "Engine/rate_controller.h"
+#include "Utils/cdsp_time.h"
 #include "test_support.h"
 
 TEST(ReturnsUnitySpeedAtTarget) {
@@ -91,7 +90,7 @@ TEST(StopwatchElapsesMonotonically) {
   stopwatch_t sw;
   stopwatch_init(&sw);
   double t0 = stopwatch_elapsed_seconds(&sw);
-  usleep(10000);  // 10 ms
+  cdsp_sleep_ms(10);
   double t1 = stopwatch_elapsed_seconds(&sw);
   ASSERT_TRUE(t1 > t0);
   stopwatch_restart(&sw);

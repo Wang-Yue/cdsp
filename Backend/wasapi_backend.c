@@ -18,6 +18,7 @@
 #include "Audio/lock_free_ring_buffer.h"
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 #include "wasapi_capabilities.h"
 
 static const logger_t g_logger = {"dsp.backend.wasapi"};
@@ -765,7 +766,7 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
     } else {
       // If no data is available, wait before checking again.
       if (capture->polling) {
-        Sleep(1);
+        cdsp_sleep_ms(1);
       } else {
         // Wait for the event to be signaled by WASAPI indicating data is ready.
         if (WaitForSingleObject(capture->event, 2000) != WAIT_OBJECT_0) {
@@ -822,7 +823,7 @@ void wasapi_capture_set_pitch(wasapi_capture_t* capture, double multiplier) {
 
 bool wasapi_capture_wait(wasapi_capture_t* capture, uint32_t timeout_ms) {
   if (capture->polling) {
-    Sleep(1);
+    cdsp_sleep_ms(1);
     return true;
   }
   if (!capture->event) return false;
@@ -1472,7 +1473,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
       UINT32 to_write = total_frames - frames_written;
 
       if (available_frames < to_write) {
-        Sleep(1);
+        cdsp_sleep_ms(1);
         continue;
       }
 
@@ -1548,7 +1549,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
         written += to_write;
         start_time = GetTickCount();  // progress made
       } else {
-        Sleep(1);
+        cdsp_sleep_ms(1);
         if (!atomic_load_explicit(&playback->thread_running,
                                   memory_order_acquire)) {
           return false;

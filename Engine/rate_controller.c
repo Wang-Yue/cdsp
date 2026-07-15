@@ -207,24 +207,10 @@ bool averager_get_average(const averager_t* avg, double* out_val) {
 /// `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`, which on Darwin is a
 /// vDSO read — no syscall, suitable for invocation on every processed
 /// audio chunk.
-/**
- * @brief Retrieves the current monotonic system time in nanoseconds.
- *
- * Uses low-overhead, system-specific API to get the monotonic time.
- * Under Darwin/macOS, it uses `clock_gettime_nsec_np` with `CLOCK_UPTIME_RAW`.
- * Under Linux, it falls back to standard POSIX `clock_gettime` with
- * `CLOCK_MONOTONIC`.
- *
- * @return The current monotonic time in nanoseconds.
- */
+#include "Utils/cdsp_time.h"
+
 static uint64_t get_current_ns(void) {
-#ifdef __APPLE__
-  return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-#else
-  struct timespec ts = {0};
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-#endif
+  return cdsp_time_now_ns();
 }
 
 void stopwatch_init(stopwatch_t* sw) {
