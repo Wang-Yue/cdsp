@@ -300,7 +300,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   // normally and device is not paused (aligning with CamillaDSP draining
   // behavior).
   bool is_paused = playback_backend_get_is_paused(loop->playback);
-  if (reached_eos && !is_paused) {
+  if (reached_eos && !is_paused &&
+      !engine_shared_state_should_stop(loop->shared)) {
     playback_loop_drain_hardware_buffer(loop);
   } else {
     logger_info(&g_logger,
