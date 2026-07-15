@@ -252,7 +252,7 @@ $(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLib
 	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
 endif
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SRC_ROOT)/Server/websocket_server.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
+$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $^ $(LDFLAGS) -o $@
 
