@@ -89,6 +89,7 @@
 #include "Audio/audio_chunk.h"
 #include "Config/config_error.h"
 #include "FFT/real_fft.h"
+#include "audio_resampler.h"
 #include "resampler_error.h"
 #include "sinc_window_function.h"
 

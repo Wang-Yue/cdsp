@@ -38,12 +38,10 @@ typedef enum {
   SINC_INTERPOLATION_CUBIC
 } sinc_interpolation_type_t;
 
-/**
- * @struct async_sinc_resampler
- * @brief Opaque structure representing an asynchronous windowed-sinc resampler.
- */
 struct async_sinc_resampler;
 typedef struct async_sinc_resampler async_sinc_resampler_t;
+
+#include "audio_resampler.h"
 
 /**
  * @brief Creates an asynchronous windowed-sinc resampler with explicit

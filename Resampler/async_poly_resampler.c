@@ -516,3 +516,31 @@ size_t async_poly_resampler_get_output_frames_next(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->needed_output_size : 0;
 }
+
+audio_resampler_t* audio_resampler_wrap_async_poly(
+    async_poly_resampler_t* res) {
+  if (!res) return NULL;
+  audio_resampler_t* wrap =
+      (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
+  if (!wrap) return NULL;
+  wrap->type = RESAMPLER_IMPL_ASYNC_POLY;
+  wrap->impl = res;
+  wrap->process =
+      (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
+          async_poly_resampler_process;
+  wrap->set_relative_ratio =
+      (void (*)(void*, double))async_poly_resampler_set_relative_ratio;
+  wrap->get_ratio = (double (*)(const void*))async_poly_resampler_get_ratio;
+  wrap->get_max_output_frames =
+      (size_t (*)(const void*))async_poly_resampler_get_max_output_frames;
+  wrap->get_chunk_size =
+      (size_t (*)(const void*))async_poly_resampler_get_chunk_size;
+  wrap->get_input_frames_next =
+      (size_t (*)(const void*))async_poly_resampler_get_input_frames_next;
+  wrap->get_output_frames_next =
+      (size_t (*)(const void*))async_poly_resampler_get_output_frames_next;
+  wrap->get_channels =
+      (size_t (*)(const void*))async_poly_resampler_get_channels;
+  wrap->free = (void (*)(void*))async_poly_resampler_free;
+  return wrap;
+}

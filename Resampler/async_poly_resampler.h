@@ -17,9 +17,6 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
-#include "Config/config_error.h"
-#include "resampler_error.h"
-
 /**
  * @brief Types of polynomial interpolation supported.
  */
@@ -62,6 +59,8 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
  */
 struct async_poly_resampler;
 typedef struct async_poly_resampler async_poly_resampler_t;
+
+#include "audio_resampler.h"
 
 /**
  * @brief Creates an asynchronous polynomial resampler.

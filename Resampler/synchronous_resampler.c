@@ -494,3 +494,31 @@ resampler_error_t synchronous_resampler_process(
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
+
+audio_resampler_t* audio_resampler_wrap_synchronous(
+    synchronous_resampler_t* res) {
+  if (!res) return NULL;
+  audio_resampler_t* wrap =
+      (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
+  if (!wrap) return NULL;
+  wrap->type = RESAMPLER_IMPL_SYNCHRONOUS;
+  wrap->impl = res;
+  wrap->process =
+      (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
+          synchronous_resampler_process;
+  wrap->set_relative_ratio =
+      (void (*)(void*, double))synchronous_resampler_set_relative_ratio;
+  wrap->get_ratio = (double (*)(const void*))synchronous_resampler_get_ratio;
+  wrap->get_max_output_frames =
+      (size_t (*)(const void*))synchronous_resampler_get_max_output_frames;
+  wrap->get_chunk_size =
+      (size_t (*)(const void*))synchronous_resampler_get_chunk_size;
+  wrap->get_input_frames_next =
+      (size_t (*)(const void*))synchronous_resampler_get_input_frames_next;
+  wrap->get_output_frames_next =
+      (size_t (*)(const void*))synchronous_resampler_get_output_frames_next;
+  wrap->get_channels =
+      (size_t (*)(const void*))synchronous_resampler_get_channels;
+  wrap->free = (void (*)(void*))synchronous_resampler_free;
+  return wrap;
+}

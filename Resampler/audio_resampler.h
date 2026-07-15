@@ -17,9 +17,24 @@
 
 #include "Audio/audio_chunk.h"
 #include "Config/resampler_config_types.h"
+#include "resampler_error.h"
+
+struct synchronous_resampler;
+typedef struct synchronous_resampler synchronous_resampler_t;
+
+struct async_poly_resampler;
+typedef struct async_poly_resampler async_poly_resampler_t;
+
+struct async_sinc_resampler;
+typedef struct async_sinc_resampler async_sinc_resampler_t;
+
+#if defined(ENABLE_COREAUDIO)
+struct apple_resampler;
+typedef struct apple_resampler apple_resampler_t;
+#endif
+
 #include "async_poly_resampler.h"
 #include "async_sinc_resampler.h"
-#include "resampler_error.h"
 #include "synchronous_resampler.h"
 #if defined(ENABLE_COREAUDIO)
 #include "apple_resampler.h"
@@ -43,12 +58,23 @@ typedef enum {
 
 /**
  * @struct audio_resampler
- * @brief Opaque structure representing an audio resampler instance.
- *
- * Concrete resamplers are wrapped in this structure to provide a uniform API.
+ * @brief Polymorphic interface wrapper for resamplers.
  */
-struct audio_resampler;
-typedef struct audio_resampler audio_resampler_t;
+typedef struct audio_resampler {
+  resampler_impl_type_t type;
+  void* impl;
+  resampler_error_t (*process)(void* impl,
+                               const audio_chunk_t* input,
+                               audio_chunk_t* output);
+  void (*set_relative_ratio)(void* impl, double multiplier);
+  double (*get_ratio)(const void* impl);
+  size_t (*get_max_output_frames)(const void* impl);
+  size_t (*get_chunk_size)(const void* impl);
+  size_t (*get_input_frames_next)(const void* impl);
+  size_t (*get_output_frames_next)(const void* impl);
+  size_t (*get_channels)(const void* impl);
+  void (*free)(void* impl);
+} audio_resampler_t;
 
 /**
  * @brief Creates an audio resampler based on the provided configuration.
