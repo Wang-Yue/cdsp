@@ -323,17 +323,14 @@ else
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
 endif
 
-LINUX_CFLAGS := -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE -I./linux_sysroot/usr/include/dbus-1.0 -I./linux_sysroot/usr/lib/aarch64-linux-gnu/dbus-1.0/include
-LINUX_LDFLAGS := -L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt -ldbus-1
+LINUX_CFLAGS = -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE -I./linux_sysroot/usr/include/dbus-1.0 -I./linux_sysroot/usr/lib/aarch64-linux-gnu/dbus-1.0/include $(if $(filter 1,$(ENABLE_PIPEWIRE)),-DENABLE_PIPEWIRE -I./linux_sysroot/usr/include/pipewire-0.3 -I./linux_sysroot/usr/include/spa-0.2)
+LINUX_LDFLAGS = -L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt -ldbus-1 $(if $(filter 1,$(ENABLE_PIPEWIRE)),-lpipewire-0.3)
 
-ifeq ($(ENABLE_PIPEWIRE),1)
-    LINUX_CFLAGS += -DENABLE_PIPEWIRE -I./linux_sysroot/usr/include/pipewire-0.3 -I./linux_sysroot/usr/include/spa-0.2
-    LINUX_LDFLAGS += -lpipewire-0.3
-endif
-
+linux-aarch64: ENABLE_PIPEWIRE ?= 1
 linux-aarch64:
 	$(MAKE) cli TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CLI_BIN=bin/dsp-cli CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 ENABLE_PIPEWIRE=$(ENABLE_PIPEWIRE) CFLAGS="$(LINUX_CFLAGS)" LDFLAGS="$(LINUX_LDFLAGS)" -j20
 
+linux-benchmarks: ENABLE_PIPEWIRE ?= 1
 linux-benchmarks:
 	$(MAKE) $(BENCH_BINS) TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 ENABLE_PIPEWIRE=$(ENABLE_PIPEWIRE) CFLAGS="$(LINUX_CFLAGS)" LDFLAGS="$(LINUX_LDFLAGS)" -j20
 
