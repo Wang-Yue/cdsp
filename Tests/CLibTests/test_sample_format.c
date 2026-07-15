@@ -66,8 +66,12 @@ TEST(CanonicalRawValues) {
                 alsa_sample_format_to_string(ALSA_SAMPLE_FORMAT_DSD_U8));
   ASSERT_STR_EQ("DSD_U16_LE",
                 alsa_sample_format_to_string(ALSA_SAMPLE_FORMAT_DSD_U16_LE));
+  ASSERT_STR_EQ("DSD_U16_BE",
+                alsa_sample_format_to_string(ALSA_SAMPLE_FORMAT_DSD_U16_BE));
   ASSERT_STR_EQ("DSD_U32_LE",
                 alsa_sample_format_to_string(ALSA_SAMPLE_FORMAT_DSD_U32_LE));
+  ASSERT_STR_EQ("DSD_U32_BE",
+                alsa_sample_format_to_string(ALSA_SAMPLE_FORMAT_DSD_U32_BE));
 }
 
 TEST(DecodesCanonicalNames) {
@@ -87,8 +91,12 @@ TEST(DecodesCanonicalNames) {
             alsa_sample_format_from_string("DSD_U8"));
   ASSERT_EQ(ALSA_SAMPLE_FORMAT_DSD_U16_LE,
             alsa_sample_format_from_string("DSD_U16_LE"));
+  ASSERT_EQ(ALSA_SAMPLE_FORMAT_DSD_U16_BE,
+            alsa_sample_format_from_string("DSD_U16_BE"));
   ASSERT_EQ(ALSA_SAMPLE_FORMAT_DSD_U32_LE,
             alsa_sample_format_from_string("DSD_U32_LE"));
+  ASSERT_EQ(ALSA_SAMPLE_FORMAT_DSD_U32_BE,
+            alsa_sample_format_from_string("DSD_U32_BE"));
 }
 
 TEST(RejectsAliases) {
@@ -109,7 +117,7 @@ TEST(AllCases) {
       count++;
     }
   }
-  ASSERT_EQ(9, count);
+  ASSERT_EQ(11, count);
 }
 
 #endif

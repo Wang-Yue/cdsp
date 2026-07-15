@@ -146,8 +146,12 @@ const char* alsa_sample_format_to_string(alsa_sample_format_t fmt) {
       return "DSD_U8";
     case ALSA_SAMPLE_FORMAT_DSD_U16_LE:
       return "DSD_U16_LE";
+    case ALSA_SAMPLE_FORMAT_DSD_U16_BE:
+      return "DSD_U16_BE";
     case ALSA_SAMPLE_FORMAT_DSD_U32_LE:
       return "DSD_U32_LE";
+    case ALSA_SAMPLE_FORMAT_DSD_U32_BE:
+      return "DSD_U32_BE";
     default:
       return "Invalid";
   }
@@ -163,7 +167,9 @@ alsa_sample_format_t alsa_sample_format_from_string(const char* str) {
   if (strcmp(str, "F64_LE") == 0) return ALSA_SAMPLE_FORMAT_F64_LE;
   if (strcmp(str, "DSD_U8") == 0) return ALSA_SAMPLE_FORMAT_DSD_U8;
   if (strcmp(str, "DSD_U16_LE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U16_LE;
+  if (strcmp(str, "DSD_U16_BE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U16_BE;
   if (strcmp(str, "DSD_U32_LE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U32_LE;
+  if (strcmp(str, "DSD_U32_BE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U32_BE;
   return ALSA_SAMPLE_FORMAT_INVALID;
 }
 #endif
@@ -815,9 +821,11 @@ size_t playback_device_config_calculate_carrier_bits(
     alsa_sample_format_t alsa_fmt = config->cfg.alsa.format;
     if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U8) {
       return 8;
-    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
+    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE ||
+               alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_BE) {
       return 16;
-    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
+    } else if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE ||
+               alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
       return 32;
     }
   }

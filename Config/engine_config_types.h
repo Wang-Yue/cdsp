@@ -325,7 +325,11 @@ typedef enum {
   ALSA_SAMPLE_FORMAT_DSD_U8,      /**< Native DSD 8-bit Unsigned. */
   ALSA_SAMPLE_FORMAT_DSD_U16_LE,  /**< Native DSD 16-bit Unsigned Little Endian.
                                    */
+  ALSA_SAMPLE_FORMAT_DSD_U16_BE,  /**< Native DSD 16-bit Unsigned Big Endian.
+                                   */
   ALSA_SAMPLE_FORMAT_DSD_U32_LE,  /**< Native DSD 32-bit Unsigned Little Endian.
+                                   */
+  ALSA_SAMPLE_FORMAT_DSD_U32_BE,  /**< Native DSD 32-bit Unsigned Big Endian.
                                    */
   ALSA_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
 } alsa_sample_format_t;

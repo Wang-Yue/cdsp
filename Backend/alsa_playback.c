@@ -278,21 +278,21 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_F64_LE) {
       formats[0] = SND_PCM_FORMAT_FLOAT64_LE;
       num_formats = 1;
-#if defined(SND_PCM_FORMAT_DSD_U8)
     } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U8) {
       formats[0] = SND_PCM_FORMAT_DSD_U8;
       num_formats = 1;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
     } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
       formats[0] = SND_PCM_FORMAT_DSD_U16_LE;
       num_formats = 1;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_BE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U16_BE;
+      num_formats = 1;
     } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
       formats[0] = SND_PCM_FORMAT_DSD_U32_LE;
       num_formats = 1;
-#endif
+    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U32_BE;
+      num_formats = 1;
     }
   } else {
     formats[0] = SND_PCM_FORMAT_FLOAT_LE;
@@ -301,7 +301,6 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     formats[3] = SND_PCM_FORMAT_S16_LE;
     num_formats = 4;
   }
-
   bool format_ok = false;
   for (size_t i = 0; i < num_formats; i++) {
     rc = snd_pcm_hw_params_set_format(playback->pcm, params, formats[i]);
@@ -388,18 +387,16 @@ bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
     sample_size = 4;
   } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
     sample_size = 8;
-#if defined(SND_PCM_FORMAT_DSD_U8)
   } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
     sample_size = 1;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
     sample_size = 2;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
+    sample_size = 2;
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
     sample_size = 4;
-#endif
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
+    sample_size = 4;
   }
   playback->interleaved_buf_size =
       playback->chunk_size * playback->channels * sample_size;
@@ -534,7 +531,6 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
         dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
       }
     }
-#if defined(SND_PCM_FORMAT_DSD_U8)
   } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
     uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < frames; f++) {
@@ -543,8 +539,6 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
         dst[f * playback->channels + c] = pcm_sample_encode_dsd_u8(val);
       }
     }
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
     uint16_t* dst = (uint16_t*)playback->interleaved_buf;
     for (size_t f = 0; f < frames; f++) {
@@ -553,8 +547,20 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
         dst[f * playback->channels + c] = (uint16_t)pcm_sample_encode_s16(val);
       }
     }
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
+    uint16_t* dst = (uint16_t*)playback->interleaved_buf;
+    for (size_t f = 0; f < frames; f++) {
+      for (size_t c = 0; c < (size_t)playback->channels; c++) {
+        double val = audio_chunk_get_channel(chunk, c)[f];
+        uint16_t encoded = (uint16_t)pcm_sample_encode_s16(val);
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        dst[f * playback->channels + c] = __builtin_bswap16(encoded);
+#else
+        dst[f * playback->channels + c] = encoded;
 #endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
+      }
+    }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
     uint32_t* dst = (uint32_t*)playback->interleaved_buf;
     for (size_t f = 0; f < frames; f++) {
@@ -563,7 +569,20 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
         dst[f * playback->channels + c] = pcm_sample_encode_f32_u32(val);
       }
     }
+  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
+    uint32_t* dst = (uint32_t*)playback->interleaved_buf;
+    for (size_t f = 0; f < frames; f++) {
+      for (size_t c = 0; c < (size_t)playback->channels; c++) {
+        double val = audio_chunk_get_channel(chunk, c)[f];
+        uint32_t encoded = pcm_sample_encode_f32_u32(val);
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        dst[f * playback->channels + c] = __builtin_bswap32(encoded);
+#else
+        dst[f * playback->channels + c] = encoded;
 #endif
+      }
+    }
   }
 
   bool paused = atomic_load_explicit(&playback->paused, memory_order_acquire);
@@ -643,21 +662,11 @@ bool alsa_playback_get_pending_rate_change(alsa_playback_t* playback,
 }
 
 static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
-#if defined(SND_PCM_FORMAT_DSD_U8)
   if (format == SND_PCM_FORMAT_DSD_U8) return true;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_LE)
   if (format == SND_PCM_FORMAT_DSD_U16_LE) return true;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U16_BE)
   if (format == SND_PCM_FORMAT_DSD_U16_BE) return true;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_LE)
   if (format == SND_PCM_FORMAT_DSD_U32_LE) return true;
-#endif
-#if defined(SND_PCM_FORMAT_DSD_U32_BE)
   if (format == SND_PCM_FORMAT_DSD_U32_BE) return true;
-#endif
   (void)format;
   return false;
 }
