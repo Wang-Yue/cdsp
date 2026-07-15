@@ -407,14 +407,14 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
       resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
       strncpy(cfg.interpolation, "Septic", sizeof(cfg.interpolation) - 1);
       cfg.has_interpolation = true;
-      cfg.fixed = FIXED_ASYNC_OUTPUT;
+      cfg.fixed = FIXED_ASYNC_INPUT;
       cfg.has_fixed = true;
       break;
     case 2:
       resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
-      cfg.fixed = FIXED_ASYNC_OUTPUT;
+      cfg.fixed = FIXED_ASYNC_INPUT;
       cfg.has_fixed = true;
       break;
 #if defined(ENABLE_COREAUDIO)
@@ -565,14 +565,14 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
       strncpy(cfg.interpolation, "Septic", sizeof(cfg.interpolation) - 1);
       cfg.has_interpolation = true;
-      cfg.fixed = FIXED_ASYNC_OUTPUT;
+      cfg.fixed = FIXED_ASYNC_INPUT;
       cfg.has_fixed = true;
       break;
     case 2:
       resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
-      cfg.fixed = FIXED_ASYNC_OUTPUT;
+      cfg.fixed = FIXED_ASYNC_INPUT;
       cfg.has_fixed = true;
       break;
 #if defined(ENABLE_COREAUDIO)
