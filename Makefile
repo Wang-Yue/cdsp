@@ -323,8 +323,8 @@ else
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
 endif
 
-LINUX_CFLAGS := -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE
-LINUX_LDFLAGS := -L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt
+LINUX_CFLAGS := -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE -I./linux_sysroot/usr/include/dbus-1.0 -I./linux_sysroot/usr/lib/aarch64-linux-gnu/dbus-1.0/include
+LINUX_LDFLAGS := -L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt -ldbus-1
 
 ifeq ($(ENABLE_PIPEWIRE),1)
     LINUX_CFLAGS += -DENABLE_PIPEWIRE -I./linux_sysroot/usr/include/pipewire-0.3 -I./linux_sysroot/usr/include/spa-0.2
