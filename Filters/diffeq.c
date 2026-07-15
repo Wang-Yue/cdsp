@@ -17,7 +17,7 @@ struct diffeq_filter {
 #include <string.h>
 
 diffeq_filter_t* diffeq_filter_create(const char* name,
-                                      const diff_eq_parameters_t* params) {
+                                      const diffeq_config_t* params) {
   diffeq_filter_t* filter =
       (diffeq_filter_t*)calloc(1, sizeof(diffeq_filter_t));
   if (!filter) return NULL;
@@ -137,8 +137,8 @@ void diffeq_filter_free(diffeq_filter_t* filter) {
   free(filter);
 }
 
-int diff_eq_parameters_validate(const diff_eq_parameters_t* params,
-                                config_error_t* err) {
+int diffeq_config_validate(const diffeq_config_t* params,
+                             config_error_t* err) {
   (void)params;
   (void)err;
   return 0;

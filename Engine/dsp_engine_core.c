@@ -139,7 +139,7 @@ void dsp_engine_core_stop_and_free(dsp_engine_core_t* core,
     core->playback = NULL;
   }
   if (core->resampler) {
-    audio_resampler_free(core->resampler);
+    resampler_free(core->resampler);
     core->resampler = NULL;
   }
   if (core->resampler_scratch) {

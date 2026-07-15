@@ -40,7 +40,7 @@ static poly_interpolation_t poly_interpolation_from_string(const char* str) {
   return POLY_INTERPOLATION_CUBIC;
 }
 
-audio_resampler_t* audio_resampler_create_from_config(
+resampler_t* resampler_create_from_config(
     const resampler_config_t* config, size_t input_rate, size_t output_rate,
     size_t channels, size_t chunk_size, config_error_t* err) {
   if (!config) {
@@ -53,7 +53,7 @@ audio_resampler_t* audio_resampler_create_from_config(
                config->type, input_rate, output_rate, channels);
   switch (config->type) {
     case RESAMPLER_TYPE_SYNCHRONOUS: {
-      audio_resampler_t* res = synchronous_resampler_create(
+      resampler_t* res = synchronous_resampler_create(
           channels, input_rate, output_rate, chunk_size, err);
       if (!res) {
         logger_error(
@@ -74,7 +74,7 @@ audio_resampler_t* audio_resampler_create_from_config(
             config->window, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
         sinc_interpolation_type_t interp =
             sinc_interpolation_type_from_string(config->interpolation);
-        audio_resampler_t* res = async_sinc_resampler_create(
+        resampler_t* res = async_sinc_resampler_create(
             channels, input_rate, output_rate, (size_t)config->sinc_len,
             (size_t)config->oversampling_factor, interp, wf, config->f_cutoff,
             config->has_f_cutoff, chunk_size, 1.1, fixed_mode, err);
@@ -92,7 +92,7 @@ audio_resampler_t* audio_resampler_create_from_config(
         if (config->has_profile) {
           prof = resampler_profile_from_string(config->profile);
         }
-        audio_resampler_t* res = async_sinc_resampler_create_from_profile(
+        resampler_t* res = async_sinc_resampler_create_from_profile(
             channels, input_rate, output_rate, prof, chunk_size, 1.1, err);
         if (!res) {
           logger_error(&g_logger,
@@ -111,7 +111,7 @@ audio_resampler_t* audio_resampler_create_from_config(
       if (config->has_interpolation) {
         poly_interpolation_t interp =
             poly_interpolation_from_string(config->interpolation);
-        audio_resampler_t* res =
+        resampler_t* res =
             async_poly_resampler_create(channels, input_rate, output_rate,
                                         interp, chunk_size, 1.1, fixed_mode, err);
         if (!res) {
@@ -128,7 +128,7 @@ audio_resampler_t* audio_resampler_create_from_config(
         if (config->has_profile) {
           prof = resampler_profile_from_string(config->profile);
         }
-        audio_resampler_t* res = async_poly_resampler_create_from_profile(
+        resampler_t* res = async_poly_resampler_create_from_profile(
             channels, input_rate, output_rate, prof, chunk_size, 1.1,
             fixed_mode, err);
         if (!res) {
@@ -150,7 +150,7 @@ audio_resampler_t* audio_resampler_create_from_config(
       apple_resampler_complexity_t comp =
           config->has_apple_complexity ? config->apple_complexity
                                        : APPLE_RESAMPLER_COMPLEXITY_NORMAL;
-      audio_resampler_t* res = apple_resampler_create(
+      resampler_t* res = apple_resampler_create(
           channels, input_rate, output_rate, qual, comp, chunk_size, err);
       if (!res) {
         logger_error(
@@ -171,60 +171,60 @@ audio_resampler_t* audio_resampler_create_from_config(
   }
 }
 
-resampler_error_t audio_resampler_process(audio_resampler_t* resampler,
-                                          const audio_chunk_t* input,
-                                          audio_chunk_t* output) {
+resampler_error_t resampler_process(resampler_t* resampler,
+                                    const audio_chunk_t* input,
+                                    audio_chunk_t* output) {
   if (!resampler || !resampler->process) return RESAMPLER_ERR_INVALID_PARAMETER;
   return resampler->process(resampler->impl, input, output);
 }
 
-void audio_resampler_set_relative_ratio(audio_resampler_t* resampler,
-                                        double multiplier) {
+void resampler_set_relative_ratio(resampler_t* resampler,
+                                  double multiplier) {
   if (resampler && resampler->set_relative_ratio) {
     resampler->set_relative_ratio(resampler->impl, multiplier);
   }
 }
 
-double audio_resampler_get_ratio(const audio_resampler_t* resampler) {
+double resampler_get_ratio(const resampler_t* resampler) {
   return (resampler && resampler->get_ratio)
              ? resampler->get_ratio(resampler->impl)
              : 1.0;
 }
 
-size_t audio_resampler_get_max_output_frames(
-    const audio_resampler_t* resampler) {
+size_t resampler_get_max_output_frames(
+    const resampler_t* resampler) {
   return (resampler && resampler->get_max_output_frames)
              ? resampler->get_max_output_frames(resampler->impl)
              : 0;
 }
 
-size_t audio_resampler_get_chunk_size(const audio_resampler_t* resampler) {
+size_t resampler_get_chunk_size(const resampler_t* resampler) {
   return (resampler && resampler->get_chunk_size)
              ? resampler->get_chunk_size(resampler->impl)
              : 0;
 }
 
-size_t audio_resampler_get_input_frames_next(
-    const audio_resampler_t* resampler) {
+size_t resampler_get_input_frames_next(
+    const resampler_t* resampler) {
   return (resampler && resampler->get_input_frames_next)
              ? resampler->get_input_frames_next(resampler->impl)
              : 0;
 }
 
-size_t audio_resampler_get_output_frames_next(
-    const audio_resampler_t* resampler) {
+size_t resampler_get_output_frames_next(
+    const resampler_t* resampler) {
   return (resampler && resampler->get_output_frames_next)
              ? resampler->get_output_frames_next(resampler->impl)
              : 0;
 }
 
-size_t audio_resampler_get_channels(const audio_resampler_t* resampler) {
+size_t resampler_get_channels(const resampler_t* resampler) {
   return (resampler && resampler->get_channels)
              ? resampler->get_channels(resampler->impl)
              : 0;
 }
 
-void audio_resampler_free(audio_resampler_t* resampler) {
+void resampler_free(resampler_t* resampler) {
   if (resampler) {
     if (resampler->free) {
       resampler->free(resampler->impl);

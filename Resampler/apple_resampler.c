@@ -245,7 +245,7 @@ static resampler_error_t apple_resampler_process(apple_resampler_t* resampler,
   return RESAMPLER_OK;
 }
 
-audio_resampler_t* apple_resampler_create(
+resampler_t* apple_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     apple_resampler_quality_t quality, apple_resampler_complexity_t complexity,
     size_t chunk_size, config_error_t* err) {
@@ -373,8 +373,8 @@ audio_resampler_t* apple_resampler_create(
   AudioConverterSetProperty(conv, kAudioConverterSampleRateConverterQuality,
                             sizeof(UInt32), &quality_val);
 
-  audio_resampler_t* wrap =
-      (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
+  resampler_t* wrap =
+      (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     apple_resampler_free(resampler);
     return NULL;

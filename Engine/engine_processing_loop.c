@@ -40,7 +40,7 @@ struct engine_processing_loop {
   engine_shared_state_t* shared;
   processing_parameters_t* processing_params;
   size_t pipeline_rate;
-  audio_resampler_t* resampler;
+  resampler_t* resampler;
   pipeline_t* active_pipeline;
   dsd_encoder_t* dsd_encoder;
   _Atomic(pipeline_t*) next_pipeline;
@@ -158,7 +158,7 @@ static audio_chunk_t* processing_loop_resample(engine_processing_loop_t* loop,
   // resampler's internal state is otherwise owned exclusively
   // by this thread, so no lock is required.
   double ratio = engine_shared_state_get_resampler_ratio(loop->shared);
-  audio_resampler_set_relative_ratio(loop->resampler, ratio);
+  resampler_set_relative_ratio(loop->resampler, ratio);
 
   // Write into the pre-sized output scratch (sized to
   // `resampler.maxOutputFrames`), then make that scratch
@@ -168,7 +168,7 @@ static audio_chunk_t* processing_loop_resample(engine_processing_loop_t* loop,
   // on the next iteration.
   *out_res_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   resampler_error_t rerr =
-      audio_resampler_process(loop->resampler, chunk, loop->resampler_scratch);
+      resampler_process(loop->resampler, chunk, loop->resampler_scratch);
   *out_res_end = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 
   if (rerr != RESAMPLER_OK) {

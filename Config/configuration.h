@@ -47,7 +47,7 @@ typedef struct {
   char** names;          /**< Array of names (if multi-name). */
   size_t names_count;    /**< Number of names in `names`. */
   bool bypassed;         /**< True if this step is bypassed. */
-} pipeline_step_t;
+} pipeline_step_config_t;
 
 /**
  * @brief Named filter configuration.
@@ -84,7 +84,7 @@ typedef struct {
   size_t mixers_count;                  /**< Number of mixers. */
   named_processor_config_t* processors; /**< Array of named processors. */
   size_t processors_count;              /**< Number of processors. */
-  pipeline_step_t*
+  pipeline_step_config_t*
       pipeline; /**< Array of pipeline steps defining the processing flow. */
   size_t pipeline_count; /**< Number of pipeline steps. */
 } dsp_config_t;

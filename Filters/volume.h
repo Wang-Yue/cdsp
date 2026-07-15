@@ -34,7 +34,7 @@ typedef struct volume_filter volume_filter_t;
  * failure.
  */
 volume_filter_t* volume_filter_create(const char* name,
-                                      const volume_parameters_t* params,
+                                      const volume_config_t* params,
                                       int sample_rate, size_t chunk_size,
                                       processing_parameters_t* proc_params,
                                       config_error_t* err);
@@ -46,7 +46,7 @@ volume_filter_t* volume_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int volume_parameters_validate(const volume_parameters_t* params,
+int volume_config_validate(const volume_config_t* params,
                                config_error_t* err);
 
 /**

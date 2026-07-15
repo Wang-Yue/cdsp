@@ -79,7 +79,7 @@ const char* race_processor_get_name(const race_processor_t* processor);
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int race_parameters_validate(const race_parameters_t* params,
+int race_config_validate(const race_config_t* params,
                              config_error_t* err);
 
 /**
@@ -93,7 +93,7 @@ int race_parameters_validate(const race_parameters_t* params,
  * @return Pointer to newly allocated race_processor_t, or NULL on failure.
  */
 race_processor_t* race_processor_create(const char* name,
-                                        const race_parameters_t* params,
+                                        const race_config_t* params,
                                         int sample_rate, config_error_t* err);
 
 /**

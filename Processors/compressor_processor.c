@@ -64,7 +64,7 @@ const char* compressor_processor_get_name(
 #endif
 
 compressor_processor_t* compressor_processor_create(
-    const char* name, const compressor_parameters_t* params, int sample_rate,
+    const char* name, const compressor_config_t* params, int sample_rate,
     size_t chunk_size) {
   if (!params || sample_rate <= 0 || chunk_size == 0) return NULL;
 
@@ -130,7 +130,7 @@ compressor_processor_t* compressor_processor_create(
   processor->prev_loudness = -100.0;
 
   if (params->has_clip_limit) {
-    limiter_parameters_t limit_params = {0};
+    limiter_config_t limit_params = {0};
     limit_params.clip_limit = params->clip_limit;
     limit_params.soft_clip = params->soft_clip;
     processor->limiter = limiter_filter_create("limiter", &limit_params);
@@ -252,8 +252,8 @@ void compressor_processor_transfer_state(compressor_processor_t* dest,
   dest->prev_loudness = src->prev_loudness;
 }
 
-int compressor_parameters_validate(const compressor_parameters_t* p,
-                                   config_error_t* err) {
+int compressor_config_validate(const compressor_config_t* p,
+                                 config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,

@@ -29,7 +29,7 @@ typedef struct diffeq_filter diffeq_filter_t;
  * failure.
  */
 diffeq_filter_t* diffeq_filter_create(const char* name,
-                                      const diff_eq_parameters_t* params);
+                                      const diffeq_config_t* params);
 
 /**
  * @brief Validates difference equation filter parameters.
@@ -38,8 +38,8 @@ diffeq_filter_t* diffeq_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int diff_eq_parameters_validate(const diff_eq_parameters_t* params,
-                                config_error_t* err);
+int diffeq_config_validate(const diffeq_config_t* params,
+                             config_error_t* err);
 
 /**
  * @brief Process a block of samples in-place.

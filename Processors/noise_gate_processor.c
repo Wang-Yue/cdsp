@@ -54,7 +54,7 @@ const char* noise_gate_processor_get_name(
 #endif
 
 noise_gate_processor_t* noise_gate_processor_create(
-    const char* name, const noise_gate_parameters_t* params, int sample_rate,
+    const char* name, const noise_gate_config_t* params, int sample_rate,
     size_t chunk_size) {
   if (!params || sample_rate <= 0 || chunk_size == 0) return NULL;
 
@@ -208,7 +208,7 @@ void noise_gate_processor_transfer_state(noise_gate_processor_t* dest,
   dest->prev_loudness = src->prev_loudness;
 }
 
-int noise_gate_parameters_validate(const noise_gate_parameters_t* p,
+int noise_gate_config_validate(const noise_gate_config_t* p,
                                     config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {

@@ -168,7 +168,7 @@ TEST(ValidatePipelineFilterMissingNames) {
   config.devices.chunksize = 1024;
   set_test_channels(&config, 2, 2);
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -193,7 +193,7 @@ TEST(ValidatePipelineFilterUndefined) {
   set_test_channels(&config, 2, 2);
 
   char* name = strdup("undefined_filter");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -230,7 +230,7 @@ TEST(ValidatePipelineFilterChannelOutOfRange) {
   config.filters_count = 1;
 
   char* name = strdup("myfilter");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 2;
@@ -258,7 +258,7 @@ TEST(ValidatePipelineMixerMissingName) {
   config.devices.chunksize = 1024;
   set_test_channels(&config, 2, 2);
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
 
@@ -280,7 +280,7 @@ TEST(ValidatePipelineMixerUndefined) {
   config.devices.chunksize = 1024;
   set_test_channels(&config, 2, 2);
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
   strcpy(step.name, "undefined_mixer");
@@ -314,7 +314,7 @@ TEST(ValidatePipelineMixerInputMismatch) {
   config.mixers = &nm;
   config.mixers_count = 1;
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
   strcpy(step.name, "mymixer");
@@ -348,7 +348,7 @@ TEST(ValidatePipelineOutputMismatch) {
   config.mixers = &nm;
   config.mixers_count = 1;
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
   strcpy(step.name, "mymixer");
@@ -383,7 +383,7 @@ TEST(ValidatePipelineBypassedStep) {
   config.filters_count = 1;
 
   char* name = strdup("myfilter");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 2;

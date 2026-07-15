@@ -54,7 +54,7 @@ typedef struct convolution_filter convolution_filter_t;
  * @return A pointer to the created convolution filter, or NULL on failure.
  */
 convolution_filter_t* convolution_filter_create(const char* name,
-                                                const conv_parameters_t* params,
+                                                const convolution_config_t* params,
                                                 size_t chunk_size,
                                                 config_error_t* err);
 
@@ -65,8 +65,8 @@ convolution_filter_t* convolution_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int conv_parameters_validate(const conv_parameters_t* params,
-                             config_error_t* err);
+int convolution_config_validate(const convolution_config_t* params,
+                                config_error_t* err);
 
 /**
  * @brief Process one block in-place.

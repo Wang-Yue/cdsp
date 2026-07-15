@@ -76,7 +76,7 @@ typedef struct dither_filter dither_filter_t;
  * @return A pointer to the created dither filter, or NULL on failure.
  */
 dither_filter_t* dither_filter_create(const char* name,
-                                      const dither_parameters_t* params);
+                                      const dither_config_t* params);
 
 /**
  * @brief Validates dither filter parameters.
@@ -85,8 +85,8 @@ dither_filter_t* dither_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int dither_parameters_validate(const dither_parameters_t* params,
-                               config_error_t* err);
+int dither_config_validate(const dither_config_t* params,
+                            config_error_t* err);
 
 /**
  * @brief Process a block of samples in-place, applying dither.

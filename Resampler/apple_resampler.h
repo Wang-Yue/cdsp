@@ -30,7 +30,7 @@
  * @param err Pointer to a config error struct to populate on failure.
  * @return Pointer to newly allocated audio_resampler_t, or NULL on failure.
  */
-audio_resampler_t* apple_resampler_create(
+resampler_t* apple_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     apple_resampler_quality_t quality, apple_resampler_complexity_t complexity,
     size_t chunk_size, config_error_t* err);

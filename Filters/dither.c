@@ -413,7 +413,7 @@ static double sample_dither(dither_filter_t* filter) {
 
 // MARK: - DitherFilter
 dither_filter_t* dither_filter_create(const char* name,
-                                      const dither_parameters_t* params) {
+                                      const dither_config_t* params) {
   dither_filter_t* filter =
       (dither_filter_t*)calloc(1, sizeof(dither_filter_t));
   if (!filter) return NULL;
@@ -486,8 +486,8 @@ void dither_filter_free(dither_filter_t* filter) {
   if (filter->shaper) noise_shaper_free(filter->shaper);
   free(filter);
 }
-int dither_parameters_validate(const dither_parameters_t* params,
-                               config_error_t* err) {
+int dither_config_validate(const dither_config_t* params,
+                            config_error_t* err) {
   if (!params) return 0;
   if (params->bits < 2) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,

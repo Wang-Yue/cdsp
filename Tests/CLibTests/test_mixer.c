@@ -45,13 +45,13 @@ TEST(MixerConstruction2to4) {
                              {.dest = 3, .sources_count = 1, .sources = &src1}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   ASSERT_TRUE(mixer != NULL);
-  ASSERT_EQ(2, audio_mixer_get_channels_in(mixer));
-  ASSERT_EQ(4, audio_mixer_get_channels_out(mixer));
+  ASSERT_EQ(2, mixer_get_channels_in(mixer));
+  ASSERT_EQ(4, mixer_get_channels_out(mixer));
 
   audio_chunk_t* input = make_constant_chunk(8, 2, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_TRUE(output != NULL);
   ASSERT_EQ(4, audio_chunk_get_channels(output));
   ASSERT_EQ(audio_chunk_get_valid_frames(input),
@@ -63,7 +63,7 @@ TEST(MixerConstruction2to4) {
   }
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerMutedMapping) {
@@ -78,9 +78,9 @@ TEST(MixerMutedMapping) {
       {.dest = 3, .sources_count = 1, .sources = &src1}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   audio_chunk_t* input = make_constant_chunk(8, 2, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
 
   ASSERT_EQ(4, audio_chunk_get_channels(output));
   assert_silence_ch(output, 0);
@@ -90,7 +90,7 @@ TEST(MixerMutedMapping) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerMutedSource) {
@@ -100,7 +100,7 @@ TEST(MixerMutedSource) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = srcs};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(4, 2);
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
@@ -110,13 +110,13 @@ TEST(MixerMutedSource) {
     b1[i] = 0.5;
   }
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_EQ(1, audio_chunk_get_channels(output));
   assert_all_samples_ch(output, 0, 0.5, 1e-9);
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerStereoToMono) {
@@ -125,10 +125,10 @@ TEST(MixerStereoToMono) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = srcs};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(4, 2, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_EQ(1, audio_chunk_get_channels(output));
   ASSERT_EQ(4, audio_chunk_get_valid_frames(output));
 
@@ -137,7 +137,7 @@ TEST(MixerStereoToMono) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerMonoToStereo) {
@@ -146,14 +146,14 @@ TEST(MixerMonoToStereo) {
                              {.dest = 1, .sources_count = 1, .sources = &src0}};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 2, .mapping_count = 2, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(4, 1);
   double samples[] = {0.25, -0.5, 0.75, -1.0};
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
   for (int i = 0; i < 4; i++) b0[i] = samples[i];
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_EQ(2, audio_chunk_get_channels(output));
   ASSERT_EQ(4, audio_chunk_get_valid_frames(output));
 
@@ -165,7 +165,7 @@ TEST(MixerMonoToStereo) {
   }
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(Mixer4to2Downmix) {
@@ -177,9 +177,9 @@ TEST(Mixer4to2Downmix) {
                              {.dest = 1, .sources_count = 2, .sources = srcs1}};
   mixer_config_t config = {
       .channels_in = 4, .channels_out = 2, .mapping_count = 2, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   audio_chunk_t* input = make_constant_chunk(8, 4, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
 
   double expected = 1.0 + double_from_db(-6.0);
   assert_all_samples_ch(output, 0, expected, 1e-6);
@@ -187,7 +187,7 @@ TEST(Mixer4to2Downmix) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerWithInvertedSource) {
@@ -197,19 +197,19 @@ TEST(MixerWithInvertedSource) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = srcs};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(4, 1);
   double samples[] = {1.0, -0.5, 0.25, 0.8};
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
   for (int i = 0; i < 4; i++) b0[i] = samples[i];
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   assert_silence_ch(output, 0);
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerIdentity) {
@@ -219,7 +219,7 @@ TEST(MixerIdentity) {
                              {.dest = 1, .sources_count = 1, .sources = &src1}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 2, .mapping_count = 2, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(4, 2);
   double ch0[] = {0.1, -0.2, 0.3, -0.4};
@@ -231,7 +231,7 @@ TEST(MixerIdentity) {
     b1[i] = ch1[i];
   }
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   waveform_t o0 = audio_chunk_get_channel(output, 0);
   waveform_t o1 = audio_chunk_get_channel(output, 1);
   for (int i = 0; i < 4; i++) {
@@ -240,7 +240,7 @@ TEST(MixerIdentity) {
   }
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerChannelRouting) {
@@ -250,7 +250,7 @@ TEST(MixerChannelRouting) {
                              {.dest = 1, .sources_count = 1, .sources = &src0}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 2, .mapping_count = 2, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(4, 2);
   double ch0[] = {1.0, 2.0, 3.0, 4.0};
@@ -262,7 +262,7 @@ TEST(MixerChannelRouting) {
     b1[i] = ch1[i];
   }
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   waveform_t o0 = audio_chunk_get_channel(output, 0);
   waveform_t o1 = audio_chunk_get_channel(output, 1);
   for (int i = 0; i < 4; i++) {
@@ -271,7 +271,7 @@ TEST(MixerChannelRouting) {
   }
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerGainAccuracy) {
@@ -284,10 +284,10 @@ TEST(MixerGainAccuracy) {
                              {.dest = 2, .sources_count = 1, .sources = &src2}};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 3, .mapping_count = 3, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(4, 1, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
 
   double gain_plus_6 = double_from_db(6.0);
   ASSERT_TRUE(fabs(gain_plus_6 - 2.0) <= 0.01);
@@ -301,7 +301,7 @@ TEST(MixerGainAccuracy) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerWithLinearScale) {
@@ -321,10 +321,10 @@ TEST(MixerWithLinearScale) {
       {.dest = 2, .sources_count = 2, .sources = srcs2}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 3, .mapping_count = 3, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(4, 2, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
 
   assert_all_samples_ch(output, 0, 0.5, 1e-9);
   assert_all_samples_ch(output, 1, 2.0, 1e-9);
@@ -332,7 +332,7 @@ TEST(MixerWithLinearScale) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(CheckMakeMixer) {
@@ -344,9 +344,9 @@ TEST(CheckMakeMixer) {
                              {.dest = 3, .sources_count = 1, .sources = &src1}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
-  ASSERT_EQ(2, audio_mixer_get_channels_in(mixer));
-  ASSERT_EQ(4, audio_mixer_get_channels_out(mixer));
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
+  ASSERT_EQ(2, mixer_get_channels_in(mixer));
+  ASSERT_EQ(4, mixer_get_channels_out(mixer));
 
   audio_chunk_t* input = audio_chunk_create(4, 2);
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
@@ -360,7 +360,7 @@ TEST(CheckMakeMixer) {
   b1[2] = 0.0;
   b1[3] = 0.0;
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_EQ(4, audio_chunk_get_channels(output));
   ASSERT_EQ(4, audio_chunk_get_valid_frames(output));
 
@@ -380,7 +380,7 @@ TEST(CheckMakeMixer) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(CheckMakeMixerMuted) {
@@ -393,14 +393,14 @@ TEST(CheckMakeMixerMuted) {
       {.dest = 3, .sources_count = 1, .sources = &src1}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   audio_chunk_t* input = audio_chunk_create(4, 2);
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
   mutable_waveform_t b1 = audio_chunk_get_channel(input, 1);
   b0[0] = 1.0;
   b1[1] = 1.0;
 
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   assert_silence_ch(output, 0);
   assert_silence_ch(output, 2);
   waveform_t o1 = audio_chunk_get_channel(output, 1);
@@ -412,7 +412,7 @@ TEST(CheckMakeMixerMuted) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerValidFramesPropagation) {
@@ -420,16 +420,16 @@ TEST(MixerValidFramesPropagation) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 1, .sources = &src0};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(16, 1);
   audio_chunk_set_valid_frames(input, 10);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   ASSERT_EQ(10, audio_chunk_get_valid_frames(output));
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerUnmappedOutputIsSilent) {
@@ -437,16 +437,16 @@ TEST(MixerUnmappedOutputIsSilent) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 1, .sources = &src0};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 2, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(4, 1, 1.0);
-  audio_chunk_t* output = audio_mixer_process_chunk(mixer, input);
+  audio_chunk_t* output = mixer_process_chunk(mixer, input);
   assert_all_samples_ch(output, 0, 1.0, 1e-9);
   assert_silence_ch(output, 1);
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerInoutAPI_MatchesAllocatingAPI) {
@@ -461,8 +461,8 @@ TEST(MixerInoutAPI_MatchesAllocatingAPI) {
       {.dest = 2, .sources_count = 1, .sources = &src2, .mute = true}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 3, .mapping_count = 3, .mapping = maps};
-  audio_mixer_t* mixerA = audio_mixer_create("mixer", &config, 2048);
-  audio_mixer_t* mixerB = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixerA = mixer_create("mixer", &config, 2048);
+  mixer_t* mixerB = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = audio_chunk_create(1024, 2);
   for (size_t ch = 0; ch < 2; ch++) {
@@ -472,10 +472,10 @@ TEST(MixerInoutAPI_MatchesAllocatingAPI) {
     }
   }
 
-  audio_chunk_t* out_alloc = audio_mixer_process_chunk(mixerA, input);
+  audio_chunk_t* out_alloc = mixer_process_chunk(mixerA, input);
   audio_chunk_t* preallocated = audio_chunk_create(1024, 3);
   audio_chunk_set_valid_frames(preallocated, 0);
-  mixer_error_t err = audio_mixer_process(mixerB, input, preallocated);
+  mixer_error_t err = mixer_process(mixerB, input, preallocated);
   ASSERT_EQ(MIXER_OK, err);
   ASSERT_EQ(audio_chunk_get_valid_frames(out_alloc),
             audio_chunk_get_valid_frames(preallocated));
@@ -490,8 +490,8 @@ TEST(MixerInoutAPI_MatchesAllocatingAPI) {
   audio_chunk_free(input);
   audio_chunk_free(out_alloc);
   audio_chunk_free(preallocated);
-  audio_mixer_free(mixerA);
-  audio_mixer_free(mixerB);
+  mixer_free(mixerA);
+  mixer_free(mixerB);
 }
 
 TEST(MixerInoutAPI_OverwritesPriorData) {
@@ -499,7 +499,7 @@ TEST(MixerInoutAPI_OverwritesPriorData) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 1, .sources = &src0};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* output = make_constant_chunk(16, 1, 99.0);
   audio_chunk_set_valid_frames(output, 0);
@@ -511,7 +511,7 @@ TEST(MixerInoutAPI_OverwritesPriorData) {
   b0[2] = 3.0;
   b0[3] = 4.0;
 
-  mixer_error_t err = audio_mixer_process(mixer, input, output);
+  mixer_error_t err = mixer_process(mixer, input, output);
   ASSERT_EQ(MIXER_OK, err);
   ASSERT_EQ(4, audio_chunk_get_valid_frames(output));
   waveform_t o0 = audio_chunk_get_channel(output, 0);
@@ -522,7 +522,7 @@ TEST(MixerInoutAPI_OverwritesPriorData) {
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerInoutAPI_RejectsTooSmallOutputBuffer) {
@@ -530,18 +530,18 @@ TEST(MixerInoutAPI_RejectsTooSmallOutputBuffer) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 1, .sources = &src0};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(256, 1, 1.0);
   audio_chunk_t* output = make_constant_chunk(16, 1, 0.0);
   audio_chunk_set_valid_frames(output, 0);
 
-  mixer_error_t err = audio_mixer_process(mixer, input, output);
+  mixer_error_t err = mixer_process(mixer, input, output);
   ASSERT_EQ(MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL, err);
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST(MixerInoutAPI_RejectsChannelMismatch) {
@@ -549,17 +549,17 @@ TEST(MixerInoutAPI_RejectsChannelMismatch) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 1, .sources = &src0};
   mixer_config_t config = {
       .channels_in = 1, .channels_out = 2, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
 
   audio_chunk_t* input = make_constant_chunk(3, 1, 1.0);
   audio_chunk_t* output = make_constant_chunk(8, 1, 0.0);
 
-  mixer_error_t err = audio_mixer_process(mixer, input, output);
+  mixer_error_t err = mixer_process(mixer, input, output);
   ASSERT_EQ(MIXER_ERR_CHANNEL_COUNT_MISMATCH, err);
 
   audio_chunk_free(input);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 TEST_MAIN()

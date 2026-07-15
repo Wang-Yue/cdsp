@@ -18,7 +18,7 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
   int size = cJSON_GetArraySize(pipe_arr);
   if (size == 0) return 0;
 
-  config->pipeline = (pipeline_step_t*)calloc(size, sizeof(pipeline_step_t));
+  config->pipeline = (pipeline_step_config_t*)calloc(size, sizeof(pipeline_step_config_t));
   if (!config->pipeline) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
     return -1;
@@ -32,7 +32,7 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
                        "Pipeline step must be an object");
       return -1;
     }
-    pipeline_step_t* step = &config->pipeline[s];
+    pipeline_step_config_t* step = &config->pipeline[s];
 
     char type_str[64];
     if (parse_json_str(step_obj, "type", type_str, sizeof(type_str))) {

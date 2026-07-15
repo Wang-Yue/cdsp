@@ -31,8 +31,8 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
  * @param err Pointer to store error details if validation fails.
  * @return 0 on success, -1 on failure.
  */
-int biquad_combo_parameters_validate(const biquad_combo_parameters_t* params,
-                                     int sample_rate, config_error_t* err);
+int biquad_combo_config_validate(const biquad_combo_config_t* params,
+                                  int sample_rate, config_error_t* err);
 
 /**
  * @brief Computes Q values for a Butterworth filter of a given order.
@@ -64,7 +64,7 @@ size_t biquad_combo_linkwitz_riley_q(int order, double* out_q, size_t max_q);
  * @return A pointer to the created filter instance, or `NULL` on failure.
  */
 biquad_combo_filter_t* biquad_combo_filter_create(
-    const char* name, const biquad_combo_parameters_t* params, int sample_rate,
+    const char* name, const biquad_combo_config_t* params, int sample_rate,
     config_error_t* err);
 
 /**

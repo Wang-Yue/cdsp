@@ -57,7 +57,7 @@ typedef enum {
 /**
  * @brief Opaque struct representing an audio mixer instance.
  */
-typedef struct audio_mixer_t audio_mixer_t;
+typedef struct mixer_s mixer_t;
 
 /**
  * @brief Validates mixer configuration.
@@ -72,17 +72,17 @@ typedef struct audio_mixer_t audio_mixer_t;
 int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err);
 
 /**
- * @brief Creates a new audio mixer instance from a configuration.
+ * @brief Creates a new mixer instance from a configuration.
  *
  * @param name Unique name for this mixer instance.
  * @param config Mixer configuration containing channel counts and mapping
  * matrix.
  * @param chunk_size Maximum number of frames per chunk for processing.
- * @return Pointer to newly allocated audio_mixer_t, or NULL on failure.
+ * @return Pointer to newly allocated mixer_t, or NULL on failure.
  */
-audio_mixer_t* audio_mixer_create(const char* name,
-                                  const mixer_config_t* config,
-                                  size_t chunk_size);
+mixer_t* mixer_create(const char* name,
+                     const mixer_config_t* config,
+                     size_t chunk_size);
 
 /**
  * @brief Zero-allocation API for mixing an audio chunk.
@@ -98,14 +98,14 @@ audio_mixer_t* audio_mixer_create(const char* name,
  * accumulates into the output and reads from the input concurrently; aliasing
  * (in-place processing) will corrupt the result.
  *
- * @param mixer Pointer to the audio mixer instance.
+ * @param mixer Pointer to the mixer instance.
  * @param input Pointer to the input audio chunk.
  * @param output Pointer to the pre-allocated output audio chunk.
  * @return A mixer_error_t code representing success or failure.
  */
-mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
-                                  const audio_chunk_t* input,
-                                  audio_chunk_t* output);
+mixer_error_t mixer_process(mixer_t* mixer,
+                            const audio_chunk_t* input,
+                            audio_chunk_t* output);
 
 /**
  * @brief Allocating convenience API for processing a chunk.
@@ -114,42 +114,42 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
  * Note: This function allocates memory and should not be used on real-time
  * audio threads.
  *
- * @param mixer Pointer to audio mixer instance.
+ * @param mixer Pointer to mixer instance.
  * @param input Input audio chunk to process.
  * @return Newly allocated output audio chunk, or NULL on failure.
  */
-audio_chunk_t* audio_mixer_process_chunk(audio_mixer_t* mixer,
-                                         const audio_chunk_t* input);
+audio_chunk_t* mixer_process_chunk(mixer_t* mixer,
+                                   const audio_chunk_t* input);
 
 /**
- * @brief Frees all resources associated with the audio mixer.
+ * @brief Frees all resources associated with the mixer.
  *
- * @param mixer Pointer to audio mixer instance to free.
+ * @param mixer Pointer to mixer instance to free.
  */
-void audio_mixer_free(audio_mixer_t* mixer);
+void mixer_free(mixer_t* mixer);
 
 /**
  * @brief Gets the number of expected input channels.
  *
- * @param mixer Pointer to audio mixer instance.
+ * @param mixer Pointer to mixer instance.
  * @return Number of input channels.
  */
-size_t audio_mixer_get_channels_in(const audio_mixer_t* mixer);
+size_t mixer_get_channels_in(const mixer_t* mixer);
 
 /**
  * @brief Gets the number of output channels produced.
  *
- * @param mixer Pointer to audio mixer instance.
+ * @param mixer Pointer to mixer instance.
  * @return Number of output channels.
  */
-size_t audio_mixer_get_channels_out(const audio_mixer_t* mixer);
+size_t mixer_get_channels_out(const mixer_t* mixer);
 
 /**
  * @brief Gets the name of the mixer instance.
  *
- * @param mixer Pointer to audio mixer instance.
+ * @param mixer Pointer to mixer instance.
  * @return Pointer to mixer name string.
  */
-const char* audio_mixer_get_name(const audio_mixer_t* mixer);
+const char* mixer_get_name(const mixer_t* mixer);
 
 #endif  // CLIB_MIXER_MIXER_H

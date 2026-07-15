@@ -10,7 +10,7 @@
 
 TEST(MovingAverage) {
   double coeffs[] = {0.5, 0.5};
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 2};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
@@ -29,7 +29,7 @@ TEST(MovingAverage) {
 TEST(SegmentedConvolution) {
   double ir[32];
   for (int i = 0; i < 32; i++) ir[i] = (double)i;
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 32};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
@@ -60,7 +60,7 @@ TEST(SegmentedConvolution) {
 
 TEST(IdentityConvolution) {
   double coeffs[] = {1.0};
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
@@ -75,7 +75,7 @@ TEST(IdentityConvolution) {
 
 TEST(DelayConvolution) {
   double coeffs[] = {0.0, 0.0, 0.0, 1.0};
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
@@ -93,7 +93,7 @@ TEST(DelayConvolution) {
 
 TEST(ConvolutionWithSineWave) {
   double coeffs[] = {0.5, 0.5};
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 2};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 64, NULL);
@@ -122,7 +122,7 @@ TEST(ConvolutionWithSineWave) {
 }
 
 TEST(EmptyIRThrows) {
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = NULL, .values_count = 0};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
@@ -130,7 +130,7 @@ TEST(EmptyIRThrows) {
 }
 
 TEST(DummyIsIdentity) {
-  conv_parameters_t params = {.type = CONV_TYPE_DUMMY, .length = 4};
+  convolution_config_t params = {.type = CONV_TYPE_DUMMY, .length = 4};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, 8, NULL);
   ASSERT_TRUE(filter != NULL);

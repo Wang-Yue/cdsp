@@ -68,7 +68,7 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on failure.
  */
-audio_resampler_t* async_poly_resampler_create(
+resampler_t* async_poly_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     poly_interpolation_t interpolation, size_t chunk_size,
     double max_relative_ratio, fixed_async_t fixed, config_error_t* err);
@@ -76,7 +76,7 @@ audio_resampler_t* async_poly_resampler_create(
 /**
  * @brief Creates an asynchronous polynomial resampler from a profile preset.
  */
-audio_resampler_t* async_poly_resampler_create_from_profile(
+resampler_t* async_poly_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
     fixed_async_t fixed, config_error_t* err);

@@ -232,7 +232,7 @@ static void compare_biquad(double b0, double b1, double b2, double a1,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_parameters_t params = {.type = BIQUAD_TYPE_FREE,
+  biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
                                 .b0 = b0,
                                 .b1 = b1,
                                 .b2 = b2,
@@ -321,7 +321,7 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  gain_parameters_t params = {.gain = gain_db,
+  gain_config_t params = {.gain = gain_db,
                               .has_gain = true,
                               .scale = GAIN_SCALE_DB,
                               .inverted = inverted,
@@ -391,7 +391,7 @@ static void compare_volume(double current_volume_db, bool mute,
   processing_parameters_set_current_volume(params,
                                            mute ? -100.0 : current_volume_db);
 
-  volume_parameters_t vol_params = {.ramp_time = 0.0,
+  volume_config_t vol_params = {.ramp_time = 0.0,
                                     .has_ramp_time = true,
                                     .limit = 50.0,
                                     .has_limit = true,
@@ -463,7 +463,7 @@ static void compare_loudness(double volume_db, double reference_db,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  loudness_parameters_t lp = {.reference_level = reference_db,
+  loudness_config_t lp = {.reference_level = reference_db,
                               .has_reference_level = true,
                               .high_boost = high_boost,
                               .has_high_boost = true,
@@ -531,7 +531,7 @@ TEST(Mixer_Vs_AnalyticalReference_StereoToMono) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   ASSERT_TRUE(mixer != NULL);
 
   seeded_rng_t rng = {0xC0FFEE};
@@ -548,7 +548,7 @@ TEST(Mixer_Vs_AnalyticalReference_StereoToMono) {
   memcpy(ch1, r, 1024 * sizeof(double));
   audio_chunk_set_valid_frames(chunk, 1024);
 
-  audio_chunk_t* out = audio_mixer_process_chunk(mixer, chunk);
+  audio_chunk_t* out = mixer_process_chunk(mixer, chunk);
   ASSERT_TRUE(out != NULL);
   double* out_ch0 = audio_chunk_get_channel(out, 0);
 
@@ -560,7 +560,7 @@ TEST(Mixer_Vs_AnalyticalReference_StereoToMono) {
 
   audio_chunk_free(chunk);
   audio_chunk_free(out);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
   free(l);
   free(r);
 }
@@ -577,7 +577,7 @@ TEST(Mixer_Vs_AnalyticalReference_LinearScale) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   ASSERT_TRUE(mixer != NULL);
 
   double* l = (double*)malloc(128 * sizeof(double));
@@ -593,7 +593,7 @@ TEST(Mixer_Vs_AnalyticalReference_LinearScale) {
   memcpy(ch1, r, 128 * sizeof(double));
   audio_chunk_set_valid_frames(chunk, 128);
 
-  audio_chunk_t* out = audio_mixer_process_chunk(mixer, chunk);
+  audio_chunk_t* out = mixer_process_chunk(mixer, chunk);
   ASSERT_TRUE(out != NULL);
   double* out_ch0 = audio_chunk_get_channel(out, 0);
 
@@ -604,7 +604,7 @@ TEST(Mixer_Vs_AnalyticalReference_LinearScale) {
 
   audio_chunk_free(chunk);
   audio_chunk_free(out);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
   free(l);
   free(r);
 }
@@ -621,7 +621,7 @@ TEST(Mixer_MutedSource_ProducesSilenceFromThatSource) {
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = sources};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 2048);
+  mixer_t* mixer = mixer_create("mixer", &config, 2048);
   ASSERT_TRUE(mixer != NULL);
 
   double* l = (double*)malloc(64 * sizeof(double));
@@ -637,7 +637,7 @@ TEST(Mixer_MutedSource_ProducesSilenceFromThatSource) {
   memcpy(ch1, r, 64 * sizeof(double));
   audio_chunk_set_valid_frames(chunk, 64);
 
-  audio_chunk_t* out = audio_mixer_process_chunk(mixer, chunk);
+  audio_chunk_t* out = mixer_process_chunk(mixer, chunk);
   ASSERT_TRUE(out != NULL);
   double* out_ch0 = audio_chunk_get_channel(out, 0);
 
@@ -647,7 +647,7 @@ TEST(Mixer_MutedSource_ProducesSilenceFromThatSource) {
 
   audio_chunk_free(chunk);
   audio_chunk_free(out);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
   free(l);
   free(r);
 }
@@ -684,7 +684,7 @@ TEST(Convolution_Vs_Rust_RandomIR) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  conv_parameters_t params = {0};
+  convolution_config_t params = {0};
   params.type = CONV_TYPE_VALUES;
   params.values = coeffs;
   params.values_count = 2000;
@@ -762,7 +762,7 @@ static void compare_delay(double delay, delay_unit_t unit, bool subsample,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = delay, .unit = unit, .subsample = subsample};
   delay_filter_t* filter =
       delay_filter_create("test_delay", &params, SAMPLE_RATE, NULL);
@@ -833,7 +833,7 @@ static void compare_biquad_combo_filter(biquad_combo_type_t type, double freq,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_combo_parameters_t params = {0};
+  biquad_combo_config_t params = {0};
   params.type = type;
   params.freq = freq;
   params.has_freq = true;
@@ -890,7 +890,7 @@ static void compare_biquad_combo_tilt(double gain, const char* label) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_combo_parameters_t params = {0};
+  biquad_combo_config_t params = {0};
   params.type = BIQUAD_COMBO_TYPE_TILT;
   params.gain = gain;
   params.has_gain = true;
@@ -957,7 +957,7 @@ static void compare_biquad_combo_geq(double freq_min, double freq_max,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_combo_parameters_t params = {0};
+  biquad_combo_config_t params = {0};
   params.type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;
   params.freq_min = freq_min;
   params.has_freq_min = true;
@@ -1042,7 +1042,7 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  biquad_combo_parameters_t params = {0};
+  biquad_combo_config_t params = {0};
   params.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ;
   params.fls = fls;
   params.qls = qls;
@@ -1162,7 +1162,7 @@ TEST(DiffEq_SimpleIIR) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  diff_eq_parameters_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   diffeq_filter_t* filter = diffeq_filter_create("test_diffeq", &params);
   ASSERT_TRUE(filter != NULL);
 
@@ -1210,7 +1210,7 @@ TEST(Dither_None) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  dither_parameters_t params = {0};
+  dither_config_t params = {0};
   params.type = DITHER_TYPE_NONE;
   params.bits = 16;
   dither_filter_t* filter = dither_filter_create("test_dither", &params);
@@ -1264,7 +1264,7 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  limiter_parameters_t params = {.clip_limit = clip_limit,
+  limiter_config_t params = {.clip_limit = clip_limit,
                                  .soft_clip = soft_clip};
   limiter_filter_t* filter = limiter_filter_create("test_limiter", &params);
   ASSERT_TRUE(filter != NULL);
@@ -1325,7 +1325,7 @@ static void compare_lookahead_limiter(double limit, double attack,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  lookahead_limiter_parameters_t params = {
+  lookahead_limiter_config_t params = {
       .limit = limit, .attack = attack, .release = release, .unit = unit};
   lookahead_limiter_filter_t* filter = lookahead_limiter_filter_create(
       "test_lookahead", &params, SAMPLE_RATE, CHUNK_SIZE);
@@ -1396,7 +1396,7 @@ TEST(Compressor_Vs_RustReference) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  compressor_parameters_t params = {0};
+  compressor_config_t params = {0};
   params.channels = 1;
   params.attack = attack;
   params.release = release;
@@ -1462,7 +1462,7 @@ TEST(NoiseGate_Vs_RustReference) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  noise_gate_parameters_t params = {0};
+  noise_gate_config_t params = {0};
   params.channels = 1;
   params.attack = attack;
   params.release = release;
@@ -1535,7 +1535,7 @@ TEST(RACE_Vs_RustReference) {
   ASSERT_EQ(NBR_FRAMES, ref_count0);
   ASSERT_EQ(NBR_FRAMES, ref_count1);
 
-  race_parameters_t params = {0};
+  race_config_t params = {0};
   params.channels = 2;
   params.channel_a = 0;
   params.channel_b = 1;

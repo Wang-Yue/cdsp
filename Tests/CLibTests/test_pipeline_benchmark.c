@@ -230,7 +230,7 @@ TEST(Pipeline_Biquads_Benchmark) {
   config.mixers = &mixer_cfg;
   config.mixers_count = 1;
 
-  pipeline_step_t steps[3];
+  pipeline_step_config_t steps[3];
   memset(steps, 0, sizeof(steps));
 
   steps[0].type = PIPELINE_STEP_TYPE_FILTER;
@@ -405,7 +405,7 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
   config.mixers = &mixer_cfg;
   config.mixers_count = 1;
 
-  pipeline_step_t steps[3];
+  pipeline_step_config_t steps[3];
   memset(steps, 0, sizeof(steps));
 
   steps[0].type = PIPELINE_STEP_TYPE_FILTER;

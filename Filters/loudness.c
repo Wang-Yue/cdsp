@@ -5,7 +5,7 @@
 struct loudness_filter {
   char name[64];
   int sample_rate;
-  loudness_parameters_t params;
+  loudness_config_t params;
   biquad_filter_t* low_shelf_filter;
   biquad_filter_t* high_shelf_filter;
   double last_volume;
@@ -92,7 +92,7 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
 }
 
 loudness_filter_t* loudness_filter_create(const char* name,
-                                          const loudness_parameters_t* params,
+                                          const loudness_config_t* params,
                                           int sample_rate,
                                           processing_parameters_t* proc_params,
                                           config_error_t* err) {
@@ -113,7 +113,7 @@ loudness_filter_t* loudness_filter_create(const char* name,
   if (params) {
     filter->params = *params;
   } else {
-    filter->params = (loudness_parameters_t){0};
+    filter->params = (loudness_config_t){0};
   }
   filter->processing_parameters = proc_params;
   filter->low_shelf_filter =
@@ -179,7 +179,7 @@ void loudness_filter_free(loudness_filter_t* filter) {
   free(filter);
 }
 
-int loudness_parameters_validate(const loudness_parameters_t* params,
+int loudness_config_validate(const loudness_config_t* params,
                                  config_error_t* err) {
   if (!params) return 0;
   if (!params->has_reference_level) {

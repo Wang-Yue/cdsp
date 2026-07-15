@@ -17,7 +17,7 @@ static bool compare_waveforms(const double* left, const double* right,
 }
 
 TEST(test_lookahead_limiter_basic) {
-  lookahead_limiter_parameters_t params = {.limit = 0.0,
+  lookahead_limiter_config_t params = {.limit = 0.0,
                                            .attack = 4.0,
                                            .release = 1.0 / log(2.0),
                                            .unit = DELAY_UNIT_SAMPLES};
@@ -53,14 +53,14 @@ TEST(test_lookahead_limiter_basic) {
 }
 
 TEST(test_lookahead_limiter_same_as_limiter) {
-  lookahead_limiter_parameters_t params_lookahead = {
+  lookahead_limiter_config_t params_lookahead = {
       .limit = 0.0, .attack = 0.0, .release = 0.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter_lookahead =
       lookahead_limiter_filter_create("lookahead", &params_lookahead, 48000,
                                       1024);
   ASSERT_TRUE(filter_lookahead != NULL);
 
-  limiter_parameters_t params_limiter = {.clip_limit = 0.0, .soft_clip = false};
+  limiter_config_t params_limiter = {.clip_limit = 0.0, .soft_clip = false};
   limiter_filter_t* filter_limiter =
       limiter_filter_create("limiter", &params_limiter);
   ASSERT_TRUE(filter_limiter != NULL);
@@ -80,7 +80,7 @@ TEST(test_lookahead_limiter_same_as_limiter) {
 }
 
 TEST(test_lookahead_limiter_zero_release) {
-  lookahead_limiter_parameters_t params = {
+  lookahead_limiter_config_t params = {
       .limit = 0.0, .attack = 2.0, .release = 0.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
       lookahead_limiter_filter_create("lookahead", &params, 48000, 1024);
@@ -94,7 +94,7 @@ TEST(test_lookahead_limiter_zero_release) {
 }
 
 TEST(test_lookahead_limiter_state_persistence) {
-  lookahead_limiter_parameters_t params = {.limit = 0.0,
+  lookahead_limiter_config_t params = {.limit = 0.0,
                                            .attack = 5.0,
                                            .release = 1.0 / log(2.0),
                                            .unit = DELAY_UNIT_SAMPLES};
@@ -117,15 +117,15 @@ TEST(test_lookahead_limiter_state_persistence) {
 }
 
 TEST(test_lookahead_limiter_attack_over_one_second_rejected) {
-  lookahead_limiter_parameters_t params = {.limit = 0.0,
+  lookahead_limiter_config_t params = {.limit = 0.0,
                                            .attack = 48001.0,
                                            .release = 4.0,
                                            .unit = DELAY_UNIT_SAMPLES};
-  ASSERT_NE(0, lookahead_limiter_parameters_validate(&params, 48000, NULL));
+  ASSERT_NE(0, lookahead_limiter_config_validate(&params, 48000, NULL));
 }
 
 TEST(test_lookahead_limiter_chunksize_larger_than_samplerate) {
-  lookahead_limiter_parameters_t params = {
+  lookahead_limiter_config_t params = {
       .limit = 0.0, .attack = 4.0, .release = 1.0, .unit = DELAY_UNIT_SAMPLES};
   lookahead_limiter_filter_t* filter =
       lookahead_limiter_filter_create("lookahead", &params, 4, 8);

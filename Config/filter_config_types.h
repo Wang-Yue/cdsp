@@ -91,7 +91,7 @@ typedef struct {
   gain_scale_t scale; /**< Scale of the gain value (dB or linear). */
   bool inverted;      /**< True if phase is inverted. */
   bool mute;          /**< True if muted. */
-} gain_parameters_t;
+} gain_config_t;
 
 /**
  * @brief Parameters for a Loudness compensation filter.
@@ -105,7 +105,7 @@ typedef struct {
   bool has_low_boost;       /**< True if `low_boost` is specified. */
   bool attenuate_mid;       /**< True to attenuate mid frequencies. */
   fader_t fader;            /**< Fader associated with this loudness filter. */
-} loudness_parameters_t;
+} loudness_config_t;
 
 /**
  * @brief Biquad filter types.
@@ -165,7 +165,7 @@ typedef struct {
   double freq_target; /**< Target resonance frequency (LinkwitzTransform). */
   double q_target;    /**< Target Q factor (LinkwitzTransform). */
   steepness_type_t steepness_type; /**< How steepness is specified. */
-} biquad_parameters_t;
+} biquad_config_t;
 
 /**
  * @brief Convolution source type.
@@ -190,7 +190,7 @@ typedef struct {
   int length;          /**< Max number of samples to read. */
   int skip_bytes_lines; /**< Bytes/lines to skip at start of file. */
   int read_bytes_lines; /**< Bytes/lines to read from file. */
-} conv_parameters_t;
+} convolution_config_t;
 
 /**
  * @brief Units for delay values.
@@ -219,7 +219,7 @@ typedef struct {
   double delay;      /**< Delay value. */
   delay_unit_t unit; /**< Unit of the delay value. */
   bool subsample;    /**< Enable fractional delay (subsample). */
-} delay_parameters_t;
+} delay_config_t;
 
 /**
  * @brief Biquad combination types (complex filters made of multiple biquads).
@@ -265,7 +265,7 @@ typedef struct {
   bool has_freq_min, has_freq_max;
   double* gains;      /**< Band gains. */
   size_t gains_count; /**< Number of bands. */
-} biquad_combo_parameters_t;
+} biquad_combo_config_t;
 
 /**
  * @brief Parameters for a Difference Equation filter.
@@ -275,7 +275,7 @@ typedef struct {
   size_t a_count; /**< Number of feedback coefficients. */
   double* b;      /**< Feedforward coefficients (b). */
   size_t b_count; /**< Number of feedforward coefficients. */
-} diff_eq_parameters_t;
+} diffeq_config_t;
 
 /**
  * @brief Dither noise shaping types.
@@ -313,7 +313,7 @@ typedef struct {
   int bits;           /**< Target bit depth. */
   double amplitude;   /**< Dither amplitude. */
   bool has_amplitude; /**< True if `amplitude` is specified. */
-} dither_parameters_t;
+} dither_config_t;
 
 /**
  * @brief Parameters for a Limiter filter.
@@ -321,7 +321,7 @@ typedef struct {
 typedef struct {
   double clip_limit; /**< Clip limit (linear scale). */
   bool soft_clip;    /**< Enable soft clipping. */
-} limiter_parameters_t;
+} limiter_config_t;
 
 /**
  * @brief Parameters for a Lookahead Limiter filter.
@@ -331,7 +331,7 @@ typedef struct {
   double attack;     /**< Attack time. */
   double release;    /**< Release time. */
   delay_unit_t unit; /**< Unit for attack and release times. */
-} lookahead_limiter_parameters_t;
+} lookahead_limiter_config_t;
 
 /**
  * @brief Parameters for a Volume control filter.
@@ -342,7 +342,7 @@ typedef struct {
   double limit;       /**< Volume limit (dB). */
   bool has_limit;     /**< True if `limit` is specified. */
   fader_t fader;      /**< Fader associated with this volume control. */
-} volume_parameters_t;
+} volume_config_t;
 
 /**
  * @brief Top-level filter configuration union.
@@ -350,17 +350,17 @@ typedef struct {
 typedef struct {
   filter_type_t type; /**< Type of the filter. */
   union {
-    gain_parameters_t gain;                 /**< Gain parameters. */
-    volume_parameters_t volume;             /**< Volume parameters. */
-    loudness_parameters_t loudness;         /**< Loudness parameters. */
-    biquad_parameters_t biquad;             /**< Biquad parameters. */
-    conv_parameters_t conv;                 /**< Convolution parameters. */
-    delay_parameters_t delay;               /**< Delay parameters. */
-    biquad_combo_parameters_t biquad_combo; /**< Biquad combo parameters. */
-    diff_eq_parameters_t diff_eq; /**< Difference equation parameters. */
-    dither_parameters_t dither;   /**< Dither parameters. */
-    limiter_parameters_t limiter; /**< Limiter parameters. */
-    lookahead_limiter_parameters_t
+    gain_config_t gain;                 /**< Gain parameters. */
+    volume_config_t volume;             /**< Volume parameters. */
+    loudness_config_t loudness;         /**< Loudness parameters. */
+    biquad_config_t biquad;             /**< Biquad parameters. */
+    convolution_config_t conv;          /**< Convolution parameters. */
+    delay_config_t delay;               /**< Delay parameters. */
+    biquad_combo_config_t biquad_combo; /**< Biquad combo parameters. */
+    diffeq_config_t diff_eq;            /**< Difference equation parameters. */
+    dither_config_t dither;             /**< Dither parameters. */
+    limiter_config_t limiter;           /**< Limiter parameters. */
+    lookahead_limiter_config_t
         lookahead_limiter; /**< Lookahead limiter parameters. */
   } parameters;            /**< Filter-specific parameters. */
 } filter_config_t;

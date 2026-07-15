@@ -52,7 +52,7 @@ struct dsp_engine_core {
   /** Pool of scratch chunks for processing. */
   round_robin_chunk_pool_t* processing_scratch_pool;
   /** Audio resampler. */
-  audio_resampler_t* resampler;
+  resampler_t* resampler;
   /** Audio processing pipeline. */
   pipeline_t* pipeline;
 

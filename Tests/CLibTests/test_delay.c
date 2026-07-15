@@ -18,7 +18,7 @@ static bool compare_waveforms(const double* left, const double* right,
 TEST(delay_small) {
   double waveform[] = {0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double waveform_delayed[] = {0.0, 0.0, 0.0, 0.0, -0.5, 1.0, 0.0, 0.0};
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = 3.0, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
   delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -32,7 +32,7 @@ TEST(delay_small) {
 TEST(delay_supersmall) {
   double waveform[] = {0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double waveform_delayed[] = {0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = 0.1, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
   delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -47,7 +47,7 @@ TEST(delay_large) {
   double waveform1[] = {0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double waveform2[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   double waveform_delayed[] = {0.0, 0.0, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0};
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = 9.0, .unit = DELAY_UNIT_SAMPLES, .subsample = false};
   delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -74,7 +74,7 @@ TEST(delay_fraction) {
       0.006413537427714274,
       -0.001882310318672015,
   };
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = 1.7, .unit = DELAY_UNIT_SAMPLES, .subsample = true};
   delay_filter_t* filter = delay_filter_create("delay", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);

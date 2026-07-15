@@ -187,7 +187,7 @@ static bool engine_session_build_pipeline_and_scratch(
   // 5. Allocate scratch chunks for temporary data storage during
   // processing/resampling.
   core->resampler_scratch = audio_chunk_create(
-      core->resampler ? audio_resampler_get_max_output_frames(core->resampler)
+      core->resampler ? resampler_get_max_output_frames(core->resampler)
                       : capture_chunk_size,
       capture_device_config_get_channels(&config->devices.capture));
   core->pipeline_scratch = audio_chunk_create(
@@ -400,7 +400,7 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
   if (config->devices.has_resampler) {
     config_error_t cerr;
     config_error_init(&cerr);
-    core->resampler = audio_resampler_create_from_config(
+    core->resampler = resampler_create_from_config(
         &config->devices.resampler, (size_t)capture_rate, pipeline_rate,
         capture_device_config_get_channels(&config->devices.capture),
         config->devices.chunksize, &cerr);
@@ -417,10 +417,10 @@ dsp_engine_core_t* engine_session_build_and_start(dsp_config_t* config,
 
   size_t requested_chunk_size = config->devices.chunksize;
   size_t capture_chunk_size =
-      core->resampler ? audio_resampler_get_chunk_size(core->resampler)
+      core->resampler ? resampler_get_chunk_size(core->resampler)
                       : requested_chunk_size;
   size_t playback_chunk_size =
-      core->resampler ? audio_resampler_get_max_output_frames(core->resampler)
+      core->resampler ? resampler_get_max_output_frames(core->resampler)
                       : capture_chunk_size;
   core->effective_playback_chunk_size = playback_chunk_size;
 

@@ -130,7 +130,7 @@ static void process_diffeq(void* f, double* w, size_t n) {
 
 TEST(Convolution_1024_Benchmark) {
   double* coeffs = (double*)calloc(1024, sizeof(double));
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1024};
   convolution_filter_t* f =
       convolution_filter_create("conv-1024", &params, CHUNK_SIZE, NULL);
@@ -141,7 +141,7 @@ TEST(Convolution_1024_Benchmark) {
 
 TEST(Convolution_4096_Benchmark) {
   double* coeffs = (double*)calloc(4096, sizeof(double));
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4096};
   convolution_filter_t* f =
       convolution_filter_create("conv-4096", &params, CHUNK_SIZE, NULL);
@@ -152,7 +152,7 @@ TEST(Convolution_4096_Benchmark) {
 
 TEST(Convolution_16384_Benchmark) {
   double* coeffs = (double*)calloc(16384, sizeof(double));
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 16384};
   convolution_filter_t* f =
       convolution_filter_create("conv-16384", &params, CHUNK_SIZE, NULL);
@@ -162,7 +162,7 @@ TEST(Convolution_16384_Benchmark) {
 }
 
 TEST(Biquad_Benchmark) {
-  biquad_parameters_t params = {.type = BIQUAD_TYPE_FREE,
+  biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
                                 .b0 = 0.21476322779271284,
                                 .b1 = 0.4295264555854257,
                                 .b2 = 0.21476322779271284,
@@ -176,7 +176,7 @@ TEST(Biquad_Benchmark) {
 TEST(DiffEq_Benchmark) {
   double a[] = {1.0, -0.1462978543780541, 0.005350765548905586};
   double b[] = {0.21476322779271284, 0.4295264555854257, 0.21476322779271284};
-  diff_eq_parameters_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   diffeq_filter_t* f = diffeq_filter_create("diffeq", &params);
   run_filter_benchmark("DiffEq", "DiffEq", f, process_diffeq);
   diffeq_filter_free(f);

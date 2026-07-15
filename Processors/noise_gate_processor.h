@@ -58,7 +58,7 @@ const char* noise_gate_processor_get_name(
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int noise_gate_parameters_validate(const noise_gate_parameters_t* params,
+int noise_gate_config_validate(const noise_gate_config_t* params,
                                     config_error_t* err);
 
 /**
@@ -73,7 +73,7 @@ int noise_gate_parameters_validate(const noise_gate_parameters_t* params,
  * failure.
  */
 noise_gate_processor_t* noise_gate_processor_create(
-    const char* name, const noise_gate_parameters_t* params, int sample_rate,
+    const char* name, const noise_gate_config_t* params, int sample_rate,
     size_t chunk_size);
 
 /**

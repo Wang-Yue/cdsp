@@ -80,7 +80,7 @@ static inline bool is_stable(const biquad_coefficients_t* coeffs) {
  * @return true if computation succeeded and coefficients are stable, false
  * otherwise.
  */
-static bool biquad_coefficients_compute(const biquad_parameters_t* params,
+static bool biquad_coefficients_compute(const biquad_config_t* params,
                                         int sample_rate,
                                         biquad_coefficients_t* out_coeffs) {
   if (!params || !out_coeffs || sample_rate <= 0) return false;
@@ -314,15 +314,15 @@ static bool biquad_coefficients_compute(const biquad_parameters_t* params,
   return is_stable(out_coeffs);
 }
 
-bool biquad_parameters_check_stability(const biquad_parameters_t* params,
-                                       int sample_rate) {
+bool biquad_config_check_stability(const biquad_config_t* params,
+                                     int sample_rate) {
   if (!params || sample_rate <= 0) return false;
   biquad_coefficients_t dummy_coeffs;
   return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);
 }
 
 biquad_filter_t* biquad_filter_create(const char* name,
-                                      const biquad_parameters_t* params,
+                                      const biquad_config_t* params,
                                       int sample_rate, config_error_t* err) {
   biquad_filter_t* filter =
       (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
@@ -480,8 +480,8 @@ void biquad_filter_free(biquad_filter_t* filter) {
   free(filter);
 }
 
-int biquad_parameters_validate(const biquad_parameters_t* params,
-                               int sample_rate, config_error_t* err) {
+int biquad_config_validate(const biquad_config_t* params,
+                            int sample_rate, config_error_t* err) {
   if (!params) return -1;
   double nyquist = (double)sample_rate / 2.0;
   if (params->type != BIQUAD_TYPE_FREE &&
@@ -546,7 +546,7 @@ int biquad_parameters_validate(const biquad_parameters_t* params,
     }
   }
   if (sample_rate > 0) {
-    if (!biquad_parameters_check_stability(params, sample_rate)) {
+    if (!biquad_config_check_stability(params, sample_rate)) {
       if (err)
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "Unstable or invalid biquad filter specified");

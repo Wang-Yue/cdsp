@@ -50,7 +50,7 @@ const char* race_processor_get_name(const race_processor_t* processor) {
 #include <string.h>
 
 race_processor_t* race_processor_create(const char* name,
-                                        const race_parameters_t* params,
+                                        const race_config_t* params,
                                         int sample_rate, config_error_t* err) {
   if (!params) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "RACE params is NULL");
@@ -117,7 +117,7 @@ race_processor_t* race_processor_create(const char* name,
   double comp_delay = params->delay - sample_period;
   if (comp_delay < 0.0) comp_delay = 0.0;
 
-  delay_parameters_t dparams = {0};
+  delay_config_t dparams = {0};
   dparams.delay = comp_delay;
   dparams.unit = unit;
   dparams.subsample =
@@ -128,7 +128,7 @@ race_processor_t* race_processor_create(const char* name,
   processor->delay_b =
       delay_filter_create("race-DelayB", &dparams, sample_rate, err);
 
-  gain_parameters_t gparams = {0};
+  gain_config_t gparams = {0};
   gparams.gain = -params->attenuation;
   gparams.has_gain = true;
   gparams.scale = GAIN_SCALE_DB;
@@ -222,7 +222,7 @@ void race_processor_transfer_state(race_processor_t* dest,
   dest->feedback_b = src->feedback_b;
 }
 
-int race_parameters_validate(const race_parameters_t* p,
+int race_config_validate(const race_config_t* p,
                              config_error_t* err) {
   if (!p) return 0;
   if (p->channels <= 0) {

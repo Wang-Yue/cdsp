@@ -65,7 +65,7 @@ typedef struct {
   engine_shared_state_t* shared;
   processing_parameters_t* processing_params;
   size_t pipeline_rate;
-  audio_resampler_t* resampler;
+  resampler_t* resampler;
   pipeline_t* pipeline;
   dsd_encoder_t* dsd_encoder;
   audio_chunk_t* resampler_scratch;

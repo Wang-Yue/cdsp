@@ -34,7 +34,7 @@ typedef struct delay_filter delay_filter_t;
  * @return A pointer to the created delay filter, or NULL on failure.
  */
 delay_filter_t* delay_filter_create(const char* name,
-                                    const delay_parameters_t* params,
+                                    const delay_config_t* params,
                                     int sample_rate, config_error_t* err);
 
 /**
@@ -44,8 +44,8 @@ delay_filter_t* delay_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int delay_parameters_validate(const delay_parameters_t* params,
-                              config_error_t* err);
+int delay_config_validate(const delay_config_t* params,
+                             config_error_t* err);
 
 /**
  * @brief Computes equivalent sample delay count given a delay duration, unit, and sample rate.

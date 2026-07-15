@@ -112,7 +112,7 @@ TEST(PipelineMultithreadedCorrectness) {
   config.filters = filters;
   config.filters_count = 4;
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.has_channel = false;
@@ -187,7 +187,7 @@ TEST(PipelineWithFilter) {
   config.filters_count = 1;
 
   char* filter_name = strdup("mygain");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -255,7 +255,7 @@ TEST(PipelineWithMixer) {
   config.mixers = &mixer_cfg;
   config.mixers_count = 1;
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
   strcpy(step.name, "swap");
@@ -306,7 +306,7 @@ TEST(PipelineBypassedFilter) {
   config.filters_count = 1;
 
   char* filter_name = strdup("mygain");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -359,7 +359,7 @@ TEST(PipelineFilterChannelOutOfBounds) {
   config.filters_count = 1;
 
   char* filter_name = strdup("mygain");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 2;
@@ -508,7 +508,7 @@ TEST(PipelineInitFilterMissingNames) {
   dsp_config_t config;
   init_default_config(&config);
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -542,7 +542,7 @@ TEST(PipelineInitFilterChannels) {
 
   int chs[2] = {0, 1};
   char* filter_name = strdup("mygain");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channels = chs;
@@ -575,7 +575,7 @@ TEST(PipelineInitFilterAllChannels) {
   config.filters_count = 1;
 
   char* filter_name = strdup("mygain");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.names = &filter_name;
@@ -597,7 +597,7 @@ TEST(PipelineInitFilterUndefined) {
   init_default_config(&config);
 
   char* filter_name = strdup("undefined_filter");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -623,7 +623,7 @@ TEST(PipelineInitMixerMissingName) {
   dsp_config_t config;
   init_default_config(&config);
 
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_MIXER;
   config.pipeline = &step;
@@ -655,7 +655,7 @@ TEST(PipelineWithLoudnessFilters) {
   config.filters_count = 1;
 
   char* filter_name = strdup("myloud");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;
@@ -713,7 +713,7 @@ TEST(PipelineSequentialMixersZeroAllocationRecovery) {
   config.mixers = mixer_cfgs;
   config.mixers_count = 2;
 
-  pipeline_step_t steps[2];
+  pipeline_step_config_t steps[2];
   memset(steps, 0, sizeof(steps));
   steps[0].type = PIPELINE_STEP_TYPE_MIXER;
   strcpy(steps[0].name, "2to4");
@@ -876,7 +876,7 @@ TEST(PipelineReload_StatePreserved) {
   config.filters_count = 1;
 
   char* filter_name = strdup("mybiquad");
-  pipeline_step_t step;
+  pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));
   step.type = PIPELINE_STEP_TYPE_FILTER;
   step.channel = 0;

@@ -27,8 +27,8 @@ typedef struct biquad_filter biquad_filter_t;
  * @param sample_rate Audio sample rate in Hz.
  * @return true if parameters yield a stable filter, false otherwise.
  */
-bool biquad_parameters_check_stability(const biquad_parameters_t* params,
-                                       int sample_rate);
+bool biquad_config_check_stability(const biquad_config_t* params,
+                                     int sample_rate);
 
 /**
  * @brief Validates high-level biquad filter parameters and checks stability.
@@ -38,8 +38,8 @@ bool biquad_parameters_check_stability(const biquad_parameters_t* params,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int biquad_parameters_validate(const biquad_parameters_t* params,
-                               int sample_rate, config_error_t* err);
+int biquad_config_validate(const biquad_config_t* params,
+                            int sample_rate, config_error_t* err);
 
 /**
  * @brief Creates a biquad filter instance directly from high-level parameters.
@@ -56,7 +56,7 @@ int biquad_parameters_validate(const biquad_parameters_t* params,
  * @return A pointer to the created filter instance, or `NULL` on failure.
  */
 biquad_filter_t* biquad_filter_create(const char* name,
-                                      const biquad_parameters_t* params,
+                                      const biquad_config_t* params,
                                       int sample_rate, config_error_t* err);
 
 /**

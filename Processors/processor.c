@@ -324,11 +324,11 @@ int processor_config_validate(const processor_config_t* proc,
   if (!proc) return 0;
   switch (proc->type) {
     case PROCESSOR_TYPE_COMPRESSOR:
-      return compressor_parameters_validate(&proc->parameters.compressor, err);
+      return compressor_config_validate(&proc->parameters.compressor, err);
     case PROCESSOR_TYPE_NOISE_GATE:
-      return noise_gate_parameters_validate(&proc->parameters.noise_gate, err);
+      return noise_gate_config_validate(&proc->parameters.noise_gate, err);
     case PROCESSOR_TYPE_RACE:
-      return race_parameters_validate(&proc->parameters.race, err);
+      return race_config_validate(&proc->parameters.race, err);
   }
   return 0;
 }

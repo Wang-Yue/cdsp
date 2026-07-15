@@ -31,7 +31,7 @@ struct delay_filter {
  * coefficients were written.
  */
 static void build_delay(double delay_samples, bool subsample,
-                        int* out_integer_delay, biquad_parameters_t* out_params,
+                        int* out_integer_delay, biquad_config_t* out_params,
                         bool* out_has_coeffs) {
   *out_has_coeffs = false;
   out_params->type = BIQUAD_TYPE_FREE;
@@ -87,7 +87,7 @@ static void build_delay(double delay_samples, bool subsample,
 }
 
 delay_filter_t* delay_filter_create(const char* name,
-                                    const delay_parameters_t* params,
+                                    const delay_config_t* params,
                                     int sample_rate, config_error_t* err) {
   delay_filter_t* filter = (delay_filter_t*)calloc(1, sizeof(delay_filter_t));
   if (!filter) {
@@ -117,7 +117,7 @@ delay_filter_t* delay_filter_create(const char* name,
   }
 
   int integer_delay = 0;
-  biquad_parameters_t bq_params = {0};
+  biquad_config_t bq_params = {0};
   bool has_coeffs = false;
   build_delay(delay_samples, subsample, &integer_delay, &bq_params,
               &has_coeffs);
@@ -199,8 +199,8 @@ void delay_filter_free(delay_filter_t* filter) {
   free(filter);
 }
 
-int delay_parameters_validate(const delay_parameters_t* params,
-                              config_error_t* err) {
+int delay_config_validate(const delay_config_t* params,
+                             config_error_t* err) {
   if (!params) return 0;
   if (params->delay < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,

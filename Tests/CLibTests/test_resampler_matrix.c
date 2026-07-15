@@ -315,10 +315,10 @@ static double* read_raw_f64(const char* path, size_t* out_count) {
   return buf;
 }
 
-static double* run_resampler_full(audio_resampler_t* res, const double* input,
+static double* run_resampler_full(resampler_t* res, const double* input,
                                   size_t input_count, size_t* out_count) {
-  size_t max_out_per_chunk = audio_resampler_get_max_output_frames(res);
-  double ratio = audio_resampler_get_ratio(res);
+  size_t max_out_per_chunk = resampler_get_max_output_frames(res);
+  double ratio = resampler_get_ratio(res);
 
   size_t estimated_out = (size_t)((double)input_count * ratio) + 1024;
   double* output = (double*)calloc(estimated_out, sizeof(double));
@@ -330,14 +330,14 @@ static double* run_resampler_full(audio_resampler_t* res, const double* input,
   size_t idx = 0;
   size_t total_out = 0;
   while (true) {
-    size_t needed_in = audio_resampler_get_input_frames_next(res);
+    size_t needed_in = resampler_get_input_frames_next(res);
     if (idx + needed_in > input_count) break;
 
     double* ch0 = audio_chunk_get_channel(in_chunk, 0);
     memcpy(ch0, input + idx, needed_in * sizeof(double));
     audio_chunk_set_valid_frames(in_chunk, needed_in);
 
-    if (audio_resampler_process(res, in_chunk, out_chunk) == RESAMPLER_OK) {
+    if (resampler_process(res, in_chunk, out_chunk) == RESAMPLER_OK) {
       size_t produced = audio_chunk_get_valid_frames(out_chunk);
       if (total_out + produced > estimated_out) {
         estimated_out = (total_out + produced) * 2 + 1024;
@@ -442,11 +442,11 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
   }
 
   size_t cs = 1024;
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, in_rate, out_rate, 1, cs, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, in_rate, out_rate, 1, cs, NULL);
   if (!res) return NULL;
   double* out = run_resampler_full(res, input, input_count, out_count);
-  audio_resampler_free(res);
+  resampler_free(res);
   return out;
 }
 
@@ -584,8 +584,8 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
   }
 
   size_t base_cs = 1024;
-  audio_resampler_t* resampler =
-      audio_resampler_create_from_config(&cfg, in_rate, out_rate, 1, base_cs, NULL);
+  resampler_t* resampler =
+      resampler_create_from_config(&cfg, in_rate, out_rate, 1, base_cs, NULL);
   if (!resampler) return false;
 
   size_t chunk_count = 64;
@@ -601,14 +601,14 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
     }
   }
 
-  size_t max_out = audio_resampler_get_max_output_frames(resampler);
+  size_t max_out = resampler_get_max_output_frames(resampler);
   audio_chunk_t* scratch = audio_chunk_create(max_out, 1);
 
   for (size_t c = 0; c < chunk_count; c++) {
-    size_t needed_in = audio_resampler_get_input_frames_next(resampler);
+    size_t needed_in = resampler_get_input_frames_next(resampler);
     audio_chunk_set_valid_frames(chunks[c], needed_in);
     total_nbr_in += needed_in;
-    audio_resampler_process(resampler, chunks[c], scratch);
+    resampler_process(resampler, chunks[c], scratch);
   }
 
   struct timespec ts_start, ts_now;
@@ -624,9 +624,9 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       break;
     }
     for (size_t c = 0; c < chunk_count; c++) {
-      size_t needed_in = audio_resampler_get_input_frames_next(resampler);
+      size_t needed_in = resampler_get_input_frames_next(resampler);
       audio_chunk_set_valid_frames(chunks[c], needed_in);
-      if (audio_resampler_process(resampler, chunks[c], scratch) ==
+      if (resampler_process(resampler, chunks[c], scratch) ==
           RESAMPLER_OK) {
         out_frames += audio_chunk_get_valid_frames(scratch);
       }
@@ -642,7 +642,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
     audio_chunk_free(chunks[c]);
   }
   audio_chunk_free(scratch);
-  audio_resampler_free(resampler);
+  resampler_free(resampler);
 
   if (out_frames == 0 || iters == 0) return false;
 

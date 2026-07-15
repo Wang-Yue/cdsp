@@ -14,7 +14,7 @@ static bool is_close(double left, double right, double maxdiff) {
 TEST(compressor_basic_compression) {
   int mon_ch[] = {0};
   int proc_ch[] = {0, 1};
-  compressor_parameters_t params = {0};
+  compressor_config_t params = {0};
   params.channels = 2;
   params.monitor_channels = mon_ch;
   params.monitor_channels_count = 1;
@@ -55,7 +55,7 @@ TEST(compressor_basic_compression) {
 TEST(noisegate_basic_gate) {
   int mon_ch[] = {0};
   int proc_ch[] = {0};
-  noise_gate_parameters_t params = {0};
+  noise_gate_config_t params = {0};
   params.channels = 1;
   params.monitor_channels = mon_ch;
   params.monitor_channels_count = 1;
@@ -92,7 +92,7 @@ TEST(noisegate_basic_gate) {
 }
 
 TEST(race_basic) {
-  race_parameters_t params = {0};
+  race_config_t params = {0};
   params.channels = 2;
   params.channel_a = 0;
   params.channel_b = 1;

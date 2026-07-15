@@ -616,7 +616,7 @@ static size_t async_sinc_resampler_get_output_frames_next(
   return resampler ? resampler->needed_output_size : 0;
 }
 
-audio_resampler_t* async_sinc_resampler_create(
+resampler_t* async_sinc_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
     size_t oversampling_factor, sinc_interpolation_type_t interpolation,
     window_function_t window, double f_cutoff, bool has_f_cutoff,
@@ -747,8 +747,8 @@ audio_resampler_t* async_sinc_resampler_create(
     return NULL;
   }
 
-  audio_resampler_t* wrap =
-      (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
+  resampler_t* wrap =
+      (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     async_sinc_resampler_free(resampler);
     return NULL;
@@ -775,7 +775,7 @@ audio_resampler_t* async_sinc_resampler_create(
   return wrap;
 }
 
-audio_resampler_t* async_sinc_resampler_create_from_profile(
+resampler_t* async_sinc_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
     config_error_t* err) {

@@ -405,7 +405,7 @@ static void fill_sine(mutable_waveform_t buf, int frames, double freq_hz,
 // MARK: - Resamplers
 
 typedef struct {
-  audio_resampler_t* resampler;
+  resampler_t* resampler;
   audio_chunk_t** inputs;
   int input_count;
   audio_chunk_t* output;
@@ -413,14 +413,14 @@ typedef struct {
 
 static void resampler_iter(int i, void* ctx) {
   resampler_test_ctx_t* c = (resampler_test_ctx_t*)ctx;
-  audio_resampler_process(c->resampler, c->inputs[i % c->input_count],
-                          c->output);
+  resampler_process(c->resampler, c->inputs[i % c->input_count],
+                    c->output);
 }
 
-static void run_resampler_hot_path(audio_resampler_t* resampler, int channels,
+static void run_resampler_hot_path(resampler_t* resampler, int channels,
                                    const char* label) {
-  int cs = (int)audio_resampler_get_chunk_size(resampler);
-  int max_out = (int)audio_resampler_get_max_output_frames(resampler);
+  int cs = (int)resampler_get_chunk_size(resampler);
+  int max_out = (int)resampler_get_max_output_frames(resampler);
   audio_chunk_t** inputs = make_random_chunks(32, channels, cs, 1.0);
   audio_chunk_t* output = audio_chunk_create(max_out, channels);
   resampler_test_ctx_t ctx = {resampler, inputs, 32, output};
@@ -439,11 +439,11 @@ TEST(AppleResampler_AllocationFree_Stereo) {
   cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_NORMAL;
   cfg.has_apple_complexity = true;
 
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
   ASSERT_TRUE(res != NULL);
   run_resampler_hot_path(res, 2, "AppleResampler stereo");
-  audio_resampler_free(res);
+  resampler_free(res);
 }
 #endif  // ENABLE_COREAUDIO
 
@@ -452,11 +452,11 @@ TEST(Synchronous_Stereo) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.type = RESAMPLER_TYPE_SYNCHRONOUS;
 
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
   ASSERT_TRUE(res != NULL);
   run_resampler_hot_path(res, 2, "Synchronous stereo");
-  audio_resampler_free(res);
+  resampler_free(res);
 }
 
 TEST(AsyncPoly_Stereo) {
@@ -466,11 +466,11 @@ TEST(AsyncPoly_Stereo) {
   strcpy(cfg.interpolation, "cubic");
   cfg.has_interpolation = true;
 
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
   ASSERT_TRUE(res != NULL);
   run_resampler_hot_path(res, 2, "AsyncPoly stereo");
-  audio_resampler_free(res);
+  resampler_free(res);
 }
 
 TEST(AsyncSinc_Stereo) {
@@ -480,11 +480,11 @@ TEST(AsyncSinc_Stereo) {
   strcpy(cfg.profile, "accurate");
   cfg.has_profile = true;
 
-  audio_resampler_t* res =
-      audio_resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
   ASSERT_TRUE(res != NULL);
   run_resampler_hot_path(res, 2, "AsyncSinc stereo");
-  audio_resampler_free(res);
+  resampler_free(res);
 }
 
 // MARK: - Filters
@@ -534,7 +534,7 @@ static void filter_iter(int i, void* ctx) {
 }
 
 TEST(Biquad_AllocationFree) {
-  biquad_parameters_t params = {
+  biquad_config_t params = {
       .type = BIQUAD_TYPE_LOWPASS, .freq = 1000.0, .q = 0.707};
   biquad_filter_t* filter = biquad_filter_create("bq", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -553,7 +553,7 @@ TEST(Convolution_AllocationFree) {
   for (int i = 0; i < ir_len; i++) {
     ir[i] = (i == 0 ? 1.0 : 0.0) + 0.001 * cos((double)i * 0.01);
   }
-  conv_parameters_t params = {
+  convolution_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = ir_len};
   convolution_filter_t* filter =
       convolution_filter_create("conv", &params, chunk_size, NULL);
@@ -568,7 +568,7 @@ TEST(Convolution_AllocationFree) {
 }
 
 TEST(Gain_AllocationFree) {
-  gain_parameters_t params = {
+  gain_config_t params = {
       .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
   gain_filter_t* filter = gain_filter_create("gain", &params);
   ASSERT_TRUE(filter != NULL);
@@ -594,7 +594,7 @@ TEST(Volume_AllocationFree) {
   processing_parameters_set_target_volume_for_fader(proc_params, -6.0,
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -615,7 +615,7 @@ TEST(Loudness_AllocationFree) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_current_volume_for_fader(proc_params, -45.0,
                                                      FADER_MAIN);
-  loudness_parameters_t params = {.reference_level = -25.0,
+  loudness_config_t params = {.reference_level = -25.0,
                                   .has_reference_level = true,
                                   .high_boost = 10.0,
                                   .has_high_boost = true,
@@ -635,7 +635,7 @@ TEST(Loudness_AllocationFree) {
 }
 
 TEST(Delay_AllocationFree) {
-  delay_parameters_t params = {
+  delay_config_t params = {
       .delay = 5.5, .unit = DELAY_UNIT_SAMPLES, .subsample = true};
   delay_filter_t* filter = delay_filter_create("del", &params, 44100, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -648,7 +648,7 @@ TEST(Delay_AllocationFree) {
 }
 
 TEST(BiquadCombo_AllocationFree) {
-  biquad_combo_parameters_t params = {.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ,
+  biquad_combo_config_t params = {.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ,
                                       .fls = 80.0,
                                       .qls = 0.707,
                                       .gls = 3.0,
@@ -679,7 +679,7 @@ TEST(DiffEq_AllocationFree) {
   double a[] = {1.0, -1.864844640491105, 0.8818236057002321};
   double b[] = {0.004244741301241303, 0.008489482602482605,
                 0.004244741301241303};
-  diff_eq_parameters_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
@@ -691,7 +691,7 @@ TEST(DiffEq_AllocationFree) {
 }
 
 TEST(Dither_AllocationFree) {
-  dither_parameters_t params = {.type = DITHER_TYPE_GESEMANN_441, .bits = 16};
+  dither_config_t params = {.type = DITHER_TYPE_GESEMANN_441, .bits = 16};
   dither_filter_t* filter = dither_filter_create("dither", &params);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
@@ -703,7 +703,7 @@ TEST(Dither_AllocationFree) {
 }
 
 TEST(Limiter_AllocationFree) {
-  limiter_parameters_t params = {.clip_limit = -1.5, .soft_clip = true};
+  limiter_config_t params = {.clip_limit = -1.5, .soft_clip = true};
   limiter_filter_t* filter = limiter_filter_create("limiter", &params);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
@@ -715,7 +715,7 @@ TEST(Limiter_AllocationFree) {
 }
 
 TEST(LookaheadLimiter_AllocationFree) {
-  lookahead_limiter_parameters_t params = {.limit = -1.0,
+  lookahead_limiter_config_t params = {.limit = -1.0,
                                            .attack = 4.0,
                                            .release = 20.0,
                                            .unit = DELAY_UNIT_SAMPLES};
@@ -757,7 +757,7 @@ static void proc_iter(int i, void* ctx) {
 TEST(Compressor_AllocationFree) {
   int mon_ch[] = {0};
   int proc_ch[] = {0, 1};
-  compressor_parameters_t params = {.channels = 2,
+  compressor_config_t params = {.channels = 2,
                                     .monitor_channels = mon_ch,
                                     .monitor_channels_count = 1,
                                     .process_channels = proc_ch,
@@ -789,7 +789,7 @@ TEST(Compressor_AllocationFree) {
 TEST(NoiseGate_AllocationFree) {
   int mon_ch[] = {0};
   int proc_ch[] = {0, 1};
-  noise_gate_parameters_t params = {.channels = 2,
+  noise_gate_config_t params = {.channels = 2,
                                     .monitor_channels = mon_ch,
                                     .monitor_channels_count = 1,
                                     .process_channels = proc_ch,
@@ -814,7 +814,7 @@ TEST(NoiseGate_AllocationFree) {
 }
 
 TEST(RACE_AllocationFree) {
-  race_parameters_t params = {.channels = 2,
+  race_config_t params = {.channels = 2,
                               .channel_a = 0,
                               .channel_b = 1,
                               .delay = 12.0,
@@ -840,7 +840,7 @@ TEST(RACE_AllocationFree) {
 // MARK: - Mixer
 
 typedef struct {
-  audio_mixer_t* mixer;
+  mixer_t* mixer;
   audio_chunk_t** inputs;
   int input_count;
   audio_chunk_t* output;
@@ -848,7 +848,7 @@ typedef struct {
 
 static void mixer_iter(int i, void* ctx) {
   mixer_test_ctx_t* c = (mixer_test_ctx_t*)ctx;
-  audio_mixer_process(c->mixer, c->inputs[i % c->input_count], c->output);
+  mixer_process(c->mixer, c->inputs[i % c->input_count], c->output);
 }
 
 TEST(Mixer_2to4_AllocationFree) {
@@ -870,7 +870,7 @@ TEST(Mixer_2to4_AllocationFree) {
       {.dest = 3, .sources_count = 1, .sources = &s31}};
   mixer_config_t config = {
       .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
-  audio_mixer_t* mixer = audio_mixer_create("mixer", &config, 1024);
+  mixer_t* mixer = mixer_create("mixer", &config, 1024);
   ASSERT_TRUE(mixer != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 1.0);
   audio_chunk_t* output = audio_chunk_create(1024, 4);
@@ -878,7 +878,7 @@ TEST(Mixer_2to4_AllocationFree) {
   assert_allocation_free("Mixer 2->4", 0, 30, mixer_iter, &ctx);
   free_chunks(inputs, 32);
   audio_chunk_free(output);
-  audio_mixer_free(mixer);
+  mixer_free(mixer);
 }
 
 // MARK: - DoP
@@ -1250,7 +1250,7 @@ TEST(Pipeline_AllocationFree) {
   config.mixers = &mixer_cfg;
   config.mixers_count = 1;
 
-  pipeline_step_t steps[3];
+  pipeline_step_config_t steps[3];
   memset(steps, 0, sizeof(steps));
 
   steps[0].type = PIPELINE_STEP_TYPE_FILTER;

@@ -45,7 +45,7 @@ typedef struct {
   parallel_filter_chain_t* chains;
   size_t chains_count;
   // For EXEC_STEP_MIXER:
-  audio_mixer_t* mixer;
+  mixer_t* mixer;
   // For EXEC_STEP_PROCESSOR:
   dsp_processor_t* processor;
 } pipeline_exec_step_t;
@@ -204,7 +204,7 @@ void pipeline_free(pipeline_t* pipeline) {
         free_filter_chains(step->chains, step->chains_count);
       } else if (step->type == EXEC_STEP_MIXER) {
         if (step->mixer) {
-          audio_mixer_free(step->mixer);
+          mixer_free(step->mixer);
         }
       } else if (step->type == EXEC_STEP_PROCESSOR) {
         if (step->processor) {
@@ -250,7 +250,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
               pipeline->expected_in_channels, pipeline->multithreaded ? 1 : 0);
 
   // Create the implicit master volume filter
-  volume_parameters_t vol_params = {
+  volume_config_t vol_params = {
       .ramp_time = config->devices.has_volume_ramp_time
                        ? config->devices.volume_ramp_time
                        : 400.0,
@@ -297,7 +297,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   // needed.
   if (config->pipeline && config->pipeline_count > 0) {
     for (size_t i = 0; i < config->pipeline_count; i++) {
-      const pipeline_step_t* step = &config->pipeline[i];
+      const pipeline_step_config_t* step = &config->pipeline[i];
       if (step->bypassed) continue;
       if (step->type == PIPELINE_STEP_TYPE_FILTER) {
         total_exec_steps += 1;
@@ -345,7 +345,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
 
   if (config->pipeline && config->pipeline_count > 0) {
     for (size_t i = 0; i < config->pipeline_count; i++) {
-      const pipeline_step_t* step = &config->pipeline[i];
+      const pipeline_step_config_t* step = &config->pipeline[i];
       if (step->bypassed) continue;
       switch (step->type) {
         case PIPELINE_STEP_TYPE_FILTER: {
@@ -536,8 +536,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             pipeline_free(pipeline);
             return NULL;
           }
-          audio_mixer_t* m =
-              audio_mixer_create(step->name, m_cfg, pipeline->frames_per_chunk);
+          mixer_t* m =
+              mixer_create(step->name, m_cfg, pipeline->frames_per_chunk);
           if (!m) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Failed to create mixer '%s'", step->name);
@@ -548,7 +548,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           audio_chunk_t* scratch =
               audio_chunk_create(pipeline->frames_per_chunk, current_channels);
           if (!scratch) {
-            audio_mixer_free(m);
+            mixer_free(m);
             config_error_set(err, CONFIG_ERR_PARSE,
                              "Failed to allocate mixer scratch buffer");
             pipeline_free(pipeline);
@@ -578,7 +578,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           }
           dsp_processor_t* p =
               dsp_processor_create(step->name, p_cfg, pipeline->rate,
-                                   pipeline->frames_per_chunk, err);
+                                    pipeline->frames_per_chunk, err);
           if (!p) {
             pipeline_free(pipeline);
             return NULL;
@@ -743,7 +743,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
         if (mixer_idx >= pipeline->scratches_for_mixers_count) continue;
         audio_chunk_t* scratch = pipeline->scratches_for_mixers[mixer_idx];
         mixer_error_t err =
-            audio_mixer_process(step->mixer, current_chunk, scratch);
+            mixer_process(step->mixer, current_chunk, scratch);
         if (err != MIXER_OK) {
           if (err == MIXER_ERR_INPUT_SIZE_MISMATCH) {
             pipeline->last_error_needed = pipeline->frames_per_chunk;
@@ -756,7 +756,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
             return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
           }
           pipeline->last_error_needed =
-              audio_mixer_get_channels_in(step->mixer);
+              mixer_get_channels_in(step->mixer);
           pipeline->last_error_got = audio_chunk_get_channels(current_chunk);
           return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
         }
@@ -801,7 +801,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
   int num_channels =
       capture_device_config_get_channels(&config->devices.capture);
   for (size_t i = 0; i < config->pipeline_count; i++) {
-    const pipeline_step_t* step = &config->pipeline[i];
+    const pipeline_step_config_t* step = &config->pipeline[i];
     if (step->bypassed) continue;
 
     switch (step->type) {

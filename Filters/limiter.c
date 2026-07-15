@@ -15,7 +15,7 @@ struct limiter_filter {
 #endif
 
 limiter_filter_t* limiter_filter_create(const char* name,
-                                        const limiter_parameters_t* params) {
+                                        const limiter_config_t* params) {
   limiter_filter_t* filter =
       (limiter_filter_t*)calloc(1, sizeof(limiter_filter_t));
   if (!filter) return NULL;
@@ -78,8 +78,8 @@ void limiter_filter_free(limiter_filter_t* filter) {
   if (filter) free(filter);
 }
 
-int limiter_parameters_validate(const limiter_parameters_t* params,
-                                config_error_t* err) {
+int limiter_config_validate(const limiter_config_t* params,
+                             config_error_t* err) {
   if (!params) return 0;
   if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
       params->clip_limit > 20.0) {

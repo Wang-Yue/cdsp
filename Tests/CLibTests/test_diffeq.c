@@ -19,7 +19,7 @@ TEST(check_result) {
   double a_vals[] = {1.0, -0.1462978543780541, 0.005350765548905586};
   double b_vals[] = {0.21476322779271284, 0.4295264555854257,
                      0.21476322779271284};
-  diff_eq_parameters_t params = {
+  diffeq_config_t params = {
       .a = a_vals, .a_count = 3, .b = b_vals, .b_count = 3};
   diffeq_filter_t* filter = diffeq_filter_create("diffeq", &params);
   ASSERT_TRUE(filter != NULL);

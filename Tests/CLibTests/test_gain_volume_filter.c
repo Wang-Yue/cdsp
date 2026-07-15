@@ -5,7 +5,7 @@
 #include "test_support.h"
 
 TEST(GainInvert) {
-  gain_parameters_t params = {
+  gain_config_t params = {
       .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB, .inverted = true};
   gain_filter_t* filter = gain_filter_create("gain", &params);
   ASSERT_TRUE(filter != NULL);
@@ -18,7 +18,7 @@ TEST(GainInvert) {
 }
 
 TEST(GainAmplify) {
-  gain_parameters_t params = {
+  gain_config_t params = {
       .gain = 20.0, .has_gain = true, .scale = GAIN_SCALE_DB};
   gain_filter_t* filter = gain_filter_create("gain", &params);
   ASSERT_TRUE(filter != NULL);
@@ -31,7 +31,7 @@ TEST(GainAmplify) {
 }
 
 TEST(GainMute) {
-  gain_parameters_t params = {.gain = 0.0, .has_gain = true, .mute = true};
+  gain_config_t params = {.gain = 0.0, .has_gain = true, .mute = true};
   gain_filter_t* filter = gain_filter_create("gain", &params);
   ASSERT_TRUE(filter != NULL);
   double waveform[] = {-0.5, 0.0, 0.5, 1.0, -1.0};
@@ -43,7 +43,7 @@ TEST(GainMute) {
 }
 
 TEST(GainLinearScale) {
-  gain_parameters_t params = {
+  gain_config_t params = {
       .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
   gain_filter_t* filter = gain_filter_create("gain", &params);
   ASSERT_TRUE(filter != NULL);
@@ -64,7 +64,7 @@ TEST(VolumeUnityGain) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -87,7 +87,7 @@ TEST(VolumeAttenuation) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
                                                     FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -112,7 +112,7 @@ TEST(VolumeMuteRampsToZero) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -138,7 +138,7 @@ TEST(VolumeRamp) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = ramp_time_ms,
+  volume_config_t params = {.ramp_time = ramp_time_ms,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -185,7 +185,7 @@ TEST(VolumeChangeThreshold) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 50.0,
                                 .has_limit = true,
@@ -221,7 +221,7 @@ TEST(VolumeLimit) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_parameters_t params = {.ramp_time = 0.0,
+  volume_config_t params = {.ramp_time = 0.0,
                                 .has_ramp_time = true,
                                 .limit = 10.0,
                                 .has_limit = true,

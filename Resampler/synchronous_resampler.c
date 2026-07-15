@@ -332,7 +332,7 @@ static resampler_error_t synchronous_resampler_process(
   return RESAMPLER_OK;
 }
 
-audio_resampler_t* synchronous_resampler_create(
+resampler_t* synchronous_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     size_t requested_chunk_size, config_error_t* err) {
   if (channels == 0) {
@@ -485,8 +485,8 @@ audio_resampler_t* synchronous_resampler_create(
     return NULL;
   }
 
-  audio_resampler_t* wrap =
-      (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
+  resampler_t* wrap =
+      (resampler_t*)calloc(1, sizeof(resampler_t));
   if (!wrap) {
     synchronous_resampler_free(resampler);
     return NULL;

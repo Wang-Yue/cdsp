@@ -69,8 +69,8 @@ const char* compressor_processor_get_name(
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int compressor_parameters_validate(const compressor_parameters_t* params,
-                                   config_error_t* err);
+int compressor_config_validate(const compressor_config_t* params,
+                                 config_error_t* err);
 
 /**
  * @brief Creates a new dynamic range compressor processor.
@@ -84,7 +84,7 @@ int compressor_parameters_validate(const compressor_parameters_t* params,
  * failure.
  */
 compressor_processor_t* compressor_processor_create(
-    const char* name, const compressor_parameters_t* params, int sample_rate,
+    const char* name, const compressor_config_t* params, int sample_rate,
     size_t chunk_size);
 
 /**

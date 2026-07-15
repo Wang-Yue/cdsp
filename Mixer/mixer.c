@@ -48,7 +48,8 @@ typedef struct {
 } prepared_source_list_t;
 
 /// Mixer that changes channel count and routes/sums audio between channels.
-struct audio_mixer_t {
+/// Mixer that changes channel count and routes/sums audio between channels.
+struct mixer_s {
   size_t chunk_size;    ///< Maximum number of frames per processing chunk.
   char* name;           ///< Unique name of the mixer instance.
   size_t channels_in;   ///< Expected number of input channels.
@@ -64,10 +65,10 @@ struct audio_mixer_t {
  * Precomputes linear gains and channel routing lists for all destination
  * channels.
  *
- * @param mixer Pointer to audio mixer instance.
+ * @param mixer Pointer to mixer instance.
  * @param config Configuration containing mapping rules.
  */
-static void populate_mapping(audio_mixer_t* mixer,
+static void populate_mapping(mixer_t* mixer,
                              const mixer_config_t* config) {
   for (size_t i = 0; i < config->mapping_count; i++) {
     const mixer_mapping_t* map = &config->mapping[i];
@@ -117,17 +118,17 @@ static void populate_mapping(audio_mixer_t* mixer,
   }
 }
 
-audio_mixer_t* audio_mixer_create(const char* name,
-                                  const mixer_config_t* config,
-                                  size_t chunk_size) {
+mixer_t* mixer_create(const char* name,
+                     const mixer_config_t* config,
+                     size_t chunk_size) {
   if (!config) {
     logger_error(&g_logger, "Mixer config is NULL for '%s'",
                  name ? name : "unnamed");
     return NULL;
   }
-  audio_mixer_t* mixer = (audio_mixer_t*)calloc(1, sizeof(audio_mixer_t));
+  mixer_t* mixer = (mixer_t*)calloc(1, sizeof(mixer_t));
   if (!mixer) {
-    logger_error(&g_logger, "Failed to allocate audio_mixer_t for '%s'",
+    logger_error(&g_logger, "Failed to allocate mixer_t for '%s'",
                  name ? name : "unnamed");
     return NULL;
   }
@@ -142,7 +143,7 @@ audio_mixer_t* audio_mixer_create(const char* name,
     logger_error(&g_logger,
                  "Failed to allocate prepared source list for mixer '%s'",
                  mixer->name);
-    audio_mixer_free(mixer);
+    mixer_free(mixer);
     return NULL;
   }
 
@@ -160,9 +161,9 @@ audio_mixer_t* audio_mixer_create(const char* name,
 /// `input` and `output` must reference distinct buffers — the mixer
 /// accumulates into the output and reads input concurrently, so aliasing
 /// would corrupt the result.
-mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
-                                  const audio_chunk_t* input,
-                                  audio_chunk_t* output) {
+mixer_error_t mixer_process(mixer_t* mixer,
+                            const audio_chunk_t* input,
+                            audio_chunk_t* output) {
   if (!mixer || !input || !output) return MIXER_ERR_INPUT_SIZE_MISMATCH;
   size_t frames = audio_chunk_get_valid_frames(input);
   if (frames > mixer->chunk_size) {
@@ -216,20 +217,20 @@ mixer_error_t audio_mixer_process(audio_mixer_t* mixer,
   return MIXER_OK;
 }
 
-audio_chunk_t* audio_mixer_process_chunk(audio_mixer_t* mixer,
-                                         const audio_chunk_t* input) {
+audio_chunk_t* mixer_process_chunk(mixer_t* mixer,
+                                   const audio_chunk_t* input) {
   if (!mixer || !input) return NULL;
   audio_chunk_t* output = audio_chunk_create(
       audio_chunk_get_valid_frames(input), mixer->channels_out);
   if (!output) return NULL;
-  if (audio_mixer_process(mixer, input, output) != MIXER_OK) {
+  if (mixer_process(mixer, input, output) != MIXER_OK) {
     audio_chunk_free(output);
     return NULL;
   }
   return output;
 }
 
-void audio_mixer_free(audio_mixer_t* mixer) {
+void mixer_free(mixer_t* mixer) {
   if (!mixer) return;
   if (mixer->name) free(mixer->name);
   if (mixer->mapping) {
@@ -243,15 +244,15 @@ void audio_mixer_free(audio_mixer_t* mixer) {
   free(mixer);
 }
 
-size_t audio_mixer_get_channels_in(const audio_mixer_t* mixer) {
+size_t mixer_get_channels_in(const mixer_t* mixer) {
   return mixer ? mixer->channels_in : 0;
 }
 
-size_t audio_mixer_get_channels_out(const audio_mixer_t* mixer) {
+size_t mixer_get_channels_out(const mixer_t* mixer) {
   return mixer ? mixer->channels_out : 0;
 }
 
-const char* audio_mixer_get_name(const audio_mixer_t* mixer) {
+const char* mixer_get_name(const mixer_t* mixer) {
   return mixer ? mixer->name : NULL;
 }
 

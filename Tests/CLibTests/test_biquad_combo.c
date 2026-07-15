@@ -57,88 +57,88 @@ TEST(make_lr6) {
 
 TEST(check_lr) {
   int fs = 48000;
-  biquad_combo_parameters_t okconf = {
+  biquad_combo_config_t okconf = {
       .type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 6,
       .has_order = true};
-  ASSERT_EQ(0, biquad_combo_parameters_validate(&okconf, fs, NULL));
+  ASSERT_EQ(0, biquad_combo_config_validate(&okconf, fs, NULL));
 
-  biquad_combo_parameters_t bad1 = {
+  biquad_combo_config_t bad1 = {
       .type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 5,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad1, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad1, fs, NULL));
 
-  biquad_combo_parameters_t bad2 = {
+  biquad_combo_config_t bad2 = {
       .type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 0,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad2, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad2, fs, NULL));
 
-  biquad_combo_parameters_t bad3 = {
+  biquad_combo_config_t bad3 = {
       .type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS,
       .freq = 0.0,
       .has_freq = true,
       .order = 2,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad3, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad3, fs, NULL));
 
-  biquad_combo_parameters_t bad4 = {
+  biquad_combo_config_t bad4 = {
       .type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS,
       .freq = 25000.0,
       .has_freq = true,
       .order = 2,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad4, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad4, fs, NULL));
 }
 
 TEST(check_butterworth) {
   int fs = 48000;
-  biquad_combo_parameters_t ok1 = {
+  biquad_combo_config_t ok1 = {
       .type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 6,
       .has_order = true};
-  ASSERT_EQ(0, biquad_combo_parameters_validate(&ok1, fs, NULL));
+  ASSERT_EQ(0, biquad_combo_config_validate(&ok1, fs, NULL));
 
-  biquad_combo_parameters_t ok2 = {
+  biquad_combo_config_t ok2 = {
       .type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 5,
       .has_order = true};
-  ASSERT_EQ(0, biquad_combo_parameters_validate(&ok2, fs, NULL));
+  ASSERT_EQ(0, biquad_combo_config_validate(&ok2, fs, NULL));
 
-  biquad_combo_parameters_t bad1 = {
+  biquad_combo_config_t bad1 = {
       .type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS,
       .freq = 1000.0,
       .has_freq = true,
       .order = 0,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad1, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad1, fs, NULL));
 
-  biquad_combo_parameters_t bad2 = {
+  biquad_combo_config_t bad2 = {
       .type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS,
       .freq = 0.0,
       .has_freq = true,
       .order = 2,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad2, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad2, fs, NULL));
 
-  biquad_combo_parameters_t bad3 = {
+  biquad_combo_config_t bad3 = {
       .type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS,
       .freq = 25000.0,
       .has_freq = true,
       .order = 2,
       .has_order = true};
-  ASSERT_NE(0, biquad_combo_parameters_validate(&bad3, fs, NULL));
+  ASSERT_NE(0, biquad_combo_config_validate(&bad3, fs, NULL));
 }
 
 TEST_MAIN()

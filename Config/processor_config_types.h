@@ -60,7 +60,7 @@ typedef struct {
   bool soft_clip;       /**< Flag indicating if soft clipping is enabled. */
   double clip_limit;    /**< Soft clip limit. */
   bool has_clip_limit;  /**< Flag indicating if soft clip limit is specified. */
-} compressor_parameters_t;
+} compressor_config_t;
 
 /**
  * @brief Parameters for the Noise Gate processor.
@@ -75,7 +75,7 @@ typedef struct {
   double release;                /**< Release time. */
   double threshold;              /**< Threshold level. */
   double attenuation;            /**< Attenuation level. */
-} noise_gate_parameters_t;
+} noise_gate_config_t;
 
 /**
  * @brief Parameters for the RACE processor.
@@ -91,7 +91,7 @@ typedef struct {
   delay_unit_t delay_unit;  /**< Unit of the delay value. */
   bool has_delay_unit;      /**< Flag indicating if delay_unit is specified. */
   double attenuation;       /**< Attenuation level. */
-} race_parameters_t;
+} race_config_t;
 
 /**
  * @brief Configuration for a processor, containing its type and parameters.
@@ -99,10 +99,10 @@ typedef struct {
 typedef struct {
   processor_type_t type; /**< The type of the processor. */
   union {
-    compressor_parameters_t compressor; /**< Compressor parameters. */
-    noise_gate_parameters_t noise_gate; /**< Noise gate parameters. */
-    race_parameters_t race;             /**< RACE parameters. */
-  } parameters;                         /**< Union of processor parameters. */
+    compressor_config_t compressor; /**< Compressor parameters. */
+    noise_gate_config_t noise_gate; /**< Noise gate parameters. */
+    race_config_t race;             /**< RACE parameters. */
+  } parameters;                     /**< Union of processor parameters. */
 } processor_config_t;
 
 #endif  // CLIB_CONFIG_PROCESSOR_CONFIG_TYPES_H

@@ -63,7 +63,7 @@ static void fill_ramp(volume_filter_t* filter) {
 }
 
 volume_filter_t* volume_filter_create(const char* name,
-                                      const volume_parameters_t* params,
+                                      const volume_config_t* params,
                                       int sample_rate, size_t chunk_size,
                                       processing_parameters_t* proc_params,
                                       config_error_t* err) {
@@ -244,7 +244,7 @@ void volume_filter_free(volume_filter_t* filter) {
   if (filter->current_ramp_gains) free(filter->current_ramp_gains);
   free(filter);
 }
-int volume_parameters_validate(const volume_parameters_t* params,
+int volume_config_validate(const volume_config_t* params,
                                config_error_t* err) {
   if (!params) return 0;
   if (params->has_ramp_time) {

@@ -29,8 +29,8 @@ typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
  * @param err Pointer to a config error structure to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int lookahead_limiter_parameters_validate(
-    const lookahead_limiter_parameters_t* params, int sample_rate,
+int lookahead_limiter_config_validate(
+    const lookahead_limiter_config_t* params, int sample_rate,
     config_error_t* err);
 
 /**
@@ -44,7 +44,7 @@ int lookahead_limiter_parameters_validate(
  * failure.
  */
 lookahead_limiter_filter_t* lookahead_limiter_filter_create(
-    const char* name, const lookahead_limiter_parameters_t* params,
+    const char* name, const lookahead_limiter_config_t* params,
     int sample_rate, size_t chunk_size);
 
 /**

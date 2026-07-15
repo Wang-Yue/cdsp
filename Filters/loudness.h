@@ -35,7 +35,7 @@ typedef struct loudness_filter loudness_filter_t;
  * failure.
  */
 loudness_filter_t* loudness_filter_create(const char* name,
-                                          const loudness_parameters_t* params,
+                                          const loudness_config_t* params,
                                           int sample_rate,
                                           processing_parameters_t* proc_params,
                                           config_error_t* err);
@@ -47,7 +47,7 @@ loudness_filter_t* loudness_filter_create(const char* name,
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int loudness_parameters_validate(const loudness_parameters_t* params,
+int loudness_config_validate(const loudness_config_t* params,
                                  config_error_t* err);
 
 /**

@@ -368,7 +368,7 @@ static double* load_raw_file(const char* path, const char* format_str,
 }
 
 convolution_filter_t* convolution_filter_create(const char* name,
-                                                const conv_parameters_t* params,
+                                                const convolution_config_t* params,
                                                 size_t chunk_size,
                                                 config_error_t* err) {
   if (!params) {
@@ -677,8 +677,8 @@ void convolution_filter_free(convolution_filter_t* filter) {
   free(filter);
 }
 
-int conv_parameters_validate(const conv_parameters_t* params,
-                             config_error_t* err) {
+int convolution_config_validate(const convolution_config_t* params,
+                                config_error_t* err) {
   if (!params) return 0;
   switch (params->type) {
     case CONV_TYPE_VALUES:
