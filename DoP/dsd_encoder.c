@@ -277,13 +277,14 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
 
 #if defined(__GNUC__) || defined(__clang__)
 typedef float v4sf __attribute__((vector_size(16)));
+typedef float v4sf_u __attribute__((vector_size(16), aligned(4)));
 
 static inline float dot_product_32(const float* a, const float* b) {
   v4sf acc0 = {0.0f, 0.0f, 0.0f, 0.0f};
   v4sf acc1 = {0.0f, 0.0f, 0.0f, 0.0f};
 
   const v4sf* va = (const v4sf*)a;
-  const v4sf* vb = (const v4sf*)b;
+  const v4sf_u* vb = (const v4sf_u*)b;
 
   for (int i = 0; i < 8; i += 2) {
     acc0 += va[i + 0] * vb[i + 0];
