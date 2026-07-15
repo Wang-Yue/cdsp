@@ -317,11 +317,17 @@ $(CLI_BIN): $(CLI_SRC) $(SERVER_SRCS) $(LIB_TARGET)
 	@mkdir -p $(dir $@)
 ifeq ($(IS_WINDOWS),1)
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
-else ifeq ($(UNAME_S),Darwin)
+else ifeq ($(TARGET_OS),Darwin)
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,-force_load $(LIB_TARGET) $(LDFLAGS) -o $@
 else
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
 endif
+
+linux-aarch64:
+	$(MAKE) cli TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CLI_BIN=bin/dsp-cli CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 CFLAGS="-O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE" LDFLAGS="-L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt" -j20
+
+linux-benchmarks:
+	$(MAKE) $(BENCH_BINS) TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 CFLAGS="-O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE" LDFLAGS="-L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt" -j20
 
 format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
