@@ -264,8 +264,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
         "Failed to create master volume filter (rate=%d, chunk=%zu): %s",
         pipeline->rate, pipeline->frames_per_chunk,
         err ? err->message : "unknown error");
-    pipeline_free(pipeline);
-    return NULL;
+    goto cleanup_fail;
   }
 
   // Pre-allocate the input scratch sized for the capture-side channel count.
@@ -278,8 +277,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
         pipeline->frames_per_chunk, pipeline->expected_in_channels);
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate capture scratch buffer");
-    pipeline_free(pipeline);
-    return NULL;
+    goto cleanup_fail;
   }
 
   size_t total_exec_steps = 0;
@@ -319,8 +317,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                                                   sizeof(pipeline_exec_step_t));
   if (!pipeline->steps) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-    pipeline_free(pipeline);
-    return NULL;
+    goto cleanup_fail;
   }
   pipeline->steps_count = total_exec_steps;
   if (num_mixers > 0) {
@@ -328,8 +325,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
         (audio_chunk_t**)calloc(num_mixers, sizeof(audio_chunk_t*));
     if (!pipeline->scratches_for_mixers) {
       config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-      pipeline_free(pipeline);
-      return NULL;
+      goto cleanup_fail;
     }
     pipeline->scratches_for_mixers_count = num_mixers;
   }
@@ -337,6 +333,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   current_channels = pipeline->expected_in_channels;
   size_t exec_idx = 0;
   size_t mixer_idx = 0;
+
+  int* all_chs = NULL;
+  parallel_filter_chain_t* new_chains = NULL;
+  size_t new_chains_count = 0;
 
   if (config->pipeline && config->pipeline_count > 0) {
     for (size_t i = 0; i < config->pipeline_count; i++) {
@@ -347,13 +347,11 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           if (!step->names || step->names_count == 0) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Filter step missing names");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           int* channels_to_apply = NULL;
           size_t channels_count = 0;
           int single_ch = 0;
-          int* all_chs = NULL;
 
           if (step->channels && step->channels_count > 0) {
             channels_to_apply = step->channels;
@@ -366,15 +364,13 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             if (current_channels > SIZE_MAX / sizeof(int)) {
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Integer overflow in channels count");
-              pipeline_free(pipeline);
-              return NULL;
+              goto cleanup_fail;
             }
             all_chs = (int*)calloc(current_channels, sizeof(int));
             if (!all_chs) {
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Memory allocation failure");
-              pipeline_free(pipeline);
-              return NULL;
+              goto cleanup_fail;
             }
             for (size_t c = 0; c < current_channels; c++) all_chs[c] = (int)c;
             channels_to_apply = all_chs;
@@ -382,16 +378,14 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           }
 
           // Create chains for this filter step
-          size_t new_chains_count = channels_count;
-          parallel_filter_chain_t* new_chains =
+          new_chains_count = channels_count;
+          new_chains =
               (parallel_filter_chain_t*)calloc(new_chains_count,
                                                sizeof(parallel_filter_chain_t));
           if (!new_chains) {
-            if (all_chs) free(all_chs);
             config_error_set(err, CONFIG_ERR_PARSE,
                              "Memory allocation failure");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
 
           for (size_t c = 0; c < channels_count; c++) {
@@ -402,38 +396,32 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             chain->filters =
                 (filter_t**)calloc(step->names_count, sizeof(filter_t*));
             if (!chain->filters) {
-              if (all_chs) free(all_chs);
-              free_filter_chains(new_chains, channels_count);
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Memory allocation failure");
-              pipeline_free(pipeline);
-              return NULL;
+              goto cleanup_fail;
             }
 
             for (size_t j = 0; j < step->names_count; j++) {
               const filter_config_t* f_cfg =
                   dsp_config_get_filter(config, step->names[j]);
               if (!f_cfg) {
-                if (all_chs) free(all_chs);
-                free_filter_chains(new_chains, channels_count);
                 config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                                  "Filter '%s' not defined", step->names[j]);
-                pipeline_free(pipeline);
-                return NULL;
+                goto cleanup_fail;
               }
               filter_t* f =
                   filter_create(step->names[j], f_cfg, pipeline->rate,
                                 pipeline->frames_per_chunk, proc_params, err);
               if (!f) {
-                if (all_chs) free(all_chs);
-                free_filter_chains(new_chains, channels_count);
-                pipeline_free(pipeline);
-                return NULL;
+                goto cleanup_fail;
               }
               chain->filters[j] = f;
             }
           }
-          if (all_chs) free(all_chs);
+          if (all_chs) {
+            free(all_chs);
+            all_chs = NULL;
+          }
 
           // Merge adjacent parallel filters, combining filter lists for the
           // same channels
@@ -487,25 +475,23 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             }
 
             if (alloc_failed) {
-              free_filter_chains(new_chains, new_chains_count);
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Memory allocation failure");
-              pipeline_free(pipeline);
-              return NULL;
+              goto cleanup_fail;
             }
             free(new_chains);
+            new_chains = NULL;
+            new_chains_count = 0;
           } else {
             for (size_t c = 0; c < new_chains_count; c++) {
               for (size_t k = 0; k < c; k++) {
                 if (new_chains[c].channel == new_chains[k].channel) {
                   int dup_channel = new_chains[c].channel;
-                  free_filter_chains(new_chains, new_chains_count);
                   config_error_set(
                       err, CONFIG_ERR_INVALID_PIPELINE,
                       "Duplicate channel %d in parallel filter step",
                       dup_channel);
-                  pipeline_free(pipeline);
-                  return NULL;
+                  goto cleanup_fail;
                 }
               }
             }
@@ -513,6 +499,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             exec->type = EXEC_STEP_PARALLEL_FILTERS;
             exec->chains = new_chains;
             exec->chains_count = new_chains_count;
+            new_chains = NULL;
+            new_chains_count = 0;
           }
           break;
         }
@@ -520,24 +508,21 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           if (!step->has_name || step->name[0] == '\0') {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Mixer step missing name or config");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           const mixer_config_t* m_cfg =
               dsp_config_get_mixer(config, step->name);
           if (!m_cfg) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Mixer step missing name or config");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           mixer_t* m =
               mixer_create(step->name, m_cfg, pipeline->frames_per_chunk, err);
           if (!m) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Failed to create mixer '%s'", step->name);
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           current_channels = m_cfg->channels_out;
           audio_chunk_t* scratch =
@@ -546,8 +531,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             mixer_free(m);
             config_error_set(err, CONFIG_ERR_PARSE,
                              "Failed to allocate mixer scratch buffer");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           pipeline->scratches_for_mixers[mixer_idx++] = scratch;
 
@@ -560,23 +544,20 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           if (!step->has_name || step->name[0] == '\0') {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Processor step missing name or config");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           const processor_config_t* p_cfg =
               dsp_config_get_processor(config, step->name);
           if (!p_cfg) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Processor step missing name or config");
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           dsp_processor_t* p =
               dsp_processor_create(step->name, p_cfg, pipeline->rate,
                                     pipeline->frames_per_chunk, err);
           if (!p) {
-            pipeline_free(pipeline);
-            return NULL;
+            goto cleanup_fail;
           }
           pipeline_exec_step_t* exec = &pipeline->steps[exec_idx++];
           exec->type = EXEC_STEP_PROCESSOR;
@@ -590,6 +571,12 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   pipeline->steps_count = exec_idx;
   pipeline->expected_out_channels = current_channels;
   return pipeline;
+
+cleanup_fail:
+  if (all_chs) free(all_chs);
+  if (new_chains) free_filter_chains(new_chains, new_chains_count);
+  if (pipeline) pipeline_free(pipeline);
+  return NULL;
 }
 
 #if HAS_DISPATCH

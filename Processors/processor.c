@@ -10,217 +10,117 @@
 
 #include "processor.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.processor"};
 
+typedef struct processor_vtable {
+  void (*process)(void* impl, audio_chunk_t* chunk);
+  const char* (*get_name)(const void* impl);
+  void (*transfer_state)(void* dest, const void* src);
+  void (*free)(void* impl);
+} processor_vtable_t;
+
 struct dsp_processor {
   processor_impl_type_t type;  ///< Concrete implementation type identifier.
   void* impl;                  ///< Pointer to underlying processor structure.
-
-  /// Apply the processor to all channels of `chunk` in place.
-  void (*process)(struct dsp_processor* self, audio_chunk_t* chunk);
-
-  /// The unique name of this processor instance.
-  const char* (*get_name)(const struct dsp_processor* self);
-
-  /// Destructor function to free the processor and its wrapper.
-  void (*free)(struct dsp_processor* self);
+  const processor_vtable_t* vtable; ///< Virtual table for dispatch.
 };
 
+/* --- Static VTable Definitions --- */
+
+static const processor_vtable_t g_comp_vtable = {
+    .process = (void (*)(void*, audio_chunk_t*))compressor_processor_process,
+    .get_name =
+        (const char* (*)(const void*))compressor_processor_get_name,
+    .transfer_state =
+        (void (*)(void*, const void*))compressor_processor_transfer_state,
+    .free = (void (*)(void*))compressor_processor_free};
+
+static const processor_vtable_t g_gate_vtable = {
+    .process = (void (*)(void*, audio_chunk_t*))noise_gate_processor_process,
+    .get_name =
+        (const char* (*)(const void*))noise_gate_processor_get_name,
+    .transfer_state =
+        (void (*)(void*, const void*))noise_gate_processor_transfer_state,
+    .free = (void (*)(void*))noise_gate_processor_free};
+
+static const processor_vtable_t g_race_vtable = {
+    .process = (void (*)(void*, audio_chunk_t*))race_processor_process,
+    .get_name = (const char* (*)(const void*))race_processor_get_name,
+    .transfer_state =
+        (void (*)(void*, const void*))race_processor_transfer_state,
+    .free = (void (*)(void*))race_processor_free};
+
 void dsp_processor_process(dsp_processor_t* proc, audio_chunk_t* chunk) {
-  if (proc && proc->process) {
-    proc->process(proc, chunk);
+  if (proc && proc->impl && proc->vtable && proc->vtable->process) {
+    proc->vtable->process(proc->impl, chunk);
   }
 }
 
 void dsp_processor_transfer_state(dsp_processor_t* dest,
                                   const dsp_processor_t* src) {
-  if (!dest || !src) return;
-  if (dest->type != src->type) return;
-  const char* pname = dsp_processor_get_name(dest);
-  switch (dest->type) {
-    case PROCESSOR_IMPL_COMPRESSOR:
-      compressor_processor_transfer_state(
-          (compressor_processor_t*)dest->impl,
-          (const compressor_processor_t*)src->impl);
-      logger_info(&g_logger,
-                  "Transferred processor state for '%s' (type=Compressor)",
-                  pname);
-      break;
-    case PROCESSOR_IMPL_NOISE_GATE:
-      noise_gate_processor_transfer_state(
-          (noise_gate_processor_t*)dest->impl,
-          (const noise_gate_processor_t*)src->impl);
-      logger_info(&g_logger,
-                  "Transferred processor state for '%s' (type=NoiseGate)",
-                  pname);
-      break;
-    case PROCESSOR_IMPL_RACE:
-      race_processor_transfer_state((race_processor_t*)dest->impl,
-                                    (const race_processor_t*)src->impl);
-      logger_info(&g_logger, "Transferred processor state for '%s' (type=RACE)",
-                  pname);
-      break;
-  }
+  if (!dest || !src || dest->type != src->type || !dest->impl || !src->impl ||
+      !dest->vtable || !dest->vtable->transfer_state)
+    return;
+  dest->vtable->transfer_state(dest->impl, src->impl);
+  logger_info(&g_logger, "Transferred processor state for '%s'",
+              dsp_processor_get_name(dest));
 }
 
 const char* dsp_processor_get_name(const dsp_processor_t* proc) {
-  return (proc && proc->get_name) ? proc->get_name(proc) : "";
+  return (proc && proc->impl && proc->vtable && proc->vtable->get_name)
+             ? proc->vtable->get_name(proc->impl)
+             : "";
 }
 
 void dsp_processor_free(dsp_processor_t* proc) {
-  if (proc && proc->free) {
-    proc->free(proc);
+  if (!proc) return;
+  if (proc->impl && proc->vtable && proc->vtable->free) {
+    proc->vtable->free(proc->impl);
   }
-}
-
-#include <stdlib.h>
-#include <string.h>
-
-/**
- * @brief Processes an audio chunk using the wrapped compressor.
- * @param self The wrapper processor instance.
- * @param chunk The audio chunk to be processed in-place.
- */
-static void comp_process(dsp_processor_t* self, audio_chunk_t* chunk) {
-  compressor_processor_process((compressor_processor_t*)self->impl, chunk);
-}
-
-/**
- * @brief Updates compressor parameters.
- * @param self The wrapper processor instance.
- * @param config The new configuration parameters.
- * @param sample_rate The current audio sample rate in Hz.
- */
-
-/**
- * @brief Retrieves the name of the wrapped compressor.
- * @param self The wrapper processor instance.
- * @return The name string, or empty string if implementation is NULL.
- */
-static const char* comp_get_name(const dsp_processor_t* self) {
-  return self->impl ? compressor_processor_get_name(
-                          (compressor_processor_t*)self->impl)
-                    : "";
-}
-
-/**
- * @brief Frees the compressor implementation and the wrapper instance.
- * @param self The wrapper processor instance to free.
- */
-static void comp_free(dsp_processor_t* self) {
-  if (self->impl)
-    compressor_processor_free((compressor_processor_t*)self->impl);
-  free(self);
+  free(proc);
 }
 
 dsp_processor_t* dsp_processor_wrap_compressor(compressor_processor_t* p) {
   if (!p) return NULL;
   dsp_processor_t* wrap = (dsp_processor_t*)calloc(1, sizeof(dsp_processor_t));
   if (!wrap) {
-    /* If wrapper allocation fails, ensure the passed processor instance is
-       freed to prevent resource leaks. */
     compressor_processor_free(p);
     return NULL;
   }
   wrap->type = PROCESSOR_IMPL_COMPRESSOR;
   wrap->impl = p;
-  wrap->process = comp_process;
-  wrap->get_name = comp_get_name;
-  wrap->free = comp_free;
+  wrap->vtable = &g_comp_vtable;
   return wrap;
-}
-
-/**
- * @brief Processes an audio chunk using the wrapped noise gate.
- * @param self The wrapper processor instance.
- * @param chunk The audio chunk to be processed in-place.
- */
-static void gate_process(dsp_processor_t* self, audio_chunk_t* chunk) {
-  noise_gate_processor_process((noise_gate_processor_t*)self->impl, chunk);
-}
-
-/**
- * @brief Retrieves the name of the wrapped noise gate.
- * @param self The wrapper processor instance.
- * @return The name string, or empty string if implementation is NULL.
- */
-static const char* gate_get_name(const dsp_processor_t* self) {
-  return self->impl ? noise_gate_processor_get_name(
-                          (noise_gate_processor_t*)self->impl)
-                    : "";
-}
-
-/**
- * @brief Frees the noise gate implementation and the wrapper instance.
- * @param self The wrapper processor instance to free.
- */
-static void gate_free(dsp_processor_t* self) {
-  if (self->impl)
-    noise_gate_processor_free((noise_gate_processor_t*)self->impl);
-  free(self);
 }
 
 dsp_processor_t* dsp_processor_wrap_noise_gate(noise_gate_processor_t* p) {
   if (!p) return NULL;
   dsp_processor_t* wrap = (dsp_processor_t*)calloc(1, sizeof(dsp_processor_t));
   if (!wrap) {
-    /* If wrapper allocation fails, ensure the passed processor instance is
-       freed to prevent resource leaks. */
     noise_gate_processor_free(p);
     return NULL;
   }
   wrap->type = PROCESSOR_IMPL_NOISE_GATE;
   wrap->impl = p;
-  wrap->process = gate_process;
-  wrap->get_name = gate_get_name;
-  wrap->free = gate_free;
+  wrap->vtable = &g_gate_vtable;
   return wrap;
-}
-
-/**
- * @brief Processes an audio chunk using the wrapped RACE processor.
- * @param self The wrapper processor instance.
- * @param chunk The audio chunk to be processed in-place.
- */
-static void race_proc(dsp_processor_t* self, audio_chunk_t* chunk) {
-  race_processor_process((race_processor_t*)self->impl, chunk);
-}
-
-/**
- * @brief Retrieves the name of the wrapped RACE processor.
- * @param self The wrapper processor instance.
- * @return The name string, or empty string if implementation is NULL.
- */
-static const char* race_get_name(const dsp_processor_t* self) {
-  return self->impl ? race_processor_get_name((race_processor_t*)self->impl)
-                    : "";
-}
-
-/**
- * @brief Frees the RACE processor implementation and the wrapper instance.
- * @param self The wrapper processor instance to free.
- */
-static void race_free_fn(dsp_processor_t* self) {
-  if (self->impl) race_processor_free((race_processor_t*)self->impl);
-  free(self);
 }
 
 dsp_processor_t* dsp_processor_wrap_race(race_processor_t* p) {
   if (!p) return NULL;
   dsp_processor_t* wrap = (dsp_processor_t*)calloc(1, sizeof(dsp_processor_t));
   if (!wrap) {
-    /* If wrapper allocation fails, ensure the passed processor instance is
-       freed to prevent resource leaks. */
     race_processor_free(p);
     return NULL;
   }
   wrap->type = PROCESSOR_IMPL_RACE;
   wrap->impl = p;
-  wrap->process = race_proc;
-  wrap->get_name = race_get_name;
-  wrap->free = race_free_fn;
+  wrap->vtable = &g_race_vtable;
   return wrap;
 }
 
@@ -309,7 +209,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
 }
 
 int processor_config_validate(const processor_config_t* proc,
-                              config_error_t* err) {
+                               config_error_t* err) {
   if (!proc) return 0;
   switch (proc->type) {
     case PROCESSOR_TYPE_COMPRESSOR:

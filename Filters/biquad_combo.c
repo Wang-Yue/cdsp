@@ -220,13 +220,7 @@ biquad_combo_filter_t* biquad_combo_filter_create(
 
   // Validate that all sections were successfully created
   for (size_t i = 0; i < num; i++) {
-    if (!secs[i]) {
-      for (size_t j = 0; j < num; j++) {
-        if (secs[j]) biquad_filter_free(secs[j]);
-      }
-      free(filter);
-      return NULL;
-    }
+    if (!secs[i]) goto cleanup_fail;
   }
 
   filter->num_sections = num;
@@ -234,17 +228,20 @@ biquad_combo_filter_t* biquad_combo_filter_create(
   if (!filter->sections) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate BiquadCombo sections memory");
-    for (size_t j = 0; j < num; j++) {
-      biquad_filter_free(secs[j]);
-    }
-    free(filter);
-    return NULL;
+    goto cleanup_fail;
   }
 
   for (size_t i = 0; i < num; i++) {
     filter->sections[i] = secs[i];
   }
   return filter;
+
+cleanup_fail:
+  for (size_t j = 0; j < num; j++) {
+    if (secs[j]) biquad_filter_free(secs[j]);
+  }
+  if (filter) free(filter);
+  return NULL;
 }
 
 void biquad_combo_filter_process(biquad_combo_filter_t* filter,
