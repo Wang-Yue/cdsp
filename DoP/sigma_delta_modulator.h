@@ -68,8 +68,8 @@ void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
  * @param x Input sample.
  * @return True if modulated DSD bit is high (1), false if low (0).
  */
-static inline bool sigma_delta_modulator_sample(sigma_delta_modulator_t* mod,
-                                                double x) {
+static inline __attribute__((always_inline)) bool sigma_delta_modulator_sample(
+    sigma_delta_modulator_t* mod, double x) {
   if (!mod) return false;
   int current_idx = mod->idx;
   double* s = &mod->non_trellis_state[current_idx * 8];
