@@ -11,14 +11,10 @@
 #ifndef CLIB_RESAMPLER_ASYNC_SINC_RESAMPLER_H
 #define CLIB_RESAMPLER_ASYNC_SINC_RESAMPLER_H
 
-#include <stdbool.h>
 #include <stddef.h>
 
-#include "Audio/audio_chunk.h"
 #include "Config/config_error.h"
 #include "Config/resampler_config_types.h"
-#include "resampler_error.h"
-#include "sinc_dot_product.h"
 #include "sinc_window_function.h"
 
 /**
@@ -37,9 +33,6 @@ typedef enum {
   /** Cubic interpolation. */
   SINC_INTERPOLATION_CUBIC
 } sinc_interpolation_type_t;
-
-struct async_sinc_resampler;
-typedef struct async_sinc_resampler async_sinc_resampler_t;
 
 #include "audio_resampler.h"
 
@@ -62,7 +55,7 @@ typedef struct async_sinc_resampler async_sinc_resampler_t;
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on failure.
  */
-async_sinc_resampler_t* async_sinc_resampler_create(
+audio_resampler_t* async_sinc_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
     size_t oversampling_factor, sinc_interpolation_type_t interpolation,
     window_function_t window, double f_cutoff, bool has_f_cutoff,
@@ -83,92 +76,9 @@ async_sinc_resampler_t* async_sinc_resampler_create(
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on failure.
  */
-async_sinc_resampler_t* async_sinc_resampler_create_from_profile(
+audio_resampler_t* async_sinc_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
     config_error_t* err);
-
-/**
- * @brief Frees the sinc resampler resources.
- *
- * @param resampler The resampler instance to free.
- */
-void async_sinc_resampler_free(async_sinc_resampler_t* resampler);
-
-/**
- * @brief Processes a chunk of audio using windowed-sinc interpolation.
- *
- * @param resampler The resampler instance.
- * @param input The input audio chunk.
- * @param output The output audio chunk.
- * @return @ref RESAMPLER_OK on success, or an error code.
- */
-resampler_error_t async_sinc_resampler_process(
-    async_sinc_resampler_t* resampler, const audio_chunk_t* input,
-    audio_chunk_t* output);
-
-/**
- * @brief Sets a relative ratio multiplier.
- *
- * @param resampler The resampler instance.
- * @param multiplier The ratio multiplier.
- */
-void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
-                                             double multiplier);
-
-/**
- * @brief Gets the current effective ratio.
- *
- * @param resampler The resampler instance.
- * @return The effective resampling ratio.
- */
-double async_sinc_resampler_get_ratio(const async_sinc_resampler_t* resampler);
-
-/**
- * @brief Gets the maximum number of output frames that can be generated in one
- * call.
- *
- * @param resampler The resampler instance.
- * @return The maximum output frame count.
- */
-size_t async_sinc_resampler_get_max_output_frames(
-    const async_sinc_resampler_t* resampler);
-
-/**
- * @brief Gets the configured chunk size.
- *
- * @param resampler The resampler instance.
- * @return The fixed input chunk size.
- */
-size_t async_sinc_resampler_get_chunk_size(
-    const async_sinc_resampler_t* resampler);
-
-/**
- * @brief Gets the number of channels.
- *
- * @param resampler The resampler instance.
- * @return The channel count.
- */
-size_t async_sinc_resampler_get_channels(
-    const async_sinc_resampler_t* resampler);
-
-/**
- * @brief Gets the number of input frames required for the next process call.
- *
- * @param resampler The resampler instance.
- * @return The required input frame count.
- */
-size_t async_sinc_resampler_get_input_frames_next(
-    const async_sinc_resampler_t* resampler);
-
-/**
- * @brief Gets the number of output frames that will be generated in the next
- * process call.
- *
- * @param resampler The resampler instance.
- * @return The expected output frame count.
- */
-size_t async_sinc_resampler_get_output_frames_next(
-    const async_sinc_resampler_t* resampler);
 
 #endif  // CLIB_RESAMPLER_ASYNC_SINC_RESAMPLER_H

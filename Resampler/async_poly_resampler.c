@@ -12,6 +12,12 @@
 
 #include "async_poly_resampler.h"
 
+#include "Audio/audio_chunk.h"
+#include "audio_resampler.h"
+#include "resampler_error.h"
+
+typedef struct async_poly_resampler async_poly_resampler_t;
+
 struct async_poly_resampler {
   size_t channels;
   size_t chunk_size;
@@ -69,118 +75,9 @@ static inline size_t calculate_output_size(
   return (size_t)floor(raw);
 }
 
-async_poly_resampler_t* async_poly_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    poly_interpolation_t interpolation, size_t chunk_size,
-    double max_relative_ratio, fixed_async_t fixed, config_error_t* err) {
-  if (channels == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPolyResampler: channels must be positive");
-    return NULL;
-  }
-  if (chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPolyResampler: chunk_size must be positive");
-    return NULL;
-  }
-  if (input_rate == 0 || output_rate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPolyResampler: rates must be positive");
-    return NULL;
-  }
-  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
+static void async_poly_resampler_free(async_poly_resampler_t* resampler);
 
-  async_poly_resampler_t* resampler =
-      (async_poly_resampler_t*)calloc(1, sizeof(async_poly_resampler_t));
-  if (!resampler) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncPolyResampler");
-    return NULL;
-  }
-
-  resampler->channels = channels;
-  resampler->chunk_size = chunk_size;
-  resampler->fixed = fixed;
-  resampler->interpolation = interpolation;
-  resampler->interpolator_len =
-      (size_t)poly_interpolation_nbr_points(interpolation);
-  resampler->base_ratio = (double)output_rate / (double)input_rate;
-  resampler->resample_ratio = resampler->base_ratio;
-  resampler->target_ratio = resampler->base_ratio;
-  resampler->max_relative_ratio = max_relative_ratio;
-  resampler->last_index = -((double)resampler->interpolator_len / 2.0);
-
-  double min_ratio_abs = resampler->base_ratio / max_relative_ratio;
-  if (fixed == FIXED_ASYNC_INPUT) {
-    resampler->max_input_frames = chunk_size;
-  } else {
-    double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
-                        (double)resampler->interpolator_len / 2.0;
-    resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
-  }
-
-  if (resampler->max_input_frames >
-      SIZE_MAX - 2 * resampler->interpolator_len) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPolyResampler: max_input_frames is out of bounds");
-    async_poly_resampler_free(resampler);
-    return NULL;
-  }
-
-  size_t buf_len =
-      resampler->max_input_frames + 2 * resampler->interpolator_len;
-  resampler->input_buffer = audio_buffers_create(channels, buf_len);
-  if (!resampler->input_buffer) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncPolyResampler input buffer");
-    async_poly_resampler_free(resampler);
-    return NULL;
-  }
-
-  resampler->needed_input_size = calculate_input_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->interpolator_len, fixed);
-  resampler->needed_output_size = calculate_output_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->interpolator_len, fixed);
-  resampler->current_buffer_fill = resampler->needed_input_size;
-
-  if (fixed == FIXED_ASYNC_OUTPUT) {
-    resampler->max_output_frames = chunk_size;
-  } else {
-    double most_neg_last_index = -((double)resampler->interpolator_len / 2.0);
-    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
-    double raw_max =
-        ((double)chunk_size - (double)(resampler->interpolator_len + 1) -
-         most_neg_last_index) *
-        max_ratio_abs;
-
-    if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
-        raw_max > (double)(SIZE_MAX - 32)) {
-      config_error_set(
-          err, CONFIG_ERR_VALIDATION,
-          "AsyncPolyResampler: calculated maximum output size is invalid");
-      async_poly_resampler_free(resampler);
-      return NULL;
-    }
-    resampler->max_output_frames = (size_t)(ceil(raw_max)) + 16;
-  }
-
-  resampler->start_idx_scratch =
-      (int*)calloc(resampler->max_output_frames, sizeof(int));
-  resampler->frac_scratch =
-      (double*)calloc(resampler->max_output_frames, sizeof(double));
-  if (!resampler->start_idx_scratch || !resampler->frac_scratch) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncPolyResampler scratch buffers");
-    async_poly_resampler_free(resampler);
-    return NULL;
-  }
-
-  return resampler;
-}
-
-void async_poly_resampler_free(async_poly_resampler_t* resampler) {
+static void async_poly_resampler_free(async_poly_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->input_buffer) audio_buffers_free(resampler->input_buffer);
   free(resampler->start_idx_scratch);
@@ -188,8 +85,8 @@ void async_poly_resampler_free(async_poly_resampler_t* resampler) {
   free(resampler);
 }
 
-void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resampler,
-                                             double multiplier) {
+static void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resampler,
+                                              double multiplier) {
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
@@ -198,21 +95,21 @@ void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resampler,
   resampler->target_ratio = resampler->base_ratio * multiplier;
 }
 
-double async_poly_resampler_get_ratio(const async_poly_resampler_t* resampler) {
+static double async_poly_resampler_get_ratio(const async_poly_resampler_t* resampler) {
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
-size_t async_poly_resampler_get_max_output_frames(
+static size_t async_poly_resampler_get_max_output_frames(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->max_output_frames : 0;
 }
 
-size_t async_poly_resampler_get_chunk_size(
+static size_t async_poly_resampler_get_chunk_size(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
-size_t async_poly_resampler_get_channels(
+static size_t async_poly_resampler_get_channels(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
 }
@@ -395,7 +292,7 @@ static void run_septic(async_poly_resampler_t* resampler, size_t output_frames,
   }
 }
 
-resampler_error_t async_poly_resampler_process(
+static resampler_error_t async_poly_resampler_process(
     async_poly_resampler_t* resampler, const audio_chunk_t* input,
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
@@ -507,24 +404,131 @@ resampler_error_t async_poly_resampler_process(
   return RESAMPLER_OK;
 }
 
-size_t async_poly_resampler_get_input_frames_next(
+static size_t async_poly_resampler_get_input_frames_next(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->needed_input_size : 0;
 }
 
-size_t async_poly_resampler_get_output_frames_next(
+static size_t async_poly_resampler_get_output_frames_next(
     const async_poly_resampler_t* resampler) {
   return resampler ? resampler->needed_output_size : 0;
 }
 
-audio_resampler_t* audio_resampler_wrap_async_poly(
-    async_poly_resampler_t* res) {
-  if (!res) return NULL;
+audio_resampler_t* async_poly_resampler_create(
+    size_t channels, size_t input_rate, size_t output_rate,
+    poly_interpolation_t interpolation, size_t chunk_size,
+    double max_relative_ratio, fixed_async_t fixed, config_error_t* err) {
+  if (channels == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPolyResampler: channels must be positive");
+    return NULL;
+  }
+  if (chunk_size == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPolyResampler: chunk_size must be positive");
+    return NULL;
+  }
+  if (input_rate == 0 || output_rate == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPolyResampler: rates must be positive");
+    return NULL;
+  }
+  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
+
+  async_poly_resampler_t* resampler =
+      (async_poly_resampler_t*)calloc(1, sizeof(async_poly_resampler_t));
+  if (!resampler) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncPolyResampler");
+    return NULL;
+  }
+
+  resampler->channels = channels;
+  resampler->chunk_size = chunk_size;
+  resampler->fixed = fixed;
+  resampler->interpolation = interpolation;
+  resampler->interpolator_len =
+      (size_t)poly_interpolation_nbr_points(interpolation);
+  resampler->base_ratio = (double)output_rate / (double)input_rate;
+  resampler->resample_ratio = resampler->base_ratio;
+  resampler->target_ratio = resampler->base_ratio;
+  resampler->max_relative_ratio = max_relative_ratio;
+  resampler->last_index = -((double)resampler->interpolator_len / 2.0);
+
+  double min_ratio_abs = resampler->base_ratio / max_relative_ratio;
+  if (fixed == FIXED_ASYNC_INPUT) {
+    resampler->max_input_frames = chunk_size;
+  } else {
+    double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
+                        (double)resampler->interpolator_len / 2.0;
+    resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
+  }
+
+  if (resampler->max_input_frames >
+      SIZE_MAX - 2 * resampler->interpolator_len) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPolyResampler: max_input_frames is out of bounds");
+    async_poly_resampler_free(resampler);
+    return NULL;
+  }
+
+  size_t buf_len =
+      resampler->max_input_frames + 2 * resampler->interpolator_len;
+  resampler->input_buffer = audio_buffers_create(channels, buf_len);
+  if (!resampler->input_buffer) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncPolyResampler input buffer");
+    async_poly_resampler_free(resampler);
+    return NULL;
+  }
+
+  resampler->needed_input_size = calculate_input_size(
+      chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->interpolator_len, fixed);
+  resampler->needed_output_size = calculate_output_size(
+      chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->interpolator_len, fixed);
+  resampler->current_buffer_fill = resampler->needed_input_size;
+
+  if (fixed == FIXED_ASYNC_OUTPUT) {
+    resampler->max_output_frames = chunk_size;
+  } else {
+    double most_neg_last_index = -((double)resampler->interpolator_len / 2.0);
+    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
+    double raw_max =
+        ((double)chunk_size - (double)(resampler->interpolator_len + 1) -
+         most_neg_last_index) *
+        max_ratio_abs;
+
+    if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
+        raw_max > (double)(SIZE_MAX - 32)) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "AsyncPolyResampler: calculated maximum output size is invalid");
+      async_poly_resampler_free(resampler);
+      return NULL;
+    }
+    resampler->max_output_frames = (size_t)(ceil(raw_max)) + 16;
+  }
+  resampler->start_idx_scratch =
+      (int*)calloc(resampler->max_output_frames, sizeof(int));
+  resampler->frac_scratch =
+      (double*)calloc(resampler->max_output_frames, sizeof(double));
+  if (!resampler->start_idx_scratch || !resampler->frac_scratch) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncPolyResampler scratch buffers");
+    async_poly_resampler_free(resampler);
+    return NULL;
+  }
+
   audio_resampler_t* wrap =
       (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
-  if (!wrap) return NULL;
+  if (!wrap) {
+    async_poly_resampler_free(resampler);
+    return NULL;
+  }
   wrap->type = RESAMPLER_IMPL_ASYNC_POLY;
-  wrap->impl = res;
+  wrap->impl = resampler;
   wrap->process =
       (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
           async_poly_resampler_process;
@@ -544,3 +548,31 @@ audio_resampler_t* audio_resampler_wrap_async_poly(
   wrap->free = (void (*)(void*))async_poly_resampler_free;
   return wrap;
 }
+
+audio_resampler_t* async_poly_resampler_create_from_profile(
+    size_t channels, size_t input_rate, size_t output_rate,
+    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
+    fixed_async_t fixed, config_error_t* err) {
+  poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
+  switch (profile) {
+    case RESAMPLER_PROFILE_VERY_FAST:
+      interp = POLY_INTERPOLATION_LINEAR;
+      break;
+    case RESAMPLER_PROFILE_FAST:
+      interp = POLY_INTERPOLATION_CUBIC;
+      break;
+    case RESAMPLER_PROFILE_BALANCED:
+      interp = POLY_INTERPOLATION_QUINTIC;
+      break;
+    case RESAMPLER_PROFILE_ACCURATE:
+      interp = POLY_INTERPOLATION_SEPTIC;
+      break;
+    default:
+      break;
+  }
+  return async_poly_resampler_create(channels, input_rate, output_rate, interp,
+                                      chunk_size, max_relative_ratio, fixed,
+                                      err);
+}
+
+

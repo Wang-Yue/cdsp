@@ -79,6 +79,14 @@
 
 #include "synchronous_resampler.h"
 
+#include "Audio/audio_chunk.h"
+#include "FFT/real_fft.h"
+#include "audio_resampler.h"
+#include "resampler_error.h"
+#include "sinc_window_function.h"
+
+typedef struct synchronous_resampler synchronous_resampler_t;
+
 struct synchronous_resampler {
   /// Number of channels processed per call.
   size_t channels;
@@ -154,179 +162,8 @@ static inline size_t gcd_size(size_t a, size_t b) {
   return x;
 }
 
-synchronous_resampler_t* synchronous_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate,
-    size_t requested_chunk_size, config_error_t* err) {
-  if (channels == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "SynchronousResampler: channels must be positive");
-    return NULL;
-  }
-  if (requested_chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "SynchronousResampler: chunk_size must be positive");
-    return NULL;
-  }
-  if (input_rate == 0 || output_rate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "SynchronousResampler: rates must be positive");
-    return NULL;
-  }
 
-  synchronous_resampler_t* resampler =
-      (synchronous_resampler_t*)calloc(1, sizeof(synchronous_resampler_t));
-  if (!resampler) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate SynchronousResampler");
-    return NULL;
-  }
-
-  resampler->channels = channels;
-  resampler->ratio = (double)output_rate / (double)input_rate;
-
-  // Match rubato synchro.rs sub-chunking: target a sub-chunk size of ~256
-  // frames. Block-size selection by rational decomposition.
-  //   g = gcd(Fᵢ, Fₒ);   L = Fᵢ/g;   M = Fₒ/g
-  //   K·L input samples ↔ K·M output samples (exactly, for any K ≥ 1)
-  // Round the requested chunkSize up to the smallest valid K·L.
-  size_t g = gcd_size(input_rate, output_rate);
-  size_t min_chunk_in = input_rate / g;
-  size_t min_chunk_out = output_rate / g;
-
-  size_t fft_chunks =
-      (size_t)ceil((double)requested_chunk_size / (double)min_chunk_in);
-  if (fft_chunks < 1) fft_chunks = 1;
-
-  size_t sub_fft_in = fft_chunks * min_chunk_in;
-  size_t sub_fft_out = fft_chunks * min_chunk_out;
-
-  size_t num_subchunks = 1;
-
-  size_t input_block = num_subchunks * sub_fft_in;
-  size_t output_block = num_subchunks * sub_fft_out;
-
-  if (input_block > SIZE_MAX / 2 || output_block > SIZE_MAX / 2) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "SynchronousResampler: block size overflows SIZE_MAX / 2");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-
-  resampler->sub_fft_in = sub_fft_in;
-  resampler->sub_fft_out = sub_fft_out;
-  resampler->num_subchunks = num_subchunks;
-  resampler->chunk_size = input_block;
-  resampler->output_chunk_size = output_block;
-  resampler->shared_bins =
-      (sub_fft_in < sub_fft_out ? sub_fft_in : sub_fft_out) + 1;
-
-  // Build the anti-aliasing kernel matching rubato's FftResampler.
-  // The kernel is applied at input rate, so all frequencies are normalised to
-  // input Nyquist.
-  double n = (double)sub_fft_in;
-  double margin = 13.5 / n + 50.0 / (n * n);
-  double cutoff;
-  if (sub_fft_in > sub_fft_out) {
-    double target_nyquist = (double)sub_fft_out / (double)sub_fft_in;
-    cutoff = target_nyquist - margin;
-    if (cutoff < 1e-6) cutoff = 1e-6;
-  } else {
-    cutoff = 1.0 - margin;
-    if (cutoff < 1e-6) cutoff = 1e-6;
-  }
-  double* kernel =
-      make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
-  if (!kernel) {
-    config_error_set(
-        err, CONFIG_ERR_PARSE,
-        "SynchronousResampler: Failed to build anti-aliasing kernel");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-
-  // Zero-pad the unity-DC-gain kernel into a length-2N buffer for
-  // overlap-add convolution (Oppenheim & Schafer §8.7). Pre-scaling
-  // by 1/(2·N) folds the unnormalised forward + inverse FFT scale
-  // factors into the filter so the resampler delivers unity gain to
-  // its callers.
-  size_t two_sub_in = 2 * sub_fft_in;
-  double* filter_time = (double*)calloc(two_sub_in, sizeof(double));
-  if (!filter_time) {
-    config_error_set(
-        err, CONFIG_ERR_PARSE,
-        "SynchronousResampler: Failed to allocate filter time buffer");
-    free(kernel);
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-  double scale = 1.0 / (double)two_sub_in;
-  for (size_t i = 0; i < sub_fft_in; i++) {
-    filter_time[i] = kernel[i] * scale;
-  }
-  free(kernel);
-
-  resampler->input_fft = real_fft_create(two_sub_in, err);
-  resampler->output_fft = real_fft_create(2 * sub_fft_out, err);
-  if (!resampler->input_fft || !resampler->output_fft) {
-    free(filter_time);
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-
-  // FFT the filter once at init; only the `sub_fft_in + 1` unique
-  // bins are stored (real-input FFT has Hermitian symmetry, so the
-  // upper half is redundant).
-  resampler->filter_spec_re = (double*)calloc(sub_fft_in + 1, sizeof(double));
-  resampler->filter_spec_im = (double*)calloc(sub_fft_in + 1, sizeof(double));
-  if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
-    config_error_set(
-        err, CONFIG_ERR_PARSE,
-        "SynchronousResampler: Failed to allocate filter spectrum buffer");
-    free(filter_time);
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-  real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec_re,
-                   resampler->filter_spec_im);
-  free(filter_time);
-
-  resampler->carries = (double**)calloc(channels, sizeof(double*));
-  if (!resampler->carries) {
-    config_error_set(
-        err, CONFIG_ERR_PARSE,
-        "SynchronousResampler: Failed to allocate channel carries array");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-  for (size_t ch = 0; ch < channels; ch++) {
-    resampler->carries[ch] = (double*)calloc(sub_fft_out, sizeof(double));
-    if (!resampler->carries[ch]) {
-      config_error_set(err, CONFIG_ERR_PARSE,
-                       "SynchronousResampler: Failed to allocate carry buffer "
-                       "for channel %zu",
-                       ch);
-      synchronous_resampler_free(resampler);
-      return NULL;
-    }
-  }
-
-  size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
-  resampler->working_time = (double*)calloc(2 * max_len, sizeof(double));
-  resampler->working_spec_re = (double*)calloc(max_len + 1, sizeof(double));
-  resampler->working_spec_im = (double*)calloc(max_len + 1, sizeof(double));
-  if (!resampler->working_time || !resampler->working_spec_re ||
-      !resampler->working_spec_im) {
-    config_error_set(
-        err, CONFIG_ERR_PARSE,
-        "SynchronousResampler: Failed to allocate working buffers");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-
-  return resampler;
-}
-
-void synchronous_resampler_free(synchronous_resampler_t* resampler) {
+static void synchronous_resampler_free(synchronous_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->input_fft) real_fft_free(resampler->input_fft);
   if (resampler->output_fft) real_fft_free(resampler->output_fft);
@@ -347,39 +184,39 @@ void synchronous_resampler_free(synchronous_resampler_t* resampler) {
 /// `SynchronousResampler` runs at a fixed rational ratio fixed at
 /// construction. The rate-adjust controller's relative multiplier
 /// has nowhere to go here — we accept it without effect.
-void synchronous_resampler_set_relative_ratio(
+static void synchronous_resampler_set_relative_ratio(
     synchronous_resampler_t* resampler, double multiplier) {
   (void)resampler;
   (void)multiplier;
   // Fixed-ratio
 }
 
-double synchronous_resampler_get_ratio(
+static double synchronous_resampler_get_ratio(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->ratio : 1.0;
 }
 
-size_t synchronous_resampler_get_max_output_frames(
+static size_t synchronous_resampler_get_max_output_frames(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->output_chunk_size : 0;
 }
 
-size_t synchronous_resampler_get_chunk_size(
+static size_t synchronous_resampler_get_chunk_size(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
-size_t synchronous_resampler_get_input_frames_next(
+static size_t synchronous_resampler_get_input_frames_next(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
-size_t synchronous_resampler_get_output_frames_next(
+static size_t synchronous_resampler_get_output_frames_next(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->output_chunk_size : 0;
 }
 
-size_t synchronous_resampler_get_channels(
+static size_t synchronous_resampler_get_channels(
     const synchronous_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
 }
@@ -387,7 +224,7 @@ size_t synchronous_resampler_get_channels(
 /// One channel's worth of FFT-based overlap-add convolution +
 /// spectral remap. All scratch buffers are class-owned; this
 /// function performs no heap allocation.
-resampler_error_t synchronous_resampler_process(
+static resampler_error_t synchronous_resampler_process(
     synchronous_resampler_t* resampler, const audio_chunk_t* input,
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
@@ -495,14 +332,167 @@ resampler_error_t synchronous_resampler_process(
   return RESAMPLER_OK;
 }
 
-audio_resampler_t* audio_resampler_wrap_synchronous(
-    synchronous_resampler_t* res) {
-  if (!res) return NULL;
+audio_resampler_t* synchronous_resampler_create(
+    size_t channels, size_t input_rate, size_t output_rate,
+    size_t requested_chunk_size, config_error_t* err) {
+  if (channels == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: channels must be positive");
+    return NULL;
+  }
+  if (requested_chunk_size == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: chunk_size must be positive");
+    return NULL;
+  }
+  if (input_rate == 0 || output_rate == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: rates must be positive");
+    return NULL;
+  }
+
+  synchronous_resampler_t* resampler =
+      (synchronous_resampler_t*)calloc(1, sizeof(synchronous_resampler_t));
+  if (!resampler) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate SynchronousResampler");
+    return NULL;
+  }
+
+  resampler->channels = channels;
+  resampler->ratio = (double)output_rate / (double)input_rate;
+
+  size_t g = gcd_size(input_rate, output_rate);
+  size_t min_chunk_in = input_rate / g;
+  size_t min_chunk_out = output_rate / g;
+
+  size_t fft_chunks =
+      (size_t)ceil((double)requested_chunk_size / (double)min_chunk_in);
+  if (fft_chunks < 1) fft_chunks = 1;
+
+  size_t sub_fft_in = fft_chunks * min_chunk_in;
+  size_t sub_fft_out = fft_chunks * min_chunk_out;
+
+  size_t num_subchunks = 1;
+
+  size_t input_block = num_subchunks * sub_fft_in;
+  size_t output_block = num_subchunks * sub_fft_out;
+
+  if (input_block > SIZE_MAX / 2 || output_block > SIZE_MAX / 2) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "SynchronousResampler: block size overflows SIZE_MAX / 2");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+
+  resampler->sub_fft_in = sub_fft_in;
+  resampler->sub_fft_out = sub_fft_out;
+  resampler->num_subchunks = num_subchunks;
+  resampler->chunk_size = input_block;
+  resampler->output_chunk_size = output_block;
+  resampler->shared_bins =
+      (sub_fft_in < sub_fft_out ? sub_fft_in : sub_fft_out) + 1;
+
+  double n = (double)sub_fft_in;
+  double margin = 13.5 / n + 50.0 / (n * n);
+  double cutoff;
+  if (sub_fft_in > sub_fft_out) {
+    double target_nyquist = (double)sub_fft_out / (double)sub_fft_in;
+    cutoff = target_nyquist - margin;
+    if (cutoff < 1e-6) cutoff = 1e-6;
+  } else {
+    cutoff = 1.0 - margin;
+    if (cutoff < 1e-6) cutoff = 1e-6;
+  }
+  double* kernel =
+      make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
+  if (!kernel) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to build anti-aliasing kernel");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+
+  size_t two_sub_in = 2 * sub_fft_in;
+  double* filter_time = (double*)calloc(two_sub_in, sizeof(double));
+  if (!filter_time) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate filter time buffer");
+    free(kernel);
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+  double scale = 1.0 / (double)two_sub_in;
+  for (size_t i = 0; i < sub_fft_in; i++) {
+    filter_time[i] = kernel[i] * scale;
+  }
+  free(kernel);
+
+  resampler->input_fft = real_fft_create(two_sub_in, err);
+  resampler->output_fft = real_fft_create(2 * sub_fft_out, err);
+  if (!resampler->input_fft || !resampler->output_fft) {
+    free(filter_time);
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+
+  resampler->filter_spec_re = (double*)calloc(sub_fft_in + 1, sizeof(double));
+  resampler->filter_spec_im = (double*)calloc(sub_fft_in + 1, sizeof(double));
+  if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate filter spectrum buffer");
+    free(filter_time);
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+  real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec_re,
+                   resampler->filter_spec_im);
+  free(filter_time);
+
+  resampler->carries = (double**)calloc(channels, sizeof(double*));
+  if (!resampler->carries) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate channel carries array");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+  for (size_t ch = 0; ch < channels; ch++) {
+    resampler->carries[ch] = (double*)calloc(sub_fft_out, sizeof(double));
+    if (!resampler->carries[ch]) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "SynchronousResampler: Failed to allocate carry buffer "
+                       "for channel %zu",
+                       ch);
+      synchronous_resampler_free(resampler);
+      return NULL;
+    }
+  }
+
+  size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
+  resampler->working_time = (double*)calloc(2 * max_len, sizeof(double));
+  resampler->working_spec_re = (double*)calloc(max_len + 1, sizeof(double));
+  resampler->working_spec_im = (double*)calloc(max_len + 1, sizeof(double));
+  if (!resampler->working_time || !resampler->working_spec_re ||
+      !resampler->working_spec_im) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate working buffers");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+
   audio_resampler_t* wrap =
       (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
-  if (!wrap) return NULL;
+  if (!wrap) {
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
   wrap->type = RESAMPLER_IMPL_SYNCHRONOUS;
-  wrap->impl = res;
+  wrap->impl = resampler;
   wrap->process =
       (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
           synchronous_resampler_process;
@@ -522,3 +512,5 @@ audio_resampler_t* audio_resampler_wrap_synchronous(
   wrap->free = (void (*)(void*))synchronous_resampler_free;
   return wrap;
 }
+
+

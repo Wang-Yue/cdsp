@@ -9,6 +9,13 @@
 
 #include "async_sinc_resampler.h"
 
+#include "Audio/audio_chunk.h"
+#include "audio_resampler.h"
+#include "resampler_error.h"
+#include "sinc_dot_product.h"
+
+typedef struct async_sinc_resampler async_sinc_resampler_t;
+
 struct async_sinc_resampler {
   size_t channels;
   size_t chunk_size;
@@ -76,185 +83,7 @@ static inline size_t calculate_output_size(
   return (size_t)floor(raw);
 }
 
-async_sinc_resampler_t* async_sinc_resampler_create(
-    size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
-    size_t oversampling_factor, sinc_interpolation_type_t interpolation,
-    window_function_t window, double f_cutoff, bool has_f_cutoff,
-    size_t chunk_size, double max_relative_ratio, fixed_async_t fixed,
-    config_error_t* err) {
-  if (channels == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSincResampler: channels must be positive");
-    return NULL;
-  }
-  if (chunk_size == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSincResampler: chunk_size must be positive");
-    return NULL;
-  }
-  if (input_rate == 0 || output_rate == 0) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSincResampler: rates must be positive");
-    return NULL;
-  }
-  if (oversampling_factor == 0) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "AsyncSincResampler: oversampling_factor must be positive");
-    return NULL;
-  }
-  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
-
-  async_sinc_resampler_t* resampler =
-      (async_sinc_resampler_t*)calloc(1, sizeof(async_sinc_resampler_t));
-  if (!resampler) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncSincResampler");
-    return NULL;
-  }
-
-  resampler->channels = channels;
-  resampler->chunk_size = chunk_size;
-  resampler->fixed = fixed;
-  resampler->sinc_len = sinc_len;
-  resampler->oversampling_factor = oversampling_factor;
-  resampler->interpolation = interpolation;
-  resampler->base_ratio = (double)output_rate / (double)input_rate;
-  resampler->resample_ratio = resampler->base_ratio;
-  resampler->target_ratio = resampler->base_ratio;
-  resampler->max_relative_ratio = max_relative_ratio;
-  resampler->last_index = -((double)sinc_len - 1.0);
-
-  float base_cutoff =
-      has_f_cutoff ? (float)f_cutoff : calculate_cutoff_f32(sinc_len, window);
-  float fc_f32 = resampler->base_ratio >= 1.0
-                     ? base_cutoff
-                     : base_cutoff * (float)resampler->base_ratio;
-  double fc = (double)fc_f32;
-
-  resampler->sinc_table =
-      make_sinc_table(sinc_len, oversampling_factor, window, fc);
-  if (!resampler->sinc_table) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to build AsyncSincResampler sinc table");
-    async_sinc_resampler_free(resampler);
-    return NULL;
-  }
-
-  double min_ratio_abs = resampler->base_ratio / max_relative_ratio;
-  if (fixed == FIXED_ASYNC_INPUT) {
-    resampler->max_input_frames = chunk_size;
-  } else {
-    double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
-                        (double)resampler->sinc_len / 2.0;
-    resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
-  }
-
-  if (resampler->max_input_frames > SIZE_MAX - 2 * sinc_len) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSincResampler: max_input_frames is out of bounds");
-    async_sinc_resampler_free(resampler);
-    return NULL;
-  }
-
-  size_t buf_len = resampler->max_input_frames + 2 * sinc_len;
-  resampler->input_buffer = audio_buffers_create(channels, buf_len);
-  if (!resampler->input_buffer) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncSincResampler input buffer");
-    async_sinc_resampler_free(resampler);
-    return NULL;
-  }
-
-  resampler->needed_input_size = calculate_input_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, fixed);
-  resampler->needed_output_size = calculate_output_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, fixed);
-  resampler->current_buffer_fill = resampler->needed_input_size;
-
-  if (fixed == FIXED_ASYNC_OUTPUT) {
-    resampler->max_output_frames = chunk_size;
-  } else {
-    double most_neg_last_index = -((double)sinc_len - 1.0);
-    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
-    double raw_max =
-        ((double)chunk_size - (double)(sinc_len + 1) - most_neg_last_index) *
-        max_ratio_abs;
-
-    if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
-        raw_max > (double)(SIZE_MAX - 32)) {
-      config_error_set(
-          err, CONFIG_ERR_VALIDATION,
-          "AsyncSincResampler: calculated maximum output size is invalid");
-      async_sinc_resampler_free(resampler);
-      return NULL;
-    }
-    resampler->max_output_frames = (size_t)(ceil(raw_max)) + 16;
-  }
-
-  resampler->idx_scratch =
-      (double*)calloc(resampler->max_output_frames, sizeof(double));
-  resampler->frac_scratch =
-      (double*)calloc(resampler->max_output_frames, sizeof(double));
-  resampler->combined_scratch = (double*)calloc(sinc_len + 1, sizeof(double));
-  if (!resampler->idx_scratch || !resampler->frac_scratch ||
-      !resampler->combined_scratch) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate AsyncSincResampler scratch buffers");
-    async_sinc_resampler_free(resampler);
-    return NULL;
-  }
-
-  return resampler;
-}
-
-async_sinc_resampler_t* async_sinc_resampler_create_from_profile(
-    size_t channels, size_t input_rate, size_t output_rate,
-    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
-    config_error_t* err) {
-  size_t sinc_len = 192;
-  size_t oversampling_factor = 512;
-  window_function_t window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
-  sinc_interpolation_type_t interpolation = SINC_INTERPOLATION_QUADRATIC;
-
-  switch (profile) {
-    case RESAMPLER_PROFILE_VERY_FAST:
-      sinc_len = 64;
-      oversampling_factor = 1024;
-      window = WINDOW_FUNCTION_HANN2;
-      interpolation = SINC_INTERPOLATION_LINEAR;
-      break;
-    case RESAMPLER_PROFILE_FAST:
-      sinc_len = 128;
-      oversampling_factor = 1024;
-      window = WINDOW_FUNCTION_BLACKMAN2;
-      interpolation = SINC_INTERPOLATION_LINEAR;
-      break;
-    case RESAMPLER_PROFILE_BALANCED:
-      sinc_len = 192;
-      oversampling_factor = 512;
-      window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
-      interpolation = SINC_INTERPOLATION_QUADRATIC;
-      break;
-    case RESAMPLER_PROFILE_ACCURATE:
-      sinc_len = 256;
-      oversampling_factor = 256;
-      window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
-      interpolation = SINC_INTERPOLATION_CUBIC;
-      break;
-    default:
-      break;
-  }
-
-  return async_sinc_resampler_create(
-      channels, input_rate, output_rate, sinc_len, oversampling_factor,
-      interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
-      FIXED_ASYNC_OUTPUT, err);
-}
-
-void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
+static void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->input_buffer) audio_buffers_free(resampler->input_buffer);
   free(resampler->sinc_table);
@@ -264,8 +93,8 @@ void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
   free(resampler);
 }
 
-void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
-                                             double multiplier) {
+static void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
+                                              double multiplier) {
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
@@ -274,21 +103,21 @@ void async_sinc_resampler_set_relative_ratio(async_sinc_resampler_t* resampler,
   resampler->target_ratio = resampler->base_ratio * multiplier;
 }
 
-double async_sinc_resampler_get_ratio(const async_sinc_resampler_t* resampler) {
+static double async_sinc_resampler_get_ratio(const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
-size_t async_sinc_resampler_get_max_output_frames(
+static size_t async_sinc_resampler_get_max_output_frames(
     const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->max_output_frames : 0;
 }
 
-size_t async_sinc_resampler_get_chunk_size(
+static size_t async_sinc_resampler_get_chunk_size(
     const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->chunk_size : 0;
 }
 
-size_t async_sinc_resampler_get_channels(
+static size_t async_sinc_resampler_get_channels(
     const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->channels : 0;
 }
@@ -667,7 +496,7 @@ static void run_linear(async_sinc_resampler_t* resampler, size_t output_frames,
   }
 }
 
-resampler_error_t async_sinc_resampler_process(
+static resampler_error_t async_sinc_resampler_process(
     async_sinc_resampler_t* resampler, const audio_chunk_t* input,
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
@@ -777,24 +606,155 @@ resampler_error_t async_sinc_resampler_process(
   return RESAMPLER_OK;
 }
 
-size_t async_sinc_resampler_get_input_frames_next(
+static size_t async_sinc_resampler_get_input_frames_next(
     const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->needed_input_size : 0;
 }
 
-size_t async_sinc_resampler_get_output_frames_next(
+static size_t async_sinc_resampler_get_output_frames_next(
     const async_sinc_resampler_t* resampler) {
   return resampler ? resampler->needed_output_size : 0;
 }
 
-audio_resampler_t* audio_resampler_wrap_async_sinc(
-    async_sinc_resampler_t* res) {
-  if (!res) return NULL;
+audio_resampler_t* async_sinc_resampler_create(
+    size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
+    size_t oversampling_factor, sinc_interpolation_type_t interpolation,
+    window_function_t window, double f_cutoff, bool has_f_cutoff,
+    size_t chunk_size, double max_relative_ratio, fixed_async_t fixed,
+    config_error_t* err) {
+  if (channels == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: channels must be positive");
+    return NULL;
+  }
+  if (chunk_size == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: chunk_size must be positive");
+    return NULL;
+  }
+  if (input_rate == 0 || output_rate == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: rates must be positive");
+    return NULL;
+  }
+  if (oversampling_factor == 0) {
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSincResampler: oversampling_factor must be positive");
+    return NULL;
+  }
+  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
+
+  async_sinc_resampler_t* resampler =
+      (async_sinc_resampler_t*)calloc(1, sizeof(async_sinc_resampler_t));
+  if (!resampler) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler");
+    return NULL;
+  }
+
+  resampler->channels = channels;
+  resampler->chunk_size = chunk_size;
+  resampler->fixed = fixed;
+  resampler->sinc_len = sinc_len;
+  resampler->oversampling_factor = oversampling_factor;
+  resampler->interpolation = interpolation;
+  resampler->base_ratio = (double)output_rate / (double)input_rate;
+  resampler->resample_ratio = resampler->base_ratio;
+  resampler->target_ratio = resampler->base_ratio;
+  resampler->max_relative_ratio = max_relative_ratio;
+  resampler->last_index = -((double)sinc_len - 1.0);
+
+  float base_cutoff =
+      has_f_cutoff ? (float)f_cutoff : calculate_cutoff_f32(sinc_len, window);
+  float fc_f32 = resampler->base_ratio >= 1.0
+                     ? base_cutoff
+                     : base_cutoff * (float)resampler->base_ratio;
+  double fc = (double)fc_f32;
+
+  resampler->sinc_table =
+      make_sinc_table(sinc_len, oversampling_factor, window, fc);
+  if (!resampler->sinc_table) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to build AsyncSincResampler sinc table");
+    async_sinc_resampler_free(resampler);
+    return NULL;
+  }
+
+  double min_ratio_abs = resampler->base_ratio / max_relative_ratio;
+  if (fixed == FIXED_ASYNC_INPUT) {
+    resampler->max_input_frames = chunk_size;
+  } else {
+    double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
+                        (double)resampler->sinc_len / 2.0;
+    resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
+  }
+
+  if (resampler->max_input_frames > SIZE_MAX - 2 * sinc_len) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: max_input_frames is out of bounds");
+    async_sinc_resampler_free(resampler);
+    return NULL;
+  }
+
+  size_t buf_len = resampler->max_input_frames + 2 * sinc_len;
+  resampler->input_buffer = audio_buffers_create(channels, buf_len);
+  if (!resampler->input_buffer) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler input buffer");
+    async_sinc_resampler_free(resampler);
+    return NULL;
+  }
+
+  resampler->needed_input_size = calculate_input_size(
+      chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->sinc_len, fixed);
+  resampler->needed_output_size = calculate_output_size(
+      chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->sinc_len, fixed);
+  resampler->current_buffer_fill = resampler->needed_input_size;
+
+  if (fixed == FIXED_ASYNC_OUTPUT) {
+    resampler->max_output_frames = chunk_size;
+  } else {
+    double most_neg_last_index = -((double)sinc_len - 1.0);
+    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
+    double raw_max =
+        ((double)chunk_size - (double)(sinc_len + 1) - most_neg_last_index) *
+        max_ratio_abs;
+
+    if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
+        raw_max > (double)(SIZE_MAX - 32)) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "AsyncSincResampler: calculated maximum output size is invalid");
+      async_sinc_resampler_free(resampler);
+      return NULL;
+    }
+    resampler->max_output_frames = (size_t)(ceil(raw_max)) + 16;
+  }
+
+  resampler->idx_scratch =
+      (double*)calloc(resampler->max_output_frames, sizeof(double));
+  resampler->frac_scratch =
+      (double*)calloc(resampler->max_output_frames, sizeof(double));
+  resampler->combined_scratch = (double*)calloc(sinc_len + 1, sizeof(double));
+  if (!resampler->idx_scratch || !resampler->frac_scratch ||
+      !resampler->combined_scratch) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate AsyncSincResampler scratch buffers");
+    async_sinc_resampler_free(resampler);
+    return NULL;
+  }
+
   audio_resampler_t* wrap =
       (audio_resampler_t*)calloc(1, sizeof(audio_resampler_t));
-  if (!wrap) return NULL;
+  if (!wrap) {
+    async_sinc_resampler_free(resampler);
+    return NULL;
+  }
   wrap->type = RESAMPLER_IMPL_ASYNC_SINC;
-  wrap->impl = res;
+  wrap->impl = resampler;
   wrap->process =
       (resampler_error_t (*)(void*, const audio_chunk_t*, audio_chunk_t*))
           async_sinc_resampler_process;
@@ -814,3 +774,49 @@ audio_resampler_t* audio_resampler_wrap_async_sinc(
   wrap->free = (void (*)(void*))async_sinc_resampler_free;
   return wrap;
 }
+
+audio_resampler_t* async_sinc_resampler_create_from_profile(
+    size_t channels, size_t input_rate, size_t output_rate,
+    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
+    config_error_t* err) {
+  size_t sinc_len = 192;
+  size_t oversampling_factor = 512;
+  window_function_t window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
+  sinc_interpolation_type_t interpolation = SINC_INTERPOLATION_QUADRATIC;
+
+  switch (profile) {
+    case RESAMPLER_PROFILE_VERY_FAST:
+      sinc_len = 64;
+      oversampling_factor = 1024;
+      window = WINDOW_FUNCTION_HANN2;
+      interpolation = SINC_INTERPOLATION_LINEAR;
+      break;
+    case RESAMPLER_PROFILE_FAST:
+      sinc_len = 128;
+      oversampling_factor = 1024;
+      window = WINDOW_FUNCTION_BLACKMAN2;
+      interpolation = SINC_INTERPOLATION_LINEAR;
+      break;
+    case RESAMPLER_PROFILE_BALANCED:
+      sinc_len = 192;
+      oversampling_factor = 512;
+      window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
+      interpolation = SINC_INTERPOLATION_QUADRATIC;
+      break;
+    case RESAMPLER_PROFILE_ACCURATE:
+      sinc_len = 256;
+      oversampling_factor = 256;
+      window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
+      interpolation = SINC_INTERPOLATION_CUBIC;
+      break;
+    default:
+      break;
+  }
+
+  return async_sinc_resampler_create(
+      channels, input_rate, output_rate, sinc_len, oversampling_factor,
+      interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
+      FIXED_ASYNC_OUTPUT, err);
+}
+
+

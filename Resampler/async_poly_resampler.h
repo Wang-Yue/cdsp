@@ -13,10 +13,10 @@
 #ifndef CLIB_RESAMPLER_ASYNC_POLY_RESAMPLER_H
 #define CLIB_RESAMPLER_ASYNC_POLY_RESAMPLER_H
 
-#include <stdbool.h>
 #include <stddef.h>
 
-#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
 /**
  * @brief Types of polynomial interpolation supported.
  */
@@ -53,13 +53,6 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
   }
 }
 
-/**
- * @struct async_poly_resampler
- * @brief Opaque structure representing an asynchronous polynomial resampler.
- */
-struct async_poly_resampler;
-typedef struct async_poly_resampler async_poly_resampler_t;
-
 #include "audio_resampler.h"
 
 /**
@@ -75,92 +68,17 @@ typedef struct async_poly_resampler async_poly_resampler_t;
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on failure.
  */
-async_poly_resampler_t* async_poly_resampler_create(
+audio_resampler_t* async_poly_resampler_create(
     size_t channels, size_t input_rate, size_t output_rate,
     poly_interpolation_t interpolation, size_t chunk_size,
     double max_relative_ratio, fixed_async_t fixed, config_error_t* err);
 
 /**
- * @brief Frees the polynomial resampler resources.
- *
- * @param resampler The resampler instance to free.
+ * @brief Creates an asynchronous polynomial resampler from a profile preset.
  */
-void async_poly_resampler_free(async_poly_resampler_t* resampler);
-
-/**
- * @brief Processes a chunk of audio using polynomial interpolation.
- *
- * @param resampler The resampler instance.
- * @param input The input audio chunk.
- * @param output The output audio chunk.
- * @return @ref RESAMPLER_OK on success, or an error code.
- */
-resampler_error_t async_poly_resampler_process(
-    async_poly_resampler_t* resampler, const audio_chunk_t* input,
-    audio_chunk_t* output);
-
-/**
- * @brief Sets a relative ratio multiplier.
- *
- * @param resampler The resampler instance.
- * @param multiplier The ratio multiplier.
- */
-void async_poly_resampler_set_relative_ratio(async_poly_resampler_t* resampler,
-                                             double multiplier);
-
-/**
- * @brief Gets the current effective ratio.
- *
- * @param resampler The resampler instance.
- * @return The effective resampling ratio.
- */
-double async_poly_resampler_get_ratio(const async_poly_resampler_t* resampler);
-
-/**
- * @brief Gets the maximum number of output frames that can be generated in one
- * call.
- *
- * @param resampler The resampler instance.
- * @return The maximum output frame count.
- */
-size_t async_poly_resampler_get_max_output_frames(
-    const async_poly_resampler_t* resampler);
-
-/**
- * @brief Gets the configured chunk size.
- *
- * @param resampler The resampler instance.
- * @return The fixed input chunk size.
- */
-size_t async_poly_resampler_get_chunk_size(
-    const async_poly_resampler_t* resampler);
-
-/**
- * @brief Gets the number of channels.
- *
- * @param resampler The resampler instance.
- * @return The channel count.
- */
-size_t async_poly_resampler_get_channels(
-    const async_poly_resampler_t* resampler);
-
-/**
- * @brief Gets the number of input frames required for the next process call.
- *
- * @param resampler The resampler instance.
- * @return The required input frame count.
- */
-size_t async_poly_resampler_get_input_frames_next(
-    const async_poly_resampler_t* resampler);
-
-/**
- * @brief Gets the number of output frames that will be generated in the next
- * process call.
- *
- * @param resampler The resampler instance.
- * @return The expected output frame count.
- */
-size_t async_poly_resampler_get_output_frames_next(
-    const async_poly_resampler_t* resampler);
+audio_resampler_t* async_poly_resampler_create_from_profile(
+    size_t channels, size_t input_rate, size_t output_rate,
+    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
+    fixed_async_t fixed, config_error_t* err);
 
 #endif  // CLIB_RESAMPLER_ASYNC_POLY_RESAMPLER_H

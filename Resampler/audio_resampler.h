@@ -19,26 +19,7 @@
 #include "Config/resampler_config_types.h"
 #include "resampler_error.h"
 
-struct synchronous_resampler;
-typedef struct synchronous_resampler synchronous_resampler_t;
 
-struct async_poly_resampler;
-typedef struct async_poly_resampler async_poly_resampler_t;
-
-struct async_sinc_resampler;
-typedef struct async_sinc_resampler async_sinc_resampler_t;
-
-#if defined(ENABLE_COREAUDIO)
-struct apple_resampler;
-typedef struct apple_resampler apple_resampler_t;
-#endif
-
-#include "async_poly_resampler.h"
-#include "async_sinc_resampler.h"
-#include "synchronous_resampler.h"
-#if defined(ENABLE_COREAUDIO)
-#include "apple_resampler.h"
-#endif
 
 /**
  * @brief Identifiers for the underlying resampler implementations.
@@ -91,40 +72,7 @@ audio_resampler_t* audio_resampler_create_from_config(
     const resampler_config_t* config, size_t input_rate, size_t output_rate,
     size_t channels, size_t chunk_size, config_error_t* err);
 
-/**
- * @brief Wraps a synchronous resampler.
- *
- * @param res The synchronous resampler to wrap.
- * @return An audio resampler instance wrapping the synchronous resampler.
- */
-audio_resampler_t* audio_resampler_wrap_synchronous(
-    synchronous_resampler_t* res);
 
-/**
- * @brief Wraps an asynchronous sinc resampler.
- *
- * @param res The async sinc resampler to wrap.
- * @return An audio resampler instance wrapping the async sinc resampler.
- */
-audio_resampler_t* audio_resampler_wrap_async_sinc(async_sinc_resampler_t* res);
-
-/**
- * @brief Wraps an asynchronous polynomial resampler.
- *
- * @param res The async polynomial resampler to wrap.
- * @return An audio resampler instance wrapping the async polynomial resampler.
- */
-audio_resampler_t* audio_resampler_wrap_async_poly(async_poly_resampler_t* res);
-
-#if defined(ENABLE_COREAUDIO)
-/**
- * @brief Wraps an Apple resampler.
- *
- * @param res The Apple resampler to wrap.
- * @return An audio resampler instance wrapping the Apple resampler.
- */
-audio_resampler_t* audio_resampler_wrap_apple(apple_resampler_t* res);
-#endif
 
 /**
  * @brief Processes a chunk of audio data.
@@ -221,22 +169,5 @@ size_t audio_resampler_get_channels(const audio_resampler_t* resampler);
  * @param resampler The resampler instance to free.
  */
 void audio_resampler_free(audio_resampler_t* resampler);
-
-/**
- * @brief Parses a sinc interpolation type from a string representation.
- *
- * @param str String representing the interpolation type (e.g. "linear",
- * "cubic").
- * @return The corresponding sinc interpolation type enum value.
- */
-sinc_interpolation_type_t sinc_interpolation_type_from_string(const char* str);
-
-/**
- * @brief Parses a polynomial interpolation type from a string representation.
- *
- * @param str String representing the interpolation type.
- * @return The corresponding polynomial interpolation type enum value.
- */
-poly_interpolation_t poly_interpolation_from_string(const char* str);
 
 #endif  // CLIB_RESAMPLER_AUDIO_RESAMPLER_H
