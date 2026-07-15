@@ -143,6 +143,7 @@ TEST(SpscWriteWrapsAroundCapacity) {
 
 TEST(SpscDrainResetsAvailable) {
   spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(8);
+  ASSERT_TRUE(ring != NULL);
   float src[] = {1.0f, 2.0f, 3.0f, 4.0f};
   spsc_audio_ring_buffer_write(ring, src, 4, 1);
   ASSERT_EQ(4, spsc_audio_ring_buffer_get_available_to_read(ring));

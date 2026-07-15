@@ -23,11 +23,13 @@ struct spsc_queue {
 
 uint64_t spsc_audio_ring_buffer_get_total_samples_written(
     const spsc_audio_ring_buffer_t* ring) {
+  if (!ring) return 0;
   return atomic_load_explicit(&ring->write_index, memory_order_relaxed);
 }
 
 size_t spsc_audio_ring_buffer_get_available_to_read(
     const spsc_audio_ring_buffer_t* ring) {
+  if (!ring) return 0;
   // Acquire barrier on write_index ensures that any data written by the
   // producer prior to updating write_index is visible to this thread.
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_acquire);
@@ -40,6 +42,7 @@ size_t spsc_audio_ring_buffer_get_available_to_read(
 
 size_t spsc_audio_ring_buffer_get_available_to_write(
     const spsc_audio_ring_buffer_t* ring) {
+  if (!ring) return 0;
   // Relaxed load is sufficient for write_index as it is only modified by the
   // producer (which is typically the calling thread).
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
