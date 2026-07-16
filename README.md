@@ -126,6 +126,23 @@ Rather than running DoP as a separate, bulky processing layer, our design integr
 - **Automatic In-Place Decoding**: The DoP decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](Sources/CDSP/Engine/engine_capture_loop.c)). It inspects incoming PCM buffers for the DoP header pattern (`0x05`/`0xFA` alternation). If detected, it decodes the raw 1-bit DSD samples in-place and decimates them back to PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
 - **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Sources/CDSP/Engine/engine_processing_loop.c)), if `output_dop` is enabled, processed PCM is modulated back to DSD and packed into a DoP-standard carrier stream before being sent to the playback SPSC queue.
 
+### 2.6 Resampling Architecture: Fixed Input vs. Fixed Output Models
+
+An important architectural difference exists between `CDSP` and upstream *CamillaDSP* regarding how asynchronous resampling mismatch is handled:
+
+* **CamillaDSP (`FIXED_ASYNC_OUTPUT` Model)**:
+  - Upstream CamillaDSP configures its resamplers (using the `Rubato` library) in **Fixed Output** mode.
+  - To guarantee a fixed output block size, CamillaDSP queries the resampler at each cycle (`input_frames_next()`) to find out how many input samples are required next (e.g., fluctuating dynamically between 1021 and 1026 frames).
+  - It then dynamically reads a **variable** number of frames from the capture hardware.
+  - *Limitation*: While highly elegant for ALSA (which easily permits variable-sized reads from its hardware ring buffer), **this model is incompatible with macOS (CoreAudio) and Windows (ASIO) capture drivers**, which strictly enforce fixed-size callback buffers. To support these platforms, CamillaDSP must implement intermediate buffering inside individual backend drivers.
+
+* **CDSP (`FIXED_ASYNC_INPUT` Model)**:
+  - `CDSP` uses **Fixed Input** mode.
+  - The capture device always reads a **fixed** block size directly from the OS/driver callback.
+  - The resampler consumes this fixed input block and produces a **variable** output block size (fluctuating slightly to match clock drift updates).
+  - The variable output block is written into a lock-free **SPSC queue**. The playback thread drains this queue and serves the playback hardware driver's fixed-size output request, with the `RateController` adjusting the target ratio based on queue fill levels.
+  - *Advantage*: This model is fully compatible with macOS, Windows, and Linux hardware APIs out of the box, without requiring any complex buffer-stashing mechanisms inside platform backends.
+
 ---
 
 ## 3. Head-to-Head Performance Evaluation
