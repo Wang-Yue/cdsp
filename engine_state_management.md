@@ -15,7 +15,7 @@ graph TD
 ```
 
 ### 1.1. Inter-Thread Level (`engine_shared_state_t`)
-Defined in [engine_shared_state.c](file:///Users/wangyue/cdsp/Engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads.
+Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -29,7 +29,7 @@ Defined in [engine_shared_state.c](file:///Users/wangyue/cdsp/Engine/engine_shar
 ---
 
 ### 1.2. Session Level (`dsp_session_t`)
-Defined in [dsp_session_internal.h](file:///Users/wangyue/cdsp/Engine/dsp_session_internal.h). Manages resource lifetimes (backends, resampler, threads, chunk pools).
+Defined in [dsp_session_internal.h](Engine/dsp_session_internal.h). Manages resource lifetimes (backends, resampler, threads, chunk pools).
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -40,7 +40,7 @@ Defined in [dsp_session_internal.h](file:///Users/wangyue/cdsp/Engine/dsp_sessio
 ---
 
 ### 1.3. Controller Level (`dsp_engine_t`)
-Defined in [dsp_engine.c](file:///Users/wangyue/cdsp/Engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands.
+Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
