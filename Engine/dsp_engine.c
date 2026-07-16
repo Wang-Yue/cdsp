@@ -185,7 +185,6 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
       config, engine_on_chunk_captured_callback, engine->capture_buffer,
       engine_on_chunk_processed_callback, engine->playback_buffer, err);
   if (!session) {
-    dsp_config_free(config);
     return false;
   }
 
