@@ -14,6 +14,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.file"};
 
@@ -22,11 +23,7 @@ static const logger_t g_logger = {"dsp.backend.file"};
  *
  * @return Monotonic time in nanoseconds.
  */
-static uint64_t get_time_ns(void) {
-  struct timespec ts = {0};
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
+static uint64_t get_time_ns(void) { return cdsp_time_now_ns(); }
 
 struct file_capture {
   char filename[512];
@@ -756,9 +753,7 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
       uint64_t actual_elapsed_ns = get_time_ns() - capture->start_time_ns;
       if (target_elapsed_ns > actual_elapsed_ns) {
         uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
-        struct timespec req = {.tv_sec = (time_t)(sleep_ns / 1000000000ULL),
-                               .tv_nsec = (long)(sleep_ns % 1000000000ULL)};
-        nanosleep(&req, NULL);
+        cdsp_sleep_us(sleep_ns / 1000ULL);
       }
     }
   }
@@ -805,9 +800,7 @@ void file_capture_set_pitch(file_capture_t* capture, double multiplier) {
 
 bool file_capture_wait(file_capture_t* capture, uint32_t timeout_ms) {
   (void)capture;
-  struct timespec req = {.tv_sec = (time_t)(timeout_ms / 1000),
-                         .tv_nsec = (long)((timeout_ms % 1000) * 1000000L)};
-  nanosleep(&req, NULL);
+  cdsp_sleep_ms(timeout_ms);
   return true;
 }
 
@@ -1057,10 +1050,7 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
                                    (uint64_t)playback->sample_rate;
       uint64_t actual_elapsed_ns = get_time_ns() - playback->start_time_ns;
       if (target_elapsed_ns > actual_elapsed_ns) {
-        uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
-        struct timespec req = {.tv_sec = (time_t)(sleep_ns / 1000000000ULL),
-                               .tv_nsec = (long)(sleep_ns % 1000000000ULL)};
-        nanosleep(&req, NULL);
+        cdsp_sleep_us((target_elapsed_ns - actual_elapsed_ns) / 1000ULL);
       }
     }
   }

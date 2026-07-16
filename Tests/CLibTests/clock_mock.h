@@ -25,6 +25,17 @@ uint64_t cdsp_clock_gettime_nsec_np(clockid_t clock_id);
 
 int cdsp_clock_gettime(clockid_t clock_id, struct timespec* tp);
 int cdsp_nanosleep(const struct timespec* req, struct timespec* rem);
+
+#undef cdsp_time_now_ns
+#define cdsp_time_now_ns mock_cdsp_time_now_ns
+#undef cdsp_sleep_ms
+#define cdsp_sleep_ms mock_cdsp_sleep_ms
+#undef cdsp_sleep_us
+#define cdsp_sleep_us mock_cdsp_sleep_us
+
+uint64_t mock_cdsp_time_now_ns(void);
+void mock_cdsp_sleep_ms(uint32_t ms);
+void mock_cdsp_sleep_us(uint64_t us);
 #endif
 
 #endif  // CLIB_TESTS_CLOCK_MOCK_H

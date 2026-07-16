@@ -12,6 +12,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
@@ -510,8 +511,7 @@ bool pipewire_capture_wait(pipewire_capture_t* capture, uint32_t timeout_ms) {
     if (elapsed >= timeout_ms) {
       return false;
     }
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};
-    nanosleep(&req, NULL);
+    cdsp_sleep_ms(1);
     elapsed += 1;
   }
   return true;
@@ -818,8 +818,7 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
       }
       return false;
     }
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};  // 1ms
-    nanosleep(&req, NULL);
+    cdsp_sleep_ms(1);
   }
   if (playback->stopped) {
     if (err) {
@@ -843,8 +842,7 @@ void pipewire_playback_close(pipewire_playback_t* playback) {
     while (!playback->stopped && playback->ring &&
            spsc_audio_ring_buffer_get_available_to_read(playback->ring) > 0 &&
            retries-- > 0) {
-      struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};
-      nanosleep(&req, NULL);
+      cdsp_sleep_ms(1);
     }
 
     pw_thread_loop_lock(playback->loop);

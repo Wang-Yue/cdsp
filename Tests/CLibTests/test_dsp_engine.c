@@ -6,6 +6,7 @@
 
 #include "Engine/dsp_engine.h"
 #include "Pipeline/config_loader.h"
+#include "Utils/cdsp_time.h"
 #include "test_support.h"
 
 static void run_e2e_test_config(const char* json, const char* backend_name) {
@@ -24,8 +25,7 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
     return;
   }
 
-  struct timespec ts = {.tv_sec = 0, .tv_nsec = 100000000};
-  nanosleep(&ts, NULL);
+  cdsp_sleep_ms(100);
 
   vu_levels_t vu = dsp_engine_get_vu_levels(engine);
   (void)vu;
@@ -699,8 +699,7 @@ TEST(DSPEngineE2E_FileFile) {
 
   for (int i = 0; i < 50; i++) {
     if (dsp_engine_get_status(engine).state == PROCESSING_STATE_INACTIVE) break;
-    struct timespec poll_ts = {.tv_sec = 0, .tv_nsec = 10000000};
-    nanosleep(&poll_ts, NULL);
+    cdsp_sleep_ms(10);
   }
 
   dsp_engine_stop(engine);
@@ -762,8 +761,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 
   // Sleep for 500ms in simulated time (~33ms real wall-clock time) to let
   // threads spawn and stream
-  struct timespec ts = {.tv_sec = 0, .tv_nsec = 500000000};
-  nanosleep(&ts, NULL);
+  cdsp_sleep_ms(500);
 
   dsp_engine_stop(engine);
   dsp_engine_free(engine);
@@ -1061,8 +1059,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   bool success = dsp_engine_set_config(engine, json, &err);
   ASSERT_TRUE(success);
 
-  struct timespec t0, t1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  uint64_t t0_ns = cdsp_time_now_ns();
 
   // Wait for the engine to finish processing the file
   // Timeout is 35.0s in simulated time (running 15x faster -> ~2.33s of real
@@ -1072,23 +1069,17 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
     if (status.state == PROCESSING_STATE_INACTIVE) {
       break;
     }
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    double cur_elapsed = (double)(now.tv_sec - t0.tv_sec) +
-                         (double)(now.tv_nsec - t0.tv_nsec) / 1000000000.0;
+    double cur_elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
     if (cur_elapsed >= 35.0) {
       break;
     }
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 5000000ULL};  // 5ms sleep
-    nanosleep(&req, NULL);
+    cdsp_sleep_ms(5);
   }
 
   // Stop the engine and wait for playback/processing threads to finish draining
   dsp_engine_stop(engine);
 
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed = (double)(t1.tv_sec - t0.tv_sec) +
-                   (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  double elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
 
   dsp_engine_free(engine);
 
@@ -1214,7 +1205,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
   // reading the entire file (5M frames) and reach EOF/exit immediately. The
   // processing thread will be blocked enqueuing to full processed_queue because
   // playback is realtime (takes ~20s real time under 15x scale to drain).
-  usleep(100000);
+  cdsp_sleep_ms(100);
 
   // Stop the engine in a separate thread. If the deadlock bug is present, the
   // thread will hang forever. We wait up to 2.0 seconds (200 * 10ms) for it to
@@ -1227,7 +1218,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
     if (stop_args.done) {
       break;
     }
-    usleep(10000);  // 10ms
+    cdsp_sleep_ms(10);  // 10ms
   }
 
   // Assert that the stop thread completed within 2.0 seconds (no deadlock)

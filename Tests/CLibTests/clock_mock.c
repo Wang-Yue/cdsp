@@ -60,3 +60,21 @@ int cdsp_nanosleep(const struct timespec* req, struct timespec* rem) {
                                 .tv_nsec = (long)(scaled_ns % 1000000000ULL)};
   return nanosleep(&scaled_req, rem);
 }
+
+uint64_t mock_cdsp_time_now_ns(void) {
+  struct timespec ts = {0};
+  cdsp_clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+void mock_cdsp_sleep_ms(uint32_t ms) {
+  struct timespec req = {.tv_sec = (time_t)(ms / 1000),
+                         .tv_nsec = (long)((ms % 1000) * 1000000ULL)};
+  cdsp_nanosleep(&req, NULL);
+}
+
+void mock_cdsp_sleep_us(uint64_t us) {
+  struct timespec req = {.tv_sec = (time_t)(us / 1000000ULL),
+                         .tv_nsec = (long)((us % 1000000ULL) * 1000ULL)};
+  cdsp_nanosleep(&req, NULL);
+}

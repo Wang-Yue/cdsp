@@ -21,6 +21,7 @@
 #include <time.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 
@@ -546,8 +547,7 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
     }
 
     // Sleep for 1ms to yield CPU.
-    struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};  // 1ms sleep
-    nanosleep(&req, NULL);
+    cdsp_sleep_ms(1);
     elapsed_ms += 1;
 
     // Timeout after 1 second to prevent infinite blocking if playback stalls.

@@ -26,6 +26,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "Utils/cdsp_time.h"
+
 struct pending_update {
   dsp_config_t* config;
   char** filters;
@@ -341,9 +343,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
             break;
           }
         }
-        struct timespec req = {.tv_sec = 0,
-                               .tv_nsec = 1000000ULL};  // 1ms sleep
-        nanosleep(&req, NULL);
+        cdsp_sleep_ms(1);
       }
     }
   }

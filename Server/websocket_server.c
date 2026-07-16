@@ -15,6 +15,7 @@
 
 #include "Config/cJSON.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 #include "websocket_server_internal.h"
 #include "ws_framing.h"
 #include "ws_handshake.h"
@@ -257,11 +258,7 @@ void websocket_server_set_engine(websocket_server_t* server,
   }
 }
 
-uint64_t get_time_ms(void) {
-  struct timespec ts = {0};
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
-}
+uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000ULL; }
 
 static void* server_thread_func(void* arg) {
   websocket_server_t* server = (websocket_server_t*)arg;

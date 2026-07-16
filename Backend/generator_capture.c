@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.generator"};
 
@@ -46,11 +47,7 @@ struct generator_capture {
  *
  * @return Monotonic time in nanoseconds.
  */
-static uint64_t get_time_ns(void) {
-  struct timespec ts = {0};
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
+static uint64_t get_time_ns(void) { return cdsp_time_now_ns(); }
 
 /**
  * @brief Convert decibels to linear amplitude multiplier.
@@ -262,9 +259,7 @@ void generator_capture_set_pitch(generator_capture_t* capture,
 
 bool generator_capture_wait(generator_capture_t* capture, uint32_t timeout_ms) {
   (void)capture;
-  struct timespec req = {.tv_sec = (time_t)(timeout_ms / 1000),
-                         .tv_nsec = (long)((timeout_ms % 1000) * 1000000L)};
-  nanosleep(&req, NULL);
+  cdsp_sleep_ms(timeout_ms);
   return true;
 }
 
