@@ -53,11 +53,14 @@ typedef struct engine_playback_loop engine_playback_loop_t;
  * @brief Configuration parameters for creating an engine playback loop
  * instance.
  */
+struct dsd_encoder;
+
 typedef struct {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
   playback_backend_t* playback;
   processing_parameters_t* processing_params;
+  struct dsd_encoder* dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
   bool rate_adjust_enabled;

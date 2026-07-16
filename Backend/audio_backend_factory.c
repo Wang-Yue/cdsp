@@ -38,16 +38,6 @@ capture_backend_t* audio_backend_factory_create_capture(
     return NULL;
   }
 
-  if (!capture_backend_open(backend, &berr)) {
-    logger_error(&g_logger, "Failed to open capture backend: %s", berr.message);
-    if (out_err) {
-      out_err->type = map_backend_error_type(berr.type);
-      snprintf(out_err->message, sizeof(out_err->message), "%s", berr.message);
-    }
-    capture_backend_free(backend);
-    return NULL;
-  }
-
   return backend;
 }
 
@@ -67,17 +57,6 @@ playback_backend_t* audio_backend_factory_create_playback(
       out_err->type = map_backend_error_type(berr.type);
       snprintf(out_err->message, sizeof(out_err->message), "%s", berr.message);
     }
-    return NULL;
-  }
-
-  if (!playback_backend_open(backend, &berr)) {
-    logger_error(&g_logger, "Failed to open playback backend: %s",
-                 berr.message);
-    if (out_err) {
-      out_err->type = map_backend_error_type(berr.type);
-      snprintf(out_err->message, sizeof(out_err->message), "%s", berr.message);
-    }
-    playback_backend_free(backend);
     return NULL;
   }
 

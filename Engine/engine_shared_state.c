@@ -147,7 +147,7 @@ engine_shared_state_t* engine_shared_state_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->resampler_ratio, 1.0);
   atomic_init(&state->state_raw,
-              processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));
+              processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
   state->pipeline_garbage_queue = spsc_queue_create(32);
   pthread_mutex_init(&state->stop_reason_mutex, NULL);

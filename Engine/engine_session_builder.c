@@ -151,28 +151,6 @@ static bool engine_session_build_backends(
       full_duplex, core->processing_params, err);
   if (!core->playback) return false;
 
-  // 4. Prefill playback silence to feed the DAC immediately on start,
-  // preventing immediate buffer underrun errors. If rate adjust is enabled,
-  // we match its target level; otherwise, we pre-fill 4 chunks.
-  size_t prefill_frames = config->devices.has_target_level
-                              ? (size_t)config->devices.target_level
-                              : playback_chunk_size;
-  backend_error_t berr;
-  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-
-  if (dsd_encoder_is_enabled(core->dsd_encoder)) {
-    size_t channels =
-        playback_device_config_get_channels(&config->devices.playback);
-    audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
-    if (prefill_chunk) {
-      dsd_encoder_fill_silence(core->dsd_encoder, prefill_chunk);
-      playback_backend_write(core->playback, prefill_chunk, &berr);
-      audio_chunk_free(prefill_chunk);
-    }
-  } else {
-    playback_backend_prefill_silence(core->playback, prefill_frames, &berr);
-  }
-
   return true;
 }
 
@@ -310,6 +288,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
       .capture = core->capture,
       .playback = core->playback,
       .processing_params = core->processing_params,
+      .dsd_encoder = core->dsd_encoder,
       .pipeline_rate = pipeline_rate,
       .chunk_size = playback_chunk_size,
       .rate_adjust_enabled = rate_adjust_enabled,
@@ -328,10 +307,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   }
 
   // 9. Spawn worker threads.
-  // Set RUNNING state before spawning threads to prevent newly launched threads
-  // from seeing INACTIVE state.
-  engine_shared_state_set_state(core->shared, PROCESSING_STATE_RUNNING);
-
+  // The threads are spawned in STARTING state (initialized by engine_shared_state_create)
+  // and will transition to RUNNING once they successfully open their backends.
   // Wrap `pthread_create` construction so each spawn shares the same QoS and
   // lifecycle.
   int ret;

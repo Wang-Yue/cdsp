@@ -304,6 +304,27 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   logger_info(&g_logger, "Capture thread started (realtime: %s)",
               capture_backend_is_realtime(loop->capture) ? "yes" : "no");
 
+  backend_error_t berr;
+  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  if (!capture_backend_open(loop->capture, &berr)) {
+    logger_error(&g_logger, "Capture thread failed to open capture backend: %s", berr.message);
+    processing_stop_reason_t reason = {
+        .type = STOP_REASON_CAPTURE_ERROR,
+        .format_change_rate = 0,
+    };
+    snprintf(reason.message, sizeof(reason.message), "%s", berr.message);
+    engine_shared_state_request_stop(loop->shared, reason);
+    if (loop->shared) {
+      engine_shared_state_shutdown_captured_queue(loop->shared);
+    }
+    return;
+  }
+
+  // Once open succeeds, transition state to RUNNING if starting
+  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STARTING) {
+    engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
+  }
+
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
   loop->watchdog_last_success_ns = cdsp_time_now_ns();

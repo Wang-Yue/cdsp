@@ -93,7 +93,7 @@ The engine progresses through several lifecycle phases, moving between states ac
 ---
 
 ### 3.1. Startup & Initialization Flow
-This scenario starts when a new configuration is applied. The engine goes into `STARTING` state while it initializes synchronously, then spawns the real-time audio threads and transitions to `RUNNING`.
+This scenario starts when a new configuration is applied. The engine goes into `STARTING` state while it initializes synchronously, then spawns the real-time audio threads. The threads open device backends asynchronously, and once capture starts successfully, it transitions the state to `RUNNING`.
 
 ```mermaid
 sequenceDiagram
@@ -102,32 +102,46 @@ sequenceDiagram
     participant E as DSPEngine Controller
     participant B as Session Builder
     participant S as Shared State
-    participant T as Worker Threads
+    participant C as Capture Thread
+    participant K as Playback Thread
 
     U->>E: set_config(json)
     Note over E: Set config_in_progress = true<br/>(Status queries now return STARTING)
     E->>B: build_and_start(config)
-    Note over B: Opens capture device backend<br/>Opens playback device backend<br/>Creates resampler & processing pipeline<br/>Pre-fills DAC with silence frames
-    B->>S: init state_raw = INACTIVE
-    B->>S: set_state(RUNNING)
-    B->>T: Spawn Capture, Processing & Playback threads
-    Note over T: Threads configure real-time priorities & start running
+    Note over B: Allocates backends & pipeline structures<br/>Initializes state_raw to STARTING
+    B->>C: Spawn Capture thread
+    B->>K: Spawn Playback thread
     B-->>E: Returns Session handle
-    Note over E: Set config_in_progress = false<br/>(Status queries now return RUNNING)
+    Note over E: Set config_in_progress = false<br/>(Status queries read STARTING from state_raw)
     E-->>U: Config changed OK
+
+    par Capture Loop Setup
+        C->>C: Opens capture device backend
+        Note over C: If failed: requests stop (CAPTURE_ERROR)
+    and Playback Loop Setup
+        K->>K: Opens playback device backend
+        K->>K: Pre-fills DAC with silence frames
+        Note over K: If failed: requests stop (PLAYBACK_ERROR)
+    end
+
+    Note over C: Once capture open succeeds:
+    C->>S: set_state(RUNNING)
+    Note over S: state_raw becomes RUNNING<br/>(Status queries now return RUNNING)
 ```
 
 1. **Config change triggers `STARTING`**:
-   - `dsp_engine_set_config()` immediately sets `config_in_progress` to `true`.
-   - Any external status requests query this atomic flag and instantly receive `PROCESSING_STATE_STARTING` without blocking on the mutex.
-2. **Synchronous Hardware Initialization**:
-   - The session builder opens both audio device backends. Prefilling silence is performed to prevent initial buffer underrun.
-   - The resampler, processing pipeline, and round-robin chunk pools are allocated.
-3. **Spawning Real-Time Loops**:
-   - Before spawning the threads, the builder sets the raw state to `PROCESSING_STATE_RUNNING` so newly spawned threads do not see `INACTIVE` and immediately abort.
-   - Capture, Processing, and Playback threads are spawned.
+   - `dsp_engine_set_config()` sets `config_in_progress` to `true`.
+   - The session builder initializes the shared state's `state_raw` to `PROCESSING_STATE_STARTING`.
+   - The session builder allocates the resampler, processing pipeline, and backend structures (without opening hardware).
+2. **Asynchronous Startup Spawning**:
+   - The builder spawns the Capture, Processing, and Playback loops in parallel.
+   - The builder returns the session handle to the engine, which sets `config_in_progress` to `false`. The client's command returns successfully.
+3. **Hardware Open & Prefill on Loop Threads**:
+   - The **Playback Thread** opens the playback device backend and pre-fills silence frames (using DSD silence if DSD is active) asynchronously.
+   - The **Capture Thread** opens the capture device backend.
+   - If either backend fails to open, it requests an immediate abort with the specific error reason.
 4. **Transition to `RUNNING`**:
-   - `config_in_progress` is reset to `false`. Status queries now read directly from `state_raw` (`RUNNING`).
+   - Once the capture thread successfully opens its device, it sets the shared state to `PROCESSING_STATE_RUNNING`.
 
 ---
 

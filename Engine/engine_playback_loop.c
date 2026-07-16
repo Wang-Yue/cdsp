@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "DoP/dsd_encoder.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "thread_priority.h"
@@ -41,6 +42,7 @@ struct engine_playback_loop {
   capture_backend_t* capture;
   playback_backend_t* playback;
   processing_parameters_t* processing_params;
+  dsd_encoder_t* dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
   bool pitch_supported;
@@ -120,6 +122,7 @@ engine_playback_loop_t* engine_playback_loop_create(
   loop->capture = config->capture;
   loop->playback = config->playback;
   loop->processing_params = config->processing_params;
+  loop->dsd_encoder = config->dsd_encoder;
   loop->pipeline_rate = config->pipeline_rate;
   loop->chunk_size = config->chunk_size;
   loop->pitch_supported =
@@ -250,6 +253,35 @@ static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
 void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Playback thread started");
+
+  backend_error_t berr;
+  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  if (!playback_backend_open(loop->playback, &berr)) {
+    logger_error(&g_logger, "Playback thread failed to open playback backend: %s", berr.message);
+    processing_stop_reason_t reason = {
+        .type = STOP_REASON_PLAYBACK_ERROR,
+        .format_change_rate = 0,
+    };
+    snprintf(reason.message, sizeof(reason.message), "%s", berr.message);
+    engine_shared_state_request_stop(loop->shared, reason);
+    return;
+  }
+
+  // Prefill playback silence to feed the DAC immediately on start,
+  // preventing immediate buffer underrun errors. If rate adjust is enabled,
+  // we match its target level; otherwise, we pre-fill chunk_size.
+  size_t prefill_frames = loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
+  if (loop->dsd_encoder && dsd_encoder_is_enabled(loop->dsd_encoder)) {
+    size_t channels = processing_parameters_get_playback_channels(loop->processing_params);
+    audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
+    if (prefill_chunk) {
+      dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);
+      playback_backend_write(loop->playback, prefill_chunk, &berr);
+      audio_chunk_free(prefill_chunk);
+    }
+  } else {
+    playback_backend_prefill_silence(loop->playback, prefill_frames, &berr);
+  }
 
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
