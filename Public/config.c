@@ -135,13 +135,27 @@ bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine,
   return *out_yaml != NULL;
 }
 
+static cdsp_backend_error_type_t map_backend_error_type(
+    audio_backend_error_type_t type) {
+  switch (type) {
+    case AUDIO_BACKEND_ERR_CONFIG_PARSE:
+      return CDSP_BACKEND_ERR_CONFIG_PARSE;
+    case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
+      return CDSP_BACKEND_ERR_DEVICE_NOT_FOUND;
+    case AUDIO_BACKEND_ERR_DEVICE_BUSY:
+      return CDSP_BACKEND_ERR_DEVICE_BUSY;
+    default:
+      return CDSP_BACKEND_ERR_UNKNOWN;
+  }
+}
+
 bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
                           cdsp_backend_error_t* out_err) {
   if (!engine || !engine->set_config_json) return false;
   audio_backend_error_t berr = {0};
   bool ok = engine->set_config_json(engine->ctx, json_str, &berr);
   if (!ok && out_err) {
-    out_err->type = (cdsp_backend_error_type_t)berr.type;
+    out_err->type = map_backend_error_type(berr.type);
     strncpy(out_err->message, berr.message, sizeof(out_err->message) - 1);
     out_err->message[sizeof(out_err->message) - 1] = '\0';
   }

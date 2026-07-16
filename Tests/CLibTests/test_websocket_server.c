@@ -308,23 +308,6 @@ void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
   }
 }
 
-bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_active_config_json) {
-    return mock->get_active_config_json(mock->ctx, out_json);
-  }
-  return false;
-}
-
-bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
-                                   char** out_json) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_previous_config_json) {
-    return mock->get_previous_config_json(mock->ctx, out_json);
-  }
-  return false;
-}
-
 bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (!mock || !mock->get_vu_levels || !out_vu) return false;
@@ -432,43 +415,6 @@ void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
   }
 }
 
-bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
-                          cdsp_backend_error_t* out_err) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->set_config_json) {
-    audio_backend_error_t raw_err = {0};
-    bool ok = mock->set_config_json(mock->ctx, json_str, &raw_err);
-    if (!ok && out_err) {
-      switch (raw_err.type) {
-        case AUDIO_BACKEND_ERR_CONFIG_PARSE:
-          out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
-          break;
-        case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
-          out_err->type = CDSP_BACKEND_ERR_DEVICE_NOT_FOUND;
-          break;
-        case AUDIO_BACKEND_ERR_DEVICE_BUSY:
-          out_err->type = CDSP_BACKEND_ERR_DEVICE_BUSY;
-          break;
-        default:
-          out_err->type = CDSP_BACKEND_ERR_UNKNOWN;
-          break;
-      }
-      strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
-      out_err->message[sizeof(out_err->message) - 1] = '\0';
-    }
-    return ok;
-  }
-  return false;
-}
-
-bool cdsp_validate_config_json(const char* json_str, char** out_result,
-                               bool* is_error) {
-  (void)json_str;
-  *out_result = NULL;
-  *is_error = false;
-  return true;
-}
-
 void cdsp_stop(dsp_engine_t* engine) {
   dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->stop) {
@@ -521,21 +467,6 @@ bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
     return mock->get_state_file_updated(mock->ctx);
   }
   return true;
-}
-
-char* cdsp_get_config_file_path(const dsp_engine_t* engine) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_config_file_path) {
-    return mock->get_config_file_path(mock->ctx);
-  }
-  return NULL;
-}
-
-void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->set_config_file_path) {
-    mock->set_config_file_path(mock->ctx, path);
-  }
 }
 
 static dsp_engine_t mock_engine = {
@@ -1062,6 +993,31 @@ TEST(test_websocket_format_alignments) {
   ASSERT_EQ(2, cJSON_GetArraySize(value));
   ASSERT_EQ(0, cJSON_GetArrayItem(value, 0)->valueint);
   ASSERT_DOUBLE_EQ(2.5, cJSON_GetArrayItem(value, 1)->valuedouble);
+  cJSON_Delete(root);
+
+  // 6. YAML Config Commands: SetConfig and ReadConfig / ValidateConfig
+  const char* valid_yaml =
+      "devices:\\n  samplerate: 44100\\n  chunksize: 1024\\n  capture:\\n    "
+      "type: File\\n    channels: 2\\n    filename: \\\"/dev/null\\\"\\n    "
+      "format: S16LE\\n  playback:\\n    type: File\\n    channels: 2\\n    "
+      "filename: \\\"/dev/null\\\"\\n    format: S16LE\\n";
+  char yaml_cmd[1024];
+  snprintf(yaml_cmd, sizeof(yaml_cmd), "{\"SetConfig\":\"%s\"}", valid_yaml);
+  websocket_server_handle_command(server, 0, yaml_cmd, resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  cmd = cJSON_GetObjectItem(root, "SetConfig");
+  ASSERT_TRUE(cmd != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
+  cJSON_Delete(root);
+
+  snprintf(yaml_cmd, sizeof(yaml_cmd), "{\"ReadConfig\":\"%s\"}", valid_yaml);
+  websocket_server_handle_command(server, 0, yaml_cmd, resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  cmd = cJSON_GetObjectItem(root, "ReadConfig");
+  ASSERT_TRUE(cmd != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
   cJSON_Delete(root);
 
   processing_parameters_free(mock_params);

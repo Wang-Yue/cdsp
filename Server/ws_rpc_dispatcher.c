@@ -287,12 +287,17 @@ typedef enum {
   WS_CMD_STOP,
   WS_CMD_EXIT,
   WS_CMD_SET_CONFIG_FILE_PATH,
+  WS_CMD_SET_CONFIG,
   WS_CMD_SET_CONFIG_JSON,
   WS_CMD_GET_CONFIG_VALUE,
   WS_CMD_SET_CONFIG_VALUE,
   WS_CMD_PATCH_CONFIG,
+  WS_CMD_READ_CONFIG,
   WS_CMD_READ_CONFIG_JSON,
+  WS_CMD_READ_CONFIG_FILE,
+  WS_CMD_VALIDATE_CONFIG,
   WS_CMD_VALIDATE_CONFIG_JSON,
+  WS_CMD_VALIDATE_CONFIG_FILE,
   WS_CMD_SUBSCRIBE_STATE,
   WS_CMD_SUBSCRIBE_VU_LEVELS,
   WS_CMD_SUBSCRIBE_SIGNAL_LEVELS,
@@ -372,12 +377,17 @@ static const command_map_t kCommandMap[] = {
     {"Stop", WS_CMD_STOP},
     {"Exit", WS_CMD_EXIT},
     {"SetConfigFilePath", WS_CMD_SET_CONFIG_FILE_PATH},
+    {"SetConfig", WS_CMD_SET_CONFIG},
     {"SetConfigJson", WS_CMD_SET_CONFIG_JSON},
     {"GetConfigValue", WS_CMD_GET_CONFIG_VALUE},
     {"SetConfigValue", WS_CMD_SET_CONFIG_VALUE},
     {"PatchConfig", WS_CMD_PATCH_CONFIG},
+    {"ReadConfig", WS_CMD_READ_CONFIG},
     {"ReadConfigJson", WS_CMD_READ_CONFIG_JSON},
+    {"ReadConfigFile", WS_CMD_READ_CONFIG_FILE},
+    {"ValidateConfig", WS_CMD_VALIDATE_CONFIG},
     {"ValidateConfigJson", WS_CMD_VALIDATE_CONFIG_JSON},
+    {"ValidateConfigFile", WS_CMD_VALIDATE_CONFIG_FILE},
     {"SubscribeState", WS_CMD_SUBSCRIBE_STATE},
     {"SubscribeVuLevels", WS_CMD_SUBSCRIBE_VU_LEVELS},
     {"SubscribeSignalLevels", WS_CMD_SUBSCRIBE_SIGNAL_LEVELS},
@@ -1491,6 +1501,31 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
   }
 }
 
+static void handle_cmd_set_config_yaml(websocket_server_t* server,
+                                       int client_idx, const char* cmd_name,
+                                       cJSON* arg, dyn_string_t* ds) {
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* new_yaml = arg->valuestring;
+    cdsp_backend_error_t err = {0};
+    bool ok = server && server->engine &&
+              cdsp_set_config_yaml(server->engine, new_yaml, &err);
+    if (ok) {
+      reply_ok(cmd_name, NULL, ds);
+    } else {
+      cJSON* err_obj = cJSON_CreateObject();
+      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                              err.message);
+      reply_error(cmd_name, NULL, err_obj, ds);
+    }
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse Config YAML");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
 static void handle_cmd_get_config_value(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
                                         cJSON* arg, dyn_string_t* ds) {
@@ -1704,6 +1739,59 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
     cJSON* err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "InvalidRequestError",
                             "Could not parse input config JSON");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_read_config_yaml(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)server;
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* config_yaml = arg->valuestring;
+    char* result = NULL;
+    bool is_error = false;
+    if (cdsp_validate_config_yaml(config_yaml, &result, &is_error) &&
+        !is_error) {
+      reply_ok(cmd_name, cJSON_CreateString(result ? result : config_yaml), ds);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "ConfigValidationError",
+                              result ? result : "Invalid config");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+    if (result) free(result);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse input config YAML");
+    reply_error(cmd_name, NULL, err, ds);
+  }
+}
+
+static void handle_cmd_read_config_file(websocket_server_t* server,
+                                        int client_idx, const char* cmd_name,
+                                        cJSON* arg, dyn_string_t* ds) {
+  (void)server;
+  (void)client_idx;
+  if (arg && cJSON_IsString(arg) && arg->valuestring) {
+    const char* path = arg->valuestring;
+    char* result = NULL;
+    bool is_error = false;
+    if (cdsp_validate_config_file(path, &result, &is_error) && !is_error) {
+      reply_ok(cmd_name, cJSON_CreateString(result), ds);
+    } else {
+      cJSON* err = cJSON_CreateObject();
+      cJSON_AddStringToObject(err, "ConfigValidationError",
+                              result ? result : "Invalid config file");
+      reply_error(cmd_name, NULL, err, ds);
+    }
+    if (result) free(result);
+  } else {
+    cJSON* err = cJSON_CreateObject();
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Could not parse input config file path");
     reply_error(cmd_name, NULL, err, ds);
   }
 }
@@ -2742,6 +2830,9 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     case WS_CMD_SET_CONFIG_FILE_PATH:
       handle_cmd_set_config_file_path(server, client_idx, simple, arg, ds);
       break;
+    case WS_CMD_SET_CONFIG:
+      handle_cmd_set_config_yaml(server, client_idx, simple, arg, ds);
+      break;
     case WS_CMD_SET_CONFIG_JSON:
       handle_cmd_set_config_json(server, client_idx, simple, arg, ds);
       break;
@@ -2754,9 +2845,17 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     case WS_CMD_PATCH_CONFIG:
       handle_cmd_patch_config(server, client_idx, simple, arg, ds);
       break;
+    case WS_CMD_READ_CONFIG:
+    case WS_CMD_VALIDATE_CONFIG:
+      handle_cmd_read_config_yaml(server, client_idx, simple, arg, ds);
+      break;
     case WS_CMD_READ_CONFIG_JSON:
     case WS_CMD_VALIDATE_CONFIG_JSON:
       handle_cmd_read_config_json(server, client_idx, simple, arg, ds);
+      break;
+    case WS_CMD_READ_CONFIG_FILE:
+    case WS_CMD_VALIDATE_CONFIG_FILE:
+      handle_cmd_read_config_file(server, client_idx, simple, arg, ds);
       break;
 
     case WS_CMD_SUBSCRIBE_STATE:
