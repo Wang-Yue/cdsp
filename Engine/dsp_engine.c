@@ -154,7 +154,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
       } else {
         // Hot reload failed. Stop and clean up the session before failing.
         dsp_session_stop_and_free(
-            engine->session, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+            engine->session,
+            (processing_stop_reason_t){.type = STOP_REASON_NONE});
         engine->session = NULL;
         if (err) *err = berr;
         return false;
@@ -220,8 +221,8 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
   config_error_t cerr = {0};
   if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
     if (engine->session) {
-      dsp_session_stop_and_free(
-          engine->session, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+      dsp_session_stop_and_free(engine->session, (processing_stop_reason_t){
+                                                     .type = STOP_REASON_NONE});
       engine->session = NULL;
     }
     if (err) {
@@ -231,15 +232,13 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
     }
     return false;
   }
-  bool success = dsp_engine_set_config_struct(engine, parsed, err);
+  bool success = dsp_engine_set_config_struct_locked(engine, parsed, err);
   if (success) {
-    pthread_mutex_lock(&engine->state_mutex);
     if (engine->previous_config_json) {
       free(engine->previous_config_json);
     }
     engine->previous_config_json = engine->active_config_json;
     engine->active_config_json = strdup(json);
-    pthread_mutex_unlock(&engine->state_mutex);
   }
   return success;
 }
@@ -363,33 +362,50 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine) {
   if (res.playback_channels > 0) {
     res.playback_rms = (double*)calloc(res.playback_channels, sizeof(double));
     res.playback_peak = (double*)calloc(res.playback_channels, sizeof(double));
-    if (res.playback_rms)
-      processing_parameters_get_playback_signal_rms(p, res.playback_rms,
-                                                    res.playback_channels);
-    if (res.playback_peak)
-      processing_parameters_get_playback_signal_peak(p, res.playback_peak,
-                                                     res.playback_channels);
+    if (!res.playback_rms || !res.playback_peak) {
+      dsp_engine_free_vu_levels(&res);
+      return (vu_levels_t){0};
+    }
+    processing_parameters_get_playback_signal_rms(p, res.playback_rms,
+                                                  res.playback_channels);
+    processing_parameters_get_playback_signal_peak(p, res.playback_peak,
+                                                   res.playback_channels);
   }
   if (res.capture_channels > 0) {
     res.capture_rms = (double*)calloc(res.capture_channels, sizeof(double));
     res.capture_peak = (double*)calloc(res.capture_channels, sizeof(double));
-    if (res.capture_rms)
-      processing_parameters_get_capture_signal_rms(p, res.capture_rms,
-                                                   res.capture_channels);
-    if (res.capture_peak)
-      processing_parameters_get_capture_signal_peak(p, res.capture_peak,
-                                                    res.capture_channels);
+    if (!res.capture_rms || !res.capture_peak) {
+      dsp_engine_free_vu_levels(&res);
+      return (vu_levels_t){0};
+    }
+    processing_parameters_get_capture_signal_rms(p, res.capture_rms,
+                                                 res.capture_channels);
+    processing_parameters_get_capture_signal_peak(p, res.capture_peak,
+                                                  res.capture_channels);
   }
   return res;
 }
 
 void dsp_engine_free_vu_levels(vu_levels_t* levels) {
   if (!levels) return;
-  free(levels->playback_rms);
-  free(levels->playback_peak);
-  free(levels->capture_rms);
-  free(levels->capture_peak);
-  memset(levels, 0, sizeof(vu_levels_t));
+  if (levels->playback_rms) {
+    free(levels->playback_rms);
+    levels->playback_rms = NULL;
+  }
+  if (levels->playback_peak) {
+    free(levels->playback_peak);
+    levels->playback_peak = NULL;
+  }
+  if (levels->capture_rms) {
+    free(levels->capture_rms);
+    levels->capture_rms = NULL;
+  }
+  if (levels->capture_peak) {
+    free(levels->capture_peak);
+    levels->capture_peak = NULL;
+  }
+  levels->playback_channels = 0;
+  levels->capture_channels = 0;
 }
 
 static spectrum_status_t dsp_engine_get_spectrum_locked(
