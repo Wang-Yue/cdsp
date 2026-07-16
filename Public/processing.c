@@ -1,33 +1,33 @@
 #include "Public/processing.h"
+
 #include <math.h>
 #include <stdlib.h>
+
 #include "Engine/dsp_engine.h"
 
 cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
-  if (!engine) return CDSP_PROCESSING_STATE_INACTIVE;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  if (iface && iface->get_status) {
+  if (engine && engine->get_status) {
     state_update_t status = {0};
-    if (iface->get_status(iface->ctx, &status)) {
+    if (engine->get_status(engine->ctx, &status)) {
       return (cdsp_processing_state_t)status.state;
     }
   }
   return CDSP_PROCESSING_STATE_INACTIVE;
 }
 
-void cdsp_get_stop_reason(const dsp_engine_t* engine, cdsp_stop_reason_t* out_reason) {
+void cdsp_get_stop_reason(const dsp_engine_t* engine,
+                          cdsp_stop_reason_t* out_reason) {
   if (!out_reason) return;
   out_reason->type = CDSP_STOP_REASON_NONE;
   out_reason->message[0] = '\0';
   out_reason->format_change_rate = 0;
-  if (!engine) return;
 
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  if (iface && iface->get_status) {
+  if (engine && engine->get_status) {
     state_update_t status = {0};
-    if (iface->get_status(iface->ctx, &status)) {
+    if (engine->get_status(engine->ctx, &status)) {
       out_reason->type = (cdsp_stop_reason_type_t)status.stop_reason.type;
-      strncpy(out_reason->message, status.stop_reason.message, sizeof(out_reason->message) - 1);
+      strncpy(out_reason->message, status.stop_reason.message,
+              sizeof(out_reason->message) - 1);
       out_reason->message[sizeof(out_reason->message) - 1] = '\0';
       out_reason->format_change_rate = status.stop_reason.format_change_rate;
     }
@@ -35,23 +35,20 @@ void cdsp_get_stop_reason(const dsp_engine_t* engine, cdsp_stop_reason_t* out_re
 }
 
 int cdsp_get_capture_rate(const dsp_engine_t* engine) {
-  if (!engine) return 0;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  if (iface && iface->get_status && iface->get_active_samplerate) {
+  if (engine && engine->get_status && engine->get_active_samplerate) {
     state_update_t status = {0};
-    if (iface->get_status(iface->ctx, &status) && status.state == PROCESSING_STATE_RUNNING) {
-      return iface->get_active_samplerate(iface->ctx);
+    if (engine->get_status(engine->ctx, &status) &&
+        status.state == PROCESSING_STATE_RUNNING) {
+      return engine->get_active_samplerate(engine->ctx);
     }
   }
   return 0;
 }
 
 double cdsp_get_signal_range(const dsp_engine_t* engine) {
-  if (!engine) return 0.0;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  if (iface && iface->get_vu_levels) {
+  if (engine && engine->get_vu_levels) {
     vu_levels_t vu = {0};
-    if (iface->get_vu_levels(iface->ctx, &vu)) {
+    if (engine->get_vu_levels(engine->ctx, &vu)) {
       size_t count = vu.playback_channels;
       if (count == 0 || !vu.playback_peak) {
         if (vu.playback_peak) free(vu.playback_peak);
@@ -81,43 +78,36 @@ bool cdsp_get_processing_status(const dsp_engine_t* engine,
                                 uint64_t* out_clipped_samples,
                                 double* out_processing_load,
                                 double* out_resampler_load) {
-  if (!engine) return false;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->get_processing_status &&
-         iface->get_processing_status(iface->ctx, out_rate_adjust, out_buffer_level,
-                                      out_clipped_samples, out_processing_load,
-                                      out_resampler_load);
+  return engine && engine->get_processing_status &&
+         engine->get_processing_status(engine->ctx, out_rate_adjust,
+                                       out_buffer_level, out_clipped_samples,
+                                       out_processing_load, out_resampler_load);
 }
 
 void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
-  if (!engine) return;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
-  if (iface && iface->reset_clipped_samples) {
-    iface->reset_clipped_samples(iface->ctx);
+  if (engine && engine->reset_clipped_samples) {
+    engine->reset_clipped_samples(engine->ctx);
   }
 }
 
 const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
-  if (!engine) return NULL;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->get_state_file ? iface->get_state_file(iface->ctx) : NULL;
+  return engine && engine->get_state_file ? engine->get_state_file(engine->ctx)
+                                          : NULL;
 }
 
 bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
-  if (!engine) return false;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->is_state_dirty ? iface->is_state_dirty(iface->ctx) : false;
+  return engine && engine->is_state_dirty ? engine->is_state_dirty(engine->ctx)
+                                          : false;
 }
 
 cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
                                        size_t n_frames,
                                        cdsp_backend_error_t* out_err) {
-  if (!engine) return NULL;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  if (!iface || !iface->get_samples) return NULL;
+  if (!engine || !engine->get_samples) return NULL;
 
   audio_backend_error_t raw_err = {0};
-  audio_samples_t* raw_samples = iface->get_samples(iface->ctx, is_capture, n_frames, &raw_err);
+  audio_samples_t* raw_samples =
+      engine->get_samples(engine->ctx, is_capture, n_frames, &raw_err);
   if (!raw_samples) {
     if (out_err) {
       switch (raw_err.type) {

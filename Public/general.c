@@ -101,15 +101,17 @@ void cdsp_free_device_types(char** types, size_t count) {
 
 dsp_engine_t* cdsp_engine_create(void) { return dsp_engine_create(); }
 
-void cdsp_engine_free(dsp_engine_t* engine) { dsp_engine_free(engine); }
+void cdsp_engine_free(dsp_engine_t* engine) {
+  if (engine && engine->free) engine->free(engine->ctx);
+}
 
-void cdsp_engine_poll(dsp_engine_t* engine) { dsp_engine_poll(engine); }
+void cdsp_engine_poll(dsp_engine_t* engine) {
+  if (engine && engine->poll) engine->poll(engine->ctx);
+}
 
 void cdsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
-  if (!engine) return;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
-  if (iface && iface->set_state_file) {
-    iface->set_state_file(iface->ctx, path);
+  if (engine && engine->set_state_file) {
+    engine->set_state_file(engine->ctx, path);
   }
 }
 
@@ -118,9 +120,7 @@ void cdsp_set_log_level(const char* level_str) {
 }
 
 void cdsp_stop(dsp_engine_t* engine) {
-  if (!engine) return;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
-  if (iface && iface->stop) {
-    iface->stop(iface->ctx);
+  if (engine && engine->stop) {
+    engine->stop(engine->ctx);
   }
 }

@@ -5,12 +5,12 @@
 #include <unistd.h>
 
 #include "Engine/dsp_engine.h"
-#include "Public/general.h"
+#include "Pipeline/config_loader.h"
 #include "Public/config.h"
+#include "Public/devices.h"
+#include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
-#include "Public/devices.h"
-#include "Pipeline/config_loader.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"
 
@@ -26,7 +26,7 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
         "⚠️ [E2E Warning] Skipping E2E test for backend '%s' (Initialization "
         "failed: %s)\n",
         backend_name, err.message);
-    dsp_engine_free(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
     return;
   }
 
@@ -37,14 +37,14 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
   cdsp_free_vu_levels(&vu);
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
   printf("✅ [E2E Success] Backend '%s' ran successfully\n", backend_name);
 }
 
 TEST(DSPEngineCreateFree) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineDeviceCapabilities) {
@@ -58,7 +58,8 @@ TEST(DSPEngineDeviceCapabilities) {
 
   if (count > 0 && devs) {
     cdsp_device_descriptor_t* desc = NULL;
-    if (cdsp_get_device_capabilities("coreaudio", devs[0].name, false, &desc, NULL)) {
+    if (cdsp_get_device_capabilities("coreaudio", devs[0].name, false, &desc,
+                                     NULL)) {
       if (desc) {
         cdsp_free_device_capabilities(desc);
       }
@@ -260,7 +261,7 @@ TEST(DSPEngineSetConfigAndReload) {
   ASSERT_EQ(1, active->pipeline_count);
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineHotParameterReload) {
@@ -465,7 +466,7 @@ TEST(DSPEngineHotParameterReload) {
   ASSERT_EQ(-3.0, active->filters[0].filter.parameters.gain.gain);
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineSetConfigStruct) {
@@ -556,7 +557,7 @@ TEST(DSPEngineSetConfigStruct) {
 #endif
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineE2E_ALSA) {
@@ -712,7 +713,7 @@ TEST(DSPEngineE2E_FileFile) {
   }
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 
   FILE* out_f = fopen(out_file, "rb");
   ASSERT_TRUE(out_f != NULL);
@@ -773,7 +774,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   cdsp_sleep_ms(1500);
 
   cdsp_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 
   // Check the size of the output file
   FILE* f = fopen(out_filename, "rb");
@@ -858,7 +859,7 @@ TEST(DSPEngineASIOSetConfigAndReload) {
         "⚠️ [ASIO Warning] Skipping ASIO SetConfigAndReload test (Failed to set "
         "config: %s)\n",
         err.message);
-    dsp_engine_free(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
     return;
   }
   ASSERT_TRUE(success1);
@@ -872,7 +873,7 @@ TEST(DSPEngineASIOSetConfigAndReload) {
   ASSERT_EQ(1, active->pipeline_count);
 
   dsp_engine_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineASIOHotParameterReload) {
@@ -945,7 +946,7 @@ TEST(DSPEngineASIOHotParameterReload) {
         "⚠️ [ASIO Warning] Skipping ASIO HotParameterReload test (Failed to set "
         "config: %s)\n",
         err.message);
-    dsp_engine_free(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
     return;
   }
   ASSERT_TRUE(success1);
@@ -959,7 +960,7 @@ TEST(DSPEngineASIOHotParameterReload) {
   ASSERT_EQ(-3.0, active->filters[0].filter.parameters.gain.gain);
 
   dsp_engine_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 
 TEST(DSPEngineASIOSetConfigStruct) {
@@ -999,7 +1000,7 @@ TEST(DSPEngineASIOSetConfigStruct) {
         "⚠️ [ASIO Warning] Skipping ASIO SetConfigStruct test (Failed to set "
         "config struct: %s)\n",
         berr.message);
-    dsp_engine_free(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
     return;
   }
   ASSERT_TRUE(ok);
@@ -1010,7 +1011,7 @@ TEST(DSPEngineASIOSetConfigStruct) {
   ASSERT_EQ(2, capture_device_config_get_channels(&active->devices.capture));
 
   dsp_engine_stop(engine);
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 }
 #endif
 
@@ -1089,7 +1090,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
 
   double elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
 
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 
   // Verify the output content matches input
   FILE* out_f = fopen(out_file, "rb");
@@ -1238,7 +1239,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
     pthread_detach(stop_thread);
   }
 
-  dsp_engine_free(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
   free(input_samples);
   remove(in_file);
   remove(out_file);

@@ -1,7 +1,9 @@
 #include "Public/config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "Config/cJSON.h"
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
@@ -83,24 +85,21 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
 }
 
 const char* cdsp_get_config_path(const dsp_engine_t* engine) {
-  if (!engine) return NULL;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->get_config_path ? iface->get_config_path(iface->ctx) : NULL;
+  return engine && engine->get_config_path
+             ? engine->get_config_path(engine->ctx)
+             : NULL;
 }
 
 void cdsp_set_config_path(dsp_engine_t* engine, const char* path) {
-  if (!engine) return;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
-  if (iface && iface->set_config_path) {
-    iface->set_config_path(iface->ctx, path);
+  if (engine && engine->set_config_path) {
+    engine->set_config_path(engine->ctx, path);
   }
 }
 
 bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json) {
   if (!engine || !out_json) return false;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->get_active_config_json &&
-         iface->get_active_config_json(iface->ctx, out_json);
+  return engine->get_active_config_json &&
+         engine->get_active_config_json(engine->ctx, out_json);
 }
 
 bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out_yaml) {
@@ -108,24 +107,23 @@ bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out_yaml) {
   return cdsp_get_active_config_json(engine, out_yaml);
 }
 
-bool cdsp_get_previous_config_json(const dsp_engine_t* engine, char** out_json) {
+bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
+                                   char** out_json) {
   if (!engine || !out_json) return false;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
-  return iface && iface->get_previous_config_json &&
-         iface->get_previous_config_json(iface->ctx, out_json);
+  return engine->get_previous_config_json &&
+         engine->get_previous_config_json(engine->ctx, out_json);
 }
 
-bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine, char** out_yaml) {
+bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine,
+                                   char** out_yaml) {
   return cdsp_get_previous_config_json(engine, out_yaml);
 }
 
 bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
                           cdsp_backend_error_t* out_err) {
-  if (!engine) return false;
-  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
-  if (!iface || !iface->set_config_json) return false;
+  if (!engine || !engine->set_config_json) return false;
   audio_backend_error_t berr = {0};
-  bool ok = iface->set_config_json(iface->ctx, json_str, &berr);
+  bool ok = engine->set_config_json(engine->ctx, json_str, &berr);
   if (!ok && out_err) {
     out_err->type = (cdsp_backend_error_type_t)berr.type;
     strncpy(out_err->message, berr.message, sizeof(out_err->message) - 1);
@@ -141,37 +139,46 @@ bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
 
 bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
                                  int samplerate_override, int channels_override,
-                                 const char* format_override, int extra_samples_override,
+                                 const char* format_override,
+                                 int extra_samples_override,
                                  cdsp_backend_error_t* out_err) {
   if (!engine || !path) return false;
   char* json = read_file_to_str(path);
   if (!json) {
-    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Could not read file %s", path);
+    if (out_err)
+      snprintf(out_err->message, sizeof(out_err->message),
+               "Could not read file %s", path);
     return false;
   }
 
   cJSON* root = cJSON_Parse(json);
   free(json);
   if (!root) {
-    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Could not parse JSON config");
+    if (out_err)
+      snprintf(out_err->message, sizeof(out_err->message),
+               "Could not parse JSON config");
     return false;
   }
 
   cJSON* devices = cJSON_GetObjectItem(root, "devices");
   if (devices) {
     if (samplerate_override > 0) {
-      cJSON_ReplaceItemInObject(devices, "samplerate", cJSON_CreateNumber(samplerate_override));
+      cJSON_ReplaceItemInObject(devices, "samplerate",
+                                cJSON_CreateNumber(samplerate_override));
     }
     cJSON* capture = cJSON_GetObjectItem(devices, "capture");
     if (capture) {
       if (channels_override > 0) {
-        cJSON_ReplaceItemInObject(capture, "channels", cJSON_CreateNumber(channels_override));
+        cJSON_ReplaceItemInObject(capture, "channels",
+                                  cJSON_CreateNumber(channels_override));
       }
       if (extra_samples_override >= 0) {
-        cJSON_ReplaceItemInObject(capture, "extra_samples", cJSON_CreateNumber(extra_samples_override));
+        cJSON_ReplaceItemInObject(capture, "extra_samples",
+                                  cJSON_CreateNumber(extra_samples_override));
       }
       if (format_override) {
-        cJSON_ReplaceItemInObject(capture, "format", cJSON_CreateString(format_override));
+        cJSON_ReplaceItemInObject(capture, "format",
+                                  cJSON_CreateString(format_override));
       }
     }
   }
@@ -179,7 +186,9 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
   char* updated_json = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
   if (!updated_json) {
-    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Failed to format updated JSON");
+    if (out_err)
+      snprintf(out_err->message, sizeof(out_err->message),
+               "Failed to format updated JSON");
     return false;
   }
 
@@ -210,19 +219,20 @@ char* cdsp_get_config_value(const dsp_engine_t* engine, const char* json_ptr) {
     cJSON_Delete(root);
     return NULL;
   }
-  
+
   char* val = NULL;
   if (cJSON_IsString(node) && node->valuestring) {
     val = strdup(node->valuestring);
   } else {
     val = cJSON_PrintUnformatted(node);
   }
-  
+
   cJSON_Delete(root);
   return val;
 }
 
-bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr, const char* val_json,
+bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
+                           const char* val_json,
                            cdsp_backend_error_t* out_err) {
   char* json = NULL;
   if (!cdsp_get_active_config_json(engine, &json) || !json) {
@@ -314,7 +324,9 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   }
   char* json = read_file_to_str(path);
   if (!json) {
-    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Could not read config file %s", path);
+    if (out_err)
+      snprintf(out_err->message, sizeof(out_err->message),
+               "Could not read config file %s", path);
     return false;
   }
   bool ok = cdsp_set_config_json(engine, json, out_err);
@@ -322,7 +334,8 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   return ok;
 }
 
-bool cdsp_validate_config_json(const char* json_str, char** out_result, bool* is_error) {
+bool cdsp_validate_config_json(const char* json_str, char** out_result,
+                               bool* is_error) {
   if (!json_str || !out_result || !is_error) return false;
   dsp_config_t* parsed = NULL;
   config_error_t cerr = {0};
@@ -338,11 +351,13 @@ bool cdsp_validate_config_json(const char* json_str, char** out_result, bool* is
   }
 }
 
-bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result, bool* is_error) {
+bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
+                               bool* is_error) {
   return cdsp_validate_config_json(yaml_str, out_result, is_error);
 }
 
-bool cdsp_validate_config_file(const char* path, char** out_result, bool* is_error) {
+bool cdsp_validate_config_file(const char* path, char** out_result,
+                               bool* is_error) {
   if (!path) return false;
   char* json = read_file_to_str(path);
   if (!json) {

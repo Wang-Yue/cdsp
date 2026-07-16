@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /**
- * @brief Opaque handle representing the DSP engine.
+ * @brief Self-contained interface handle representing the DSP engine.
  */
 typedef struct dsp_engine dsp_engine_t;
 
@@ -18,7 +18,8 @@ typedef enum {
   CDSP_PROCESSING_STATE_STARTING = 1, /**< Engine is starting. */
   CDSP_PROCESSING_STATE_RUNNING = 2,  /**< Engine is running. */
   CDSP_PROCESSING_STATE_PAUSED = 3,   /**< Engine is paused. */
-  CDSP_PROCESSING_STATE_STALLED = 4   /**< Engine is stalled (waiting for data). */
+  CDSP_PROCESSING_STATE_STALLED =
+      4 /**< Engine is stalled (waiting for data). */
 } cdsp_processing_state_t;
 
 /**
@@ -108,7 +109,7 @@ typedef struct {
  * @brief Set of capabilities for a specific access mode.
  */
 typedef struct {
-  char mode[64]; // e.g. "Unified", "Shared", "Exclusive"
+  char mode[64];  // e.g. "Unified", "Shared", "Exclusive"
   cdsp_channel_capability_t* capabilities;
   size_t capabilities_count;
 } cdsp_device_capability_set_t;
@@ -127,13 +128,13 @@ typedef struct {
  * @brief Fader identifiers.
  */
 typedef enum {
-  CDSP_FADER_MAIN = 0,   /**< Main fader. */
-  CDSP_FADER_AUX1 = 1,   /**< Auxiliary fader 1. */
-  CDSP_FADER_AUX2 = 2,   /**< Auxiliary fader 2. */
-  CDSP_FADER_AUX3 = 3,   /**< Auxiliary fader 3. */
-  CDSP_FADER_AUX4 = 4,   /**< Auxiliary fader 4. */
-  CDSP_FADER_COUNT = 5,  /**< Number of faders. */
-  CDSP_FADER_NONE = -1   /**< No fader. */
+  CDSP_FADER_MAIN = 0,  /**< Main fader. */
+  CDSP_FADER_AUX1 = 1,  /**< Auxiliary fader 1. */
+  CDSP_FADER_AUX2 = 2,  /**< Auxiliary fader 2. */
+  CDSP_FADER_AUX3 = 3,  /**< Auxiliary fader 3. */
+  CDSP_FADER_AUX4 = 4,  /**< Auxiliary fader 4. */
+  CDSP_FADER_COUNT = 5, /**< Number of faders. */
+  CDSP_FADER_NONE = -1  /**< No fader. */
 } cdsp_fader_t;
 
 /**
@@ -145,4 +146,4 @@ typedef struct {
   size_t frames;         /**< Number of frames per channel. */
 } cdsp_audio_samples_t;
 
-#endif // CDSP_PUBLIC_TYPES_H
+#endif  // CDSP_PUBLIC_TYPES_H

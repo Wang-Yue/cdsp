@@ -23,16 +23,16 @@ typedef int socket_t;
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/cJSON.h"
-#include "Server/websocket_server.h"
 #include "Engine/dsp_engine.h"
 #include "Public/cdsp_pub_types.h"
+#include "Public/config.h"
+#include "Public/devices.h"
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
 #include "Public/spectrum.h"
 #include "Public/volume.h"
-#include "Public/config.h"
-#include "Public/devices.h"
+#include "Server/websocket_server.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
                                 const char* command_text, char* out_response,
@@ -255,10 +255,10 @@ static bool mock_get_previous_config_json(void* ctx, char** out_json) {
   *out_json = NULL;
   return false;
 }
-static dsp_engine_interface_t mock_engine;
+static dsp_engine_t mock_engine;
 
 cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   state_update_t status = {0};
   if (mock && mock->get_status && mock->get_status(mock->ctx, &status)) {
     return (cdsp_processing_state_t)status.state;
@@ -266,52 +266,59 @@ cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
   return CDSP_PROCESSING_STATE_INACTIVE;
 }
 
-void cdsp_get_stop_reason(const dsp_engine_t* engine, cdsp_stop_reason_t* out_reason) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+void cdsp_get_stop_reason(const dsp_engine_t* engine,
+                          cdsp_stop_reason_t* out_reason) {
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   state_update_t status = {0};
   if (mock && mock->get_status && mock->get_status(mock->ctx, &status)) {
     out_reason->type = (cdsp_stop_reason_type_t)status.stop_reason.type;
-    strncpy(out_reason->message, status.stop_reason.message, sizeof(out_reason->message) - 1);
+    strncpy(out_reason->message, status.stop_reason.message,
+            sizeof(out_reason->message) - 1);
     out_reason->format_change_rate = status.stop_reason.format_change_rate;
   }
 }
 
 int cdsp_get_capture_rate(const dsp_engine_t* engine) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_active_samplerate) {
     return mock->get_active_samplerate(mock->ctx);
   }
   return 0;
 }
 
-bool cdsp_get_processing_status(const dsp_engine_t* engine, double* out_rate_adjust,
-                                double* out_buffer_level, uint64_t* out_clipped_samples,
-                                double* out_processing_load, double* out_resampler_load) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+bool cdsp_get_processing_status(const dsp_engine_t* engine,
+                                double* out_rate_adjust,
+                                double* out_buffer_level,
+                                uint64_t* out_clipped_samples,
+                                double* out_processing_load,
+                                double* out_resampler_load) {
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_processing_status) {
-    return mock->get_processing_status(mock->ctx, out_rate_adjust, out_buffer_level,
-                                       out_clipped_samples, out_processing_load, out_resampler_load);
+    return mock->get_processing_status(mock->ctx, out_rate_adjust,
+                                       out_buffer_level, out_clipped_samples,
+                                       out_processing_load, out_resampler_load);
   }
   return false;
 }
 
 void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->reset_clipped_samples) {
     mock->reset_clipped_samples(mock->ctx);
   }
 }
 
 bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_active_config_json) {
     return mock->get_active_config_json(mock->ctx, out_json);
   }
   return false;
 }
 
-bool cdsp_get_previous_config_json(const dsp_engine_t* engine, char** out_json) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
+                                   char** out_json) {
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_previous_config_json) {
     return mock->get_previous_config_json(mock->ctx, out_json);
   }
@@ -319,7 +326,7 @@ bool cdsp_get_previous_config_json(const dsp_engine_t* engine, char** out_json) 
 }
 
 bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (!mock || !mock->get_vu_levels || !out_vu) return false;
   vu_levels_t raw_vu = {0};
   if (mock->get_vu_levels(mock->ctx, &raw_vu)) {
@@ -345,20 +352,25 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* levels) {
 }
 
 bool cdsp_get_available_devices(const char* backend, bool is_input,
-                                cdsp_device_info_t** out_devices, size_t* out_count) {
+                                cdsp_device_info_t** out_devices,
+                                size_t* out_count) {
   *out_devices = NULL;
   *out_count = 0;
   return true;
 }
 
-bool cdsp_get_device_capabilities(const char* backend, const char* device, bool is_capture,
-                                  cdsp_device_descriptor_t** out_desc, cdsp_device_error_t* out_err) {
+bool cdsp_get_device_capabilities(const char* backend, const char* device,
+                                  bool is_capture,
+                                  cdsp_device_descriptor_t** out_desc,
+                                  cdsp_device_error_t* out_err) {
   audio_device_descriptor_t* raw_desc = NULL;
   device_error_t raw_err = {0};
-  bool ok = mock_engine.get_device_capabilities(mock_engine.ctx, backend, device, is_capture, &raw_desc, &raw_err);
+  bool ok = mock_engine.get_device_capabilities(
+      mock_engine.ctx, backend, device, is_capture, &raw_desc, &raw_err);
   if (ok) {
     if (out_desc) {
-      cdsp_device_descriptor_t* d = (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
+      cdsp_device_descriptor_t* d =
+          (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
       memset(d, 0, sizeof(cdsp_device_descriptor_t));
       *out_desc = d;
     }
@@ -389,10 +401,11 @@ void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc) {
 bool cdsp_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
                        double min_freq, double max_freq, size_t n_bins,
                        cdsp_spectrum_t* out_spec) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (!mock || !mock->get_spectrum) return false;
   spectrum_t raw_spec = {0};
-  if (mock->get_spectrum(mock->ctx, is_capture, channel, min_freq, max_freq, n_bins, &raw_spec)) {
+  if (mock->get_spectrum(mock->ctx, is_capture, channel, min_freq, max_freq,
+                         n_bins, &raw_spec)) {
     out_spec->count = raw_spec.count;
     if (raw_spec.count > 0) {
       double* freqs = (double*)malloc(raw_spec.count * sizeof(double));
@@ -421,7 +434,7 @@ void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
 
 bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
                           cdsp_backend_error_t* out_err) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->set_config_json) {
     audio_backend_error_t raw_err = {0};
     bool ok = mock->set_config_json(mock->ctx, json_str, &raw_err);
@@ -448,7 +461,8 @@ bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
   return false;
 }
 
-bool cdsp_validate_config_json(const char* json_str, char** out_result, bool* is_error) {
+bool cdsp_validate_config_json(const char* json_str, char** out_result,
+                               bool* is_error) {
   (void)json_str;
   *out_result = NULL;
   *is_error = false;
@@ -456,14 +470,14 @@ bool cdsp_validate_config_json(const char* json_str, char** out_result, bool* is
 }
 
 void cdsp_stop(dsp_engine_t* engine) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->stop) {
     mock->stop(mock->ctx);
   }
 }
 
 float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_fader_volume) {
     return mock->get_fader_volume(mock->ctx, (fader_t)fader);
   }
@@ -471,29 +485,30 @@ float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
 }
 
 bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->is_fader_muted) {
     return mock->is_fader_muted(mock->ctx, (fader_t)fader);
   }
   return false;
 }
 
-void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db, bool instant) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db,
+                           bool instant) {
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->set_fader_volume) {
     mock->set_fader_volume(mock->ctx, (fader_t)fader, db, instant);
   }
 }
 
 void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->set_fader_mute) {
     mock->set_fader_mute(mock->ctx, (fader_t)fader, mute);
   }
 }
 
 const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_state_file) {
     return mock->get_state_file(mock->ctx);
   }
@@ -501,7 +516,7 @@ const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
 }
 
 bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->is_state_dirty) {
     return mock->is_state_dirty(mock->ctx);
   }
@@ -509,7 +524,7 @@ bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
 }
 
 const char* cdsp_get_config_path(const dsp_engine_t* engine) {
-  const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
+  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (mock && mock->get_config_path) {
     return mock->get_config_path(mock->ctx);
   }
@@ -517,13 +532,13 @@ const char* cdsp_get_config_path(const dsp_engine_t* engine) {
 }
 
 void cdsp_set_config_path(dsp_engine_t* engine, const char* path) {
-  dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
+  dsp_engine_t* mock = (dsp_engine_t*)engine;
   if (mock && mock->set_config_path) {
     mock->set_config_path(mock->ctx, path);
   }
 }
 
-static dsp_engine_interface_t mock_engine = {
+static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
     .get_active_samplerate = mock_get_active_samplerate,
