@@ -19,6 +19,22 @@ typedef int socket_t;
 #endif
 
 typedef struct {
+  cdsp_processing_state_t state;
+  cdsp_stop_reason_t stop_reason;
+} ws_state_update_t;
+
+static inline const char* ws_processing_state_to_string(cdsp_processing_state_t state) {
+  switch (state) {
+    case CDSP_PROCESSING_STATE_INACTIVE: return "Inactive";
+    case CDSP_PROCESSING_STATE_STARTING: return "Starting";
+    case CDSP_PROCESSING_STATE_RUNNING: return "Running";
+    case CDSP_PROCESSING_STATE_PAUSED: return "Paused";
+    case CDSP_PROCESSING_STATE_STALLED: return "Stalled";
+    default: return "Inactive";
+  }
+}
+
+typedef struct {
   uint64_t timestamp_ms;
   double* levels;
 } level_sample_t;
@@ -97,9 +113,9 @@ void level_history_get_rms_since(const level_history_t* history,
                                  uint64_t since_ms, double* out_levels);
 void client_session_clear(client_session_t* session);
 void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...);
-void free_vu_levels_arrays(vu_levels_t* vu);
-cJSON* serialize_stop_reason(const processing_stop_reason_t* reason);
-cJSON* create_state_event_value(processing_state_t state,
-                                const processing_stop_reason_t* reason);
+void free_vu_levels_arrays(cdsp_vu_levels_t* vu);
+cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason);
+cJSON* create_state_event_value(cdsp_processing_state_t state,
+                                const cdsp_stop_reason_t* reason);
 
 #endif  // CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H

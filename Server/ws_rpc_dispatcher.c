@@ -6,10 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Audio/processing_parameters.h"
 #include "Config/cJSON.h"
 #include "Logging/app_logger.h"
-#include "Pipeline/config_loader.h"
 #include "websocket_server_internal.h"
 
 #include "Public/cdsp_pub_types.h"
@@ -21,14 +19,10 @@
 #include "Public/config.h"
 #include "Public/devices.h"
 
-static inline bool ws_engine_get_status(dsp_engine_t* engine, state_update_t* out_status) {
+static inline bool ws_engine_get_status(dsp_engine_t* engine, ws_state_update_t* out_status) {
   if (!engine || !out_status) return false;
-  out_status->state = (processing_state_t)cdsp_get_state(engine);
-  cdsp_stop_reason_t r = {0};
-  cdsp_get_stop_reason(engine, &r);
-  out_status->stop_reason.type = (processing_stop_reason_type_t)r.type;
-  strncpy(out_status->stop_reason.message, r.message, sizeof(out_status->stop_reason.message) - 1);
-  out_status->stop_reason.format_change_rate = r.format_change_rate;
+  out_status->state = cdsp_get_state(engine);
+  cdsp_get_stop_reason(engine, &out_status->stop_reason);
   return true;
 }
 
@@ -55,168 +49,46 @@ static inline bool ws_engine_get_previous_config_json(dsp_engine_t* engine, char
   return cdsp_get_previous_config_json(engine, out_json);
 }
 
-static inline bool ws_engine_get_vu_levels(dsp_engine_t* engine, vu_levels_t* out_vu) {
+static inline bool ws_engine_get_vu_levels(dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   if (!engine || !out_vu) return false;
-  cdsp_vu_levels_t pub_vu = {0};
-  if (cdsp_get_vu_levels(engine, &pub_vu)) {
-    out_vu->playback_rms = pub_vu.playback_rms;
-    out_vu->playback_peak = pub_vu.playback_peak;
-    out_vu->capture_rms = pub_vu.capture_rms;
-    out_vu->capture_peak = pub_vu.capture_peak;
-    out_vu->playback_channels = pub_vu.playback_channels;
-    out_vu->capture_channels = pub_vu.capture_channels;
-    return true;
-  }
-  return false;
+  return cdsp_get_vu_levels(engine, out_vu);
 }
 
 static inline bool ws_engine_get_available_devices(dsp_engine_t* engine, const char* backend, bool is_input,
-                                                  audio_device_t** out_devices, size_t* out_count) {
+                                                   cdsp_device_info_t** out_devices, size_t* out_count) {
   (void)engine;
-  cdsp_device_info_t* pub_devs = NULL;
-  size_t count = 0;
-  if (cdsp_get_available_devices(backend, is_input, &pub_devs, &count)) {
-    *out_count = count;
-    if (count > 0 && pub_devs) {
-      audio_device_t* list = (audio_device_t*)malloc(count * sizeof(audio_device_t));
-      for (size_t i = 0; i < count; i++) {
-        strncpy(list[i].name, pub_devs[i].name, sizeof(list[i].name) - 1);
-        list[i].name[sizeof(list[i].name) - 1] = '\0';
-      }
-      free(pub_devs);
-      *out_devices = list;
-    } else {
-      *out_devices = NULL;
-    }
-    return true;
-  }
-  return false;
-}
-
-static inline bool ws_engine_get_device_capabilities(dsp_engine_t* engine, const char* backend, const char* device,
-                                                    bool is_capture, audio_device_descriptor_t** out_desc,
-                                                    device_error_t* out_err) {
-  (void)engine;
-  cdsp_device_descriptor_t* pub_desc = NULL;
-  cdsp_device_error_t pub_err = {0};
-  if (cdsp_get_device_capabilities(backend, device, is_capture, &pub_desc, &pub_err)) {
-    audio_device_descriptor_t* desc = (audio_device_descriptor_t*)malloc(sizeof(audio_device_descriptor_t));
-    strncpy(desc->name, pub_desc->name, sizeof(desc->name) - 1);
-    desc->name[sizeof(desc->name) - 1] = '\0';
-    desc->capability_sets_count = pub_desc->capability_sets_count;
-    
-    if (pub_desc->capability_sets_count > 0 && pub_desc->capability_sets) {
-      desc->capability_sets = (device_capability_set_t*)malloc(pub_desc->capability_sets_count * sizeof(device_capability_set_t));
-      for (size_t i = 0; i < pub_desc->capability_sets_count; i++) {
-        device_capability_set_t* int_set = &desc->capability_sets[i];
-        cdsp_device_capability_set_t* pub_set = &pub_desc->capability_sets[i];
-        
-        int_set->capabilities_count = pub_set->capabilities_count;
-        if (pub_set->capabilities_count > 0 && pub_set->capabilities) {
-          int_set->capabilities = (channel_capability_t*)malloc(pub_set->capabilities_count * sizeof(channel_capability_t));
-          for (size_t j = 0; j < pub_set->capabilities_count; j++) {
-            channel_capability_t* int_cap = &int_set->capabilities[j];
-            cdsp_channel_capability_t* pub_cap = &pub_set->capabilities[j];
-            
-            int_cap->channels = pub_cap->channels;
-            int_cap->samplerates_count = pub_cap->samplerates_count;
-            if (pub_cap->samplerates_count > 0 && pub_cap->samplerates) {
-              int_cap->samplerates = (samplerate_capability_t*)malloc(pub_cap->samplerates_count * sizeof(samplerate_capability_t));
-              for (size_t k = 0; k < pub_cap->samplerates_count; k++) {
-                samplerate_capability_t* int_sr = &int_cap->samplerates[k];
-                cdsp_samplerate_capability_t* pub_sr = &pub_cap->samplerates[k];
-                
-                int_sr->samplerate = pub_sr->samplerate;
-                int_sr->formats_count = pub_sr->formats_count;
-                if (pub_sr->formats_count > 0 && pub_sr->formats) {
-                  int_sr->formats = (char**)malloc(pub_sr->formats_count * sizeof(char*));
-                  for (size_t l = 0; l < pub_sr->formats_count; l++) {
-                    int_sr->formats[l] = pub_sr->formats[l] ? strdup(pub_sr->formats[l]) : NULL;
-                  }
-                } else {
-                  int_sr->formats = NULL;
-                }
-              }
-            } else {
-              int_cap->samplerates = NULL;
-            }
-          }
-        } else {
-          int_set->capabilities = NULL;
-        }
-      }
-    } else {
-      desc->capability_sets = NULL;
-    }
-    
-    *out_desc = desc;
-    cdsp_free_device_capabilities(pub_desc);
-    return true;
-  } else {
-    if (out_err) {
-      out_err->type = (device_error_type_t)pub_err.type;
-      strncpy(out_err->message, pub_err.message, sizeof(out_err->message) - 1);
-      out_err->message[sizeof(out_err->message) - 1] = '\0';
-    }
-    return false;
-  }
+  return cdsp_get_available_devices(backend, is_input, out_devices, out_count);
 }
 
 static inline bool ws_engine_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
                                          double min_freq, double max_freq, uint32_t n_bins,
-                                         spectrum_t* out_spec) {
-  cdsp_spectrum_t pub_spec = {0};
-  if (cdsp_get_spectrum(engine, is_capture, channel, min_freq, max_freq, n_bins, &pub_spec)) {
-    out_spec->count = pub_spec.count;
-    if (pub_spec.count > 0) {
-      double* freqs = (double*)malloc(pub_spec.count * sizeof(double));
-      double* mags = (double*)malloc(pub_spec.count * sizeof(double));
-      for (size_t i = 0; i < pub_spec.count; i++) {
-        freqs[i] = pub_spec.frequencies[i];
-        mags[i] = pub_spec.magnitudes[i];
-      }
-      out_spec->frequencies = freqs;
-      out_spec->magnitudes = mags;
-    } else {
-      out_spec->frequencies = NULL;
-      out_spec->magnitudes = NULL;
-    }
-    cdsp_free_spectrum(&pub_spec);
-    return true;
-  }
-  return false;
+                                         cdsp_spectrum_t* out_spec) {
+  return cdsp_get_spectrum(engine, is_capture, channel, min_freq, max_freq, n_bins, out_spec);
 }
 
 static inline bool ws_engine_set_config_json(dsp_engine_t* engine, const char* json_str,
-                                            audio_backend_error_t* out_err) {
-  cdsp_backend_error_t pub_err = {0};
-  bool ok = cdsp_set_config_json(engine, json_str, &pub_err);
-  if (!ok && out_err) {
-    out_err->type = (audio_backend_error_type_t)pub_err.type;
-    strncpy(out_err->message, pub_err.message, sizeof(out_err->message) - 1);
-    out_err->message[sizeof(out_err->message) - 1] = '\0';
-  }
-  return ok;
+                                             cdsp_backend_error_t* out_err) {
+  return cdsp_set_config_json(engine, json_str, out_err);
 }
 
 static inline void ws_engine_stop(dsp_engine_t* engine) {
   cdsp_stop(engine);
 }
 
-static inline float ws_engine_get_fader_volume(dsp_engine_t* engine, fader_t fader) {
-  return cdsp_get_fader_volume(engine, (uint32_t)fader);
+static inline float ws_engine_get_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader) {
+  return cdsp_get_fader_volume(engine, fader);
 }
 
-static inline bool ws_engine_is_fader_muted(dsp_engine_t* engine, fader_t fader) {
-  return cdsp_is_fader_muted(engine, (uint32_t)fader);
+static inline bool ws_engine_is_fader_muted(dsp_engine_t* engine, cdsp_fader_t fader) {
+  return cdsp_is_fader_muted(engine, fader);
 }
 
-static inline void ws_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db, bool instant) {
-  cdsp_set_fader_volume(engine, (uint32_t)fader, db, instant);
+static inline void ws_engine_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db, bool instant) {
+  cdsp_set_fader_volume(engine, fader, db, instant);
 }
 
-static inline void ws_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
-  cdsp_set_fader_mute(engine, (uint32_t)fader, mute);
+static inline void ws_engine_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute) {
+  cdsp_set_fader_mute(engine, fader, mute);
 }
 
 static inline const char* ws_engine_get_state_file(dsp_engine_t* engine) {
@@ -236,33 +108,33 @@ static inline void ws_engine_set_config_path(dsp_engine_t* engine, const char* p
   cdsp_set_config_path(engine, path);
 }
 
-cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
+cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason) {
   char reason_str[512] = "None";
   if (reason) {
     switch (reason->type) {
-      case STOP_REASON_NONE:
+      case CDSP_STOP_REASON_NONE:
         snprintf(reason_str, sizeof(reason_str), "None");
         break;
-      case STOP_REASON_DONE:
+      case CDSP_STOP_REASON_DONE:
         snprintf(reason_str, sizeof(reason_str), "Done");
         break;
-      case STOP_REASON_CAPTURE_ERROR:
+      case CDSP_STOP_REASON_CAPTURE_ERROR:
         snprintf(reason_str, sizeof(reason_str), "CaptureError: %s",
                  reason->message);
         break;
-      case STOP_REASON_PLAYBACK_ERROR:
+      case CDSP_STOP_REASON_PLAYBACK_ERROR:
         snprintf(reason_str, sizeof(reason_str), "PlaybackError: %s",
                  reason->message);
         break;
-      case STOP_REASON_CAPTURE_FORMAT_CHANGE:
+      case CDSP_STOP_REASON_CAPTURE_FORMAT_CHANGE:
         snprintf(reason_str, sizeof(reason_str), "CaptureFormatChange(%d)",
                  reason->format_change_rate);
         break;
-      case STOP_REASON_PLAYBACK_FORMAT_CHANGE:
+      case CDSP_STOP_REASON_PLAYBACK_FORMAT_CHANGE:
         snprintf(reason_str, sizeof(reason_str), "PlaybackFormatChange(%d)",
                  reason->format_change_rate);
         break;
-      case STOP_REASON_UNKNOWN_ERROR:
+      case CDSP_STOP_REASON_UNKNOWN_ERROR:
         snprintf(reason_str, sizeof(reason_str), "UnknownError: %s",
                  reason->message);
         break;
@@ -274,10 +146,10 @@ cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
   return cJSON_CreateString(reason_str);
 }
 
-cJSON* create_state_event_value(processing_state_t state,
-                                const processing_stop_reason_t* reason) {
+cJSON* create_state_event_value(cdsp_processing_state_t state,
+                                const cdsp_stop_reason_t* reason) {
   cJSON* val = cJSON_CreateObject();
-  cJSON_AddStringToObject(val, "state", processing_state_to_string(state));
+  cJSON_AddStringToObject(val, "state", ws_processing_state_to_string(state));
   cJSON_AddItemToObject(val, "stop_reason", serialize_stop_reason(reason));
   return val;
 }
@@ -511,24 +383,24 @@ static websocket_command_t lookup_command(const char* name) {
   return WS_CMD_UNKNOWN;
 }
 
-static const char* get_websocket_error_key(audio_backend_error_type_t type) {
+static const char* get_websocket_error_key(cdsp_backend_error_type_t type) {
   switch (type) {
-    case AUDIO_BACKEND_ERR_CONFIG_PARSE:
+    case CDSP_BACKEND_ERR_CONFIG_PARSE:
       return "ConfigValidationError";
-    case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
+    case CDSP_BACKEND_ERR_DEVICE_NOT_FOUND:
       return "DeviceNotFoundError";
-    case AUDIO_BACKEND_ERR_DEVICE_BUSY:
+    case CDSP_BACKEND_ERR_DEVICE_BUSY:
       return "DeviceBusyError";
     default:
       return "DeviceError";
   }
 }
 
-static const char* get_websocket_device_error_key(device_error_type_t type) {
+static const char* get_websocket_device_error_key(cdsp_device_error_type_t type) {
   switch (type) {
-    case DEVICE_ERROR_NOT_FOUND:
+    case CDSP_DEVICE_ERROR_NOT_FOUND:
       return "DeviceNotFoundError";
-    case DEVICE_ERROR_BUSY:
+    case CDSP_DEVICE_ERROR_BUSY:
       return "DeviceBusyError";
     default:
       return "DeviceError";
@@ -717,7 +589,7 @@ static void cjson_merge_patch(cJSON* target, const cJSON* patch) {
   }
 }
 
-static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
+static char* format_device_descriptor(const cdsp_device_descriptor_t* desc) {
   if (!desc) return strdup("null");
   cJSON* root = cJSON_CreateObject();
   cJSON_AddStringToObject(root, "name", desc->name);
@@ -726,7 +598,7 @@ static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
   cJSON_AddItemToObject(root, "capability_sets", cs_arr);
 
   for (size_t cs_idx = 0; cs_idx < desc->capability_sets_count; cs_idx++) {
-    const device_capability_set_t* cs = &desc->capability_sets[cs_idx];
+    const cdsp_device_capability_set_t* cs = &desc->capability_sets[cs_idx];
     cJSON* cs_obj = cJSON_CreateObject();
     cJSON_AddItemToArray(cs_arr, cs_obj);
 
@@ -734,7 +606,7 @@ static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
     cJSON_AddItemToObject(cs_obj, "capabilities", caps_arr);
 
     for (size_t c_idx = 0; c_idx < cs->capabilities_count; c_idx++) {
-      const channel_capability_t* cap = &cs->capabilities[c_idx];
+      const cdsp_channel_capability_t* cap = &cs->capabilities[c_idx];
       cJSON* cap_obj = cJSON_CreateObject();
       cJSON_AddItemToArray(caps_arr, cap_obj);
 
@@ -744,7 +616,7 @@ static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
       cJSON_AddItemToObject(cap_obj, "samplerates", sr_arr);
 
       for (size_t s_idx = 0; s_idx < cap->samplerates_count; s_idx++) {
-        const samplerate_capability_t* sr = &cap->samplerates[s_idx];
+        const cdsp_samplerate_capability_t* sr = &cap->samplerates[s_idx];
         cJSON* sr_obj = cJSON_CreateObject();
         cJSON_AddItemToArray(sr_arr, sr_obj);
 
@@ -765,7 +637,7 @@ static char* format_device_descriptor(const audio_device_descriptor_t* desc) {
   return str;
 }
 
-cJSON* serialize_spectrum(const spectrum_t* spec) {
+cJSON* serialize_spectrum(const cdsp_spectrum_t* spec) {
   if (!spec || spec->count == 0) return cJSON_CreateNull();
   cJSON* root = cJSON_CreateObject();
   cJSON_AddItemToObject(
@@ -778,14 +650,14 @@ cJSON* serialize_spectrum(const spectrum_t* spec) {
 }
 
 static bool server_handle_adjust_volume_fader(websocket_server_t* server,
-                                              fader_t fader, double delta,
+                                              cdsp_fader_t fader, double delta,
                                               double min_vol, double max_vol,
                                               dyn_string_t* ds,
                                               const char* cmd_name) {
-  state_update_t status;
+  ws_state_update_t status;
   if (!server || !server->engine || 
       !ws_engine_get_status(server->engine, &status) ||
-      status.state != PROCESSING_STATE_RUNNING) {
+      status.state != CDSP_PROCESSING_STATE_RUNNING) {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     return true;
   }
@@ -817,13 +689,13 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
                                   dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     double vol =
         (1)
-            ? ws_engine_get_fader_volume(server->engine, FADER_MAIN)
+            ? ws_engine_get_fader_volume(server->engine, CDSP_FADER_MAIN)
             : 0.0;
     reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
   } else {
@@ -838,12 +710,12 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
   double vol = 0.0;
   if (arg && cJSON_IsNumber(arg)) {
     vol = arg->valuedouble;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (1) {
-        ws_engine_set_fader_volume(server->engine, FADER_MAIN, vol,
+        ws_engine_set_fader_volume(server->engine, CDSP_FADER_MAIN, vol,
                                          false);
       }
       reply_ok(cmd_name, NULL, ds);
@@ -863,13 +735,13 @@ static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
                                 dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     bool mute =
         (1)
-            ? ws_engine_is_fader_muted(server->engine, FADER_MAIN)
+            ? ws_engine_is_fader_muted(server->engine, CDSP_FADER_MAIN)
             : false;
     reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
   } else {
@@ -884,12 +756,12 @@ static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
   bool mute = false;
   if (arg && cJSON_IsBool(arg)) {
     mute = cJSON_IsTrue(arg);
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (1) {
-        ws_engine_set_fader_mute(server->engine, FADER_MAIN, mute);
+        ws_engine_set_fader_mute(server->engine, CDSP_FADER_MAIN, mute);
       }
       reply_ok(cmd_name, NULL, ds);
     } else {
@@ -907,16 +779,16 @@ static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
                                    dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     bool was_muted =
         (1)
-            ? ws_engine_is_fader_muted(server->engine, FADER_MAIN)
+            ? ws_engine_is_fader_muted(server->engine, CDSP_FADER_MAIN)
             : false;
     if (1) {
-      ws_engine_set_fader_mute(server->engine, FADER_MAIN,
+      ws_engine_set_fader_mute(server->engine, CDSP_FADER_MAIN,
                                      !was_muted);
     }
     reply_ok(cmd_name, cJSON_CreateBool(!was_muted), ds);
@@ -930,20 +802,20 @@ static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
                                   dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     cJSON* arr = cJSON_CreateArray();
-    for (int i = 0; i < FADER_COUNT; i++) {
+    for (int i = 0; i < CDSP_FADER_COUNT; i++) {
       cJSON* obj = cJSON_CreateObject();
       double vol = (1)
                        ? ws_engine_get_fader_volume(server->engine,
-                                                          (fader_t)i)
+                                                          (cdsp_fader_t)i)
                        : 0.0;
       bool mute =
           (1)
-              ? ws_engine_is_fader_muted(server->engine, (fader_t)i)
+              ? ws_engine_is_fader_muted(server->engine, (cdsp_fader_t)i)
               : false;
       cJSON_AddNumberToObject(obj, "volume", vol);
       cJSON_AddBoolToObject(obj, "mute", mute);
@@ -961,14 +833,14 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         double vol = (1)
                          ? ws_engine_get_fader_volume(server->engine,
-                                                            (fader_t)idx)
+                                                            (cdsp_fader_t)idx)
                          : 0.0;
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
@@ -1006,13 +878,13 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
     }
   }
   if (ok) {
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         if (1) {
-          ws_engine_set_fader_volume(server->engine, (fader_t)idx,
+          ws_engine_set_fader_volume(server->engine, (cdsp_fader_t)idx,
                                            vol, false);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -1049,13 +921,13 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
     }
   }
   if (ok) {
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         if (1) {
-          ws_engine_set_fader_volume(server->engine, (fader_t)idx,
+          ws_engine_set_fader_volume(server->engine, (cdsp_fader_t)idx,
                                            vol, true);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -1080,14 +952,14 @@ static void handle_cmd_get_fader_mute(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         bool mute = (1)
                         ? ws_engine_is_fader_muted(server->engine,
-                                                         (fader_t)idx)
+                                                         (cdsp_fader_t)idx)
                         : false;
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
@@ -1125,13 +997,13 @@ static void handle_cmd_set_fader_mute(websocket_server_t* server,
     }
   }
   if (ok) {
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         if (1) {
-          ws_engine_set_fader_mute(server->engine, (fader_t)idx,
+          ws_engine_set_fader_mute(server->engine, (cdsp_fader_t)idx,
                                          mute);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -1155,16 +1027,16 @@ static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      if (idx >= 0 && idx < FADER_COUNT) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
+      if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         bool was_muted = (1)
-                             ? ws_engine_is_fader_muted(server->engine, (fader_t)idx)
+                             ? ws_engine_is_fader_muted(server->engine, (cdsp_fader_t)idx)
                              : false;
         if (1) {
-          ws_engine_set_fader_mute(server->engine, (fader_t)idx,
+          ws_engine_set_fader_mute(server->engine, (cdsp_fader_t)idx,
                                          !was_muted);
         }
         cJSON* arr = cJSON_CreateArray();
@@ -1193,7 +1065,7 @@ static void handle_cmd_adjust_volume(websocket_server_t* server, int client_idx,
   double min_vol = -150.0;
   double max_vol = 50.0;
   if (parse_value_with_optional_limits(arg, &delta, &min_vol, &max_vol)) {
-    server_handle_adjust_volume_fader(server, FADER_MAIN, delta, min_vol,
+    server_handle_adjust_volume_fader(server, CDSP_FADER_MAIN, delta, min_vol,
                                       max_vol, ds, cmd_name);
   } else {
     cJSON* err = cJSON_CreateObject();
@@ -1222,8 +1094,8 @@ static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
     }
   }
   if (ok) {
-    if (idx >= 0 && idx < FADER_COUNT) {
-      server_handle_adjust_volume_fader(server, (fader_t)idx, delta, min_vol,
+    if (idx >= 0 && idx < CDSP_FADER_COUNT) {
+      server_handle_adjust_volume_fader(server, (cdsp_fader_t)idx, delta, min_vol,
                                         max_vol, ds, cmd_name);
     } else {
       reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -1529,7 +1401,7 @@ static void handle_cmd_reload(websocket_server_t* server, int client_idx,
     char* json = server_read_file_to_string(path);
     free(path);
     if (json) {
-      audio_backend_error_t err = {0};
+      cdsp_backend_error_t err = {0};
       bool ok =
           server && server->engine && 1 &&
           ws_engine_set_config_json(server->engine, json, &err);
@@ -1603,7 +1475,7 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* new_json = arg->valuestring;
-    audio_backend_error_t err = {0};
+    cdsp_backend_error_t err = {0};
     bool ok =
         server && server->engine && 1 &&
         ws_engine_set_config_json(server->engine, new_json, &err);
@@ -1712,7 +1584,7 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
       char* updated_json =
           server_set_value_at_pointer_str(active_json, pointer, trimmed_val);
       if (updated_json) {
-        audio_backend_error_t err = {0};
+        cdsp_backend_error_t err = {0};
         bool ok = server && server->engine && 1 &&
                   ws_engine_set_config_json(server->engine,
                                                   updated_json, &err);
@@ -1773,7 +1645,7 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
         cjson_merge_patch(target_root, arg);
         char* target_json = cJSON_PrintUnformatted(target_root);
         if (target_json) {
-          audio_backend_error_t err = {0};
+          cdsp_backend_error_t err = {0};
           bool ok = server && server->engine &&
                     1 &&
                     ws_engine_set_config_json(server->engine,
@@ -1822,16 +1694,16 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* config_json = arg->valuestring;
-    dsp_config_t* parsed = NULL;
-    config_error_t cerr = {0};
-    if (config_loader_parse(config_json, &parsed, &cerr) == 0 && parsed) {
+    char* result = NULL;
+    bool is_error = false;
+    if (cdsp_validate_config_json(config_json, &result, &is_error) && !is_error) {
       reply_ok(cmd_name, cJSON_CreateString(config_json), ds);
-      dsp_config_free(parsed);
     } else {
       cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "ConfigValidationError", cerr.message);
+      cJSON_AddStringToObject(err, "ConfigValidationError", result ? result : "Invalid config");
       reply_error(cmd_name, NULL, err, ds);
     }
+    if (result) free(result);
   } else {
     cJSON* err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "InvalidRequestError",
@@ -1844,7 +1716,7 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
                                             const char* cmd_name,
                                             bool is_capture, bool is_rms,
                                             dyn_string_t* ds) {
-  vu_levels_t vu = {0};
+  cdsp_vu_levels_t vu = {0};
   if (server && server->engine && 1 &&
       ws_engine_get_vu_levels(server->engine, &vu)) {
     double* arr = NULL;
@@ -1857,7 +1729,7 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
       count = vu.playback_channels;
     }
     reply_ok(cmd_name, cJSON_CreateDoubleArray(arr, (int)count), ds);
-    free_vu_levels_arrays(&vu);
+    cdsp_free_vu_levels(&vu);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
   }
@@ -1904,10 +1776,10 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
                                                 const char* cmd_name,
                                                 bool is_capture, bool is_rms,
                                                 dyn_string_t* ds) {
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     uint64_t since = 0;
     uint64_t now = get_time_ms();
     level_history_t* hist = NULL;
@@ -1985,10 +1857,10 @@ static void handle_get_signal_since_helper(websocket_server_t* server,
   double secs = 0;
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
       uint64_t now = get_time_ms();
       uint64_t since = now - (uint64_t)(secs * 1000.0);
       level_history_t* hist = NULL;
@@ -2058,7 +1930,7 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
                                          cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  vu_levels_t vu = {0};
+  cdsp_vu_levels_t vu = {0};
   if (server && server->engine && 1 &&
       ws_engine_get_vu_levels(server->engine, &vu)) {
     cJSON* root = cJSON_CreateObject();
@@ -2075,7 +1947,7 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
         root, "capture_peak",
         cJSON_CreateDoubleArray(vu.capture_peak, (int)vu.capture_channels));
     reply_ok(cmd_name, root, ds);
-    free_vu_levels_arrays(&vu);
+    cdsp_free_vu_levels(&vu);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
   }
@@ -2087,10 +1959,10 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
                                                     cJSON* arg,
                                                     dyn_string_t* ds) {
   (void)arg;
-  state_update_t status;
+  ws_state_update_t status;
   if (server && server->engine && 
       ws_engine_get_status(server->engine, &status) &&
-      status.state == PROCESSING_STATE_RUNNING) {
+      status.state == CDSP_PROCESSING_STATE_RUNNING) {
     uint64_t cap_rms_since =
         server->client_sessions[client_idx].last_cap_rms_time;
     uint64_t cap_pk_since =
@@ -2150,10 +2022,10 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
   double secs = 0;
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
-    state_update_t status;
+    ws_state_update_t status;
     if (server && server->engine && 
         ws_engine_get_status(server->engine, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
+        status.state == CDSP_PROCESSING_STATE_RUNNING) {
       uint64_t now = get_time_ms();
       uint64_t since = now - (uint64_t)(secs * 1000.0);
 
@@ -2268,7 +2140,7 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  vu_levels_t vu = {0};
+  cdsp_vu_levels_t vu = {0};
   if (server && server->engine && 1 &&
       ws_engine_get_vu_levels(server->engine, &vu)) {
     size_t count = vu.playback_channels;
@@ -2279,7 +2151,7 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
     }
     double range = 2.0 * db_to_amplitude(max_peak);
     reply_ok(cmd_name, cJSON_CreateNumber(range), ds);
-    free_vu_levels_arrays(&vu);
+    cdsp_free_vu_levels(&vu);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
   }
@@ -2310,7 +2182,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     ok = true;
   }
   if (ok) {
-    spectrum_t spec = {0};
+    cdsp_spectrum_t spec = {0};
     bool spec_ok =
         server && server->engine && 1 &&
         ws_engine_get_spectrum(server->engine, is_capture, channel,
@@ -2322,8 +2194,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
       } else {
         reply_error(cmd_name, "UnknownError", NULL, ds);
       }
-      if (spec.frequencies) free(spec.frequencies);
-      if (spec.magnitudes) free(spec.magnitudes);
+      cdsp_free_spectrum(&spec);
     } else {
       cJSON* err = cJSON_CreateObject();
       cJSON_AddStringToObject(err, "DeviceError", "Failed to compute spectrum");
@@ -2343,7 +2214,7 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
                                                 dyn_string_t* ds) {
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* backend = arg->valuestring;
-    audio_device_t* devs = NULL;
+    cdsp_device_info_t* devs = NULL;
     size_t count = 0;
     bool ok = server && server->engine &&
               1 &&
@@ -2390,6 +2261,7 @@ static void handle_get_device_capabilities_helper(websocket_server_t* server,
                                                   const char* cmd_name,
                                                   cJSON* arg, bool is_capture,
                                                   dyn_string_t* ds) {
+  (void)server;
   char backend[128] = "";
   char device[256] = "";
   bool ok = false;
@@ -2403,12 +2275,10 @@ static void handle_get_device_capabilities_helper(websocket_server_t* server,
     }
   }
   if (ok) {
-    audio_device_descriptor_t* desc = NULL;
-    device_error_t d_err;
-    device_error_clear(&d_err);
-    bool cap_ok =
-        server && server->engine && 1 &&
-        ws_engine_get_device_capabilities(server->engine, backend, device, is_capture, &desc, &d_err);
+    cdsp_device_descriptor_t* desc = NULL;
+    cdsp_device_error_t d_err;
+    memset(&d_err, 0, sizeof(d_err));
+    bool cap_ok = cdsp_get_device_capabilities(backend, device, is_capture, &desc, &d_err);
     if (cap_ok && desc) {
       char* val = format_device_descriptor(desc);
       if (val) {
@@ -2424,9 +2294,7 @@ static void handle_get_device_capabilities_helper(websocket_server_t* server,
         cJSON_AddStringToObject(err, "DeviceError", "Out of memory");
         reply_error(cmd_name, NULL, err, ds);
       }
-      extern void dsp_engine_free_device_capabilities(
-          audio_device_descriptor_t * desc);
-      dsp_engine_free_device_capabilities(desc);
+      cdsp_free_device_capabilities(desc);
     } else {
       cJSON* err = cJSON_CreateObject();
       cJSON_AddStringToObject(err, get_websocket_device_error_key(d_err.type),
@@ -2469,14 +2337,14 @@ static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
                                  dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  processing_state_t state = PROCESSING_STATE_INACTIVE;
+  cdsp_processing_state_t state = CDSP_PROCESSING_STATE_INACTIVE;
   if (server && server->engine) {
-    state_update_t status;
+    ws_state_update_t status;
     if (ws_engine_get_status(server->engine, &status)) {
       state = status.state;
     }
   }
-  reply_ok(cmd_name, cJSON_CreateString(processing_state_to_string(state)), ds);
+  reply_ok(cmd_name, cJSON_CreateString(ws_processing_state_to_string(state)), ds);
 }
 
 static void handle_cmd_get_stop_reason(websocket_server_t* server,
@@ -2486,7 +2354,7 @@ static void handle_cmd_get_stop_reason(websocket_server_t* server,
   (void)arg;
   cJSON* val = NULL;
   if (server && server->engine) {
-    state_update_t status = {0};
+    ws_state_update_t status = {0};
     if (ws_engine_get_status(server->engine, &status)) {
       val = serialize_stop_reason(&status.stop_reason);
     }
@@ -2502,11 +2370,11 @@ static void handle_cmd_get_capture_rate(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  state_update_t status = {0};
+  ws_state_update_t status = {0};
   bool has_status = server && server->engine && 
                     ws_engine_get_status(server->engine, &status);
   int sr = 0;
-  if (has_status && status.state == PROCESSING_STATE_RUNNING) {
+  if (has_status && status.state == CDSP_PROCESSING_STATE_RUNNING) {
     sr = ws_engine_get_active_samplerate(server->engine);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(sr), ds);

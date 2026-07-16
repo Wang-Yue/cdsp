@@ -2,10 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include "Engine/dsp_engine.h"
+#include "Config/cJSON.h"
 
 bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   if (!engine || !out_vu) return false;
-  vu_levels_t vu = dsp_engine_get_vu_levels(engine);
+  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
+  if (!iface || !iface->get_vu_levels) return false;
+
+  vu_levels_t vu = {0};
+  if (!iface->get_vu_levels(iface->ctx, &vu)) return false;
   
   out_vu->playback_channels = vu.playback_channels;
   out_vu->capture_channels = vu.capture_channels;
@@ -38,7 +43,10 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
     out_vu->capture_peak = NULL;
   }
 
-  dsp_engine_free_vu_levels(&vu);
+  if (vu.playback_rms) free(vu.playback_rms);
+  if (vu.playback_peak) free(vu.playback_peak);
+  if (vu.capture_rms) free(vu.capture_rms);
+  if (vu.capture_peak) free(vu.capture_peak);
   return true;
 }
 
@@ -54,42 +62,49 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu) {
   vu->capture_peak = NULL;
 }
 
+static void get_labels_from_json(cJSON* devices, const char* dir_key, char*** out_labels, size_t* out_count) {
+  if (!out_labels || !out_count) return;
+  *out_labels = NULL;
+  *out_count = 0;
+  if (!devices) return;
+  cJSON* dir = cJSON_GetObjectItem(devices, dir_key);
+  if (!dir) return;
+  cJSON* labels = cJSON_GetObjectItem(dir, "channel_labels");
+  if (labels && cJSON_IsArray(labels)) {
+    size_t count = cJSON_GetArraySize(labels);
+    if (count > 0) {
+      char** arr = (char**)malloc(count * sizeof(char*));
+      for (size_t i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(labels, i);
+        arr[i] = (item && cJSON_IsString(item) && item->valuestring) ? strdup(item->valuestring) : NULL;
+      }
+      *out_labels = arr;
+      *out_count = count;
+    }
+  }
+}
+
 bool cdsp_get_channel_labels(const dsp_engine_t* engine,
                              char*** out_playback_labels, size_t* out_playback_count,
                              char*** out_capture_labels, size_t* out_capture_count) {
   if (!engine) return false;
-  const dsp_config_t* cfg = dsp_engine_get_active_config(engine);
-  if (!cfg) return false;
+  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
+  if (!iface || !iface->get_active_config_json) return false;
 
-  size_t pb_count = cfg->devices.playback.labels_count;
-  size_t cap_count = cfg->devices.capture.labels_count;
+  char* active_json = NULL;
+  if (!iface->get_active_config_json(iface->ctx, &active_json) || !active_json) return false;
 
-  if (out_playback_labels && out_playback_count) {
-    *out_playback_count = pb_count;
-    if (pb_count > 0 && cfg->devices.playback.labels) {
-      char** pb_arr = (char**)malloc(pb_count * sizeof(char*));
-      for (size_t i = 0; i < pb_count; i++) {
-        pb_arr[i] = cfg->devices.playback.labels[i] ? strdup(cfg->devices.playback.labels[i]) : NULL;
-      }
-      *out_playback_labels = pb_arr;
-    } else {
-      *out_playback_labels = NULL;
-    }
+  cJSON* root = cJSON_Parse(active_json);
+  free(active_json);
+  if (!root) return false;
+
+  cJSON* devices = cJSON_GetObjectItem(root, "devices");
+  if (devices) {
+    get_labels_from_json(devices, "playback", out_playback_labels, out_playback_count);
+    get_labels_from_json(devices, "capture", out_capture_labels, out_capture_count);
   }
 
-  if (out_capture_labels && out_capture_count) {
-    *out_capture_count = cap_count;
-    if (cap_count > 0 && cfg->devices.capture.labels) {
-      char** cap_arr = (char**)malloc(cap_count * sizeof(char*));
-      for (size_t i = 0; i < cap_count; i++) {
-        cap_arr[i] = cfg->devices.capture.labels[i] ? strdup(cfg->devices.capture.labels[i]) : NULL;
-      }
-      *out_capture_labels = cap_arr;
-    } else {
-      *out_capture_labels = NULL;
-    }
-  }
-
+  cJSON_Delete(root);
   return true;
 }
 

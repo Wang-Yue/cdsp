@@ -2,6 +2,7 @@
 #define CLIB_SERVER_WS_RPC_DISPATCHER_H
 
 #include "websocket_server_internal.h"
+#include "Public/spectrum.h"
 
 /**
  * @brief Handle a control command text (either simple quoted string or JSON
@@ -16,7 +17,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                                      const char* command_text,
                                      dyn_string_t* ds);
 
-cJSON* serialize_spectrum(const spectrum_t* spec);
-cJSON* serialize_stop_reason(const processing_stop_reason_t* reason);
+cJSON* serialize_spectrum(const cdsp_spectrum_t* spec);
+cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason);
 
 #endif  // CLIB_SERVER_WS_RPC_DISPATCHER_H

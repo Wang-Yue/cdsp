@@ -1,15 +1,15 @@
 #include "Public/devices.h"
 #include <stdlib.h>
 #include <string.h>
-#include "Config/engine_config_types.h"
-#include "Engine/dsp_engine.h"
+#include "Backend/audio_backend.h"
+#include "Backend/audio_backend_registry.h"
 
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices, size_t* out_count) {
   if (!backend || !out_devices || !out_count) return false;
   
   audio_device_t devs[128];
-  int count = dsp_engine_get_available_devices(backend, is_input, devs, 128);
+  int count = audio_backend_registry_get_available_devices(backend, is_input, devs, 128);
   if (count < 0) {
     *out_count = 0;
     *out_devices = NULL;
@@ -44,10 +44,20 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
   if (!backend || !device || !out_desc) return false;
 
   device_error_t err = {0};
-  audio_device_descriptor_t* desc = dsp_engine_get_device_capabilities(backend, device, is_capture, &err);
+  audio_device_descriptor_t* desc = audio_backend_registry_get_device_capabilities(backend, device, is_capture, &err);
   if (!desc) {
     if (out_err) {
-      out_err->type = (cdsp_device_error_type_t)err.type;
+      switch (err.type) {
+        case DEVICE_ERROR_NOT_FOUND:
+          out_err->type = CDSP_DEVICE_ERROR_NOT_FOUND;
+          break;
+        case DEVICE_ERROR_BUSY:
+          out_err->type = CDSP_DEVICE_ERROR_BUSY;
+          break;
+        default:
+          out_err->type = CDSP_DEVICE_ERROR_UNKNOWN;
+          break;
+      }
       strncpy(out_err->message, err.message, sizeof(out_err->message) - 1);
       out_err->message[sizeof(out_err->message) - 1] = '\0';
     }
@@ -56,7 +66,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
 
   cdsp_device_descriptor_t* pub = (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
   if (!pub) {
-    dsp_engine_free_device_capabilities(desc);
+    free_audio_device_descriptor(desc);
     return false;
   }
 
@@ -69,7 +79,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
     pub->capability_sets = (cdsp_device_capability_set_t*)malloc(desc->capability_sets_count * sizeof(cdsp_device_capability_set_t));
     if (!pub->capability_sets) {
       free(pub);
-      dsp_engine_free_device_capabilities(desc);
+      free_audio_device_descriptor(desc);
       return false;
     }
 
@@ -136,7 +146,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
   }
 
   *out_desc = pub;
-  dsp_engine_free_device_capabilities(desc);
+  free_audio_device_descriptor(desc);
   return true;
 }
 

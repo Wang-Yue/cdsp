@@ -100,13 +100,7 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   va_end(args);
 }
 
-void free_vu_levels_arrays(vu_levels_t* vu) {
-  if (vu->playback_rms) free(vu->playback_rms);
-  if (vu->playback_peak) free(vu->playback_peak);
-  if (vu->capture_rms) free(vu->capture_rms);
-  if (vu->capture_peak) free(vu->capture_peak);
-  memset(vu, 0, sizeof(vu_levels_t));
-}
+
 
 double db_to_amplitude(double db) {
   if (db <= -1000.0) return 0.0;
@@ -311,21 +305,17 @@ static void* server_thread_func(void* arg) {
     if (now - last_broadcast_time_ms >= server->update_interval) {
       last_broadcast_time_ms = now;
 
-      state_update_t status = {0};
+      ws_state_update_t status = {0};
       bool has_status = false;
       if (server->engine) {
-        status.state = (processing_state_t)cdsp_get_state(server->engine);
-        cdsp_stop_reason_t stop_reason = {0};
-        cdsp_get_stop_reason(server->engine, &stop_reason);
-        status.stop_reason.type = (processing_stop_reason_type_t)stop_reason.type;
-        strncpy(status.stop_reason.message, stop_reason.message, sizeof(status.stop_reason.message) - 1);
-        status.stop_reason.format_change_rate = stop_reason.format_change_rate;
+        status.state = cdsp_get_state(server->engine);
+        cdsp_get_stop_reason(server->engine, &status.stop_reason);
         has_status = true;
       }
 
       const char* state_str = "Inactive";
       if (has_status) {
-        state_str = processing_state_to_string(status.state);
+        state_str = ws_processing_state_to_string(status.state);
       }
 
       double* current_cap_peak = NULL;
@@ -335,15 +325,8 @@ static void* server_thread_func(void* arg) {
       size_t cap_channels = 0;
       size_t pb_channels = 0;
 
-      vu_levels_t vu = {0};
-      cdsp_vu_levels_t pub_vu = {0};
-      if (server->engine && cdsp_get_vu_levels(server->engine, &pub_vu)) {
-        vu.playback_rms = pub_vu.playback_rms;
-        vu.playback_peak = pub_vu.playback_peak;
-        vu.capture_rms = pub_vu.capture_rms;
-        vu.capture_peak = pub_vu.capture_peak;
-        vu.playback_channels = pub_vu.playback_channels;
-        vu.capture_channels = pub_vu.capture_channels;
+      cdsp_vu_levels_t vu = {0};
+      if (server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
         cap_channels = vu.capture_channels;
         pb_channels = vu.playback_channels;
         current_cap_peak = vu.capture_peak;
@@ -625,7 +608,7 @@ static void* server_thread_func(void* arg) {
               cJSON* val = cJSON_CreateObject();
               cJSON_AddItemToObject(root, "SpectrumEvent", val);
               cJSON_AddStringToObject(val, "result", "Ok");
-              cJSON_AddItemToObject(val, "value", serialize_spectrum((const spectrum_t*)&spec));
+              cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
               QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
               cdsp_free_spectrum(&spec);
@@ -635,7 +618,7 @@ static void* server_thread_func(void* arg) {
         }
       }
 
-      free_vu_levels_arrays(&vu);
+      cdsp_free_vu_levels(&vu);
     }
     pthread_mutex_unlock(&server->sessions_mutex);
 

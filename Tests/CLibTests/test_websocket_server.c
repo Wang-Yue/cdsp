@@ -334,6 +334,16 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   return false;
 }
 
+void cdsp_free_vu_levels(cdsp_vu_levels_t* levels) {
+  if (levels) {
+    if (levels->playback_rms) free(levels->playback_rms);
+    if (levels->playback_peak) free(levels->playback_peak);
+    if (levels->capture_rms) free(levels->capture_rms);
+    if (levels->capture_peak) free(levels->capture_peak);
+    memset(levels, 0, sizeof(cdsp_vu_levels_t));
+  }
+}
+
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices, size_t* out_count) {
   *out_devices = NULL;
@@ -354,7 +364,17 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
     }
   } else {
     if (out_err) {
-      out_err->type = (cdsp_device_error_type_t)raw_err.type;
+      switch (raw_err.type) {
+        case DEVICE_ERROR_NOT_FOUND:
+          out_err->type = CDSP_DEVICE_ERROR_NOT_FOUND;
+          break;
+        case DEVICE_ERROR_BUSY:
+          out_err->type = CDSP_DEVICE_ERROR_BUSY;
+          break;
+        default:
+          out_err->type = CDSP_DEVICE_ERROR_UNKNOWN;
+          break;
+      }
       strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
       out_err->message[sizeof(out_err->message) - 1] = '\0';
     }
@@ -406,13 +426,33 @@ bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
     audio_backend_error_t raw_err = {0};
     bool ok = mock->set_config_json(mock->ctx, json_str, &raw_err);
     if (!ok && out_err) {
-      out_err->type = (cdsp_backend_error_type_t)raw_err.type;
+      switch (raw_err.type) {
+        case AUDIO_BACKEND_ERR_CONFIG_PARSE:
+          out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+          break;
+        case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
+          out_err->type = CDSP_BACKEND_ERR_DEVICE_NOT_FOUND;
+          break;
+        case AUDIO_BACKEND_ERR_DEVICE_BUSY:
+          out_err->type = CDSP_BACKEND_ERR_DEVICE_BUSY;
+          break;
+        default:
+          out_err->type = CDSP_BACKEND_ERR_UNKNOWN;
+          break;
+      }
       strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
       out_err->message[sizeof(out_err->message) - 1] = '\0';
     }
     return ok;
   }
   return false;
+}
+
+bool cdsp_validate_config_json(const char* json_str, char** out_result, bool* is_error) {
+  (void)json_str;
+  *out_result = NULL;
+  *is_error = false;
+  return true;
 }
 
 void cdsp_stop(dsp_engine_t* engine) {
@@ -422,7 +462,7 @@ void cdsp_stop(dsp_engine_t* engine) {
   }
 }
 
-float cdsp_get_fader_volume(const dsp_engine_t* engine, uint32_t fader) {
+float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
   const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
   if (mock && mock->get_fader_volume) {
     return mock->get_fader_volume(mock->ctx, (fader_t)fader);
@@ -430,7 +470,7 @@ float cdsp_get_fader_volume(const dsp_engine_t* engine, uint32_t fader) {
   return 0.0f;
 }
 
-bool cdsp_is_fader_muted(const dsp_engine_t* engine, uint32_t fader) {
+bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader) {
   const dsp_engine_interface_t* mock = (const dsp_engine_interface_t*)engine;
   if (mock && mock->is_fader_muted) {
     return mock->is_fader_muted(mock->ctx, (fader_t)fader);
@@ -438,14 +478,14 @@ bool cdsp_is_fader_muted(const dsp_engine_t* engine, uint32_t fader) {
   return false;
 }
 
-void cdsp_set_fader_volume(dsp_engine_t* engine, uint32_t fader, float db, bool instant) {
+void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db, bool instant) {
   dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
   if (mock && mock->set_fader_volume) {
     mock->set_fader_volume(mock->ctx, (fader_t)fader, db, instant);
   }
 }
 
-void cdsp_set_fader_mute(dsp_engine_t* engine, uint32_t fader, bool mute) {
+void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute) {
   dsp_engine_interface_t* mock = (dsp_engine_interface_t*)engine;
   if (mock && mock->set_fader_mute) {
     mock->set_fader_mute(mock->ctx, (fader_t)fader, mute);

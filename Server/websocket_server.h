@@ -12,8 +12,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Backend/backend_error.h"
-#include "Config/configuration.h"
 #include "Public/cdsp_pub_types.h"
 
 /**

@@ -150,81 +150,41 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
     return false;
   }
 
-  dsp_config_t* parsed = NULL;
-  config_error_t cerr = {0};
-  if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
-    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Parsing failed: %s", cerr.message);
-    free(json);
+  cJSON* root = cJSON_Parse(json);
+  free(json);
+  if (!root) {
+    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Could not parse JSON config");
     return false;
   }
 
-  // Apply overrides
-  if (samplerate_override > 0) {
-    parsed->devices.samplerate = samplerate_override;
-  }
-  if (channels_override > 0) {
-    capture_device_config_set_channels(&parsed->devices.capture, channels_override);
-  }
-  if (extra_samples_override >= 0) {
-    capture_device_config_set_extra_samples(&parsed->devices.capture, extra_samples_override);
-  }
-  if (format_override) {
-#if defined(ENABLE_ALSA)
-    if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_ALSA) {
-      alsa_sample_format_t fmt = alsa_sample_format_from_string(format_override);
-      if (fmt != ALSA_SAMPLE_FORMAT_INVALID) {
-        parsed->devices.capture.cfg.alsa.format = fmt;
-        parsed->devices.capture.cfg.alsa.has_format = true;
-      }
+  cJSON* devices = cJSON_GetObjectItem(root, "devices");
+  if (devices) {
+    if (samplerate_override > 0) {
+      cJSON_ReplaceItemInObject(devices, "samplerate", cJSON_CreateNumber(samplerate_override));
     }
-#endif
-#if defined(ENABLE_COREAUDIO)
-    if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
-      coreaudio_sample_format_t fmt = coreaudio_sample_format_from_string(format_override);
-      if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
-        capture_device_config_set_format(&parsed->devices.capture, fmt);
+    cJSON* capture = cJSON_GetObjectItem(devices, "capture");
+    if (capture) {
+      if (channels_override > 0) {
+        cJSON_ReplaceItemInObject(capture, "channels", cJSON_CreateNumber(channels_override));
       }
-    }
-#endif
-#if defined(ENABLE_WASAPI)
-    if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_WASAPI) {
-      wasapi_sample_format_t fmt = wasapi_sample_format_from_string(format_override);
-      if (fmt != WASAPI_SAMPLE_FORMAT_INVALID) {
-        parsed->devices.capture.cfg.wasapi.format = fmt;
-        parsed->devices.capture.cfg.wasapi.has_format = true;
+      if (extra_samples_override >= 0) {
+        cJSON_ReplaceItemInObject(capture, "extra_samples", cJSON_CreateNumber(extra_samples_override));
       }
-    }
-#endif
-#if defined(ENABLE_ASIO)
-    if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO) {
-      asio_sample_format_t fmt = asio_sample_format_from_string(format_override);
-      if (fmt != ASIO_SAMPLE_FORMAT_INVALID) {
-        parsed->devices.capture.cfg.asio.format = fmt;
-        parsed->devices.capture.cfg.asio.has_format = true;
-      }
-    }
-#endif
-    if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_FILE ||
-        parsed->devices.capture.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-      binary_sample_format_t fmt = binary_sample_format_from_string(format_override);
-      if (fmt != BINARY_SAMPLE_FORMAT_INVALID) {
-        capture_device_config_set_file_format(&parsed->devices.capture, fmt);
+      if (format_override) {
+        cJSON_ReplaceItemInObject(capture, "format", cJSON_CreateString(format_override));
       }
     }
   }
 
-  // Set structural configuration on the engine
-  audio_backend_error_t berr = {0};
-  bool ok = dsp_engine_set_config_struct(engine, parsed, &berr);
-  if (!ok && out_err) {
-    strncpy(out_err->message, berr.message, sizeof(out_err->message) - 1);
-    out_err->message[sizeof(out_err->message) - 1] = '\0';
-    // dsp_engine_set_config_struct frees config on failure
-  } else {
-    // dsp_engine_set_config_struct takes ownership and frees on success as well
+  char* updated_json = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  if (!updated_json) {
+    if (out_err) snprintf(out_err->message, sizeof(out_err->message), "Failed to format updated JSON");
+    return false;
   }
-  
-  free(json);
+
+  bool ok = cdsp_set_config_json(engine, updated_json, out_err);
+  free(updated_json);
   return ok;
 }
 

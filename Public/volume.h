@@ -40,31 +40,31 @@ void cdsp_set_mute(dsp_engine_t* engine, bool mute);
  * @param fader_idx Index of the fader (0 for Main, 1-4 for Aux1-Aux4).
  * @return Volume in dB.
  */
-float cdsp_get_fader_volume(const dsp_engine_t* engine, uint32_t fader_idx);
+float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader);
 
 /**
  * @brief Set the volume of a specific fader.
  * @param engine Pointer to the engine.
- * @param fader_idx Index of the fader (0 for Main, 1-4 for Aux1-Aux4).
+ * @param fader Fader identifier.
  * @param db Volume in dB.
  * @param instant If true, bypasses the volume ramp and applies immediately.
  */
-void cdsp_set_fader_volume(dsp_engine_t* engine, uint32_t fader_idx, float db, bool instant);
+void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db, bool instant);
 
 /**
  * @brief Get the mute state of a specific fader.
  * @param engine Pointer to the engine.
- * @param fader_idx Index of the fader.
+ * @param fader Fader identifier.
  * @return true if muted, false otherwise.
  */
-bool cdsp_is_fader_muted(const dsp_engine_t* engine, uint32_t fader_idx);
+bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader);
 
 /**
  * @brief Set the mute state of a specific fader.
  * @param engine Pointer to the engine.
- * @param fader_idx Index of the fader.
+ * @param fader Fader identifier.
  * @param mute true to mute, false to unmute.
  */
-void cdsp_set_fader_mute(dsp_engine_t* engine, uint32_t fader_idx, bool mute);
+void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute);
 
 #endif // CDSP_PUBLIC_VOLUME_H

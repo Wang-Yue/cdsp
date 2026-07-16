@@ -10,19 +10,13 @@
 #include <objbase.h>
 #endif
 
-#include "Audio/processing_parameters.h"
-#include "Backend/audio_backend.h"
-#include "Config/configuration.h"
-#include "Config/engine_config_types.h"
-#include "Config/log_level.h"
 #include "Public/cdsp_pub_types.h"
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/volume.h"
 #include "Public/config.h"
+#include "Public/state.h"
 #include "Logging/app_logger.h"
-#include "Pipeline/config_loader.h"
-#include "Pipeline/state_file.h"
 #include "Server/websocket_server.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/double_helpers.h"
@@ -117,35 +111,6 @@ static void print_usage(void) {
       "File, Stdout\n");
 }
 
-/**
- * @brief Reads the contents of a file into a dynamically allocated string.
- *
- * The caller is responsible for freeing the returned buffer.
- *
- * @param path Path to the file.
- * @return A null-terminated string containing the file contents, or NULL if
- * reading fails.
- */
-static char* read_file_to_string(const char* path) {
-  FILE* fp = fopen(path, "rb");
-  if (!fp) return NULL;
-  fseek(fp, 0, SEEK_END);
-  long len = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-  if (len < 0) {
-    fclose(fp);
-    return NULL;
-  }
-  char* buf = (char*)calloc((size_t)len + 1, sizeof(char));
-  if (!buf) {
-    fclose(fp);
-    return NULL;
-  }
-  size_t read_bytes = fread(buf, 1, (size_t)len, fp);
-  buf[read_bytes] = '\0';
-  fclose(fp);
-  return buf;
-}
 
 int main(int argc, char** argv) {
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
@@ -164,11 +129,11 @@ int main(int argc, char** argv) {
   bool no_config = false;
   const char* log_level_str = "info";
 
-  double initial_gains[FADER_COUNT];
-  bool has_initial_gains[FADER_COUNT];
-  bool initial_mutes[FADER_COUNT];
-  bool has_initial_mutes[FADER_COUNT];
-  for (int i = 0; i < FADER_COUNT; i++) {
+  double initial_gains[CDSP_FADER_COUNT];
+  bool has_initial_gains[CDSP_FADER_COUNT];
+  bool initial_mutes[CDSP_FADER_COUNT];
+  bool has_initial_mutes[CDSP_FADER_COUNT];
+  for (int i = 0; i < CDSP_FADER_COUNT; i++) {
     initial_gains[i] = 0.0;
     has_initial_gains[i] = false;
     initial_mutes[i] = false;
@@ -232,7 +197,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "-g") == 0 || strcmp(arg, "--gain") == 0) {
       if (i + 1 < argc) {
-#if FADER_COUNT > 0
+#if CDSP_FADER_COUNT > 0
         initial_gains[0] = atof(argv[++i]);
         has_initial_gains[0] = true;
 #else
@@ -244,7 +209,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--gain1") == 0) {
       if (i + 1 < argc) {
-#if FADER_COUNT > 1
+#if CDSP_FADER_COUNT > 1
         initial_gains[1] = atof(argv[++i]);
         has_initial_gains[1] = true;
 #else
@@ -256,7 +221,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--gain2") == 0) {
       if (i + 1 < argc) {
-#if FADER_COUNT > 2
+#if CDSP_FADER_COUNT > 2
         initial_gains[2] = atof(argv[++i]);
         has_initial_gains[2] = true;
 #else
@@ -268,7 +233,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--gain3") == 0) {
       if (i + 1 < argc) {
-#if FADER_COUNT > 3
+#if CDSP_FADER_COUNT > 3
         initial_gains[3] = atof(argv[++i]);
         has_initial_gains[3] = true;
 #else
@@ -280,7 +245,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--gain4") == 0) {
       if (i + 1 < argc) {
-#if FADER_COUNT > 4
+#if CDSP_FADER_COUNT > 4
         initial_gains[4] = atof(argv[++i]);
         has_initial_gains[4] = true;
 #else
@@ -291,27 +256,27 @@ int main(int argc, char** argv) {
         return 1;
       }
     } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--mute") == 0) {
-#if FADER_COUNT > 0
+#if CDSP_FADER_COUNT > 0
       initial_mutes[0] = true;
       has_initial_mutes[0] = true;
 #endif
     } else if (strcmp(arg, "--mute1") == 0) {
-#if FADER_COUNT > 1
+#if CDSP_FADER_COUNT > 1
       initial_mutes[1] = true;
       has_initial_mutes[1] = true;
 #endif
     } else if (strcmp(arg, "--mute2") == 0) {
-#if FADER_COUNT > 2
+#if CDSP_FADER_COUNT > 2
       initial_mutes[2] = true;
       has_initial_mutes[2] = true;
 #endif
     } else if (strcmp(arg, "--mute3") == 0) {
-#if FADER_COUNT > 3
+#if CDSP_FADER_COUNT > 3
       initial_mutes[3] = true;
       has_initial_mutes[3] = true;
 #endif
     } else if (strcmp(arg, "--mute4") == 0) {
-#if FADER_COUNT > 4
+#if CDSP_FADER_COUNT > 4
       initial_mutes[4] = true;
       has_initial_mutes[4] = true;
 #endif
@@ -364,181 +329,65 @@ int main(int argc, char** argv) {
       printf("Error: Missing config file to check.\n");
       return 1;
     }
-    char* json = read_file_to_string(config_path);
-    if (!json) {
-      logger_error(&g_logger,
-                   "Configuration check failed: Could not read file %s",
-                   config_path);
-      printf("Configuration check failed: Could not read file.\n");
+    char* result = NULL;
+    bool is_error = false;
+    if (cdsp_validate_config_file(config_path, &result, &is_error) && !is_error) {
+      logger_info(&g_logger, "Configuration check succeeded for %s", config_path);
+      printf("Configuration is valid.\n");
+    } else {
+      logger_error(&g_logger, "Configuration check failed: %s", result ? result : "Invalid config");
+      printf("Configuration check failed: %s\n", result ? result : "Invalid config");
+      if (result) free(result);
       return 1;
     }
-    dsp_config_t* parsed = NULL;
-    config_error_t cerr;
-    if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
-      logger_error(&g_logger, "Configuration check failed: %s", cerr.message);
-      printf("Configuration check failed: %s\n", cerr.message);
-      free(json);
-      return 1;
-    }
-    logger_info(&g_logger, "Configuration check succeeded for %s", config_path);
-    printf("Configuration is valid.\n");
-    dsp_config_free(parsed);
-    free(json);
+    if (result) free(result);
     return 0;
   }
 
   // Load state file if present
   char* allocated_config_path = NULL;
-  dsp_state_t* loaded_state = dsp_state_create();
+  cdsp_state_t* loaded_state = cdsp_state_create();
   bool has_loaded_state = false;
   if (state_file_path && loaded_state) {
-    if (dsp_state_load(state_file_path, loaded_state)) {
+    if (cdsp_state_load(state_file_path, loaded_state)) {
       has_loaded_state = true;
       logger_info(&g_logger, "Loaded state file from %s", state_file_path);
       if (!config_path && !no_config &&
-          dsp_state_has_config_path(loaded_state)) {
-        allocated_config_path = strdup(dsp_state_get_config_path(loaded_state));
+          cdsp_state_has_config_path(loaded_state)) {
+        allocated_config_path = strdup(cdsp_state_get_config_path(loaded_state));
         config_path = allocated_config_path;
       }
     }
   }
 
   if (has_loaded_state && loaded_state) {
-    for (int i = 0; i < FADER_COUNT; i++) {
+    for (int i = 0; i < CDSP_FADER_COUNT; i++) {
       if (!has_initial_gains[i]) {
-        initial_gains[i] = dsp_state_get_volume(loaded_state, i);
+        initial_gains[i] = cdsp_state_get_volume(loaded_state, i);
         has_initial_gains[i] = true;
       }
       if (!has_initial_mutes[i]) {
-        initial_mutes[i] = dsp_state_get_mute(loaded_state, i);
+        initial_mutes[i] = cdsp_state_get_mute(loaded_state, i);
         has_initial_mutes[i] = true;
       }
     }
   }
 
   if (loaded_state) {
-    dsp_state_free(loaded_state);
+    cdsp_state_free(loaded_state);
   }
 
-  char* config_json = NULL;
-  dsp_config_t* parsed = NULL;
-  if (!wait_config && !no_config) {
-    if (!config_path) {
-      logger_error(&g_logger, "Missing required configuration file");
-      printf("Error: Missing required configuration file.\n");
-      print_usage();
-      return 1;
-    }
-    config_json = read_file_to_string(config_path);
-    if (!config_json) {
-      logger_error(&g_logger, "Failed to read configuration file %s",
-                   config_path);
-      printf("Failed to load configuration: Could not read file %s\n",
-             config_path);
-      return 1;
-    }
-    config_error_t cerr;
-    if (config_loader_parse(config_json, &parsed, &cerr) != 0 || !parsed) {
-      logger_error(&g_logger, "Failed to parse configuration file %s: %s",
-                   config_path, cerr.message);
-      printf("Failed to load configuration: %s\n", cerr.message);
-      free(config_json);
-      return 1;
-    }
-    if (samplerate_override > 0)
-      parsed->devices.samplerate = samplerate_override;
-    if (channels_override > 0)
-      capture_device_config_set_channels(&parsed->devices.capture,
-                                         channels_override);
-    if (extra_samples_override >= 0) {
-      capture_device_config_set_extra_samples(&parsed->devices.capture,
-                                              extra_samples_override);
-    }
-    if (format_override) {
-      if (false) {
-        // dummy
-#if defined(ENABLE_ALSA)
-      } else if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_ALSA) {
-        alsa_sample_format_t fmt =
-            alsa_sample_format_from_string(format_override);
-        if (fmt != ALSA_SAMPLE_FORMAT_INVALID) {
-          parsed->devices.capture.cfg.alsa.format = fmt;
-          parsed->devices.capture.cfg.alsa.has_format = true;
-        } else {
-          printf("Error: Invalid format '%s' for ALSA\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-#endif
-#if defined(ENABLE_COREAUDIO)
-      } else if (parsed->devices.capture.type ==
-                 AUDIO_BACKEND_TYPE_CORE_AUDIO) {
-        coreaudio_sample_format_t fmt =
-            coreaudio_sample_format_from_string(format_override);
-        if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
-          capture_device_config_set_format(&parsed->devices.capture, fmt);
-        } else {
-          printf("Error: Invalid format '%s' for CoreAudio\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-#endif
-#if defined(ENABLE_WASAPI)
-      } else if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_WASAPI) {
-        wasapi_sample_format_t fmt =
-            wasapi_sample_format_from_string(format_override);
-        if (fmt != WASAPI_SAMPLE_FORMAT_INVALID) {
-          parsed->devices.capture.cfg.wasapi.format = fmt;
-          parsed->devices.capture.cfg.wasapi.has_format = true;
-        } else {
-          printf("Error: Invalid format '%s' for WASAPI\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-#endif
-#if defined(ENABLE_ASIO)
-      } else if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO) {
-        asio_sample_format_t fmt =
-            asio_sample_format_from_string(format_override);
-        if (fmt != ASIO_SAMPLE_FORMAT_INVALID) {
-          parsed->devices.capture.cfg.asio.format = fmt;
-          parsed->devices.capture.cfg.asio.has_format = true;
-        } else {
-          printf("Error: Invalid format '%s' for ASIO\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-#endif
-      } else if (parsed->devices.capture.type == AUDIO_BACKEND_TYPE_FILE ||
-                 parsed->devices.capture.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-        binary_sample_format_t fmt =
-            binary_sample_format_from_string(format_override);
-        if (fmt != BINARY_SAMPLE_FORMAT_INVALID) {
-          capture_device_config_set_file_format(&parsed->devices.capture, fmt);
-        } else {
-          printf("Error: Invalid format '%s' for File\n", format_override);
-          dsp_config_free(parsed);
-          free(config_json);
-          return 1;
-        }
-      } else {
-        printf(
-            "Warning: Overriding format is not supported for this backend, "
-            "ignoring\n");
-      }
-    }
+  if (!wait_config && !no_config && !config_path) {
+    logger_error(&g_logger, "Missing required configuration file");
+    printf("Error: Missing required configuration file.\n");
+    print_usage();
+    return 1;
   }
 
   dsp_engine_t* engine = cdsp_engine_create();
   if (!engine) {
     logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
     printf("Error starting engine: Failed to allocate engine\n");
-    if (parsed) dsp_config_free(parsed);
-    if (config_json) free(config_json);
     return 1;
   }
 
@@ -553,8 +402,6 @@ int main(int argc, char** argv) {
       logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
       printf("Error starting engine: %s\n", berr.message);
       cdsp_engine_free(engine);
-      if (parsed) dsp_config_free(parsed);
-      if (config_json) free(config_json);
       return 1;
     }
   } else {
@@ -566,10 +413,7 @@ int main(int argc, char** argv) {
         "configuration)...\n");
   }
 
-  if (parsed) dsp_config_free(parsed);
-  if (config_json) free(config_json);
-
-  for (int i = 0; i < FADER_COUNT; i++) {
+  for (int i = 0; i < CDSP_FADER_COUNT; i++) {
     if (has_initial_gains[i]) {
       cdsp_set_fader_volume(engine, (uint32_t)i, (float)initial_gains[i], true);
     }

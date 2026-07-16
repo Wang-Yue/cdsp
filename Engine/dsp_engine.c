@@ -52,6 +52,11 @@ static bool dsp_engine_check_stop_requested(
 static const char* dsp_engine_get_state_file(const dsp_engine_t* engine);
 static bool dsp_engine_is_state_dirty(const dsp_engine_t* engine);
 static char* dsp_engine_get_config_path(const dsp_engine_t* engine);
+static void dsp_engine_stop(dsp_engine_t* engine);
+static void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path);
+static audio_samples_t* dsp_engine_get_samples(dsp_engine_t* engine, bool is_capture,
+                                               size_t n_frames, audio_backend_error_t* err);
+static void dsp_engine_free_samples(audio_samples_t* samples);
 
 /**
  * @brief Callback triggered when a chunk is captured by the audio engine core.
@@ -250,7 +255,7 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
   return success;
 }
 
-void dsp_engine_stop(dsp_engine_t* engine) {
+static void dsp_engine_stop(dsp_engine_t* engine) {
   if (!engine) return;
   pthread_mutex_lock(&engine->state_mutex);
   if (engine->session) {
@@ -267,7 +272,7 @@ void dsp_engine_stop(dsp_engine_t* engine) {
   pthread_mutex_unlock(&engine->state_mutex);
 }
 
-void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
+static void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
                                  bool instant) {
   if (!engine || fader < 0 || fader >= FADER_COUNT) return;
   pthread_mutex_lock(&engine->state_mutex);
@@ -284,7 +289,7 @@ void dsp_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db,
   pthread_mutex_unlock(&engine->state_mutex);
 }
 
-void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
+static void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
   if (!engine || fader < 0 || fader >= FADER_COUNT) return;
   pthread_mutex_lock(&engine->state_mutex);
   engine_state_manager_set_fader_mute(engine->state_mgr, fader, mute);
@@ -297,20 +302,20 @@ void dsp_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
   pthread_mutex_unlock(&engine->state_mutex);
 }
 
-float dsp_engine_get_fader_volume(const dsp_engine_t* engine, fader_t fader) {
+static float dsp_engine_get_fader_volume(const dsp_engine_t* engine, fader_t fader) {
   return engine
              ? engine_state_manager_get_fader_volume(engine->state_mgr, fader)
              : 0.0f;
 }
 
-bool dsp_engine_is_fader_muted(const dsp_engine_t* engine, fader_t fader) {
+static bool dsp_engine_is_fader_muted(const dsp_engine_t* engine, fader_t fader) {
   return engine ? engine_state_manager_is_fader_muted(engine->state_mgr, fader)
                 : false;
 }
 
 static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine);
 
-state_update_t dsp_engine_get_status(const dsp_engine_t* engine) {
+static state_update_t dsp_engine_get_status(const dsp_engine_t* engine) {
   if (!engine) {
     state_update_t res = {.state = PROCESSING_STATE_INACTIVE,
                           .stop_reason = {.type = STOP_REASON_NONE}};
@@ -359,7 +364,9 @@ static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine) {
 
 static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine);
 
-vu_levels_t dsp_engine_get_vu_levels(const dsp_engine_t* engine) {
+static void dsp_engine_free_vu_levels(vu_levels_t* levels);
+
+static vu_levels_t dsp_engine_get_vu_levels(const dsp_engine_t* engine) {
   if (!engine) {
     vu_levels_t res = {0};
     return res;
@@ -405,7 +412,7 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(const dsp_engine_t* engine) {
   return res;
 }
 
-void dsp_engine_free_vu_levels(vu_levels_t* levels) {
+static void dsp_engine_free_vu_levels(vu_levels_t* levels) {
   if (!levels) return;
   if (levels->playback_rms) {
     free(levels->playback_rms);
@@ -431,7 +438,7 @@ static spectrum_status_t dsp_engine_get_spectrum_locked(
     dsp_engine_t* engine, bool is_capture, int channel, double min_freq,
     double max_freq, size_t n_bins, spectrum_result_t* out_result);
 
-spectrum_status_t dsp_engine_get_spectrum(dsp_engine_t* engine, bool is_capture,
+static spectrum_status_t dsp_engine_get_spectrum(dsp_engine_t* engine, bool is_capture,
                                           int channel, double min_freq,
                                           double max_freq, size_t n_bins,
                                           spectrum_result_t* out_result) {
@@ -460,7 +467,7 @@ static audio_samples_t* dsp_engine_get_samples_locked(
     dsp_engine_t* engine, bool is_capture, size_t n_frames,
     audio_backend_error_t* err);
 
-audio_samples_t* dsp_engine_get_samples(dsp_engine_t* engine, bool is_capture,
+static audio_samples_t* dsp_engine_get_samples(dsp_engine_t* engine, bool is_capture,
                                         size_t n_frames,
                                         audio_backend_error_t* err) {
   if (!engine) return NULL;
@@ -535,7 +542,7 @@ static audio_samples_t* dsp_engine_get_samples_locked(
   return res;
 }
 
-void dsp_engine_free_samples(audio_samples_t* samples) {
+static void dsp_engine_free_samples(audio_samples_t* samples) {
   if (!samples) return;
   if (samples->channels) {
     for (size_t ch = 0; ch < samples->channels_count; ch++) {
@@ -550,21 +557,21 @@ void dsp_engine_set_log_level(log_level_t level) {
   app_logger_set_level(level);
 }
 
-int dsp_engine_get_available_devices(const char* backend, bool input,
+static int dsp_engine_get_available_devices(const char* backend, bool input,
                                      audio_device_t* out_devices,
                                      int max_devices) {
   return audio_backend_registry_get_available_devices(backend, input,
                                                       out_devices, max_devices);
 }
 
-audio_device_descriptor_t* dsp_engine_get_device_capabilities(
+static audio_device_descriptor_t* dsp_engine_get_device_capabilities(
     const char* backend, const char* device, bool is_capture,
     device_error_t* err) {
   return audio_backend_registry_get_device_capabilities(backend, device,
                                                         is_capture, err);
 }
 
-void dsp_engine_free_device_capabilities(audio_device_descriptor_t* desc) {
+static void dsp_engine_free_device_capabilities(audio_device_descriptor_t* desc) {
   free_audio_device_descriptor(desc);
 }
 
@@ -796,7 +803,7 @@ static bool dsp_engine_is_state_dirty(const dsp_engine_t* engine) {
   return engine ? engine_state_manager_is_dirty(engine->state_mgr) : false;
 }
 
-void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path) {
+static void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path) {
   if (engine) engine_state_manager_set_config_path(engine->state_mgr, path);
 }
 

@@ -116,5 +116,9 @@ void cdsp_set_log_level(const char* level_str) {
 }
 
 void cdsp_stop(dsp_engine_t* engine) {
-  dsp_engine_stop(engine);
+  if (!engine) return;
+  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
+  if (iface && iface->stop) {
+    iface->stop(iface->ctx);
+  }
 }

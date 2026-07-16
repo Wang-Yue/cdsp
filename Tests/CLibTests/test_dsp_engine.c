@@ -5,6 +5,11 @@
 #include <unistd.h>
 
 #include "Engine/dsp_engine.h"
+#include "Public/general.h"
+#include "Public/config.h"
+#include "Public/processing.h"
+#include "Public/signal_levels.h"
+#include "Public/devices.h"
 #include "Pipeline/config_loader.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"
@@ -13,9 +18,9 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  audio_backend_error_t err;
+  cdsp_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success = dsp_engine_set_config(engine, json, &err);
+  bool success = cdsp_set_config_json(engine, json, &err);
   if (!success) {
     printf(
         "⚠️ [E2E Warning] Skipping E2E test for backend '%s' (Initialization "
@@ -27,10 +32,11 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
 
   cdsp_sleep_ms(100);
 
-  vu_levels_t vu = dsp_engine_get_vu_levels(engine);
-  (void)vu;
+  cdsp_vu_levels_t vu = {0};
+  cdsp_get_vu_levels(engine, &vu);
+  cdsp_free_vu_levels(&vu);
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
   printf("✅ [E2E Success] Backend '%s' ran successfully\n", backend_name);
 }
@@ -42,19 +48,22 @@ TEST(DSPEngineCreateFree) {
 }
 
 TEST(DSPEngineDeviceCapabilities) {
-  audio_device_t devs[32];
-  int count = dsp_engine_get_available_devices("coreaudio", false, devs, 32);
-  ASSERT_TRUE(count >= 0);
+  cdsp_device_info_t* devs = NULL;
+  size_t count = 0;
+  bool ok = cdsp_get_available_devices("coreaudio", false, &devs, &count);
+  ASSERT_TRUE(ok);
 
   // Test freeing NULL descriptor (should be a safe no-op)
-  dsp_engine_free_device_capabilities(NULL);
+  cdsp_free_device_capabilities(NULL);
 
-  if (count > 0) {
-    audio_device_descriptor_t* desc = dsp_engine_get_device_capabilities(
-        "coreaudio", devs[0].name, false, NULL);
-    if (desc) {
-      dsp_engine_free_device_capabilities(desc);
+  if (count > 0 && devs) {
+    cdsp_device_descriptor_t* desc = NULL;
+    if (cdsp_get_device_capabilities("coreaudio", devs[0].name, false, &desc, NULL)) {
+      if (desc) {
+        cdsp_free_device_capabilities(desc);
+      }
     }
+    free(devs);
   }
 }
 
@@ -250,7 +259,7 @@ TEST(DSPEngineSetConfigAndReload) {
   ASSERT_EQ(1, active->mixers_count);
   ASSERT_EQ(1, active->pipeline_count);
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
 }
 
@@ -455,7 +464,7 @@ TEST(DSPEngineHotParameterReload) {
   ASSERT_EQ(1, active->filters_count);
   ASSERT_EQ(-3.0, active->filters[0].filter.parameters.gain.gain);
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
 }
 
@@ -546,7 +555,7 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_EQ(4, capture_device_config_get_channels(&active->devices.capture));
 #endif
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
 }
 
@@ -698,11 +707,11 @@ TEST(DSPEngineE2E_FileFile) {
   ASSERT_TRUE(success);
 
   for (int i = 0; i < 50; i++) {
-    if (dsp_engine_get_status(engine).state == PROCESSING_STATE_INACTIVE) break;
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
     cdsp_sleep_ms(10);
   }
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
 
   FILE* out_f = fopen(out_file, "rb");
@@ -763,7 +772,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   // threads spawn and stream stably on virtual machines.
   cdsp_sleep_ms(1500);
 
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
   dsp_engine_free(engine);
 
   // Check the size of the output file
@@ -1065,8 +1074,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   // Timeout is 35.0s in simulated time (running 15x faster -> ~2.33s of real
   // time)
   while (1) {
-    state_update_t status = dsp_engine_get_status(engine);
-    if (status.state == PROCESSING_STATE_INACTIVE) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       break;
     }
     double cur_elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
@@ -1077,7 +1085,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   }
 
   // Stop the engine and wait for playback/processing threads to finish draining
-  dsp_engine_stop(engine);
+  cdsp_stop(engine);
 
   double elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
 
@@ -1138,7 +1146,7 @@ struct stop_thread_args {
 
 static void* stop_thread_func(void* arg) {
   struct stop_thread_args* args = (struct stop_thread_args*)arg;
-  dsp_engine_stop(args->engine);
+  cdsp_stop(args->engine);
   args->done = true;
   return NULL;
 }
