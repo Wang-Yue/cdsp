@@ -108,10 +108,16 @@ void engine_state_manager_set_state_file(engine_state_manager_t* mgr,
 const char* engine_state_manager_get_state_file(
     const engine_state_manager_t* mgr) {
   if (!mgr) return NULL;
+  static _Thread_local char tls_path[1024];
   pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
-  const char* path = mgr->has_state_file_path ? mgr->state_file_path : NULL;
+  if (mgr->has_state_file_path) {
+    strncpy(tls_path, mgr->state_file_path, sizeof(tls_path) - 1);
+    tls_path[sizeof(tls_path) - 1] = '\0';
+    pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
+    return tls_path;
+  }
   pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
-  return path;
+  return NULL;
 }
 
 void engine_state_manager_set_config_path(engine_state_manager_t* mgr,
