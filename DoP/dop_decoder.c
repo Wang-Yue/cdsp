@@ -23,6 +23,13 @@
 // across DSD64 / 128 / 256 at 44.1 / 48 kHz families are preserved.
 #include "dop_decoder.h"
 
+#if defined(__APPLE__) || defined(USE_LIBDISPATCH)
+#include <dispatch/dispatch.h>
+#define HAS_DISPATCH 1
+#else
+#define HAS_DISPATCH 0
+#endif
+
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -71,8 +78,8 @@ struct dop_decoder {
   bool logged_active;       /**< Status flag to rate-limit logging. */
   bool last_seen_active;    /**< Flag indicating if DoP was active in the last
                                processed chunk. */
-  int chunks_at_seen_state; /**< Count of chunks processed in the current state.
-                             */
+  int chunks_at_seen_state; /**< Count of chunks processed in the current state. */
+  bool use_multithreading; /**< True if multi-threaded parallelization should be used. */
 };
 
 #include <math.h>
@@ -192,7 +199,8 @@ static double* build_ctables(double sample_rate, double cutoff_hz) {
 }
 
 dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
-                                  bool bypass_dop, double cutoff_hz) {
+                                  bool bypass_dop, double cutoff_hz,
+                                  bool multithreaded) {
   if (channels <= 0) {
     logger_error(&g_logger, "Invalid channel count for DoP decoder: %d",
                  channels);
@@ -205,6 +213,12 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   }
   dec->channels = channels;
   dec->bypass_dop = bypass_dop;
+  dec->use_multithreading = false;
+#if HAS_DISPATCH || defined(USE_OPENMP)
+  if (multithreaded && channels > 2) {
+    dec->use_multithreading = true;
+  }
+#endif
   dec->channel_states = (dop_decoder_channel_state_t*)calloc(
       channels, sizeof(dop_decoder_channel_state_t));
   if (!dec->channel_states) {
@@ -389,6 +403,21 @@ static void process_channel(dop_decoder_channel_state_t* state,
   state->fifo_pos = pos;
 }
 
+#if HAS_DISPATCH
+typedef struct {
+  dop_decoder_t* decoder;
+  audio_chunk_t* chunk;
+  size_t valid_frames;
+} dop_decoder_dispatch_ctx_t;
+
+static void dop_decoder_worker(void* context, size_t ch) {
+  dop_decoder_dispatch_ctx_t* ctx = (dop_decoder_dispatch_ctx_t*)context;
+  process_channel(&ctx->decoder->channel_states[ch],
+                  audio_chunk_get_channel(ctx->chunk, ch), ctx->valid_frames,
+                  ctx->decoder->ctables);
+}
+#endif
+
 bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
                                     audio_chunk_t* chunk) {
   if (!decoder || !chunk) return false;
@@ -402,10 +431,26 @@ bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
       (int)audio_chunk_get_channels(chunk) != decoder->channels)
     return false;
 
-  for (int ch = 0; ch < decoder->channels; ch++) {
-    process_channel(&decoder->channel_states[ch],
-                    audio_chunk_get_channel(chunk, ch), valid_frames,
-                    decoder->ctables);
+  if (decoder->use_multithreading) {
+#if HAS_DISPATCH
+    dop_decoder_dispatch_ctx_t dctx = {decoder, chunk, valid_frames};
+    dispatch_queue_t queue =
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
+    dispatch_apply_f(decoder->channels, queue, &dctx, dop_decoder_worker);
+#elif defined(USE_OPENMP)
+    #pragma omp parallel for num_threads(decoder->channels)
+    for (int ch = 0; ch < decoder->channels; ch++) {
+      process_channel(&decoder->channel_states[ch],
+                      audio_chunk_get_channel(chunk, ch), valid_frames,
+                      decoder->ctables);
+    }
+#endif
+  } else {
+    for (int ch = 0; ch < decoder->channels; ch++) {
+      process_channel(&decoder->channel_states[ch],
+                      audio_chunk_get_channel(chunk, ch), valid_frames,
+                      decoder->ctables);
+    }
   }
 
   bool all_active = true;

@@ -950,7 +950,7 @@ static void dop_dec_iter(int i, void* ctx) {
 }
 
 TEST(DoPDecoder_AllocationFree) {
-  dop_decoder_t* decoder = dop_decoder_create(2, 176400.0, false, 20000.0);
+  dop_decoder_t* decoder = dop_decoder_create(2, 176400.0, false, 20000.0, false);
   ASSERT_TRUE(decoder != NULL);
   int total_chunks = 36;
   audio_chunk_t** chunks =

@@ -20,7 +20,7 @@ TEST(DoPDetectionAndBypass) {
       double base_rate = base_rates[j];
       double pcm_sample_rate = base_rate * (double)mult / 16.0;
       dop_decoder_t* decoder =
-          dop_decoder_create(2, pcm_sample_rate, false, 20000.0);
+          dop_decoder_create(2, pcm_sample_rate, false, 20000.0, false);
       ASSERT_TRUE(decoder != NULL);
 
       audio_chunk_t* chunk = audio_chunk_create(64, 2);
@@ -65,7 +65,7 @@ TEST(DoPDetectionAndBypass) {
       dop_decoder_free(decoder);
 
       dop_decoder_t* bypassed_decoder =
-          dop_decoder_create(2, pcm_sample_rate, true, 20000.0);
+          dop_decoder_create(2, pcm_sample_rate, true, 20000.0, false);
       audio_chunk_t* test_chunk = audio_chunk_create(64, 2);
       for (int ch = 0; ch < 2; ch++) {
         for (size_t t = 0; t < 64; t++) {
@@ -94,7 +94,7 @@ TEST(DoPFalsePositives) {
       double base_rate = base_rates[j];
       double pcm_sample_rate = base_rate * (double)mult / 16.0;
       dop_decoder_t* decoder =
-          dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
+          dop_decoder_create(1, pcm_sample_rate, false, 20000.0, false);
       audio_chunk_t* chunk = audio_chunk_create(64, 1);
 
       for (size_t t = 0; t < 64; t++)
@@ -125,7 +125,7 @@ TEST(MultiChunkDoPStreamStability) {
       double base_rate = base_rates[j];
       double pcm_sample_rate = base_rate * (double)mult / 16.0;
       dop_decoder_t* decoder =
-          dop_decoder_create(2, pcm_sample_rate, false, 20000.0);
+          dop_decoder_create(2, pcm_sample_rate, false, 20000.0, false);
       int chunk_size = 1024;
       int num_chunks = 10;
 
@@ -164,7 +164,7 @@ TEST(DoPRoundtripSINAD) {
       dsd_encoder_t* encoder = dsd_encoder_create(
           1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0, false);
       dop_decoder_t* decoder =
-          dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
+          dop_decoder_create(1, pcm_sample_rate, false, 20000.0, false);
       ASSERT_TRUE(encoder != NULL);
       ASSERT_TRUE(decoder != NULL);
 
@@ -231,7 +231,7 @@ TEST(DoPVariableChunkRoundtrip) {
   dsd_encoder_t* encoder = dsd_encoder_create(1, pcm_sample_rate, DSD_MODE_DOP,
                                               16, SDM_FILTER_SDM6, 20000.0, false);
   dop_decoder_t* decoder =
-      dop_decoder_create(1, (double)pcm_sample_rate, false, 20000.0);
+      dop_decoder_create(1, (double)pcm_sample_rate, false, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(decoder != NULL);
 

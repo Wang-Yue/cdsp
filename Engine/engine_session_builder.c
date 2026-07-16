@@ -77,14 +77,19 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
       capture_device_config_get_channels(&config->devices.capture),
       playback_device_config_get_channels(&config->devices.playback));
 
+  bool multithreaded =
+      config->devices.has_multithreaded ? config->devices.multithreaded : false;
+
   double capture_rate = (double)(config->devices.has_capture_samplerate
                                      ? config->devices.capture_samplerate
                                      : config->devices.samplerate);
+
   core->dop_decoder = dop_decoder_create(
       capture_device_config_get_channels(&config->devices.capture),
       capture_rate,
       capture_device_config_get_bypass_dop(&config->devices.capture),
-      capture_device_config_get_dop_cutoff_hz(&config->devices.capture));
+      capture_device_config_get_dop_cutoff_hz(&config->devices.capture),
+      multithreaded);
 
   size_t playback_rate = config->devices.samplerate;
   sdm_filter_t dop_filter =
@@ -112,9 +117,6 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
   }
   size_t dsd_bit_depth =
       playback_device_config_calculate_carrier_bits(&config->devices.playback);
-
-  bool multithreaded =
-      config->devices.has_multithreaded ? config->devices.multithreaded : false;
 
   core->dsd_encoder = dsd_encoder_create(
       playback_device_config_get_channels(&config->devices.playback),

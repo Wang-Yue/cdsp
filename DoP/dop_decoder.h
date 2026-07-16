@@ -49,7 +49,8 @@ typedef struct dop_decoder dop_decoder_t;
  * @return Pointer to the allocated dop_decoder_t instance, or NULL on failure.
  */
 dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
-                                  bool bypass_dop, double cutoff_hz);
+                                  bool bypass_dop, double cutoff_hz,
+                                  bool multithreaded);
 
 /**
  * @brief Detect DoP and (when active) decode the chunk in place.

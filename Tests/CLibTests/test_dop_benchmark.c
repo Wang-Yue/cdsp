@@ -77,18 +77,17 @@ TEST(DSDEncoder_Benchmark) {
   run_encoder_benchmark(8, true);
 }
 
-TEST(DoPDecoder_Benchmark) {
+static void run_decoder_benchmark(int channels, bool multithreaded) {
   size_t carrier_rate = 768000;
-  dsd_encoder_t* encoder = dsd_encoder_create(2, carrier_rate, DSD_MODE_DOP, 16,
+  dsd_encoder_t* encoder = dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
                                               SDM_FILTER_SDM6, 20000.0, false);
   dop_decoder_t* decoder =
-      dop_decoder_create(2, (double)carrier_rate, false, 20000.0);
+      dop_decoder_create(channels, (double)carrier_rate, false, 20000.0, multithreaded);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
   ASSERT_TRUE(decoder != NULL);
 
   int frames = 1024;
-  int channels = 2;
   audio_chunk_t* pcm_source = audio_chunk_create(frames, channels);
   double amplitude = 0.5;
   for (int ch = 0; ch < channels; ch++) {
@@ -118,7 +117,7 @@ TEST(DoPDecoder_Benchmark) {
   }
   ASSERT_TRUE(dop_decoder_is_active(decoder));
 
-  int iters = 2000;
+  int iters = 1000;
   struct timespec start, end;
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < iters; i++) {
@@ -135,7 +134,8 @@ TEST(DoPDecoder_Benchmark) {
   double ns_per_frame = elapsed_ns / (double)(frames * iters);
   double real_time_ratio = (1.0 / (carrier_rate * 1e-9)) / ns_per_frame;
 
-  printf("=== DoP Decoder Throughput ===\n");
+  printf("=== DoP Decoder Throughput (%d channels, multithreaded=%s) ===\n",
+         channels, multithreaded ? "ON" : "OFF");
   printf("Throughput: %8.2f ns/frame\n", ns_per_frame);
   printf("Real-time ratio: %8.2fx\n", real_time_ratio);
 
@@ -144,6 +144,15 @@ TEST(DoPDecoder_Benchmark) {
   audio_chunk_free(pcm_source);
   dop_decoder_free(decoder);
   dsd_encoder_free(encoder);
+}
+
+TEST(DoPDecoder_Benchmark) {
+  // Benchmark stereo (always sequential)
+  run_decoder_benchmark(2, false);
+
+  // Benchmark 8-channel (sequential vs parallel)
+  run_decoder_benchmark(8, false);
+  run_decoder_benchmark(8, true);
 }
 
 TEST_MAIN()
