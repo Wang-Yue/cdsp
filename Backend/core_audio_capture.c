@@ -76,6 +76,7 @@ struct core_audio_capture {
   float* read_scratch;
   cdsp_sem_t semaphore;
   bool stopped;
+  _Atomic uint32_t active_callbacks;
 };
 
 /**
@@ -121,8 +122,14 @@ static OSStatus capture_callback(void* inRefCon,
   (void)inBusNumber;
   (void)ioData;
   core_audio_capture_t* capture = (core_audio_capture_t*)inRefCon;
-  if (!capture || !capture->prealloc_buffer_list ||
+  if (!capture) return noErr;
+
+  atomic_fetch_add_explicit(&capture->active_callbacks, 1,
+                            memory_order_relaxed);
+  if (capture->stopped || !capture->prealloc_buffer_list ||
       !capture->prealloc_channel_data_pointers || !capture->audio_unit) {
+    atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                              memory_order_relaxed);
     return noErr;
   }
 
@@ -184,6 +191,8 @@ static OSStatus capture_callback(void* inRefCon,
     cdsp_sem_signal(capture->semaphore);
   }
 
+  atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                            memory_order_relaxed);
   return noErr;
 }
 
@@ -695,6 +704,10 @@ void core_audio_capture_close(core_audio_capture_t* capture) {
                          kAudioUnitScope_Global, 0, &null_cb, sizeof(null_cb));
     AudioComponentInstanceDispose(capture->audio_unit);
     capture->audio_unit = NULL;
+  }
+  while (atomic_load_explicit(&capture->active_callbacks,
+                              memory_order_acquire) > 0) {
+    usleep(500);
   }
   deallocate_render_buffers(capture);
   if (capture->read_scratch) {

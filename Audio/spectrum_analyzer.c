@@ -71,7 +71,7 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
     dsp_ops_float_hann_window(analyzer->window, analyzer->fft_n);
   }
 
-  analyzer->out_capacity = 256;
+  analyzer->out_capacity = 1024;
   analyzer->plan.frequencies =
       (float*)calloc(analyzer->out_capacity, sizeof(float));
   analyzer->plan.ranges =
@@ -174,30 +174,9 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                        half_n + 1);
 
   // 4. Geometric Binning via Cached Plan
-  // Reallocate buffers if the requested number of bins exceeds current
-  // capacity.
+  // Reject if requested bins exceed preallocated capacity.
   if (n_bins > analyzer->out_capacity) {
-    size_t new_cap = spsc_audio_ring_buffer_round_up_to_power_of_two(n_bins);
-    if (new_cap == 0) {
-      return SPECTRUM_ERROR_INVALID_PARAM;
-    }
-    float* new_freqs =
-        (float*)realloc(analyzer->plan.frequencies, new_cap * sizeof(float));
-    bin_range_t* new_ranges = (bin_range_t*)realloc(
-        analyzer->plan.ranges, new_cap * sizeof(bin_range_t));
-    float* new_mags =
-        (float*)realloc(analyzer->out_magnitudes, new_cap * sizeof(float));
-    if (!new_freqs || !new_ranges || !new_mags) {
-      if (new_freqs) analyzer->plan.frequencies = new_freqs;
-      if (new_ranges) analyzer->plan.ranges = new_ranges;
-      if (new_mags) analyzer->out_magnitudes = new_mags;
-      return SPECTRUM_ERROR_INVALID_PARAM;
-    }
-    analyzer->plan.frequencies = new_freqs;
-    analyzer->plan.ranges = new_ranges;
-    analyzer->out_magnitudes = new_mags;
-    analyzer->plan.capacity = new_cap;
-    analyzer->out_capacity = new_cap;
+    return SPECTRUM_ERROR_INVALID_PARAM;
   }
 
   // Recompute the logarithmic binning plan if parameters changed.
