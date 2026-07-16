@@ -62,8 +62,9 @@ resampler_t* resampler_create_from_config(const resampler_config_t* config,
                                           config_error_t* err) {
   if (resampler_config_validate(config, err) != 0) return NULL;
   logger_debug(&g_logger,
-               "Creating resampler type %d (%zuHz -> %zuHz, %zu channels)",
-               config->type, input_rate, output_rate, channels);
+               "Creating resampler type %s (%zuHz -> %zuHz, %zu channels)",
+               resampler_type_to_string(config->type), input_rate, output_rate,
+               channels);
   const resampler_vtable_t* vtable = resampler_vtable_from_type(config->type);
   if (!vtable) {
     logger_error(&g_logger, "Unknown resampler type %d", config->type);
