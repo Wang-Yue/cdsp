@@ -243,22 +243,29 @@ TEST(DSPEngineSetConfigAndReload) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success1 = dsp_engine_set_config(engine, json1, &err);
+  bool success1 = engine->set_config_json(engine->ctx, json1, &err);
   if (!success1) {
     printf("ERROR: json1 set_config failed: %s\n", err.message);
   }
   ASSERT_TRUE(success1);
 
-  bool success2 = dsp_engine_set_config(engine, json2, &err);
+  bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   if (!success2) {
     printf("ERROR: json2 set_config failed: %s\n", err.message);
   }
   ASSERT_TRUE(success2);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(1, active->mixers_count);
   ASSERT_EQ(1, active->pipeline_count);
+  dsp_config_free(active);
+  free(active_json);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -454,16 +461,23 @@ TEST(DSPEngineHotParameterReload) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success1 = dsp_engine_set_config(engine, json1, &err);
+  bool success1 = engine->set_config_json(engine->ctx, json1, &err);
   ASSERT_TRUE(success1);
 
-  bool success2 = dsp_engine_set_config(engine, json2, &err);
+  bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(1, active->filters_count);
   ASSERT_EQ(-3.0, active->filters[0].filter.parameters.gain.gain);
+  dsp_config_free(active);
+  free(active_json);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -533,21 +547,49 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_EQ(0, parse_res);
   ASSERT_TRUE(parsed != NULL);
 
-  // Apply overrides
-  parsed->devices.samplerate = 48000;
+  const char* json_override =
 #if defined(_WIN32)
-  capture_device_config_set_channels(&parsed->devices.capture, 2);
-  playback_device_config_set_channels(&parsed->devices.playback, 2);
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Wasapi\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Wasapi\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
 #else
-  capture_device_config_set_channels(&parsed->devices.capture, 4);
-  playback_device_config_set_channels(&parsed->devices.playback, 4);
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 4\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 4\n"
+      "        }\n"
+      "    }\n"
+      "}";
 #endif
 
   audio_backend_error_t berr;
-  bool ok = dsp_engine_set_config_struct(engine, parsed, &berr);
+  bool ok = engine->set_config_json(engine->ctx, json_override, &berr);
   ASSERT_TRUE(ok);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr2 = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr2));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(48000, active->devices.samplerate);
 #if defined(_WIN32)
@@ -555,6 +597,8 @@ TEST(DSPEngineSetConfigStruct) {
 #else
   ASSERT_EQ(4, capture_device_config_get_channels(&active->devices.capture));
 #endif
+  dsp_config_free(active);
+  free(active_json);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -704,7 +748,7 @@ TEST(DSPEngineE2E_FileFile) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success = dsp_engine_set_config(engine, json, &err);
+  bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
   for (int i = 0; i < 50; i++) {
@@ -767,7 +811,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  ASSERT_TRUE(dsp_engine_set_config(engine, json, &err));
+  ASSERT_TRUE(engine->set_config_json(engine->ctx, json, &err));
 
   // Sleep for 1500ms in simulated time (~100ms real wall-clock time) to let
   // threads spawn and stream stably on virtual machines.
@@ -853,7 +897,7 @@ TEST(DSPEngineASIOSetConfigAndReload) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success1 = dsp_engine_set_config(engine, json1, &err);
+  bool success1 = engine->set_config_json(engine->ctx, json1, &err);
   if (!success1) {
     printf(
         "⚠️ [ASIO Warning] Skipping ASIO SetConfigAndReload test (Failed to set "
@@ -864,13 +908,20 @@ TEST(DSPEngineASIOSetConfigAndReload) {
   }
   ASSERT_TRUE(success1);
 
-  bool success2 = dsp_engine_set_config(engine, json2, &err);
+  bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(1, active->mixers_count);
   ASSERT_EQ(1, active->pipeline_count);
+  dsp_config_free(active);
+  free(active_json);
 
   dsp_engine_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -940,7 +991,7 @@ TEST(DSPEngineASIOHotParameterReload) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success1 = dsp_engine_set_config(engine, json1, &err);
+  bool success1 = engine->set_config_json(engine->ctx, json1, &err);
   if (!success1) {
     printf(
         "⚠️ [ASIO Warning] Skipping ASIO HotParameterReload test (Failed to set "
@@ -951,13 +1002,20 @@ TEST(DSPEngineASIOHotParameterReload) {
   }
   ASSERT_TRUE(success1);
 
-  bool success2 = dsp_engine_set_config(engine, json2, &err);
+  bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(1, active->filters_count);
   ASSERT_EQ(-3.0, active->filters[0].filter.parameters.gain.gain);
+  dsp_config_free(active);
+  free(active_json);
 
   dsp_engine_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -993,8 +1051,24 @@ TEST(DSPEngineASIOSetConfigStruct) {
   parsed->devices.samplerate = 48000;
   capture_device_config_set_channels(&parsed->devices.capture, 2);
 
+  const char* json_override =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Asio\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Asio\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
   audio_backend_error_t berr;
-  bool ok = dsp_engine_set_config_struct(engine, parsed, &berr);
+  bool ok = engine->set_config_json(engine->ctx, json_override, &berr);
   if (!ok) {
     printf(
         "⚠️ [ASIO Warning] Skipping ASIO SetConfigStruct test (Failed to set "
@@ -1005,10 +1079,17 @@ TEST(DSPEngineASIOSetConfigStruct) {
   }
   ASSERT_TRUE(ok);
 
-  const dsp_config_t* active = dsp_engine_get_active_config(engine);
+  char* active_json = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
+  ASSERT_TRUE(active_json != NULL);
+  dsp_config_t* active = NULL;
+  config_error_t cerr2 = {0};
+  ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr2));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(48000, active->devices.samplerate);
   ASSERT_EQ(2, capture_device_config_get_channels(&active->devices.capture));
+  dsp_config_free(active);
+  free(active_json);
 
   dsp_engine_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -1066,7 +1147,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success = dsp_engine_set_config(engine, json, &err);
+  bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
   uint64_t t0_ns = cdsp_time_now_ns();
@@ -1207,7 +1288,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
-  bool success = dsp_engine_set_config(engine, json, &err);
+  bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
   // Sleep for 100ms real time. Since capture is non-realtime, it will finish
