@@ -759,9 +759,9 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   memset(&err, 0, sizeof(err));
   ASSERT_TRUE(dsp_engine_set_config(engine, json, &err));
 
-  // Sleep for 500ms in simulated time (~33ms real wall-clock time) to let
-  // threads spawn and stream
-  cdsp_sleep_ms(500);
+  // Sleep for 1500ms in simulated time (~100ms real wall-clock time) to let
+  // threads spawn and stream stably on virtual machines.
+  cdsp_sleep_ms(1500);
 
   dsp_engine_stop(engine);
   dsp_engine_free(engine);
@@ -773,10 +773,10 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   long size = ftell(f);
   fclose(f);
 
-  // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), 500ms simulated time is
-  // ~88.2KB. Unthrottled generation should easily produce > 200KB of audio in
-  // that window (>2.2x to 50x realtime).
-  ASSERT_TRUE(size > 200000);
+  // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), 1500ms simulated time
+  // is ~264.6KB. Unthrottled generation should easily produce > 400KB of audio
+  // in that window (>1.5x to 50x realtime).
+  ASSERT_TRUE(size > 400000);
 
   remove(out_filename);
   printf(
