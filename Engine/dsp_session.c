@@ -45,7 +45,11 @@
 static const logger_t g_logger = {"dsp.session"};
 
 const dsp_config_t* dsp_session_get_config(const dsp_session_t* core) {
-  return core ? core->current_config : NULL;
+  if (!core) return NULL;
+  pthread_mutex_lock((pthread_mutex_t*)&core->config_mutex);
+  const dsp_config_t* cfg = core->current_config;
+  pthread_mutex_unlock((pthread_mutex_t*)&core->config_mutex);
+  return cfg;
 }
 
 processing_parameters_t* dsp_session_get_processing_params(
@@ -186,10 +190,14 @@ void dsp_session_stop_and_free(dsp_session_t* core,
     core->processing_scratch_pool = NULL;
   }
 
+  pthread_mutex_lock(&core->config_mutex);
   if (core->current_config) {
     dsp_config_free(core->current_config);
     core->current_config = NULL;
   }
+  pthread_mutex_unlock(&core->config_mutex);
+  pthread_mutex_destroy(&core->config_mutex);
+
   if (core->processing_params) {
     processing_parameters_free(core->processing_params);
     core->processing_params = NULL;
@@ -279,10 +287,12 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
     pipeline_free(new_pipeline);
   }
 
+  pthread_mutex_lock(&core->config_mutex);
   core->current_config = new_config;
   if (old_config && old_config != new_config) {
     dsp_config_free(old_config);
   }
+  pthread_mutex_unlock(&core->config_mutex);
 
   logger_info(&g_logger, "Pipeline rebuilt without audio-device restart");
   return true;

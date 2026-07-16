@@ -7,6 +7,8 @@
  * Engine sub-modules.
  */
 
+#include <pthread.h>
+
 #include "DoP/dsd_encoder.h"
 #include "dsp_session.h"
 
@@ -14,6 +16,8 @@ struct dsp_session {
   // MARK: - Configuration
   /** Current configuration. */
   dsp_config_t* current_config;
+  /** Mutex protecting configuration access. */
+  pthread_mutex_t config_mutex;
   /** Processing parameters derived from configuration. */
   processing_parameters_t* processing_params;
 

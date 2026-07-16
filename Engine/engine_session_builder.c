@@ -359,21 +359,27 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   }
 
   core->threads_created = true;
+  pthread_mutex_lock(&core->config_mutex);
   core->current_config = config;
+  pthread_mutex_unlock(&core->config_mutex);
   return true;
 }
 
 dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
-                                                  chunk_callback_t on_captured,
-                                                  void* captured_ctx,
-                                                  chunk_callback_t on_processed,
-                                                  void* processed_ctx,
-                                                  audio_backend_error_t* err) {
+                                              chunk_callback_t on_captured,
+                                              void* captured_ctx,
+                                              chunk_callback_t on_processed,
+                                              void* processed_ctx,
+                                              audio_backend_error_t* err) {
   if (!config) return NULL;
 
-  dsp_session_t* core =
-      (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
+  dsp_session_t* core = (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
+
+  pthread_mutex_init(&core->config_mutex, NULL);
+  pthread_mutex_lock(&core->config_mutex);
+  core->current_config = config;
+  pthread_mutex_unlock(&core->config_mutex);
 
 #ifdef _WIN32
   timeBeginPeriod(1);
