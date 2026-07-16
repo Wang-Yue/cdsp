@@ -113,7 +113,7 @@ processing_state_t dsp_session_get_state(const dsp_session_t* session);
  * @param session Pointer to the session instance.
  * @return Pointer to the stop reason, or NULL if not stopped.
  */
-const processing_stop_reason_t* dsp_session_get_stop_reason(
+processing_stop_reason_t dsp_session_get_stop_reason(
     const dsp_session_t* session);
 
 /**

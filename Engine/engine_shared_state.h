@@ -133,7 +133,7 @@ pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
  * @param state Pointer to the shared state instance.
  * @return Pointer to the processing stop reason structure.
  */
-const processing_stop_reason_t* engine_shared_state_get_stop_reason(
+processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state);
 
 /**

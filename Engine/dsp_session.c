@@ -74,9 +74,7 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
   if (!core || !core->shared) return false;
   bool req = engine_shared_state_should_stop(core->shared);
   if (req && out_reason) {
-    const processing_stop_reason_t* r =
-        engine_shared_state_get_stop_reason(core->shared);
-    if (r) *out_reason = *r;
+    *out_reason = engine_shared_state_get_stop_reason(core->shared);
   }
   return req;
 }
@@ -98,11 +96,12 @@ processing_state_t dsp_session_get_state(const dsp_session_t* core) {
                               : PROCESSING_STATE_INACTIVE;
 }
 
-const processing_stop_reason_t* dsp_session_get_stop_reason(
+processing_stop_reason_t dsp_session_get_stop_reason(
     const dsp_session_t* core) {
-  return core && core->shared
-             ? engine_shared_state_get_stop_reason(core->shared)
-             : NULL;
+  if (core && core->shared) {
+    return engine_shared_state_get_stop_reason(core->shared);
+  }
+  return (processing_stop_reason_t){.type = STOP_REASON_NONE};
 }
 
 void dsp_session_stop_and_free(dsp_session_t* core,

@@ -317,10 +317,9 @@ static state_update_t dsp_engine_get_status_locked(const dsp_engine_t* engine) {
   if (engine->session) {
     dsp_session_collect_garbage((dsp_session_t*)engine->session);
     res.state = dsp_session_get_state(engine->session);
-    const processing_stop_reason_t* r =
-        dsp_session_get_stop_reason(engine->session);
-    if (r && r->type != STOP_REASON_NONE) {
-      res.stop_reason = *r;
+    processing_stop_reason_t r = dsp_session_get_stop_reason(engine->session);
+    if (r.type != STOP_REASON_NONE) {
+      res.stop_reason = r;
     } else if (engine->has_last_stop_reason) {
       res.stop_reason = engine->last_stop_reason;
     } else {

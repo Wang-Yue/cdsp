@@ -30,6 +30,7 @@
 
 #include "engine_shared_state.h"
 
+#include <pthread.h>
 #include <stdlib.h>
 
 #include "Logging/app_logger.h"
@@ -54,6 +55,11 @@ struct engine_shared_state {
    * discipline.
    */
   processing_stop_reason_t stop_reason;
+
+  /**
+   * @brief Mutex protecting access to the stop reason structure.
+   */
+  pthread_mutex_t stop_reason_mutex;
 
   /**
    * @brief Resampler relative-ratio (≈ 1.0).
@@ -118,10 +124,15 @@ pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
   return (pipeline_t*)spsc_queue_dequeue(state->pipeline_garbage_queue);
 }
 
-const processing_stop_reason_t* engine_shared_state_get_stop_reason(
+processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state) {
-  if (!state) return NULL;
-  return &state->stop_reason;
+  processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
+  if (state) {
+    pthread_mutex_lock((pthread_mutex_t*)&state->stop_reason_mutex);
+    reason = state->stop_reason;
+    pthread_mutex_unlock((pthread_mutex_t*)&state->stop_reason_mutex);
+  }
+  return reason;
 }
 
 engine_shared_state_t* engine_shared_state_create(
@@ -139,6 +150,7 @@ engine_shared_state_t* engine_shared_state_create(
               processing_state_to_raw_byte(PROCESSING_STATE_INACTIVE));
   atomic_init(&state->stop_once, false);
   state->pipeline_garbage_queue = spsc_queue_create(32);
+  pthread_mutex_init(&state->stop_reason_mutex, NULL);
 
   if (!state->captured_queue || !state->processed_queue ||
       !state->pipeline_garbage_queue) {
@@ -161,6 +173,7 @@ void engine_shared_state_free(engine_shared_state_t* state) {
     spsc_queue_free(state->pipeline_garbage_queue);
   }
 
+  pthread_mutex_destroy(&state->stop_reason_mutex);
   free(state);
 }
 
@@ -182,7 +195,10 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
+    pthread_mutex_lock(&state->stop_reason_mutex);
     state->stop_reason = reason;
+    pthread_mutex_unlock(&state->stop_reason_mutex);
+
     if (reason.type != STOP_REASON_DONE) {
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       // Immediately shut down both queues on error or user stop to wake up
@@ -200,12 +216,16 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
     // received subsequently while processing is blocked waiting on full queues,
     // override the reason and force INACTIVE state to prevent infinite joins
     // and deadlocks.
+    pthread_mutex_lock(&state->stop_reason_mutex);
     if (state->stop_reason.type == STOP_REASON_DONE &&
         reason.type != STOP_REASON_DONE) {
       state->stop_reason = reason;
+      pthread_mutex_unlock(&state->stop_reason_mutex);
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
+    } else {
+      pthread_mutex_unlock(&state->stop_reason_mutex);
     }
   }
 }
