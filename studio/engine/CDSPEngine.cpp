@@ -79,7 +79,7 @@ float CDSPEngine::getFaderVolume(Fader fader) const {
 bool CDSPEngine::isFaderMuted(Fader fader) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        return cdsp_is_fader_muted(m_engine, faderToCFader(fader));
+        return cdsp_get_fader_mute(m_engine, faderToCFader(fader));
     }
     return false;
 }

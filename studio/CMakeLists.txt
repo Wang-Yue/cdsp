@@ -3,7 +3,9 @@ project(MonitorQt LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_BUILD_TYPE Debug)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -108,6 +110,14 @@ file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h")
 
 add_executable(MonitorQt ${SOURCES})
 
+if(APPLE)
+    set_target_properties(MonitorQt PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "MonitorQt"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.wangyue.monitorqt"
+    )
+endif()
+
 target_link_libraries(MonitorQt PRIVATE
     Qt6::Core
     Qt6::Widgets
@@ -118,6 +128,38 @@ target_link_libraries(MonitorQt PRIVATE
     ${CDSP_LIB}
     ${PLATFORM_LIBS}
 )
+
+# Dead code stripping & Link-Time Optimization (LTO)
+if(APPLE)
+    target_link_options(MonitorQt PRIVATE -Wl,-dead_strip)
+endif()
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error)
+if(ipo_supported)
+    set_property(TARGET MonitorQt PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
+if(APPLE)
+    find_program(MACDEPLOYQT_BIN NAMES macdeployqt HINTS /opt/homebrew/bin)
+    if(MACDEPLOYQT_BIN)
+        add_custom_target(
+            deploy
+            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
+            COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            DEPENDS MonitorQt
+            COMMENT "Deploying Qt libraries into macOS .app bundle..."
+        )
+        add_custom_target(
+            dmg
+            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
+            COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -dmg
+            DEPENDS MonitorQt
+            COMMENT "Deploying Qt libraries and creating DMG installer..."
+        )
+    endif()
+endif()
 
 # Automatic Code Formatting with clang-format
 find_program(CLANG_FORMAT_BIN NAMES clang-format)
