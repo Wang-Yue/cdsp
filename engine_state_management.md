@@ -1,0 +1,224 @@
+# CDSP Engine State Management Architecture
+
+This document provides a detailed, step-by-step technical guide on how the CDSP Engine manages state transitions, synchronization flags, thread interactions, and queue teardowns. It is designed to help you navigate the "state flag" relationships when modifying startup, playback, or shutdown paths.
+
+---
+
+## 1. Key State Variables & Structs Reference
+
+The state is managed across three layers: the Engine controller (`dsp_engine_t`), the Session builder/teardown (`dsp_session_t`), and the Inter-thread synchronizer (`engine_shared_state_t`).
+
+```mermaid
+graph TD
+    dsp_engine_t -->|"Session handle (Pointer)"| dsp_session_t
+    dsp_session_t -->|"Inter-thread Shared State"| engine_shared_state_t
+```
+
+### 1.1. Inter-Thread Level (`engine_shared_state_t`)
+Defined in [engine_shared_state.c](file:///Users/wangyue/cdsp/Engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads.
+
+| Field Name | Type | Purpose | Concurrency Model |
+| :--- | :--- | :--- | :--- |
+| `state_raw` | `_Atomic uint8_t` | Encodes `processing_state_t` (`INACTIVE`, `RUNNING`, `PAUSED`, `STALLED`). When set to `INACTIVE`, it serves as the global stop signal. | Lock-free atomic reads (`acquire` ordering) and writes (`release` ordering). |
+| `stop_once` | `_Atomic bool` | A latch/flag indicating whether a stop sequence has been initiated. Prevents multiple stop requests from colliding. | Checked and set atomically via Compare-And-Swap (CAS) `atomic_compare_exchange_strong_explicit`. |
+| `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Protected by `stop_reason_mutex`. |
+| `stop_reason_mutex` | `pthread_mutex_t` | Mutex protecting access to `stop_reason`. | C11 Mutex Lock. |
+| `captured_queue` | `audio_sync_queue_t*` | Sync queue from Capture -> Processing. | Lock-free SPSC + OS semaphore. |
+| `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
+
+---
+
+### 1.2. Session Level (`dsp_session_t`)
+Defined in [dsp_session_internal.h](file:///Users/wangyue/cdsp/Engine/dsp_session_internal.h). Manages resource lifetimes (backends, resampler, threads, chunk pools).
+
+| Field Name | Type | Purpose | Concurrency Model |
+| :--- | :--- | :--- | :--- |
+| `threads_created` | `bool` | Set to `true` if all worker threads spawned successfully. If `false`, teardown skips calling `pthread_join` to prevent hangs. | Thread-confined (touched only on the main controller thread). |
+| `config_mutex` | `pthread_mutex_t` | Guards access to the `current_config` pointer. | C11 Mutex Lock. |
+| `current_config` | `dsp_config_t*` | Pointer to the active session config. | Protected by `config_mutex`. |
+
+---
+
+### 1.3. Controller Level (`dsp_engine_t`)
+Defined in [dsp_engine.c](file:///Users/wangyue/cdsp/Engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands.
+
+| Field Name | Type | Purpose | Concurrency Model |
+| :--- | :--- | :--- | :--- |
+| `state_mutex` | `pthread_mutex_t` | Serializes configuration changes, volumes, and status queries. | C11 Mutex Lock. |
+| `last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) after the active `dsp_session_t` has been freed. | Protected by `state_mutex`. |
+| `has_last_stop_reason` | `bool` | Flag indicating if `last_stop_reason` holds a valid stopped/error state. | Protected by `state_mutex`. |
+| `config_in_progress` | `_Atomic bool` | True if a configuration change or reload is actively running. Status queries check this flag to return `STARTING` without blocking on `state_mutex`. | Lock-free atomic reads and writes. |
+
+---
+
+## 2. State Transition Matrices
+
+### 2.1. Core Processing States (`processing_state_t`)
+The raw state of the engine is stored in `state_raw` inside `engine_shared_state_t`:
+
+```
+                     ┌──────────────┐
+                     │   INACTIVE   │◀──────────────────────────────┐
+                     └──────────────┘                               │
+                            │ (set config)                          │
+                            ▼                                       │
+                     ┌──────────────┐                               │
+                     │   STARTING   │                               │
+                     └──────────────┘                               │
+                            │ (spawn threads)                       │
+                            ▼                                       │ (abort or error)
+                     ┌──────────────┐                               │
+                     │   RUNNING    │───────────────────────────────┤
+                     └──────────────┘                               │
+                       ▲          │                                 │
+    (signal detected)  │          │ (no signal / silence timeout)   │
+                       │          ▼                                 │
+                     ┌──────────────┐                               │
+                     │    PAUSED    │───────────────────────────────┘
+                     └──────────────┘
+```
+
+* **`INACTIVE`**: Threads are stopped or in the process of shutting down. `engine_shared_state_should_stop()` returns `true`.
+* **`STARTING`**: The engine is active but in the process of rebuilding/restarting its session (e.g. opening device backends, pre-filling silence, spawning threads). Status queries return this state instantly without blocking.
+* **`RUNNING`**: Active audio capture and playback.
+* **`PAUSED`**: Audio levels are below the silence threshold. Worker loops still run but backends are paused to yield CPU time.
+* **`STALLED`**: The watchdog detected that no chunks have arrived from the hardware capture backend for too long, indicating driver or hardware starvation.
+
+---
+
+## 3. Step-by-Step Shutdown Scenarios
+
+Shutdown behaves differently depending on whether it was a **Graceful EOF** (non-realtime file playback) or an **Immediate Abort** (hardware disconnect, playback thread error, user click).
+
+### 3.1. Flow A: Graceful EOF Teardown (Queue Drain)
+Used when a finite file input completes. The goal is to let the remaining audio drain through all buffers to the DAC.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Capture Thread
+    participant P as Processing Thread
+    participant K as Playback Thread
+    participant S as Shared State
+
+    Note over C: Reaches EOF in file
+    C->>S: request_stop(STOP_REASON_DONE)
+    Note over S: CAS stop_once -> true<br/>stop_reason = DONE<br/>state_raw remains RUNNING
+    C->>S: shutdown_captured_queue()
+    Note over C: Exits run loop & terminates
+    
+    Note over P: dequeue_captured_blocking() returns remaining chunks
+    Note over P: captured_queue becomes empty
+    P->>S: dequeue_captured_blocking() returns NULL
+    P->>S: shutdown_processed_queue()
+    Note over P: Exits run loop & terminates
+
+    Note over K: dequeue_processed_blocking() returns remaining chunks
+    Note over K: processed_queue becomes empty
+    K->>S: dequeue_processed_blocking() returns NULL
+    Note over K: Drains hardware DAC ring buffer (3 seconds max)
+    K->>S: set_state(INACTIVE)
+    Note over K: Exits run loop & terminates
+```
+
+1. **Capture Loop Reaches EOF**: 
+   - Calls `engine_shared_state_request_stop(state, STOP_REASON_DONE)`.
+   - CAS on `stop_once` succeeds. `stop_reason` is set to `STOP_REASON_DONE`.
+   - **Crucial**: The state is **not** set to `INACTIVE`. `state_raw` remains `RUNNING`.
+   - Calls `audio_sync_queue_shutdown(captured_queue)`.
+2. **Processing Loop Drains Capture Queue**:
+   - Keeps dequeuing chunks from `captured_queue` and processing them.
+   - Once all chunks are drained, `dequeue_captured_blocking` returns `NULL`.
+   - The processing thread exits its `while(1)` loop, then calls `engine_shared_state_shutdown_processed_queue(state)`.
+3. **Playback Loop Drains Playback Queue**:
+   - Dequeues and plays all remaining processed chunks.
+   - Once `processed_queue` is empty, `dequeue_processed_blocking` returns `NULL`.
+   - The playback thread runs `playback_loop_drain_hardware_buffer` to wait for the DAC buffer to hit `0`.
+   - Sets the state to `INACTIVE` via `engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE)`.
+   - Playback thread terminates.
+
+---
+
+### 3.2. Flow B: Immediate Abort (e.g. Playback Thread Error)
+Used when a thread crashes, a hardware device is disconnected, or the user clicks "Stop". Threads must wake up and abort immediately.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as Playback Thread
+    participant S as Shared State
+    participant P as Processing Thread
+    participant C as Capture Thread
+
+    Note over K: Hardware write error detected
+    K->>S: request_stop(STOP_REASON_PLAYBACK_ERROR)
+    Note over S: CAS stop_once -> true<br/>stop_reason = ERROR<br/>state_raw = INACTIVE
+    S->>S: shutdown_captured_queue()
+    S->>S: shutdown_processed_queue()
+    Note over K: Exits run loop & terminates
+
+    Note over P: Blocked in dequeue or enqueue
+    P->>S: dequeue/enqueue detects should_stop() (INACTIVE)
+    Note over P: Aborts immediately
+    Note over P: Exits run loop & terminates
+
+    Note over C: Blocked in enqueue_captured
+    C->>S: enqueue detects should_stop() (INACTIVE)
+    Note over C: Aborts immediately
+    Note over C: Exits run loop & terminates
+```
+
+1. **Playback Thread Detects Error**:
+   - Calls `engine_shared_state_request_stop(state, STOP_REASON_PLAYBACK_ERROR)`.
+   - CAS on `stop_once` succeeds. `stop_reason` is set to the error.
+   - **Crucial**: State is immediately changed to `INACTIVE`.
+   - **Crucial**: Both `captured_queue` and `processed_queue` are immediately shut down.
+2. **Unblocking Worker Threads**:
+   - The Capture and Processing threads might be blocked waiting on semaphores (sleeping) or blocked waiting to push to full queues (spinning).
+   - Calling `shutdown` on the queues wakes up all semaphores immediately.
+   - The threads check `engine_shared_state_should_stop()`, which returns `true` (since state is `INACTIVE`).
+   - All loops break and threads terminate immediately.
+3. **Controller Teardown**:
+   - The controller joins all terminated threads and frees session allocations safely.
+```
+
+---
+
+## 4. The CAS Race-Condition Safety Gate
+
+One of the trickiest parts of shutdown is when multiple threads encounter errors simultaneously. For example:
+- The capture thread encounters a read timeout error.
+- At the same time, the playback thread gets a buffer underrun/write error.
+- Simultaneously, the user clicks "Stop" in the UI.
+
+Without a gate, these threads would overwrite the stop reason and attempt to shut down queues repeatedly, causing crashes or double-frees.
+
+```c
+  bool expected = false;
+  if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
+                                              true, memory_order_acq_rel,
+                                              memory_order_acquire)) {
+      // WINNER: Only this block executes once.
+      state->stop_reason = reason;
+      ...
+  } else {
+      // LOSER: Stop has already been requested by someone else.
+      ...
+  }
+```
+
+* **The First Thread (Winner)**: Atomic compare-exchange finds `stop_once` is `false`. It atomically updates it to `true` and returns `true`. It sets the initial, most accurate stop reason.
+* **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch.
+  - If a graceful EOF was previously requested (`stop_reason == STOP_REASON_DONE`), but a new thread requests an immediate abort (`reason.type != STOP_REASON_DONE`), the loser branch **overrides** the stop reason and forces an immediate queue shutdown.
+  - Otherwise, it does not overwrite the stop reason to preserve the first error root cause.
+
+---
+
+## 5. Summary Cheat Sheet for Debugging
+
+| Symptom | Probable Cause | Action |
+| :--- | :--- | :--- |
+| **Shutdown Hangs (Infinite Join)** | Playback thread is blocked waiting on `processed_queue`'s semaphore. | Check if `engine_shared_state_request_stop` forgot to shut down `processed_queue` on error path. |
+| **Processing Spins Endless 1ms Sleeps** | EOF was requested, but playback thread terminated early, leaving the queue full. `should_stop` check was skipped because stop reason was `DONE`. | Ensure `should_stop` breaks the enqueue loop immediately regardless of the stop reason. |
+| **Torn Stop Reasons / Corrupt Msg** | Thread read `state->stop_reason` concurrently while another thread was writing it. | Ensure all reads/writes of `stop_reason` are wrapped by `stop_reason_mutex` and returned by value. |
+| **Double Free on Config Change** | Controller freed `config` on failure, but `dsp_session_stop_and_free` also freed it because `core->current_config` was assigned. | Ensure ownership of the `config` struct is explicitly transferred and handled only by the session on builder exit. |

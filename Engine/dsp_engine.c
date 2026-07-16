@@ -1,6 +1,7 @@
 #include "dsp_engine.h"
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "Audio/audio_history_buffer.h"
 #include "Config/config_diff.h"
@@ -30,6 +31,8 @@ struct dsp_engine {
   char* previous_config_json;
   /** Interface function pointer table. */
   dsp_engine_interface_t iface;
+  /** True if configuration or reload is in progress. */
+  _Atomic bool config_in_progress;
 };
 
 #include <stdio.h>
@@ -100,6 +103,7 @@ dsp_engine_t* dsp_engine_create(void) {
   pthread_mutexattr_destroy(&attr);
   engine->active_config_json = NULL;
   engine->previous_config_json = NULL;
+  atomic_init(&engine->config_in_progress, false);
 
   return engine;
 }
@@ -125,9 +129,11 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_t* engine,
 bool dsp_engine_set_config_struct(dsp_engine_t* engine, dsp_config_t* config,
                                   audio_backend_error_t* err) {
   if (!engine) return false;
+  atomic_store(&engine->config_in_progress, true);
   pthread_mutex_lock(&engine->state_mutex);
   bool res = dsp_engine_set_config_struct_locked(engine, config, err);
   pthread_mutex_unlock(&engine->state_mutex);
+  atomic_store(&engine->config_in_progress, false);
   return res;
 }
 
@@ -205,9 +211,11 @@ static bool dsp_engine_set_config_locked(dsp_engine_t* engine, const char* json,
 bool dsp_engine_set_config(dsp_engine_t* engine, const char* json,
                            audio_backend_error_t* err) {
   if (!engine) return false;
+  atomic_store(&engine->config_in_progress, true);
   pthread_mutex_lock(&engine->state_mutex);
   bool res = dsp_engine_set_config_locked(engine, json, err);
   pthread_mutex_unlock(&engine->state_mutex);
+  atomic_store(&engine->config_in_progress, false);
   return res;
 }
 
@@ -308,7 +316,18 @@ state_update_t dsp_engine_get_status(const dsp_engine_t* engine) {
                           .stop_reason = {.type = STOP_REASON_NONE}};
     return res;
   }
+  if (atomic_load(&engine->config_in_progress)) {
+    state_update_t res = {.state = PROCESSING_STATE_STARTING,
+                          .stop_reason = {.type = STOP_REASON_NONE}};
+    return res;
+  }
   pthread_mutex_lock((pthread_mutex_t*)&engine->state_mutex);
+  if (atomic_load(&engine->config_in_progress)) {
+    pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
+    state_update_t res = {.state = PROCESSING_STATE_STARTING,
+                          .stop_reason = {.type = STOP_REASON_NONE}};
+    return res;
+  }
   state_update_t res = dsp_engine_get_status_locked(engine);
   pthread_mutex_unlock((pthread_mutex_t*)&engine->state_mutex);
   return res;
