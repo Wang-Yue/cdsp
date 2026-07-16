@@ -1,3 +1,4 @@
+#define CDSP_TIME_IMPL
 #include "Utils/cdsp_time.h"
 
 #include <time.h>
