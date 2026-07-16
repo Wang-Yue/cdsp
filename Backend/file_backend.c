@@ -69,6 +69,7 @@ struct file_playback {
   bool realtime;
   uint64_t start_time_ns;
   size_t total_frames_written;
+  bool stopped;
 #endif
 };
 
@@ -859,6 +860,18 @@ static void play_vtable_set_is_paused(void* ctx, bool paused) {
   file_playback_set_is_paused((file_playback_t*)ctx, paused);
 }
 /** @brief Vtable wrapper for file_playback_destroy. */
+/** @brief Vtable wrapper for file_playback_stop. */
+static void play_vtable_stop(void* ctx) {
+#ifdef CDSP_TEST
+  file_playback_t* playback = (file_playback_t*)ctx;
+  if (playback) {
+    playback->stopped = true;
+  }
+#else
+  (void)ctx;
+#endif
+}
+/** @brief Vtable wrapper for file_playback_destroy. */
 static void play_vtable_destroy(void* ctx) {
   file_playback_destroy((file_playback_t*)ctx);
 }
@@ -872,6 +885,7 @@ static const playback_backend_vtable_t file_playback_vtable = {
     .prefill_silence = play_vtable_prefill_silence,
     .get_is_paused = play_vtable_get_is_paused,
     .set_is_paused = play_vtable_set_is_paused,
+    .stop = play_vtable_stop,
     .destroy = play_vtable_destroy};
 
 playback_backend_t* file_playback_create(const playback_device_config_t* config,
@@ -983,6 +997,14 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
 
 bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
                          backend_error_t* err) {
+#ifdef CDSP_TEST
+  if (playback->stopped) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Playback stopped");
+    }
+    return false;
+  }
+#endif
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
       backend_error_init(

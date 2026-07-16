@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -1137,6 +1138,111 @@ TEST(DSPEngineE2E_FileFile_Realtime_FT) {
 
 TEST(DSPEngineE2E_FileFile_Realtime_TT) {
   run_e2e_file_file_test(true, true, 480000, true);
+}
+
+struct stop_thread_args {
+  dsp_engine_t* engine;
+  volatile bool done;
+};
+
+static void* stop_thread_func(void* arg) {
+  struct stop_thread_args* args = (struct stop_thread_args*)arg;
+  dsp_engine_stop(args->engine);
+  args->done = true;
+  return NULL;
+}
+
+TEST(DSPEngineE2E_DeadlockGuard) {
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/e2e_deadlock_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_deadlock_out_%d.raw",
+           getpid());
+  remove(in_file);
+  remove(out_file);
+
+  // Write test input (S16_LE mono, 22.4 simulated seconds @ 16000Hz = 358400
+  // frames) This size is specifically chosen (between 1x and 2x queuelimit of
+  // 500 chunks) to ensure capture thread exits while processing thread is
+  // blocked.
+  int total_frames = 358400;
+  FILE* f = fopen(in_file, "wb");
+  ASSERT_TRUE(f != NULL);
+  int16_t* input_samples = malloc(total_frames * sizeof(int16_t));
+  for (int i = 0; i < total_frames; i++) {
+    input_samples[i] = (int16_t)(i % 32768);
+  }
+  fwrite(input_samples, sizeof(int16_t), total_frames, f);
+  fclose(f);
+
+  // Build JSON configuration with large queuelimit (500)
+  // Capture is non-realtime (File), Playback is realtime (File)
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 500,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": false\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = dsp_engine_set_config(engine, json, &err);
+  ASSERT_TRUE(success);
+
+  // Sleep for 100ms real time. Since capture is non-realtime, it will finish
+  // reading the entire file (5M frames) and reach EOF/exit immediately. The
+  // processing thread will be blocked enqueuing to full processed_queue because
+  // playback is realtime (takes ~20s real time under 15x scale to drain).
+  usleep(100000);
+
+  // Stop the engine in a separate thread. If the deadlock bug is present, the
+  // thread will hang forever. We wait up to 2.0 seconds (200 * 10ms) for it to
+  // complete.
+  pthread_t stop_thread;
+  struct stop_thread_args stop_args = {.engine = engine, .done = false};
+  pthread_create(&stop_thread, NULL, stop_thread_func, &stop_args);
+
+  for (int i = 0; i < 200; i++) {
+    if (stop_args.done) {
+      break;
+    }
+    usleep(10000);  // 10ms
+  }
+
+  // Assert that the stop thread completed within 2.0 seconds (no deadlock)
+  ASSERT_TRUE(stop_args.done);
+
+  if (stop_args.done) {
+    pthread_join(stop_thread, NULL);
+  } else {
+    pthread_detach(stop_thread);
+  }
+
+  dsp_engine_free(engine);
+  free(input_samples);
+  remove(in_file);
+  remove(out_file);
 }
 
 TEST_MAIN()
