@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-#include "Public/cdsp_pub_types.h"
+#include "cdsp_pub_types.h"
 
 /**
  * @brief Get the CamillaDSP-C version string.

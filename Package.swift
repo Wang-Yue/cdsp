@@ -20,7 +20,7 @@ let package = Package(
         "LICENSE",
         "README.md",
       ],
-      publicHeadersPath: ".",
+      publicHeadersPath: "Public",
       cSettings: [
         .headerSearchPath("."),
         .headerSearchPath("Audio"),

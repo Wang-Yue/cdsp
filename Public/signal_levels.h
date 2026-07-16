@@ -3,7 +3,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include "Public/cdsp_pub_types.h"
+
+#include "cdsp_pub_types.h"
 
 /**
  * @brief Get the current VU levels for capture and playback sides.
@@ -26,9 +27,10 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
 /**
  * @brief Get the optional channel labels configured for playback and capture.
  *
- * The arrays out_playback_labels and out_capture_labels, along with each string,
- * are allocated dynamically and must be freed by calling cdsp_free_channel_labels.
- * If a channel has no label, its string pointer in the array will be NULL.
+ * The arrays out_playback_labels and out_capture_labels, along with each
+ * string, are allocated dynamically and must be freed by calling
+ * cdsp_free_channel_labels. If a channel has no label, its string pointer in
+ * the array will be NULL.
  *
  * @param engine Pointer to the engine.
  * @param out_playback_labels Output array of playback channel labels.
@@ -38,8 +40,10 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
  * @return true on success, false on failure (or if no labels are configured).
  */
 bool cdsp_get_channel_labels(const dsp_engine_t* engine,
-                             char*** out_playback_labels, size_t* out_playback_count,
-                             char*** out_capture_labels, size_t* out_capture_count);
+                             char*** out_playback_labels,
+                             size_t* out_playback_count,
+                             char*** out_capture_labels,
+                             size_t* out_capture_count);
 
 /**
  * @brief Free channel labels arrays and strings.
@@ -48,4 +52,4 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
  */
 void cdsp_free_channel_labels(char** labels, size_t count);
 
-#endif // CDSP_PUBLIC_SIGNAL_LEVELS_H
+#endif  // CDSP_PUBLIC_SIGNAL_LEVELS_H

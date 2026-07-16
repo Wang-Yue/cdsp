@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "Public/cdsp_pub_types.h"
+#include "cdsp_pub_types.h"
 
 /**
  * @brief Get the volume of the main fader (index 0).

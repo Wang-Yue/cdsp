@@ -7,7 +7,8 @@
 #define CDSP_PUBLIC_STATE_H
 
 #include <stdbool.h>
-#include "Public/cdsp_pub_types.h"
+
+#include "cdsp_pub_types.h"
 
 struct cdsp_state_s;
 /**
@@ -103,4 +104,4 @@ double cdsp_state_get_volume(const cdsp_state_t* state, int index);
  */
 void cdsp_state_set_volume(cdsp_state_t* state, int index, double volume);
 
-#endif // CDSP_PUBLIC_STATE_H
+#endif  // CDSP_PUBLIC_STATE_H

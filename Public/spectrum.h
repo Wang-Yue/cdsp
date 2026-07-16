@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "Public/cdsp_pub_types.h"
+
+#include "cdsp_pub_types.h"
 
 /**
  * @brief Spectrum data structure containing frequency and magnitude arrays.
@@ -37,4 +38,4 @@ bool cdsp_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
  */
 void cdsp_free_spectrum(cdsp_spectrum_t* spec);
 
-#endif // CDSP_PUBLIC_SPECTRUM_H
+#endif  // CDSP_PUBLIC_SPECTRUM_H

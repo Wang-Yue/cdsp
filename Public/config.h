@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "Public/cdsp_pub_types.h"
+#include "cdsp_pub_types.h"
 
 /**
  * @brief Get the currently loaded configuration file path (WebSocket:
