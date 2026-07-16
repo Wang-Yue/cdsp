@@ -325,7 +325,6 @@ sequenceDiagram
    - All loops break and threads terminate immediately.
 3. **Controller Teardown**:
    - The controller joins all terminated threads and frees session allocations safely.
-```
 
 ---
 
