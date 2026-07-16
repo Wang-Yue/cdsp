@@ -379,6 +379,12 @@ static bool promote_current_thread_to_real_time_internal(
 
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
+#ifdef CDSP_TEST
+  (void)name;
+  (void)buffer_frames;
+  (void)sample_rate;
+  return;
+#else
   pthread_t thread = pthread_self();
   struct sched_param param;
   int policy;
@@ -434,6 +440,7 @@ fallback:
               "[%s] Failed to promote thread to real-time priority (both "
               "pthread_setschedparam and RealtimeKit failed)",
               name ? name : "unknown");
+#endif
 }
 #elif defined(_WIN32)
 #include <windows.h>
