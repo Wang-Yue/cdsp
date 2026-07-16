@@ -162,7 +162,7 @@ TEST(DoPRoundtripSINAD) {
       double base_rate = base_rates[j];
       size_t pcm_sample_rate = (size_t)round(base_rate * (double)mult / 16.0);
       dsd_encoder_t* encoder = dsd_encoder_create(
-          1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
+          1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0, false);
       dop_decoder_t* decoder =
           dop_decoder_create(1, pcm_sample_rate, false, 20000.0);
       ASSERT_TRUE(encoder != NULL);
@@ -229,7 +229,7 @@ TEST(DoPRoundtripSINAD) {
 TEST(DoPVariableChunkRoundtrip) {
   size_t pcm_sample_rate = 176400;
   dsd_encoder_t* encoder = dsd_encoder_create(1, pcm_sample_rate, DSD_MODE_DOP,
-                                              16, SDM_FILTER_SDM6, 20000.0);
+                                              16, SDM_FILTER_SDM6, 20000.0, false);
   dop_decoder_t* decoder =
       dop_decoder_create(1, (double)pcm_sample_rate, false, 20000.0);
   ASSERT_TRUE(encoder != NULL);
@@ -306,7 +306,7 @@ TEST(DoPVariableChunkRoundtrip) {
 TEST(NativeDSDEncoderCreationAndOutput) {
   size_t pcm_sample_rate = 176400;
   dsd_encoder_t* encoder = dsd_encoder_create(
-      2, pcm_sample_rate, DSD_MODE_NATIVE, 16, SDM_FILTER_SDM6, 20000.0);
+      2, pcm_sample_rate, DSD_MODE_NATIVE, 16, SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
 
@@ -356,7 +356,7 @@ TEST(NativeDSDBitDepthsEncodingTest) {
     size_t depth = bit_depths[i];
     size_t rate = (depth == 8) ? 352800 : 176400;
     dsd_encoder_t* encoder = dsd_encoder_create(2, rate, DSD_MODE_NATIVE, depth,
-                                                SDM_FILTER_SDM6, 20000.0);
+                                                SDM_FILTER_SDM6, 20000.0, false);
     ASSERT_TRUE(encoder != NULL);
     ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
 
@@ -417,13 +417,13 @@ TEST(SupportedCarrierRatesTest) {
 
   // Verify Native DSD encoding at 32-bit and 8-bit carrier rates
   dsd_encoder_t* enc_32bit_dsd64 = dsd_encoder_create(
-      2, 88200, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0);
+      2, 88200, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_32bit_dsd64 != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(enc_32bit_dsd64));
   dsd_encoder_free(enc_32bit_dsd64);
 
   dsd_encoder_t* enc_8bit_dsd256 = dsd_encoder_create(
-      2, 1411200, DSD_MODE_NATIVE, 8, SDM_FILTER_SDM6, 20000.0);
+      2, 1411200, DSD_MODE_NATIVE, 8, SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_8bit_dsd256 != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(enc_8bit_dsd256));
   dsd_encoder_free(enc_8bit_dsd256);
@@ -432,7 +432,7 @@ TEST(SupportedCarrierRatesTest) {
 TEST(DSDEncoderSilencePrefill) {
   // Test Native DSD 8-bit
   dsd_encoder_t* enc_nat8 = dsd_encoder_create(2, 352800, DSD_MODE_NATIVE, 8,
-                                               SDM_FILTER_SDM6, 20000.0);
+                                               SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_nat8 != NULL);
   audio_chunk_t* chunk8 = audio_chunk_create(10, 2);
   dsd_encoder_fill_silence(enc_nat8, chunk8);
@@ -446,7 +446,7 @@ TEST(DSDEncoderSilencePrefill) {
 
   // Test Native DSD 16-bit
   dsd_encoder_t* enc_nat16 = dsd_encoder_create(2, 176400, DSD_MODE_NATIVE, 16,
-                                                SDM_FILTER_SDM6, 20000.0);
+                                                SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_nat16 != NULL);
   audio_chunk_t* chunk16 = audio_chunk_create(10, 2);
   dsd_encoder_fill_silence(enc_nat16, chunk16);
@@ -460,7 +460,7 @@ TEST(DSDEncoderSilencePrefill) {
 
   // Test Native DSD 32-bit
   dsd_encoder_t* enc_nat32 = dsd_encoder_create(2, 88200, DSD_MODE_NATIVE, 32,
-                                                SDM_FILTER_SDM6, 20000.0);
+                                                SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_nat32 != NULL);
   audio_chunk_t* chunk32 = audio_chunk_create(10, 2);
   dsd_encoder_fill_silence(enc_nat32, chunk32);
@@ -475,7 +475,7 @@ TEST(DSDEncoderSilencePrefill) {
 
   // Test DoP Mode (16-bit DSD payload, alternating 0x05 / 0xFA marker)
   dsd_encoder_t* enc_dop =
-      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0);
+      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0, false);
   ASSERT_TRUE(enc_dop != NULL);
   audio_chunk_t* chunk_dop = audio_chunk_create(10, 2);
   dsd_encoder_fill_silence(enc_dop, chunk_dop);
@@ -502,7 +502,7 @@ TEST(DSDEncoderGoldenCorrectness) {
 
   // 8-bit Native DSD encoder (352800 Hz * 8 = 2822400 Hz)
   dsd_encoder_t* enc8 = dsd_encoder_create(1, 352800, DSD_MODE_NATIVE, 8,
-                                           SDM_FILTER_SDM6, 20000.0);
+                                           SDM_FILTER_SDM6, 20000.0, false);
   audio_chunk_t* chunk8 = audio_chunk_create(64, 1);
   memcpy(audio_chunk_get_channel(chunk8, 0), ch, 64 * sizeof(double));
   dsd_encoder_encode(enc8, chunk8);
@@ -522,7 +522,7 @@ TEST(DSDEncoderGoldenCorrectness) {
 
   // 16-bit Native DSD encoder (176400 Hz * 16 = 2822400 Hz)
   dsd_encoder_t* enc16 = dsd_encoder_create(1, 176400, DSD_MODE_NATIVE, 16,
-                                            SDM_FILTER_SDM6, 20000.0);
+                                            SDM_FILTER_SDM6, 20000.0, false);
   audio_chunk_t* chunk16 = audio_chunk_create(64, 1);
   memcpy(audio_chunk_get_channel(chunk16, 0), ch, 64 * sizeof(double));
   dsd_encoder_encode(enc16, chunk16);
@@ -544,7 +544,7 @@ TEST(DSDEncoderGoldenCorrectness) {
 
   // 32-bit Native DSD encoder (88200 Hz * 32 = 2822400 Hz)
   dsd_encoder_t* enc32 = dsd_encoder_create(1, 88200, DSD_MODE_NATIVE, 32,
-                                            SDM_FILTER_SDM6, 20000.0);
+                                            SDM_FILTER_SDM6, 20000.0, false);
   audio_chunk_t* chunk32 = audio_chunk_create(64, 1);
   memcpy(audio_chunk_get_channel(chunk32, 0), ch, 64 * sizeof(double));
   dsd_encoder_encode(enc32, chunk32);

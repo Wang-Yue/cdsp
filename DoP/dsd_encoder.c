@@ -23,6 +23,13 @@
 
 #include "dsd_encoder.h"
 
+#if defined(__APPLE__) || defined(USE_LIBDISPATCH)
+#include <dispatch/dispatch.h>
+#define HAS_DISPATCH 1
+#else
+#define HAS_DISPATCH 0
+#endif
+
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 
@@ -73,6 +80,8 @@ struct dsd_encoder {
    * cache footprint.
    */
   float* coeffs;
+  /** True if multi-threaded parallelization should be used. */
+  bool use_multithreading;
 };
 
 #include <math.h>
@@ -197,7 +206,8 @@ static float* build_coeffs(size_t sample_rate, size_t dsd_bit_depth,
 
 dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                                   dsd_mode_t mode, size_t dsd_bit_depth,
-                                  sdm_filter_t filter_name, double cutoff_hz) {
+                                  sdm_filter_t filter_name, double cutoff_hz,
+                                  bool multithreaded) {
   if (channels <= 0) {
     logger_error(&g_logger, "Invalid channel count for DSD encoder: %d",
                  channels);
@@ -213,6 +223,12 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
   }
   enc->channels = channels;
   enc->dsd_bit_depth = dsd_bit_depth;
+  enc->use_multithreading = false;
+#if HAS_DISPATCH || defined(USE_OPENMP)
+  if (multithreaded && channels > 2) {
+    enc->use_multithreading = true;
+  }
+#endif
   enc->coeffs = build_coeffs(sample_rate, dsd_bit_depth, cutoff_hz);
   if (!enc->coeffs) {
     logger_error(&g_logger,
@@ -412,11 +428,70 @@ static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
   state1->marker = marker1;
 }
 
+#if HAS_DISPATCH
+typedef struct {
+  dsd_encoder_t* encoder;
+  audio_chunk_t* chunk;
+  size_t frames;
+  int num_pairs;
+} dsd_encoder_dispatch_ctx_t;
+
+static void dsd_encoder_worker(void* context, size_t task) {
+  dsd_encoder_dispatch_ctx_t* ctx = (dsd_encoder_dispatch_ctx_t*)context;
+  int num_pairs = ctx->num_pairs;
+  int task_idx = (int)task;
+  if (task_idx < num_pairs) {
+    int ch = task_idx * 2;
+    encode_dual_channels(
+        &ctx->encoder->channel_states[ch], &ctx->encoder->channel_states[ch + 1],
+        audio_chunk_get_channel(ctx->chunk, ch),
+        audio_chunk_get_channel(ctx->chunk, ch + 1), ctx->frames,
+        ctx->encoder->coeffs, ctx->encoder->mode, ctx->encoder->dsd_bit_depth);
+  } else {
+    int ch = task_idx * 2;
+    encode_channel(&ctx->encoder->channel_states[ch],
+                   audio_chunk_get_channel(ctx->chunk, ch), ctx->frames,
+                   ctx->encoder->coeffs, ctx->encoder->mode,
+                   ctx->encoder->dsd_bit_depth);
+  }
+}
+#endif
+
 void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (!encoder || !encoder->enabled || !chunk) return;
   size_t n = audio_chunk_get_valid_frames(chunk);
   int chs = encoder->channels;
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
+
+  if (encoder->use_multithreading) {
+    int num_pairs = chs / 2;
+    int total_tasks = num_pairs + (chs % 2);
+#if HAS_DISPATCH
+    dsd_encoder_dispatch_ctx_t dctx = {encoder, chunk, n, num_pairs};
+    dispatch_queue_t queue =
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
+    dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
+    return;
+#elif defined(USE_OPENMP)
+    #pragma omp parallel for num_threads(total_tasks)
+    for (int task = 0; task < total_tasks; task++) {
+      if (task < num_pairs) {
+        int ch = task * 2;
+        encode_dual_channels(
+            &encoder->channel_states[ch], &encoder->channel_states[ch + 1],
+            audio_chunk_get_channel(chunk, ch),
+            audio_chunk_get_channel(chunk, ch + 1), n, encoder->coeffs,
+            encoder->mode, encoder->dsd_bit_depth);
+      } else {
+        int ch = task * 2;
+        encode_channel(&encoder->channel_states[ch],
+                       audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
+                       encoder->mode, encoder->dsd_bit_depth);
+      }
+    }
+    return;
+#endif
+  }
 
   int ch = 0;
   for (; ch + 1 < chs; ch += 2) {

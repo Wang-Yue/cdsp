@@ -923,7 +923,7 @@ TEST(DoPEncoder_AllocationFree) {
   openblas_set_num_threads(1);
 #endif
   dsd_encoder_t* encoder =
-      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0);
+      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 0.5);
   dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};

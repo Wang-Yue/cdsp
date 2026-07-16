@@ -54,11 +54,13 @@ typedef struct dsd_encoder dsd_encoder_t;
  * @param filter_name Noise-shaper filter name.
  * @param cutoff_hz Passband cutoff of the interpolation filter.
  *                  Ignored when `enabled` is false.
+ * @param multithreaded True to enable multi-threaded parallelization.
  * @return Pointer to the created dsd_encoder_t instance.
  */
 dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                                   dsd_mode_t mode, size_t dsd_bit_depth,
-                                  sdm_filter_t filter_name, double cutoff_hz);
+                                  sdm_filter_t filter_name, double cutoff_hz,
+                                  bool multithreaded);
 
 /**
  * @brief Encode the chunk's PCM samples into DoP/DSD, in place.

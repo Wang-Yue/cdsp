@@ -14,15 +14,14 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-TEST(DSDEncoder_Benchmark) {
+static void run_encoder_benchmark(int channels, bool multithreaded) {
   size_t carrier_rate = 768000;
-  dsd_encoder_t* encoder = dsd_encoder_create(2, carrier_rate, DSD_MODE_DOP, 16,
-                                              SDM_FILTER_SDM6, 20000.0);
+  dsd_encoder_t* encoder = dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
+                                              SDM_FILTER_SDM6, 20000.0, multithreaded);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
 
   int frames = 1024;
-  int channels = 2;
   audio_chunk_t* pcm_source = audio_chunk_create(frames, channels);
   double amplitude = 0.5;
   for (int ch = 0; ch < channels; ch++) {
@@ -43,7 +42,7 @@ TEST(DSDEncoder_Benchmark) {
     dsd_encoder_encode(encoder, temp_chunk);
   }
 
-  int iters = 2000;
+  int iters = 1000;
   struct timespec start, end;
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < iters; i++) {
@@ -59,7 +58,8 @@ TEST(DSDEncoder_Benchmark) {
   double ns_per_frame = elapsed_ns / (double)(frames * iters);
   double real_time_ratio = (1.0 / ((double)carrier_rate * 1e-9)) / ns_per_frame;
 
-  printf("=== DSD Encoder Throughput ===\n");
+  printf("=== DSD Encoder Throughput (%d channels, multithreaded=%s) ===\n",
+         channels, multithreaded ? "ON" : "OFF");
   printf("Throughput: %8.2f ns/frame\n", ns_per_frame);
   printf("Real-time ratio: %8.2fx\n", real_time_ratio);
 
@@ -68,10 +68,19 @@ TEST(DSDEncoder_Benchmark) {
   dsd_encoder_free(encoder);
 }
 
+TEST(DSDEncoder_Benchmark) {
+  // Benchmark stereo (always sequential optimized)
+  run_encoder_benchmark(2, false);
+
+  // Benchmark 8-channel (sequential vs parallel)
+  run_encoder_benchmark(8, false);
+  run_encoder_benchmark(8, true);
+}
+
 TEST(DoPDecoder_Benchmark) {
   size_t carrier_rate = 768000;
   dsd_encoder_t* encoder = dsd_encoder_create(2, carrier_rate, DSD_MODE_DOP, 16,
-                                              SDM_FILTER_SDM6, 20000.0);
+                                              SDM_FILTER_SDM6, 20000.0, false);
   dop_decoder_t* decoder =
       dop_decoder_create(2, (double)carrier_rate, false, 20000.0);
   ASSERT_TRUE(encoder != NULL);

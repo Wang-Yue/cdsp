@@ -113,9 +113,13 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
   size_t dsd_bit_depth =
       playback_device_config_calculate_carrier_bits(&config->devices.playback);
 
+  bool multithreaded =
+      config->devices.has_multithreaded ? config->devices.multithreaded : false;
+
   core->dsd_encoder = dsd_encoder_create(
       playback_device_config_get_channels(&config->devices.playback),
-      playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0);
+      playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0,
+      multithreaded);
 
   return (core->shared && core->processing_params && core->dop_decoder &&
           core->dsd_encoder);
