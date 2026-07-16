@@ -249,8 +249,10 @@ void dsp_engine_stop(dsp_engine_t* engine) {
     dsp_session_collect_garbage(engine->session);
     processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
     dsp_session_is_stop_requested(engine->session, &reason);
-    engine->last_stop_reason = reason;
-    engine->has_last_stop_reason = true;
+    if (reason.type != STOP_REASON_NONE) {
+      engine->last_stop_reason = reason;
+      engine->has_last_stop_reason = true;
+    }
     dsp_session_stop_and_free(engine->session, reason);
     engine->session = NULL;
   }
