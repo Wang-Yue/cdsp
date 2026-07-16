@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "Backend/file_backend.h"
+#include "Utils/cdsp_time.h"
 #include "test_support.h"
 
 TEST(FileBackendRawRoundTrip) {
@@ -404,14 +405,12 @@ TEST(FileBackendRealtimeThrottling) {
 
   audio_chunk_t* read_chunk = audio_chunk_create(441, channels);
 
-  struct timespec t0, t1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  uint64_t t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(capture_backend_read(capture_fast, 441, read_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
-                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  uint64_t t1 = cdsp_time_now_ns();
+  double elapsed_fast = (double)(t1 - t0) / 1000000000.0;
 
   capture_backend_close(capture_fast);
   capture_backend_free(capture_fast);
@@ -426,13 +425,12 @@ TEST(FileBackendRealtimeThrottling) {
   ASSERT_TRUE(capture_rt != NULL);
   ASSERT_TRUE(capture_backend_open(capture_rt, &err));
 
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(capture_backend_read(capture_rt, 441, read_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
-                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  t1 = cdsp_time_now_ns();
+  double elapsed_rt = (double)(t1 - t0) / 1000000000.0;
 
   capture_backend_close(capture_rt);
   capture_backend_free(capture_rt);
@@ -482,14 +480,12 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
   }
   audio_chunk_set_valid_frames(write_chunk, 441);
 
-  struct timespec t0, t1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  uint64_t t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(playback_backend_write(playback_fast, write_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
-                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  uint64_t t1 = cdsp_time_now_ns();
+  double elapsed_fast = (double)(t1 - t0) / 1000000000.0;
 
   playback_backend_close(playback_fast);
   playback_backend_free(playback_fast);
@@ -503,13 +499,12 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
   ASSERT_TRUE(playback_rt != NULL);
   ASSERT_TRUE(playback_backend_open(playback_rt, &err));
 
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(playback_backend_write(playback_rt, write_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
-                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  t1 = cdsp_time_now_ns();
+  double elapsed_rt = (double)(t1 - t0) / 1000000000.0;
 
   playback_backend_close(playback_rt);
   playback_backend_free(playback_rt);
@@ -580,14 +575,12 @@ TEST(FileBackendWavRealtimeThrottling) {
 
   audio_chunk_t* read_chunk = audio_chunk_create(160, channels);
 
-  struct timespec t0, t1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  uint64_t t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(capture_backend_read(capture_fast, 160, read_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_fast = (double)(t1.tv_sec - t0.tv_sec) +
-                        (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  uint64_t t1 = cdsp_time_now_ns();
+  double elapsed_fast = (double)(t1 - t0) / 1000000000.0;
 
   capture_backend_close(capture_fast);
   capture_backend_free(capture_fast);
@@ -601,13 +594,12 @@ TEST(FileBackendWavRealtimeThrottling) {
   ASSERT_TRUE(capture_rt != NULL);
   ASSERT_TRUE(capture_backend_open(capture_rt, &err));
 
-  clock_gettime(CLOCK_MONOTONIC, &t0);
+  t0 = cdsp_time_now_ns();
   for (int i = 0; i < 10; i++) {
     ASSERT_TRUE(capture_backend_read(capture_rt, 160, read_chunk, &err));
   }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double elapsed_rt = (double)(t1.tv_sec - t0.tv_sec) +
-                      (double)(t1.tv_nsec - t0.tv_nsec) / 1000000000.0;
+  t1 = cdsp_time_now_ns();
+  double elapsed_rt = (double)(t1 - t0) / 1000000000.0;
 
   capture_backend_close(capture_rt);
   capture_backend_free(capture_rt);

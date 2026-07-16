@@ -125,11 +125,6 @@ else
     endif
 endif
 
-LDFLAGS_TEST := $(LDFLAGS)
-ifneq ($(IS_DARWIN),1)
-    LDFLAGS_TEST += -Wl,--wrap=clock_gettime -Wl,--wrap=nanosleep
-endif
-
 
 # All library C source files across subdirectories of CDSP
 ALL_SRCS := $(wildcard $(SRC_ROOT)/*/*.c)
@@ -197,10 +192,6 @@ $(TEST_OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DCDSP_TEST -c $< -o $@
 
-$(ROOT_DIR)/.build/clock_mock.o: $(ROOT_DIR)/Tests/CLibTests/clock_mock.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
 # Archive object files into static library
 $(LIB_TARGET): $(OBJS)
 	@rm -f $@
@@ -222,18 +213,18 @@ $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.
 
 # Build test binaries by linking against libdsp_test.a
 ifeq ($(IS_WINDOWS),1)
-$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
+$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS_TEST) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
 endif
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
+$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS_TEST) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS) -o $@
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
+$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS_TEST) -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -o $@
 
 
 RUST_HARNESS_DIR := $(ROOT_DIR)/Tests/RustHarnesses
