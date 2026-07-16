@@ -15,6 +15,10 @@
 
 #include "Config/cJSON.h"
 #include "Logging/app_logger.h"
+#include "Public/general.h"
+#include "Public/processing.h"
+#include "Public/signal_levels.h"
+#include "Public/spectrum.h"
 #include "Utils/cdsp_time.h"
 #include "websocket_server_internal.h"
 #include "ws_framing.h"
@@ -252,7 +256,7 @@ websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
 }
 
 void websocket_server_set_engine(websocket_server_t* server,
-                                 dsp_engine_interface_t* engine) {
+                                 dsp_engine_t* engine) {
   if (server) {
     server->engine = engine;
   }
@@ -308,9 +312,16 @@ static void* server_thread_func(void* arg) {
       last_broadcast_time_ms = now;
 
       state_update_t status = {0};
-      bool has_status =
-          server->engine && server->engine->get_status &&
-          server->engine->get_status(server->engine->ctx, &status);
+      bool has_status = false;
+      if (server->engine) {
+        status.state = (processing_state_t)cdsp_get_state(server->engine);
+        cdsp_stop_reason_t stop_reason = {0};
+        cdsp_get_stop_reason(server->engine, &stop_reason);
+        status.stop_reason.type = (processing_stop_reason_type_t)stop_reason.type;
+        strncpy(status.stop_reason.message, stop_reason.message, sizeof(status.stop_reason.message) - 1);
+        status.stop_reason.format_change_rate = stop_reason.format_change_rate;
+        has_status = true;
+      }
 
       const char* state_str = "Inactive";
       if (has_status) {
@@ -325,8 +336,14 @@ static void* server_thread_func(void* arg) {
       size_t pb_channels = 0;
 
       vu_levels_t vu = {0};
-      if (server->engine && server->engine->get_vu_levels &&
-          server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+      cdsp_vu_levels_t pub_vu = {0};
+      if (server->engine && cdsp_get_vu_levels(server->engine, &pub_vu)) {
+        vu.playback_rms = pub_vu.playback_rms;
+        vu.playback_peak = pub_vu.playback_peak;
+        vu.capture_rms = pub_vu.capture_rms;
+        vu.capture_peak = pub_vu.capture_peak;
+        vu.playback_channels = pub_vu.playback_channels;
+        vu.capture_channels = pub_vu.capture_channels;
         cap_channels = vu.capture_channels;
         pb_channels = vu.playback_channels;
         current_cap_peak = vu.capture_peak;
@@ -596,24 +613,22 @@ static void* server_thread_func(void* arg) {
                                 ? 1000.0 / session->spectrum_max_rate
                                 : 0.0;
           if (now - session->last_spectrum_push_time >= interval) {
-            spectrum_t spec = {0};
+            cdsp_spectrum_t spec = {0};
             bool spec_ok =
-                server && server->engine && server->engine->get_spectrum &&
-                server->engine->get_spectrum(
-                    server->engine->ctx, session->spectrum_is_capture,
-                    session->spectrum_channel, session->spectrum_min_freq,
-                    session->spectrum_max_freq, session->spectrum_n_bins,
-                    &spec);
+                server && server->engine &&
+                cdsp_get_spectrum(server->engine, session->spectrum_is_capture,
+                                  session->spectrum_channel, session->spectrum_min_freq,
+                                  session->spectrum_max_freq, session->spectrum_n_bins,
+                                  &spec);
             if (spec_ok) {
               cJSON* root = cJSON_CreateObject();
               cJSON* val = cJSON_CreateObject();
               cJSON_AddItemToObject(root, "SpectrumEvent", val);
               cJSON_AddStringToObject(val, "result", "Ok");
-              cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
+              cJSON_AddItemToObject(val, "value", serialize_spectrum((const spectrum_t*)&spec));
               QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
-              if (spec.frequencies) free(spec.frequencies);
-              if (spec.magnitudes) free(spec.magnitudes);
+              cdsp_free_spectrum(&spec);
               session->last_spectrum_push_time = now;
             }
           }

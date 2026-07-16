@@ -17,7 +17,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Server/websocket_server.h"
 
 /**
  * @brief Main DSP engine structure.
@@ -128,6 +127,44 @@ void dsp_engine_set_config_path(dsp_engine_t* engine, const char* path);
  * @param engine Pointer to the engine instance.
  */
 void dsp_engine_poll(dsp_engine_t* engine);
+
+typedef struct {
+  void* ctx;
+  bool (*get_status)(void* ctx, state_update_t* out_status);
+  int (*get_active_samplerate)(void* ctx);
+  bool (*get_processing_status)(void* ctx, double* out_rate_adjust,
+                                double* out_buffer_level,
+                                uint64_t* out_clipped_samples,
+                                double* out_processing_load,
+                                double* out_resampler_load);
+  void (*reset_clipped_samples)(void* ctx);
+  bool (*get_active_config_json)(void* ctx, char** out_json);
+  bool (*get_previous_config_json)(void* ctx, char** out_json);
+  bool (*get_vu_levels)(void* ctx, vu_levels_t* out_vu);
+  bool (*get_available_devices)(void* ctx, const char* backend, bool is_input,
+                                audio_device_t** out_devices,
+                                size_t* out_count);
+  bool (*get_device_capabilities)(void* ctx, const char* backend,
+                                  const char* device, bool is_capture,
+                                  audio_device_descriptor_t** out_desc,
+                                  device_error_t* out_err);
+  bool (*get_spectrum)(void* ctx, bool is_capture, uint32_t channel,
+                       double min_freq, double max_freq, uint32_t n_bins,
+                       spectrum_t* out_spec);
+  bool (*set_config_json)(void* ctx, const char* json_str,
+                          audio_backend_error_t* out_err);
+  void (*stop)(void* ctx);
+  float (*get_fader_volume)(void* ctx, fader_t fader);
+  bool (*is_fader_muted)(void* ctx, fader_t fader);
+  void (*set_fader_volume)(void* ctx, fader_t fader, float db, bool instant);
+  void (*set_fader_mute)(void* ctx, fader_t fader, bool mute);
+
+  // Path & persistence callbacks
+  const char* (*get_state_file)(void* ctx);
+  bool (*is_state_dirty)(void* ctx);
+  char* (*get_config_path)(void* ctx);
+  void (*set_config_path)(void* ctx, const char* path);
+} dsp_engine_interface_t;
 
 /**
  * @brief Get the interface function pointer table.

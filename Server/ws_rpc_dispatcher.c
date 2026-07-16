@@ -12,6 +12,230 @@
 #include "Pipeline/config_loader.h"
 #include "websocket_server_internal.h"
 
+#include "Public/cdsp_pub_types.h"
+#include "Public/general.h"
+#include "Public/processing.h"
+#include "Public/signal_levels.h"
+#include "Public/spectrum.h"
+#include "Public/volume.h"
+#include "Public/config.h"
+#include "Public/devices.h"
+
+static inline bool ws_engine_get_status(dsp_engine_t* engine, state_update_t* out_status) {
+  if (!engine || !out_status) return false;
+  out_status->state = (processing_state_t)cdsp_get_state(engine);
+  cdsp_stop_reason_t r = {0};
+  cdsp_get_stop_reason(engine, &r);
+  out_status->stop_reason.type = (processing_stop_reason_type_t)r.type;
+  strncpy(out_status->stop_reason.message, r.message, sizeof(out_status->stop_reason.message) - 1);
+  out_status->stop_reason.format_change_rate = r.format_change_rate;
+  return true;
+}
+
+static inline int ws_engine_get_active_samplerate(dsp_engine_t* engine) {
+  return cdsp_get_capture_rate(engine);
+}
+
+static inline bool ws_engine_get_processing_status(dsp_engine_t* engine, double* out_rate_adjust,
+                                                  double* out_buffer_level, uint64_t* out_clipped_samples,
+                                                  double* out_processing_load, double* out_resampler_load) {
+  return cdsp_get_processing_status(engine, out_rate_adjust, out_buffer_level,
+                                    out_clipped_samples, out_processing_load, out_resampler_load);
+}
+
+static inline void ws_engine_reset_clipped_samples(dsp_engine_t* engine) {
+  cdsp_reset_clipped_samples(engine);
+}
+
+static inline bool ws_engine_get_active_config_json(dsp_engine_t* engine, char** out_json) {
+  return cdsp_get_active_config_json(engine, out_json);
+}
+
+static inline bool ws_engine_get_previous_config_json(dsp_engine_t* engine, char** out_json) {
+  return cdsp_get_previous_config_json(engine, out_json);
+}
+
+static inline bool ws_engine_get_vu_levels(dsp_engine_t* engine, vu_levels_t* out_vu) {
+  if (!engine || !out_vu) return false;
+  cdsp_vu_levels_t pub_vu = {0};
+  if (cdsp_get_vu_levels(engine, &pub_vu)) {
+    out_vu->playback_rms = pub_vu.playback_rms;
+    out_vu->playback_peak = pub_vu.playback_peak;
+    out_vu->capture_rms = pub_vu.capture_rms;
+    out_vu->capture_peak = pub_vu.capture_peak;
+    out_vu->playback_channels = pub_vu.playback_channels;
+    out_vu->capture_channels = pub_vu.capture_channels;
+    return true;
+  }
+  return false;
+}
+
+static inline bool ws_engine_get_available_devices(dsp_engine_t* engine, const char* backend, bool is_input,
+                                                  audio_device_t** out_devices, size_t* out_count) {
+  (void)engine;
+  cdsp_device_info_t* pub_devs = NULL;
+  size_t count = 0;
+  if (cdsp_get_available_devices(backend, is_input, &pub_devs, &count)) {
+    *out_count = count;
+    if (count > 0 && pub_devs) {
+      audio_device_t* list = (audio_device_t*)malloc(count * sizeof(audio_device_t));
+      for (size_t i = 0; i < count; i++) {
+        strncpy(list[i].name, pub_devs[i].name, sizeof(list[i].name) - 1);
+        list[i].name[sizeof(list[i].name) - 1] = '\0';
+      }
+      free(pub_devs);
+      *out_devices = list;
+    } else {
+      *out_devices = NULL;
+    }
+    return true;
+  }
+  return false;
+}
+
+static inline bool ws_engine_get_device_capabilities(dsp_engine_t* engine, const char* backend, const char* device,
+                                                    bool is_capture, audio_device_descriptor_t** out_desc,
+                                                    device_error_t* out_err) {
+  (void)engine;
+  cdsp_device_descriptor_t* pub_desc = NULL;
+  cdsp_device_error_t pub_err = {0};
+  if (cdsp_get_device_capabilities(backend, device, is_capture, &pub_desc, &pub_err)) {
+    audio_device_descriptor_t* desc = (audio_device_descriptor_t*)malloc(sizeof(audio_device_descriptor_t));
+    strncpy(desc->name, pub_desc->name, sizeof(desc->name) - 1);
+    desc->name[sizeof(desc->name) - 1] = '\0';
+    desc->capability_sets_count = pub_desc->capability_sets_count;
+    
+    if (pub_desc->capability_sets_count > 0 && pub_desc->capability_sets) {
+      desc->capability_sets = (device_capability_set_t*)malloc(pub_desc->capability_sets_count * sizeof(device_capability_set_t));
+      for (size_t i = 0; i < pub_desc->capability_sets_count; i++) {
+        device_capability_set_t* int_set = &desc->capability_sets[i];
+        cdsp_device_capability_set_t* pub_set = &pub_desc->capability_sets[i];
+        
+        int_set->capabilities_count = pub_set->capabilities_count;
+        if (pub_set->capabilities_count > 0 && pub_set->capabilities) {
+          int_set->capabilities = (channel_capability_t*)malloc(pub_set->capabilities_count * sizeof(channel_capability_t));
+          for (size_t j = 0; j < pub_set->capabilities_count; j++) {
+            channel_capability_t* int_cap = &int_set->capabilities[j];
+            cdsp_channel_capability_t* pub_cap = &pub_set->capabilities[j];
+            
+            int_cap->channels = pub_cap->channels;
+            int_cap->samplerates_count = pub_cap->samplerates_count;
+            if (pub_cap->samplerates_count > 0 && pub_cap->samplerates) {
+              int_cap->samplerates = (samplerate_capability_t*)malloc(pub_cap->samplerates_count * sizeof(samplerate_capability_t));
+              for (size_t k = 0; k < pub_cap->samplerates_count; k++) {
+                samplerate_capability_t* int_sr = &int_cap->samplerates[k];
+                cdsp_samplerate_capability_t* pub_sr = &pub_cap->samplerates[k];
+                
+                int_sr->samplerate = pub_sr->samplerate;
+                int_sr->formats_count = pub_sr->formats_count;
+                if (pub_sr->formats_count > 0 && pub_sr->formats) {
+                  int_sr->formats = (char**)malloc(pub_sr->formats_count * sizeof(char*));
+                  for (size_t l = 0; l < pub_sr->formats_count; l++) {
+                    int_sr->formats[l] = pub_sr->formats[l] ? strdup(pub_sr->formats[l]) : NULL;
+                  }
+                } else {
+                  int_sr->formats = NULL;
+                }
+              }
+            } else {
+              int_cap->samplerates = NULL;
+            }
+          }
+        } else {
+          int_set->capabilities = NULL;
+        }
+      }
+    } else {
+      desc->capability_sets = NULL;
+    }
+    
+    *out_desc = desc;
+    cdsp_free_device_capabilities(pub_desc);
+    return true;
+  } else {
+    if (out_err) {
+      out_err->type = (device_error_type_t)pub_err.type;
+      strncpy(out_err->message, pub_err.message, sizeof(out_err->message) - 1);
+      out_err->message[sizeof(out_err->message) - 1] = '\0';
+    }
+    return false;
+  }
+}
+
+static inline bool ws_engine_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
+                                         double min_freq, double max_freq, uint32_t n_bins,
+                                         spectrum_t* out_spec) {
+  cdsp_spectrum_t pub_spec = {0};
+  if (cdsp_get_spectrum(engine, is_capture, channel, min_freq, max_freq, n_bins, &pub_spec)) {
+    out_spec->count = pub_spec.count;
+    if (pub_spec.count > 0) {
+      double* freqs = (double*)malloc(pub_spec.count * sizeof(double));
+      double* mags = (double*)malloc(pub_spec.count * sizeof(double));
+      for (size_t i = 0; i < pub_spec.count; i++) {
+        freqs[i] = pub_spec.frequencies[i];
+        mags[i] = pub_spec.magnitudes[i];
+      }
+      out_spec->frequencies = freqs;
+      out_spec->magnitudes = mags;
+    } else {
+      out_spec->frequencies = NULL;
+      out_spec->magnitudes = NULL;
+    }
+    cdsp_free_spectrum(&pub_spec);
+    return true;
+  }
+  return false;
+}
+
+static inline bool ws_engine_set_config_json(dsp_engine_t* engine, const char* json_str,
+                                            audio_backend_error_t* out_err) {
+  cdsp_backend_error_t pub_err = {0};
+  bool ok = cdsp_set_config_json(engine, json_str, &pub_err);
+  if (!ok && out_err) {
+    out_err->type = (audio_backend_error_type_t)pub_err.type;
+    strncpy(out_err->message, pub_err.message, sizeof(out_err->message) - 1);
+    out_err->message[sizeof(out_err->message) - 1] = '\0';
+  }
+  return ok;
+}
+
+static inline void ws_engine_stop(dsp_engine_t* engine) {
+  cdsp_stop(engine);
+}
+
+static inline float ws_engine_get_fader_volume(dsp_engine_t* engine, fader_t fader) {
+  return cdsp_get_fader_volume(engine, (uint32_t)fader);
+}
+
+static inline bool ws_engine_is_fader_muted(dsp_engine_t* engine, fader_t fader) {
+  return cdsp_is_fader_muted(engine, (uint32_t)fader);
+}
+
+static inline void ws_engine_set_fader_volume(dsp_engine_t* engine, fader_t fader, float db, bool instant) {
+  cdsp_set_fader_volume(engine, (uint32_t)fader, db, instant);
+}
+
+static inline void ws_engine_set_fader_mute(dsp_engine_t* engine, fader_t fader, bool mute) {
+  cdsp_set_fader_mute(engine, (uint32_t)fader, mute);
+}
+
+static inline const char* ws_engine_get_state_file(dsp_engine_t* engine) {
+  return cdsp_get_state_file_path(engine);
+}
+
+static inline bool ws_engine_is_state_dirty(dsp_engine_t* engine) {
+  return cdsp_is_state_dirty(engine);
+}
+
+static inline char* ws_engine_get_config_path(dsp_engine_t* engine) {
+  const char* path = cdsp_get_config_path(engine);
+  return path ? strdup(path) : NULL;
+}
+
+static inline void ws_engine_set_config_path(dsp_engine_t* engine, const char* path) {
+  cdsp_set_config_path(engine, path);
+}
+
 cJSON* serialize_stop_reason(const processing_stop_reason_t* reason) {
   char reason_str[512] = "None";
   if (reason) {
@@ -559,24 +783,21 @@ static bool server_handle_adjust_volume_fader(websocket_server_t* server,
                                               dyn_string_t* ds,
                                               const char* cmd_name) {
   state_update_t status;
-  if (!server || !server->engine || !server->engine->get_status ||
-      !server->engine->get_status(server->engine->ctx, &status) ||
+  if (!server || !server->engine || 
+      !ws_engine_get_status(server->engine, &status) ||
       status.state != PROCESSING_STATE_RUNNING) {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     return true;
   }
-  if (!server->engine->get_fader_volume) {
-    reply_error(cmd_name, "UnknownError", NULL, ds);
-    return true;
-  }
 
-  double current = server->engine->get_fader_volume(server->engine->ctx, fader);
+
+  double current = ws_engine_get_fader_volume(server->engine, fader);
   double new_vol = current + delta;
   if (new_vol < min_vol) new_vol = min_vol;
   if (new_vol > max_vol) new_vol = max_vol;
 
-  if (server->engine->set_fader_volume) {
-    server->engine->set_fader_volume(server->engine->ctx, fader, (float)new_vol,
+  if (1) {
+    ws_engine_set_fader_volume(server->engine, fader, (float)new_vol,
                                      false);
   }
 
@@ -597,12 +818,12 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     double vol =
-        (server->engine->get_fader_volume)
-            ? server->engine->get_fader_volume(server->engine->ctx, FADER_MAIN)
+        (1)
+            ? ws_engine_get_fader_volume(server->engine, FADER_MAIN)
             : 0.0;
     reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
   } else {
@@ -618,11 +839,11 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
   if (arg && cJSON_IsNumber(arg)) {
     vol = arg->valuedouble;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
-      if (server->engine->set_fader_volume) {
-        server->engine->set_fader_volume(server->engine->ctx, FADER_MAIN, vol,
+      if (1) {
+        ws_engine_set_fader_volume(server->engine, FADER_MAIN, vol,
                                          false);
       }
       reply_ok(cmd_name, NULL, ds);
@@ -643,12 +864,12 @@ static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     bool mute =
-        (server->engine->is_fader_muted)
-            ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
+        (1)
+            ? ws_engine_is_fader_muted(server->engine, FADER_MAIN)
             : false;
     reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
   } else {
@@ -664,11 +885,11 @@ static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
   if (arg && cJSON_IsBool(arg)) {
     mute = cJSON_IsTrue(arg);
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
-      if (server->engine->set_fader_mute) {
-        server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN, mute);
+      if (1) {
+        ws_engine_set_fader_mute(server->engine, FADER_MAIN, mute);
       }
       reply_ok(cmd_name, NULL, ds);
     } else {
@@ -687,15 +908,15 @@ static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     bool was_muted =
-        (server->engine->is_fader_muted)
-            ? server->engine->is_fader_muted(server->engine->ctx, FADER_MAIN)
+        (1)
+            ? ws_engine_is_fader_muted(server->engine, FADER_MAIN)
             : false;
-    if (server->engine->set_fader_mute) {
-      server->engine->set_fader_mute(server->engine->ctx, FADER_MAIN,
+    if (1) {
+      ws_engine_set_fader_mute(server->engine, FADER_MAIN,
                                      !was_muted);
     }
     reply_ok(cmd_name, cJSON_CreateBool(!was_muted), ds);
@@ -710,19 +931,19 @@ static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     cJSON* arr = cJSON_CreateArray();
     for (int i = 0; i < FADER_COUNT; i++) {
       cJSON* obj = cJSON_CreateObject();
-      double vol = (server->engine->get_fader_volume)
-                       ? server->engine->get_fader_volume(server->engine->ctx,
+      double vol = (1)
+                       ? ws_engine_get_fader_volume(server->engine,
                                                           (fader_t)i)
                        : 0.0;
       bool mute =
-          (server->engine->is_fader_muted)
-              ? server->engine->is_fader_muted(server->engine->ctx, (fader_t)i)
+          (1)
+              ? ws_engine_is_fader_muted(server->engine, (fader_t)i)
               : false;
       cJSON_AddNumberToObject(obj, "volume", vol);
       cJSON_AddBoolToObject(obj, "mute", mute);
@@ -741,12 +962,12 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        double vol = (server->engine->get_fader_volume)
-                         ? server->engine->get_fader_volume(server->engine->ctx,
+        double vol = (1)
+                         ? ws_engine_get_fader_volume(server->engine,
                                                             (fader_t)idx)
                          : 0.0;
         cJSON* arr = cJSON_CreateArray();
@@ -786,12 +1007,12 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
   }
   if (ok) {
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        if (server->engine->set_fader_volume) {
-          server->engine->set_fader_volume(server->engine->ctx, (fader_t)idx,
+        if (1) {
+          ws_engine_set_fader_volume(server->engine, (fader_t)idx,
                                            vol, false);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -829,12 +1050,12 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
   }
   if (ok) {
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        if (server->engine->set_fader_volume) {
-          server->engine->set_fader_volume(server->engine->ctx, (fader_t)idx,
+        if (1) {
+          ws_engine_set_fader_volume(server->engine, (fader_t)idx,
                                            vol, true);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -860,12 +1081,12 @@ static void handle_cmd_get_fader_mute(websocket_server_t* server,
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        bool mute = (server->engine->is_fader_muted)
-                        ? server->engine->is_fader_muted(server->engine->ctx,
+        bool mute = (1)
+                        ? ws_engine_is_fader_muted(server->engine,
                                                          (fader_t)idx)
                         : false;
         cJSON* arr = cJSON_CreateArray();
@@ -905,12 +1126,12 @@ static void handle_cmd_set_fader_mute(websocket_server_t* server,
   }
   if (ok) {
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        if (server->engine->set_fader_mute) {
-          server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
+        if (1) {
+          ws_engine_set_fader_mute(server->engine, (fader_t)idx,
                                          mute);
         }
         reply_ok(cmd_name, NULL, ds);
@@ -935,16 +1156,15 @@ static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
   if (arg && cJSON_IsNumber(arg)) {
     int idx = arg->valueint;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < FADER_COUNT) {
-        bool was_muted = (server->engine->is_fader_muted)
-                             ? server->engine->is_fader_muted(
-                                   server->engine->ctx, (fader_t)idx)
+        bool was_muted = (1)
+                             ? ws_engine_is_fader_muted(server->engine, (fader_t)idx)
                              : false;
-        if (server->engine->set_fader_mute) {
-          server->engine->set_fader_mute(server->engine->ctx, (fader_t)idx,
+        if (1) {
+          ws_engine_set_fader_mute(server->engine, (fader_t)idx,
                                          !was_muted);
         }
         cJSON* arr = cJSON_CreateArray();
@@ -1167,8 +1387,8 @@ static void handle_cmd_get_config_file_path(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   char* path = NULL;
-  if (server && server->engine && server->engine->get_config_path) {
-    path = server->engine->get_config_path(server->engine->ctx);
+  if (server && server->engine && 1) {
+    path = ws_engine_get_config_path(server->engine);
   }
   if (path) {
     reply_ok(cmd_name, cJSON_CreateString(path), ds);
@@ -1184,8 +1404,8 @@ static void handle_cmd_get_previous_config(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   char* prev = NULL;
-  if (server && server->engine && server->engine->get_previous_config_json) {
-    server->engine->get_previous_config_json(server->engine->ctx, &prev);
+  if (server && server->engine && 1) {
+    ws_engine_get_previous_config_json(server->engine, &prev);
   }
   if (prev) {
     reply_ok(cmd_name, cJSON_CreateString(prev), ds);
@@ -1201,8 +1421,8 @@ static void handle_cmd_get_state_file_path(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   const char* path = NULL;
-  if (server && server->engine && server->engine->get_state_file) {
-    path = server->engine->get_state_file(server->engine->ctx);
+  if (server && server->engine && 1) {
+    path = ws_engine_get_state_file(server->engine);
   }
   if (path) {
     reply_ok(cmd_name, cJSON_CreateString(path), ds);
@@ -1217,8 +1437,8 @@ static void handle_cmd_get_state_file_updated(websocket_server_t* server,
                                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  bool updated = server && server->engine && server->engine->is_state_dirty
-                     ? !server->engine->is_state_dirty(server->engine->ctx)
+  bool updated = server && server->engine && 1
+                     ? !ws_engine_is_state_dirty(server->engine)
                      : true;
   reply_ok(cmd_name, cJSON_CreateBool(updated), ds);
 }
@@ -1229,13 +1449,13 @@ static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   char* json = NULL;
-  if (server && server->engine && server->engine->get_active_config_json) {
-    server->engine->get_active_config_json(server->engine->ctx, &json);
+  if (server && server->engine && 1) {
+    ws_engine_get_active_config_json(server->engine, &json);
   }
   if (!json) {
     char* path = NULL;
-    if (server && server->engine && server->engine->get_config_path) {
-      path = server->engine->get_config_path(server->engine->ctx);
+    if (server && server->engine && 1) {
+      path = ws_engine_get_config_path(server->engine);
     }
     if (path) {
       json = server_read_file_to_string(path);
@@ -1257,13 +1477,13 @@ static void handle_get_config_metadata_helper(websocket_server_t* server,
                                               const char* key,
                                               dyn_string_t* ds) {
   char* json = NULL;
-  if (server && server->engine && server->engine->get_active_config_json) {
-    server->engine->get_active_config_json(server->engine->ctx, &json);
+  if (server && server->engine && 1) {
+    ws_engine_get_active_config_json(server->engine, &json);
   }
   if (!json) {
     char* path = NULL;
-    if (server && server->engine && server->engine->get_config_path) {
-      path = server->engine->get_config_path(server->engine->ctx);
+    if (server && server->engine && 1) {
+      path = ws_engine_get_config_path(server->engine);
     }
     if (path) {
       json = server_read_file_to_string(path);
@@ -1302,8 +1522,8 @@ static void handle_cmd_reload(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   char* path = NULL;
-  if (server && server->engine && server->engine->get_config_path) {
-    path = server->engine->get_config_path(server->engine->ctx);
+  if (server && server->engine && 1) {
+    path = ws_engine_get_config_path(server->engine);
   }
   if (path) {
     char* json = server_read_file_to_string(path);
@@ -1311,8 +1531,8 @@ static void handle_cmd_reload(websocket_server_t* server, int client_idx,
     if (json) {
       audio_backend_error_t err = {0};
       bool ok =
-          server && server->engine && server->engine->set_config_json &&
-          server->engine->set_config_json(server->engine->ctx, json, &err);
+          server && server->engine && 1 &&
+          ws_engine_set_config_json(server->engine, json, &err);
       if (ok) {
         reply_ok(cmd_name, NULL, ds);
       } else {
@@ -1341,8 +1561,8 @@ static void handle_cmd_stop(websocket_server_t* server, int client_idx,
                             dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  if (server && server->engine && server->engine->stop) {
-    server->engine->stop(server->engine->ctx);
+  if (server && server->engine && 1) {
+    ws_engine_stop(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1352,8 +1572,8 @@ static void handle_cmd_exit(websocket_server_t* server, int client_idx,
                             dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  if (server && server->engine && server->engine->stop) {
-    server->engine->stop(server->engine->ctx);
+  if (server && server->engine && 1) {
+    ws_engine_stop(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1365,8 +1585,8 @@ static void handle_cmd_set_config_file_path(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* path = arg->valuestring;
-    if (server && server->engine && server->engine->set_config_path) {
-      server->engine->set_config_path(server->engine->ctx, path);
+    if (server && server->engine && 1) {
+      ws_engine_set_config_path(server->engine, path);
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
@@ -1385,8 +1605,8 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
     const char* new_json = arg->valuestring;
     audio_backend_error_t err = {0};
     bool ok =
-        server && server->engine && server->engine->set_config_json &&
-        server->engine->set_config_json(server->engine->ctx, new_json, &err);
+        server && server->engine && 1 &&
+        ws_engine_set_config_json(server->engine, new_json, &err);
     if (ok) {
       reply_ok(cmd_name, NULL, ds);
     } else {
@@ -1410,13 +1630,13 @@ static void handle_cmd_get_config_value(websocket_server_t* server,
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* pointer = arg->valuestring;
     char* json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &json);
+    if (server && server->engine && 1) {
+      ws_engine_get_active_config_json(server->engine, &json);
     }
     if (!json) {
       char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
+      if (server && server->engine && 1) {
+        path = ws_engine_get_config_path(server->engine);
       }
       if (path) {
         json = server_read_file_to_string(path);
@@ -1475,13 +1695,13 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
   }
   if (pointer[0] != '\0' && trimmed_val) {
     char* active_json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &active_json);
+    if (server && server->engine && 1) {
+      ws_engine_get_active_config_json(server->engine, &active_json);
     }
     if (!active_json) {
       char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
+      if (server && server->engine && 1) {
+        path = ws_engine_get_config_path(server->engine);
       }
       if (path) {
         active_json = server_read_file_to_string(path);
@@ -1493,8 +1713,8 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
           server_set_value_at_pointer_str(active_json, pointer, trimmed_val);
       if (updated_json) {
         audio_backend_error_t err = {0};
-        bool ok = server && server->engine && server->engine->set_config_json &&
-                  server->engine->set_config_json(server->engine->ctx,
+        bool ok = server && server->engine && 1 &&
+                  ws_engine_set_config_json(server->engine,
                                                   updated_json, &err);
         if (ok) {
           reply_ok(cmd_name, NULL, ds);
@@ -1534,13 +1754,13 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
   (void)client_idx;
   if (arg && cJSON_IsObject(arg)) {
     char* active_json = NULL;
-    if (server && server->engine && server->engine->get_active_config_json) {
-      server->engine->get_active_config_json(server->engine->ctx, &active_json);
+    if (server && server->engine && 1) {
+      ws_engine_get_active_config_json(server->engine, &active_json);
     }
     if (!active_json) {
       char* path = NULL;
-      if (server && server->engine && server->engine->get_config_path) {
-        path = server->engine->get_config_path(server->engine->ctx);
+      if (server && server->engine && 1) {
+        path = ws_engine_get_config_path(server->engine);
       }
       if (path) {
         active_json = server_read_file_to_string(path);
@@ -1555,8 +1775,8 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
         if (target_json) {
           audio_backend_error_t err = {0};
           bool ok = server && server->engine &&
-                    server->engine->set_config_json &&
-                    server->engine->set_config_json(server->engine->ctx,
+                    1 &&
+                    ws_engine_set_config_json(server->engine,
                                                     target_json, &err);
           if (ok) {
             reply_ok(cmd_name, NULL, ds);
@@ -1625,8 +1845,8 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
                                             bool is_capture, bool is_rms,
                                             dyn_string_t* ds) {
   vu_levels_t vu = {0};
-  if (server && server->engine && server->engine->get_vu_levels &&
-      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+  if (server && server->engine && 1 &&
+      ws_engine_get_vu_levels(server->engine, &vu)) {
     double* arr = NULL;
     size_t count = 0;
     if (is_capture) {
@@ -1685,8 +1905,8 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
                                                 bool is_capture, bool is_rms,
                                                 dyn_string_t* ds) {
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     uint64_t since = 0;
     uint64_t now = get_time_ms();
@@ -1766,8 +1986,8 @@ static void handle_get_signal_since_helper(websocket_server_t* server,
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       uint64_t now = get_time_ms();
       uint64_t since = now - (uint64_t)(secs * 1000.0);
@@ -1839,8 +2059,8 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   vu_levels_t vu = {0};
-  if (server && server->engine && server->engine->get_vu_levels &&
-      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+  if (server && server->engine && 1 &&
+      ws_engine_get_vu_levels(server->engine, &vu)) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(
         root, "playback_rms",
@@ -1868,8 +2088,8 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
                                                     dyn_string_t* ds) {
   (void)arg;
   state_update_t status;
-  if (server && server->engine && server->engine->get_status &&
-      server->engine->get_status(server->engine->ctx, &status) &&
+  if (server && server->engine && 
+      ws_engine_get_status(server->engine, &status) &&
       status.state == PROCESSING_STATE_RUNNING) {
     uint64_t cap_rms_since =
         server->client_sessions[client_idx].last_cap_rms_time;
@@ -1931,8 +2151,8 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
     state_update_t status;
-    if (server && server->engine && server->engine->get_status &&
-        server->engine->get_status(server->engine->ctx, &status) &&
+    if (server && server->engine && 
+        ws_engine_get_status(server->engine, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
       uint64_t now = get_time_ms();
       uint64_t since = now - (uint64_t)(secs * 1000.0);
@@ -2015,13 +2235,13 @@ static void handle_cmd_get_channel_labels(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   char* json = NULL;
-  if (server && server->engine && server->engine->get_active_config_json) {
-    server->engine->get_active_config_json(server->engine->ctx, &json);
+  if (server && server->engine && 1) {
+    ws_engine_get_active_config_json(server->engine, &json);
   }
   if (!json) {
     char* path = NULL;
-    if (server && server->engine && server->engine->get_config_path) {
-      path = server->engine->get_config_path(server->engine->ctx);
+    if (server && server->engine && 1) {
+      path = ws_engine_get_config_path(server->engine);
     }
     if (path) {
       json = server_read_file_to_string(path);
@@ -2049,8 +2269,8 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   vu_levels_t vu = {0};
-  if (server && server->engine && server->engine->get_vu_levels &&
-      server->engine->get_vu_levels(server->engine->ctx, &vu)) {
+  if (server && server->engine && 1 &&
+      ws_engine_get_vu_levels(server->engine, &vu)) {
     size_t count = vu.playback_channels;
     double max_peak = -1000.0;
     for (size_t i = 0; i < count; i++) {
@@ -2092,8 +2312,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   if (ok) {
     spectrum_t spec = {0};
     bool spec_ok =
-        server && server->engine && server->engine->get_spectrum &&
-        server->engine->get_spectrum(server->engine->ctx, is_capture, channel,
+        server && server->engine && 1 &&
+        ws_engine_get_spectrum(server->engine, is_capture, channel,
                                      min_freq, max_freq, n_bins, &spec);
     if (spec_ok) {
       cJSON* spec_json = serialize_spectrum(&spec);
@@ -2126,9 +2346,8 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
     audio_device_t* devs = NULL;
     size_t count = 0;
     bool ok = server && server->engine &&
-              server->engine->get_available_devices &&
-              server->engine->get_available_devices(
-                  server->engine->ctx, backend, is_capture, &devs, &count);
+              1 &&
+              ws_engine_get_available_devices(server->engine, backend, is_capture, &devs, &count);
     if (ok && devs) {
       cJSON* arr = cJSON_CreateArray();
       for (size_t i = 0; i < count; i++) {
@@ -2188,9 +2407,8 @@ static void handle_get_device_capabilities_helper(websocket_server_t* server,
     device_error_t d_err;
     device_error_clear(&d_err);
     bool cap_ok =
-        server && server->engine && server->engine->get_device_capabilities &&
-        server->engine->get_device_capabilities(
-            server->engine->ctx, backend, device, is_capture, &desc, &d_err);
+        server && server->engine && 1 &&
+        ws_engine_get_device_capabilities(server->engine, backend, device, is_capture, &desc, &d_err);
     if (cap_ok && desc) {
       char* val = format_device_descriptor(desc);
       if (val) {
@@ -2252,9 +2470,9 @@ static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   processing_state_t state = PROCESSING_STATE_INACTIVE;
-  if (server && server->engine && server->engine->get_status) {
+  if (server && server->engine) {
     state_update_t status;
-    if (server->engine->get_status(server->engine->ctx, &status)) {
+    if (ws_engine_get_status(server->engine, &status)) {
       state = status.state;
     }
   }
@@ -2267,9 +2485,9 @@ static void handle_cmd_get_stop_reason(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   cJSON* val = NULL;
-  if (server && server->engine && server->engine->get_status) {
+  if (server && server->engine) {
     state_update_t status = {0};
-    if (server->engine->get_status(server->engine->ctx, &status)) {
+    if (ws_engine_get_status(server->engine, &status)) {
       val = serialize_stop_reason(&status.stop_reason);
     }
   }
@@ -2285,13 +2503,11 @@ static void handle_cmd_get_capture_rate(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   state_update_t status = {0};
-  bool has_status = server && server->engine && server->engine->get_status &&
-                    server->engine->get_status(server->engine->ctx, &status);
+  bool has_status = server && server->engine && 
+                    ws_engine_get_status(server->engine, &status);
   int sr = 0;
   if (has_status && status.state == PROCESSING_STATE_RUNNING) {
-    sr = (server->engine->get_active_samplerate)
-             ? server->engine->get_active_samplerate(server->engine->ctx)
-             : 0;
+    sr = ws_engine_get_active_samplerate(server->engine);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(sr), ds);
 }
@@ -2302,8 +2518,8 @@ static void handle_cmd_get_rate_adjust(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   double rate = 1.0;
-  if (server && server->engine && server->engine->get_processing_status) {
-    server->engine->get_processing_status(server->engine->ctx, &rate, NULL,
+  if (server && server->engine) {
+    ws_engine_get_processing_status(server->engine, &rate, NULL,
                                           NULL, NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(rate), ds);
@@ -2315,8 +2531,8 @@ static void handle_cmd_get_buffer_level(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   double lvl = 0.0;
-  if (server && server->engine && server->engine->get_processing_status) {
-    server->engine->get_processing_status(server->engine->ctx, NULL, &lvl, NULL,
+  if (server && server->engine) {
+    ws_engine_get_processing_status(server->engine, NULL, &lvl, NULL,
                                           NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber((int)lvl), ds);
@@ -2328,8 +2544,8 @@ static void handle_cmd_get_clipped_samples(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   uint64_t clips = 0;
-  if (server && server->engine && server->engine->get_processing_status) {
-    server->engine->get_processing_status(server->engine->ctx, NULL, NULL,
+  if (server && server->engine) {
+    ws_engine_get_processing_status(server->engine, NULL, NULL,
                                           &clips, NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber((double)clips), ds);
@@ -2341,8 +2557,8 @@ static void handle_cmd_reset_clipped_samples(websocket_server_t* server,
                                              dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  if (server && server->engine && server->engine->reset_clipped_samples) {
-    server->engine->reset_clipped_samples(server->engine->ctx);
+  if (server && server->engine) {
+    ws_engine_reset_clipped_samples(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -2353,8 +2569,8 @@ static void handle_cmd_get_processing_load(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   double load = 0.0;
-  if (server && server->engine && server->engine->get_processing_status) {
-    server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL,
+  if (server && server->engine) {
+    ws_engine_get_processing_status(server->engine, NULL, NULL, NULL,
                                           &load, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(load), ds);
@@ -2366,8 +2582,8 @@ static void handle_cmd_get_resampler_load(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   double load = 0.0;
-  if (server && server->engine && server->engine->get_processing_status) {
-    server->engine->get_processing_status(server->engine->ctx, NULL, NULL, NULL,
+  if (server && server->engine) {
+    ws_engine_get_processing_status(server->engine, NULL, NULL, NULL,
                                           NULL, &load);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(load), ds);

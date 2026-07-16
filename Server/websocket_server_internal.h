@@ -65,7 +65,7 @@ typedef struct {
 struct websocket_server {
   uint16_t port;
   char host[128];
-  dsp_engine_interface_t* engine;
+  dsp_engine_t* engine;
 
   socket_t server_fd;
   _Atomic bool running;

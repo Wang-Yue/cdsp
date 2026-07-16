@@ -15,7 +15,11 @@
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Config/log_level.h"
-#include "Engine/dsp_engine.h"
+#include "Public/cdsp_pub_types.h"
+#include "Public/general.h"
+#include "Public/processing.h"
+#include "Public/volume.h"
+#include "Public/config.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/state_file.h"
@@ -350,7 +354,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  dsp_engine_set_log_level(log_level_from_string(log_level_str));
+  cdsp_set_log_level(log_level_str);
 
   logger_info(&g_logger, "Starting dsp-cli application");
 
@@ -529,7 +533,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t* engine = cdsp_engine_create();
   if (!engine) {
     logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
     printf("Error starting engine: Failed to allocate engine\n");
@@ -538,20 +542,21 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (parsed) {
-    audio_backend_error_t berr;
-    if (dsp_engine_set_config_struct(engine, parsed, &berr)) {
+  if (config_path && !wait_config && !no_config) {
+    cdsp_backend_error_t berr = {0};
+    if (cdsp_engine_set_config_file(engine, config_path, samplerate_override,
+                                    channels_override, format_override,
+                                    extra_samples_override, &berr)) {
       logger_info(&g_logger, "DSP engine configured and started");
       printf("Engine started successfully.\n");
     } else {
       logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
       printf("Error starting engine: %s\n", berr.message);
-      // dsp_engine_set_config_struct frees parsed on failure
-      dsp_engine_free(engine);
+      cdsp_engine_free(engine);
+      if (parsed) dsp_config_free(parsed);
       if (config_json) free(config_json);
       return 1;
     }
-    if (config_json) free(config_json);
   } else {
     logger_info(
         &g_logger,
@@ -561,27 +566,29 @@ int main(int argc, char** argv) {
         "configuration)...\n");
   }
 
+  if (parsed) dsp_config_free(parsed);
+  if (config_json) free(config_json);
+
   for (int i = 0; i < FADER_COUNT; i++) {
     if (has_initial_gains[i]) {
-      dsp_engine_set_fader_volume(engine, (fader_t)i, (float)initial_gains[i],
-                                  true);
+      cdsp_set_fader_volume(engine, (uint32_t)i, (float)initial_gains[i], true);
     }
     if (initial_mutes[i]) {
-      dsp_engine_set_fader_mute(engine, (fader_t)i, true);
+      cdsp_set_fader_mute(engine, (uint32_t)i, true);
     }
   }
 
   if (state_file_path) {
-    dsp_engine_set_state_file(engine, state_file_path);
+    cdsp_engine_set_state_file(engine, state_file_path);
   }
   if (config_path) {
-    dsp_engine_set_config_path(engine, config_path);
+    cdsp_set_config_path(engine, config_path);
   }
 
   websocket_server_t* server = NULL;
   if (has_port) {
     server = websocket_server_create(port, bind_address);
-    websocket_server_set_engine(server, dsp_engine_get_interface(engine));
+    websocket_server_set_engine(server, engine);
     if (websocket_server_start(server)) {
       printf("WebSocket server running on %s:%u\n", bind_address, port);
     } else {
@@ -595,10 +602,9 @@ int main(int argc, char** argv) {
   bool started = (config_path != NULL);
   while (keep_running) {
     cdsp_sleep_ms(100);
-    dsp_engine_poll(engine);
+    cdsp_engine_poll(engine);
     if (started) {
-      state_update_t status = dsp_engine_get_status(engine);
-      if (status.state == PROCESSING_STATE_INACTIVE) {
+      if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
         logger_info(&g_logger, "Engine reached inactive state, exiting loop");
         printf("Engine finished processing. Exiting.\n");
         break;
@@ -607,7 +613,7 @@ int main(int argc, char** argv) {
   }
 
   if (server) websocket_server_free(server);
-  dsp_engine_free(engine);
+  cdsp_engine_free(engine);
   if (allocated_config_path) free(allocated_config_path);
   logger_info(&g_logger, "Application exit clean");
   printf("Engine stopped.\n");

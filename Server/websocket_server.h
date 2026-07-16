@@ -14,78 +14,12 @@
 
 #include "Backend/backend_error.h"
 #include "Config/configuration.h"
-#include "Config/engine_config_types.h"
+#include "Public/cdsp_pub_types.h"
 
 /**
  * @brief Opaque structure representing a WebSocket server.
  */
 typedef struct websocket_server websocket_server_t;
-
-/**
- * @brief Interface for DSPEngine that WebSocketServer interacts with.
- *
- * This structure contains function pointers that allow the WebSocket server to
- * query status, get configurations, retrieve levels, and control the DSP
- * engine.
- */
-typedef struct {
-  /** Context pointer passed to all callback functions. */
-  void* ctx;
-  /** Gets the current state update/status. */
-  bool (*get_status)(void* ctx, state_update_t* out_status);
-  /** Gets the active sample rate. */
-  int (*get_active_samplerate)(void* ctx);
-  /** Gets various real-time processing status metrics. */
-  bool (*get_processing_status)(void* ctx, double* out_rate_adjust,
-                                double* out_buffer_level,
-                                uint64_t* out_clipped_samples,
-                                double* out_processing_load,
-                                double* out_resampler_load);
-  /** Resets the clipped samples counter. */
-  void (*reset_clipped_samples)(void* ctx);
-  /** Gets the active configuration as a JSON string. */
-  bool (*get_active_config_json)(void* ctx, char** out_json);
-  /** Gets the previous configuration as a JSON string. */
-  bool (*get_previous_config_json)(void* ctx, char** out_json);
-  /** Gets the current VU levels. */
-  bool (*get_vu_levels)(void* ctx, vu_levels_t* out_vu);
-  /** Gets available audio devices. */
-  bool (*get_available_devices)(void* ctx, const char* backend, bool is_input,
-                                audio_device_t** out_devices,
-                                size_t* out_count);
-  /** Gets capabilities for a specific device. */
-  bool (*get_device_capabilities)(void* ctx, const char* backend,
-                                  const char* device, bool is_capture,
-                                  audio_device_descriptor_t** out_desc,
-                                  device_error_t* out_err);
-  /** Gets spectrum data. */
-  bool (*get_spectrum)(void* ctx, bool is_capture, uint32_t channel,
-                       double min_freq, double max_freq, uint32_t n_bins,
-                       spectrum_t* out_spec);
-  /** Sets the active configuration using a JSON string. */
-  bool (*set_config_json)(void* ctx, const char* json_str,
-                          audio_backend_error_t* out_err);
-  /** Stops the DSP engine. */
-  void (*stop)(void* ctx);
-  /** Gets volume of a fader. */
-  float (*get_fader_volume)(void* ctx, fader_t fader);
-  /** Checks if fader is muted. */
-  bool (*is_fader_muted)(void* ctx, fader_t fader);
-  /** Sets volume of a fader. */
-  void (*set_fader_volume)(void* ctx, fader_t fader, float db, bool instant);
-  /** Mutes or unmutes a fader. */
-  void (*set_fader_mute)(void* ctx, fader_t fader, bool mute);
-
-  // Path & persistence callbacks
-  /** Gets the path to the state file. */
-  const char* (*get_state_file)(void* ctx);
-  /** Checks if the current state is dirty and needs saving. */
-  bool (*is_state_dirty)(void* ctx);
-  /** Gets the path to the configuration file. */
-  char* (*get_config_path)(void* ctx);
-  /** Sets the path to the configuration file. */
-  void (*set_config_path)(void* ctx, const char* path);
-} dsp_engine_interface_t;
 
 /**
  * @brief Create a new WebSocket control server on the specified port and host.
@@ -97,14 +31,13 @@ typedef struct {
 websocket_server_t* websocket_server_create(uint16_t port, const char* host);
 
 /**
- * @brief Set the DSP engine interface for the WebSocket server to interact
- * with.
+ * @brief Set the DSP engine for the WebSocket server to interact with.
  *
  * @param server Pointer to the WebSocket server.
- * @param engine Pointer to the DSP engine interface.
+ * @param engine Pointer to the DSP engine.
  */
 void websocket_server_set_engine(websocket_server_t* server,
-                                 dsp_engine_interface_t* engine);
+                                 dsp_engine_t* engine);
 
 /**
  * @brief Start the WebSocket server listening and processing connections in a
