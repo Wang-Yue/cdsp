@@ -188,8 +188,10 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
       "        }\n"
       "    },\n"
       "    \"pipeline\": [\n"
-      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": [\"first_filter\"]},\n"
-      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": [\"second_filter\"]}\n"
+      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": "
+      "[\"first_filter\"]},\n"
+      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": "
+      "[\"second_filter\"]}\n"
       "    ]\n"
       "}";
 
@@ -212,8 +214,10 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
       "        }\n"
       "    },\n"
       "    \"pipeline\": [\n"
-      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": [\"first_filter\"]},\n"
-      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": [\"second_filter\"]}\n"
+      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": "
+      "[\"first_filter\"]},\n"
+      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": "
+      "[\"second_filter\"]}\n"
       "    ]\n"
       "}";
 

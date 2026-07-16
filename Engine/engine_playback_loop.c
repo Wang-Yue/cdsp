@@ -257,7 +257,9 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   if (!playback_backend_open(loop->playback, &berr)) {
-    logger_error(&g_logger, "Playback thread failed to open playback backend: %s", berr.message);
+    logger_error(&g_logger,
+                 "Playback thread failed to open playback backend: %s",
+                 berr.message);
     processing_stop_reason_t reason = {
         .type = STOP_REASON_PLAYBACK_ERROR,
         .format_change_rate = 0,
@@ -270,9 +272,11 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   // Prefill playback silence to feed the DAC immediately on start,
   // preventing immediate buffer underrun errors. If rate adjust is enabled,
   // we match its target level; otherwise, we pre-fill chunk_size.
-  size_t prefill_frames = loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
+  size_t prefill_frames =
+      loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
   if (loop->dsd_encoder && dsd_encoder_is_enabled(loop->dsd_encoder)) {
-    size_t channels = processing_parameters_get_playback_channels(loop->processing_params);
+    size_t channels =
+        processing_parameters_get_playback_channels(loop->processing_params);
     audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
     if (prefill_chunk) {
       dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);

@@ -307,7 +307,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   if (!capture_backend_open(loop->capture, &berr)) {
-    logger_error(&g_logger, "Capture thread failed to open capture backend: %s", berr.message);
+    logger_error(&g_logger, "Capture thread failed to open capture backend: %s",
+                 berr.message);
     processing_stop_reason_t reason = {
         .type = STOP_REASON_CAPTURE_ERROR,
         .format_change_rate = 0,
@@ -321,7 +322,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   }
 
   // Once open succeeds, transition state to RUNNING if starting
-  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STARTING) {
+  if (engine_shared_state_get_state(loop->shared) ==
+      PROCESSING_STATE_STARTING) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
   }
 

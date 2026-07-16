@@ -1,8 +1,8 @@
 #ifndef CLIB_SERVER_WS_RPC_DISPATCHER_H
 #define CLIB_SERVER_WS_RPC_DISPATCHER_H
 
-#include "websocket_server_internal.h"
 #include "Public/spectrum.h"
+#include "websocket_server_internal.h"
 
 /**
  * @brief Handle a control command text (either simple quoted string or JSON

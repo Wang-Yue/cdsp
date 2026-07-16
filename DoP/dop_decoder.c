@@ -78,8 +78,10 @@ struct dop_decoder {
   bool logged_active;       /**< Status flag to rate-limit logging. */
   bool last_seen_active;    /**< Flag indicating if DoP was active in the last
                                processed chunk. */
-  int chunks_at_seen_state; /**< Count of chunks processed in the current state. */
-  bool use_multithreading; /**< True if multi-threaded parallelization should be used. */
+  int chunks_at_seen_state; /**< Count of chunks processed in the current state.
+                             */
+  bool use_multithreading; /**< True if multi-threaded parallelization should be
+                              used. */
 };
 
 #include <math.h>
@@ -438,7 +440,7 @@ bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(decoder->channels, queue, &dctx, dop_decoder_worker);
 #elif defined(USE_OPENMP)
-    #pragma omp parallel for num_threads(decoder->channels)
+#pragma omp parallel for num_threads(decoder->channels)
     for (int ch = 0; ch < decoder->channels; ch++) {
       process_channel(&decoder->channel_states[ch],
                       audio_chunk_get_channel(chunk, ch), valid_frames,

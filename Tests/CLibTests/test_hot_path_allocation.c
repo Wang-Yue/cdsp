@@ -922,8 +922,8 @@ TEST(DoPEncoder_AllocationFree) {
 #if defined(ENABLE_BLAS)
   openblas_set_num_threads(1);
 #endif
-  dsd_encoder_t* encoder =
-      dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16, SDM_FILTER_SDM4, 20000.0, false);
+  dsd_encoder_t* encoder = dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16,
+                                              SDM_FILTER_SDM4, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 0.5);
   dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};
@@ -950,7 +950,8 @@ static void dop_dec_iter(int i, void* ctx) {
 }
 
 TEST(DoPDecoder_AllocationFree) {
-  dop_decoder_t* decoder = dop_decoder_create(2, 176400.0, false, 20000.0, false);
+  dop_decoder_t* decoder =
+      dop_decoder_create(2, 176400.0, false, 20000.0, false);
   ASSERT_TRUE(decoder != NULL);
   int total_chunks = 36;
   audio_chunk_t** chunks =

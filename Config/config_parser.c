@@ -305,7 +305,8 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
     }
   }
 
-  // Sort filters, mixers, and processors alphabetically by name to make config comparison order-independent.
+  // Sort filters, mixers, and processors alphabetically by name to make config
+  // comparison order-independent.
   if (config->filters && config->filters_count > 1) {
     qsort(config->filters, config->filters_count, sizeof(named_filter_config_t),
           compare_named_filters);
@@ -315,8 +316,8 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
           compare_named_mixers);
   }
   if (config->processors && config->processors_count > 1) {
-    qsort(config->processors, config->processors_count, sizeof(named_processor_config_t),
-          compare_named_processors);
+    qsort(config->processors, config->processors_count,
+          sizeof(named_processor_config_t), compare_named_processors);
   }
 
   cJSON_Delete(root);

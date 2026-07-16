@@ -23,14 +23,21 @@ typedef struct {
   cdsp_stop_reason_t stop_reason;
 } ws_state_update_t;
 
-static inline const char* ws_processing_state_to_string(cdsp_processing_state_t state) {
+static inline const char* ws_processing_state_to_string(
+    cdsp_processing_state_t state) {
   switch (state) {
-    case CDSP_PROCESSING_STATE_INACTIVE: return "Inactive";
-    case CDSP_PROCESSING_STATE_STARTING: return "Starting";
-    case CDSP_PROCESSING_STATE_RUNNING: return "Running";
-    case CDSP_PROCESSING_STATE_PAUSED: return "Paused";
-    case CDSP_PROCESSING_STATE_STALLED: return "Stalled";
-    default: return "Inactive";
+    case CDSP_PROCESSING_STATE_INACTIVE:
+      return "Inactive";
+    case CDSP_PROCESSING_STATE_STARTING:
+      return "Starting";
+    case CDSP_PROCESSING_STATE_RUNNING:
+      return "Running";
+    case CDSP_PROCESSING_STATE_PAUSED:
+      return "Paused";
+    case CDSP_PROCESSING_STATE_STALLED:
+      return "Stalled";
+    default:
+      return "Inactive";
   }
 }
 

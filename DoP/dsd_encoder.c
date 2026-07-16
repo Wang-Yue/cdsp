@@ -442,11 +442,12 @@ static void dsd_encoder_worker(void* context, size_t task) {
   int task_idx = (int)task;
   if (task_idx < num_pairs) {
     int ch = task_idx * 2;
-    encode_dual_channels(
-        &ctx->encoder->channel_states[ch], &ctx->encoder->channel_states[ch + 1],
-        audio_chunk_get_channel(ctx->chunk, ch),
-        audio_chunk_get_channel(ctx->chunk, ch + 1), ctx->frames,
-        ctx->encoder->coeffs, ctx->encoder->mode, ctx->encoder->dsd_bit_depth);
+    encode_dual_channels(&ctx->encoder->channel_states[ch],
+                         &ctx->encoder->channel_states[ch + 1],
+                         audio_chunk_get_channel(ctx->chunk, ch),
+                         audio_chunk_get_channel(ctx->chunk, ch + 1),
+                         ctx->frames, ctx->encoder->coeffs, ctx->encoder->mode,
+                         ctx->encoder->dsd_bit_depth);
   } else {
     int ch = task_idx * 2;
     encode_channel(&ctx->encoder->channel_states[ch],
@@ -473,7 +474,7 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
     dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
     return;
 #elif defined(USE_OPENMP)
-    #pragma omp parallel for num_threads(total_tasks)
+#pragma omp parallel for num_threads(total_tasks)
     for (int task = 0; task < total_tasks; task++) {
       if (task < num_pairs) {
         int ch = task * 2;

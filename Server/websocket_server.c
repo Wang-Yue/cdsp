@@ -100,8 +100,6 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   va_end(args);
 }
 
-
-
 double db_to_amplitude(double db) {
   if (db <= -1000.0) return 0.0;
   return pow(10.0, db / 20.0);
@@ -600,9 +598,10 @@ static void* server_thread_func(void* arg) {
             bool spec_ok =
                 server && server->engine &&
                 cdsp_get_spectrum(server->engine, session->spectrum_is_capture,
-                                  session->spectrum_channel, session->spectrum_min_freq,
-                                  session->spectrum_max_freq, session->spectrum_n_bins,
-                                  &spec);
+                                  session->spectrum_channel,
+                                  session->spectrum_min_freq,
+                                  session->spectrum_max_freq,
+                                  session->spectrum_n_bins, &spec);
             if (spec_ok) {
               cJSON* root = cJSON_CreateObject();
               cJSON* val = cJSON_CreateObject();

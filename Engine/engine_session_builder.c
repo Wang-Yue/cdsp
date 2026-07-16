@@ -313,10 +313,10 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   }
 
   // 9. Spawn worker threads.
-  // The threads are spawned in STARTING state (initialized by engine_shared_state_create)
-  // and will transition to RUNNING once they successfully open their backends.
-  // Wrap `pthread_create` construction so each spawn shares the same QoS and
-  // lifecycle.
+  // The threads are spawned in STARTING state (initialized by
+  // engine_shared_state_create) and will transition to RUNNING once they
+  // successfully open their backends. Wrap `pthread_create` construction so
+  // each spawn shares the same QoS and lifecycle.
   int ret;
   ret = pthread_create(&core->capture_thread, NULL, capture_thread_func,
                        core->capture_loop);

@@ -1,15 +1,19 @@
 #include "Public/devices.h"
+
 #include <stdlib.h>
 #include <string.h>
+
 #include "Backend/audio_backend.h"
 #include "Backend/audio_backend_registry.h"
 
 bool cdsp_get_available_devices(const char* backend, bool is_input,
-                                cdsp_device_info_t** out_devices, size_t* out_count) {
+                                cdsp_device_info_t** out_devices,
+                                size_t* out_count) {
   if (!backend || !out_devices || !out_count) return false;
-  
+
   audio_device_t devs[128];
-  int count = audio_backend_registry_get_available_devices(backend, is_input, devs, 128);
+  int count = audio_backend_registry_get_available_devices(backend, is_input,
+                                                           devs, 128);
   if (count < 0) {
     *out_count = 0;
     *out_devices = NULL;
@@ -18,7 +22,8 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
 
   *out_count = (size_t)count;
   if (count > 0) {
-    cdsp_device_info_t* list = (cdsp_device_info_t*)malloc(count * sizeof(cdsp_device_info_t));
+    cdsp_device_info_t* list =
+        (cdsp_device_info_t*)malloc(count * sizeof(cdsp_device_info_t));
     if (!list) {
       *out_count = 0;
       *out_devices = NULL;
@@ -39,12 +44,16 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
   return true;
 }
 
-bool cdsp_get_device_capabilities(const char* backend, const char* device, bool is_capture,
-                                  cdsp_device_descriptor_t** out_desc, cdsp_device_error_t* out_err) {
+bool cdsp_get_device_capabilities(const char* backend, const char* device,
+                                  bool is_capture,
+                                  cdsp_device_descriptor_t** out_desc,
+                                  cdsp_device_error_t* out_err) {
   if (!backend || !device || !out_desc) return false;
 
   device_error_t err = {0};
-  audio_device_descriptor_t* desc = audio_backend_registry_get_device_capabilities(backend, device, is_capture, &err);
+  audio_device_descriptor_t* desc =
+      audio_backend_registry_get_device_capabilities(backend, device,
+                                                     is_capture, &err);
   if (!desc) {
     if (out_err) {
       switch (err.type) {
@@ -64,7 +73,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
     return false;
   }
 
-  cdsp_device_descriptor_t* pub = (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
+  cdsp_device_descriptor_t* pub =
+      (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
   if (!pub) {
     free_audio_device_descriptor(desc);
     return false;
@@ -72,11 +82,12 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
 
   strncpy(pub->name, desc->name, sizeof(pub->name) - 1);
   pub->name[sizeof(pub->name) - 1] = '\0';
-  pub->description[0] = '\0'; // Not used internally in C port
+  pub->description[0] = '\0';  // Not used internally in C port
 
   pub->capability_sets_count = desc->capability_sets_count;
   if (desc->capability_sets_count > 0 && desc->capability_sets) {
-    pub->capability_sets = (cdsp_device_capability_set_t*)malloc(desc->capability_sets_count * sizeof(cdsp_device_capability_set_t));
+    pub->capability_sets = (cdsp_device_capability_set_t*)malloc(
+        desc->capability_sets_count * sizeof(cdsp_device_capability_set_t));
     if (!pub->capability_sets) {
       free(pub);
       free_audio_device_descriptor(desc);
@@ -92,7 +103,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
 
       pub_set->capabilities_count = int_set->capabilities_count;
       if (int_set->capabilities_count > 0 && int_set->capabilities) {
-        pub_set->capabilities = (cdsp_channel_capability_t*)malloc(int_set->capabilities_count * sizeof(cdsp_channel_capability_t));
+        pub_set->capabilities = (cdsp_channel_capability_t*)malloc(
+            int_set->capabilities_count * sizeof(cdsp_channel_capability_t));
         if (!pub_set->capabilities) {
           pub_set->capabilities_count = 0;
           continue;
@@ -104,9 +116,11 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
 
           pub_cap->channels = int_cap->channels;
           pub_cap->samplerates_count = int_cap->samplerates_count;
-          
+
           if (int_cap->samplerates_count > 0 && int_cap->samplerates) {
-            pub_cap->samplerates = (cdsp_samplerate_capability_t*)malloc(int_cap->samplerates_count * sizeof(cdsp_samplerate_capability_t));
+            pub_cap->samplerates = (cdsp_samplerate_capability_t*)malloc(
+                int_cap->samplerates_count *
+                sizeof(cdsp_samplerate_capability_t));
             if (!pub_cap->samplerates) {
               pub_cap->samplerates_count = 0;
               continue;
@@ -120,14 +134,16 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device, bool 
               pub_sr->formats_count = int_sr->formats_count;
 
               if (int_sr->formats_count > 0 && int_sr->formats) {
-                pub_sr->formats = (char**)malloc(int_sr->formats_count * sizeof(char*));
+                pub_sr->formats =
+                    (char**)malloc(int_sr->formats_count * sizeof(char*));
                 if (!pub_sr->formats) {
                   pub_sr->formats_count = 0;
                   continue;
                 }
 
                 for (size_t l = 0; l < int_sr->formats_count; l++) {
-                  pub_sr->formats[l] = int_sr->formats[l] ? strdup(int_sr->formats[l]) : NULL;
+                  pub_sr->formats[l] =
+                      int_sr->formats[l] ? strdup(int_sr->formats[l]) : NULL;
                 }
               } else {
                 pub_sr->formats = NULL;

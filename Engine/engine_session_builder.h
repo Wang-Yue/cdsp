@@ -17,10 +17,10 @@
  * error.
  */
 dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
-                                                  chunk_callback_t on_captured,
-                                                  void* captured_ctx,
-                                                  chunk_callback_t on_processed,
-                                                  void* processed_ctx,
-                                                  audio_backend_error_t* err);
+                                              chunk_callback_t on_captured,
+                                              void* captured_ctx,
+                                              chunk_callback_t on_processed,
+                                              void* processed_ctx,
+                                              audio_backend_error_t* err);
 
 #endif  // CDSP_ENGINE_SESSION_BUILDER_H

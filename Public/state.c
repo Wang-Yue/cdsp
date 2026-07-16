@@ -1,4 +1,5 @@
 #include "Public/state.h"
+
 #include "Pipeline/state_file.h"
 
 cdsp_state_t* cdsp_state_create(void) {

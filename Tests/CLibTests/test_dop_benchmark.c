@@ -16,8 +16,9 @@
 
 static void run_encoder_benchmark(int channels, bool multithreaded) {
   size_t carrier_rate = 768000;
-  dsd_encoder_t* encoder = dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
-                                              SDM_FILTER_SDM6, 20000.0, multithreaded);
+  dsd_encoder_t* encoder =
+      dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
+                         SDM_FILTER_SDM6, 20000.0, multithreaded);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
 
@@ -79,10 +80,11 @@ TEST(DSDEncoder_Benchmark) {
 
 static void run_decoder_benchmark(int channels, bool multithreaded) {
   size_t carrier_rate = 768000;
-  dsd_encoder_t* encoder = dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
-                                              SDM_FILTER_SDM6, 20000.0, false);
-  dop_decoder_t* decoder =
-      dop_decoder_create(channels, (double)carrier_rate, false, 20000.0, multithreaded);
+  dsd_encoder_t* encoder =
+      dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
+                         SDM_FILTER_SDM6, 20000.0, false);
+  dop_decoder_t* decoder = dop_decoder_create(channels, (double)carrier_rate,
+                                              false, 20000.0, multithreaded);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
   ASSERT_TRUE(decoder != NULL);
