@@ -87,6 +87,9 @@ typedef struct {
   void (*set_fader_volume)(void* ctx, fader_t fader, float db, bool instant);
   void (*set_fader_mute)(void* ctx, fader_t fader, bool mute);
 
+  audio_samples_t* (*get_samples)(void* ctx, bool is_capture, size_t n_frames,
+                                  audio_backend_error_t* err);
+
   // Path & persistence callbacks
   const char* (*get_state_file)(void* ctx);
   bool (*is_state_dirty)(void* ctx);
@@ -104,11 +107,13 @@ typedef struct {
  */
 dsp_engine_interface_t* dsp_engine_get_interface(dsp_engine_t* engine);
 
+#ifdef CDSP_TEST
 // Direct functions used by internal test suites (test_dsp_engine.c)
 const dsp_config_t* dsp_engine_get_active_config(const dsp_engine_t* engine);
 bool dsp_engine_set_config(dsp_engine_t* engine, const char* json,
                            audio_backend_error_t* err);
 bool dsp_engine_set_config_struct(dsp_engine_t* engine, dsp_config_t* config,
                                   audio_backend_error_t* err);
+#endif
 
 #endif  // CLIB_ENGINE_DSP_ENGINE_H

@@ -71,4 +71,24 @@ const char* cdsp_get_state_file_path(const dsp_engine_t* engine);
  */
 bool cdsp_is_state_dirty(const dsp_engine_t* engine);
 
+/**
+ * @brief Retrieve a chunk of audio samples from the engine's internal history buffers.
+ *
+ * @param engine Pointer to the engine.
+ * @param is_capture True to retrieve capture samples, false to retrieve playback samples.
+ * @param n_frames Number of frames to retrieve.
+ * @param out_err Pointer to retrieve error details on failure.
+ * @return Pointer to a newly allocated cdsp_audio_samples_t structure, or NULL on failure.
+ *         Must be freed with cdsp_free_samples().
+ */
+cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
+                                       size_t n_frames,
+                                       cdsp_backend_error_t* out_err);
+
+/**
+ * @brief Free the resources allocated for audio samples.
+ * @param samples Pointer to the audio samples structure.
+ */
+void cdsp_free_samples(cdsp_audio_samples_t* samples);
+
 #endif // CDSP_PUBLIC_PROCESSING_H

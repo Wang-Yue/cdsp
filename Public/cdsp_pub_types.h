@@ -136,4 +136,13 @@ typedef enum {
   CDSP_FADER_NONE = -1   /**< No fader. */
 } cdsp_fader_t;
 
+/**
+ * @brief Public representation of captured or playback audio samples.
+ */
+typedef struct {
+  double** channels;     /**< Array of channel buffers. */
+  size_t channels_count; /**< Number of channels. */
+  size_t frames;         /**< Number of frames per channel. */
+} cdsp_audio_samples_t;
+
 #endif // CDSP_PUBLIC_TYPES_H

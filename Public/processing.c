@@ -108,3 +108,47 @@ bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
   dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
   return iface && iface->is_state_dirty ? iface->is_state_dirty(iface->ctx) : false;
 }
+
+cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
+                                       size_t n_frames,
+                                       cdsp_backend_error_t* out_err) {
+  if (!engine) return NULL;
+  dsp_engine_interface_t* iface = dsp_engine_get_interface((dsp_engine_t*)engine);
+  if (!iface || !iface->get_samples) return NULL;
+
+  audio_backend_error_t raw_err = {0};
+  audio_samples_t* raw_samples = iface->get_samples(iface->ctx, is_capture, n_frames, &raw_err);
+  if (!raw_samples) {
+    if (out_err) {
+      switch (raw_err.type) {
+        case AUDIO_BACKEND_ERR_CONFIG_PARSE:
+          out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+          break;
+        case AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND:
+          out_err->type = CDSP_BACKEND_ERR_DEVICE_NOT_FOUND;
+          break;
+        case AUDIO_BACKEND_ERR_DEVICE_BUSY:
+          out_err->type = CDSP_BACKEND_ERR_DEVICE_BUSY;
+          break;
+        default:
+          out_err->type = CDSP_BACKEND_ERR_UNKNOWN;
+          break;
+      }
+      strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
+      out_err->message[sizeof(out_err->message) - 1] = '\0';
+    }
+    return NULL;
+  }
+  return (cdsp_audio_samples_t*)raw_samples;
+}
+
+void cdsp_free_samples(cdsp_audio_samples_t* samples) {
+  if (!samples) return;
+  if (samples->channels) {
+    for (size_t ch = 0; ch < samples->channels_count; ch++) {
+      free(samples->channels[ch]);
+    }
+    free(samples->channels);
+  }
+  free(samples);
+}
