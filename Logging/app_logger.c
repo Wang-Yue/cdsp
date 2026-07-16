@@ -127,7 +127,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
     }
 
     log_argument_t arg = args[arg_idx++];
-    char tmp[32768];
+    char tmp[4096];
     tmp[0] = '\0';
 
     if (strchr("diouxXcp", conv)) {
@@ -212,7 +212,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
   // Append any unconsumed arguments
   for (; arg_idx < 4; arg_idx++) {
     if (args[arg_idx].type == LOG_ARG_NONE) break;
-    char tmp[32768];
+    char tmp[4096];
     tmp[0] = '\0';
     switch (args[arg_idx].type) {
       case LOG_ARG_NONE:
@@ -296,7 +296,7 @@ static void* worker_thread_func(void* arg) {
             lvl_str = "TRACE";
             break;
         }
-        char formatted_msg[32768];
+        char formatted_msg[4096];
         log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
         format_log_message(formatted_msg, sizeof(formatted_msg), rec.message,
                            args);
@@ -422,6 +422,7 @@ void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
 
 void app_logger_flush_and_stop(app_logger_t* logger) {
   if (!logger) return;
+  pthread_mutex_lock(&logger->worker_mutex);
   if (atomic_load_explicit(&logger->is_started, memory_order_acquire)) {
     atomic_store_explicit(&logger->should_exit, true, memory_order_release);
     cdsp_sem_signal(logger->semaphore);
@@ -429,6 +430,7 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
     atomic_store_explicit(&logger->is_started, false, memory_order_release);
     atomic_store_explicit(&logger->should_exit, false, memory_order_release);
   }
+  pthread_mutex_unlock(&logger->worker_mutex);
 }
 
 void app_logger_log_raw_str(const logger_t* logger, log_level_t level,

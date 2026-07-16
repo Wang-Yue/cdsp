@@ -10,13 +10,13 @@
 #include <objbase.h>
 #endif
 
+#include "Logging/app_logger.h"
 #include "Public/cdsp_pub_types.h"
+#include "Public/config.h"
 #include "Public/general.h"
 #include "Public/processing.h"
-#include "Public/volume.h"
-#include "Public/config.h"
 #include "Public/state.h"
-#include "Logging/app_logger.h"
+#include "Public/volume.h"
 #include "Server/websocket_server.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/double_helpers.h"
@@ -110,7 +110,6 @@ static void print_usage(void) {
 #endif
       "File, Stdout\n");
 }
-
 
 int main(int argc, char** argv) {
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
@@ -331,12 +330,16 @@ int main(int argc, char** argv) {
     }
     char* result = NULL;
     bool is_error = false;
-    if (cdsp_validate_config_file(config_path, &result, &is_error) && !is_error) {
-      logger_info(&g_logger, "Configuration check succeeded for %s", config_path);
+    if (cdsp_validate_config_file(config_path, &result, &is_error) &&
+        !is_error) {
+      logger_info(&g_logger, "Configuration check succeeded for %s",
+                  config_path);
       printf("Configuration is valid.\n");
     } else {
-      logger_error(&g_logger, "Configuration check failed: %s", result ? result : "Invalid config");
-      printf("Configuration check failed: %s\n", result ? result : "Invalid config");
+      logger_error(&g_logger, "Configuration check failed: %s",
+                   result ? result : "Invalid config");
+      printf("Configuration check failed: %s\n",
+             result ? result : "Invalid config");
       if (result) free(result);
       return 1;
     }
@@ -354,7 +357,8 @@ int main(int argc, char** argv) {
       logger_info(&g_logger, "Loaded state file from %s", state_file_path);
       if (!config_path && !no_config &&
           cdsp_state_has_config_path(loaded_state)) {
-        allocated_config_path = strdup(cdsp_state_get_config_path(loaded_state));
+        allocated_config_path =
+            strdup(cdsp_state_get_config_path(loaded_state));
         config_path = allocated_config_path;
       }
     }
@@ -381,6 +385,7 @@ int main(int argc, char** argv) {
     logger_error(&g_logger, "Missing required configuration file");
     printf("Error: Missing required configuration file.\n");
     print_usage();
+    if (allocated_config_path) free(allocated_config_path);
     return 1;
   }
 
@@ -388,6 +393,7 @@ int main(int argc, char** argv) {
   if (!engine) {
     logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
     printf("Error starting engine: Failed to allocate engine\n");
+    if (allocated_config_path) free(allocated_config_path);
     return 1;
   }
 
@@ -402,6 +408,7 @@ int main(int argc, char** argv) {
       logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
       printf("Error starting engine: %s\n", berr.message);
       cdsp_engine_free(engine);
+      if (allocated_config_path) free(allocated_config_path);
       return 1;
     }
   } else {

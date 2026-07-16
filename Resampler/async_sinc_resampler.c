@@ -280,7 +280,7 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
                      1.0 - 0.5 * x - x2 + 0.5 * x3, x + 0.5 * x2 - 0.5 * x3,
                      -1.0 / 6.0 * x + 1.0 / 6.0 * x3};
 
-      memset(combined, 0, (s_len + 1) * sizeof(double));
+      memset(combined, 0, (s_len + 4) * sizeof(double));
       for (int k = 0; k < 4; k++) {
         int shift = pts[k].idx - min_idx;
         const double* sinc_row = table + pts[k].sub * s_len;
@@ -385,7 +385,7 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
       double w[3] = {0.5 * (2.0 - 3.0 * x + x2), 0.5 * (4.0 * x - 2.0 * x2),
                      0.5 * (x2 - x)};
 
-      memset(combined, 0, (s_len + 1) * sizeof(double));
+      memset(combined, 0, (s_len + 4) * sizeof(double));
       for (int k = 0; k < 3; k++) {
         int shift = pts[k].idx - min_idx;
         const double* sinc_row = table + pts[k].sub * s_len;
@@ -481,7 +481,7 @@ static void run_linear(async_sinc_resampler_t* resampler, size_t output_frames,
       // interp_lin weights.
       double w[2] = {1.0 - x, x};
 
-      memset(combined, 0, (s_len + 1) * sizeof(double));
+      memset(combined, 0, (s_len + 4) * sizeof(double));
       for (int k = 0; k < 2; k++) {
         int shift = pts[k].idx - min_idx;
         const double* sinc_row = table + pts[k].sub * s_len;
@@ -772,7 +772,7 @@ static void* async_sinc_resampler_create_impl(
       (double*)calloc(resampler->max_output_frames, sizeof(double));
   resampler->frac_scratch =
       (double*)calloc(resampler->max_output_frames, sizeof(double));
-  resampler->combined_scratch = (double*)calloc(sinc_len + 1, sizeof(double));
+  resampler->combined_scratch = (double*)calloc(sinc_len + 4, sizeof(double));
   if (!resampler->idx_scratch || !resampler->frac_scratch ||
       !resampler->combined_scratch) {
     config_error_set(err, CONFIG_ERR_PARSE,

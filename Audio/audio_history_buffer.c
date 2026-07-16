@@ -55,10 +55,10 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
         audio_history_buffer_clear_internal(history);
         return;
       }
+      history->channels = ch + 1;
       spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch],
                                                        true);
     }
-    history->channels = channels;
   }
 }
 
@@ -154,11 +154,10 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
   // Step 2: Read subsequent channels into local stack scratch memory to prevent
   // data races on multi-threaded reads, then accumulate into dest.
   float stack_scratch[2048];
-  float* local_scratch = stack_scratch;
   if (count > 2048) {
-    local_scratch = (float*)malloc(count * sizeof(float));
-    if (!local_scratch) return AUDIO_HISTORY_BUFFER_OK;
+    count = 2048;
   }
+  float* local_scratch = stack_scratch;
 
   for (size_t ch = 1; ch < history->channels; ch++) {
     ok = spsc_audio_ring_buffer_read_latest_at(
@@ -171,9 +170,6 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     for (size_t i = 0; i < count; i++) {
       dest[i] += local_scratch[i];
     }
-  }
-  if (local_scratch != stack_scratch) {
-    free(local_scratch);
   }
 
   // Step 3: Scale the accumulated sum to get the average.
