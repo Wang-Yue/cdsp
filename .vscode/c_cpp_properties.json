@@ -21,7 +21,7 @@
       ],
       "defines": [
         "ENABLE_COREAUDIO",
-        "ENABLE_ACCELERATE",
+        "ENABLE_ACCELERATE"
       ],
       "macFrameworkPath": [
         "/System/Library/Frameworks",
