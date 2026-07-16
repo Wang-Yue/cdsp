@@ -17,7 +17,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-
 /**
  * @brief Main DSP engine structure.
  *
@@ -42,19 +41,6 @@ void dsp_engine_free(dsp_engine_t* engine);
  * @param engine Pointer to the engine instance.
  */
 void dsp_engine_poll(dsp_engine_t* engine);
-
-/**
- * @brief Set the path for the state file (for persisting volume/mute states).
- * @param engine Pointer to the engine instance.
- * @param path Path to the state file.
- */
-void dsp_engine_set_state_file(dsp_engine_t* engine, const char* path);
-
-/**
- * @brief Set global log level.
- * @param level Log level.
- */
-void dsp_engine_set_log_level(log_level_t level);
 
 typedef struct {
   void* ctx;
@@ -92,9 +78,11 @@ typedef struct {
 
   // Path & persistence callbacks
   const char* (*get_state_file)(void* ctx);
+  void (*set_state_file)(void* ctx, const char* path);
   bool (*is_state_dirty)(void* ctx);
   char* (*get_config_path)(void* ctx);
   void (*set_config_path)(void* ctx, const char* path);
+  void (*set_log_level)(void* ctx, log_level_t level);
 } dsp_engine_interface_t;
 
 /**
@@ -109,7 +97,7 @@ dsp_engine_interface_t* dsp_engine_get_interface(dsp_engine_t* engine);
 
 #ifdef CDSP_TEST
 // Direct functions used by internal test suites (test_dsp_engine.c)
-const dsp_config_t* dsp_engine_get_active_config(const dsp_engine_t* engine);
+const dsp_config_t* dsp_engine_get_active_config(dsp_engine_t* engine);
 bool dsp_engine_set_config(dsp_engine_t* engine, const char* json,
                            audio_backend_error_t* err);
 bool dsp_engine_set_config_struct(dsp_engine_t* engine, dsp_config_t* config,

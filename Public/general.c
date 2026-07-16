@@ -1,15 +1,19 @@
 #include "Public/general.h"
+
 #include <stdlib.h>
 #include <string.h>
+
 #include "Engine/dsp_engine.h"
+#include "Logging/app_logger.h"
 
-const char* cdsp_get_version(void) {
-  return "CamillaDSP-C-Embedded 2.0.0";
-}
+const char* cdsp_get_version(void) { return "CDSP 4.2.0"; }
 
-void cdsp_get_supported_device_types(char*** out_playback_types, size_t* out_playback_count,
-                                     char*** out_capture_types, size_t* out_capture_count) {
-  if (!out_playback_types || !out_playback_count || !out_capture_types || !out_capture_count) {
+void cdsp_get_supported_device_types(char*** out_playback_types,
+                                     size_t* out_playback_count,
+                                     char*** out_capture_types,
+                                     size_t* out_capture_count) {
+  if (!out_playback_types || !out_playback_count || !out_capture_types ||
+      !out_capture_count) {
     return;
   }
 
@@ -27,7 +31,7 @@ void cdsp_get_supported_device_types(char*** out_playback_types, size_t* out_pla
 #if defined(ENABLE_ASIO)
   pb_count++;
 #endif
-  pb_count += 2; // File, Stdout
+  pb_count += 2;  // File, Stdout
 
   // Count capture types
   size_t cap_count = 0;
@@ -43,7 +47,7 @@ void cdsp_get_supported_device_types(char*** out_playback_types, size_t* out_pla
 #if defined(ENABLE_ASIO)
   cap_count++;
 #endif
-  cap_count += 3; // File, Stdin, Generator
+  cap_count += 3;  // File, Stdin, Generator
 
   char** pb_arr = (char**)malloc(pb_count * sizeof(char*));
   char** cap_arr = (char**)malloc(cap_count * sizeof(char*));
@@ -95,24 +99,22 @@ void cdsp_free_device_types(char** types, size_t count) {
   free(types);
 }
 
-dsp_engine_t* cdsp_engine_create(void) {
-  return dsp_engine_create();
-}
+dsp_engine_t* cdsp_engine_create(void) { return dsp_engine_create(); }
 
-void cdsp_engine_free(dsp_engine_t* engine) {
-  dsp_engine_free(engine);
-}
+void cdsp_engine_free(dsp_engine_t* engine) { dsp_engine_free(engine); }
 
-void cdsp_engine_poll(dsp_engine_t* engine) {
-  dsp_engine_poll(engine);
-}
+void cdsp_engine_poll(dsp_engine_t* engine) { dsp_engine_poll(engine); }
 
 void cdsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
-  dsp_engine_set_state_file(engine, path);
+  if (!engine) return;
+  dsp_engine_interface_t* iface = dsp_engine_get_interface(engine);
+  if (iface && iface->set_state_file) {
+    iface->set_state_file(iface->ctx, path);
+  }
 }
 
 void cdsp_set_log_level(const char* level_str) {
-  dsp_engine_set_log_level(log_level_from_string(level_str));
+  app_logger_set_level(log_level_from_string(level_str));
 }
 
 void cdsp_stop(dsp_engine_t* engine) {
