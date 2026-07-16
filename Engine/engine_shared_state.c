@@ -187,6 +187,19 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
     }
     audio_sync_queue_shutdown(state->captured_queue);
+  } else {
+    // If stop was gracefully requested (STOP_REASON_DONE) to flush queues on
+    // EOF, but a non-graceful stop request (like user Stop or device error) is
+    // received subsequently while processing is blocked waiting on full queues,
+    // override the reason and force INACTIVE state to prevent infinite joins
+    // and deadlocks.
+    if (state->stop_reason.type == STOP_REASON_DONE &&
+        reason.type != STOP_REASON_DONE) {
+      state->stop_reason = reason;
+      engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
+      audio_sync_queue_shutdown(state->captured_queue);
+      audio_sync_queue_shutdown(state->processed_queue);
+    }
   }
 }
 
