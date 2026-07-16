@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "Config/cJSON.h"
+#include "Config/cdsp_yaml.h"
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "Pipeline/config_loader.h"
@@ -103,8 +104,15 @@ bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json) {
 }
 
 bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out_yaml) {
-  // Configs are JSON internally in CDSP-C
-  return cdsp_get_active_config_json(engine, out_yaml);
+  if (!engine || !out_yaml) return false;
+  char* json_str = NULL;
+  if (!cdsp_get_active_config_json(engine, &json_str)) return false;
+  cJSON* root = cJSON_Parse(json_str);
+  free(json_str);
+  if (!root) return false;
+  *out_yaml = cdsp_json_to_yaml(root);
+  cJSON_Delete(root);
+  return *out_yaml != NULL;
 }
 
 bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
@@ -116,7 +124,15 @@ bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
 
 bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine,
                                    char** out_yaml) {
-  return cdsp_get_previous_config_json(engine, out_yaml);
+  if (!engine || !out_yaml) return false;
+  char* json_str = NULL;
+  if (!cdsp_get_previous_config_json(engine, &json_str)) return false;
+  cJSON* root = cJSON_Parse(json_str);
+  free(json_str);
+  if (!root) return false;
+  *out_yaml = cdsp_json_to_yaml(root);
+  cJSON_Delete(root);
+  return *out_yaml != NULL;
 }
 
 bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
@@ -134,7 +150,26 @@ bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
 
 bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
                           cdsp_backend_error_t* out_err) {
-  return cdsp_set_config_json(engine, yaml_str, out_err);
+  if (!engine || !yaml_str) return false;
+  char* err_msg = NULL;
+  cJSON* json_root = cdsp_yaml_to_json(yaml_str, &err_msg);
+  if (!json_root) {
+    if (out_err) {
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+      snprintf(out_err->message, sizeof(out_err->message),
+               "YAML parse error: %s",
+               err_msg ? err_msg : "Invalid YAML syntax");
+    }
+    if (err_msg) free(err_msg);
+    return false;
+  }
+  if (err_msg) free(err_msg);
+  char* json_str = cJSON_PrintUnformatted(json_root);
+  cJSON_Delete(json_root);
+  if (!json_str) return false;
+  bool ok = cdsp_set_config_json(engine, json_str, out_err);
+  free(json_str);
+  return ok;
 }
 
 bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
@@ -322,8 +357,8 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
     if (out_err) strcpy(out_err->message, "No config file path set");
     return false;
   }
-  char* json = read_file_to_str(path);
-  if (!json) {
+  char* file_str = read_file_to_str(path);
+  if (!file_str) {
     if (out_err)
       snprintf(out_err->message, sizeof(out_err->message),
                "Could not read config file %s", path);
@@ -331,8 +366,16 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
     return false;
   }
   free(path);
-  bool ok = cdsp_set_config_json(engine, json, out_err);
-  free(json);
+
+  const char* p = file_str;
+  while (isspace((unsigned char)*p)) p++;
+  bool ok = false;
+  if (*p == '{') {
+    ok = cdsp_set_config_json(engine, file_str, out_err);
+  } else {
+    ok = cdsp_set_config_yaml(engine, file_str, out_err);
+  }
+  free(file_str);
   return ok;
 }
 
@@ -355,7 +398,37 @@ bool cdsp_validate_config_json(const char* json_str, char** out_result,
 
 bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
                                bool* is_error) {
-  return cdsp_validate_config_json(yaml_str, out_result, is_error);
+  if (!yaml_str || !out_result || !is_error) return false;
+  char* err_msg = NULL;
+  cJSON* json_root = cdsp_yaml_to_json(yaml_str, &err_msg);
+  if (!json_root) {
+    *out_result = strdup(err_msg ? err_msg : "Invalid YAML syntax");
+    *is_error = true;
+    if (err_msg) free(err_msg);
+    return false;
+  }
+  if (err_msg) free(err_msg);
+  char* json_str = cJSON_PrintUnformatted(json_root);
+  cJSON_Delete(json_root);
+  if (!json_str) {
+    *out_result = strdup("Memory allocation error during YAML validation");
+    *is_error = true;
+    return false;
+  }
+  char* json_res = NULL;
+  bool ok = cdsp_validate_config_json(json_str, &json_res, is_error);
+  free(json_str);
+  if (ok && json_res && !*is_error) {
+    cJSON* val_root = cJSON_Parse(json_res);
+    free(json_res);
+    if (val_root) {
+      *out_result = cdsp_json_to_yaml(val_root);
+      cJSON_Delete(val_root);
+      return true;
+    }
+  }
+  *out_result = json_res;
+  return ok;
 }
 
 bool cdsp_validate_config_file(const char* path, char** out_result,
