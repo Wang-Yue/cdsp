@@ -17,22 +17,18 @@ CC ?= clang
 AR ?= ar
 CFLAGS ?= -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
 UNAME_S := $(shell uname -s)
-TARGET_OS ?= $(UNAME_S)
 
-ifneq (,$(filter %mingw32-gcc %mingw32-clang Windows_NT Windows Win32 MINGW% MSYS% CYGWIN%,$(TARGET_OS) $(CC)))
+ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
     IS_WINDOWS := 1
+else ifeq ($(UNAME_S),Darwin)
+    IS_DARWIN := 1
+else
+    IS_LINUX := 1
 endif
 
 ifeq ($(IS_WINDOWS),1)
-    ifneq ($(UNAME_S),Windows_NT)
-        ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-            CROSS_PREFIX ?=
-        else
-            CROSS_PREFIX ?= x86_64-w64-mingw32-
-        endif
-    endif
-    CC := $(CROSS_PREFIX)gcc
-    AR := $(CROSS_PREFIX)gcc-ar
+    CC := gcc
+    AR := gcc-ar
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 0
@@ -43,7 +39,7 @@ ifeq ($(IS_WINDOWS),1)
     ENABLE_ASIO ?= 1
     ENABLE_OPENMP ?= 0
     CLI_BIN_EXT := .exe
-else ifeq ($(UNAME_S),Darwin)
+else ifeq ($(IS_DARWIN),1)
     CFLAGS += -mcpu=native
     LDFLAGS += -flto
     ENABLE_COREAUDIO ?= 1
@@ -57,6 +53,7 @@ else ifeq ($(UNAME_S),Darwin)
     ENABLE_OPENMP ?= 0
 else
     # Linux (Default)
+    CFLAGS += -march=native
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 1
@@ -69,30 +66,7 @@ else
 endif
 
 # Map Flags to CFLAGS preprocessor definitions
-ifeq ($(ENABLE_COREAUDIO),1)
-    CFLAGS += -DENABLE_COREAUDIO
-endif
-ifeq ($(ENABLE_ACCELERATE),1)
-    CFLAGS += -DENABLE_ACCELERATE
-endif
-ifeq ($(ENABLE_ALSA),1)
-    CFLAGS += -DENABLE_ALSA
-endif
-ifeq ($(ENABLE_PIPEWIRE),1)
-    CFLAGS += -DENABLE_PIPEWIRE
-endif
-ifeq ($(ENABLE_FFTW),1)
-    CFLAGS += -DENABLE_FFTW
-endif
-ifeq ($(ENABLE_BLAS),1)
-    CFLAGS += -DENABLE_BLAS
-endif
-ifeq ($(ENABLE_WASAPI),1)
-    CFLAGS += -DENABLE_WASAPI
-endif
-ifeq ($(ENABLE_ASIO),1)
-    CFLAGS += -DENABLE_ASIO
-endif
+$(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filter 1,$(ENABLE_$(f))),$(eval CFLAGS += -DENABLE_$(f))))
 
 
 # Map Flags to link options (LDFLAGS)
@@ -109,7 +83,7 @@ ifeq ($(IS_WINDOWS),1)
         LDFLAGS += -lopenblas
     endif
     LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid
-else ifeq ($(UNAME_S),Darwin)
+else ifeq ($(IS_DARWIN),1)
     ifeq ($(ENABLE_COREAUDIO),1)
         LDFLAGS += -framework CoreAudio -framework AudioToolbox
     endif
@@ -119,7 +93,7 @@ else ifeq ($(UNAME_S),Darwin)
     LDFLAGS += -framework CoreFoundation
 else
     # Linux
-    CFLAGS += -march=native -D_GNU_SOURCE
+    CFLAGS += -D_GNU_SOURCE
     ifeq ($(USE_LIBDISPATCH),1)
         CFLAGS += -DUSE_LIBDISPATCH -I/usr/libexec/swift/lib/swift
         LDFLAGS += -L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux
@@ -198,12 +172,9 @@ CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all build lib test run-test-runner bench cli clean format windows
+.PHONY: all build lib test run-test-runner bench cli clean format
 
 all: cli
-
-windows:
-	+$(MAKE) TARGET_OS=Windows ENABLE_FFTW=1 ENABLE_BLAS=1
 
 build: all
 
@@ -246,7 +217,7 @@ $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
 
 # Build test binaries by linking against libdsp_test.a
-ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
+ifeq ($(IS_WINDOWS),1)
 $(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DCDSP_TEST $(MOCK_TIME_FLAGS_TEST) $< $(TEST_LIB_TARGET) $(ROOT_DIR)/.build/clock_mock.o $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
@@ -317,22 +288,11 @@ $(CLI_BIN): $(CLI_SRC) $(SERVER_SRCS) $(LIB_TARGET)
 	@mkdir -p $(dir $@)
 ifeq ($(IS_WINDOWS),1)
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
-else ifeq ($(TARGET_OS),Darwin)
+else ifeq ($(IS_DARWIN),1)
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,-force_load $(LIB_TARGET) $(LDFLAGS) -o $@
 else
 	$(CC) $(CFLAGS) $(CLI_SRC) $(SERVER_SRCS) -Wl,--whole-archive $(LIB_TARGET) -Wl,--no-whole-archive $(LDFLAGS) -o $@
 endif
-
-LINUX_CFLAGS = -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -Wall -Wextra -std=c11 -I. -I. -I./Filters -I./Audio -I./Config -I./FFT -I./Mixer -I./Resampler -I./Processors -I./DoP -I./Pipeline -I./Engine -I./Server -I./Backend -I./Logging -DENABLE_ALSA -DENABLE_FFTW -mcpu=cortex_a72 -D_GNU_SOURCE -I./linux_sysroot/usr/include/dbus-1.0 -I./linux_sysroot/usr/lib/aarch64-linux-gnu/dbus-1.0/include $(if $(filter 1,$(ENABLE_PIPEWIRE)),-DENABLE_PIPEWIRE -I./linux_sysroot/usr/include/pipewire-0.3 -I./linux_sysroot/usr/include/spa-0.2)
-LINUX_LDFLAGS = -L./linux_sysroot/usr/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined -lasound -lfftw3 -lfftw3f -lrt -ldbus-1 $(if $(filter 1,$(ENABLE_PIPEWIRE)),-lpipewire-0.3)
-
-linux-aarch64: ENABLE_PIPEWIRE ?= 1
-linux-aarch64:
-	$(MAKE) cli TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CLI_BIN=bin/dsp-cli CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 ENABLE_PIPEWIRE=$(ENABLE_PIPEWIRE) CFLAGS="$(LINUX_CFLAGS)" LDFLAGS="$(LINUX_LDFLAGS)" -j20
-
-linux-benchmarks: ENABLE_PIPEWIRE ?= 1
-linux-benchmarks:
-	$(MAKE) $(BENCH_BINS) TARGET_OS=Linux OBJ_DIR=.build/obj_linux LIB_TARGET=libdsp_linux.a CC="zig cc -target aarch64-linux-gnu -I./linux_sysroot/usr/include -I./linux_sysroot/usr/include/aarch64-linux-gnu" AR="zig ar" ENABLE_ALSA=1 ENABLE_FFTW=1 ENABLE_BLAS=0 ENABLE_PIPEWIRE=$(ENABLE_PIPEWIRE) CFLAGS="$(LINUX_CFLAGS)" LDFLAGS="$(LINUX_LDFLAGS)" -j20
 
 format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
