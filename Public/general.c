@@ -109,12 +109,6 @@ void cdsp_engine_poll(dsp_engine_t* engine) {
   if (engine && engine->poll) engine->poll(engine->ctx);
 }
 
-void cdsp_engine_set_state_file(dsp_engine_t* engine, const char* path) {
-  if (engine && engine->set_state_file) {
-    engine->set_state_file(engine->ctx, path);
-  }
-}
-
 void cdsp_set_log_level(const char* level_str) {
   app_logger_set_level(log_level_from_string(level_str));
 }

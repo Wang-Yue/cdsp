@@ -280,8 +280,8 @@ void cdsp_get_stop_reason(const dsp_engine_t* engine,
 
 int cdsp_get_capture_rate(const dsp_engine_t* engine) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_active_samplerate) {
-    return mock->get_active_samplerate(mock->ctx);
+  if (mock && mock->get_capture_rate) {
+    return mock->get_capture_rate(mock->ctx);
   }
   return 0;
 }
@@ -484,10 +484,10 @@ float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
   return 0.0f;
 }
 
-bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader) {
+bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->is_fader_muted) {
-    return mock->is_fader_muted(mock->ctx, (fader_t)fader);
+  if (mock && mock->get_fader_mute) {
+    return mock->get_fader_mute(mock->ctx, (fader_t)fader);
   }
   return false;
 }
@@ -509,52 +509,52 @@ void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute) {
 
 const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_state_file) {
-    return mock->get_state_file(mock->ctx);
+  if (mock && mock->get_state_file_path) {
+    return mock->get_state_file_path(mock->ctx);
   }
   return NULL;
 }
 
-bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
+bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->is_state_dirty) {
-    return mock->is_state_dirty(mock->ctx);
+  if (mock && mock->get_state_file_updated) {
+    return mock->get_state_file_updated(mock->ctx);
   }
-  return false;
+  return true;
 }
 
-const char* cdsp_get_config_path(const dsp_engine_t* engine) {
+char* cdsp_get_config_file_path(const dsp_engine_t* engine) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_config_path) {
-    return mock->get_config_path(mock->ctx);
+  if (mock && mock->get_config_file_path) {
+    return mock->get_config_file_path(mock->ctx);
   }
   return NULL;
 }
 
-void cdsp_set_config_path(dsp_engine_t* engine, const char* path) {
+void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path) {
   dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->set_config_path) {
-    mock->set_config_path(mock->ctx, path);
+  if (mock && mock->set_config_file_path) {
+    mock->set_config_file_path(mock->ctx, path);
   }
 }
 
 static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
-    .get_active_samplerate = mock_get_active_samplerate,
+    .get_capture_rate = mock_get_active_samplerate,
     .get_processing_status = mock_get_processing_status,
     .reset_clipped_samples = mock_reset_clipped_samples,
     .get_vu_levels = mock_get_vu_levels,
     .get_fader_volume = mock_get_fader_volume,
-    .is_fader_muted = mock_is_fader_muted,
+    .get_fader_mute = mock_is_fader_muted,
     .set_config_json = mock_set_config_json,
     .get_device_capabilities = mock_get_device_capabilities,
     .set_fader_volume = mock_set_fader_volume,
     .set_fader_mute = mock_set_fader_mute,
-    .get_state_file = mock_get_state_file,
-    .is_state_dirty = mock_is_state_dirty,
-    .get_config_path = mock_get_config_path,
-    .set_config_path = mock_set_config_path,
+    .get_state_file_path = mock_get_state_file,
+    .get_state_file_updated = mock_is_state_dirty,
+    .get_config_file_path = mock_get_config_path,
+    .set_config_file_path = mock_set_config_path,
     .get_active_config_json = mock_get_active_config_json,
     .get_previous_config_json = mock_get_previous_config_json};
 

@@ -15,8 +15,8 @@ void cdsp_set_volume(dsp_engine_t* engine, float db, bool instant) {
 }
 
 bool cdsp_get_mute(const dsp_engine_t* engine) {
-  return engine && engine->is_fader_muted
-             ? engine->is_fader_muted(engine->ctx, (fader_t)0)
+  return engine && engine->get_fader_mute
+             ? engine->get_fader_mute(engine->ctx, (fader_t)0)
              : false;
 }
 
@@ -39,9 +39,9 @@ void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db,
   }
 }
 
-bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader) {
-  return engine && engine->is_fader_muted
-             ? engine->is_fader_muted(engine->ctx, (fader_t)fader)
+bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader) {
+  return engine && engine->get_fader_mute
+             ? engine->get_fader_mute(engine->ctx, (fader_t)fader)
              : false;
 }
 

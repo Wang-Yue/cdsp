@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
 #include "Public/cdsp_pub_types.h"
 
 /**
@@ -49,15 +50,16 @@ float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader);
  * @param db Volume in dB.
  * @param instant If true, bypasses the volume ramp and applies immediately.
  */
-void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db, bool instant);
+void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db,
+                           bool instant);
 
 /**
- * @brief Get the mute state of a specific fader.
+ * @brief Get the mute state of a specific fader (WebSocket: GetFaderMute).
  * @param engine Pointer to the engine.
  * @param fader Fader identifier.
  * @return true if muted, false otherwise.
  */
-bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader);
+bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader);
 
 /**
  * @brief Set the mute state of a specific fader.
@@ -67,4 +69,4 @@ bool cdsp_is_fader_muted(const dsp_engine_t* engine, cdsp_fader_t fader);
  */
 void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute);
 
-#endif // CDSP_PUBLIC_VOLUME_H
+#endif  // CDSP_PUBLIC_VOLUME_H

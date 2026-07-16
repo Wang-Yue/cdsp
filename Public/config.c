@@ -84,15 +84,15 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
   return curr;
 }
 
-const char* cdsp_get_config_path(const dsp_engine_t* engine) {
-  return engine && engine->get_config_path
-             ? engine->get_config_path(engine->ctx)
+char* cdsp_get_config_file_path(const dsp_engine_t* engine) {
+  return engine && engine->get_config_file_path
+             ? engine->get_config_file_path(engine->ctx)
              : NULL;
 }
 
-void cdsp_set_config_path(dsp_engine_t* engine, const char* path) {
-  if (engine && engine->set_config_path) {
-    engine->set_config_path(engine->ctx, path);
+void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path) {
+  if (engine && engine->set_config_file_path) {
+    engine->set_config_file_path(engine->ctx, path);
   }
 }
 
@@ -317,7 +317,7 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
 }
 
 bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
-  const char* path = cdsp_get_config_path(engine);
+  char* path = cdsp_get_config_file_path(engine);
   if (!path) {
     if (out_err) strcpy(out_err->message, "No config file path set");
     return false;
@@ -327,8 +327,10 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
     if (out_err)
       snprintf(out_err->message, sizeof(out_err->message),
                "Could not read config file %s", path);
+    free(path);
     return false;
   }
+  free(path);
   bool ok = cdsp_set_config_json(engine, json, out_err);
   free(json);
   return ok;

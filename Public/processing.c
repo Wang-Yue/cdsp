@@ -35,11 +35,11 @@ void cdsp_get_stop_reason(const dsp_engine_t* engine,
 }
 
 int cdsp_get_capture_rate(const dsp_engine_t* engine) {
-  if (engine && engine->get_status && engine->get_active_samplerate) {
+  if (engine && engine->get_status && engine->get_capture_rate) {
     state_update_t status = {0};
     if (engine->get_status(engine->ctx, &status) &&
         status.state == PROCESSING_STATE_RUNNING) {
-      return engine->get_active_samplerate(engine->ctx);
+      return engine->get_capture_rate(engine->ctx);
     }
   }
   return 0;
@@ -91,13 +91,15 @@ void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
 }
 
 const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
-  return engine && engine->get_state_file ? engine->get_state_file(engine->ctx)
-                                          : NULL;
+  return engine && engine->get_state_file_path
+             ? engine->get_state_file_path(engine->ctx)
+             : NULL;
 }
 
-bool cdsp_is_state_dirty(const dsp_engine_t* engine) {
-  return engine && engine->is_state_dirty ? engine->is_state_dirty(engine->ctx)
-                                          : false;
+bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
+  return engine && engine->get_state_file_updated
+             ? engine->get_state_file_updated(engine->ctx)
+             : true;
 }
 
 cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,

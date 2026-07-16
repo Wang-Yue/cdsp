@@ -89,7 +89,7 @@ static inline float ws_engine_get_fader_volume(dsp_engine_t* engine,
 
 static inline bool ws_engine_is_fader_muted(dsp_engine_t* engine,
                                             cdsp_fader_t fader) {
-  return cdsp_is_fader_muted(engine, fader);
+  return cdsp_get_fader_mute(engine, fader);
 }
 
 static inline void ws_engine_set_fader_volume(dsp_engine_t* engine,
@@ -108,17 +108,16 @@ static inline const char* ws_engine_get_state_file(dsp_engine_t* engine) {
 }
 
 static inline bool ws_engine_is_state_dirty(dsp_engine_t* engine) {
-  return cdsp_is_state_dirty(engine);
+  return !cdsp_get_state_file_updated(engine);
 }
 
 static inline char* ws_engine_get_config_path(dsp_engine_t* engine) {
-  const char* path = cdsp_get_config_path(engine);
-  return path ? strdup(path) : NULL;
+  return cdsp_get_config_file_path(engine);
 }
 
 static inline void ws_engine_set_config_path(dsp_engine_t* engine,
                                              const char* path) {
-  cdsp_set_config_path(engine, path);
+  cdsp_set_config_file_path(engine, path);
 }
 
 cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason) {

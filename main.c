@@ -430,10 +430,10 @@ int main(int argc, char** argv) {
   }
 
   if (state_file_path) {
-    cdsp_engine_set_state_file(engine, state_file_path);
+    cdsp_set_state_file_path(engine, state_file_path);
   }
   if (config_path) {
-    cdsp_set_config_path(engine, config_path);
+    cdsp_set_config_file_path(engine, config_path);
   }
 
   websocket_server_t* server = NULL;

@@ -46,11 +46,10 @@ typedef struct dsp_engine_impl dsp_engine_impl_t;
 static const logger_t g_logger = {"dsp.engine"};
 
 /**
- * @brief Callback triggered when a chunk is captured by the audio engine core.
- * Appends the chunk to the capture history buffer.
- *
- * @param ctx Pointer to the audio_history_buffer_t capture buffer.
- * @param chunk Pointer to the captured audio_chunk_t.
+ * @brief Internal callback invoked when an audio chunk is captured from the
+ * input device. Appends captured audio frames into the capture history buffer.
+ * @param ctx Pointer to the capture audio_history_buffer_t instance.
+ * @param chunk Pointer to the captured audio_chunk_t data structure.
  */
 static void engine_on_chunk_captured_callback(void* ctx,
                                               const audio_chunk_t* chunk) {
@@ -59,11 +58,11 @@ static void engine_on_chunk_captured_callback(void* ctx,
 }
 
 /**
- * @brief Callback triggered when a chunk is processed (played back) by the
- * audio engine core. Appends the chunk to the playback history buffer.
- *
- * @param ctx Pointer to the audio_history_buffer_t playback buffer.
- * @param chunk Pointer to the processed audio_chunk_t.
+ * @brief Internal callback invoked when an audio chunk finishes DSP processing
+ * before playback. Appends processed audio frames into the playback history
+ * buffer.
+ * @param ctx Pointer to the playback audio_history_buffer_t instance.
+ * @param chunk Pointer to the processed audio_chunk_t data structure.
  */
 static void engine_on_chunk_processed_callback(void* ctx,
                                                const audio_chunk_t* chunk) {
@@ -71,6 +70,14 @@ static void engine_on_chunk_processed_callback(void* ctx,
   if (buf && chunk) audio_history_buffer_append(buf, chunk);
 }
 
+/**
+ * @brief Internal helper to apply a parsed dsp_config_t structure while holding
+ * state mutex lock.
+ * @param impl Pointer to concrete engine implementation state.
+ * @param config Parsed configuration object pointer.
+ * @param err Output error details on configuration failure.
+ * @return true on successful application, false otherwise.
+ */
 static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
                                                 dsp_config_t* config,
                                                 audio_backend_error_t* err) {
@@ -126,6 +133,14 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
   return true;
 }
 
+/**
+ * @brief Internal helper to parse and apply a JSON config string while holding
+ * state mutex lock.
+ * @param impl Pointer to concrete engine implementation state.
+ * @param json Null-terminated JSON configuration payload.
+ * @param err Output error details on parse or application failure.
+ * @return true on success, false otherwise.
+ */
 static bool dsp_engine_set_config_locked(dsp_engine_impl_t* impl,
                                          const char* json,
                                          audio_backend_error_t* err) {
@@ -219,7 +234,7 @@ static float dsp_engine_get_fader_volume(void* ctx, fader_t fader) {
               : 0.0f;
 }
 
-static bool dsp_engine_is_fader_muted(void* ctx, fader_t fader) {
+static bool dsp_engine_get_fader_mute(void* ctx, fader_t fader) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   return impl ? engine_state_manager_is_fader_muted(impl->state_mgr, fader)
               : false;
@@ -270,7 +285,27 @@ static bool dsp_engine_get_status(void* ctx, state_update_t* out_status) {
   return true;
 }
 
-static int dsp_engine_get_active_samplerate(void* ctx) {
+static processing_state_t dsp_engine_get_state(void* ctx) {
+  state_update_t status = {0};
+  if (dsp_engine_get_status(ctx, &status)) {
+    return status.state;
+  }
+  return PROCESSING_STATE_INACTIVE;
+}
+
+static bool dsp_engine_get_stop_reason(void* ctx,
+                                       processing_stop_reason_t* out_reason) {
+  if (!out_reason) return false;
+  state_update_t status = {0};
+  if (dsp_engine_get_status(ctx, &status)) {
+    *out_reason = status.stop_reason;
+    return true;
+  }
+  *out_reason = (processing_stop_reason_t){.type = STOP_REASON_NONE};
+  return false;
+}
+
+static int dsp_engine_get_capture_rate(void* ctx) {
   if (!ctx) return 0;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
@@ -580,27 +615,27 @@ static bool dsp_engine_check_stop_requested(
   return dsp_session_is_stop_requested(impl->session, out_reason);
 }
 
-static void dsp_engine_set_state_file(void* ctx, const char* path) {
+static void dsp_engine_set_state_file_path(void* ctx, const char* path) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   if (impl) engine_state_manager_set_state_file(impl->state_mgr, path);
 }
 
-static const char* dsp_engine_get_state_file(void* ctx) {
+static const char* dsp_engine_get_state_file_path(void* ctx) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   return impl ? engine_state_manager_get_state_file(impl->state_mgr) : NULL;
 }
 
-static bool dsp_engine_is_state_dirty(void* ctx) {
+static bool dsp_engine_get_state_file_updated(void* ctx) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
-  return impl ? engine_state_manager_is_dirty(impl->state_mgr) : false;
+  return impl ? !engine_state_manager_is_dirty(impl->state_mgr) : true;
 }
 
-static void dsp_engine_set_config_path(void* ctx, const char* path) {
+static void dsp_engine_set_config_file_path(void* ctx, const char* path) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   if (impl) engine_state_manager_set_config_path(impl->state_mgr, path);
 }
 
-static char* dsp_engine_get_config_path(void* ctx) {
+static char* dsp_engine_get_config_file_path(void* ctx) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   return impl ? engine_state_manager_get_config_path(impl->state_mgr) : NULL;
 }
@@ -662,13 +697,13 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->previous_config_json = NULL;
   atomic_init(&impl->config_in_progress, false);
 
-  // Directly bind VTable entries to unified static dsp_engine_...
-  // implementations
   impl->iface.ctx = impl;
   impl->iface.free = dsp_engine_free_impl;
   impl->iface.poll = dsp_engine_poll_impl;
   impl->iface.get_status = dsp_engine_get_status;
-  impl->iface.get_active_samplerate = dsp_engine_get_active_samplerate;
+  impl->iface.get_state = dsp_engine_get_state;
+  impl->iface.get_stop_reason = dsp_engine_get_stop_reason;
+  impl->iface.get_capture_rate = dsp_engine_get_capture_rate;
   impl->iface.get_processing_status = dsp_engine_get_processing_status;
   impl->iface.reset_clipped_samples = dsp_engine_reset_clipped_samples;
   impl->iface.get_active_config_json = dsp_engine_get_active_config_json;
@@ -680,15 +715,15 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->iface.set_config_json = dsp_engine_set_config_json;
   impl->iface.stop = dsp_engine_stop;
   impl->iface.get_fader_volume = dsp_engine_get_fader_volume;
-  impl->iface.is_fader_muted = dsp_engine_is_fader_muted;
+  impl->iface.get_fader_mute = dsp_engine_get_fader_mute;
   impl->iface.set_fader_volume = dsp_engine_set_fader_volume;
   impl->iface.set_fader_mute = dsp_engine_set_fader_mute;
   impl->iface.get_samples = dsp_engine_get_samples;
-  impl->iface.get_state_file = dsp_engine_get_state_file;
-  impl->iface.set_state_file = dsp_engine_set_state_file;
-  impl->iface.is_state_dirty = dsp_engine_is_state_dirty;
-  impl->iface.get_config_path = dsp_engine_get_config_path;
-  impl->iface.set_config_path = dsp_engine_set_config_path;
+  impl->iface.get_state_file_path = dsp_engine_get_state_file_path;
+  impl->iface.set_state_file_path = dsp_engine_set_state_file_path;
+  impl->iface.get_state_file_updated = dsp_engine_get_state_file_updated;
+  impl->iface.get_config_file_path = dsp_engine_get_config_file_path;
+  impl->iface.set_config_file_path = dsp_engine_set_config_file_path;
   impl->iface.set_log_level = dsp_engine_set_log_level;
 
   return &impl->iface;
