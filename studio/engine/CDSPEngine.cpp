@@ -5,31 +5,31 @@
 
 CDSPEngine::CDSPEngine() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_engine = dsp_engine_create();
+    m_engine = cdsp_engine_create();
 }
 
 CDSPEngine::~CDSPEngine() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        dsp_engine_free(m_engine);
+        cdsp_engine_free(m_engine);
         m_engine = nullptr;
     }
 }
 
-fader_t CDSPEngine::faderToCFader(Fader fader) {
+cdsp_fader_t CDSPEngine::faderToCFader(Fader fader) {
     switch (fader) {
     case Fader::Main:
-        return FADER_MAIN;
+        return CDSP_FADER_MAIN;
     case Fader::Aux1:
-        return FADER_AUX1;
+        return CDSP_FADER_AUX1;
     case Fader::Aux2:
-        return FADER_AUX2;
+        return CDSP_FADER_AUX2;
     case Fader::Aux3:
-        return FADER_AUX3;
+        return CDSP_FADER_AUX3;
     case Fader::Aux4:
-        return FADER_AUX4;
+        return CDSP_FADER_AUX4;
     }
-    return FADER_MAIN;
+    return CDSP_FADER_MAIN;
 }
 
 bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage) {
@@ -38,9 +38,9 @@ bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage)
     if (!m_engine)
         return false;
 
-    audio_backend_error_t err;
+    cdsp_backend_error_t err;
     memset(&err, 0, sizeof(err));
-    bool success = dsp_engine_set_config(m_engine, configJson.c_str(), &err);
+    bool success = cdsp_set_config_json(m_engine, configJson.c_str(), &err);
     if (!success) {
         errorMessage = err.message;
     }
@@ -50,28 +50,28 @@ bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage)
 void CDSPEngine::stop() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        dsp_engine_stop(m_engine);
+        cdsp_stop(m_engine);
     }
 }
 
 void CDSPEngine::setFaderVolume(Fader fader, float db, bool instant) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        dsp_engine_set_fader_volume(m_engine, faderToCFader(fader), db, instant);
+        cdsp_set_fader_volume(m_engine, faderToCFader(fader), db, instant);
     }
 }
 
 void CDSPEngine::setFaderMute(Fader fader, bool mute) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        dsp_engine_set_fader_mute(m_engine, faderToCFader(fader), mute);
+        cdsp_set_fader_mute(m_engine, faderToCFader(fader), mute);
     }
 }
 
 float CDSPEngine::getFaderVolume(Fader fader) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        return dsp_engine_get_fader_volume(m_engine, faderToCFader(fader));
+        return cdsp_get_fader_volume(m_engine, faderToCFader(fader));
     }
     return 0.0f;
 }
@@ -79,7 +79,7 @@ float CDSPEngine::getFaderVolume(Fader fader) const {
 bool CDSPEngine::isFaderMuted(Fader fader) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
-        return dsp_engine_is_fader_muted(m_engine, faderToCFader(fader));
+        return cdsp_is_fader_muted(m_engine, faderToCFader(fader));
     }
     return false;
 }
@@ -90,21 +90,21 @@ StateUpdate CDSPEngine::getStatus() const {
     if (!m_engine)
         return res;
 
-    state_update_t st = dsp_engine_get_status(m_engine);
-    switch (st.state) {
-    case PROCESSING_STATE_RUNNING:
+    cdsp_processing_state_t st = cdsp_get_state(m_engine);
+    switch (st) {
+    case CDSP_PROCESSING_STATE_RUNNING:
         res.state = ProcessingState::Running;
         break;
-    case PROCESSING_STATE_PAUSED:
+    case CDSP_PROCESSING_STATE_PAUSED:
         res.state = ProcessingState::Paused;
         break;
-    case PROCESSING_STATE_INACTIVE:
+    case CDSP_PROCESSING_STATE_INACTIVE:
         res.state = ProcessingState::Inactive;
         break;
-    case PROCESSING_STATE_STARTING:
+    case CDSP_PROCESSING_STATE_STARTING:
         res.state = ProcessingState::Starting;
         break;
-    case PROCESSING_STATE_STALLED:
+    case CDSP_PROCESSING_STATE_STALLED:
         res.state = ProcessingState::Stalled;
         break;
     default:
@@ -112,32 +112,34 @@ StateUpdate CDSPEngine::getStatus() const {
         break;
     }
 
-    switch (st.stop_reason.type) {
-    case STOP_REASON_NONE:
+    cdsp_stop_reason_t stop_reason;
+    cdsp_get_stop_reason(m_engine, &stop_reason);
+    switch (stop_reason.type) {
+    case CDSP_STOP_REASON_NONE:
         res.stopReason.type = StopReasonType::None;
         break;
-    case STOP_REASON_DONE:
+    case CDSP_STOP_REASON_DONE:
         res.stopReason.type = StopReasonType::Done;
         break;
-    case STOP_REASON_CAPTURE_ERROR:
+    case CDSP_STOP_REASON_CAPTURE_ERROR:
         res.stopReason.type = StopReasonType::CaptureError;
-        res.stopReason.message = st.stop_reason.message;
+        res.stopReason.message = stop_reason.message;
         break;
-    case STOP_REASON_PLAYBACK_ERROR:
+    case CDSP_STOP_REASON_PLAYBACK_ERROR:
         res.stopReason.type = StopReasonType::PlaybackError;
-        res.stopReason.message = st.stop_reason.message;
+        res.stopReason.message = stop_reason.message;
         break;
-    case STOP_REASON_CAPTURE_FORMAT_CHANGE:
+    case CDSP_STOP_REASON_CAPTURE_FORMAT_CHANGE:
         res.stopReason.type = StopReasonType::CaptureFormatChange;
-        res.stopReason.formatChangeRate = static_cast<int>(st.stop_reason.format_change_rate);
+        res.stopReason.formatChangeRate = static_cast<int>(stop_reason.format_change_rate);
         break;
-    case STOP_REASON_PLAYBACK_FORMAT_CHANGE:
+    case CDSP_STOP_REASON_PLAYBACK_FORMAT_CHANGE:
         res.stopReason.type = StopReasonType::PlaybackFormatChange;
-        res.stopReason.formatChangeRate = static_cast<int>(st.stop_reason.format_change_rate);
+        res.stopReason.formatChangeRate = static_cast<int>(stop_reason.format_change_rate);
         break;
-    case STOP_REASON_UNKNOWN_ERROR:
+    case CDSP_STOP_REASON_UNKNOWN_ERROR:
         res.stopReason.type = StopReasonType::UnknownError;
-        res.stopReason.message = st.stop_reason.message;
+        res.stopReason.message = stop_reason.message;
         break;
     default:
         res.stopReason.type = StopReasonType::None;
@@ -153,21 +155,22 @@ VuLevels CDSPEngine::getVuLevels() const {
     if (!m_engine)
         return res;
 
-    vu_levels_t levels = dsp_engine_get_vu_levels(m_engine);
-    if (levels.playback_rms && levels.playback_peak) {
-        for (size_t i = 0; i < levels.playback_channels; ++i) {
-            res.playback_rms.push_back(static_cast<float>(levels.playback_rms[i]));
-            res.playback_peak.push_back(static_cast<float>(levels.playback_peak[i]));
+    cdsp_vu_levels_t levels;
+    if (cdsp_get_vu_levels(m_engine, &levels)) {
+        if (levels.playback_rms && levels.playback_peak) {
+            for (size_t i = 0; i < levels.playback_channels; ++i) {
+                res.playback_rms.push_back(static_cast<float>(levels.playback_rms[i]));
+                res.playback_peak.push_back(static_cast<float>(levels.playback_peak[i]));
+            }
         }
-    }
-    if (levels.capture_rms && levels.capture_peak) {
-        for (size_t i = 0; i < levels.capture_channels; ++i) {
-            res.capture_rms.push_back(static_cast<float>(levels.capture_rms[i]));
-            res.capture_peak.push_back(static_cast<float>(levels.capture_peak[i]));
+        if (levels.capture_rms && levels.capture_peak) {
+            for (size_t i = 0; i < levels.capture_channels; ++i) {
+                res.capture_rms.push_back(static_cast<float>(levels.capture_rms[i]));
+                res.capture_peak.push_back(static_cast<float>(levels.capture_peak[i]));
+            }
         }
+        cdsp_free_vu_levels(&levels);
     }
-
-    dsp_engine_free_vu_levels(&levels);
     return res;
 }
 
@@ -177,15 +180,16 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
     if (!m_engine)
         return false;
 
-    spectrum_result_t res;
+    cdsp_spectrum_t res;
     memset(&res, 0, sizeof(res));
-    spectrum_status_t st = dsp_engine_get_spectrum(m_engine, isCapture, channel, minFreq, maxFreq, nBins, &res);
-    if (st != SPECTRUM_OK || !res.frequencies || !res.magnitudes || res.count == 0) {
+    bool success = cdsp_get_spectrum(m_engine, isCapture, channel, minFreq, maxFreq, nBins, &res);
+    if (!success || !res.frequencies || !res.magnitudes || res.count == 0) {
         return false;
     }
 
     outSpectrum.frequencies.assign(res.frequencies, res.frequencies + res.count);
     outSpectrum.magnitudes.assign(res.magnitudes, res.magnitudes + res.count);
+    cdsp_free_spectrum(&res);
     return true;
 }
 
@@ -194,9 +198,9 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
     if (!m_engine)
         return false;
 
-    audio_backend_error_t err;
+    cdsp_backend_error_t err;
     memset(&err, 0, sizeof(err));
-    audio_samples_t* res = dsp_engine_get_samples(m_engine, isCapture, nFrames, &err);
+    cdsp_audio_samples_t* res = cdsp_get_samples(m_engine, isCapture, nFrames, &err);
     if (!res)
         return false;
 
@@ -212,7 +216,7 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
         outSamples.channels.push_back(chSamples);
     }
 
-    dsp_engine_free_samples(res);
+    cdsp_free_samples(res);
     return true;
 }
 
@@ -220,14 +224,14 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<AudioDevice> result;
 
-    audio_device_t devs[32];
-    memset(devs, 0, sizeof(devs));
-    int count = dsp_engine_get_available_devices(backend.c_str(), input, devs, 32);
-    if (count > 0) {
-        int safeCount = std::min(count, 32);
-        for (int i = 0; i < safeCount; ++i) {
+    cdsp_device_info_t* devs = nullptr;
+    size_t count = 0;
+    bool success = cdsp_get_available_devices(backend.c_str(), input, &devs, &count);
+    if (success && count > 0 && devs) {
+        for (size_t i = 0; i < count; ++i) {
             result.push_back(AudioDevice{devs[i].name});
         }
+        free(devs);
     }
     return result;
 }
@@ -236,11 +240,11 @@ std::optional<AudioDeviceDescriptor>
 CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    device_error_t devErr;
+    cdsp_device_error_t devErr;
     memset(&devErr, 0, sizeof(devErr));
-    audio_device_descriptor_t* desc =
-        dsp_engine_get_device_capabilities(backend.c_str(), device.c_str(), isCapture, &devErr);
-    if (!desc)
+    cdsp_device_descriptor_t* desc = nullptr;
+    bool success = cdsp_get_device_capabilities(backend.c_str(), device.c_str(), isCapture, &desc, &devErr);
+    if (!success || !desc)
         return std::nullopt;
 
     AudioDeviceDescriptor res;
@@ -277,11 +281,11 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
         }
     }
 
-    dsp_engine_free_device_capabilities(desc);
+    cdsp_free_device_capabilities(desc);
     return res;
 }
 
 void CDSPEngine::setLogLevel(const std::string& levelStr) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    dsp_engine_set_log_level(log_level_from_string(levelStr.c_str()));
+    cdsp_set_log_level(levelStr.c_str());
 }

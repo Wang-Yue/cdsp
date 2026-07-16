@@ -2396,5 +2396,3 @@ std::string DSPConfiguration::toJsonString() const {
     QJsonDocument doc(toJsonObject());
     return doc.toJson(QJsonDocument::Compact).toStdString();
 }
-
-

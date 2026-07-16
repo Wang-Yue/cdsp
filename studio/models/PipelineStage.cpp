@@ -729,9 +729,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         return res;
 
     int leftCh = (stage.leftChannel < channelCount) ? stage.leftChannel : 0;
-    int rightCh = (stage.rightChannel < channelCount && stage.rightChannel != leftCh)
-                      ? stage.rightChannel
-                      : (channelCount > 1 ? 1 : 0);
+    int rightCh = (stage.rightChannel < channelCount && stage.rightChannel != leftCh) ? stage.rightChannel
+                                                                                      : (channelCount > 1 ? 1 : 0);
 
     if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
         stage.type == StageType::Crossfeed || stage.type == StageType::RACE || stage.type == StageType::SplitWidth) {
@@ -1003,10 +1002,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         m4to2.channelsIn = channelCount + 2;
         m4to2.channelsOut = channelCount;
         m4to2.mapping.resize(channelCount);
-        m4to2.mapping[leftCh] = MixerMapping{
-            leftCh, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
-        m4to2.mapping[rightCh] = MixerMapping{
-            rightCh, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
+        m4to2.mapping[leftCh] =
+            MixerMapping{leftCh, {MixerSource{0, 0.0, false}, makeMixerSource(2, c1), makeMixerSource(3, c2)}};
+        m4to2.mapping[rightCh] =
+            MixerMapping{rightCh, {MixerSource{1, 0.0, false}, makeMixerSource(2, c2), makeMixerSource(3, c1)}};
         for (size_t idx = 0; idx < otherChannels.size(); ++idx) {
             int ch = otherChannels[idx];
             m4to2.mapping[ch] = MixerMapping{ch, {MixerSource{static_cast<int>(idx + 4), 0.0, false}}};

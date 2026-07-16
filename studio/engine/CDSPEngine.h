@@ -12,7 +12,14 @@
 #include <vector>
 
 extern "C" {
-#include "Engine/dsp_engine.h"
+#include "Public/cdsp_pub_types.h"
+#include "Public/config.h"
+#include "Public/devices.h"
+#include "Public/general.h"
+#include "Public/processing.h"
+#include "Public/signal_levels.h"
+#include "Public/spectrum.h"
+#include "Public/volume.h"
 }
 
 class CDSPEngine {
@@ -51,7 +58,7 @@ private:
     dsp_engine_t* m_engine = nullptr;
     mutable std::mutex m_mutex;
 
-    static fader_t faderToCFader(Fader fader);
+    static cdsp_fader_t faderToCFader(Fader fader);
 };
 
 #endif // CDSP_ENGINE_H
