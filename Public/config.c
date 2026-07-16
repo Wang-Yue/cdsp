@@ -192,20 +192,29 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
                                  int extra_samples_override,
                                  cdsp_backend_error_t* out_err) {
   if (!engine || !path) return false;
-  char* json = read_file_to_str(path);
-  if (!json) {
+  char* raw_content = read_file_to_str(path);
+  if (!raw_content) {
     if (out_err)
       snprintf(out_err->message, sizeof(out_err->message),
                "Could not read file %s", path);
     return false;
   }
 
-  cJSON* root = cJSON_Parse(json);
-  free(json);
+  const char* p = raw_content;
+  while (isspace((unsigned char)*p)) p++;
+  cJSON* root = NULL;
+  if (*p == '{') {
+    root = cJSON_Parse(raw_content);
+  } else {
+    char* err_msg = NULL;
+    root = cdsp_yaml_to_json(raw_content, &err_msg);
+    if (err_msg) free(err_msg);
+  }
+  free(raw_content);
   if (!root) {
     if (out_err)
       snprintf(out_err->message, sizeof(out_err->message),
-               "Could not parse JSON config");
+               "Could not parse config file format");
     return false;
   }
 
@@ -448,13 +457,20 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
 bool cdsp_validate_config_file(const char* path, char** out_result,
                                bool* is_error) {
   if (!path) return false;
-  char* json = read_file_to_str(path);
-  if (!json) {
+  char* file_str = read_file_to_str(path);
+  if (!file_str) {
     if (out_result) *out_result = strdup("Could not read file");
     if (is_error) *is_error = true;
     return false;
   }
-  bool ok = cdsp_validate_config_json(json, out_result, is_error);
-  free(json);
+  const char* p = file_str;
+  while (isspace((unsigned char)*p)) p++;
+  bool ok = false;
+  if (*p == '{') {
+    ok = cdsp_validate_config_json(file_str, out_result, is_error);
+  } else {
+    ok = cdsp_validate_config_yaml(file_str, out_result, is_error);
+  }
+  free(file_str);
   return ok;
 }
