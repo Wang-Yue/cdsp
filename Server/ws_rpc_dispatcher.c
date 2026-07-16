@@ -26,100 +26,6 @@ static inline bool ws_engine_get_status(dsp_engine_t* engine,
   return true;
 }
 
-static inline int ws_engine_get_active_samplerate(dsp_engine_t* engine) {
-  return cdsp_get_capture_rate(engine);
-}
-
-static inline bool ws_engine_get_processing_status(
-    dsp_engine_t* engine, double* out_rate_adjust, double* out_buffer_level,
-    uint64_t* out_clipped_samples, double* out_processing_load,
-    double* out_resampler_load) {
-  return cdsp_get_processing_status(engine, out_rate_adjust, out_buffer_level,
-                                    out_clipped_samples, out_processing_load,
-                                    out_resampler_load);
-}
-
-static inline void ws_engine_reset_clipped_samples(dsp_engine_t* engine) {
-  cdsp_reset_clipped_samples(engine);
-}
-
-static inline bool ws_engine_get_active_config_json(dsp_engine_t* engine,
-                                                    char** out_json) {
-  return cdsp_get_active_config_json(engine, out_json);
-}
-
-static inline bool ws_engine_get_previous_config_json(dsp_engine_t* engine,
-                                                      char** out_json) {
-  return cdsp_get_previous_config_json(engine, out_json);
-}
-
-static inline bool ws_engine_get_vu_levels(dsp_engine_t* engine,
-                                           cdsp_vu_levels_t* out_vu) {
-  if (!engine || !out_vu) return false;
-  return cdsp_get_vu_levels(engine, out_vu);
-}
-
-static inline bool ws_engine_get_available_devices(
-    dsp_engine_t* engine, const char* backend, bool is_input,
-    cdsp_device_info_t** out_devices, size_t* out_count) {
-  (void)engine;
-  return cdsp_get_available_devices(backend, is_input, out_devices, out_count);
-}
-
-static inline bool ws_engine_get_spectrum(dsp_engine_t* engine, bool is_capture,
-                                          uint32_t channel, double min_freq,
-                                          double max_freq, uint32_t n_bins,
-                                          cdsp_spectrum_t* out_spec) {
-  return cdsp_get_spectrum(engine, is_capture, channel, min_freq, max_freq,
-                           n_bins, out_spec);
-}
-
-static inline bool ws_engine_set_config_json(dsp_engine_t* engine,
-                                             const char* json_str,
-                                             cdsp_backend_error_t* out_err) {
-  return cdsp_set_config_json(engine, json_str, out_err);
-}
-
-static inline void ws_engine_stop(dsp_engine_t* engine) { cdsp_stop(engine); }
-
-static inline float ws_engine_get_fader_volume(dsp_engine_t* engine,
-                                               cdsp_fader_t fader) {
-  return cdsp_get_fader_volume(engine, fader);
-}
-
-static inline bool ws_engine_is_fader_muted(dsp_engine_t* engine,
-                                            cdsp_fader_t fader) {
-  return cdsp_get_fader_mute(engine, fader);
-}
-
-static inline void ws_engine_set_fader_volume(dsp_engine_t* engine,
-                                              cdsp_fader_t fader, float db,
-                                              bool instant) {
-  cdsp_set_fader_volume(engine, fader, db, instant);
-}
-
-static inline void ws_engine_set_fader_mute(dsp_engine_t* engine,
-                                            cdsp_fader_t fader, bool mute) {
-  cdsp_set_fader_mute(engine, fader, mute);
-}
-
-static inline const char* ws_engine_get_state_file(dsp_engine_t* engine) {
-  return cdsp_get_state_file_path(engine);
-}
-
-static inline bool ws_engine_is_state_dirty(dsp_engine_t* engine) {
-  return !cdsp_get_state_file_updated(engine);
-}
-
-static inline char* ws_engine_get_config_path(dsp_engine_t* engine) {
-  return cdsp_get_config_file_path(engine);
-}
-
-static inline void ws_engine_set_config_path(dsp_engine_t* engine,
-                                             const char* path) {
-  cdsp_set_config_file_path(engine, path);
-}
-
 cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason) {
   char reason_str[512] = "None";
   if (reason) {
@@ -430,188 +336,6 @@ static const char* get_websocket_device_error_key(
   }
 }
 
-static char* server_read_file_to_string(const char* path) {
-  FILE* fp = fopen(path, "rb");
-  if (!fp) return NULL;
-  fseek(fp, 0, SEEK_END);
-  long len = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-  if (len < 0) {
-    fclose(fp);
-    return NULL;
-  }
-  char* buf = (char*)calloc((size_t)len + 1, sizeof(char));
-  if (!buf) {
-    fclose(fp);
-    return NULL;
-  }
-  size_t read_bytes = fread(buf, 1, (size_t)len, fp);
-  buf[read_bytes] = '\0';
-  fclose(fp);
-  return buf;
-}
-
-static bool extract_json_string_value(const char* json, const char* key,
-                                      char* out_buf, size_t max_len) {
-  if (!json || !key || !out_buf || max_len == 0) return false;
-  cJSON* root = cJSON_Parse(json);
-  if (!root) return false;
-  cJSON* item = cJSON_GetObjectItemCaseSensitive(root, key);
-  bool success = false;
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(out_buf, item->valuestring, max_len - 1);
-    out_buf[max_len - 1] = '\0';
-    success = true;
-  }
-  cJSON_Delete(root);
-  return success;
-}
-
-static cJSON* cjson_locate_pointer(cJSON* root, const char* pointer,
-                                   cJSON** out_parent, const char** out_key,
-                                   int* out_index) {
-  if (!root || !pointer) return NULL;
-  const char* ptr = pointer;
-  if (*ptr == '/') ptr++;
-  cJSON* curr = root;
-  cJSON* parent = NULL;
-  const char* last_key = NULL;
-  int last_idx = -1;
-
-  while (*ptr && curr) {
-    char segment[128];
-    size_t seg_len = 0;
-    while (*ptr && *ptr != '/' && seg_len < sizeof(segment) - 1) {
-      segment[seg_len++] = *ptr++;
-    }
-    segment[seg_len] = '\0';
-    if (*ptr == '/') ptr++;
-
-    parent = curr;
-    if (cJSON_IsObject(curr)) {
-      cJSON* child = curr->child;
-      curr = NULL;
-      last_key = NULL;
-      while (child) {
-        if (strcmp(child->string, segment) == 0) {
-          curr = child;
-          last_key = child->string;
-          break;
-        }
-        child = child->next;
-      }
-      last_idx = -1;
-    } else if (cJSON_IsArray(curr)) {
-      char* endptr = NULL;
-      int idx = (int)strtol(segment, &endptr, 10);
-      if (endptr == segment || *endptr != '\0') return NULL;
-      curr = cJSON_GetArrayItem(curr, idx);
-      last_idx = idx;
-      last_key = NULL;
-    } else {
-      return NULL;
-    }
-  }
-
-  if (out_parent) *out_parent = parent;
-  if (out_key) *out_key = last_key;
-  if (out_index) *out_index = last_idx;
-  return curr;
-}
-
-static bool server_get_value_at_pointer(const char* json, const char* pointer,
-                                        char* out_val, size_t max_len) {
-  cJSON* root = cJSON_Parse(json);
-  if (!root) return false;
-  cJSON* node = cjson_locate_pointer(root, pointer, NULL, NULL, NULL);
-  if (!node) {
-    cJSON_Delete(root);
-    return false;
-  }
-  char* printed = cJSON_PrintUnformatted(node);
-  if (printed) {
-    strncpy(out_val, printed, max_len - 1);
-    out_val[max_len - 1] = '\0';
-    free(printed);
-    cJSON_Delete(root);
-    return true;
-  }
-  cJSON_Delete(root);
-  return false;
-}
-
-static char* server_set_value_at_pointer_str(const char* json,
-                                             const char* pointer,
-                                             const char* new_val_str) {
-  cJSON* root = cJSON_Parse(json);
-  if (!root) return NULL;
-
-  cJSON* parent = NULL;
-  const char* key = NULL;
-  int idx = -1;
-  cJSON* target = cjson_locate_pointer(root, pointer, &parent, &key, &idx);
-  (void)target;
-  if (!parent) {
-    cJSON_Delete(root);
-    return NULL;
-  }
-
-  cJSON* new_node = cJSON_Parse(new_val_str);
-  if (!new_node) {
-    cJSON_Delete(root);
-    return NULL;
-  }
-
-  if (key) {
-    cJSON_ReplaceItemInObject(parent, key, new_node);
-  } else if (idx != -1) {
-    cJSON_ReplaceItemInArray(parent, idx, new_node);
-  } else {
-    cJSON_Delete(new_node);
-    cJSON_Delete(root);
-    return NULL;
-  }
-
-  char* updated_json = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  return updated_json;
-}
-
-static void cjson_merge_patch(cJSON* target, const cJSON* patch) {
-  if (!target || !patch) return;
-  if (!cJSON_IsObject(target) || !cJSON_IsObject(patch)) return;
-
-  cJSON* patch_child = patch->child;
-  while (patch_child) {
-    cJSON* target_child =
-        cJSON_GetObjectItemCaseSensitive(target, patch_child->string);
-    if (cJSON_IsNull(patch_child)) {
-      if (target_child) {
-        cJSON_DeleteItemFromObject(target, patch_child->string);
-      }
-    } else if (cJSON_IsObject(patch_child)) {
-      if (target_child && cJSON_IsObject(target_child)) {
-        cjson_merge_patch(target_child, patch_child);
-      } else {
-        cJSON* duplicated = cJSON_Duplicate(patch_child, true);
-        if (target_child) {
-          cJSON_ReplaceItemInObject(target, patch_child->string, duplicated);
-        } else {
-          cJSON_AddItemToObject(target, patch_child->string, duplicated);
-        }
-      }
-    } else {
-      cJSON* duplicated = cJSON_Duplicate(patch_child, true);
-      if (target_child) {
-        cJSON_ReplaceItemInObject(target, patch_child->string, duplicated);
-      } else {
-        cJSON_AddItemToObject(target, patch_child->string, duplicated);
-      }
-    }
-    patch_child = patch_child->next;
-  }
-}
-
 static char* format_device_descriptor(const cdsp_device_descriptor_t* desc) {
   if (!desc) return strdup("null");
   cJSON* root = cJSON_CreateObject();
@@ -685,14 +409,12 @@ static bool server_handle_adjust_volume_fader(websocket_server_t* server,
     return true;
   }
 
-  double current = ws_engine_get_fader_volume(server->engine, fader);
+  double current = cdsp_get_fader_volume(server->engine, fader);
   double new_vol = current + delta;
   if (new_vol < min_vol) new_vol = min_vol;
   if (new_vol > max_vol) new_vol = max_vol;
 
-  if (1) {
-    ws_engine_set_fader_volume(server->engine, fader, (float)new_vol, false);
-  }
+  cdsp_set_fader_volume(server->engine, fader, (float)new_vol, false);
 
   if (strcmp(cmd_name, "AdjustVolume") == 0) {
     reply_ok(cmd_name, cJSON_CreateNumber(new_vol), ds);
@@ -714,8 +436,7 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
       status.state == CDSP_PROCESSING_STATE_RUNNING) {
-    double vol =
-        (1) ? ws_engine_get_fader_volume(server->engine, CDSP_FADER_MAIN) : 0.0;
+    double vol = cdsp_get_fader_volume(server->engine, CDSP_FADER_MAIN);
     reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
@@ -733,9 +454,7 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
-      if (1) {
-        ws_engine_set_fader_volume(server->engine, CDSP_FADER_MAIN, vol, false);
-      }
+      cdsp_set_fader_volume(server->engine, CDSP_FADER_MAIN, (float)vol, false);
       reply_ok(cmd_name, NULL, ds);
     } else {
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
@@ -757,8 +476,7 @@ static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
       status.state == CDSP_PROCESSING_STATE_RUNNING) {
-    bool mute =
-        (1) ? ws_engine_is_fader_muted(server->engine, CDSP_FADER_MAIN) : false;
+    bool mute = cdsp_get_fader_mute(server->engine, CDSP_FADER_MAIN);
     reply_ok(cmd_name, cJSON_CreateBool(mute), ds);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
@@ -776,9 +494,7 @@ static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
-      if (1) {
-        ws_engine_set_fader_mute(server->engine, CDSP_FADER_MAIN, mute);
-      }
+      cdsp_set_fader_mute(server->engine, CDSP_FADER_MAIN, mute);
       reply_ok(cmd_name, NULL, ds);
     } else {
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
@@ -799,11 +515,8 @@ static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
       status.state == CDSP_PROCESSING_STATE_RUNNING) {
-    bool was_muted =
-        (1) ? ws_engine_is_fader_muted(server->engine, CDSP_FADER_MAIN) : false;
-    if (1) {
-      ws_engine_set_fader_mute(server->engine, CDSP_FADER_MAIN, !was_muted);
-    }
+    bool was_muted = cdsp_get_fader_mute(server->engine, CDSP_FADER_MAIN);
+    cdsp_set_fader_mute(server->engine, CDSP_FADER_MAIN, !was_muted);
     reply_ok(cmd_name, cJSON_CreateBool(!was_muted), ds);
   } else {
     reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
@@ -822,12 +535,8 @@ static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
     cJSON* arr = cJSON_CreateArray();
     for (int i = 0; i < CDSP_FADER_COUNT; i++) {
       cJSON* obj = cJSON_CreateObject();
-      double vol =
-          (1) ? ws_engine_get_fader_volume(server->engine, (cdsp_fader_t)i)
-              : 0.0;
-      bool mute =
-          (1) ? ws_engine_is_fader_muted(server->engine, (cdsp_fader_t)i)
-              : false;
+      double vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)i);
+      bool mute = cdsp_get_fader_mute(server->engine, (cdsp_fader_t)i);
       cJSON_AddNumberToObject(obj, "volume", vol);
       cJSON_AddBoolToObject(obj, "mute", mute);
       cJSON_AddItemToArray(arr, obj);
@@ -849,9 +558,7 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        double vol =
-            (1) ? ws_engine_get_fader_volume(server->engine, (cdsp_fader_t)idx)
-                : 0.0;
+        double vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)idx);
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(vol));
@@ -893,10 +600,8 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        if (1) {
-          ws_engine_set_fader_volume(server->engine, (cdsp_fader_t)idx, vol,
-                                     false);
-        }
+        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
+                              false);
         reply_ok(cmd_name, NULL, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -936,10 +641,8 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        if (1) {
-          ws_engine_set_fader_volume(server->engine, (cdsp_fader_t)idx, vol,
-                                     true);
-        }
+        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
+                              true);
         reply_ok(cmd_name, NULL, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -967,9 +670,7 @@ static void handle_cmd_get_fader_mute(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        bool mute =
-            (1) ? ws_engine_is_fader_muted(server->engine, (cdsp_fader_t)idx)
-                : false;
+        bool mute = cdsp_get_fader_mute(server->engine, (cdsp_fader_t)idx);
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
         cJSON_AddItemToArray(arr, cJSON_CreateBool(mute));
@@ -1011,9 +712,7 @@ static void handle_cmd_set_fader_mute(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        if (1) {
-          ws_engine_set_fader_mute(server->engine, (cdsp_fader_t)idx, mute);
-        }
+        cdsp_set_fader_mute(server->engine, (cdsp_fader_t)idx, mute);
         reply_ok(cmd_name, NULL, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -1040,13 +739,8 @@ static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
         ws_engine_get_status(server->engine, &status) &&
         status.state == CDSP_PROCESSING_STATE_RUNNING) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        bool was_muted =
-            (1) ? ws_engine_is_fader_muted(server->engine, (cdsp_fader_t)idx)
-                : false;
-        if (1) {
-          ws_engine_set_fader_mute(server->engine, (cdsp_fader_t)idx,
-                                   !was_muted);
-        }
+        bool was_muted = cdsp_get_fader_mute(server->engine, (cdsp_fader_t)idx);
+        cdsp_set_fader_mute(server->engine, (cdsp_fader_t)idx, !was_muted);
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
         cJSON_AddItemToArray(arr, cJSON_CreateBool(!was_muted));
@@ -1266,10 +960,9 @@ static void handle_cmd_get_config_file_path(websocket_server_t* server,
                                             dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  char* path = NULL;
-  if (server && server->engine && 1) {
-    path = ws_engine_get_config_path(server->engine);
-  }
+  char* path = (server && server->engine)
+                   ? cdsp_get_config_file_path(server->engine)
+                   : NULL;
   if (path) {
     reply_ok(cmd_name, cJSON_CreateString(path), ds);
     free(path);
@@ -1284,8 +977,8 @@ static void handle_cmd_get_previous_config(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   char* prev = NULL;
-  if (server && server->engine && 1) {
-    ws_engine_get_previous_config_json(server->engine, &prev);
+  if (server && server->engine) {
+    cdsp_get_previous_config_yaml(server->engine, &prev);
   }
   if (prev) {
     reply_ok(cmd_name, cJSON_CreateString(prev), ds);
@@ -1300,10 +993,9 @@ static void handle_cmd_get_state_file_path(websocket_server_t* server,
                                            cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  const char* path = NULL;
-  if (server && server->engine && 1) {
-    path = ws_engine_get_state_file(server->engine);
-  }
+  const char* path = (server && server->engine)
+                         ? cdsp_get_state_file_path(server->engine)
+                         : NULL;
   if (path) {
     reply_ok(cmd_name, cJSON_CreateString(path), ds);
   } else {
@@ -1317,8 +1009,8 @@ static void handle_cmd_get_state_file_updated(websocket_server_t* server,
                                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  bool updated = server && server->engine && 1
-                     ? !ws_engine_is_state_dirty(server->engine)
+  bool updated = (server && server->engine)
+                     ? cdsp_get_state_file_updated(server->engine)
                      : true;
   reply_ok(cmd_name, cJSON_CreateBool(updated), ds);
 }
@@ -1328,23 +1020,18 @@ static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
                                   dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  char* json = NULL;
-  if (server && server->engine && 1) {
-    ws_engine_get_active_config_json(server->engine, &json);
-  }
-  if (!json) {
-    char* path = NULL;
-    if (server && server->engine && 1) {
-      path = ws_engine_get_config_path(server->engine);
-    }
-    if (path) {
-      json = server_read_file_to_string(path);
-      free(path);
+  char* config_str = NULL;
+  bool ok = false;
+  if (server && server->engine) {
+    if (strcmp(cmd_name, "GetConfigYaml") == 0) {
+      ok = cdsp_get_active_config_yaml(server->engine, &config_str);
+    } else {
+      ok = cdsp_get_active_config_json(server->engine, &config_str);
     }
   }
-  if (json) {
-    reply_ok(cmd_name, cJSON_CreateString(json), ds);
-    free(json);
+  if (ok && config_str) {
+    reply_ok(cmd_name, cJSON_CreateString(config_str), ds);
+    free(config_str);
   } else {
     cJSON* err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "InvalidRequestError", "No active config");
@@ -1352,39 +1039,19 @@ static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
   }
 }
 
-static void handle_get_config_metadata_helper(websocket_server_t* server,
-                                              const char* cmd_name,
-                                              const char* key,
-                                              dyn_string_t* ds) {
-  char* json = NULL;
-  if (server && server->engine && 1) {
-    ws_engine_get_active_config_json(server->engine, &json);
-  }
-  if (!json) {
-    char* path = NULL;
-    if (server && server->engine && 1) {
-      path = ws_engine_get_config_path(server->engine);
-    }
-    if (path) {
-      json = server_read_file_to_string(path);
-      free(path);
-    }
-  }
-  char val_str[1024] = "";
-  if (json && extract_json_string_value(json, key, val_str, sizeof(val_str))) {
-    reply_ok(cmd_name, cJSON_CreateString(val_str), ds);
-  } else {
-    reply_ok(cmd_name, cJSON_CreateNull(), ds);
-  }
-  if (json) free(json);
-}
-
 static void handle_cmd_get_config_title(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  handle_get_config_metadata_helper(server, cmd_name, "title", ds);
+  char* title =
+      (server && server->engine) ? cdsp_get_config_title(server->engine) : NULL;
+  if (title) {
+    reply_ok(cmd_name, cJSON_CreateString(title), ds);
+    free(title);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
 }
 
 static void handle_cmd_get_config_description(websocket_server_t* server,
@@ -1393,7 +1060,15 @@ static void handle_cmd_get_config_description(websocket_server_t* server,
                                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  handle_get_config_metadata_helper(server, cmd_name, "description", ds);
+  char* desc = (server && server->engine)
+                   ? cdsp_get_config_description(server->engine)
+                   : NULL;
+  if (desc) {
+    reply_ok(cmd_name, cJSON_CreateString(desc), ds);
+    free(desc);
+  } else {
+    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+  }
 }
 
 static void handle_cmd_reload(websocket_server_t* server, int client_idx,
@@ -1401,36 +1076,14 @@ static void handle_cmd_reload(websocket_server_t* server, int client_idx,
                               dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  char* path = NULL;
-  if (server && server->engine && 1) {
-    path = ws_engine_get_config_path(server->engine);
-  }
-  if (path) {
-    char* json = server_read_file_to_string(path);
-    free(path);
-    if (json) {
-      cdsp_backend_error_t err = {0};
-      bool ok = server && server->engine && 1 &&
-                ws_engine_set_config_json(server->engine, json, &err);
-      if (ok) {
-        reply_ok(cmd_name, NULL, ds);
-      } else {
-        cJSON* err_obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                                err.message);
-        reply_error(cmd_name, NULL, err_obj, ds);
-      }
-      free(json);
-    } else {
-      cJSON* err_obj = cJSON_CreateObject();
-      cJSON_AddStringToObject(err_obj, "ConfigReadError",
-                              "Could not read config file");
-      reply_error(cmd_name, NULL, err_obj, ds);
-    }
+  cdsp_backend_error_t err = {0};
+  if (server && server->engine && cdsp_reload_config(server->engine, &err)) {
+    reply_ok(cmd_name, NULL, ds);
   } else {
     cJSON* err_obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(err_obj, "InvalidRequestError",
-                            "No config file path set");
+    cJSON_AddStringToObject(
+        err_obj, get_websocket_error_key(err.type),
+        err.message[0] ? err.message : "Failed to reload config");
     reply_error(cmd_name, NULL, err_obj, ds);
   }
 }
@@ -1440,8 +1093,8 @@ static void handle_cmd_stop(websocket_server_t* server, int client_idx,
                             dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  if (server && server->engine && 1) {
-    ws_engine_stop(server->engine);
+  if (server && server->engine) {
+    cdsp_stop(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1451,8 +1104,8 @@ static void handle_cmd_exit(websocket_server_t* server, int client_idx,
                             dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  if (server && server->engine && 1) {
-    ws_engine_stop(server->engine);
+  if (server && server->engine) {
+    cdsp_stop(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1464,8 +1117,8 @@ static void handle_cmd_set_config_file_path(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* path = arg->valuestring;
-    if (server && server->engine && 1) {
-      ws_engine_set_config_path(server->engine, path);
+    if (server && server->engine) {
+      cdsp_set_config_file_path(server->engine, path);
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
@@ -1483,8 +1136,8 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* new_json = arg->valuestring;
     cdsp_backend_error_t err = {0};
-    bool ok = server && server->engine && 1 &&
-              ws_engine_set_config_json(server->engine, new_json, &err);
+    bool ok = server && server->engine &&
+              cdsp_set_config_json(server->engine, new_json, &err);
     if (ok) {
       reply_ok(cmd_name, NULL, ds);
     } else {
@@ -1532,29 +1185,17 @@ static void handle_cmd_get_config_value(websocket_server_t* server,
   (void)client_idx;
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* pointer = arg->valuestring;
-    char* json = NULL;
-    if (server && server->engine && 1) {
-      ws_engine_get_active_config_json(server->engine, &json);
-    }
-    if (!json) {
-      char* path = NULL;
-      if (server && server->engine && 1) {
-        path = ws_engine_get_config_path(server->engine);
-      }
-      if (path) {
-        json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    char val_buf[2048] = "";
-    if (json &&
-        server_get_value_at_pointer(json, pointer, val_buf, sizeof(val_buf))) {
-      cJSON* parsed_val = cJSON_Parse(val_buf);
+    char* val = (server && server->engine)
+                    ? cdsp_get_config_value(server->engine, pointer)
+                    : NULL;
+    if (val) {
+      cJSON* parsed_val = cJSON_Parse(val);
       if (parsed_val) {
         reply_ok(cmd_name, parsed_val, ds);
       } else {
-        reply_ok(cmd_name, cJSON_CreateString(val_buf), ds);
+        reply_ok(cmd_name, cJSON_CreateString(val), ds);
       }
+      free(val);
     } else {
       cJSON* err = cJSON_CreateObject();
       char msg[256];
@@ -1562,7 +1203,6 @@ static void handle_cmd_get_config_value(websocket_server_t* server,
       cJSON_AddStringToObject(err, "InvalidRequestError", msg);
       reply_error(cmd_name, NULL, err, ds);
     }
-    if (json) free(json);
   } else {
     cJSON* err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "InvalidRequestError",
@@ -1576,7 +1216,7 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   char pointer[256] = "";
-  char* trimmed_val = NULL;
+  char* val_json = NULL;
   if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
     cJSON* p_node = cJSON_GetArrayItem(arg, 0);
     cJSON* v_node = cJSON_GetArrayItem(arg, 1);
@@ -1584,7 +1224,7 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
       strncpy(pointer, p_node->valuestring, sizeof(pointer) - 1);
     }
     if (v_node) {
-      trimmed_val = cJSON_PrintUnformatted(v_node);
+      val_json = cJSON_PrintUnformatted(v_node);
     }
   } else if (arg && cJSON_IsObject(arg)) {
     cJSON* p_node = cJSON_GetObjectItemCaseSensitive(arg, "pointer");
@@ -1593,55 +1233,22 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
       strncpy(pointer, p_node->valuestring, sizeof(pointer) - 1);
     }
     if (v_node) {
-      trimmed_val = cJSON_PrintUnformatted(v_node);
+      val_json = cJSON_PrintUnformatted(v_node);
     }
   }
-  if (pointer[0] != '\0' && trimmed_val) {
-    char* active_json = NULL;
-    if (server && server->engine && 1) {
-      ws_engine_get_active_config_json(server->engine, &active_json);
-    }
-    if (!active_json) {
-      char* path = NULL;
-      if (server && server->engine && 1) {
-        path = ws_engine_get_config_path(server->engine);
-      }
-      if (path) {
-        active_json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    if (active_json) {
-      char* updated_json =
-          server_set_value_at_pointer_str(active_json, pointer, trimmed_val);
-      if (updated_json) {
-        cdsp_backend_error_t err = {0};
-        bool ok = server && server->engine && 1 &&
-                  ws_engine_set_config_json(server->engine, updated_json, &err);
-        if (ok) {
-          reply_ok(cmd_name, NULL, ds);
-        } else {
-          cJSON* err_obj = cJSON_CreateObject();
-          cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                                  err.message);
-          reply_error(cmd_name, NULL, err_obj, ds);
-        }
-        free(updated_json);
-      } else {
-        cJSON* err = cJSON_CreateObject();
-        char msg[256];
-        snprintf(msg, sizeof(msg), "Path not found: %s", pointer);
-        cJSON_AddStringToObject(err, "InvalidRequestError", msg);
-        reply_error(cmd_name, NULL, err, ds);
-      }
-      free(active_json);
+  if (pointer[0] != '\0' && val_json) {
+    cdsp_backend_error_t err = {0};
+    bool ok = server && server->engine &&
+              cdsp_set_config_value(server->engine, pointer, val_json, &err);
+    if (ok) {
+      reply_ok(cmd_name, NULL, ds);
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidRequestError",
-                              "No active config to modify");
-      reply_error(cmd_name, NULL, err, ds);
+      cJSON* err_obj = cJSON_CreateObject();
+      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                              err.message[0] ? err.message : "Path not found");
+      reply_error(cmd_name, NULL, err_obj, ds);
     }
-    free(trimmed_val);
+    free(val_json);
   } else {
     cJSON* err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "InvalidRequestError",
@@ -1655,57 +1262,24 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
                                     dyn_string_t* ds) {
   (void)client_idx;
   if (arg && cJSON_IsObject(arg)) {
-    char* active_json = NULL;
-    if (server && server->engine && 1) {
-      ws_engine_get_active_config_json(server->engine, &active_json);
-    }
-    if (!active_json) {
-      char* path = NULL;
-      if (server && server->engine && 1) {
-        path = ws_engine_get_config_path(server->engine);
-      }
-      if (path) {
-        active_json = server_read_file_to_string(path);
-        free(path);
-      }
-    }
-    if (active_json) {
-      cJSON* target_root = cJSON_Parse(active_json);
-      if (target_root) {
-        cjson_merge_patch(target_root, arg);
-        char* target_json = cJSON_PrintUnformatted(target_root);
-        if (target_json) {
-          cdsp_backend_error_t err = {0};
-          bool ok =
-              server && server->engine && 1 &&
-              ws_engine_set_config_json(server->engine, target_json, &err);
-          if (ok) {
-            reply_ok(cmd_name, NULL, ds);
-          } else {
-            cJSON* err_obj = cJSON_CreateObject();
-            cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                                    err.message);
-            reply_error(cmd_name, NULL, err_obj, ds);
-          }
-          free(target_json);
-        } else {
-          cJSON* err = cJSON_CreateObject();
-          cJSON_AddStringToObject(err, "InvalidRequestError",
-                                  "Failed to format target JSON");
-          reply_error(cmd_name, NULL, err, ds);
-        }
-        cJSON_Delete(target_root);
+    char* patch_str = cJSON_PrintUnformatted(arg);
+    if (patch_str) {
+      cdsp_backend_error_t err = {0};
+      bool ok = server && server->engine &&
+                cdsp_patch_config(server->engine, patch_str, &err);
+      if (ok) {
+        reply_ok(cmd_name, NULL, ds);
       } else {
-        cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "InvalidRequestError",
-                                "Failed to parse target JSON");
-        reply_error(cmd_name, NULL, err, ds);
+        cJSON* err_obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
+                                err.message[0] ? err.message : "Invalid patch");
+        reply_error(cmd_name, NULL, err_obj, ds);
       }
-      free(active_json);
+      free(patch_str);
     } else {
       cJSON* err = cJSON_CreateObject();
       cJSON_AddStringToObject(err, "InvalidRequestError",
-                              "No active config to patch");
+                              "Could not format patch JSON");
       reply_error(cmd_name, NULL, err, ds);
     }
   } else {
@@ -1801,8 +1375,7 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
                                             bool is_capture, bool is_rms,
                                             dyn_string_t* ds) {
   cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && 1 &&
-      ws_engine_get_vu_levels(server->engine, &vu)) {
+  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
     double* arr = NULL;
     size_t count = 0;
     if (is_capture) {
@@ -2015,8 +1588,7 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && 1 &&
-      ws_engine_get_vu_levels(server->engine, &vu)) {
+  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(
         root, "playback_rms",
@@ -2190,33 +1762,26 @@ static void handle_cmd_get_channel_labels(websocket_server_t* server,
                                           cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  char* json = NULL;
-  if (server && server->engine && 1) {
-    ws_engine_get_active_config_json(server->engine, &json);
-  }
-  if (!json) {
-    char* path = NULL;
-    if (server && server->engine && 1) {
-      path = ws_engine_get_config_path(server->engine);
-    }
-    if (path) {
-      json = server_read_file_to_string(path);
-      free(path);
-    }
-  }
-  char play_labels[2048] = "null";
-  char cap_labels[2048] = "null";
-  if (json) {
-    server_get_value_at_pointer(json, "/devices/playback/labels", play_labels,
-                                sizeof(play_labels));
-    server_get_value_at_pointer(json, "/devices/capture/labels", cap_labels,
-                                sizeof(cap_labels));
-    free(json);
-  }
+  char* play_labels =
+      (server && server->engine)
+          ? cdsp_get_config_value(server->engine, "/devices/playback/labels")
+          : NULL;
+  char* cap_labels =
+      (server && server->engine)
+          ? cdsp_get_config_value(server->engine, "/devices/capture/labels")
+          : NULL;
+
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, "playback", cJSON_Parse(play_labels));
-  cJSON_AddItemToObject(root, "capture", cJSON_Parse(cap_labels));
+  cJSON_AddItemToObject(
+      root, "playback",
+      play_labels ? cJSON_Parse(play_labels) : cJSON_CreateNull());
+  cJSON_AddItemToObject(
+      root, "capture",
+      cap_labels ? cJSON_Parse(cap_labels) : cJSON_CreateNull());
   reply_ok(cmd_name, root, ds);
+
+  if (play_labels) free(play_labels);
+  if (cap_labels) free(cap_labels);
 }
 
 static void handle_cmd_get_signal_range(websocket_server_t* server,
@@ -2225,8 +1790,7 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && 1 &&
-      ws_engine_get_vu_levels(server->engine, &vu)) {
+  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
     size_t count = vu.playback_channels;
     double max_peak = -1000.0;
     for (size_t i = 0; i < count; i++) {
@@ -2267,9 +1831,9 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   }
   if (ok) {
     cdsp_spectrum_t spec = {0};
-    bool spec_ok = server && server->engine && 1 &&
-                   ws_engine_get_spectrum(server->engine, is_capture, channel,
-                                          min_freq, max_freq, n_bins, &spec);
+    bool spec_ok = server && server->engine &&
+                   cdsp_get_spectrum(server->engine, is_capture, channel,
+                                     min_freq, max_freq, n_bins, &spec);
     if (spec_ok) {
       cJSON* spec_json = serialize_spectrum(&spec);
       if (spec_json) {
@@ -2299,9 +1863,8 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
     const char* backend = arg->valuestring;
     cdsp_device_info_t* devs = NULL;
     size_t count = 0;
-    bool ok = server && server->engine && 1 &&
-              ws_engine_get_available_devices(server->engine, backend,
-                                              is_capture, &devs, &count);
+    bool ok = server && server->engine &&
+              cdsp_get_available_devices(backend, is_capture, &devs, &count);
     if (ok && devs) {
       cJSON* arr = cJSON_CreateArray();
       for (size_t i = 0; i < count; i++) {
@@ -2460,7 +2023,7 @@ static void handle_cmd_get_capture_rate(websocket_server_t* server,
       server && server->engine && ws_engine_get_status(server->engine, &status);
   int sr = 0;
   if (has_status && status.state == CDSP_PROCESSING_STATE_RUNNING) {
-    sr = ws_engine_get_active_samplerate(server->engine);
+    sr = cdsp_get_capture_rate(server->engine);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(sr), ds);
 }
@@ -2472,8 +2035,7 @@ static void handle_cmd_get_rate_adjust(websocket_server_t* server,
   (void)arg;
   double rate = 1.0;
   if (server && server->engine) {
-    ws_engine_get_processing_status(server->engine, &rate, NULL, NULL, NULL,
-                                    NULL);
+    cdsp_get_processing_status(server->engine, &rate, NULL, NULL, NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(rate), ds);
 }
@@ -2485,8 +2047,7 @@ static void handle_cmd_get_buffer_level(websocket_server_t* server,
   (void)arg;
   double lvl = 0.0;
   if (server && server->engine) {
-    ws_engine_get_processing_status(server->engine, NULL, &lvl, NULL, NULL,
-                                    NULL);
+    cdsp_get_processing_status(server->engine, NULL, &lvl, NULL, NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber((int)lvl), ds);
 }
@@ -2498,8 +2059,7 @@ static void handle_cmd_get_clipped_samples(websocket_server_t* server,
   (void)arg;
   uint64_t clips = 0;
   if (server && server->engine) {
-    ws_engine_get_processing_status(server->engine, NULL, NULL, &clips, NULL,
-                                    NULL);
+    cdsp_get_processing_status(server->engine, NULL, NULL, &clips, NULL, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber((double)clips), ds);
 }
@@ -2511,7 +2071,7 @@ static void handle_cmd_reset_clipped_samples(websocket_server_t* server,
   (void)client_idx;
   (void)arg;
   if (server && server->engine) {
-    ws_engine_reset_clipped_samples(server->engine);
+    cdsp_reset_clipped_samples(server->engine);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -2523,8 +2083,7 @@ static void handle_cmd_get_processing_load(websocket_server_t* server,
   (void)arg;
   double load = 0.0;
   if (server && server->engine) {
-    ws_engine_get_processing_status(server->engine, NULL, NULL, NULL, &load,
-                                    NULL);
+    cdsp_get_processing_status(server->engine, NULL, NULL, NULL, &load, NULL);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(load), ds);
 }
@@ -2536,8 +2095,7 @@ static void handle_cmd_get_resampler_load(websocket_server_t* server,
   (void)arg;
   double load = 0.0;
   if (server && server->engine) {
-    ws_engine_get_processing_status(server->engine, NULL, NULL, NULL, NULL,
-                                    &load);
+    cdsp_get_processing_status(server->engine, NULL, NULL, NULL, NULL, &load);
   }
   reply_ok(cmd_name, cJSON_CreateNumber(load), ds);
 }
