@@ -337,11 +337,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       // preserve every sample frame.
       while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
         if (engine_shared_state_should_stop(loop->shared)) {
-          const processing_stop_reason_t* reason =
-              engine_shared_state_get_stop_reason(loop->shared);
-          if (reason && reason->type != STOP_REASON_DONE) {
-            break;
-          }
+          // Immediately abort enqueuing if the session is stopping/inactive.
+          break;
         }
         cdsp_sleep_ms(1);
       }
