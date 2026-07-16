@@ -96,6 +96,12 @@ const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
              : NULL;
 }
 
+void cdsp_set_state_file_path(dsp_engine_t* engine, const char* path) {
+  if (engine && engine->set_state_file_path) {
+    engine->set_state_file_path(engine->ctx, path);
+  }
+}
+
 bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
   return engine && engine->get_state_file_updated
              ? engine->get_state_file_updated(engine->ctx)

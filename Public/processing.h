@@ -68,6 +68,14 @@ void cdsp_reset_clipped_samples(dsp_engine_t* engine);
 const char* cdsp_get_state_file_path(const dsp_engine_t* engine);
 
 /**
+ * @brief Set the path to the state file for persisting volume and mute states
+ * (WebSocket: SetStateFilePath).
+ * @param engine Pointer to the engine.
+ * @param path Path to the state file.
+ */
+void cdsp_set_state_file_path(dsp_engine_t* engine, const char* path);
+
+/**
  * @brief Check whether all pending changes have been saved to the state file
  * (WebSocket: GetStateFileUpdated).
  * @param engine Pointer to the engine.
