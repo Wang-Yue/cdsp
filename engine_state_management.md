@@ -86,11 +86,142 @@ The raw state of the engine is stored in `state_raw` inside `engine_shared_state
 
 ---
 
-## 3. Step-by-Step Shutdown Scenarios
+## 3. Thread Lifecycles & State Scenarios
 
-Shutdown behaves differently depending on whether it was a **Graceful EOF** (non-realtime file playback) or an **Immediate Abort** (hardware disconnect, playback thread error, user click).
+The engine progresses through several lifecycle phases, moving between states according to hardware feedback, queue levels, and user inputs.
 
-### 3.1. Flow A: Graceful EOF Teardown (Queue Drain)
+---
+
+### 3.1. Startup & Initialization Flow
+This scenario starts when a new configuration is applied. The engine goes into `STARTING` state while it initializes synchronously, then spawns the real-time audio threads and transitions to `RUNNING`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as UI / Client
+    participant E as DSPEngine Controller
+    participant B as Session Builder
+    participant S as Shared State
+    participant T as Worker Threads
+
+    U->>E: set_config(json)
+    Note over E: Set config_in_progress = true<br/>(Status queries now return STARTING)
+    E->>B: build_and_start(config)
+    Note over B: Opens capture device backend<br/>Opens playback device backend<br/>Creates resampler & processing pipeline<br/>Pre-fills DAC with silence frames
+    B->>S: init state_raw = INACTIVE
+    B->>S: set_state(RUNNING)
+    B->>T: Spawn Capture, Processing & Playback threads
+    Note over T: Threads configure real-time priorities & start running
+    B-->>E: Returns Session handle
+    Note over E: Set config_in_progress = false<br/>(Status queries now return RUNNING)
+    E-->>U: Config changed OK
+```
+
+1. **Config change triggers `STARTING`**:
+   - `dsp_engine_set_config()` immediately sets `config_in_progress` to `true`.
+   - Any external status requests query this atomic flag and instantly receive `PROCESSING_STATE_STARTING` without blocking on the mutex.
+2. **Synchronous Hardware Initialization**:
+   - The session builder opens both audio device backends. Prefilling silence is performed to prevent initial buffer underrun.
+   - The resampler, processing pipeline, and round-robin chunk pools are allocated.
+3. **Spawning Real-Time Loops**:
+   - Before spawning the threads, the builder sets the raw state to `PROCESSING_STATE_RUNNING` so newly spawned threads do not see `INACTIVE` and immediately abort.
+   - Capture, Processing, and Playback threads are spawned.
+4. **Transition to `RUNNING`**:
+   - `config_in_progress` is reset to `false`. Status queries now read directly from `state_raw` (`RUNNING`).
+
+---
+
+### 3.2. Steady-State Audio Loops
+Once started, audio chunks flow continuously through SPSC queues synchronized by low-overhead OS semaphores.
+
+```mermaid
+graph LR
+    H_In[Capture Mic/Line] -->|hardware read| C[Capture Loop]
+    C -->|pool chunk| S_Cap[captured_queue SPSC]
+    S_Cap -->|blocking dequeue| P[Processing Loop]
+    P -->|process pipeline| S_Proc[processed_queue SPSC]
+    S_Proc -->|blocking dequeue| K[Playback Loop]
+    K -->|hardware write| H_Out[Playback DAC/Line]
+```
+
+* **Capture Loop**: Obtains a pre-allocated chunk from `capture_pool`, reads PCM/DSD from the device backend, runs metering/silence checks, and pushes to `captured_queue`. It then signals `captured_queue`'s semaphore.
+* **Processing Loop**: Blocks on `captured_queue`'s semaphore. Once awakened, it dequeues the chunk, runs it through the DSP pipeline (resampler, mixers, channels, volume/mute), obtains a scratch chunk from the pool, copies the output, and enqueues it to `processed_queue`, signaling its semaphore.
+* **Playback Loop**: Blocks on `processed_queue`'s semaphore. Once awakened, it dequeues the processed chunk, runs the rate-adjust controller, and writes the frame samples to the physical playback backend.
+
+---
+
+### 3.3. Silence Auto-Pause & Resume Flow
+If silence detection is enabled, the capture loop auto-pauses the downstream pipeline to save CPU and stops writing to the output device when silence is sustained.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Capture Thread
+    participant S as Shared State
+    participant B as Backend Devices
+    participant K as Playback Thread
+
+    Note over C: Peak levels fall below silence_threshold_db
+    Note over C: silence_timeout_seconds elapses
+    C->>S: set_state(PAUSED)
+    C->>B: Set playback & capture backends is_paused = true
+    Note over C: Enqueueing of captured chunks stops
+    Note over K: processed_queue becomes empty<br/>Blocks on processed semaphore
+
+    Note over C: New audio signal arrives (peak > threshold)
+    C->>S: set_state(RUNNING)
+    C->>B: Set playback & capture backends is_paused = false
+    C->>S: Enqueueing of captured chunks resumes
+    Note over K: Awakens and writes audio to DAC again
+```
+
+1. **Silence Detection**:
+   - The capture loop monitors the peak levels of each chunk.
+   - If the level stays below the threshold for longer than the timeout, the silence counter updates.
+2. **Auto-Pause Transition**:
+   - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
+   - It pauses both capture and playback backends. In paused mode, backends yield CPU cycles.
+   - The capture thread stops pushing chunks to `captured_queue`.
+   - The processing and playback queues naturally drain, and the playback loop eventually blocks on the empty queue.
+3. **Signal Auto-Resume**:
+   - When a loud chunk is read (above the threshold), the silence counter resets.
+   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING`.
+   - Both backends are unpaused, and chunk pushing resumes, waking up the downstream threads.
+
+---
+
+### 3.4. Watchdog Stall & Recovery Flow
+The watchdog monitors hardware starvation. If the driver halts or the device is disconnected without throwing a direct backend error, the engine transitions to `STALLED`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant H as Hardware / Driver
+    participant C as Capture Thread
+    participant S as Shared State
+
+    Note over C: read() blocks / returns no data
+    Note over C: UPTIME_RAW elapsed > 0.5s
+    C->>S: set_state(STALLED)
+    Note over C: Logs warning: "Capture device stalled"
+    
+    Note over H: Hardware/driver resumes sending data
+    Note over C: read() successfully returns a chunk
+    C->>S: set_state(RUNNING)
+    Note over C: Logs info: "Capture recovered from stall"
+```
+
+1. **Stall Detection**:
+   - During normal reads, the capture thread updates `watchdog_last_success_ns`.
+   - If the capture read fails to return data chunks (but doesn't throw a fatal driver error), the loop checks the time elapsed since the last success.
+   - If it exceeds `0.5` seconds, the thread sets `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
+2. **Stall Recovery**:
+   - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the watchdog clears.
+   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
+
+---
+
+### 3.5. Graceful EOF Teardown (Queue Drain)
 Used when a finite file input completes. The goal is to let the remaining audio drain through all buffers to the DAC.
 
 ```mermaid
@@ -139,7 +270,7 @@ sequenceDiagram
 
 ---
 
-### 3.2. Flow B: Immediate Abort (e.g. Playback Thread Error)
+### 3.6. Immediate Abort Teardown
 Used when a thread crashes, a hardware device is disconnected, or the user clicks "Stop". Threads must wake up and abort immediately.
 
 ```mermaid
