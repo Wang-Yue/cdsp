@@ -1,3 +1,4 @@
+#include <stdatomic.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -6,20 +7,25 @@
 extern uint64_t clock_gettime_nsec_np(clockid_t clock_id);
 #endif
 
-static uint64_t s_real_start_time_ns = 0;
-static uint64_t s_mock_start_time_ns = 0;
+static _Atomic uint64_t s_real_start_time_ns = 0;
+static _Atomic uint64_t s_mock_start_time_ns = 0;
 
 static void init_clock_mock(void) {
-  if (s_real_start_time_ns != 0) return;
+  if (atomic_load(&s_real_start_time_ns) != 0) return;
 
   struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  s_real_start_time_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-  s_mock_start_time_ns = s_real_start_time_ns;
+  uint64_t now_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+
+  uint64_t expected = 0;
+  if (atomic_compare_exchange_strong(&s_real_start_time_ns, &expected,
+                                     now_ns)) {
+    atomic_store(&s_mock_start_time_ns, now_ns);
+  }
 }
 
 int cdsp_clock_gettime(clockid_t clock_id, struct timespec* tp) {
-  if (s_real_start_time_ns == 0) {
+  if (atomic_load(&s_real_start_time_ns) == 0) {
     init_clock_mock();
   }
 
@@ -29,8 +35,8 @@ int cdsp_clock_gettime(clockid_t clock_id, struct timespec* tp) {
 
   uint64_t real_now =
       (uint64_t)real_ts.tv_sec * 1000000000ULL + real_ts.tv_nsec;
-  uint64_t elapsed = real_now - s_real_start_time_ns;
-  uint64_t fake_now = s_mock_start_time_ns + elapsed * 15;
+  uint64_t elapsed = real_now - atomic_load(&s_real_start_time_ns);
+  uint64_t fake_now = atomic_load(&s_mock_start_time_ns) + elapsed * 15;
 
   tp->tv_sec = (time_t)(fake_now / 1000000000ULL);
   tp->tv_nsec = (long)(fake_now % 1000000000ULL);
@@ -39,12 +45,12 @@ int cdsp_clock_gettime(clockid_t clock_id, struct timespec* tp) {
 
 uint64_t cdsp_clock_gettime_nsec_np(clockid_t clock_id) {
 #ifdef __APPLE__
-  if (s_real_start_time_ns == 0) {
+  if (atomic_load(&s_real_start_time_ns) == 0) {
     init_clock_mock();
   }
   uint64_t real_now = clock_gettime_nsec_np(clock_id);
-  uint64_t elapsed = real_now - s_real_start_time_ns;
-  return s_mock_start_time_ns + elapsed * 15;
+  uint64_t elapsed = real_now - atomic_load(&s_real_start_time_ns);
+  return atomic_load(&s_mock_start_time_ns) + elapsed * 15;
 #else
   (void)clock_id;
   struct timespec ts = {0};
