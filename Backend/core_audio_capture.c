@@ -14,7 +14,9 @@
 
 #include "core_audio_capture.h"
 #if defined(ENABLE_COREAUDIO)
+#ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
+#endif
 #include <dispatch/dispatch.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -672,7 +674,13 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
         capture->capture_rings[ch], capture->read_scratch, frames_to_read);
     double* dst_ptr = audio_chunk_get_channel(chunk, ch);
     if (dst_ptr) {
+#ifdef ENABLE_ACCELERATE
       vDSP_vspdp(capture->read_scratch, 1, dst_ptr, 1, n);
+#else
+      for (size_t i = 0; i < n; i++) {
+        dst_ptr[i] = (double)capture->read_scratch[i];
+      }
+#endif
     }
   }
   audio_chunk_set_valid_frames(chunk, frames_to_read);

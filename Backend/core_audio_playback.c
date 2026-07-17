@@ -13,7 +13,9 @@
 
 #include "core_audio_playback.h"
 #if defined(ENABLE_COREAUDIO)
+#ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
+#endif
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,8 +134,18 @@ static OSStatus playback_callback(void* inRefCon,
             playback->channels);
         if ((int)copied < frame_count) {
           float zero = 0.0f;
+#ifdef ENABLE_ACCELERATE
           vDSP_vfill(&zero, float_ptr + ch + (copied * playback->channels),
                      playback->channels, frame_count - (int)copied);
+#else
+          float* p = float_ptr + ch + (copied * playback->channels);
+          int count = frame_count - (int)copied;
+          int stride = playback->channels;
+          for (int i = 0; i < count; i++) {
+            *p = zero;
+            p += stride;
+          }
+#endif
         }
       }
     }
@@ -146,11 +158,25 @@ static OSStatus playback_callback(void* inRefCon,
             playback->playback_rings[ch], float_ptr, frame_count);
         if ((int)copied < frame_count) {
           float zero = 0.0f;
+#ifdef ENABLE_ACCELERATE
           vDSP_vfill(&zero, float_ptr + copied, 1, frame_count - (int)copied);
+#else
+          float* p = float_ptr + copied;
+          int count = frame_count - (int)copied;
+          for (int i = 0; i < count; i++) {
+            p[i] = zero;
+          }
+#endif
         }
       } else {
         float zero = 0.0f;
+#ifdef ENABLE_ACCELERATE
         vDSP_vfill(&zero, float_ptr, 1, frame_count);
+#else
+        for (int i = 0; i < frame_count; i++) {
+          float_ptr[i] = zero;
+        }
+#endif
       }
     }
   }

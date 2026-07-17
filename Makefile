@@ -90,6 +90,10 @@ else ifeq ($(IS_DARWIN),1)
     ifeq ($(ENABLE_ACCELERATE),1)
         LDFLAGS += -framework Accelerate
     endif
+    ifeq ($(ENABLE_FFTW),1)
+        CFLAGS += -I/opt/homebrew/include
+        LDFLAGS += -L/opt/homebrew/lib -lfftw3 -lfftw3f
+    endif
     LDFLAGS += -framework CoreFoundation
 else
     # Linux
