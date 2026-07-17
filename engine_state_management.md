@@ -11,6 +11,7 @@ The state is managed across three layers: the Engine controller (`dsp_engine_t`)
 ```mermaid
 graph TD
     dsp_engine_t -->|"Session handle (Pointer)"| dsp_session_t
+    dsp_engine_t -->|"State persistence manager"| engine_state_manager_t
     dsp_session_t -->|"Inter-thread Shared State"| engine_shared_state_t
 ```
 
@@ -48,6 +49,18 @@ Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfa
 | `last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) after the active `dsp_session_t` has been freed. | Protected by `state_mutex`. |
 | `has_last_stop_reason` | `bool` | Flag indicating if `last_stop_reason` holds a valid stopped/error state. | Protected by `state_mutex`. |
 | `config_in_progress` | `_Atomic bool` | True if a configuration change or reload is actively running. Status queries check this flag to return `STARTING` without blocking on `state_mutex`. | Lock-free atomic reads and writes. |
+
+---
+
+### 1.4. State Persistence Level (`engine_state_manager_t`)
+Defined in [engine_state_manager.h](Engine/engine_state_manager.h). Manages fader volume/mute settings, config path, and state file serialization.
+
+| Field Name | Type | Purpose | Concurrency Model |
+| :--- | :--- | :--- | :--- |
+| `state_file` | `char*` | Path to state persistence file on disk. | Protected by `state_mutex`. |
+| `config_path` | `char*` | Path to active configuration file. | Protected by `state_mutex`. |
+| `change_counter` | `uint64_t` | Incrementing counter tracking state changes (volumes, mute, config path) to determine dirty status. | Protected by `state_mutex`. |
+| `last_saved_counter`| `uint64_t` | Change counter snapshot at last disk save. State is dirty when `change_counter != last_saved_counter`. | Protected by `state_mutex`. |
 
 ---
 

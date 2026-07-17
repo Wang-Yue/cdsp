@@ -41,35 +41,25 @@ The alternative codebase focuses entirely on the C engine (`CDSP`) to achieve ma
 
 ## 2. Architecture & Design Principles
 
-```
-[ Rust CamillaDSP Concurrency ]
+```mermaid
+flowchart TB
+    subgraph Rust ["Upstream CamillaDSP Concurrency"]
+        direction TB
+        R_Cap["Capture Thread"] -->|"Crossbeam Channel"| R_Proc["Processing Thread"]
+        R_Proc -->|"Rayon Work-Stealing Pool"| R_Filt["Filter Workers"]
+        R_Proc -->|"Crossbeam Channel"| R_Play["Playback Thread"]
+    end
 
-  Capture Thread
-        |
-        | (Crossbeam Channels)
-        v
-  Processing Thread  ====== (Rayon Work-Stealing Pool) ======> Filter Workers
-        |
-        | (Crossbeam Channels)
-        v
-  Playback Thread
-
-
-[ C Engine (CDSP) Concurrency ]
-
-                     Capture Thread
-                      /          \
-  (Wait-Free SPSC    /            \  (Binary Semaphore Signal)
-   Ring Buffer)     v              v
-                  Processing Thread  == (GCD dispatch_apply_f / Apple Silicon) ==> Dynamic Core Scheduling
-                      /          \
-  (Wait-Free SPSC    /            \  (Binary Semaphore Signal)
-   Ring Buffer)     v              v
-                     Playback Thread
+    subgraph CDSP ["C Engine (CDSP) Concurrency"]
+        direction TB
+        C_Cap["Capture Thread"] -->|"Wait-Free SPSC Queue<br/>+ Native Semaphore Signal"| C_Proc["Processing Thread"]
+        C_Proc -->|"GCD dispatch_apply_f<br/>(Apple Silicon P/E Cores)"| C_Sched["Dynamic Core Scheduling"]
+        C_Proc -->|"Wait-Free SPSC Queue<br/>+ Native Semaphore Signal"| C_Play["Playback Thread"]
+    end
 ```
 
 ### 2.1 Wait-Free SPSC Queue and Platform-Native Semaphores
-To transfer audio blocks between the Capture, Processing, and Playback loops without thread blocking or locks, we implement a custom power-of-two capacity Single-Producer Single-Consumer (SPSC) queue ([lock_free_ring_buffer.c](Sources/CDSP/Audio/lock_free_ring_buffer.c)). 
+To transfer audio blocks between the Capture, Processing, and Playback loops without thread blocking or locks, we implement a custom power-of-two capacity Single-Producer Single-Consumer (SPSC) queue ([lock_free_ring_buffer.c](Utils/lock_free_ring_buffer.c)). 
 
 Index coordination is achieved using atomic integers (`_Atomic`) with release-acquire memory ordering. The queue memory is fully pre-allocated at startup, guaranteeing zero heap allocations on the hot path. 
 
@@ -84,31 +74,33 @@ Audio chunks are cycled through a pre-allocated chunk pool (`round_robin_chunk_p
 #### 2.2.2 Off-Thread Pipeline GC and In-Place State Transfers
 When a live configuration change is requested, the reload mechanism preserves audio continuity and guarantees real-time safety via a deferred garbage collection pattern:
 
-```
-Control Thread (Main/Control)            Realtime Thread (Audio Processing)
-----------------------------            ----------------------------------
-1. Builds new pipeline in bg
-2. Atomic Exchange (next_pipeline) ------------>
-                                        3. Core switches to new pipeline
-                                        4. Enqueues old pipeline to Garbage Queue
-                    <----------------------------
-5. Deallocates old filters async
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Control Thread (Main/Control)
+    participant A as Audio Thread (Realtime Processing)
+
+    Note over C: 1. Builds new pipeline in bg
+    C->>A: 2. Atomic Exchange (next_pipeline)
+    Note over A: 3. Core switches to new pipeline<br/>Copies state (zero allocations)
+    A->>C: 4. Enqueues old pipeline to Garbage Queue
+    Note over C: 5. Deallocates old filters async
 ```
 
 1. **Background Compilation**: The **Control Thread** loads configuration parameters, performs synchronous disk reads (e.g. loading convolution WAV coefficient files), and allocates memory for the new pipeline in the background.
 2. **Atomic Swap**: The Control Thread publishes the new pipeline pointer via an atomic slot (`_Atomic(pipeline_t*)`).
-3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](Sources/CDSP/Pipeline/pipeline.c#L113-L150). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
-4. **Deferred GC**: The old pipeline pointer is enqueued onto a lock-free `pipeline_garbage_queue` (in [engine_shared_state.c](Sources/CDSP/Engine/engine_shared_state.c)). The **Control Thread** periodically drains this queue and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
+3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](Pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
+4. **Deferred GC**: The old pipeline pointer is enqueued onto a lock-free `pipeline_garbage_queue` (in [engine_shared_state.c](Engine/engine_shared_state.c)). The **Control Thread** periodically drains this queue and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
 
 ### 2.3 OS-Specific Vectorization & Asymmetric Core Scheduling
 We bypass platform-agnostic compilers to leverage macOS-specific features:
 
 - **Apple Accelerate Integration**: Biquad calculations, mixer mappings, and FFTs are delegated directly to the system-integrated **Accelerate (vDSP / vForce)** framework, which uses low-level ARM Neon SIMD registers specifically optimized for Apple Silicon processors.
 - **Dynamic GCD Scheduling**: Rather than using a work-stealing threadpool (Rayon), the CDSP engine parallelizes multi-channel filters using **Grand Central Dispatch (GCD)** via `dispatch_apply_f` (or OpenMP on Linux). GCD integrates directly with the macOS kernel scheduler, dynamically distributing workload lanes to Performance (P) and Efficiency (E) cores based on thread priority, cache locality, and CoreAudio deadlines.
-- **Explicit SIMD Vectorization**: Biquad loops and windowed-sinc resampler dot products are designed to maximize SIMD execution. In windowed-sinc dot products ([sinc_dot_product.h](Sources/CDSP/Resampler/sinc_dot_product.h)), we enforce loop vectorization flags and fast math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang generates clean, pipeline-unrolled ARM Neon vector instructions.
+- **Explicit SIMD Vectorization**: Biquad loops and windowed-sinc resampler dot products are designed to maximize SIMD execution. In windowed-sinc dot products ([sinc_dot_product.h](Resampler/sinc_dot_product.h)), we enforce loop vectorization flags and fast math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang generates clean, pipeline-unrolled ARM Neon vector instructions.
 
 ### 2.4 Real-Time Safe Stall Watchdog
-Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](Sources/CDSP/Engine/engine_capture_loop.c#L206)) built directly into the capture loop.
+Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](Engine/engine_capture_loop.c#L180-L200)) built directly into the capture loop.
 
 #### 2.4.1 Unified Design vs. Backend-Specific Duplication
 A major architectural advantage of our design lies in how stall detection is managed:
@@ -123,8 +115,8 @@ A major architectural advantage of our design lies in how stall detection is man
 To demonstrate the architectural flexibility of our clean-sheet engines in accommodating highly specialized audio formats without adding complexity to the core real-time processing loop, we implemented native DSD over PCM (DoP) and Native DSD support ([dop_decoder.h](DoP/dop_decoder.h) / [dsd_encoder.h](DoP/dsd_encoder.h)).
 
 Rather than running DoP as a separate, bulky processing layer, our design integrates it directly into the capture and processing pipeline:
-- **Automatic In-Place Decoding**: The DoP decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](Sources/CDSP/Engine/engine_capture_loop.c)). It inspects incoming PCM buffers for the DoP header pattern (`0x05`/`0xFA` alternation). If detected, it decodes the raw 1-bit DSD samples in-place and decimates them back to PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
-- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Sources/CDSP/Engine/engine_processing_loop.c)), if `output_dop` is enabled, processed PCM is modulated back to DSD and packed into a DoP-standard carrier stream before being sent to the playback SPSC queue.
+- **Automatic In-Place Decoding**: The DoP decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](Engine/engine_capture_loop.c)). It inspects incoming PCM buffers for the DoP header pattern (`0x05`/`0xFA` alternation). If detected, it decodes the raw 1-bit DSD samples in-place and decimates them back to PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
+- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Engine/engine_processing_loop.c)), if `output_dop` is enabled, processed PCM is modulated back to DSD and packed into a DoP-standard carrier stream before being sent to the playback SPSC queue.
 
 ### 2.6 Resampling Architecture: Fixed Input vs. Fixed Output Models
 
