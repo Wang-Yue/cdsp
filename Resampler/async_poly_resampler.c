@@ -260,11 +260,7 @@ static void run_quintic(async_poly_resampler_t* resampler, size_t output_frames,
           6.0 * a - 60.0 * b - 40.0 * c + 120.0 * d - 30.0 * e + 4.0 * f;
       double k0 = 120.0 * c;
 
-      double x2 = x * x;
-      double x3 = x2 * x;
-      double x4 = x2 * x2;
-      double x5 = x2 * x3;
-      double val = k5 * x5 + k4 * x4 + k3 * x3 + k2 * x2 + k1 * x + k0;
+      double val = k0 + x * (k1 + x * (k2 + x * (k3 + x * (k4 + x * k5))));
 
       out[frame] = (1.0 / 120.0) * val;
     }
