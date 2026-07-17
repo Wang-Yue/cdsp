@@ -420,6 +420,17 @@ capture_backend_t* core_audio_capture_create(
   }
   atomic_init(&capture->is_device_alive, true);
 
+  AudioDeviceID dev_id = core_audio_device_id_for_name(
+      capture->device_name[0] ? capture->device_name : NULL,
+      CORE_AUDIO_SCOPE_INPUT);
+  if (dev_id != 0 &&
+      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
+    capture->pitch_control_active =
+        core_audio_device_select_adjustable_clock_source(dev_id);
+  } else {
+    capture->pitch_control_active = false;
+  }
+
   capture_backend_t* backend =
       (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
@@ -626,9 +637,8 @@ bool core_audio_capture_open(core_audio_capture_t* capture,
     capture->rate_watcher =
         rate_change_watcher_create(dev_id, capture->sample_rate);
   }
-  if (dev_id != 0 && core_audio_device_select_adjustable_clock_source(dev_id)) {
-    capture->pitch_control_active = true;
-  }
+  capture->pitch_control_active =
+      (dev_id != 0 && core_audio_device_select_adjustable_clock_source(dev_id));
 
   return true;
 
