@@ -135,6 +135,21 @@ An important architectural difference exists between `CDSP` and upstream *Camill
   - The variable output block is written into a lock-free **SPSC queue**. The playback thread drains this queue and serves the playback hardware driver's fixed-size output request, with the `RateController` adjusting the target ratio based on queue fill levels.
   - *Advantage*: This model is fully compatible with macOS, Windows, and Linux hardware APIs out of the box, without requiring any complex buffer-stashing mechanisms inside platform backends.
 
+### 2.7 Native C Public API & Zero-Overhead In-Process FFI
+
+A major architectural contrast lies in how integration and external control are achieved:
+
+* **Upstream CamillaDSP (IPC-Only Integration)**:
+  - Upstream CamillaDSP is designed exclusively as an independent, standalone executable binary. 
+  - Its internal engine modules (`camillalib`) rely heavily on Rust-specific concurrency and synchronization types (`Arc<RwLock<T>>`, `crossbeam_channel::Receiver<T>`) which cannot be directly exposed to C.
+  - Consequently, any external GUI client (like *CamillaDSP-Monitor*) must control it across a process boundary via network loopback WebSocket RPC requests, introducing socket connection setup, IPC context-switches, and JSON serialization/deserialization overhead.
+  
+* **CDSP Engine (Dual-Mode: WebSocket & Zero-Overhead FFI)**:
+  - In addition to hosting a compatible, drop-in WebSocket RPC server ([Server/websocket_server.c](Server/websocket_server.c)) for standard clients, `CDSP` exposes a clean, FFI-friendly public C API ([Public/general.h](Public/general.h)).
+  - It exposes simple, stateless, thread-safe functions (such as `cdsp_engine_create`, `cdsp_volume_set_gain`, `cdsp_signal_levels_get`) that operate directly on opaque engine handles.
+  - This allows host applications (like `CamillaDSP-Monitor` via Swift FFI or `Monitor-Qt` via direct C++ link) to embed the DSP processing engine **directly in-process** as a static or dynamic library (`libdsp.a`). 
+  - Parameter changes (such as muting, panning, or changing volume) bypass IPC serialization entirely and update the engine's atomic register slots directly, eliminating TCP/IPC socket latency and loopback jitter.
+
 ---
 
 ## 3. Head-to-Head Performance Evaluation
