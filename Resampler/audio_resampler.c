@@ -9,6 +9,7 @@
 #include "Logging/app_logger.h"
 #include "async_poly_resampler.h"
 #include "async_sinc_resampler.h"
+#include "slip_resampler.h"
 #include "synchronous_resampler.h"
 
 static const logger_t g_logger = {"dsp.resampler"};
@@ -25,6 +26,8 @@ static const resampler_vtable_t* resampler_vtable_from_type(
       return &g_async_sinc_resampler_vtable;
     case RESAMPLER_TYPE_ASYNC_POLY:
       return &g_async_poly_resampler_vtable;
+    case RESAMPLER_TYPE_SLIP:
+      return &g_slip_resampler_vtable;
     default:
       return NULL;
   }
@@ -39,6 +42,8 @@ static resampler_impl_type_t resampler_impl_type_from_config(
       return RESAMPLER_IMPL_ASYNC_SINC;
     case RESAMPLER_TYPE_ASYNC_POLY:
       return RESAMPLER_IMPL_ASYNC_POLY;
+    case RESAMPLER_TYPE_SLIP:
+      return RESAMPLER_IMPL_SLIP;
   }
   return RESAMPLER_IMPL_SYNCHRONOUS;
 }

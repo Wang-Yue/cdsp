@@ -34,8 +34,8 @@
 
 use audioadapter_buffers::direct::SequentialSlice;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, FixedSync, Fft, Indexing, PolynomialDegree, Resampler,
-    SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, Adjustable, Async, Fft, FixedAsync, FixedSync, Indexing, PolynomialDegree,
+    Resampler, SincInterpolationParameters, SincInterpolationType, Slip, WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
@@ -80,7 +80,7 @@ fn make_resampler(
         let f_cutoff = calculate_cutoff::<f32>(sinc_len, window);
         let params = SincInterpolationParameters {
             sinc_len,
-            f_cutoff,
+            f_cutoff: Some(f_cutoff),
             oversampling_factor,
             interpolation,
             window,
@@ -147,7 +147,12 @@ fn make_resampler(
             )
             .unwrap(),
         ),
-        "fft" => Box::new(Fft::<f64>::new(fs_in, fs_out, chunk_size, 1, 1, FixedSync::Both).unwrap()),
+        "fft" => Box::new(Fft::<f64>::new(fs_in, fs_out, chunk_size, 1, FixedSync::Both).unwrap()),
+        "slip" => {
+            let mut s = Slip::<f64>::new(chunk_size, 1, FixedAsync::Input).unwrap();
+            s.set_resample_ratio(ratio, false).unwrap();
+            Box::new(s)
+        }
         other => panic!("unknown mode: {other}"),
     }
 }

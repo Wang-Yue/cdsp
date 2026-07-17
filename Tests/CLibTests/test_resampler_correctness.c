@@ -330,4 +330,290 @@ TEST(AsyncSinc_UnderrunBoundaryCheck) {
   resampler_free(res);
 }
 
+TEST(SlipResampler_Basic) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+
+  size_t chunk_size = 1000;
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 48000, 48000, 1, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t max_out = resampler_get_max_output_frames(res);
+  size_t expected_max_out = chunk_size + (chunk_size - 1) / (128 + 2); // 1007
+  ASSERT_EQ(expected_max_out, max_out);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(chunk_size, 1);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out, 1);
+
+  double* in_data = audio_chunk_get_channel(in_chunk, 0);
+  for (size_t i = 0; i < chunk_size; i++) {
+    in_data[i] = (double)i;
+  }
+  audio_chunk_set_valid_frames(in_chunk, chunk_size);
+
+  // 1. Ratio 1.0 -> output matches input exactly
+  resampler_set_relative_ratio(res, 1.0);
+  resampler_error_t err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(chunk_size, audio_chunk_get_valid_frames(out_chunk));
+  const double* out_data = audio_chunk_get_channel(out_chunk, 0);
+  for (size_t i = 0; i < chunk_size; i++) {
+    ASSERT_DOUBLE_EQ((double)i, out_data[i]);
+  }
+
+  // 2. Ratio 1.001000000001 -> Expect a slip (duplicate sample) in the first chunk
+  resampler_set_relative_ratio(res, 1.001000000001);
+  err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(chunk_size + 1, audio_chunk_get_valid_frames(out_chunk));
+  out_data = audio_chunk_get_channel(out_chunk, 0);
+  
+  // First 437 samples are copied exactly
+  for (size_t i = 0; i < 437; i++) {
+    ASSERT_DOUBLE_EQ((double)i, out_data[i]);
+  }
+  // After crossfade (437 + 128 = 565), samples are offset by -1
+  for (size_t i = 565; i < chunk_size + 1; i++) {
+    ASSERT_DOUBLE_EQ((double)(i - 1), out_data[i]);
+  }
+
+  // 3. Ratio 0.998999999999 -> Expect a slip (drop sample) in the first chunk
+  resampler_set_relative_ratio(res, 0.998999999999);
+  err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(chunk_size - 1, audio_chunk_get_valid_frames(out_chunk));
+  out_data = audio_chunk_get_channel(out_chunk, 0);
+  
+  // First 436 samples are copied exactly
+  for (size_t i = 0; i < 436; i++) {
+    ASSERT_DOUBLE_EQ((double)i, out_data[i]);
+  }
+  // After crossfade (436 + 128 = 564), samples are offset by +1
+  for (size_t i = 564; i < chunk_size - 1; i++) {
+    ASSERT_DOUBLE_EQ((double)(i + 1), out_data[i]);
+  }
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  resampler_free(res);
+}
+
+#define RUBATO_HARNESS_NAME "cdsp_resampler_compare"
+
+static char g_rubato_bin_path[1024] = {0};
+static bool g_rubato_checked = false;
+static bool g_rubato_available = false;
+
+static bool check_rubato_available(void) {
+  if (g_rubato_checked) return g_rubato_available;
+  g_rubato_checked = true;
+
+  const char* env_path = getenv("RUBATO_BIN");
+  if (env_path && strlen(env_path) > 0) {
+    FILE* f = fopen(env_path, "r");
+    if (f) {
+      fclose(f);
+      strncpy(g_rubato_bin_path, env_path, sizeof(g_rubato_bin_path) - 1);
+      g_rubato_available = true;
+      return true;
+    }
+  }
+
+  static char home_path[1024] = {0};
+  const char* home = getenv("HOME");
+  if (home) {
+    snprintf(home_path, sizeof(home_path),
+             "%s/cdsp/Tests/RustHarnesses/target/"
+             "release/" RUBATO_HARNESS_NAME,
+             home);
+  }
+
+  const char* candidates[] = {
+      "Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
+      "./Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
+      "../Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
+      "../../Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
+      home_path[0] ? home_path : NULL};
+  for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+    if (!candidates[i]) continue;
+    FILE* f = fopen(candidates[i], "r");
+    if (f) {
+      fclose(f);
+      strncpy(g_rubato_bin_path, candidates[i], sizeof(g_rubato_bin_path) - 1);
+      g_rubato_available = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+static int write_raw_f64(const double* data, size_t count, const char* path) {
+  FILE* f = fopen(path, "wb");
+  if (!f) return 0;
+  size_t written = fwrite(data, sizeof(double), count, f);
+  fclose(f);
+  return written == count;
+}
+
+static double* read_raw_f64(const char* path, size_t* out_count) {
+  FILE* f = fopen(path, "rb");
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  size_t count = size / sizeof(double);
+  double* data = (double*)malloc(count * sizeof(double));
+  if (!data) {
+    fclose(f);
+    return NULL;
+  }
+  size_t read = fread(data, sizeof(double), count, f);
+  fclose(f);
+  if (read != count) {
+    free(data);
+    return NULL;
+  }
+  *out_count = count;
+  return data;
+}
+
+TEST(SlipResampler_Vs_Rubato) {
+  if (!check_rubato_available()) {
+    printf("[SKIP] cdsp_resampler_compare harness not built/available. Skipping comparison test.\n");
+    return;
+  }
+
+  size_t chunk_size = 1000;
+  size_t total_frames = 20 * chunk_size;
+
+  double* input = (double*)malloc(total_frames * sizeof(double));
+  ASSERT_TRUE(input != NULL);
+  for (size_t i = 0; i < total_frames; i++) {
+    input[i] = sin(0.05 * (double)i);
+  }
+
+  int fs_in = 40000;
+  int fs_out = 40012; // ratio = 1.0003 (robust drift accumulation away from boundaries)
+  double ratio = (double)fs_out / (double)fs_in;
+
+  char in_path[256];
+  char ref_path[256];
+  snprintf(in_path, sizeof(in_path), "/tmp/cdsp_slip_compare_in.raw");
+  snprintf(ref_path, sizeof(ref_path), "/tmp/cdsp_slip_compare_ref.raw");
+
+  remove(ref_path);
+  ASSERT_TRUE(write_raw_f64(input, total_frames, in_path));
+
+  char cmd[1024];
+  snprintf(cmd, sizeof(cmd),
+           "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
+           g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+  int status = system(cmd);
+  ASSERT_EQ(0, status);
+
+  size_t ref_count = 0;
+  double* ref_data = read_raw_f64(ref_path, &ref_count);
+  ASSERT_TRUE(ref_data != NULL);
+
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+
+  resampler_t* res = resampler_create_from_config(&cfg, fs_in, fs_in, 1, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+  resampler_set_relative_ratio(res, ratio);
+
+  size_t max_out = resampler_get_max_output_frames(res);
+  audio_chunk_t* in_chunk = audio_chunk_create(chunk_size, 1);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out, 1);
+
+  size_t accum_out = 0;
+  for (size_t c = 0; c < 20; c++) {
+    size_t needed_in = resampler_get_input_frames_next(res);
+    ASSERT_EQ(chunk_size, needed_in);
+
+    double* ch_in = audio_chunk_get_channel(in_chunk, 0);
+    memcpy(ch_in, &input[c * chunk_size], chunk_size * sizeof(double));
+    audio_chunk_set_valid_frames(in_chunk, chunk_size);
+
+    resampler_error_t err = resampler_process(res, in_chunk, out_chunk);
+    ASSERT_EQ(RESAMPLER_OK, err);
+
+    size_t got_out = audio_chunk_get_valid_frames(out_chunk);
+    printf("[C slip_process] chunk=%zu n_in=%zu n_out=%zu\n", c, chunk_size, got_out);
+    fflush(stdout);
+    const double* ch_out = audio_chunk_get_channel(out_chunk, 0);
+    for (size_t i = 0; i < got_out; i++) {
+      ASSERT_TRUE(accum_out + i < ref_count);
+      ASSERT_DOUBLE_EQ(ref_data[accum_out + i], ch_out[i]);
+    }
+    accum_out += got_out;
+  }
+
+  ASSERT_EQ(ref_count, accum_out);
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  resampler_free(res);
+  free(input);
+  free(ref_data);
+
+  fs_out = 39988; // ratio = 0.9997 (robust drift accumulation away from boundaries)
+  ratio = (double)fs_out / (double)fs_in;
+
+  input = (double*)malloc(total_frames * sizeof(double));
+  ASSERT_TRUE(input != NULL);
+  for (size_t i = 0; i < total_frames; i++) {
+    input[i] = sin(0.05 * (double)i);
+  }
+
+  remove(ref_path);
+  snprintf(cmd, sizeof(cmd),
+           "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
+           g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+  status = system(cmd);
+  ASSERT_EQ(0, status);
+
+  ref_count = 0;
+  ref_data = read_raw_f64(ref_path, &ref_count);
+  ASSERT_TRUE(ref_data != NULL);
+
+  res = resampler_create_from_config(&cfg, fs_in, fs_in, 1, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+  resampler_set_relative_ratio(res, ratio);
+
+  in_chunk = audio_chunk_create(chunk_size, 1);
+  out_chunk = audio_chunk_create(max_out, 1);
+
+  accum_out = 0;
+  for (size_t c = 0; c < 20; c++) {
+    size_t needed_in = resampler_get_input_frames_next(res);
+    ASSERT_EQ(chunk_size, needed_in);
+
+    double* ch_in = audio_chunk_get_channel(in_chunk, 0);
+    memcpy(ch_in, &input[c * chunk_size], chunk_size * sizeof(double));
+    audio_chunk_set_valid_frames(in_chunk, chunk_size);
+
+    resampler_error_t err = resampler_process(res, in_chunk, out_chunk);
+    ASSERT_EQ(RESAMPLER_OK, err);
+
+    size_t got_out = audio_chunk_get_valid_frames(out_chunk);
+    const double* ch_out = audio_chunk_get_channel(out_chunk, 0);
+
+    for (size_t i = 0; i < got_out; i++) {
+      ASSERT_TRUE(accum_out + i < ref_count);
+      ASSERT_DOUBLE_EQ(ref_data[accum_out + i], ch_out[i]);
+    }
+    accum_out += got_out;
+  }
+
+  ASSERT_EQ(ref_count, accum_out);
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  resampler_free(res);
+  free(input);
+  free(ref_data);
+}
+
 TEST_MAIN()

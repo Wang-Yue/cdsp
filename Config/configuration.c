@@ -181,6 +181,18 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
   if (resampler_config_validate(&config->devices.resampler, err) != 0) {
     return -1;
   }
+  if (config->devices.has_resampler &&
+      config->devices.resampler.type == RESAMPLER_TYPE_SLIP) {
+    size_t cap_rate = config->devices.has_capture_samplerate
+                          ? config->devices.capture_samplerate
+                          : config->devices.samplerate;
+    if (cap_rate != config->devices.samplerate) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "The Slip resampler requires matching samplerate and "
+                       "capture_samplerate");
+      return -1;
+    }
+  }
 
   // Validate pipeline structure and channel routing
   return pipeline_config_validate(config, err);

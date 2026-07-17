@@ -20,7 +20,8 @@
 typedef enum {
   RESAMPLER_TYPE_SYNCHRONOUS = 0, /**< Synchronous resampler. */
   RESAMPLER_TYPE_ASYNC_SINC,      /**< Asynchronous Sinc resampler. */
-  RESAMPLER_TYPE_ASYNC_POLY       /**< Asynchronous Polyphase resampler. */
+  RESAMPLER_TYPE_ASYNC_POLY,      /**< Asynchronous Polyphase resampler. */
+  RESAMPLER_TYPE_SLIP             /**< Slip resampler. */
 } resampler_type_t;
 
 /**

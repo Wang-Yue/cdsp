@@ -13,6 +13,8 @@ const char* resampler_type_to_string(resampler_type_t type) {
       return "AsyncSinc";
     case RESAMPLER_TYPE_ASYNC_POLY:
       return "AsyncPoly";
+    case RESAMPLER_TYPE_SLIP:
+      return "Slip";
     default:
       return "Synchronous";
   }
@@ -23,6 +25,7 @@ resampler_type_t resampler_type_from_string(const char* str) {
   if (strcmp(str, "Synchronous") == 0) return RESAMPLER_TYPE_SYNCHRONOUS;
   if (strcmp(str, "AsyncSinc") == 0) return RESAMPLER_TYPE_ASYNC_SINC;
   if (strcmp(str, "AsyncPoly") == 0) return RESAMPLER_TYPE_ASYNC_POLY;
+  if (strcmp(str, "Slip") == 0) return RESAMPLER_TYPE_SLIP;
   return RESAMPLER_TYPE_SYNCHRONOUS;
 }
 

@@ -28,7 +28,9 @@ typedef enum {
   /** Asynchronous windowed-sinc resampler. */
   RESAMPLER_IMPL_ASYNC_SINC,
   /** Asynchronous polynomial resampler. */
-  RESAMPLER_IMPL_ASYNC_POLY
+  RESAMPLER_IMPL_ASYNC_POLY,
+  /** Slip resampler. */
+  RESAMPLER_IMPL_SLIP
 } resampler_impl_type_t;
 
 /**
