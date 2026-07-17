@@ -1028,4 +1028,52 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   remove(rf64_out_filename);
 }
 
+TEST(FileBackendGetChannelsRF64) {
+  char rf64_filename[256];
+  snprintf(rf64_filename, sizeof(rf64_filename),
+           "/tmp/test_file_backend_get_ch_rf64_%d.wav", getpid());
+  remove(rf64_filename);
+
+  // Write RF64 header manually
+  FILE* f = fopen(rf64_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t rf64_header[80] = {
+      'R', 'F', '6', '4',
+      0xFF, 0xFF, 0xFF, 0xFF,
+      'W', 'A', 'V', 'E',
+      'd', 's', '6', '4',
+      28, 0, 0, 0, // ds64 size
+      100, 0, 0, 0, 0, 0, 0, 0,
+      100, 0, 0, 0, 0, 0, 0, 0,
+      50, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0,
+      'f', 'm', 't', ' ',
+      16, 0, 0, 0,
+      1, 0,
+      6, 0, // channels: 6
+      0x80, 0x3E, 0, 0,
+      0x00, 0x7D, 0, 0,
+      12, 0,
+      16, 0,
+      'd', 'a', 't', 'a',
+      0xFF, 0xFF, 0xFF, 0xFF
+  };
+  fwrite(rf64_header, 1, sizeof(rf64_header), f);
+  fclose(f);
+
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = true;
+  cap_cfg.has_is_wav = true;
+  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
+           "%s", rf64_filename);
+  cap_cfg.cfg.wav_file.has_filename = true;
+
+  int channels = capture_device_config_get_channels(&cap_cfg);
+  ASSERT_EQ(6, channels);
+
+  remove(rf64_filename);
+}
+
 TEST_MAIN()

@@ -532,12 +532,30 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
       if (config->is_wav) {
         FILE* f = cdsp_fopen(config->cfg.wav_file.filename, "rb");
         if (f) {
-          uint8_t header[44];
+          uint8_t header[12];
           int wav_channels = 0;
-          if (fread(header, 1, 44, f) == 44) {
-            if (memcmp(header, "RIFF", 4) == 0 &&
-                memcmp(header + 8, "WAVE", 4) == 0) {
-              wav_channels = header[22] | (header[23] << 8);
+          if (fread(header, 1, 12, f) == 12) {
+            bool is_riff = (memcmp(header, "RIFF", 4) == 0);
+            bool is_rf64 = (memcmp(header, "RF64", 4) == 0);
+            if ((is_riff || is_rf64) && memcmp(header + 8, "WAVE", 4) == 0) {
+              uint8_t chunk_header[8];
+              while (fread(chunk_header, 1, 8, f) == 8) {
+                uint32_t chunk_size = chunk_header[4] |
+                                      (chunk_header[5] << 8) |
+                                      (chunk_header[6] << 16) |
+                                      (chunk_header[7] << 24);
+                if (memcmp(chunk_header, "fmt ", 4) == 0) {
+                  uint8_t fmt_data[4];
+                  if (fread(fmt_data, 1, 4, f) == 4) {
+                    wav_channels = fmt_data[2] | (fmt_data[3] << 8);
+                  }
+                  break;
+                } else {
+                  if (fseek(f, chunk_size, SEEK_CUR) != 0) {
+                    break;
+                  }
+                }
+              }
             }
           }
           fclose(f);
