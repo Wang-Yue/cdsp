@@ -301,6 +301,11 @@ void AudioDeviceManager::validateSampleRates() {
         captureConfig.sampleRate = playbackConfig.sampleRate;
         changed = true;
     }
+    if (m_settings->resamplerEnabled && m_settings->resamplerType == ResamplerType::Slip &&
+        captureConfig.sampleRate != playbackConfig.sampleRate) {
+        m_settings->resamplerType = ResamplerType::Synchronous;
+        changed = true;
+    }
 
     if (changed) {
         saveConfigs();

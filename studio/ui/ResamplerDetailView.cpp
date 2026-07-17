@@ -166,8 +166,30 @@ void ResamplerDetailView::refreshUi() {
     if (m_isLocalEditing)
         return;
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
-    updateVisibility();
+
+    bool allowSlip = false;
+    if (m_devices) {
+        int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
+        int pbRate = m_devices->playbackConfig.sampleRate > 0 ? m_devices->playbackConfig.sampleRate : 48000;
+        if (capRate == pbRate) {
+            allowSlip = true;
+        }
+    }
+
+    if (!allowSlip && m_settings->resamplerType == ResamplerType::Slip) {
+        m_settings->resamplerType = ResamplerType::Synchronous;
+    }
+
+    m_typeCombo->blockSignals(true);
+    m_typeCombo->clear();
+    m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly"});
+    if (allowSlip) {
+        m_typeCombo->addItem("Slip");
+    }
+    m_typeCombo->blockSignals(false);
+
     m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
+    updateVisibility();
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
     m_attenuationSpin->setValue(m_settings->resamplerAttenuation);

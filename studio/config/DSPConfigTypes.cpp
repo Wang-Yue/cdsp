@@ -219,6 +219,8 @@ std::string resamplerTypeToString(ResamplerType t) {
         return "AsyncSinc";
     case ResamplerType::AsyncPoly:
         return "AsyncPoly";
+    case ResamplerType::Slip:
+        return "Slip";
     }
     return "Synchronous";
 }
@@ -276,6 +278,8 @@ ResamplerType stringToResamplerType(const std::string& str) {
         return ResamplerType::AsyncSinc;
     if (str == "AsyncPoly")
         return ResamplerType::AsyncPoly;
+    if (str == "Slip")
+        return ResamplerType::Slip;
     return ResamplerType::Synchronous;
 }
 

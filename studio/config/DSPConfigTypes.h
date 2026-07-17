@@ -114,7 +114,7 @@ enum class GainScale { dB, linear };
 std::string gainScaleToString(GainScale s);
 GainScale stringToGainScale(const std::string& str);
 
-enum class ResamplerType { Synchronous, AsyncSinc, AsyncPoly };
+enum class ResamplerType { Synchronous, AsyncSinc, AsyncPoly, Slip };
 std::string resamplerTypeToString(ResamplerType t);
 ResamplerType stringToResamplerType(const std::string& str);
 
