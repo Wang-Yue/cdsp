@@ -797,7 +797,7 @@ TEST(FileBackendRF64Read) {
       'd', 's', '6', '4',
       28, 0, 0, 0, // ds64 chunk size (28)
       250, 0, 0, 0, 0, 0, 0, 0, // RIFF size (64-bit)
-      256, 0, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
+      0, 1, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
       128, 0, 0, 0, 0, 0, 0, 0, // Sample count (64-bit: 128 samples)
       0, 0, 0, 0, // table entry count
       'f', 'm', 't', ' ',
@@ -959,7 +959,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
       'd', 's', '6', '4',
       28, 0, 0, 0, // ds64 chunk size (28)
       250, 0, 0, 0, 0, 0, 0, 0, // RIFF size (64-bit)
-      256, 0, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
+      0, 1, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
       128, 0, 0, 0, 0, 0, 0, 0, // Sample count (64-bit: 128 samples)
       0, 0, 0, 0, // table entry count
       'f', 'm', 't', ' ',
