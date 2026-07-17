@@ -6,7 +6,7 @@
 ---
 
 ## Abstract
-This paper presents the design, implementation, and performance evaluation of a high-performance alternative digital signal processing (DSP) engine written in C (`CDSP`). Specialized for macOS and Apple Silicon, the engine achieves seamless drop-in compatibility with the upstream Rust-based *CamillaDSP* by implementing the exact same configuration schemas and WebSocket control APIs. By replacing generic, platform-agnostic concurrency and vectorization structures with custom wait-free single-producer single-consumer (SPSC) queues, platform-native semaphores, Grand Central Dispatch (GCD), and Apple's Accelerate (vDSP) framework, our architecture delivers up to 1.77x faster filter execution, 1.73x faster resampling throughput, and 1.25x faster raw end-to-end loopback processing. Furthermore, our design enforces strict real-time safety, eliminating memory allocations, deallocations, and blocking disk I/O on the audio thread during live configuration reloads.
+This paper presents the design, implementation, and performance evaluation of a high-performance, cross-platform alternative digital signal processing (DSP) engine written in C (`CDSP`). Supporting macOS, Linux, and Windows, the engine achieves seamless drop-in compatibility with the upstream Rust-based *CamillaDSP* by implementing the exact same configuration schemas and WebSocket control APIs. By replacing generic, platform-agnostic concurrency and vectorization structures with custom wait-free single-producer single-consumer (SPSC) queues, platform-native semaphores, multi-platform task schedulers (Grand Central Dispatch / OpenMP), and native hardware vectorization (Apple Accelerate / GCC auto-vectorization), our architecture delivers up to 1.77x faster filter execution, 1.73x faster resampling throughput, and 1.25x faster raw end-to-end loopback processing. Furthermore, our design enforces strict real-time safety, eliminating memory allocations, deallocations, and blocking disk I/O on the audio thread during live configuration reloads.
 
 ---
 
@@ -92,12 +92,16 @@ sequenceDiagram
 3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](Pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
 4. **Deferred GC**: The old pipeline pointer is enqueued onto a lock-free `pipeline_garbage_queue` (in [engine_shared_state.c](Engine/engine_shared_state.c)). The **Control Thread** periodically drains this queue and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
 
-### 2.3 OS-Specific Vectorization & Asymmetric Core Scheduling
-We bypass platform-agnostic compilers to leverage macOS-specific features:
+### 2.3 Cross-Platform Vectorization & Dynamic Core Scheduling
+We leverage platform-native APIs and math acceleration frameworks depending on the target operating system:
 
-- **Apple Accelerate Integration**: Biquad calculations, mixer mappings, and FFTs are delegated directly to the system-integrated **Accelerate (vDSP / vForce)** framework, which uses low-level ARM Neon SIMD registers specifically optimized for Apple Silicon processors.
-- **Dynamic GCD Scheduling**: Rather than using a work-stealing threadpool (Rayon), the CDSP engine parallelizes multi-channel filters using **Grand Central Dispatch (GCD)** via `dispatch_apply_f` (or OpenMP on Linux). GCD integrates directly with the macOS kernel scheduler, dynamically distributing workload lanes to Performance (P) and Efficiency (E) cores based on thread priority, cache locality, and CoreAudio deadlines.
-- **Explicit SIMD Vectorization**: Biquad loops and windowed-sinc resampler dot products are designed to maximize SIMD execution. In windowed-sinc dot products ([sinc_dot_product.h](Resampler/sinc_dot_product.h)), we enforce loop vectorization flags and fast math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang generates clean, pipeline-unrolled ARM Neon vector instructions.
+- **Hardware-Accelerated Vectorization**:
+  - **macOS**: Biquad calculations, mixer mappings, and FFTs are delegated directly to Apple's **Accelerate (vDSP / vForce)** framework, utilizing low-level ARM Neon SIMD registers.
+  - **Linux & Windows**: Biquad and filter loops are structured for compiler auto-vectorization (utilizing NEON on ARM and AVX2/AVX-512 on x86_64). FFT operations are optionally backed by the high-performance **FFTW** or **OpenBLAS** libraries, falling back to a custom, hand-optimized mixed-radix C FFT implementation.
+- **Dynamic Thread Scheduling**:
+  - Rather than using a generic work-stealing threadpool (such as Rayon in Rust), the engine parallelizes multi-channel filters using **Grand Central Dispatch (GCD)** via `dispatch_apply_f` (on macOS or Linux) or **OpenMP** (on Linux or Windows).
+  - GCD integrates directly with the macOS kernel scheduler to dynamically assign workloads to Performance (P) and Efficiency (E) cores, optimizing for CoreAudio deadlines. On Linux/Windows, OpenMP distributes filter processing lanes across cores with low-overhead static scheduling, avoiding cache thrashing.
+- **Explicit Loop Vectorization**: Biquad loops and windowed-sinc resampler dot products are decorated with vectorization hints (`#pragma clang loop vectorize(enable)` / OpenMP SIMD pragmas) and fast-math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang and GCC generate optimal Neon/AVX assembly.
 
 ### 2.4 Real-Time Safe Stall Watchdog
 Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](Engine/engine_capture_loop.c#L180-L200)) built directly into the capture loop.
@@ -250,7 +254,7 @@ The C engine builds in ~22 seconds, representing a **4.3x faster compilation cyc
 
 While the alternative engine offers substantial architectural and performance advantages, several areas present opportunities for future research:
 
-1. **Cross-Platform SIMD Dispatch**: Expanding the explicit SIMD layout to include x86_64 architectures (using AVX2/AVX-512 intrinsics) and generic Linux ARM architectures (via native NEON intrinsics) would allow the C engine to maintain its speed advantages outside macOS.
+1. **Dynamic SIMD Dispatch (AVX2/AVX-512/NEON Runtime Selection)**: Adding run-time CPU feature detection (e.g. via `cpuid` or `getauxval`) to dynamically select AVX2 or AVX-512 vector paths on x86_64 systems without requiring native compiler compilation flags (`-march=native`).
 2. **Hybrid Asymmetric Scheduling**: Implementing custom GCD queues that dynamically steer heavy convolution filter segments exclusively to Performance cores, while placing lighter biquad filters on Efficiency cores, could optimize thermal design power (TDP) on mobile macOS devices.
 
 ---
