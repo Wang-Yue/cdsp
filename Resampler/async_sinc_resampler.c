@@ -546,26 +546,6 @@ static resampler_error_t async_sinc_resampler_process(
   size_t s_len = resampler->sinc_len;
   size_t two_s_len = 2 * s_len;
 
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    double* base = audio_buffers_get_channel(resampler->input_buffer, ch);
-    if (!base) continue;
-    memmove(base, base + resampler->current_buffer_fill,
-            two_s_len * sizeof(double));
-  }
-  // Copy the new input chunk data immediately after the history.
-  for (size_t ch = 0; ch < resampler->channels; ch++) {
-    const double* src_ptr = audio_chunk_get_channel(input, ch);
-    double* dst_ptr = audio_buffers_get_channel(resampler->input_buffer, ch);
-    if (!src_ptr || !dst_ptr) continue;
-    memcpy(dst_ptr + two_s_len, src_ptr, valid_frames * sizeof(double));
-    if (valid_frames < resampler->needed_input_size) {
-      memset(dst_ptr + two_s_len + valid_frames, 0,
-             (resampler->needed_input_size - valid_frames) * sizeof(double));
-    }
-  }
-
-  resampler->current_buffer_fill = resampler->needed_input_size;
-
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->needed_input_size;
     resampler->resample_ratio = resampler->target_ratio;
@@ -585,6 +565,26 @@ static resampler_error_t async_sinc_resampler_process(
   if (audio_chunk_get_frames(output) < output_frames) {
     return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
+
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    double* base = audio_buffers_get_channel(resampler->input_buffer, ch);
+    if (!base) continue;
+    memmove(base, base + resampler->current_buffer_fill,
+            two_s_len * sizeof(double));
+  }
+  // Copy the new input chunk data immediately after the history.
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    const double* src_ptr = audio_chunk_get_channel(input, ch);
+    double* dst_ptr = audio_buffers_get_channel(resampler->input_buffer, ch);
+    if (!src_ptr || !dst_ptr) continue;
+    memcpy(dst_ptr + two_s_len, src_ptr, valid_frames * sizeof(double));
+    if (valid_frames < resampler->needed_input_size) {
+      memset(dst_ptr + two_s_len + valid_frames, 0,
+             (resampler->needed_input_size - valid_frames) * sizeof(double));
+    }
+  }
+
+  resampler->current_buffer_fill = resampler->needed_input_size;
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
   double t_ratio_end = 1.0 / resampler->target_ratio;
@@ -622,11 +622,7 @@ static resampler_error_t async_sinc_resampler_process(
       break;
   }
 
-  // Update state for next chunk.
   resampler->last_index = final_idx - (double)resampler->needed_input_size;
-  if (resampler->last_index < -(double)resampler->sinc_len) {
-    resampler->last_index = -(double)resampler->sinc_len;
-  }
   resampler->resample_ratio = resampler->target_ratio;
 
   size_t prev_needed_input_size = resampler->needed_input_size;
