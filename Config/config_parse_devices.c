@@ -334,7 +334,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
         final_cap->cfg.wav_file.has_filename = temp.has_filename;
         final_cap->cfg.wav_file.extra_samples = temp.extra_samples;
         final_cap->cfg.wav_file.has_extra_samples = temp.has_extra_samples;
-        final_cap->cfg.raw_file.channels = temp.channels;
+        final_cap->cfg.wav_file.channels = temp.channels;
 #ifdef CDSP_TEST
         final_cap->cfg.wav_file.realtime = temp.realtime;
         final_cap->cfg.wav_file.has_realtime = temp.has_realtime;
@@ -732,7 +732,8 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;
     dev->has_capture_samplerate = (dev->capture_samplerate > 0);
   }
-  if (parse_json_double(dev_obj, "volume_ramp_time_ms", &dev->volume_ramp_time_ms)) {
+  if (parse_json_double(dev_obj, "volume_ramp_time_ms",
+                        &dev->volume_ramp_time_ms)) {
     dev->has_volume_ramp_time_ms = (dev->volume_ramp_time_ms > 0.0);
   }
   if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {

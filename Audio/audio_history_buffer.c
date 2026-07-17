@@ -173,32 +173,28 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     return AUDIO_HISTORY_BUFFER_OK;
   }
 
-  // Step 2: Read subsequent channels into pre-allocated scratch memory to
-  // prevent data races on multi-threaded reads, then accumulate into dest.
-  size_t read_cnt = count;
+  // Step 2: Read subsequent channels into stack scratch memory in 2048-frame
+  // chunks to prevent data races on multi-threaded reads and avoid dynamic
+  // allocation.
   float stack_scratch[2048];
-  float* local_scratch = stack_scratch;
-  if (read_cnt > 2048) {
-    if (history->scratch && history->scratch_capacity >= read_cnt) {
-      local_scratch = history->scratch;
-    } else {
-      read_cnt = 2048;
-    }
-  }
-
   for (size_t ch = 1; ch < history->channels; ch++) {
-    ok = spsc_audio_ring_buffer_read_latest_at(
-        history->buffers[ch], local_scratch, read_cnt, min_written);
-    if (!ok) {
-      return AUDIO_HISTORY_BUFFER_OK;
-    }
+    for (size_t offset = 0; offset < count; offset += 2048) {
+      size_t chunk_len = (count - offset > 2048) ? 2048 : (count - offset);
+      uint64_t chunk_written = min_written - (count - offset - chunk_len);
+      ok = spsc_audio_ring_buffer_read_latest_at(
+          history->buffers[ch], stack_scratch, chunk_len, chunk_written);
+      if (!ok) {
+        return AUDIO_HISTORY_BUFFER_OK;
+      }
 #ifdef ENABLE_ACCELERATE
-    vDSP_vadd(dest, 1, local_scratch, 1, dest, 1, read_cnt);
+      vDSP_vadd(dest + offset, 1, stack_scratch, 1, dest + offset, 1,
+                chunk_len);
 #else
-    for (size_t i = 0; i < read_cnt; i++) {
-      dest[i] += local_scratch[i];
-    }
+      for (size_t i = 0; i < chunk_len; i++) {
+        dest[offset + i] += stack_scratch[i];
+      }
 #endif
+    }
   }
 
   // Step 3: Scale the accumulated sum to get the average.

@@ -25,6 +25,9 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 #if defined(ENABLE_ALSA)
   pb_count++;
 #endif
+#if defined(ENABLE_PIPEWIRE)
+  pb_count++;
+#endif
 #if defined(ENABLE_WASAPI)
   pb_count++;
 #endif
@@ -39,6 +42,9 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
   cap_count++;
 #endif
 #if defined(ENABLE_ALSA)
+  cap_count++;
+#endif
+#if defined(ENABLE_PIPEWIRE)
   cap_count++;
 #endif
 #if defined(ENABLE_WASAPI)
@@ -68,6 +74,9 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 #if defined(ENABLE_ALSA)
   pb_arr[pb_idx++] = strdup("ALSA");
 #endif
+#if defined(ENABLE_PIPEWIRE)
+  pb_arr[pb_idx++] = strdup("PipeWire");
+#endif
 #if defined(ENABLE_WASAPI)
   pb_arr[pb_idx++] = strdup("WASAPI");
 #endif
@@ -83,6 +92,9 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 #endif
 #if defined(ENABLE_ALSA)
   cap_arr[cap_idx++] = strdup("ALSA");
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  cap_arr[cap_idx++] = strdup("PipeWire");
 #endif
 #if defined(ENABLE_WASAPI)
   cap_arr[cap_idx++] = strdup("WASAPI");

@@ -207,8 +207,8 @@ static cJSON* parse_scalar_val(const char* str) {
   }
 
   size_t len = strlen(str);
-  if ((str[0] == '"' && str[len - 1] == '"') ||
-      (str[0] == '\'' && str[len - 1] == '\'')) {
+  if (len >= 2 && ((str[0] == '"' && str[len - 1] == '"') ||
+                   (str[0] == '\'' && str[len - 1] == '\''))) {
     char* unquoted = (char*)malloc(len);
     if (!unquoted) return NULL;
     size_t out_idx = 0;

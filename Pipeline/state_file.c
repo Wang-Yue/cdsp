@@ -92,7 +92,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
           // strip quotes if any
           if (val[0] == '"' || val[0] == '\'') {
             size_t vlen = strlen(val);
-            if (vlen > 2 && val[vlen - 1] == val[0]) {
+            if (vlen >= 2 && val[vlen - 1] == val[0]) {
               size_t copylen = vlen - 2;
               if (copylen >= sizeof(out_state->config_path)) {
                 copylen = sizeof(out_state->config_path) - 1;

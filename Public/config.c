@@ -224,22 +224,38 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
   cJSON* devices = cJSON_GetObjectItem(root, "devices");
   if (devices) {
     if (samplerate_override > 0) {
-      cJSON_ReplaceItemInObject(devices, "samplerate",
-                                cJSON_CreateNumber(samplerate_override));
+      cJSON* item = cJSON_CreateNumber(samplerate_override);
+      if (cJSON_HasObjectItem(devices, "samplerate")) {
+        cJSON_ReplaceItemInObject(devices, "samplerate", item);
+      } else {
+        cJSON_AddItemToObject(devices, "samplerate", item);
+      }
     }
     cJSON* capture = cJSON_GetObjectItem(devices, "capture");
     if (capture) {
       if (channels_override > 0) {
-        cJSON_ReplaceItemInObject(capture, "channels",
-                                  cJSON_CreateNumber(channels_override));
+        cJSON* item = cJSON_CreateNumber(channels_override);
+        if (cJSON_HasObjectItem(capture, "channels")) {
+          cJSON_ReplaceItemInObject(capture, "channels", item);
+        } else {
+          cJSON_AddItemToObject(capture, "channels", item);
+        }
       }
       if (extra_samples_override >= 0) {
-        cJSON_ReplaceItemInObject(capture, "extra_samples",
-                                  cJSON_CreateNumber(extra_samples_override));
+        cJSON* item = cJSON_CreateNumber(extra_samples_override);
+        if (cJSON_HasObjectItem(capture, "extra_samples")) {
+          cJSON_ReplaceItemInObject(capture, "extra_samples", item);
+        } else {
+          cJSON_AddItemToObject(capture, "extra_samples", item);
+        }
       }
       if (format_override) {
-        cJSON_ReplaceItemInObject(capture, "format",
-                                  cJSON_CreateString(format_override));
+        cJSON* item = cJSON_CreateString(format_override);
+        if (cJSON_HasObjectItem(capture, "format")) {
+          cJSON_ReplaceItemInObject(capture, "format", item);
+        } else {
+          cJSON_AddItemToObject(capture, "format", item);
+        }
       }
     }
   }
@@ -320,7 +336,11 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
   }
 
   if (key) {
-    cJSON_ReplaceItemInObject(parent, key, new_node);
+    if (cJSON_HasObjectItem(parent, key)) {
+      cJSON_ReplaceItemInObject(parent, key, new_node);
+    } else {
+      cJSON_AddItemToObject(parent, key, new_node);
+    }
   } else if (idx >= 0) {
     cJSON_ReplaceItemInArray(parent, idx, new_node);
   } else {
@@ -360,10 +380,12 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
   while (child) {
     if (child->string) {
       cJSON* copy = cJSON_Duplicate(child, true);
-      if (cJSON_HasObjectItem(root, child->string)) {
-        cJSON_ReplaceItemInObject(root, child->string, copy);
-      } else {
-        cJSON_AddItemToObject(root, child->string, copy);
+      if (copy) {
+        if (cJSON_HasObjectItem(root, child->string)) {
+          cJSON_ReplaceItemInObject(root, child->string, copy);
+        } else {
+          cJSON_AddItemToObject(root, child->string, copy);
+        }
       }
     }
     child = child->next;
@@ -383,7 +405,7 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   char* path = cdsp_get_config_file_path(engine);
   if (!path) {
     if (out_err) {
-      out_err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
       snprintf(out_err->message, sizeof(out_err->message),
                "No config file path set");
     }

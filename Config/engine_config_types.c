@@ -530,6 +530,8 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       if (config->is_wav) {
+        if (config->cfg.wav_file.channels > 0)
+          return config->cfg.wav_file.channels;
         FILE* f = cdsp_fopen(config->cfg.wav_file.filename, "rb");
         if (f) {
           uint8_t header[12];
@@ -540,8 +542,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
             if ((is_riff || is_rf64) && memcmp(header + 8, "WAVE", 4) == 0) {
               uint8_t chunk_header[8];
               while (fread(chunk_header, 1, 8, f) == 8) {
-                uint32_t chunk_size = chunk_header[4] |
-                                      (chunk_header[5] << 8) |
+                uint32_t chunk_size = chunk_header[4] | (chunk_header[5] << 8) |
                                       (chunk_header[6] << 16) |
                                       (chunk_header[7] << 24);
                 if (memcmp(chunk_header, "fmt ", 4) == 0) {
@@ -561,7 +562,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
           fclose(f);
           if (wav_channels > 0) return wav_channels;
         }
-        return config->cfg.raw_file.channels;
+        return config->cfg.wav_file.channels;
       }
       return config->cfg.raw_file.channels;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
@@ -796,7 +797,11 @@ void capture_device_config_set_channels(capture_device_config_t* config,
       break;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
-      config->cfg.raw_file.channels = channels;
+      if (config->is_wav) {
+        config->cfg.wav_file.channels = channels;
+      } else {
+        config->cfg.raw_file.channels = channels;
+      }
       break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       config->cfg.stdin_in.channels = channels;

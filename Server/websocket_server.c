@@ -257,13 +257,15 @@ void websocket_server_set_engine(websocket_server_t* server,
 uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000ULL; }
 
 static void remove_client_session(websocket_server_t* server,
-                                  socket_t* client_fds, char (*last_state)[64],
-                                  int* num_clients, int index) {
+                                  struct pollfd* fds, socket_t* client_fds,
+                                  char (*last_state)[64], int* num_clients,
+                                  int index) {
   CLOSE_SOCKET(client_fds[index]);
   pthread_mutex_lock(&server->sessions_mutex);
   client_session_clear(&server->client_sessions[index]);
 
   for (int j = index; j < *num_clients - 1; j++) {
+    fds[j + 1] = fds[j + 2];
     client_fds[j] = client_fds[j + 1];
     strcpy(last_state[j], last_state[j + 1]);
     server->client_sessions[j] = server->client_sessions[j + 1];
@@ -677,8 +679,8 @@ static void* server_thread_func(void* arg) {
 
           if (n <= 0) {
             logger_info(&server_logger, "Client disconnected on slot %d", i);
-            remove_client_session(server, client_fds, last_state, &num_clients,
-                                  i);
+            remove_client_session(server, fds, client_fds, last_state,
+                                  &num_clients, i);
             i--;
           } else {
             buf[n] = '\0';
@@ -696,14 +698,14 @@ static void* server_thread_func(void* arg) {
                                         (size_t)(n - offset), &payload_len,
                                         &header_len, &mask, &opcode)) {
                 if (opcode == 0x08) {
-                  remove_client_session(server, client_fds, last_state,
+                  remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
                   i--;
                   break;
                 }
 
                 if (payload_len > 128 * 1024) {
-                  remove_client_session(server, client_fds, last_state,
+                  remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
                   i--;
                   break;
@@ -714,7 +716,7 @@ static void* server_thread_func(void* arg) {
 
                 char* payload = (char*)malloc(payload_len + 1);
                 if (!payload) {
-                  remove_client_session(server, client_fds, last_state,
+                  remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
                   i--;
                   break;
@@ -735,7 +737,7 @@ static void* server_thread_func(void* arg) {
 
                 if (!read_ok) {
                   free(payload);
-                  remove_client_session(server, client_fds, last_state,
+                  remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
                   i--;
                   break;

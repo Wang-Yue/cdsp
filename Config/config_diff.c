@@ -806,10 +806,9 @@ static bool pipeline_step_equal(const pipeline_step_config_t* a,
   if (a->type != b->type) return false;
   if (a->channel != b->channel) return false;
   if (a->has_channel != b->has_channel) return false;
-  if (a->channels_count != b->channels_count) return false;
-  for (size_t i = 0; i < a->channels_count; i++) {
-    if (a->channels[i] != b->channels[i]) return false;
-  }
+  if (!int_arrays_equal(a->channels, a->channels_count, b->channels,
+                        b->channels_count))
+    return false;
   if (a->has_name != b->has_name) return false;
   if (a->has_name && !safe_streq(a->name, b->name)) return false;
   if (!string_arrays_equal(a->names, a->names_count, b->names, b->names_count))

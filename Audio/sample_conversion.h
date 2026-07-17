@@ -261,7 +261,8 @@ static inline void pcm_sample_encode_s24_4_lj_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24_4_lj_bytes(const uint8_t* src) {
-  int32_t val = (int32_t)((src[1] << 8) | (src[2] << 16) | (src[3] << 24));
+  int32_t val = (int32_t)(((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16) |
+                          ((uint32_t)src[3] << 24));
   return pcm_sample_decode_s32(val);
 }
 

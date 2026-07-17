@@ -815,7 +815,9 @@ static void handle_cmd_subscribe_state(websocket_server_t* server,
                                        cJSON* arg, dyn_string_t* ds) {
   (void)arg;
   if (server) {
+    pthread_mutex_lock(&server->sessions_mutex);
     server->client_sessions[client_idx].state_subscribed = true;
+    pthread_mutex_unlock(&server->sessions_mutex);
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -843,11 +845,13 @@ static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
     reply_error(cmd_name, NULL, err, ds);
   } else {
     if (server) {
+      pthread_mutex_lock(&server->sessions_mutex);
       server->client_sessions[client_idx].vu_subscribed = true;
       server->client_sessions[client_idx].vu_max_rate = max_rate;
       server->client_sessions[client_idx].vu_attack = attack;
       server->client_sessions[client_idx].vu_release = release;
       server->client_sessions[client_idx].last_vu_push_time = 0;
+      pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
   }
@@ -864,10 +868,12 @@ static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
   if (strcmp(side, "playback") == 0 || strcmp(side, "capture") == 0 ||
       strcmp(side, "both") == 0) {
     if (server) {
+      pthread_mutex_lock(&server->sessions_mutex);
       server->client_sessions[client_idx].signal_levels_subscribed = true;
       snprintf(server->client_sessions[client_idx].signal_levels_side,
                sizeof(server->client_sessions[client_idx].signal_levels_side),
                "%s", side);
+      pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
@@ -906,6 +912,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   }
   if (ok) {
     if (server) {
+      pthread_mutex_lock(&server->sessions_mutex);
       server->client_sessions[client_idx].spectrum_subscribed = true;
       server->client_sessions[client_idx].spectrum_is_capture = is_capture;
       server->client_sessions[client_idx].spectrum_channel = channel;
@@ -914,6 +921,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
       server->client_sessions[client_idx].spectrum_n_bins = n_bins;
       server->client_sessions[client_idx].spectrum_max_rate = max_rate;
       server->client_sessions[client_idx].last_spectrum_push_time = 0;
+      pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
@@ -929,6 +937,7 @@ static void handle_cmd_stop_subscription(websocket_server_t* server,
                                          cJSON* arg, dyn_string_t* ds) {
   (void)arg;
   if (server) {
+    pthread_mutex_lock(&server->sessions_mutex);
     bool active =
         server->client_sessions[client_idx].state_subscribed ||
         server->client_sessions[client_idx].vu_subscribed ||
@@ -939,8 +948,10 @@ static void handle_cmd_stop_subscription(websocket_server_t* server,
       server->client_sessions[client_idx].vu_subscribed = false;
       server->client_sessions[client_idx].signal_levels_subscribed = false;
       server->client_sessions[client_idx].spectrum_subscribed = false;
+      pthread_mutex_unlock(&server->sessions_mutex);
       reply_ok(cmd_name, NULL, ds);
     } else {
+      pthread_mutex_unlock(&server->sessions_mutex);
       cJSON* err = cJSON_CreateObject();
       cJSON_AddStringToObject(err, "InvalidRequestError",
                               "No active subscription");
@@ -1440,6 +1451,7 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
     uint64_t since = 0;
     uint64_t now = get_time_ms();
     level_history_t* hist = NULL;
+    pthread_mutex_lock(&server->sessions_mutex);
     if (is_capture) {
       if (is_rms) {
         since = server->client_sessions[client_idx].last_cap_rms_time;
@@ -1461,6 +1473,7 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
         hist = &server->playback_peak_history;
       }
     }
+    pthread_mutex_unlock(&server->sessions_mutex);
     size_t ch = hist->channels;
     double* vals = (double*)calloc(ch, sizeof(double));
     if (is_rms) {
@@ -1619,6 +1632,7 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
       status.state == CDSP_PROCESSING_STATE_RUNNING) {
+    pthread_mutex_lock(&server->sessions_mutex);
     uint64_t cap_rms_since =
         server->client_sessions[client_idx].last_cap_rms_time;
     uint64_t cap_pk_since =
@@ -1632,6 +1646,7 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
     server->client_sessions[client_idx].last_cap_peak_time = now;
     server->client_sessions[client_idx].last_pb_rms_time = now;
     server->client_sessions[client_idx].last_pb_peak_time = now;
+    pthread_mutex_unlock(&server->sessions_mutex);
 
     size_t c_ch = server->capture_rms_history.channels;
     size_t p_ch = server->playback_rms_history.channels;

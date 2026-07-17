@@ -295,6 +295,9 @@ static void* worker_thread_func(void* arg) {
           case LOG_LEVEL_TRACE:
             lvl_str = "TRACE";
             break;
+          default:
+            lvl_str = "UNKNOWN";
+            break;
         }
         char formatted_msg[4096];
         log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
