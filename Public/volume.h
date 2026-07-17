@@ -6,6 +6,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Get the volume of the main fader (index 0).
  * @param engine Pointer to the engine.
@@ -38,7 +42,7 @@ void cdsp_set_mute(dsp_engine_t* engine, bool mute);
 /**
  * @brief Get the volume of a specific fader.
  * @param engine Pointer to the engine.
- * @param fader_idx Index of the fader (0 for Main, 1-4 for Aux1-Aux4).
+ * @param fader Fader identifier (CDSP_FADER_MAIN, CDSP_FADER_AUX1-4).
  * @return Volume in dB.
  */
 float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader);
@@ -68,5 +72,9 @@ bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader);
  * @param mute true to mute, false to unmute.
  */
 void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_VOLUME_H

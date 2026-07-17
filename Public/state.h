@@ -10,6 +10,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct cdsp_state_s;
 /**
  * @brief Opaque structure representing the public DSP state.
@@ -103,5 +107,9 @@ double cdsp_state_get_volume(const cdsp_state_t* state, int index);
  * @param volume The volume value to set.
  */
 void cdsp_state_set_volume(cdsp_state_t* state, int index, double volume);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_STATE_H

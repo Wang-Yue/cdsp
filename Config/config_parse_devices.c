@@ -737,7 +737,7 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->has_volume_ramp_time_ms = (dev->volume_ramp_time_ms > 0.0);
   }
   if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {
-    dev->has_volume_limit = (dev->volume_limit > 0.0);
+    dev->has_volume_limit = true;
   }
   dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change",
                                                  &dev->stop_on_rate_change);

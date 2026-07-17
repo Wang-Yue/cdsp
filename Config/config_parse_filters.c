@@ -589,6 +589,14 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           race_config_t* rp = &p_conf->parameters.race;
           parse_json_double(params, "attenuation", &rp->attenuation);
           parse_json_double(params, "delay", &rp->delay);
+          int rch = 0;
+          if (parse_json_int(params, "channels", &rch)) rp->channels = rch;
+          int ch_a = 0;
+          if (parse_json_int(params, "channel_a", &ch_a)) rp->channel_a = ch_a;
+          int ch_b = 0;
+          if (parse_json_int(params, "channel_b", &ch_b)) rp->channel_b = ch_b;
+          rp->has_subsample_delay =
+              parse_json_bool(params, "subsample_delay", &rp->subsample_delay);
 
           char unit_buf[64];
           if (parse_json_str(params, "delay_unit", unit_buf,
