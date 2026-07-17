@@ -743,6 +743,9 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->playback.cfg.raw_file.wav_header !=
           b->playback.cfg.raw_file.wav_header)
         return false;
+      if (a->playback.cfg.raw_file.use_rf64 !=
+          b->playback.cfg.raw_file.use_rf64)
+        return false;
       break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       if (a->playback.cfg.stdout_out.channels !=

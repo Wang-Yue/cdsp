@@ -690,6 +690,8 @@ typedef struct {
   int channels;                  /**< Number of channels. */
   bool wav_header;               /**< Write WAV header. */
   bool has_wav_header;           /**< True if wav_header is specified. */
+  bool use_rf64;                 /**< Use RF64 WAV header. */
+  bool has_use_rf64;             /**< True if use_rf64 is specified. */
 #ifdef CDSP_TEST
   bool realtime;     /**< Write at real-time rate. */
   bool has_realtime; /**< True if realtime is specified. */

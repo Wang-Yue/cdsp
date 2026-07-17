@@ -430,6 +430,8 @@ typedef struct {
   bool has_file_format;
   bool is_wav;
   bool has_is_wav;
+  bool use_rf64;
+  bool has_use_rf64;
 #ifdef CDSP_TEST
   bool realtime;
   bool has_realtime;
@@ -530,6 +532,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   }
 
   play->has_is_wav = parse_json_bool(play_obj, "wav_header", &play->is_wav);
+  play->has_use_rf64 = parse_json_bool(play_obj, "use_rf64", &play->use_rf64);
   play->has_exclusive =
       parse_json_bool(play_obj, "exclusive", &play->exclusive);
 
@@ -646,6 +649,8 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.raw_file.channels = temp.channels;
       final_play->cfg.raw_file.wav_header = temp.is_wav;
       final_play->cfg.raw_file.has_wav_header = temp.has_is_wav;
+      final_play->cfg.raw_file.use_rf64 = temp.use_rf64;
+      final_play->cfg.raw_file.has_use_rf64 = temp.has_use_rf64;
 #ifdef CDSP_TEST
       final_play->cfg.raw_file.realtime = temp.realtime;
       final_play->cfg.raw_file.has_realtime = temp.has_realtime;

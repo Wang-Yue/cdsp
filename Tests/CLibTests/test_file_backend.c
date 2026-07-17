@@ -686,4 +686,346 @@ TEST(FileBackendWavRealtimeThrottling) {
   remove(wav_filename);
 }
 
+TEST(FileBackendRF64Read) {
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_rf64_%d.wav", getpid());
+  remove(wav_filename);
+
+  FILE* f = fopen(wav_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+
+  // RF64 WAV header
+  uint8_t header[80] = {
+      'R', 'F', '6', '4',
+      0xFF, 0xFF, 0xFF, 0xFF,
+      'W', 'A', 'V', 'E',
+      'd', 's', '6', '4',
+      28, 0, 0, 0, // ds64 chunk size (28)
+      250, 0, 0, 0, 0, 0, 0, 0, // RIFF size (64-bit)
+      256, 0, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
+      128, 0, 0, 0, 0, 0, 0, 0, // Sample count (64-bit: 128 samples)
+      0, 0, 0, 0, // table entry count
+      'f', 'm', 't', ' ',
+      16, 0, 0, 0, // fmt chunk size (16)
+      1, 0, // format tag (PCM)
+      1, 0, // channels (1)
+      0x80, 0x3E, 0, 0, // sample rate (16000)
+      0x00, 0x7D, 0, 0, // byte rate (32000)
+      2, 0, // block align (2)
+      16, 0, // bits per sample (16)
+      'd', 'a', 't', 'a',
+      0xFF, 0xFF, 0xFF, 0xFF // data size placeholder (RF64 style)
+  };
+
+  fwrite(header, 1, sizeof(header), f);
+
+  // Write 128 samples of PCM 16-bit audio (256 bytes)
+  int16_t samples[128] = {0};
+  for (int i = 0; i < 128; i++) {
+    samples[i] = i * 100;
+  }
+  fwrite(samples, sizeof(int16_t), 128, f);
+  fclose(f);
+
+  // Read the RF64 file back and check that the parser correctly extracts params
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = true;
+  cap_cfg.has_is_wav = true;
+  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
+           "%s", wav_filename);
+  cap_cfg.cfg.wav_file.has_filename = true;
+
+  backend_error_t err;
+  capture_backend_t* capture =
+      file_capture_create(&cap_cfg, 0, 1024, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  audio_chunk_t* read_chunk = audio_chunk_create(128, 1);
+  ASSERT_TRUE(capture_backend_read(capture, 128, read_chunk, &err));
+  ASSERT_EQ(128, audio_chunk_get_valid_frames(read_chunk));
+
+  for (size_t f_idx = 0; f_idx < 128; f_idx++) {
+    double expected = (double)((int16_t)f_idx * 100) / 32768.0;
+    ASSERT_NEAR(expected, audio_chunk_get_channel(read_chunk, 0)[f_idx], 1.0 / 32767.0);
+  }
+
+  audio_chunk_free(read_chunk);
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+
+  remove(wav_filename);
+}
+
+TEST(FileBackendRF64RoundTrip) {
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_rf64_rt_%d.wav", getpid());
+  remove(wav_filename);
+
+  // 1. Write RF64 WAV file (S16 format)
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.is_wav = true;
+  play_cfg.has_is_wav = true;
+  play_cfg.cfg.raw_file.channels = 1;
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+  play_cfg.cfg.raw_file.wav_header = true;
+  play_cfg.cfg.raw_file.has_wav_header = true;
+  play_cfg.cfg.raw_file.use_rf64 = true;
+  play_cfg.cfg.raw_file.has_use_rf64 = true;
+
+  backend_error_t err;
+  playback_backend_t* playback =
+      file_playback_create(&play_cfg, 16000, 1024, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  audio_chunk_t* write_chunk = audio_chunk_create(128, 1);
+  for (size_t f = 0; f < 128; f++) {
+    audio_chunk_get_channel(write_chunk, 0)[f] = (double)f / 128.0;
+  }
+  audio_chunk_set_valid_frames(write_chunk, 128);
+
+  ASSERT_TRUE(playback_backend_write(playback, write_chunk, &err));
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+
+  // Verify it starts with RF64
+  FILE* check_f = fopen(wav_filename, "rb");
+  ASSERT_TRUE(check_f != NULL);
+  char sig[4];
+  ASSERT_EQ(4, fread(sig, 1, 4, check_f));
+  ASSERT_TRUE(memcmp(sig, "RF64", 4) == 0);
+  fclose(check_f);
+
+  // 2. Read back and verify values
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = true;
+  cap_cfg.has_is_wav = true;
+  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
+           "%s", wav_filename);
+  cap_cfg.cfg.wav_file.has_filename = true;
+
+  capture_backend_t* capture =
+      file_capture_create(&cap_cfg, 0, 1024, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  audio_chunk_t* read_chunk = audio_chunk_create(128, 1);
+  ASSERT_TRUE(capture_backend_read(capture, 128, read_chunk, &err));
+  ASSERT_EQ(128, audio_chunk_get_valid_frames(read_chunk));
+
+  for (size_t f = 0; f < 128; f++) {
+    double expected = (double)f / 128.0;
+    ASSERT_NEAR(expected, audio_chunk_get_channel(read_chunk, 0)[f],
+                1.0 / 32767.0);
+  }
+
+  audio_chunk_free(write_chunk);
+  audio_chunk_free(read_chunk);
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+
+  remove(wav_filename);
+}
+
+TEST(FileBackendWavRF64CrossRoundTrip) {
+  char rf64_in_filename[256];
+  char wav_mid_filename[256];
+  char rf64_out_filename[256];
+  snprintf(rf64_in_filename, sizeof(rf64_in_filename),
+           "/tmp/test_file_backend_cross_in_%d.wav", getpid());
+  snprintf(wav_mid_filename, sizeof(wav_mid_filename),
+           "/tmp/test_file_backend_cross_mid_%d.wav", getpid());
+  snprintf(rf64_out_filename, sizeof(rf64_out_filename),
+           "/tmp/test_file_backend_cross_out_%d.wav", getpid());
+
+  remove(rf64_in_filename);
+  remove(wav_mid_filename);
+  remove(rf64_out_filename);
+
+  // Prep Step: Write an RF64 input file manually
+  FILE* f = fopen(rf64_in_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t rf64_header[80] = {
+      'R', 'F', '6', '4',
+      0xFF, 0xFF, 0xFF, 0xFF,
+      'W', 'A', 'V', 'E',
+      'd', 's', '6', '4',
+      28, 0, 0, 0, // ds64 chunk size (28)
+      250, 0, 0, 0, 0, 0, 0, 0, // RIFF size (64-bit)
+      256, 0, 0, 0, 0, 0, 0, 0, // Data size (64-bit: 256 bytes)
+      128, 0, 0, 0, 0, 0, 0, 0, // Sample count (64-bit: 128 samples)
+      0, 0, 0, 0, // table entry count
+      'f', 'm', 't', ' ',
+      16, 0, 0, 0, // fmt chunk size (16)
+      1, 0, // format tag (PCM)
+      1, 0, // channels (1)
+      0x80, 0x3E, 0, 0, // sample rate (16000)
+      0x00, 0x7D, 0, 0, // byte rate (32000)
+      2, 0, // block align (2)
+      16, 0, // bits per sample (16)
+      'd', 'a', 't', 'a',
+      0xFF, 0xFF, 0xFF, 0xFF // data size placeholder
+  };
+  fwrite(rf64_header, 1, sizeof(rf64_header), f);
+  int16_t samples[128] = {0};
+  for (int i = 0; i < 128; i++) {
+    samples[i] = i * 100;
+  }
+  fwrite(samples, sizeof(int16_t), 128, f);
+  fclose(f);
+
+  // 1. RF64 Capture -> WAV Playback
+  capture_device_config_t cap_cfg_1;
+  memset(&cap_cfg_1, 0, sizeof(cap_cfg_1));
+  cap_cfg_1.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg_1.is_wav = true;
+  cap_cfg_1.has_is_wav = true;
+  snprintf(cap_cfg_1.cfg.wav_file.filename, sizeof(cap_cfg_1.cfg.wav_file.filename),
+           "%s", rf64_in_filename);
+  cap_cfg_1.cfg.wav_file.has_filename = true;
+
+  backend_error_t err;
+  capture_backend_t* capture_1 =
+      file_capture_create(&cap_cfg_1, 0, 1024, NULL, &err);
+  ASSERT_TRUE(capture_1 != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_1, &err));
+
+  playback_device_config_t play_cfg_1;
+  memset(&play_cfg_1, 0, sizeof(play_cfg_1));
+  play_cfg_1.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg_1.is_wav = true;
+  play_cfg_1.has_is_wav = true;
+  play_cfg_1.cfg.raw_file.channels = 1;
+  snprintf(play_cfg_1.cfg.raw_file.filename,
+           sizeof(play_cfg_1.cfg.raw_file.filename), "%s", wav_mid_filename);
+  play_cfg_1.cfg.raw_file.has_filename = true;
+  play_cfg_1.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg_1.cfg.raw_file.has_format = true;
+  play_cfg_1.cfg.raw_file.wav_header = true;
+  play_cfg_1.cfg.raw_file.has_wav_header = true;
+  play_cfg_1.cfg.raw_file.use_rf64 = false; // Plain WAV
+  play_cfg_1.cfg.raw_file.has_use_rf64 = true;
+
+  playback_backend_t* playback_1 =
+      file_playback_create(&play_cfg_1, 16000, 1024, NULL, &err);
+  ASSERT_TRUE(playback_1 != NULL);
+  ASSERT_TRUE(playback_backend_open(playback_1, &err));
+
+  audio_chunk_t* chunk = audio_chunk_create(128, 1);
+  ASSERT_TRUE(capture_backend_read(capture_1, 128, chunk, &err));
+  ASSERT_TRUE(playback_backend_write(playback_1, chunk, &err));
+
+  capture_backend_close(capture_1);
+  capture_backend_free(capture_1);
+  playback_backend_close(playback_1);
+  playback_backend_free(playback_1);
+
+  // Verify the intermediate file is standard WAV
+  FILE* check_wav = fopen(wav_mid_filename, "rb");
+  ASSERT_TRUE(check_wav != NULL);
+  char sig[4];
+  ASSERT_EQ(4, fread(sig, 1, 4, check_wav));
+  ASSERT_TRUE(memcmp(sig, "RIFF", 4) == 0);
+  fclose(check_wav);
+
+  // 2. WAV Capture -> RF64 Playback
+  capture_device_config_t cap_cfg_2;
+  memset(&cap_cfg_2, 0, sizeof(cap_cfg_2));
+  cap_cfg_2.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg_2.is_wav = true;
+  cap_cfg_2.has_is_wav = true;
+  snprintf(cap_cfg_2.cfg.wav_file.filename, sizeof(cap_cfg_2.cfg.wav_file.filename),
+           "%s", wav_mid_filename);
+  cap_cfg_2.cfg.wav_file.has_filename = true;
+
+  capture_backend_t* capture_2 =
+      file_capture_create(&cap_cfg_2, 0, 1024, NULL, &err);
+  ASSERT_TRUE(capture_2 != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_2, &err));
+
+  playback_device_config_t play_cfg_2;
+  memset(&play_cfg_2, 0, sizeof(play_cfg_2));
+  play_cfg_2.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg_2.is_wav = true;
+  play_cfg_2.has_is_wav = true;
+  play_cfg_2.cfg.raw_file.channels = 1;
+  snprintf(play_cfg_2.cfg.raw_file.filename,
+           sizeof(play_cfg_2.cfg.raw_file.filename), "%s", rf64_out_filename);
+  play_cfg_2.cfg.raw_file.has_filename = true;
+  play_cfg_2.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  play_cfg_2.cfg.raw_file.has_format = true;
+  play_cfg_2.cfg.raw_file.wav_header = true;
+  play_cfg_2.cfg.raw_file.has_wav_header = true;
+  play_cfg_2.cfg.raw_file.use_rf64 = true; // RF64 WAV
+  play_cfg_2.cfg.raw_file.has_use_rf64 = true;
+
+  playback_backend_t* playback_2 =
+      file_playback_create(&play_cfg_2, 16000, 1024, NULL, &err);
+  ASSERT_TRUE(playback_2 != NULL);
+  ASSERT_TRUE(playback_backend_open(playback_2, &err));
+
+  audio_chunk_t* chunk2 = audio_chunk_create(128, 1);
+  ASSERT_TRUE(capture_backend_read(capture_2, 128, chunk2, &err));
+  ASSERT_TRUE(playback_backend_write(playback_2, chunk2, &err));
+
+  capture_backend_close(capture_2);
+  capture_backend_free(capture_2);
+  playback_backend_close(playback_2);
+  playback_backend_free(playback_2);
+
+  // Verify the final file is RF64 WAV
+  FILE* check_rf64 = fopen(rf64_out_filename, "rb");
+  ASSERT_TRUE(check_rf64 != NULL);
+  ASSERT_EQ(4, fread(sig, 1, 4, check_rf64));
+  ASSERT_TRUE(memcmp(sig, "RF64", 4) == 0);
+  fclose(check_rf64);
+
+  // 3. Read back final RF64 and verify content correctness
+  capture_device_config_t cap_cfg_final;
+  memset(&cap_cfg_final, 0, sizeof(cap_cfg_final));
+  cap_cfg_final.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg_final.is_wav = true;
+  cap_cfg_final.has_is_wav = true;
+  snprintf(cap_cfg_final.cfg.wav_file.filename, sizeof(cap_cfg_final.cfg.wav_file.filename),
+           "%s", rf64_out_filename);
+  cap_cfg_final.cfg.wav_file.has_filename = true;
+
+  capture_backend_t* capture_final =
+      file_capture_create(&cap_cfg_final, 0, 1024, NULL, &err);
+  ASSERT_TRUE(capture_final != NULL);
+  ASSERT_TRUE(capture_backend_open(capture_final, &err));
+
+  audio_chunk_t* final_chunk = audio_chunk_create(128, 1);
+  ASSERT_TRUE(capture_backend_read(capture_final, 128, final_chunk, &err));
+  ASSERT_EQ(128, audio_chunk_get_valid_frames(final_chunk));
+
+  for (size_t f_idx = 0; f_idx < 128; f_idx++) {
+    double expected = (double)((int16_t)f_idx * 100) / 32768.0;
+    ASSERT_NEAR(expected, audio_chunk_get_channel(final_chunk, 0)[f_idx], 1.0 / 32767.0);
+  }
+
+  audio_chunk_free(chunk);
+  audio_chunk_free(chunk2);
+  audio_chunk_free(final_chunk);
+  capture_backend_close(capture_final);
+  capture_backend_free(capture_final);
+
+  remove(rf64_in_filename);
+  remove(wav_mid_filename);
+  remove(rf64_out_filename);
+}
+
 TEST_MAIN()
