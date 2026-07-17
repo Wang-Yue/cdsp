@@ -337,9 +337,7 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
         double a2 = 0.5 * (p0 + p2) - p1;
         double a3 = 0.5 * (p1 - p2) + 1.0 / 6.0 * (p3 - p0);
         double x = frac_offset;
-        double x2 = x * x;
-        double x3 = x2 * x;
-        out[frame] = a0 + a1 * x + a2 * x2 + a3 * x3;
+        out[frame] = a0 + x * (a1 + x * (a2 + x * a3));
       }
     }
   }
@@ -438,8 +436,7 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
         double a1 = -3.0 * p0 + 4.0 * p1 - p2;
         double a0 = 2.0 * p0;
         double x = frac_offset;
-        double x2 = x * x;
-        out[frame] = 0.5 * (a0 + a1 * x + a2 * x2);
+        out[frame] = 0.5 * (a0 + x * (a1 + x * a2));
       }
     }
   }

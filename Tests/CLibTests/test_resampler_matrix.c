@@ -624,7 +624,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
   while (true) {
     clock_gettime(CLOCK_MONOTONIC, &ts_now);
     double now_ns = (double)ts_now.tv_sec * 1e9 + (double)ts_now.tv_nsec;
-    if (iters >= 20 && (now_ns - start_ns) >= 400000000.0) {
+    if (iters >= 5 && (now_ns - start_ns) >= 10000000.0) {
       break;
     }
     for (size_t c = 0; c < chunk_count; c++) {
@@ -685,11 +685,10 @@ static bool measure_rubato_perf(const char* mode, int in_rate, int out_rate,
   char cmd[1024];
 #ifdef _WIN32
   snprintf(cmd, sizeof(cmd),
-           "\"\"%s\" %s \"%s\" \"%s\" %d %d %zu --bench=20 2>&1\"",
+           "\"\"%s\" %s \"%s\" \"%s\" %d %d %zu --bench=1 2>&1\"",
            g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate, cs);
 #else
-  snprintf(cmd, sizeof(cmd),
-           "\"%s\" %s \"%s\" \"%s\" %d %d %zu --bench=20 2>&1",
+  snprintf(cmd, sizeof(cmd), "\"%s\" %s \"%s\" \"%s\" %d %d %zu --bench=1 2>&1",
            g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate, cs);
 #endif
 
