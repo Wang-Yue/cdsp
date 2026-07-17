@@ -355,5 +355,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (loop->shared) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_INACTIVE);
   }
+  if (loop->playback) {
+    playback_backend_close(loop->playback);
+  }
   logger_info(&g_logger, "Playback thread stopped");
 }

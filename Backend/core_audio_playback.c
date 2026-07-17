@@ -581,6 +581,7 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
 /// Close the CoreAudio playback device and release HAL resources.
 void core_audio_playback_close(core_audio_playback_t* playback) {
   if (!playback) return;
+  if (!playback->audio_unit && playback->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
     rate_change_watcher_free(playback->rate_watcher);

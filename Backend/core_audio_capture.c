@@ -682,6 +682,7 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
 /// Close the CoreAudio capture device and release HAL resources.
 void core_audio_capture_close(core_audio_capture_t* capture) {
   if (!capture) return;
+  if (!capture->audio_unit && capture->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio capture device");
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
