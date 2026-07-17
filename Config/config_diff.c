@@ -461,15 +461,6 @@ static bool resampler_config_equal(const resampler_config_t* a,
   if (a->has_f_cutoff != b->has_f_cutoff) return false;
   if (a->has_f_cutoff && a->f_cutoff != b->f_cutoff) return false;
 
-#if defined(ENABLE_COREAUDIO)
-  if (a->has_apple_quality != b->has_apple_quality) return false;
-  if (a->has_apple_quality && a->apple_quality != b->apple_quality)
-    return false;
-  if (a->has_apple_complexity != b->has_apple_complexity) return false;
-  if (a->has_apple_complexity && a->apple_complexity != b->apple_complexity)
-    return false;
-#endif
-
   return true;
 }
 

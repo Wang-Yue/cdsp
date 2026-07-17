@@ -34,7 +34,6 @@
 #include "Processors/compressor_processor.h"
 #include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
-#include "Resampler/apple_resampler.h"
 #include "Resampler/async_poly_resampler.h"
 #include "Resampler/async_sinc_resampler.h"
 #include "Resampler/audio_resampler.h"
@@ -428,24 +427,6 @@ static void run_resampler_hot_path(resampler_t* resampler, int channels,
   free_chunks(inputs, 32);
   audio_chunk_free(output);
 }
-
-#if defined(ENABLE_COREAUDIO)
-TEST(AppleResampler_AllocationFree_Stereo) {
-  resampler_config_t cfg;
-  memset(&cfg, 0, sizeof(cfg));
-  cfg.type = RESAMPLER_TYPE_APPLE;
-  cfg.apple_quality = APPLE_RESAMPLER_QUALITY_MAX;
-  cfg.has_apple_quality = true;
-  cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_NORMAL;
-  cfg.has_apple_complexity = true;
-
-  resampler_t* res =
-      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
-  ASSERT_TRUE(res != NULL);
-  run_resampler_hot_path(res, 2, "AppleResampler stereo");
-  resampler_free(res);
-}
-#endif  // ENABLE_COREAUDIO
 
 TEST(Synchronous_Stereo) {
   resampler_config_t cfg;

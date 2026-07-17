@@ -75,8 +75,6 @@ typedef struct {
   cell_t swift_sync;
   cell_t swift_poly;
   cell_t swift_sinc;
-  cell_t apple_mast;
-  cell_t apple_minph;
   cell_t rubato_fft;
   cell_t rubato_poly;
   cell_t rubato_sinc;
@@ -413,22 +411,7 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
       break;
-#if defined(ENABLE_COREAUDIO)
-    case 3:
-      resampler_config_init(&cfg, RESAMPLER_TYPE_APPLE);
-      cfg.apple_quality = APPLE_RESAMPLER_QUALITY_MAX;
-      cfg.has_apple_quality = true;
-      cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_MASTERING;
-      cfg.has_apple_complexity = true;
-      break;
-    case 4:
-      resampler_config_init(&cfg, RESAMPLER_TYPE_APPLE);
-      cfg.apple_quality = APPLE_RESAMPLER_QUALITY_MAX;
-      cfg.has_apple_quality = true;
-      cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_MINIMUM_PHASE;
-      cfg.has_apple_complexity = true;
-      break;
-#endif
+
     case 5:
       if (!check_rubato_available()) return NULL;
       return run_rubato("fft", in_rate, out_rate, input, input_count,
@@ -567,22 +550,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
       break;
-#if defined(ENABLE_COREAUDIO)
-    case 3:
-      resampler_config_init(&cfg, RESAMPLER_TYPE_APPLE);
-      cfg.apple_quality = APPLE_RESAMPLER_QUALITY_MAX;
-      cfg.has_apple_quality = true;
-      cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_MASTERING;
-      cfg.has_apple_complexity = true;
-      break;
-    case 4:
-      resampler_config_init(&cfg, RESAMPLER_TYPE_APPLE);
-      cfg.apple_quality = APPLE_RESAMPLER_QUALITY_MAX;
-      cfg.has_apple_quality = true;
-      cfg.apple_complexity = APPLE_RESAMPLER_COMPLEXITY_MINIMUM_PHASE;
-      cfg.has_apple_complexity = true;
-      break;
-#endif
+
     default:
       return false;
   }
@@ -729,8 +697,6 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
   r.swift_sync = measure_quality_cell(in_rate, out_rate, 0);
   r.swift_poly = measure_quality_cell(in_rate, out_rate, 1);
   r.swift_sinc = measure_quality_cell(in_rate, out_rate, 2);
-  r.apple_mast = measure_quality_cell(in_rate, out_rate, 3);
-  r.apple_minph = measure_quality_cell(in_rate, out_rate, 4);
 
   if (rubato_ok) {
     r.rubato_fft = measure_quality_cell(in_rate, out_rate, 5);
@@ -756,18 +722,6 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
     r.swift_sinc.has_ns_per_out_frame = true;
     r.swift_sinc.rtf_per_iter = rtf;
     r.swift_sinc.has_rtf_per_iter = true;
-  }
-  if (measure_swift_perf(in_rate, out_rate, 3, &ns, &rtf)) {
-    r.apple_mast.ns_per_out_frame = ns;
-    r.apple_mast.has_ns_per_out_frame = true;
-    r.apple_mast.rtf_per_iter = rtf;
-    r.apple_mast.has_rtf_per_iter = true;
-  }
-  if (measure_swift_perf(in_rate, out_rate, 4, &ns, &rtf)) {
-    r.apple_minph.ns_per_out_frame = ns;
-    r.apple_minph.has_ns_per_out_frame = true;
-    r.apple_minph.rtf_per_iter = rtf;
-    r.apple_minph.has_rtf_per_iter = true;
   }
 
   if (rubato_ok && r.rubato_fft.has_sinad_db) {
@@ -871,37 +825,32 @@ static void format_cell(bool has_val, double val, const char* format_str,
 static void print_table(const row_t* grid, size_t grid_count, const char* title,
                         metric_type_t metric, bool higher_is_better,
                         const char* format_str) {
-  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16], h6[16],
-      h7[16];
+  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16];
   pad_to_14("Pair", pair_col);
   pad_to_14("C Sync", h0);
   pad_to_14("C Poly", h1);
   pad_to_14("C Sinc", h2);
-  pad_to_14("Apple Mast", h3);
-  pad_to_14("Apple MinPh", h4);
-  pad_to_14("rubato Fft", h5);
-  pad_to_14("rubato Poly", h6);
-  pad_to_14("rubato Sinc", h7);
+  pad_to_14("rubato Fft", h3);
+  pad_to_14("rubato Poly", h4);
+  pad_to_14("rubato Sinc", h5);
 
   const char* direction_str =
       higher_is_better ? "higher is better" : "lower is better";
   printf("=== %s (%s) ===\n", title, direction_str);
-  printf("%s %s %s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5, h6,
-         h7);
+  printf("%s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5);
 
   for (size_t r = 0; r < grid_count; r++) {
     const row_t* row = &grid[r];
-    const cell_t* cells[8] = {&row->swift_sync,  &row->swift_poly,
-                              &row->swift_sinc,  &row->apple_mast,
-                              &row->apple_minph, &row->rubato_fft,
+    const cell_t* cells[6] = {&row->swift_sync,  &row->swift_poly,
+                              &row->swift_sinc,  &row->rubato_fft,
                               &row->rubato_poly, &row->rubato_sinc};
-    double vals[8];
-    bool has_vals[8];
+    double vals[6];
+    bool has_vals[6];
     bool any_valid = false;
     double best_val = 0.0;
     bool has_best = false;
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 6; i++) {
       has_vals[i] = get_cell_metric(cells[i], metric, &vals[i]);
       if (has_vals[i]) {
         if (!any_valid) {
@@ -920,20 +869,17 @@ static void print_table(const row_t* grid, size_t grid_count, const char* title,
 
     if (!any_valid) continue;
 
-    char c0[16], c1[16], c2[16], c3[16], c4[16], c5[16], c6[16], c7[16];
+    char c0[16], c1[16], c2[16], c3[16], c4[16], c5[16];
     format_cell(has_vals[0], vals[0], format_str, has_best, best_val, c0);
     format_cell(has_vals[1], vals[1], format_str, has_best, best_val, c1);
     format_cell(has_vals[2], vals[2], format_str, has_best, best_val, c2);
     format_cell(has_vals[3], vals[3], format_str, has_best, best_val, c3);
     format_cell(has_vals[4], vals[4], format_str, has_best, best_val, c4);
     format_cell(has_vals[5], vals[5], format_str, has_best, best_val, c5);
-    format_cell(has_vals[6], vals[6], format_str, has_best, best_val, c6);
-    format_cell(has_vals[7], vals[7], format_str, has_best, best_val, c7);
 
     char label_col[16];
     pad_to_14(row->label, label_col);
-    printf("%s %s %s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5,
-           c6, c7);
+    printf("%s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5);
   }
 }
 

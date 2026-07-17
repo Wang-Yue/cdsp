@@ -28,11 +28,7 @@ typedef enum {
   /** Asynchronous windowed-sinc resampler. */
   RESAMPLER_IMPL_ASYNC_SINC,
   /** Asynchronous polynomial resampler. */
-  RESAMPLER_IMPL_ASYNC_POLY,
-#if defined(ENABLE_COREAUDIO)
-  /** Apple Core Audio AudioConverter wrapper. */
-  RESAMPLER_IMPL_APPLE
-#endif
+  RESAMPLER_IMPL_ASYNC_POLY
 } resampler_impl_type_t;
 
 /**

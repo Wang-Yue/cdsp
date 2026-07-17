@@ -25,17 +25,6 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   res->has_interpolation = parse_json_str(
       res_obj, "interpolation", res->interpolation, sizeof(res->interpolation));
 
-#if defined(ENABLE_COREAUDIO)
-  if (parse_json_str(res_obj, "apple_quality", str_buf, sizeof(str_buf))) {
-    res->apple_quality = apple_resampler_quality_from_string(str_buf);
-    res->has_apple_quality = true;
-  }
-  if (parse_json_str(res_obj, "apple_complexity", str_buf, sizeof(str_buf))) {
-    res->apple_complexity = apple_resampler_complexity_from_string(str_buf);
-    res->has_apple_complexity = true;
-  }
-#endif
-
   if (parse_json_int(res_obj, "sinc_len", &res->sinc_len)) {
     res->has_sinc_len = (res->sinc_len > 0);
   }

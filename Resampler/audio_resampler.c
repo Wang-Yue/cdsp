@@ -1,20 +1,15 @@
 // Resampler protocol + shared types.
-// Four resampler implementations conform to AudioResampler:
+// Three resampler implementations conform to AudioResampler:
 //   * SynchronousResampler — FFT-based fixed-ratio.
 //   * AsyncSincResampler   — Asynchronous windowed-sinc resampler.
 //   * AsyncPolyResampler   — Asynchronous polynomial resampler.
-//   * AppleResampler       — Core Audio AudioConverter wrapper.
 
 #include "audio_resampler.h"
 
+#include "Logging/app_logger.h"
 #include "async_poly_resampler.h"
 #include "async_sinc_resampler.h"
 #include "synchronous_resampler.h"
-#if defined(ENABLE_COREAUDIO)
-#include "apple_resampler.h"
-#endif
-
-#include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.resampler"};
 
@@ -30,10 +25,6 @@ static const resampler_vtable_t* resampler_vtable_from_type(
       return &g_async_sinc_resampler_vtable;
     case RESAMPLER_TYPE_ASYNC_POLY:
       return &g_async_poly_resampler_vtable;
-#if defined(ENABLE_COREAUDIO)
-    case RESAMPLER_TYPE_APPLE:
-      return &g_apple_resampler_vtable;
-#endif
     default:
       return NULL;
   }
@@ -48,10 +39,6 @@ static resampler_impl_type_t resampler_impl_type_from_config(
       return RESAMPLER_IMPL_ASYNC_SINC;
     case RESAMPLER_TYPE_ASYNC_POLY:
       return RESAMPLER_IMPL_ASYNC_POLY;
-#if defined(ENABLE_COREAUDIO)
-    case RESAMPLER_TYPE_APPLE:
-      return RESAMPLER_IMPL_APPLE;
-#endif
   }
   return RESAMPLER_IMPL_SYNCHRONOUS;
 }
