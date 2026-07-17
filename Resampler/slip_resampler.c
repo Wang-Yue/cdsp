@@ -5,7 +5,9 @@
 
 #define MAX_CROSSFADE_LEN 128
 
-typedef struct {
+typedef struct slip_resampler slip_resampler_t;
+
+struct slip_resampler {
   size_t channels;
   size_t chunk_size;
   fixed_async_t fixed;
@@ -21,7 +23,7 @@ typedef struct {
   size_t scratch_capacity;
   double** input_scratch;
   double** output_scratch;
-} slip_resampler_t;
+};
 
 static int slip_resampler_validate(const resampler_config_t* config,
                                    config_error_t* err) {
@@ -99,28 +101,14 @@ static void slip_resampler_get_ratio_range(const slip_resampler_t* impl,
   }
 }
 
-static void* slip_resampler_create(const resampler_config_t* config,
-                                   size_t input_rate, size_t output_rate,
-                                   size_t channels, size_t chunk_size,
-                                   config_error_t* err) {
-  (void)config;
-  if (input_rate != output_rate) {
-    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "Slip resampler requires matching capture and playback "
-                     "sample rates");
-    return NULL;
-  }
-  if (chunk_size < 4) {
-    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
-                     "Slip resampler chunk_size must be at least 4");
-    return NULL;
-  }
+static slip_resampler_t* slip_resampler_create_impl(size_t channels, size_t chunk_size,
+                                                    fixed_async_t fixed_mode) {
   slip_resampler_t* impl =
       (slip_resampler_t*)calloc(1, sizeof(slip_resampler_t));
   if (!impl) return NULL;
   impl->channels = channels;
   impl->chunk_size = chunk_size;
-  impl->fixed = FIXED_ASYNC_INPUT;
+  impl->fixed = fixed_mode;
 
   impl->crossfade_len = (chunk_size - 2) / 2;
   if (impl->crossfade_len > MAX_CROSSFADE_LEN) {
@@ -153,6 +141,25 @@ static void* slip_resampler_create(const resampler_config_t* config,
   slip_resampler_replan(impl);
 
   return impl;
+}
+
+static void* slip_resampler_create(const resampler_config_t* config,
+                                   size_t input_rate, size_t output_rate,
+                                   size_t channels, size_t chunk_size,
+                                   config_error_t* err) {
+  (void)config;
+  if (input_rate != output_rate) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "Slip resampler requires matching capture and playback "
+                     "sample rates");
+    return NULL;
+  }
+  if (chunk_size < 4) {
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
+                     "Slip resampler chunk_size must be at least 4");
+    return NULL;
+  }
+  return slip_resampler_create_impl(channels, chunk_size, FIXED_ASYNC_INPUT);
 }
 
 static void place_correction(const double* input, double* output,
