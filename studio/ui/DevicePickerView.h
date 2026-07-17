@@ -118,6 +118,11 @@ private:
     QComboBox* m_pbRawFileFormatCombo = nullptr;
     QSpinBox* m_pbRawFileChannelsSpin = nullptr;
 
+    QLineEdit* m_pbWavFilePathEdit = nullptr;
+    QComboBox* m_pbWavFileFormatCombo = nullptr;
+    QSpinBox* m_pbWavFileChannelsSpin = nullptr;
+    QComboBox* m_pbWavFormatModeCombo = nullptr;
+
     // Processing Settings
     QComboBox* m_chunkSizeCombo = nullptr;
     QLabel* m_latencyLabel = nullptr;
@@ -137,7 +142,7 @@ private:
     QWidget* createCapGeneratorView();
 
     QWidget* createPbCoreAudioView();
-    QWidget* createPbFileView();
+    QWidget* createPbFileView(bool isWav);
 
     static QString formatSampleRate(int rate);
     void updateDoPCapability();

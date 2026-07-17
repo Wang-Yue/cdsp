@@ -290,6 +290,7 @@ struct RawFilePlaybackConfig {
     std::string filename;
     std::string format = "S16_LE";
     std::optional<bool> wavHeader;
+    std::optional<bool> useRf64;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static RawFilePlaybackConfig fromJson(const QJsonObject& json);

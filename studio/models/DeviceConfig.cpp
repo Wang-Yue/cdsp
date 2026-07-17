@@ -287,6 +287,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.rawFile.channels = channels;
         pb.rawFile.format = fileFormat;
         pb.rawFile.wavHeader = isWav;
+        pb.rawFile.useRf64 = useRf64;
         break;
     case AudioBackendType::SignalGenerator:
         break;
@@ -308,6 +309,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["filename"] = QString::fromStdString(filename);
     obj["fileFormat"] = QString::fromStdString(fileFormat);
     obj["isWav"] = isWav;
+    obj["useRf64"] = useRf64;
     obj["skipBytes"] = skipBytes;
     obj["readBytes"] = readBytes;
     obj["extraSamples"] = extraSamples;
@@ -352,6 +354,8 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.fileFormat = json["fileFormat"].toString().toStdString();
     if (json.contains("isWav"))
         cfg.isWav = json["isWav"].toBool();
+    if (json.contains("useRf64"))
+        cfg.useRf64 = json["useRf64"].toBool();
     if (json.contains("skipBytes"))
         cfg.skipBytes = json["skipBytes"].toInt();
     if (json.contains("readBytes"))
@@ -379,7 +383,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
-           isWav == other.isWav && skipBytes == other.skipBytes && readBytes == other.readBytes &&
+           isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes && readBytes == other.readBytes &&
            extraSamples == other.extraSamples && generatorType == other.generatorType &&
            generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel;
 }

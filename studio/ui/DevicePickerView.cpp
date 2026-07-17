@@ -163,6 +163,7 @@ void DevicePickerView::setupUi() {
     m_pbBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
 #endif
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
+    m_pbBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
 
     auto getPbStackIndex = [](AudioBackendType backend) {
         switch (backend) {
@@ -173,9 +174,11 @@ void DevicePickerView::setupUi() {
         case AudioBackendType::PulseAudio:
             return 0;
         case AudioBackendType::RawFile:
-        case AudioBackendType::WavFile:
-        case AudioBackendType::SignalGenerator:
             return 1;
+        case AudioBackendType::WavFile:
+            return 2;
+        case AudioBackendType::SignalGenerator:
+            return 0;
         }
         return 0;
     };
@@ -193,7 +196,8 @@ void DevicePickerView::setupUi() {
 
     m_pbStack = new QStackedWidget(pbGroup);
     m_pbStack->addWidget(createPbCoreAudioView());
-    m_pbStack->addWidget(createPbFileView());
+    m_pbStack->addWidget(createPbFileView(false));
+    m_pbStack->addWidget(createPbFileView(true));
     pbLayout->addWidget(m_pbStack);
 
     mainLayout->addWidget(pbGroup);
@@ -1024,7 +1028,7 @@ void DevicePickerView::updateDoPCapability() {
     m_pbDopHintLabel->setVisible(!isCapable);
 }
 
-QWidget* DevicePickerView::createPbFileView() {
+QWidget* DevicePickerView::createPbFileView(bool isWav) {
     auto w = new QWidget();
     auto form = new QFormLayout(w);
     form->setSpacing(12);
@@ -1034,46 +1038,99 @@ QWidget* DevicePickerView::createPbFileView() {
     pathLbl->setFixedWidth(120);
     fileBox->addWidget(pathLbl);
 
-    m_pbRawFilePathEdit = new QLineEdit(w);
-    m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
-    m_pbRawFilePathEdit->setClearButtonEnabled(true);
-    connect(m_pbRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
-    connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    fileBox->addWidget(m_pbRawFilePathEdit);
+    if (isWav) {
+        m_pbWavFilePathEdit = new QLineEdit(w);
+        m_pbWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
+        m_pbWavFilePathEdit->setClearButtonEnabled(true);
+        connect(m_pbWavFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
+        connect(m_pbWavFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        fileBox->addWidget(m_pbWavFilePathEdit);
 
-    auto browseBtn = new QPushButton("Select File...", w);
-    connect(browseBtn, &QPushButton::clicked, [this, w]() {
-        QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
-        if (!path.isEmpty())
-            m_pbRawFilePathEdit->setText(path);
-    });
-    fileBox->addWidget(browseBtn);
-    form->addRow("", fileBox);
+        auto browseBtn = new QPushButton("Select File...", w);
+        connect(browseBtn, &QPushButton::clicked, [this, w]() {
+            QString path = QFileDialog::getSaveFileName(w, "Select Output WAV File", "", "WAV Files (*.wav)");
+            if (!path.isEmpty())
+                m_pbWavFilePathEdit->setText(path);
+        });
+        fileBox->addWidget(browseBtn);
+        form->addRow("", fileBox);
 
-    m_pbRawFileFormatCombo = new QComboBox(w);
-    m_pbRawFileFormatCombo->addItems(
-        {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
-    connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
-    });
-    form->addRow("Format", m_pbRawFileFormatCombo);
+        m_pbWavFileFormatCombo = new QComboBox(w);
+        m_pbWavFileFormatCombo->addItems(
+            {"S16_LE", "S24_3_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+        connect(m_pbWavFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            QTimer::singleShot(0, this, [this]() { applySettings(); });
+        });
+        form->addRow("Format", m_pbWavFileFormatCombo);
 
-    m_pbRawFileChannelsSpin = new QSpinBox(w);
-    m_pbRawFileChannelsSpin->setRange(1, 32);
-    m_pbRawFileChannelsSpin->setMinimumWidth(110);
-    m_pbRawFileChannelsSpin->setMaximumWidth(140);
-    connect(m_pbRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    form->addRow("Channels", m_pbRawFileChannelsSpin);
+        m_pbWavFormatModeCombo = new QComboBox(w);
+        m_pbWavFormatModeCombo->addItem("Standard (RIFF)", false);
+        m_pbWavFormatModeCombo->addItem("RF64 (64-bit)", true);
+        connect(m_pbWavFormatModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        form->addRow("WAV Format", m_pbWavFormatModeCombo);
+
+        m_pbWavFileChannelsSpin = new QSpinBox(w);
+        m_pbWavFileChannelsSpin->setRange(1, 32);
+        m_pbWavFileChannelsSpin->setMinimumWidth(110);
+        m_pbWavFileChannelsSpin->setMaximumWidth(140);
+        connect(m_pbWavFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        form->addRow("Channels", m_pbWavFileChannelsSpin);
+    } else {
+        m_pbRawFilePathEdit = new QLineEdit(w);
+        m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
+        m_pbRawFilePathEdit->setClearButtonEnabled(true);
+        connect(m_pbRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
+        connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        fileBox->addWidget(m_pbRawFilePathEdit);
+
+        auto browseBtn = new QPushButton("Select File...", w);
+        connect(browseBtn, &QPushButton::clicked, [this, w]() {
+            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
+            if (!path.isEmpty())
+                m_pbRawFilePathEdit->setText(path);
+        });
+        fileBox->addWidget(browseBtn);
+        form->addRow("", fileBox);
+
+        m_pbRawFileFormatCombo = new QComboBox(w);
+        m_pbRawFileFormatCombo->addItems(
+            {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+        connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            QTimer::singleShot(0, this, [this]() { applySettings(); });
+        });
+        form->addRow("Format", m_pbRawFileFormatCombo);
+
+        m_pbRawFileChannelsSpin = new QSpinBox(w);
+        m_pbRawFileChannelsSpin->setRange(1, 32);
+        m_pbRawFileChannelsSpin->setMinimumWidth(110);
+        m_pbRawFileChannelsSpin->setMaximumWidth(140);
+        connect(m_pbRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        form->addRow("Channels", m_pbRawFileChannelsSpin);
+    }
 
     return w;
 }
@@ -1302,9 +1359,21 @@ void DevicePickerView::refreshUi() {
     updateDoPCapability();
 
     // 4. Refresh Playback File View
-    m_pbRawFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
-    m_pbRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
-    m_pbRawFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+    if (m_devices->playbackConfig.backend == AudioBackendType::WavFile) {
+        if (m_devices->playbackConfig.fileFormat == "S24_4_RJ_LE") {
+            m_devices->playbackConfig.fileFormat = "S16_LE";
+        }
+        m_pbWavFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+        m_pbWavFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
+        m_pbWavFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+        int modeIdx = m_pbWavFormatModeCombo->findData(m_devices->playbackConfig.useRf64);
+        if (modeIdx >= 0)
+            m_pbWavFormatModeCombo->setCurrentIndex(modeIdx);
+    } else {
+        m_pbRawFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+        m_pbRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
+        m_pbRawFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+    }
 
     // 5. Refresh Processing Settings
     int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
@@ -1449,6 +1518,15 @@ void DevicePickerView::applySettings() {
         pbCfg.fileFormat = m_pbRawFileFormatCombo->currentText().toStdString();
         pbCfg.channels = m_pbRawFileChannelsSpin->value();
         pbCfg.deviceChannels = pbCfg.channels;
+        pbCfg.isWav = false;
+        pbCfg.useRf64 = false;
+    } else if (pbCfg.backend == AudioBackendType::WavFile) {
+        pbCfg.filename = m_pbWavFilePathEdit->text().toStdString();
+        pbCfg.fileFormat = m_pbWavFileFormatCombo->currentText().toStdString();
+        pbCfg.channels = m_pbWavFileChannelsSpin->value();
+        pbCfg.deviceChannels = pbCfg.channels;
+        pbCfg.isWav = true;
+        pbCfg.useRf64 = m_pbWavFormatModeCombo->currentData().toBool();
     }
     m_devices->setPlaybackConfig(pbCfg);
 

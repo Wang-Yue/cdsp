@@ -32,6 +32,7 @@ struct DeviceConfig {
     std::string filename;
     std::string fileFormat = "S16_LE";
     bool isWav = false;
+    bool useRf64 = false;
     int skipBytes = 0;
     int readBytes = 0;
     int extraSamples = 0;
