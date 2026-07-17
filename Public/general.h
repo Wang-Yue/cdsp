@@ -6,7 +6,7 @@
 #include "cdsp_pub_types.h"
 
 /**
- * @brief Get the CamillaDSP-C version string.
+ * @brief Get the CDSP version string.
  * @return Static version string (do not free).
  */
 const char* cdsp_get_version(void);
