@@ -337,6 +337,8 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* levels) {
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices,
                                 size_t* out_count) {
+  (void)backend;
+  (void)is_input;
   *out_devices = NULL;
   *out_count = 0;
   return true;
