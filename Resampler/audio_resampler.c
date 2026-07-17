@@ -61,23 +61,25 @@ resampler_t* resampler_create_from_config(const resampler_config_t* config,
                                           size_t channels, size_t chunk_size,
                                           config_error_t* err) {
   if (resampler_config_validate(config, err) != 0) return NULL;
+  char desc_buf[256];
+  resampler_config_description(config, desc_buf, sizeof(desc_buf));
   logger_debug(&g_logger,
-               "Creating resampler type %s (%zuHz -> %zuHz, %zu channels)",
-               resampler_type_to_string(config->type), input_rate, output_rate,
-               channels);
+               "Creating resampler %s (%zuHz -> %zuHz, %zu channels)", desc_buf,
+               input_rate, output_rate, channels);
   const resampler_vtable_t* vtable = resampler_vtable_from_type(config->type);
   if (!vtable) {
-    logger_error(&g_logger, "Unknown resampler type %d", config->type);
-    config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %d",
-                     config->type);
+    logger_error(&g_logger, "Unknown resampler type %s",
+                 resampler_type_to_string(config->type));
+    config_error_set(err, CONFIG_ERR_PARSE, "Unknown resampler type %s",
+                     resampler_type_to_string(config->type));
     return NULL;
   }
 
   void* impl = vtable->create(config, input_rate, output_rate, channels,
                               chunk_size, err);
   if (!impl) {
-    logger_error(&g_logger, "Failed to instantiate resampler type %d",
-                 config->type);
+    logger_error(&g_logger, "Failed to instantiate resampler type %s",
+                 resampler_type_to_string(config->type));
     return NULL;
   }
 

@@ -81,8 +81,8 @@ dsp_processor_t* dsp_processor_create(const char* name,
   if (processor_config_validate(config, err) != 0) return NULL;
   const processor_vtable_t* vtable = processor_vtable_from_type(config->type);
   if (!vtable) {
-    logger_error(&g_logger, "Unknown processor type %d for '%s'", config->type,
-                 name ? name : "");
+    logger_error(&g_logger, "Unknown processor type %s for '%s'",
+                 processor_type_to_string(config->type), name ? name : "");
     config_error_set(err, CONFIG_ERR_PARSE, "Unknown processor type");
     return NULL;
   }

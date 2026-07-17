@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "Resampler/resampler_error.h"
 #include "Utils/cdsp_time.h"
 
 struct pending_update {
@@ -157,10 +158,11 @@ static audio_chunk_t* processing_loop_resample(engine_processing_loop_t* loop,
   *out_res_end = cdsp_time_now_ns();
 
   if (rerr != RESAMPLER_OK) {
-    logger_error(&g_logger, "Processing error: resampler error %d", rerr);
+    logger_error(&g_logger, "Processing error: resampler error %s",
+                 resampler_error_description(rerr));
     processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
-    snprintf(reason.message, sizeof(reason.message), "Resampler error %d",
-             rerr);
+    snprintf(reason.message, sizeof(reason.message), "Resampler error: %s",
+             resampler_error_description(rerr));
     engine_shared_state_request_stop(loop->shared, reason);
     *out_err = true;
     return NULL;
@@ -298,10 +300,11 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     uint64_t pipe_end = cdsp_time_now_ns();
 
     if (perr != PIPELINE_OK) {
-      logger_error(&g_logger, "Processing error: pipeline error %d", perr);
+      logger_error(&g_logger, "Processing error: pipeline error %s",
+                   pipeline_error_description(perr));
       processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
-      snprintf(reason.message, sizeof(reason.message), "Pipeline error %d",
-               perr);
+      snprintf(reason.message, sizeof(reason.message), "Pipeline error: %s",
+               pipeline_error_description(perr));
       engine_shared_state_request_stop(loop->shared, reason);
       break;
     }

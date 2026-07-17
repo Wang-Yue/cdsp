@@ -13,9 +13,12 @@
 #include <strings.h>
 
 #include "Audio/audio_chunk.h"
+#include "Logging/app_logger.h"
 #include "audio_resampler.h"
 #include "resampler_error.h"
 #include "sinc_dot_product.h"
+
+static const logger_t g_logger = {"dsp.resampler.async_sinc"};
 
 typedef enum {
   SINC_INTERPOLATION_NEAREST = 0,
@@ -714,6 +717,10 @@ static void* async_sinc_resampler_create_impl(
     async_sinc_resampler_free(resampler);
     return NULL;
   }
+  logger_debug(
+      &g_logger,
+      "AsyncSincResampler initialized: window=%s, sinc_len=%zu, cutoff=%f",
+      window_function_to_string(window), sinc_len, fc);
 
   double min_ratio_abs = resampler->base_ratio / max_relative_ratio;
   if (fixed == FIXED_ASYNC_INPUT) {

@@ -28,6 +28,13 @@ typedef enum {
   PIPELINE_ERR_CHANNEL_COUNT_MISMATCH = -3    ///< Channel count mismatch.
 } pipeline_error_t;
 
+/**
+ * @brief Convert pipeline error code to human-readable string.
+ * @param err Error code.
+ * @return Constant string description.
+ */
+const char* pipeline_error_description(pipeline_error_t err);
+
 struct pipeline_s;
 /**
  * @brief Opaque structure representing the audio processing pipeline.

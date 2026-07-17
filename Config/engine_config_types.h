@@ -826,38 +826,6 @@ typedef struct {
 } devices_config_t;
 
 /**
- * @brief Initializes a capture device configuration with default values.
- * @param config Pointer to the configuration struct.
- * @param type The audio backend type.
- * @param channels Number of channels.
- */
-void capture_device_config_init(capture_device_config_t* config,
-                                audio_backend_type_t type, int channels);
-
-/**
- * @brief Initializes a playback device configuration with default values.
- * @param config Pointer to the configuration struct.
- * @param type The audio backend type.
- * @param channels Number of channels.
- */
-void playback_device_config_init(playback_device_config_t* config,
-                                 audio_backend_type_t type, int channels);
-
-/**
- * @brief Initializes a devices configuration.
- * @param config Pointer to the configuration struct.
- * @param samplerate Playback sample rate.
- * @param chunksize Buffer chunk size.
- * @param capture Capture device configuration.
- * @param playback Playback device configuration.
- */
-void devices_config_init(devices_config_t* config, size_t samplerate,
-                         size_t chunksize, capture_device_config_t capture,
-                         playback_device_config_t playback);
-
-// Accessor helper functions
-
-/**
  * @brief Gets the number of channels from a capture device configuration.
  * @param config Pointer to the configuration.
  * @return Number of channels.
@@ -896,53 +864,6 @@ bool capture_device_config_get_bypass_dop(
  * @return Cutoff frequency in Hz.
  */
 double capture_device_config_get_dop_cutoff_hz(
-    const capture_device_config_t* config);
-
-/**
- * @brief Gets filename from a capture device configuration (for file backends).
- * @param config Pointer to the configuration.
- * @return Filename string, or NULL.
- */
-const char* capture_device_config_get_filename(
-    const capture_device_config_t* config);
-
-/**
- * @brief Gets file format from a capture device configuration (for file
- * backends).
- * @param config Pointer to the configuration.
- * @return Binary sample format.
- */
-binary_sample_format_t capture_device_config_get_file_format(
-    const capture_device_config_t* config);
-
-/**
- * @brief Gets extra samples from a capture device configuration.
- * @param config Pointer to the configuration.
- * @return Number of extra samples.
- */
-int capture_device_config_get_extra_samples(
-    const capture_device_config_t* config);
-
-/**
- * @brief Gets skip bytes from a capture device configuration.
- * @param config Pointer to the configuration.
- * @return Number of bytes to skip.
- */
-int capture_device_config_get_skip_bytes(const capture_device_config_t* config);
-
-/**
- * @brief Gets read bytes from a capture device configuration.
- * @param config Pointer to the configuration.
- * @return Number of bytes to read.
- */
-int capture_device_config_get_read_bytes(const capture_device_config_t* config);
-
-/**
- * @brief Gets generator signal parameters from a capture device configuration.
- * @param config Pointer to the configuration.
- * @return Generator signal parameters.
- */
-generator_signal_t capture_device_config_get_generator(
     const capture_device_config_t* config);
 
 /**
@@ -996,70 +917,12 @@ sdm_filter_t playback_device_config_get_dsd_encoder_filter(
     const playback_device_config_t* config);
 
 /**
- * @brief Gets filename from a playback device configuration.
- * @param config Pointer to the configuration.
- * @return Filename string, or NULL.
- */
-const char* playback_device_config_get_filename(
-    const playback_device_config_t* config);
-
-/**
- * @brief Gets file format from a playback device configuration.
- * @param config Pointer to the configuration.
- * @return Binary sample format.
- */
-binary_sample_format_t playback_device_config_get_file_format(
-    const playback_device_config_t* config);
-
-/**
- * @brief Gets WAV header setting from a playback device configuration.
- * @param config Pointer to the configuration.
- * @return True if WAV header should be written.
- */
-bool playback_device_config_get_wav_header(
-    const playback_device_config_t* config);
-
-/**
  * @brief Sets the number of channels in a capture device configuration.
  * @param config Pointer to the configuration.
  * @param channels Number of channels.
  */
 void capture_device_config_set_channels(capture_device_config_t* config,
                                         int channels);
-
-/**
- * @brief Sets the number of channels in a playback device configuration.
- * @param config Pointer to the configuration.
- * @param channels Number of channels.
- */
-void playback_device_config_set_channels(playback_device_config_t* config,
-                                         int channels);
-
-/**
- * @brief Sets extra samples in a capture device configuration.
- * @param config Pointer to the configuration.
- * @param extra_samples Number of extra samples.
- */
-void capture_device_config_set_extra_samples(capture_device_config_t* config,
-                                             int extra_samples);
-
-#if defined(ENABLE_COREAUDIO)
-/**
- * @brief Sets CoreAudio sample format in a capture device configuration.
- * @param config Pointer to the configuration.
- * @param format CoreAudio sample format.
- */
-void capture_device_config_set_format(capture_device_config_t* config,
-                                      coreaudio_sample_format_t format);
-#endif
-
-/**
- * @brief Sets file format in a capture device configuration.
- * @param config Pointer to the configuration.
- * @param format Binary sample format.
- */
-void capture_device_config_set_file_format(capture_device_config_t* config,
-                                           binary_sample_format_t format);
 
 /**
  * @brief Recursively frees the memory allocated for an audio device descriptor.

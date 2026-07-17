@@ -83,8 +83,8 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   if (filter_config_validate(config, sample_rate, err) != 0) return NULL;
   const filter_vtable_t* vtable = filter_vtable_from_type(config->type);
   if (!vtable) {
-    logger_error(&g_logger, "Unknown filter type %d for '%s'", config->type,
-                 name ? name : "unnamed");
+    logger_error(&g_logger, "Unknown filter type %s for '%s'",
+                 filter_type_to_string(config->type), name ? name : "unnamed");
     config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Unknown filter type");
     return NULL;
   }
@@ -112,8 +112,8 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
   filter->vtable = vtable;
   filter->instance = instance;
 
-  logger_debug(&g_logger, "Filter '%s' successfully created (type=%d)",
-               filter->name, filter->type);
+  logger_debug(&g_logger, "Filter '%s' successfully created (type=%s)",
+               filter->name, filter_type_to_string(config->type));
   return filter;
 }
 

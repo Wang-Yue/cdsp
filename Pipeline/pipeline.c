@@ -11,6 +11,21 @@
 #include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.pipeline"};
+
+const char* pipeline_error_description(pipeline_error_t err) {
+  switch (err) {
+    case PIPELINE_OK:
+      return "No error";
+    case PIPELINE_ERR_INPUT_SIZE_MISMATCH:
+      return "Input size mismatch";
+    case PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL:
+      return "Output buffer too small";
+    case PIPELINE_ERR_CHANNEL_COUNT_MISMATCH:
+      return "Channel count mismatch";
+    default:
+      return "Unknown pipeline error";
+  }
+}
 #include "Mixer/mixer.h"
 #include "Processors/processor.h"
 
@@ -539,6 +554,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           pipeline_exec_step_t* exec = &pipeline->steps[exec_idx++];
           exec->type = EXEC_STEP_MIXER;
           exec->mixer = m;
+          logger_debug(&g_logger, "Mixer '%s' added to pipeline",
+                       mixer_get_name(m));
           break;
         }
         case PIPELINE_STEP_TYPE_PROCESSOR: {

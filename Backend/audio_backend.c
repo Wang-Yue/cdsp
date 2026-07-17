@@ -75,8 +75,8 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return file_capture_create(config, sample_rate, chunk_size, params, err);
     default: {
-      logger_error(&g_logger, "Unsupported capture backend type: %d",
-                   config->type);
+      logger_error(&g_logger, "Unsupported capture backend type: %s",
+                   audio_backend_type_to_string(config->type));
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported capture backend type");
@@ -126,8 +126,8 @@ playback_backend_t* create_playback_backend(
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return file_playback_create(config, sample_rate, chunk_size, params, err);
     default: {
-      logger_error(&g_logger, "Unsupported playback backend type: %d",
-                   config->type);
+      logger_error(&g_logger, "Unsupported playback backend type: %s",
+                   audio_backend_type_to_string(config->type));
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Unsupported playback backend type");

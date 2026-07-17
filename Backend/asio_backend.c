@@ -1287,8 +1287,10 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       playback->channel_infos[idx].isInput = ASIOFalse;
       playback->iasio->lpVtbl->getChannelInfo(playback->iasio,
                                               &playback->channel_infos[idx]);
-      logger_info(&g_logger, "ASIO playback channel %d info: type=%ld, name=%s",
-                  i, (long)playback->channel_infos[idx].type,
+      logger_info(&g_logger, "ASIO playback channel %d info: type=%s, name=%s",
+                  i,
+                  asio_sample_format_to_string(
+                      (asio_sample_format_t)playback->channel_infos[idx].type),
                   playback->channel_infos[idx].name);
     }
 
