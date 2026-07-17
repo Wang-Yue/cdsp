@@ -7,12 +7,12 @@
 
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
+#include "Filters/clipper.h"
 #include "Filters/convolution.h"
 #include "Filters/delay.h"
 #include "Filters/diffeq.h"
 #include "Filters/dither.h"
 #include "Filters/gain.h"
-#include "Filters/limiter.h"
 #include "Filters/lookahead_limiter.h"
 #include "Filters/loudness.h"
 #include "Filters/volume.h"
@@ -66,8 +66,8 @@ const char* filter_type_to_string(filter_type_t type) {
       return "DiffEq";
     case FILTER_TYPE_DITHER:
       return "Dither";
-    case FILTER_TYPE_LIMITER:
-      return "Limiter";
+    case FILTER_TYPE_CLIPPER:
+      return "Clipper";
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return "LookaheadLimiter";
     default:
@@ -86,7 +86,7 @@ filter_type_t filter_type_from_string(const char* str) {
   if (strcmp(str, "BiquadCombo") == 0) return FILTER_TYPE_BIQUAD_COMBO;
   if (strcmp(str, "DiffEq") == 0) return FILTER_TYPE_DIFF_EQ;
   if (strcmp(str, "Dither") == 0) return FILTER_TYPE_DITHER;
-  if (strcmp(str, "Limiter") == 0) return FILTER_TYPE_LIMITER;
+  if (strcmp(str, "Clipper") == 0) return FILTER_TYPE_CLIPPER;
   if (strcmp(str, "LookaheadLimiter") == 0)
     return FILTER_TYPE_LOOKAHEAD_LIMITER;
   return FILTER_TYPE_GAIN;

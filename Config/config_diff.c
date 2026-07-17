@@ -170,7 +170,7 @@ static bool convolution_config_equal(const convolution_config_t* a,
 static bool delay_config_equal(const delay_config_t* a,
                                const delay_config_t* b) {
   if (a->delay != b->delay) return false;
-  if (a->unit != b->unit) return false;
+  if (a->delay_unit != b->delay_unit) return false;
   if (a->subsample != b->subsample) return false;
   return true;
 }
@@ -247,13 +247,13 @@ static bool dither_config_equal(const dither_config_t* a,
 }
 
 /**
- * @brief Compares two limiter parameter structures for equality.
- * @param a Pointer to first limiter parameters.
- * @param b Pointer to second limiter parameters.
+ * @brief Compares two clipper parameter structures for equality.
+ * @param a Pointer to first clipper parameters.
+ * @param b Pointer to second clipper parameters.
  * @return true if parameters are equal, false otherwise.
  */
-static bool limiter_config_equal(const limiter_config_t* a,
-                                 const limiter_config_t* b) {
+static bool clipper_config_equal(const clipper_config_t* a,
+                                 const clipper_config_t* b) {
   if (a->clip_limit != b->clip_limit) return false;
   if (a->soft_clip != b->soft_clip) return false;
   return true;
@@ -269,8 +269,9 @@ static bool lookahead_limiter_config_equal(
     const lookahead_limiter_config_t* a, const lookahead_limiter_config_t* b) {
   if (a->limit != b->limit) return false;
   if (a->attack != b->attack) return false;
+  if (a->attack_unit != b->attack_unit) return false;
   if (a->release != b->release) return false;
-  if (a->unit != b->unit) return false;
+  if (a->release_unit != b->release_unit) return false;
   return true;
 }
 
@@ -306,9 +307,9 @@ static bool filter_config_equal(const filter_config_t* a,
                                  &b->parameters.diff_eq);
     case FILTER_TYPE_DITHER:
       return dither_config_equal(&a->parameters.dither, &b->parameters.dither);
-    case FILTER_TYPE_LIMITER:
-      return limiter_config_equal(&a->parameters.limiter,
-                                  &b->parameters.limiter);
+    case FILTER_TYPE_CLIPPER:
+      return clipper_config_equal(&a->parameters.clipper,
+                                  &b->parameters.clipper);
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return lookahead_limiter_config_equal(&a->parameters.lookahead_limiter,
                                             &b->parameters.lookahead_limiter);
@@ -371,8 +372,12 @@ static bool processor_config_equal(const processor_config_t* a,
                             b->parameters.compressor.process_channels_count))
         return false;
       if (a->parameters.compressor.attack != b->parameters.compressor.attack ||
+          a->parameters.compressor.attack_unit !=
+              b->parameters.compressor.attack_unit ||
           a->parameters.compressor.release !=
               b->parameters.compressor.release ||
+          a->parameters.compressor.release_unit !=
+              b->parameters.compressor.release_unit ||
           a->parameters.compressor.threshold !=
               b->parameters.compressor.threshold ||
           a->parameters.compressor.factor != b->parameters.compressor.factor)
@@ -406,8 +411,12 @@ static bool processor_config_equal(const processor_config_t* a,
                             b->parameters.noise_gate.process_channels_count))
         return false;
       if (a->parameters.noise_gate.attack != b->parameters.noise_gate.attack ||
+          a->parameters.noise_gate.attack_unit !=
+              b->parameters.noise_gate.attack_unit ||
           a->parameters.noise_gate.release !=
               b->parameters.noise_gate.release ||
+          a->parameters.noise_gate.release_unit !=
+              b->parameters.noise_gate.release_unit ||
           a->parameters.noise_gate.threshold !=
               b->parameters.noise_gate.threshold ||
           a->parameters.noise_gate.attenuation !=
@@ -478,14 +487,14 @@ bool devices_config_equal(const devices_config_t* a,
   if (a->has_enable_rate_adjust != b->has_enable_rate_adjust) return false;
   if (a->target_level != b->target_level) return false;
   if (a->has_target_level != b->has_target_level) return false;
-  if (a->adjust_period != b->adjust_period) return false;
-  if (a->has_adjust_period != b->has_adjust_period) return false;
+  if (a->adjust_interval_s != b->adjust_interval_s) return false;
+  if (a->has_adjust_interval_s != b->has_adjust_interval_s) return false;
   if (a->capture_samplerate != b->capture_samplerate) return false;
   if (a->has_capture_samplerate != b->has_capture_samplerate) return false;
   if (a->silence_threshold != b->silence_threshold) return false;
   if (a->has_silence_threshold != b->has_silence_threshold) return false;
-  if (a->silence_timeout != b->silence_timeout) return false;
-  if (a->has_silence_timeout != b->has_silence_timeout) return false;
+  if (a->silence_timeout_s != b->silence_timeout_s) return false;
+  if (a->has_silence_timeout_s != b->has_silence_timeout_s) return false;
   if (a->volume_ramp_time != b->volume_ramp_time) return false;
   if (a->has_volume_ramp_time != b->has_volume_ramp_time) return false;
   if (a->volume_limit != b->volume_limit) return false;

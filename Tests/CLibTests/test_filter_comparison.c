@@ -15,13 +15,13 @@
 #include "Audio/audio_chunk.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
+#include "Filters/clipper.h"
 #include "Filters/convolution.h"
 #include "Filters/delay.h"
 #include "Filters/diffeq.h"
 #include "Filters/dither.h"
 #include "Filters/filter.h"
 #include "Filters/gain.h"
-#include "Filters/limiter.h"
 #include "Filters/lookahead_limiter.h"
 #include "Filters/loudness.h"
 #include "Filters/volume.h"
@@ -737,6 +737,8 @@ static const char* delay_unit_to_str(delay_unit_t unit) {
       return "ms";
     case DELAY_UNIT_US:
       return "us";
+    case DELAY_UNIT_S:
+      return "s";
     case DELAY_UNIT_SAMPLES:
       return "samples";
     case DELAY_UNIT_MM:
@@ -771,7 +773,7 @@ static void compare_delay(double delay, delay_unit_t unit, bool subsample,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   delay_config_t params = {
-      .delay = delay, .unit = unit, .subsample = subsample};
+      .delay = delay, .delay_unit = unit, .subsample = subsample};
   filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
   void* filter =
       g_delay_vtable.create("test_delay", &cfg, SAMPLE_RATE, 0, NULL, NULL);
@@ -1260,22 +1262,22 @@ TEST(Dither_None) {
   free(swift_out);
 }
 
-// MARK: - Limiter
+// MARK: - Clipper
 
-static void compare_limiter(double clip_limit, bool soft_clip,
+static void compare_clipper(double clip_limit, bool soft_clip,
                             const char* label) {
   double* input = (double*)malloc(NBR_FRAMES * sizeof(double));
   make_test_signal(input, NBR_FRAMES);
   char in_path[256], ref_path[256];
-  snprintf(in_path, sizeof(in_path), "/tmp/cdsp_limiter_%s_in.raw", label);
-  snprintf(ref_path, sizeof(ref_path), "/tmp/cdsp_limiter_%s_ref.raw", label);
+  snprintf(in_path, sizeof(in_path), "/tmp/cdsp_clipper_%s_in.raw", label);
+  snprintf(ref_path, sizeof(ref_path), "/tmp/cdsp_clipper_%s_ref.raw", label);
   write_raw(input, NBR_FRAMES, in_path);
 
   char lim_s[64], cs_s[64];
   snprintf(lim_s, sizeof(lim_s), "%.17g", clip_limit);
   snprintf(cs_s, sizeof(cs_s), "%d", CHUNK_SIZE);
 
-  if (!RUN_HARNESS("limiter", lim_s, soft_clip ? "1" : "0", cs_s, in_path,
+  if (!RUN_HARNESS("clipper", lim_s, soft_clip ? "1" : "0", cs_s, in_path,
                    ref_path)) {
     free(input);
     return;
@@ -1285,11 +1287,11 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  limiter_config_t params = {.clip_limit = clip_limit, .soft_clip = soft_clip};
-  filter_config_t cfg = {.type = FILTER_TYPE_LIMITER,
-                         .parameters.limiter = params};
+  clipper_config_t params = {.clip_limit = clip_limit, .soft_clip = soft_clip};
+  filter_config_t cfg = {.type = FILTER_TYPE_CLIPPER,
+                         .parameters.clipper = params};
   void* filter =
-      g_limiter_vtable.create("test_limiter", &cfg, 0, 0, NULL, NULL);
+      g_clipper_vtable.create("test_clipper", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
   double* swift_out = (double*)malloc(NBR_FRAMES * sizeof(double));
@@ -1298,7 +1300,7 @@ static void compare_limiter(double clip_limit, bool soft_clip,
   for (size_t idx = 0; idx < NBR_FRAMES; idx += CHUNK_SIZE) {
     size_t end =
         (idx + CHUNK_SIZE < NBR_FRAMES) ? (idx + CHUNK_SIZE) : NBR_FRAMES;
-    g_limiter_vtable.process(filter, &swift_out[idx], end - idx);
+    g_clipper_vtable.process(filter, &swift_out[idx], end - idx);
   }
 
   double max_abs_diff = 0.0;
@@ -1306,18 +1308,18 @@ static void compare_limiter(double clip_limit, bool soft_clip,
     double d = fabs(swift_out[i] - ref[i]);
     if (d > max_abs_diff) max_abs_diff = d;
   }
-  printf("[limiter %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
+  printf("[clipper %s] maxAbsDiff=%.3e\n", label, max_abs_diff);
   ASSERT_TRUE(max_abs_diff < 1e-12);
 
-  g_limiter_vtable.free(filter);
+  g_clipper_vtable.free(filter);
   free(input);
   free(ref);
   free(swift_out);
 }
 
-TEST(Limiter_HardClip) { compare_limiter(-3.0, false, "hard"); }
+TEST(Clipper_HardClip) { compare_clipper(-3.0, false, "hard"); }
 
-TEST(Limiter_SoftClip) { compare_limiter(-1.5, true, "soft"); }
+TEST(Clipper_SoftClip) { compare_clipper(-1.5, true, "soft"); }
 
 // MARK: - Lookahead Limiter
 
@@ -1348,8 +1350,11 @@ static void compare_lookahead_limiter(double limit, double attack,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  lookahead_limiter_config_t params = {
-      .limit = limit, .attack = attack, .release = release, .unit = unit};
+  lookahead_limiter_config_t params = {.limit = limit,
+                                       .attack = attack,
+                                       .attack_unit = (time_unit_t)unit,
+                                       .release = release,
+                                       .release_unit = (time_unit_t)unit};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void* filter = g_lookahead_limiter_vtable.create(
@@ -1424,7 +1429,9 @@ TEST(Compressor_Vs_RustReference) {
   compressor_config_t params = {0};
   params.channels = 1;
   params.attack = attack;
+  params.attack_unit = TIME_UNIT_S;
   params.release = release;
+  params.release_unit = TIME_UNIT_S;
   params.threshold = threshold;
   params.factor = factor;
   params.makeup_gain = makeup_gain;
@@ -1493,7 +1500,9 @@ TEST(NoiseGate_Vs_RustReference) {
   noise_gate_config_t params = {0};
   params.channels = 1;
   params.attack = attack;
+  params.attack_unit = TIME_UNIT_S;
   params.release = release;
+  params.release_unit = TIME_UNIT_S;
   params.threshold = threshold;
   params.attenuation = attenuation;
 

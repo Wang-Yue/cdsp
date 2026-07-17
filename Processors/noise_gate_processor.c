@@ -131,6 +131,21 @@ static void noise_gate_processor_free(noise_gate_processor_t* processor) {
  * @return Pointer to newly allocated noise_gate_processor_t, or NULL on
  * failure.
  */
+static double compute_time_seconds(double value, time_unit_t unit,
+                                   int sample_rate) {
+  switch (unit) {
+    case TIME_UNIT_US:
+      return value / 1000000.0;
+    case TIME_UNIT_MS:
+      return value / 1000.0;
+    case TIME_UNIT_S:
+      return value;
+    case TIME_UNIT_SAMPLES:
+      return value / (double)sample_rate;
+  }
+  return 0.0;
+}
+
 static void* noise_gate_processor_create(const char* name,
                                          const processor_config_t* config,
                                          int sample_rate, size_t chunk_size,
@@ -194,8 +209,14 @@ static void* noise_gate_processor_create(const char* name,
   }
 
   double srate = (double)sample_rate;
-  processor->attack = exp(-1.0 / srate / params->attack);
-  processor->release = exp(-1.0 / srate / params->release);
+  double attack_seconds =
+      compute_time_seconds(params->attack, params->attack_unit, sample_rate);
+  double release_seconds =
+      compute_time_seconds(params->release, params->release_unit, sample_rate);
+  processor->attack =
+      attack_seconds > 0.0 ? exp(-1.0 / srate / attack_seconds) : 0.0;
+  processor->release =
+      release_seconds > 0.0 ? exp(-1.0 / srate / release_seconds) : 0.0;
   processor->threshold = params->threshold;
   processor->factor = double_from_db(-params->attenuation);
   processor->prev_loudness = 0.0;

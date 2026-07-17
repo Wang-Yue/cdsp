@@ -26,7 +26,7 @@ typedef enum {
   FILTER_INSTANCE_DIFF_EQ,           /**< Difference equation filter. */
   FILTER_INSTANCE_DITHER,            /**< Dither filter. */
   FILTER_INSTANCE_GAIN,              /**< Gain filter. */
-  FILTER_INSTANCE_LIMITER,           /**< Limiter filter. */
+  FILTER_INSTANCE_CLIPPER,           /**< Clipper filter. */
   FILTER_INSTANCE_LOOKAHEAD_LIMITER, /**< Lookahead limiter filter. */
   FILTER_INSTANCE_LOUDNESS,          /**< Loudness filter. */
   FILTER_INSTANCE_VOLUME             /**< Volume filter. */

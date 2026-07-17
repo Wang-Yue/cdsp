@@ -4,15 +4,15 @@ version = 4
 
 [[package]]
 name = "CamillaDSP"
-version = "4.2.0"
-source = "git+https://github.com/HEnquist/camilladsp.git?rev=e399fb91804aeec2141541f07e19b04f87887c91#e399fb91804aeec2141541f07e19b04f87887c91"
+version = "5.0.0"
+source = "git+https://github.com/HEnquist/camilladsp.git?rev=69897c828f6ae873db26d9f88511d5c7a6bb802c#69897c828f6ae873db26d9f88511d5c7a6bb802c"
 dependencies = [
  "alsa",
  "alsa-sys",
  "audio_thread_priority",
- "audioadapter 2.0.1",
- "audioadapter-buffers 2.0.0",
- "audioadapter-sample 2.0.0",
+ "audioadapter 4.0.0",
+ "audioadapter-buffers 4.0.0",
+ "audioadapter-sample 4.0.0",
  "chrono",
  "clap",
  "coreaudio-rs",
@@ -37,13 +37,14 @@ dependencies = [
  "rayon",
  "realfft",
  "ringbuf",
- "rubato 1.0.1",
+ "rubato 4.0.0",
  "serde",
  "serde_json",
  "serde_with",
  "signal-hook",
  "tungstenite",
  "wasapi",
+ "waveadapter",
  "windows",
  "yaml_serde",
 ]
@@ -159,17 +160,6 @@ dependencies = [
 
 [[package]]
 name = "audioadapter"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98e72b98fa467adcb7a88c5d1b8b686193185c81b9bf9c3fa3ac3524180cd55c"
-dependencies = [
- "audio-core",
- "libm",
- "num-traits",
-]
-
-[[package]]
-name = "audioadapter"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91f87b70b051c5866680ad79f6743a42ccab264c009d1a71f4d33a3872ae60c8"
@@ -179,13 +169,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "audioadapter-buffers"
-version = "2.0.0"
+name = "audioadapter"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6af89882334c4e501faa08992888593ada468f9e1ab211635c32f9ada7786e0"
+checksum = "c75c3943c6c7279bb25a449a8d1727480730ab2efd7b6fd5d6ca51927096e6e4"
 dependencies = [
- "audioadapter 2.0.1",
- "audioadapter-sample 2.0.0",
+ "audio-core",
  "num-traits",
 ]
 
@@ -201,12 +190,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "audioadapter-sample"
-version = "2.0.0"
+name = "audioadapter-buffers"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e9a3d502fec0b21aa420febe0b110875cf8a7057c49e83a0cace1df6a73e03e"
+checksum = "ece3390b6eb40379094843a1da5aaccc34bc0d85a8cbf68d09fe092fee6de29e"
 dependencies = [
- "audio-core",
+ "audioadapter 4.0.0",
+ "audioadapter-sample 4.0.0",
  "num-traits",
 ]
 
@@ -215,6 +205,16 @@ name = "audioadapter-sample"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34ab94f2bc04a14e1f49ee5f222f66460e8a1b51627bdfedf34eed394d747938"
+dependencies = [
+ "audio-core",
+ "num-traits",
+]
+
+[[package]]
+name = "audioadapter-sample"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1592f90413568e259413c21a41a3d571feb1774255c209e7966d98f9db708c90"
 dependencies = [
  "audio-core",
  "num-traits",
@@ -1197,12 +1197,11 @@ dependencies = [
 
 [[package]]
 name = "rubato"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90173154a8a14e6adb109ea641743bc95ec81c093d94e70c6763565f7108ebeb"
+version = "2.0.0"
+source = "git+https://github.com/HEnquist/rubato.git?rev=63c2107383e3c0dc3419466b18a2b1b6ad87fda2#63c2107383e3c0dc3419466b18a2b1b6ad87fda2"
 dependencies = [
- "audioadapter 2.0.1",
- "audioadapter-buffers 2.0.0",
+ "audioadapter 3.0.0",
+ "audioadapter-buffers 3.0.0",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -1213,11 +1212,12 @@ dependencies = [
 
 [[package]]
 name = "rubato"
-version = "2.0.0"
-source = "git+https://github.com/HEnquist/rubato.git?rev=63c2107383e3c0dc3419466b18a2b1b6ad87fda2#63c2107383e3c0dc3419466b18a2b1b6ad87fda2"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f57c655d11e929f05a8663b323ff553f8d9773be05dfdc087795955bedeb8d92"
 dependencies = [
- "audioadapter 3.0.0",
- "audioadapter-buffers 3.0.0",
+ "audioadapter 4.0.0",
+ "audioadapter-buffers 4.0.0",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -1612,6 +1612,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49757b3c82ebf16c57d69365a142940b384176c24df52a087fb748e2085359ea"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "waveadapter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75483f4d924138d7624a1ffd2767af7d07b43e3fc30c46905509c930821692c8"
+dependencies = [
+ "audioadapter 4.0.0",
+ "audioadapter-buffers 4.0.0",
+ "audioadapter-sample 4.0.0",
+ "num-traits",
 ]
 
 [[package]]

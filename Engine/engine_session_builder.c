@@ -250,8 +250,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
       .silence_threshold_db = config->devices.has_silence_threshold
                                   ? config->devices.silence_threshold
                                   : 0.0,
-      .silence_timeout_seconds = config->devices.has_silence_timeout
-                                     ? config->devices.silence_timeout
+      .silence_timeout_seconds = config->devices.has_silence_timeout_s
+                                     ? config->devices.silence_timeout_s
                                      : 0.0,
       .stop_on_rate_change = config->devices.has_stop_on_rate_change
                                  ? config->devices.stop_on_rate_change
@@ -283,8 +283,9 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   bool rate_adjust_enabled = config->devices.has_enable_rate_adjust
                                  ? config->devices.enable_rate_adjust
                                  : false;
-  double adjust_period =
-      config->devices.has_adjust_period ? config->devices.adjust_period : 10.0;
+  double adjust_period = config->devices.has_adjust_interval_s
+                             ? config->devices.adjust_interval_s
+                             : 10.0;
   int target_level = config->devices.has_target_level
                          ? config->devices.target_level
                          : (int)playback_chunk_size;

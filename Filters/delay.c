@@ -160,7 +160,7 @@ static void* delay_filter_create(const char* name,
   }
 
   double delay = params ? params->delay : 0.0;
-  delay_unit_t unit = params ? params->unit : DELAY_UNIT_MS;
+  delay_unit_t unit = params ? params->delay_unit : DELAY_UNIT_MS;
   bool subsample = params ? params->subsample : false;
 
   double delay_samples = compute_delay_samples(delay, unit, sample_rate);
@@ -264,6 +264,8 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
       return delay / 1000.0 * (double)sample_rate;
     case DELAY_UNIT_US:
       return delay / 1000000.0 * (double)sample_rate;
+    case DELAY_UNIT_S:
+      return delay * (double)sample_rate;
     case DELAY_UNIT_SAMPLES:
       return delay;
     case DELAY_UNIT_MM:

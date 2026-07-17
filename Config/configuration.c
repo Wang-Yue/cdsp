@@ -71,10 +71,10 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
 
-  if (config->devices.has_silence_timeout &&
-      config->devices.silence_timeout < 0.0) {
+  if (config->devices.has_silence_timeout_s &&
+      config->devices.silence_timeout_s < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "silence_timeout cannot be negative");
+                     "silence_timeout_s cannot be negative");
     return -1;
   }
   if (config->devices.has_silence_threshold &&
@@ -135,10 +135,10 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
 
-  if (config->devices.has_adjust_period &&
-      config->devices.adjust_period < 0.1) {
+  if (config->devices.has_adjust_interval_s &&
+      config->devices.adjust_interval_s < 0.1) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "adjust_period must be at least 0.1 seconds");
+                     "adjust_interval_s must be at least 0.1 seconds");
     return -1;
   }
 

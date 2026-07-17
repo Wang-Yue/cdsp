@@ -52,7 +52,9 @@ typedef struct {
   int* process_channels;         /**< Array of channels to process. */
   size_t process_channels_count; /**< Number of process channels. */
   double attack;                 /**< Attack time. */
+  time_unit_t attack_unit;       /**< Unit of attack time. */
   double release;                /**< Release time. */
+  time_unit_t release_unit;      /**< Unit of release time. */
   double threshold;              /**< Threshold level. */
   double factor;                 /**< Compression factor/ratio. */
   double makeup_gain;            /**< Makeup gain value. */
@@ -72,7 +74,9 @@ typedef struct {
   int* process_channels;         /**< Array of channels to process. */
   size_t process_channels_count; /**< Number of process channels. */
   double attack;                 /**< Attack time. */
+  time_unit_t attack_unit;       /**< Unit of attack time. */
   double release;                /**< Release time. */
+  time_unit_t release_unit;      /**< Unit of release time. */
   double threshold;              /**< Threshold level. */
   double attenuation;            /**< Attenuation level. */
 } noise_gate_config_t;

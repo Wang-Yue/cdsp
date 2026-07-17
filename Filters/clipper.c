@@ -1,14 +1,14 @@
-#include "limiter.h"
+#include "clipper.h"
 
 #include "filter.h"
 
-struct limiter_filter {
+struct clipper_filter {
   char name[64];
   double clip_limit;
   bool soft_clip;
 };
 
-typedef struct limiter_filter limiter_filter_t;
+typedef struct clipper_filter clipper_filter_t;
 
 #include <math.h>
 #include <stdlib.h>
@@ -19,33 +19,33 @@ typedef struct limiter_filter limiter_filter_t;
 #endif
 
 /**
- * @brief Free the limiter filter instance.
+ * @brief Free the clipper filter instance.
  *
- * @param filter Pointer to the limiter filter instance to free.
+ * @param filter Pointer to the clipper filter instance to free.
  */
-static void limiter_filter_free(limiter_filter_t* filter) {
+static void clipper_filter_free(clipper_filter_t* filter) {
   if (filter) free(filter);
 }
 
 /**
- * @brief Validates limiter filter parameters.
+ * @brief Validates clipper filter parameters.
  *
- * @param config Pointer to the limiter parameters to validate.
+ * @param config Pointer to the clipper parameters to validate.
  * @param sample_rate The audio sample rate.
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-static int limiter_config_validate(const filter_config_t* config,
+static int clipper_config_validate(const filter_config_t* config,
                                    int sample_rate, config_error_t* err) {
   (void)sample_rate;
-  if (!config || config->type != FILTER_TYPE_LIMITER) return -1;
-  const limiter_config_t* params = &config->parameters.limiter;
+  if (!config || config->type != FILTER_TYPE_CLIPPER) return -1;
+  const clipper_config_t* params = &config->parameters.clipper;
   if (!params) return 0;
   if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
       params->clip_limit > 20.0) {
     config_error_set(
         err, CONFIG_ERR_INVALID_FILTER,
-        "Limiter clip_limit must be between -120.0 dB and 20.0 dB, got %g",
+        "Clipper clip_limit must be between -120.0 dB and 20.0 dB, got %g",
         params->clip_limit);
     return -1;
   }
@@ -53,7 +53,7 @@ static int limiter_config_validate(const filter_config_t* config,
 }
 
 /**
- * @brief Create a limiter filter.
+ * @brief Create a clipper filter.
  *
  * @param name The name of the filter.
  * @param config Pointer to the filter configuration.
@@ -61,9 +61,9 @@ static int limiter_config_validate(const filter_config_t* config,
  * @param chunk_size Maximum number of frames per processing chunk.
  * @param proc_params Processing parameters.
  * @param err Optional pointer to receive configuration error detail on failure.
- * @return Pointer to the allocated limiter_filter_t, or NULL on failure.
+ * @return Pointer to the allocated clipper_filter_t, or NULL on failure.
  */
-static void* limiter_filter_create(const char* name,
+static void* clipper_filter_create(const char* name,
                                    const filter_config_t* config,
                                    int sample_rate, size_t chunk_size,
                                    processing_parameters_t* proc_params,
@@ -71,22 +71,22 @@ static void* limiter_filter_create(const char* name,
   (void)sample_rate;
   (void)chunk_size;
   (void)proc_params;
-  if (!config || config->type != FILTER_TYPE_LIMITER) return NULL;
-  const limiter_config_t* params = &config->parameters.limiter;
-  if (limiter_config_validate(config, 0, err) != 0) return NULL;
-  limiter_filter_t* filter =
-      (limiter_filter_t*)calloc(1, sizeof(limiter_filter_t));
+  if (!config || config->type != FILTER_TYPE_CLIPPER) return NULL;
+  const clipper_config_t* params = &config->parameters.clipper;
+  if (clipper_config_validate(config, 0, err) != 0) return NULL;
+  clipper_filter_t* filter =
+      (clipper_filter_t*)calloc(1, sizeof(clipper_filter_t));
   if (!filter) return NULL;
   if (name) {
     strncpy(filter->name, name, sizeof(filter->name) - 1);
     filter->name[sizeof(filter->name) - 1] = '\0';
   } else {
-    strcpy(filter->name, "limiter");
+    strcpy(filter->name, "clipper");
   }
   double limit_db = params ? params->clip_limit : 0.0;
   double limit = double_from_db(limit_db);
   if (limit <= 0.0 || !isfinite(limit)) {
-    limiter_filter_free(filter);
+    clipper_filter_free(filter);
     return NULL;
   }
   filter->clip_limit = limit;
@@ -95,13 +95,13 @@ static void* limiter_filter_create(const char* name,
 }
 
 /**
- * @brief Process a waveform buffer in-place by applying limiting.
+ * @brief Process a waveform buffer in-place by applying clipping.
  *
- * @param filter Pointer to the limiter filter instance.
+ * @param filter Pointer to the clipper filter instance.
  * @param waveform The waveform data to process.
  * @param count The number of samples to process.
  */
-static void limiter_filter_process(limiter_filter_t* filter,
+static void clipper_filter_process(clipper_filter_t* filter,
                                    mutable_waveform_t waveform, size_t count) {
   if (!filter || !waveform || count == 0) return;
   if (filter->soft_clip) {
@@ -139,10 +139,10 @@ static void limiter_filter_process(limiter_filter_t* filter,
   }
 }
 
-const filter_vtable_t g_limiter_vtable = {
-    .validate = limiter_config_validate,
-    .create = limiter_filter_create,
+const filter_vtable_t g_clipper_vtable = {
+    .validate = clipper_config_validate,
+    .create = clipper_filter_create,
     .process =
-        (void (*)(void*, mutable_waveform_t, size_t))limiter_filter_process,
+        (void (*)(void*, mutable_waveform_t, size_t))clipper_filter_process,
     .transfer_state = NULL,
-    .free = (void (*)(void*))limiter_filter_free};
+    .free = (void (*)(void*))clipper_filter_free};

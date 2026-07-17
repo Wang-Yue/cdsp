@@ -23,6 +23,21 @@ typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
 #include <stdlib.h>
 #include <string.h>
 
+static double compute_time_samples(double value, time_unit_t unit,
+                                   int sample_rate) {
+  switch (unit) {
+    case TIME_UNIT_US:
+      return value / 1000000.0 * (double)sample_rate;
+    case TIME_UNIT_MS:
+      return value / 1000.0 * (double)sample_rate;
+    case TIME_UNIT_S:
+      return value * (double)sample_rate;
+    case TIME_UNIT_SAMPLES:
+      return value;
+  }
+  return 0.0;
+}
+
 /**
  * @brief Parses parameters and computes internal filter settings.
  *
@@ -37,12 +52,14 @@ static void configure(const lookahead_limiter_config_t* params, int sample_rate,
                       double* out_release_coeff) {
   double limit_db = params ? params->limit : 0.0;
   *out_limit = double_from_db(limit_db);
-  delay_unit_t unit = params ? params->unit : DELAY_UNIT_MS;
+  time_unit_t attack_unit = params ? params->attack_unit : TIME_UNIT_MS;
+  time_unit_t release_unit = params ? params->release_unit : TIME_UNIT_MS;
   double attack = params ? params->attack : 0.0;
   double release = params ? params->release : 0.0;
   *out_attack_samples =
-      (int)round(compute_delay_samples(attack, unit, sample_rate));
-  double release_samples = compute_delay_samples(release, unit, sample_rate);
+      (int)round(compute_time_samples(attack, attack_unit, sample_rate));
+  double release_samples =
+      compute_time_samples(release, release_unit, sample_rate);
   if (release_samples > 0.0) {
     *out_release_coeff = exp(-1.0 / release_samples);
   } else {
@@ -133,21 +150,8 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
                      params->release);
     return -1;
   }
-  double attack_samples = 0.0;
-  switch (params->unit) {
-    case DELAY_UNIT_MS:
-      attack_samples = params->attack / 1000.0 * (double)sample_rate;
-      break;
-    case DELAY_UNIT_US:
-      attack_samples = params->attack / 1000000.0 * (double)sample_rate;
-      break;
-    case DELAY_UNIT_SAMPLES:
-      attack_samples = params->attack;
-      break;
-    case DELAY_UNIT_MM:
-      attack_samples = params->attack / 1000.0 * (double)sample_rate / 343.0;
-      break;
-  }
+  double attack_samples =
+      compute_time_samples(params->attack, params->attack_unit, sample_rate);
   if (attack_samples > (double)sample_rate) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "Lookahead Limiter: attack time cannot be longer than 1 "

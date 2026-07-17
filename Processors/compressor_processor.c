@@ -21,8 +21,8 @@
 
 #include "compressor_processor.h"
 
+#include "Filters/clipper.h"
 #include "Filters/filter.h"
-#include "Filters/limiter.h"
 #include "Logging/app_logger.h"
 #include "Utils/double_helpers.h"
 #include "processor.h"
@@ -134,8 +134,23 @@ static void compressor_processor_free(compressor_processor_t* processor) {
   free(processor->monitor_channels);
   free(processor->process_channels);
   free(processor->scratch);
-  if (processor->limiter) g_limiter_vtable.free(processor->limiter);
+  if (processor->limiter) g_clipper_vtable.free(processor->limiter);
   free(processor);
+}
+
+static double compute_time_seconds(double value, time_unit_t unit,
+                                   int sample_rate) {
+  switch (unit) {
+    case TIME_UNIT_US:
+      return value / 1000000.0;
+    case TIME_UNIT_MS:
+      return value / 1000.0;
+    case TIME_UNIT_S:
+      return value;
+    case TIME_UNIT_SAMPLES:
+      return value / (double)sample_rate;
+  }
+  return 0.0;
 }
 
 /**
@@ -212,21 +227,27 @@ static void* compressor_processor_create(const char* name,
   }
 
   double srate = (double)sample_rate;
-  processor->attack = exp(-1.0 / srate / params->attack);
-  processor->release = exp(-1.0 / srate / params->release);
+  double attack_seconds =
+      compute_time_seconds(params->attack, params->attack_unit, sample_rate);
+  double release_seconds =
+      compute_time_seconds(params->release, params->release_unit, sample_rate);
+  processor->attack =
+      attack_seconds > 0.0 ? exp(-1.0 / srate / attack_seconds) : 0.0;
+  processor->release =
+      release_seconds > 0.0 ? exp(-1.0 / srate / release_seconds) : 0.0;
   processor->threshold = params->threshold;
   processor->factor = params->factor;
   processor->makeup_gain = params->has_makeup_gain ? params->makeup_gain : 0.0;
   processor->prev_loudness = -100.0;
 
   if (params->has_clip_limit) {
-    limiter_config_t limit_params = {0};
+    clipper_config_t limit_params = {0};
     limit_params.clip_limit = params->clip_limit;
     limit_params.soft_clip = params->soft_clip;
-    filter_config_t lcfg = {.type = FILTER_TYPE_LIMITER,
-                            .parameters.limiter = limit_params};
+    filter_config_t lcfg = {.type = FILTER_TYPE_CLIPPER,
+                            .parameters.clipper = limit_params};
     processor->limiter =
-        g_limiter_vtable.create("limiter", &lcfg, 0, 0, NULL, err);
+        g_clipper_vtable.create("limiter", &lcfg, 0, 0, NULL, err);
     if (!processor->limiter) {
       compressor_processor_free(processor);
       return NULL;
@@ -333,7 +354,7 @@ static void compressor_processor_process(compressor_processor_t* processor,
       int ch = processor->process_channels[ch_idx];
       double* wave = audio_chunk_get_channel(chunk, ch);
       if (wave) {
-        g_limiter_vtable.process(processor->limiter, wave, count);
+        g_clipper_vtable.process(processor->limiter, wave, count);
       }
     }
   }

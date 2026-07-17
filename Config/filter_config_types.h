@@ -56,7 +56,7 @@ typedef enum {
                                crossovers). */
   FILTER_TYPE_DIFF_EQ,      /**< Difference equation filter. */
   FILTER_TYPE_DITHER,       /**< Dither filter. */
-  FILTER_TYPE_LIMITER,      /**< Limiter filter. */
+  FILTER_TYPE_CLIPPER,      /**< Clipper filter. */
   FILTER_TYPE_LOOKAHEAD_LIMITER /**< Lookahead limiter filter. */
 } filter_type_t;
 
@@ -193,11 +193,22 @@ typedef struct {
 } convolution_config_t;
 
 /**
+ * @brief Units for general time values (attack, release, etc.).
+ */
+typedef enum {
+  TIME_UNIT_US = 0, /**< Microseconds. */
+  TIME_UNIT_MS,     /**< Milliseconds. */
+  TIME_UNIT_S,      /**< Seconds. */
+  TIME_UNIT_SAMPLES /**< Samples. */
+} time_unit_t;
+
+/**
  * @brief Units for delay values.
  */
 typedef enum {
   DELAY_UNIT_MS = 0,  /**< Milliseconds. */
   DELAY_UNIT_US,      /**< Microseconds. */
+  DELAY_UNIT_S,       /**< Seconds. */
   DELAY_UNIT_SAMPLES, /**< Samples. */
   DELAY_UNIT_MM       /**< Millimeters (distance). */
 } delay_unit_t;
@@ -206,9 +217,9 @@ typedef enum {
  * @brief Parameters for a Delay filter.
  */
 typedef struct {
-  double delay;      /**< Delay value. */
-  delay_unit_t unit; /**< Unit of the delay value. */
-  bool subsample;    /**< Enable fractional delay (subsample). */
+  double delay;            /**< Delay value. */
+  delay_unit_t delay_unit; /**< Unit of the delay value. */
+  bool subsample;          /**< Enable fractional delay (subsample). */
 } delay_config_t;
 
 /**
@@ -306,21 +317,22 @@ typedef struct {
 } dither_config_t;
 
 /**
- * @brief Parameters for a Limiter filter.
+ * @brief Parameters for a Clipper filter.
  */
 typedef struct {
   double clip_limit; /**< Clip limit (linear scale). */
   bool soft_clip;    /**< Enable soft clipping. */
-} limiter_config_t;
+} clipper_config_t;
 
 /**
  * @brief Parameters for a Lookahead Limiter filter.
  */
 typedef struct {
-  double limit;      /**< Limit value. */
-  double attack;     /**< Attack time. */
-  double release;    /**< Release time. */
-  delay_unit_t unit; /**< Unit for attack and release times. */
+  double limit;             /**< Limit value. */
+  double attack;            /**< Attack time. */
+  time_unit_t attack_unit;  /**< Unit of attack time. */
+  double release;           /**< Release time. */
+  time_unit_t release_unit; /**< Unit of release time. */
 } lookahead_limiter_config_t;
 
 /**
@@ -349,7 +361,7 @@ typedef struct {
     biquad_combo_config_t biquad_combo; /**< Biquad combo parameters. */
     diffeq_config_t diff_eq;            /**< Difference equation parameters. */
     dither_config_t dither;             /**< Dither parameters. */
-    limiter_config_t limiter;           /**< Limiter parameters. */
+    clipper_config_t clipper;           /**< Clipper parameters. */
     lookahead_limiter_config_t
         lookahead_limiter; /**< Lookahead limiter parameters. */
   } parameters;            /**< Filter-specific parameters. */

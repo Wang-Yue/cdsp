@@ -6,12 +6,12 @@
 #include "Logging/app_logger.h"
 #include "biquad.h"
 #include "biquad_combo.h"
+#include "clipper.h"
 #include "convolution.h"
 #include "delay.h"
 #include "diffeq.h"
 #include "dither.h"
 #include "gain.h"
-#include "limiter.h"
 #include "lookahead_limiter.h"
 #include "loudness.h"
 #include "volume.h"
@@ -34,8 +34,8 @@ static const filter_vtable_t* filter_vtable_from_type(filter_type_t type) {
       return &g_dither_vtable;
     case FILTER_TYPE_GAIN:
       return &g_gain_vtable;
-    case FILTER_TYPE_LIMITER:
-      return &g_limiter_vtable;
+    case FILTER_TYPE_CLIPPER:
+      return &g_clipper_vtable;
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return &g_lookahead_limiter_vtable;
     case FILTER_TYPE_LOUDNESS:
@@ -64,8 +64,8 @@ static filter_instance_type_t filter_instance_type_from_config(
       return FILTER_INSTANCE_DITHER;
     case FILTER_TYPE_GAIN:
       return FILTER_INSTANCE_GAIN;
-    case FILTER_TYPE_LIMITER:
-      return FILTER_INSTANCE_LIMITER;
+    case FILTER_TYPE_CLIPPER:
+      return FILTER_INSTANCE_CLIPPER;
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return FILTER_INSTANCE_LOOKAHEAD_LIMITER;
     case FILTER_TYPE_LOUDNESS:

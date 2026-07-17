@@ -18,13 +18,13 @@
 #include "Engine/engine_shared_state.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
+#include "Filters/clipper.h"
 #include "Filters/convolution.h"
 #include "Filters/delay.h"
 #include "Filters/diffeq.h"
 #include "Filters/dither.h"
 #include "Filters/filter.h"
 #include "Filters/gain.h"
-#include "Filters/limiter.h"
 #include "Filters/lookahead_limiter.h"
 #include "Filters/loudness.h"
 #include "Filters/volume.h"
@@ -502,7 +502,7 @@ static void dither_process_wrap(void* f, double* w, size_t n) {
   g_dither_vtable.process(f, w, n);
 }
 static void limit_process_wrap(void* f, double* w, size_t n) {
-  g_limiter_vtable.process(f, w, n);
+  g_clipper_vtable.process(f, w, n);
 }
 static void look_process_wrap(void* f, double* w, size_t n) {
   g_lookahead_limiter_vtable.process(f, w, n);
@@ -626,7 +626,7 @@ TEST(Loudness_AllocationFree) {
 
 TEST(Delay_AllocationFree) {
   delay_config_t params = {
-      .delay = 5.5, .unit = DELAY_UNIT_SAMPLES, .subsample = true};
+      .delay = 5.5, .delay_unit = DELAY_UNIT_SAMPLES, .subsample = true};
   filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
   void* filter = g_delay_vtable.create("del", &cfg, 44100, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -699,25 +699,26 @@ TEST(Dither_AllocationFree) {
   g_dither_vtable.free(filter);
 }
 
-TEST(Limiter_AllocationFree) {
-  limiter_config_t params = {.clip_limit = -1.5, .soft_clip = true};
-  filter_config_t cfg = {.type = FILTER_TYPE_LIMITER,
-                         .parameters.limiter = params};
-  void* filter = g_limiter_vtable.create("limiter", &cfg, 0, 0, NULL, NULL);
+TEST(Clipper_AllocationFree) {
+  clipper_config_t params = {.clip_limit = -1.5, .soft_clip = true};
+  filter_config_t cfg = {.type = FILTER_TYPE_CLIPPER,
+                         .parameters.clipper = params};
+  void* filter = g_clipper_vtable.create("clipper", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
   double* wave = (double*)calloc(1024, sizeof(double));
   fill_sine(wave, 1024, 1000.0, 44100.0);
   filter_test_ctx_t ctx = {filter, limit_process_wrap, wave, 1024};
-  assert_allocation_free("Limiter", 0, 30, filter_iter, &ctx);
+  assert_allocation_free("Clipper", 0, 30, filter_iter, &ctx);
   free(wave);
-  g_limiter_vtable.free(filter);
+  g_clipper_vtable.free(filter);
 }
 
 TEST(LookaheadLimiter_AllocationFree) {
   lookahead_limiter_config_t params = {.limit = -1.0,
                                        .attack = 4.0,
+                                       .attack_unit = TIME_UNIT_SAMPLES,
                                        .release = 20.0,
-                                       .unit = DELAY_UNIT_SAMPLES};
+                                       .release_unit = TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void* filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 44100,
@@ -758,7 +759,9 @@ TEST(Compressor_AllocationFree) {
                                 .process_channels = proc_ch,
                                 .process_channels_count = 2,
                                 .attack = 0.005,
+                                .attack_unit = TIME_UNIT_S,
                                 .release = 0.05,
+                                .release_unit = TIME_UNIT_S,
                                 .threshold = -10.0,
                                 .factor = 3.0,
                                 .makeup_gain = 2.0,
@@ -792,7 +795,9 @@ TEST(NoiseGate_AllocationFree) {
                                 .process_channels = proc_ch,
                                 .process_channels_count = 2,
                                 .attack = 0.005,
+                                .attack_unit = TIME_UNIT_S,
                                 .release = 0.05,
+                                .release_unit = TIME_UNIT_S,
                                 .threshold = -20.0,
                                 .attenuation = 12.0};
   processor_config_t config = {.type = PROCESSOR_TYPE_NOISE_GATE,

@@ -176,17 +176,29 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           delay_config_t* dp = &f_conf->parameters.delay;
           parse_json_double(params, "delay", &dp->delay);
           char unit_buf[64];
-          if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
+          if (parse_json_str(params, "delay_unit", unit_buf,
+                             sizeof(unit_buf))) {
             if (strcmp(unit_buf, "us") == 0)
-              dp->unit = DELAY_UNIT_US;
+              dp->delay_unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "ms") == 0)
+              dp->delay_unit = DELAY_UNIT_MS;
+            else if (strcmp(unit_buf, "s") == 0)
+              dp->delay_unit = DELAY_UNIT_S;
             else if (strcmp(unit_buf, "samples") == 0)
-              dp->unit = DELAY_UNIT_SAMPLES;
+              dp->delay_unit = DELAY_UNIT_SAMPLES;
             else if (strcmp(unit_buf, "mm") == 0)
-              dp->unit = DELAY_UNIT_MM;
-            else
-              dp->unit = DELAY_UNIT_MS;
+              dp->delay_unit = DELAY_UNIT_MM;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                               "Filter '%s': invalid delay_unit '%s'", nf->name,
+                               unit_buf);
+              return -1;
+            }
           } else {
-            dp->unit = DELAY_UNIT_MS;
+            config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                             "Filter '%s': missing required 'delay_unit'",
+                             nf->name);
+            return -1;
           }
           parse_json_bool(params, "subsample", &dp->subsample);
           break;
@@ -331,8 +343,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               parse_json_double(params, "amplitude", &dp->amplitude);
           break;
         }
-        case FILTER_TYPE_LIMITER: {
-          limiter_config_t* lp = &f_conf->parameters.limiter;
+        case FILTER_TYPE_CLIPPER: {
+          clipper_config_t* lp = &f_conf->parameters.clipper;
           parse_json_double(params, "clip_limit", &lp->clip_limit);
           parse_json_bool(params, "soft_clip", &lp->soft_clip);
           break;
@@ -343,18 +355,51 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           parse_json_double(params, "limit", &llp->limit);
           parse_json_double(params, "attack", &llp->attack);
           parse_json_double(params, "release", &llp->release);
-          char unit_buf[64];
-          if (parse_json_str(params, "unit", unit_buf, sizeof(unit_buf))) {
-            if (strcmp(unit_buf, "us") == 0)
-              llp->unit = DELAY_UNIT_US;
-            else if (strcmp(unit_buf, "samples") == 0)
-              llp->unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(unit_buf, "mm") == 0)
-              llp->unit = DELAY_UNIT_MM;
-            else
-              llp->unit = DELAY_UNIT_MS;
+          char a_unit_buf[64], r_unit_buf[64];
+          if (parse_json_str(params, "attack_unit", a_unit_buf,
+                             sizeof(a_unit_buf))) {
+            if (strcmp(a_unit_buf, "us") == 0)
+              llp->attack_unit = TIME_UNIT_US;
+            else if (strcmp(a_unit_buf, "ms") == 0)
+              llp->attack_unit = TIME_UNIT_MS;
+            else if (strcmp(a_unit_buf, "s") == 0)
+              llp->attack_unit = TIME_UNIT_S;
+            else if (strcmp(a_unit_buf, "samples") == 0)
+              llp->attack_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                               "Filter '%s': invalid attack_unit '%s'",
+                               nf->name, a_unit_buf);
+              return -1;
+            }
           } else {
-            llp->unit = DELAY_UNIT_MS;
+            config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                             "Filter '%s': missing required 'attack_unit'",
+                             nf->name);
+            return -1;
+          }
+
+          if (parse_json_str(params, "release_unit", r_unit_buf,
+                             sizeof(r_unit_buf))) {
+            if (strcmp(r_unit_buf, "us") == 0)
+              llp->release_unit = TIME_UNIT_US;
+            else if (strcmp(r_unit_buf, "ms") == 0)
+              llp->release_unit = TIME_UNIT_MS;
+            else if (strcmp(r_unit_buf, "s") == 0)
+              llp->release_unit = TIME_UNIT_S;
+            else if (strcmp(r_unit_buf, "samples") == 0)
+              llp->release_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                               "Filter '%s': invalid release_unit '%s'",
+                               nf->name, r_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                             "Filter '%s': missing required 'release_unit'",
+                             nf->name);
+            return -1;
           }
           break;
         }
@@ -422,6 +467,53 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           cp->has_clip_limit =
               parse_json_double(params, "clip_limit", &cp->clip_limit);
 
+          char a_unit_buf[64], r_unit_buf[64];
+          if (parse_json_str(params, "attack_unit", a_unit_buf,
+                             sizeof(a_unit_buf))) {
+            if (strcmp(a_unit_buf, "us") == 0)
+              cp->attack_unit = TIME_UNIT_US;
+            else if (strcmp(a_unit_buf, "ms") == 0)
+              cp->attack_unit = TIME_UNIT_MS;
+            else if (strcmp(a_unit_buf, "s") == 0)
+              cp->attack_unit = TIME_UNIT_S;
+            else if (strcmp(a_unit_buf, "samples") == 0)
+              cp->attack_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid attack_unit '%s'",
+                               np->name, a_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'attack_unit'",
+                             np->name);
+            return -1;
+          }
+
+          if (parse_json_str(params, "release_unit", r_unit_buf,
+                             sizeof(r_unit_buf))) {
+            if (strcmp(r_unit_buf, "us") == 0)
+              cp->release_unit = TIME_UNIT_US;
+            else if (strcmp(r_unit_buf, "ms") == 0)
+              cp->release_unit = TIME_UNIT_MS;
+            else if (strcmp(r_unit_buf, "s") == 0)
+              cp->release_unit = TIME_UNIT_S;
+            else if (strcmp(r_unit_buf, "samples") == 0)
+              cp->release_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid release_unit '%s'",
+                               np->name, r_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'release_unit'",
+                             np->name);
+            return -1;
+          }
+
           cp->monitor_channels = parse_int_array(
               cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
               &cp->monitor_channels_count);
@@ -437,6 +529,53 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           parse_json_double(params, "release", &ng->release);
           parse_json_double(params, "threshold", &ng->threshold);
           parse_json_double(params, "attenuation", &ng->attenuation);
+
+          char a_unit_buf[64], r_unit_buf[64];
+          if (parse_json_str(params, "attack_unit", a_unit_buf,
+                             sizeof(a_unit_buf))) {
+            if (strcmp(a_unit_buf, "us") == 0)
+              ng->attack_unit = TIME_UNIT_US;
+            else if (strcmp(a_unit_buf, "ms") == 0)
+              ng->attack_unit = TIME_UNIT_MS;
+            else if (strcmp(a_unit_buf, "s") == 0)
+              ng->attack_unit = TIME_UNIT_S;
+            else if (strcmp(a_unit_buf, "samples") == 0)
+              ng->attack_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid attack_unit '%s'",
+                               np->name, a_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'attack_unit'",
+                             np->name);
+            return -1;
+          }
+
+          if (parse_json_str(params, "release_unit", r_unit_buf,
+                             sizeof(r_unit_buf))) {
+            if (strcmp(r_unit_buf, "us") == 0)
+              ng->release_unit = TIME_UNIT_US;
+            else if (strcmp(r_unit_buf, "ms") == 0)
+              ng->release_unit = TIME_UNIT_MS;
+            else if (strcmp(r_unit_buf, "s") == 0)
+              ng->release_unit = TIME_UNIT_S;
+            else if (strcmp(r_unit_buf, "samples") == 0)
+              ng->release_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid release_unit '%s'",
+                               np->name, r_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'release_unit'",
+                             np->name);
+            return -1;
+          }
 
           ng->monitor_channels = parse_int_array(
               cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
@@ -456,13 +595,26 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
                              sizeof(unit_buf))) {
             if (strcmp(unit_buf, "us") == 0)
               rp->delay_unit = DELAY_UNIT_US;
+            else if (strcmp(unit_buf, "ms") == 0)
+              rp->delay_unit = DELAY_UNIT_MS;
+            else if (strcmp(unit_buf, "s") == 0)
+              rp->delay_unit = DELAY_UNIT_S;
             else if (strcmp(unit_buf, "samples") == 0)
               rp->delay_unit = DELAY_UNIT_SAMPLES;
             else if (strcmp(unit_buf, "mm") == 0)
               rp->delay_unit = DELAY_UNIT_MM;
-            else
-              rp->delay_unit = DELAY_UNIT_MS;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid delay_unit '%s'",
+                               np->name, unit_buf);
+              return -1;
+            }
             rp->has_delay_unit = true;
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'delay_unit'",
+                             np->name);
+            return -1;
           }
           break;
         }

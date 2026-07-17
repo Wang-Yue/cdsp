@@ -711,15 +711,17 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   if (parse_json_int(dev_obj, "target_level", &dev->target_level)) {
     dev->has_target_level = (dev->target_level > 0);
   }
-  if (parse_json_double(dev_obj, "adjust_period", &dev->adjust_period)) {
-    dev->has_adjust_period = (dev->adjust_period > 0.0);
+  if (parse_json_double(dev_obj, "adjust_interval_s",
+                        &dev->adjust_interval_s)) {
+    dev->has_adjust_interval_s = (dev->adjust_interval_s > 0.0);
   }
   if (parse_json_double(dev_obj, "silence_threshold",
                         &dev->silence_threshold)) {
     dev->has_silence_threshold = (dev->silence_threshold != 0.0);
   }
-  if (parse_json_double(dev_obj, "silence_timeout", &dev->silence_timeout)) {
-    dev->has_silence_timeout = (dev->silence_timeout > 0.0);
+  if (parse_json_double(dev_obj, "silence_timeout_s",
+                        &dev->silence_timeout_s)) {
+    dev->has_silence_timeout_s = (dev->silence_timeout_s > 0.0);
   }
   if (parse_json_int(dev_obj, "capture_samplerate", &val_int)) {
     dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;

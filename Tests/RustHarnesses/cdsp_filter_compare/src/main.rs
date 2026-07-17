@@ -211,15 +211,16 @@ fn main() {
             let in_path = &args[7];
             let out_path = &args[8];
             let unit = match unit_str.as_str() {
-                "ms" => camillalib::config::TimeUnit::Milliseconds,
-                "us" => camillalib::config::TimeUnit::Microseconds,
-                "samples" => camillalib::config::TimeUnit::Samples,
-                "mm" => camillalib::config::TimeUnit::Millimetres,
+                "ms" => camillalib::config::DelayUnit::Milliseconds,
+                "us" => camillalib::config::DelayUnit::Microseconds,
+                "s" => camillalib::config::DelayUnit::Seconds,
+                "samples" => camillalib::config::DelayUnit::Samples,
+                "mm" => camillalib::config::DelayUnit::Millimetres,
                 _ => panic!("invalid unit"),
             };
             let conf = camillalib::config::DelayParameters {
                 delay: delay_val,
-                unit: Some(unit),
+                delay_unit: unit,
                 subsample: Some(subsample),
             };
             let mut filter =
@@ -353,17 +354,17 @@ fn main() {
             let output = run_filter(&mut filter, input, chunk_size);
             write_f64(out_path, &output);
         }
-        "limiter" => {
+        "clipper" => {
             let clip_limit: f64 = args[2].parse().unwrap();
             let soft_clip: bool = args[3] == "1";
             let chunk_size: usize = args[4].parse().unwrap();
             let in_path = &args[5];
             let out_path = &args[6];
-            let conf = camillalib::config::LimiterParameters {
+            let conf = camillalib::config::ClipperParameters {
                 clip_limit,
                 soft_clip: Some(soft_clip),
             };
-            let mut filter = camillalib::filters::limiter::Limiter::from_config("test", conf);
+            let mut filter = camillalib::filters::clipper::Clipper::from_config("test", conf);
             let input = read_f64(in_path);
             let output = run_filter(&mut filter, input, chunk_size);
             write_f64(out_path, &output);
@@ -380,15 +381,16 @@ fn main() {
             let unit = match unit_str.as_str() {
                 "ms" => camillalib::config::TimeUnit::Milliseconds,
                 "us" => camillalib::config::TimeUnit::Microseconds,
+                "s" => camillalib::config::TimeUnit::Seconds,
                 "samples" => camillalib::config::TimeUnit::Samples,
-                "mm" => camillalib::config::TimeUnit::Millimetres,
                 _ => panic!("invalid unit"),
             };
             let conf = camillalib::config::LookaheadLimiterParameters {
                 limit,
                 attack,
+                attack_unit: unit,
                 release,
-                unit,
+                release_unit: unit,
             };
             let mut filter = camillalib::filters::lookahead_limiter::LookaheadLimiter::from_config(
                 "test", conf, samplerate, chunk_size,
@@ -420,7 +422,9 @@ fn main() {
                 monitor_channels: None,
                 process_channels: None,
                 attack,
+                attack_unit: camillalib::config::TimeUnit::Seconds,
                 release,
+                release_unit: camillalib::config::TimeUnit::Seconds,
                 threshold,
                 factor,
                 makeup_gain: Some(makeup_gain),
@@ -458,7 +462,9 @@ fn main() {
                 monitor_channels: None,
                 process_channels: None,
                 attack,
+                attack_unit: camillalib::config::TimeUnit::Seconds,
                 release,
+                release_unit: camillalib::config::TimeUnit::Seconds,
                 threshold,
                 attenuation,
             };
@@ -493,10 +499,11 @@ fn main() {
             let out_ch1 = &args[13];
 
             let delay_unit = match unit_str.as_str() {
-                "ms" => camillalib::config::TimeUnit::Milliseconds,
-                "us" => camillalib::config::TimeUnit::Microseconds,
-                "samples" => camillalib::config::TimeUnit::Samples,
-                "mm" => camillalib::config::TimeUnit::Millimetres,
+                "ms" => camillalib::config::DelayUnit::Milliseconds,
+                "us" => camillalib::config::DelayUnit::Microseconds,
+                "s" => camillalib::config::DelayUnit::Seconds,
+                "samples" => camillalib::config::DelayUnit::Samples,
+                "mm" => camillalib::config::DelayUnit::Millimetres,
                 _ => panic!("invalid unit"),
             };
 
@@ -506,7 +513,7 @@ fn main() {
                 channel_b,
                 delay,
                 subsample_delay: Some(subsample_delay),
-                delay_unit: Some(delay_unit),
+                delay_unit,
                 attenuation,
             };
             let mut processor = RACE::from_config("test", params, samplerate);

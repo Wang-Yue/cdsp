@@ -791,8 +791,8 @@ typedef struct {
   bool has_enable_rate_adjust;  /**< True if enable_rate_adjust is specified. */
   int target_level;             /**< Target buffer level for rate adjust. */
   bool has_target_level;        /**< True if target_level is specified. */
-  double adjust_period;         /**< Rate adjustment period (seconds). */
-  bool has_adjust_period;       /**< True if adjust_period is specified. */
+  double adjust_interval_s;     /**< Rate adjustment interval (seconds). */
+  bool has_adjust_interval_s;   /**< True if adjust_interval_s is specified. */
   resampler_config_t resampler; /**< Resampler configuration. */
   bool has_resampler;           /**< True if resampler is specified. */
   capture_device_config_t capture;   /**< Capture device configuration. */
@@ -803,9 +803,9 @@ typedef struct {
   double
       silence_threshold; /**< Silence detection threshold (dB). 0 = disabled. */
   bool has_silence_threshold; /**< True if silence_threshold is specified. */
-  double silence_timeout;     /**< Silence detection timeout (seconds). 0 =
+  double silence_timeout_s;   /**< Silence detection timeout (seconds). 0 =
                                  disabled. */
-  bool has_silence_timeout;   /**< True if silence_timeout is specified. */
+  bool has_silence_timeout_s; /**< True if silence_timeout_s is specified. */
   double
       volume_ramp_time; /**< Volume ramp time (milliseconds) for mute/unmute. */
   bool has_volume_ramp_time; /**< True if volume_ramp_time is specified. */

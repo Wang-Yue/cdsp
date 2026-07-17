@@ -182,6 +182,9 @@ static void* race_processor_create(const char* name,
     case DELAY_UNIT_MS:
       sample_period = 1000.0 / (double)sample_rate;
       break;
+    case DELAY_UNIT_S:
+      sample_period = 1.0 / (double)sample_rate;
+      break;
     case DELAY_UNIT_MM:
       sample_period = 343.0 * 1000.0 / (double)sample_rate;
       break;
@@ -202,7 +205,7 @@ static void* race_processor_create(const char* name,
 
   delay_config_t dparams = {0};
   dparams.delay = comp_delay;
-  dparams.unit = unit;
+  dparams.delay_unit = unit;
   dparams.subsample =
       params->has_subsample_delay ? params->subsample_delay : false;
 
