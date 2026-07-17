@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct DeviceConfig {
@@ -57,6 +58,7 @@ struct DeviceConfig {
 
     DeviceConfig enforced() const;
     static int bestRate(const std::vector<int>& rates, int currentRate);
+    static std::optional<std::pair<int, int>> parseWavHeader(const std::string& path);
 
     CaptureDeviceConfig toCaptureDeviceConfig() const;
     PlaybackDeviceConfig toPlaybackDeviceConfig() const;

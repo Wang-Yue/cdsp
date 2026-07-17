@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <set>
 
 std::vector<int> DeviceConfig::supportedChannels() const {
@@ -114,11 +115,57 @@ DeviceConfig DeviceConfig::enforced() const {
         if (!fmts.empty() && std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
             res.format = fmts.empty() ? "F32" : fmts[0];
         }
+    } else if (res.backend == AudioBackendType::WavFile) {
+        if (!res.filename.empty()) {
+            if (auto wavInfo = parseWavHeader(res.filename)) {
+                res.channels = wavInfo->first;
+                res.sampleRate = wavInfo->second;
+            }
+        }
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
     } else {
         res.channels = std::max(1, std::min(32, res.channels));
         res.deviceChannels = res.channels;
     }
     return res;
+}
+
+std::optional<std::pair<int, int>> DeviceConfig::parseWavHeader(const std::string& path) {
+    if (path.empty()) return std::nullopt;
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) return std::nullopt;
+
+    char riff[4];
+    file.read(riff, 4);
+    if (file.gcount() != 4 || std::string(riff, 4) != "RIFF") return std::nullopt;
+
+    file.seekg(8);
+    char wave[4];
+    file.read(wave, 4);
+    if (file.gcount() != 4 || std::string(wave, 4) != "WAVE") return std::nullopt;
+
+    file.seekg(12);
+    std::vector<char> buffer(1024);
+    file.read(buffer.data(), buffer.size());
+    std::streamsize bytesRead = file.gcount();
+    if (bytesRead < 16) return std::nullopt;
+
+    std::string dataStr(buffer.data(), bytesRead);
+    size_t fmtOffset = dataStr.find("fmt ");
+    if (fmtOffset == std::string::npos || fmtOffset + 16 > static_cast<size_t>(bytesRead)) {
+        return std::nullopt;
+    }
+
+    const char* chunkPtr = buffer.data() + fmtOffset;
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(chunkPtr);
+    uint16_t numChannels = p[10] | (p[11] << 8);
+    uint32_t sampleRate = p[12] | (p[13] << 8) | (p[14] << 16) | (p[15] << 24);
+
+    if (numChannels == 0 || numChannels > 32) return std::nullopt;
+    if (sampleRate < 8000 || sampleRate > 768000) return std::nullopt;
+
+    return std::make_pair(static_cast<int>(numChannels), static_cast<int>(sampleRate));
 }
 
 int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
