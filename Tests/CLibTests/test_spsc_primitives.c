@@ -386,4 +386,16 @@ TEST(ConcurrentProducerConsumerSeesMonotonicSequence) {
   spsc_audio_ring_buffer_free(ring);
 }
 
+TEST(SpscNullAndAvailableToReadCap) {
+  ASSERT_EQ(0, spsc_queue_get_count(NULL));
+
+  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
+  spsc_audio_ring_buffer_set_overwrite_on_overflow(ring, true);
+  float src[32] = {0};
+  spsc_audio_ring_buffer_write(ring, src, 32, 1);
+  size_t avail = spsc_audio_ring_buffer_get_available_to_read(ring);
+  ASSERT_EQ(16, avail);
+  spsc_audio_ring_buffer_free(ring);
+}
+
 TEST_MAIN()

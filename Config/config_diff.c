@@ -13,6 +13,12 @@ struct config_change {
 #include <stdlib.h>
 #include <string.h>
 
+static bool safe_streq(const char* s1, const char* s2) {
+  if (s1 == s2) return true;
+  if (!s1 || !s2) return false;
+  return strcmp(s1, s2) == 0;
+}
+
 /**
  * @brief Compares two double arrays for equality.
  * @param a First double array.
@@ -143,8 +149,8 @@ static bool loudness_config_equal(const loudness_config_t* a,
 static bool convolution_config_equal(const convolution_config_t* a,
                                      const convolution_config_t* b) {
   if (a->type != b->type) return false;
-  if (strcmp(a->filename, b->filename) != 0) return false;
-  if (strcmp(a->format, b->format) != 0) return false;
+  if (!safe_streq(a->filename, b->filename)) return false;
+  if (!safe_streq(a->format, b->format)) return false;
   if (a->channel != b->channel) return false;
   if (a->length != b->length) return false;
   if (a->skip_bytes_lines != b->skip_bytes_lines) return false;
@@ -440,9 +446,9 @@ static bool resampler_config_equal(const resampler_config_t* a,
                                    const resampler_config_t* b) {
   if (a->type != b->type) return false;
   if (a->has_profile != b->has_profile) return false;
-  if (a->has_profile && strcmp(a->profile, b->profile) != 0) return false;
+  if (a->has_profile && !safe_streq(a->profile, b->profile)) return false;
   if (a->has_interpolation != b->has_interpolation) return false;
-  if (a->has_interpolation && strcmp(a->interpolation, b->interpolation) != 0)
+  if (a->has_interpolation && !safe_streq(a->interpolation, b->interpolation))
     return false;
   if (a->has_sinc_len != b->has_sinc_len) return false;
   if (a->has_sinc_len && a->sinc_len != b->sinc_len) return false;
@@ -451,7 +457,7 @@ static bool resampler_config_equal(const resampler_config_t* a,
       a->oversampling_factor != b->oversampling_factor)
     return false;
   if (a->has_window != b->has_window) return false;
-  if (a->has_window && strcmp(a->window, b->window) != 0) return false;
+  if (a->has_window && !safe_streq(a->window, b->window)) return false;
   if (a->has_f_cutoff != b->has_f_cutoff) return false;
   if (a->has_f_cutoff && a->f_cutoff != b->f_cutoff) return false;
 
@@ -523,8 +529,8 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->capture.cfg.coreaudio.channels !=
           b->capture.cfg.coreaudio.channels)
         return false;
-      if (strcmp(a->capture.cfg.coreaudio.device,
-                 b->capture.cfg.coreaudio.device) != 0)
+      if (!safe_streq(a->capture.cfg.coreaudio.device,
+                      b->capture.cfg.coreaudio.device))
         return false;
       if (a->capture.cfg.coreaudio.format != b->capture.cfg.coreaudio.format)
         return false;
@@ -534,18 +540,18 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_ALSA:
       if (a->capture.cfg.alsa.channels != b->capture.cfg.alsa.channels)
         return false;
-      if (strcmp(a->capture.cfg.alsa.device, b->capture.cfg.alsa.device) != 0)
+      if (!safe_streq(a->capture.cfg.alsa.device, b->capture.cfg.alsa.device))
         return false;
       if (a->capture.cfg.alsa.format != b->capture.cfg.alsa.format)
         return false;
       if (a->capture.cfg.alsa.stop_on_inactive !=
           b->capture.cfg.alsa.stop_on_inactive)
         return false;
-      if (strcmp(a->capture.cfg.alsa.link_volume_control,
-                 b->capture.cfg.alsa.link_volume_control) != 0)
+      if (!safe_streq(a->capture.cfg.alsa.link_volume_control,
+                      b->capture.cfg.alsa.link_volume_control))
         return false;
-      if (strcmp(a->capture.cfg.alsa.link_mute_control,
-                 b->capture.cfg.alsa.link_mute_control) != 0)
+      if (!safe_streq(a->capture.cfg.alsa.link_mute_control,
+                      b->capture.cfg.alsa.link_mute_control))
         return false;
       break;
 #endif
@@ -553,27 +559,27 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       if (a->capture.cfg.pipewire.channels != b->capture.cfg.pipewire.channels)
         return false;
-      if (strcmp(a->capture.cfg.pipewire.device,
-                 b->capture.cfg.pipewire.device) != 0)
+      if (!safe_streq(a->capture.cfg.pipewire.device,
+                      b->capture.cfg.pipewire.device))
         return false;
-      if (strcmp(a->capture.cfg.pipewire.node_name,
-                 b->capture.cfg.pipewire.node_name) != 0)
+      if (!safe_streq(a->capture.cfg.pipewire.node_name,
+                      b->capture.cfg.pipewire.node_name))
         return false;
-      if (strcmp(a->capture.cfg.pipewire.node_description,
-                 b->capture.cfg.pipewire.node_description) != 0)
+      if (!safe_streq(a->capture.cfg.pipewire.node_description,
+                      b->capture.cfg.pipewire.node_description))
         return false;
-      if (strcmp(a->capture.cfg.pipewire.node_group_name,
-                 b->capture.cfg.pipewire.node_group_name) != 0)
+      if (!safe_streq(a->capture.cfg.pipewire.node_group_name,
+                      b->capture.cfg.pipewire.node_group_name))
         return false;
-      if (strcmp(a->capture.cfg.pipewire.autoconnect_to,
-                 b->capture.cfg.pipewire.autoconnect_to) != 0)
+      if (!safe_streq(a->capture.cfg.pipewire.autoconnect_to,
+                      b->capture.cfg.pipewire.autoconnect_to))
         return false;
       break;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       if (a->capture.is_wav) {
-        if (strcmp(a->capture.cfg.wav_file.filename,
-                   b->capture.cfg.wav_file.filename) != 0)
+        if (!safe_streq(a->capture.cfg.wav_file.filename,
+                        b->capture.cfg.wav_file.filename))
           return false;
         if (a->capture.cfg.wav_file.extra_samples !=
             b->capture.cfg.wav_file.extra_samples)
@@ -582,8 +588,8 @@ bool devices_config_equal(const devices_config_t* a,
         if (a->capture.cfg.raw_file.channels !=
             b->capture.cfg.raw_file.channels)
           return false;
-        if (strcmp(a->capture.cfg.raw_file.filename,
-                   b->capture.cfg.raw_file.filename) != 0)
+        if (!safe_streq(a->capture.cfg.raw_file.filename,
+                        b->capture.cfg.raw_file.filename))
           return false;
         if (a->capture.cfg.raw_file.format != b->capture.cfg.raw_file.format)
           return false;
@@ -631,8 +637,8 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_WASAPI:
       if (a->capture.cfg.wasapi.channels != b->capture.cfg.wasapi.channels)
         return false;
-      if (strcmp(a->capture.cfg.wasapi.device, b->capture.cfg.wasapi.device) !=
-          0)
+      if (!safe_streq(a->capture.cfg.wasapi.device,
+                      b->capture.cfg.wasapi.device))
         return false;
       if (a->capture.cfg.wasapi.format != b->capture.cfg.wasapi.format)
         return false;
@@ -648,7 +654,7 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_ASIO:
       if (a->capture.cfg.asio.channels != b->capture.cfg.asio.channels)
         return false;
-      if (strcmp(a->capture.cfg.asio.device, b->capture.cfg.asio.device) != 0)
+      if (!safe_streq(a->capture.cfg.asio.device, b->capture.cfg.asio.device))
         return false;
       if (a->capture.cfg.asio.format != b->capture.cfg.asio.format)
         return false;
@@ -681,8 +687,8 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->playback.cfg.coreaudio.channels !=
           b->playback.cfg.coreaudio.channels)
         return false;
-      if (strcmp(a->playback.cfg.coreaudio.device,
-                 b->playback.cfg.coreaudio.device) != 0)
+      if (!safe_streq(a->playback.cfg.coreaudio.device,
+                      b->playback.cfg.coreaudio.device))
         return false;
       if (a->playback.cfg.coreaudio.format != b->playback.cfg.coreaudio.format)
         return false;
@@ -692,7 +698,7 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_ALSA:
       if (a->playback.cfg.alsa.channels != b->playback.cfg.alsa.channels)
         return false;
-      if (strcmp(a->playback.cfg.alsa.device, b->playback.cfg.alsa.device) != 0)
+      if (!safe_streq(a->playback.cfg.alsa.device, b->playback.cfg.alsa.device))
         return false;
       if (a->playback.cfg.alsa.format != b->playback.cfg.alsa.format)
         return false;
@@ -708,20 +714,20 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->playback.cfg.pipewire.channels !=
           b->playback.cfg.pipewire.channels)
         return false;
-      if (strcmp(a->playback.cfg.pipewire.device,
-                 b->playback.cfg.pipewire.device) != 0)
+      if (!safe_streq(a->playback.cfg.pipewire.device,
+                      b->playback.cfg.pipewire.device))
         return false;
-      if (strcmp(a->playback.cfg.pipewire.node_name,
-                 b->playback.cfg.pipewire.node_name) != 0)
+      if (!safe_streq(a->playback.cfg.pipewire.node_name,
+                      b->playback.cfg.pipewire.node_name))
         return false;
-      if (strcmp(a->playback.cfg.pipewire.node_description,
-                 b->playback.cfg.pipewire.node_description) != 0)
+      if (!safe_streq(a->playback.cfg.pipewire.node_description,
+                      b->playback.cfg.pipewire.node_description))
         return false;
-      if (strcmp(a->playback.cfg.pipewire.node_group_name,
-                 b->playback.cfg.pipewire.node_group_name) != 0)
+      if (!safe_streq(a->playback.cfg.pipewire.node_group_name,
+                      b->playback.cfg.pipewire.node_group_name))
         return false;
-      if (strcmp(a->playback.cfg.pipewire.autoconnect_to,
-                 b->playback.cfg.pipewire.autoconnect_to) != 0)
+      if (!safe_streq(a->playback.cfg.pipewire.autoconnect_to,
+                      b->playback.cfg.pipewire.autoconnect_to))
         return false;
       break;
 #endif
@@ -729,8 +735,8 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->playback.cfg.raw_file.channels !=
           b->playback.cfg.raw_file.channels)
         return false;
-      if (strcmp(a->playback.cfg.raw_file.filename,
-                 b->playback.cfg.raw_file.filename) != 0)
+      if (!safe_streq(a->playback.cfg.raw_file.filename,
+                      b->playback.cfg.raw_file.filename))
         return false;
       if (a->playback.cfg.raw_file.format != b->playback.cfg.raw_file.format)
         return false;
@@ -753,8 +759,8 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_WASAPI:
       if (a->playback.cfg.wasapi.channels != b->playback.cfg.wasapi.channels)
         return false;
-      if (strcmp(a->playback.cfg.wasapi.device,
-                 b->playback.cfg.wasapi.device) != 0)
+      if (!safe_streq(a->playback.cfg.wasapi.device,
+                      b->playback.cfg.wasapi.device))
         return false;
       if (a->playback.cfg.wasapi.format != b->playback.cfg.wasapi.format)
         return false;
@@ -768,7 +774,7 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_ASIO:
       if (a->playback.cfg.asio.channels != b->playback.cfg.asio.channels)
         return false;
-      if (strcmp(a->playback.cfg.asio.device, b->playback.cfg.asio.device) != 0)
+      if (!safe_streq(a->playback.cfg.asio.device, b->playback.cfg.asio.device))
         return false;
       if (a->playback.cfg.asio.format != b->playback.cfg.asio.format)
         return false;
@@ -801,8 +807,8 @@ static bool pipeline_step_equal(const pipeline_step_config_t* a,
   for (size_t i = 0; i < a->channels_count; i++) {
     if (a->channels[i] != b->channels[i]) return false;
   }
-  if (strcmp(a->name, b->name) != 0) return false;
   if (a->has_name != b->has_name) return false;
+  if (a->has_name && !safe_streq(a->name, b->name)) return false;
   if (!string_arrays_equal(a->names, a->names_count, b->names, b->names_count))
     return false;
   if (a->bypassed != b->bypassed) return false;
@@ -849,20 +855,20 @@ config_change_type_t config_diff(const dsp_config_t* current,
   // If names of filters/mixers/processors at specific slots change, it's also a
   // structural change.
   for (size_t i = 0; i < current->filters_count; i++) {
-    if (strcmp(current->filters[i].name, new_conf->filters[i].name) != 0) {
+    if (!safe_streq(current->filters[i].name, new_conf->filters[i].name)) {
       out_change->type = CONFIG_CHANGE_PIPELINE;
       return CONFIG_CHANGE_PIPELINE;
     }
   }
   for (size_t i = 0; i < current->mixers_count; i++) {
-    if (strcmp(current->mixers[i].name, new_conf->mixers[i].name) != 0) {
+    if (!safe_streq(current->mixers[i].name, new_conf->mixers[i].name)) {
       out_change->type = CONFIG_CHANGE_PIPELINE;
       return CONFIG_CHANGE_PIPELINE;
     }
   }
   for (size_t i = 0; i < current->processors_count; i++) {
-    if (strcmp(current->processors[i].name, new_conf->processors[i].name) !=
-        0) {
+    if (!safe_streq(current->processors[i].name,
+                    new_conf->processors[i].name)) {
       out_change->type = CONFIG_CHANGE_PIPELINE;
       return CONFIG_CHANGE_PIPELINE;
     }

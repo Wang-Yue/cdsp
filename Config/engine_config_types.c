@@ -512,6 +512,7 @@ void playback_device_config_init(playback_device_config_t* config,
 }
 
 int capture_device_config_get_channels(const capture_device_config_t* config) {
+  if (!config) return 0;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -562,6 +563,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
 
 int playback_device_config_get_channels(
     const playback_device_config_t* config) {
+  if (!config) return 0;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -594,6 +596,7 @@ int playback_device_config_get_channels(
 
 const char* capture_device_config_get_device(
     const capture_device_config_t* config) {
+  if (!config) return "";
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -631,16 +634,19 @@ coreaudio_sample_format_t capture_device_config_get_format(
 
 bool capture_device_config_get_bypass_dop(
     const capture_device_config_t* config) {
+  if (!config) return true;
   return config->bypass_dop;
 }
 
 double capture_device_config_get_dop_cutoff_hz(
     const capture_device_config_t* config) {
+  if (!config) return 20000.0;
   return config->dop_cutoff_hz;
 }
 
 const char* playback_device_config_get_device(
     const playback_device_config_t* config) {
+  if (!config) return "";
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -678,6 +684,7 @@ coreaudio_sample_format_t playback_device_config_get_format(
 
 bool playback_device_config_get_exclusive(
     const playback_device_config_t* config) {
+  if (!config) return false;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -744,12 +751,14 @@ size_t playback_device_config_calculate_carrier_bits(
 
 sdm_filter_t playback_device_config_get_dsd_encoder_filter(
     const playback_device_config_t* config) {
+  if (!config) return SDM_FILTER_INVALID;
   return config->dsd_encoder_filter;
 }
 
 /// Capture sample rate when different from playback (requires resampler)
 void capture_device_config_set_channels(capture_device_config_t* config,
                                         int channels) {
+  if (!config) return;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:

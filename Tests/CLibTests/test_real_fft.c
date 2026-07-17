@@ -259,12 +259,24 @@ TEST(RealFFTPow2VDSPRoundtrip) {
     ASSERT_DOUBLE_EQ(0.0, spec_im[0]);
     ASSERT_DOUBLE_EQ(0.0, spec_im[real_fft_get_spectrum_length(real_fft) - 1]);
 
+    size_t spec_len = real_fft_get_spectrum_length(real_fft);
+    double* spec_re_copy = (double*)malloc(spec_len * sizeof(double));
+    double* spec_im_copy = (double*)malloc(spec_len * sizeof(double));
+    memcpy(spec_re_copy, spec_re, spec_len * sizeof(double));
+    memcpy(spec_im_copy, spec_im, spec_len * sizeof(double));
+
     double* recovered = (double*)calloc(length, sizeof(double));
     real_fft_inverse(real_fft, spec_re, spec_im, recovered);
     ASSERT_NEAR((double)length, recovered[0], 1e-10);
     for (size_t k = 1; k < length; k++) {
       ASSERT_NEAR(0.0, recovered[k], 1e-10);
     }
+    for (size_t k = 0; k < spec_len; k++) {
+      ASSERT_DOUBLE_EQ(spec_re_copy[k], spec_re[k]);
+      ASSERT_DOUBLE_EQ(spec_im_copy[k], spec_im[k]);
+    }
+    free(spec_re_copy);
+    free(spec_im_copy);
 
     size_t k_bin = length / 4;
     if (k_bin < 1) k_bin = 1;

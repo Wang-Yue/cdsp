@@ -47,9 +47,12 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
   counter->threshold_db = threshold_db;
   counter->silent_chunks = 0;
   // Convert the timeout duration from seconds to the number of audio chunks.
-  if (timeout_seconds > 0.0 && chunksize > 0) {
-    counter->limit_chunks = (size_t)round(
-        (timeout_seconds * (double)samplerate) / (double)chunksize);
+  if (timeout_seconds > 0.0 && chunksize > 0 && isfinite(timeout_seconds) &&
+      samplerate > 0) {
+    double limit =
+        round((timeout_seconds * (double)samplerate) / (double)chunksize);
+    counter->limit_chunks =
+        (limit > (double)SIZE_MAX) ? SIZE_MAX : (size_t)limit;
   } else {
     counter->limit_chunks = 0;
   }

@@ -826,7 +826,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
           }
         }
         if (step->has_channel) {
-          if (step->channel >= num_channels) {
+          if (step->channel < 0 || step->channel >= num_channels) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Filter step %zu references channel %d but "
                              "pipeline only has %d channel(s) at this point",
@@ -835,7 +835,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
           }
         }
         for (size_t j = 0; j < step->channels_count; j++) {
-          if (step->channels[j] >= num_channels) {
+          if (step->channels[j] < 0 || step->channels[j] >= num_channels) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                              "Filter step %zu references channel %d but "
                              "pipeline only has %d channel(s) at this point",

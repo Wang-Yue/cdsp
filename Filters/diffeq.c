@@ -45,9 +45,16 @@ static void diffeq_filter_free(diffeq_filter_t* filter) {
  */
 static int diffeq_config_validate(const filter_config_t* config,
                                   int sample_rate, config_error_t* err) {
-  (void)config;
   (void)sample_rate;
-  (void)err;
+  if (!config || config->type != FILTER_TYPE_DIFF_EQ) return -1;
+  const diffeq_config_t* params = &config->parameters.diff_eq;
+  if (params && params->a && params->a_count > 0) {
+    if (params->a[0] == 0.0 || !isfinite(params->a[0])) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "DiffEq filter a[0] must be non-zero and finite");
+      return -1;
+    }
+  }
   return 0;
 }
 

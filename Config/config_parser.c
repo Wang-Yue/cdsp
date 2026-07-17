@@ -22,18 +22,30 @@
 static const logger_t g_logger = {"dsp.config.parser"};
 
 static int compare_named_filters(const void* a, const void* b) {
-  return strcmp(((const named_filter_config_t*)a)->name,
-                ((const named_filter_config_t*)b)->name);
+  const char* na = ((const named_filter_config_t*)a)->name;
+  const char* nb = ((const named_filter_config_t*)b)->name;
+  if (!na && !nb) return 0;
+  if (!na) return -1;
+  if (!nb) return 1;
+  return strcmp(na, nb);
 }
 
 static int compare_named_mixers(const void* a, const void* b) {
-  return strcmp(((const named_mixer_config_t*)a)->name,
-                ((const named_mixer_config_t*)b)->name);
+  const char* na = ((const named_mixer_config_t*)a)->name;
+  const char* nb = ((const named_mixer_config_t*)b)->name;
+  if (!na && !nb) return 0;
+  if (!na) return -1;
+  if (!nb) return 1;
+  return strcmp(na, nb);
 }
 
 static int compare_named_processors(const void* a, const void* b) {
-  return strcmp(((const named_processor_config_t*)a)->name,
-                ((const named_processor_config_t*)b)->name);
+  const char* na = ((const named_processor_config_t*)a)->name;
+  const char* nb = ((const named_processor_config_t*)b)->name;
+  if (!na && !nb) return 0;
+  if (!na) return -1;
+  if (!nb) return 1;
+  return strcmp(na, nb);
 }
 
 /**

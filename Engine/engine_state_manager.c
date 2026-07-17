@@ -22,6 +22,8 @@ struct engine_state_manager {
   bool has_state_file_path;
   /** True if there are unsaved state changes. */
   bool dirty;
+  /** Monotonic counter incremented on every state modification. */
+  uint64_t change_counter;
   /** Mutex for protecting state variables. */
   pthread_mutex_t mutex;
 };
@@ -38,6 +40,7 @@ engine_state_manager_t* engine_state_manager_create(void) {
   mgr->has_active_config_path = false;
   mgr->has_state_file_path = false;
   mgr->dirty = false;
+  mgr->change_counter = 0;
 
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
@@ -60,6 +63,7 @@ void engine_state_manager_set_fader_volume(engine_state_manager_t* mgr,
   pthread_mutex_lock(&mgr->mutex);
   mgr->fader_volumes[fader] = (double)db;
   mgr->dirty = true;
+  mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
 }
 
@@ -78,6 +82,7 @@ void engine_state_manager_set_fader_mute(engine_state_manager_t* mgr,
   pthread_mutex_lock(&mgr->mutex);
   mgr->fader_mutes[fader] = mute;
   mgr->dirty = true;
+  mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
 }
 
@@ -133,6 +138,7 @@ void engine_state_manager_set_config_path(engine_state_manager_t* mgr,
     mgr->has_active_config_path = false;
   }
   mgr->dirty = true;
+  mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
 }
 
@@ -155,13 +161,6 @@ bool engine_state_manager_is_dirty(const engine_state_manager_t* mgr) {
   return res;
 }
 
-void engine_state_manager_set_dirty(engine_state_manager_t* mgr, bool dirty) {
-  if (!mgr) return;
-  pthread_mutex_lock(&mgr->mutex);
-  mgr->dirty = dirty;
-  pthread_mutex_unlock(&mgr->mutex);
-}
-
 void engine_state_manager_sync_to_processing_parameters(
     const engine_state_manager_t* mgr, processing_parameters_t* params) {
   if (!mgr || !params) return;
@@ -182,6 +181,7 @@ void engine_state_manager_save_if_needed(engine_state_manager_t* mgr) {
   pthread_mutex_lock(&mgr->mutex);
   bool is_dirty = mgr->dirty;
   bool has_file = mgr->has_state_file_path;
+  uint64_t saved_counter = mgr->change_counter;
   pthread_mutex_unlock(&mgr->mutex);
 
   if (!has_file || !is_dirty) return;
@@ -206,7 +206,11 @@ void engine_state_manager_save_if_needed(engine_state_manager_t* mgr) {
 
   const char* s_path = engine_state_manager_get_state_file(mgr);
   if (s_path && dsp_state_save(s_path, state)) {
-    engine_state_manager_set_dirty(mgr, false);
+    pthread_mutex_lock(&mgr->mutex);
+    if (mgr->change_counter == saved_counter) {
+      mgr->dirty = false;
+    }
+    pthread_mutex_unlock(&mgr->mutex);
   }
   dsp_state_free(state);
 }

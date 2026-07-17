@@ -327,6 +327,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   if (ret != 0) {
     engine_shared_state_request_stop(
         core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    if (core->capture) capture_backend_stop(core->capture);
+    if (core->playback) playback_backend_stop(core->playback);
     pthread_join(core->capture_thread, NULL);
     return false;
   }
@@ -336,6 +338,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   if (ret != 0) {
     engine_shared_state_request_stop(
         core->shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    if (core->capture) capture_backend_stop(core->capture);
+    if (core->playback) playback_backend_stop(core->playback);
     pthread_join(core->capture_thread, NULL);
     pthread_join(core->processing_thread, NULL);
     return false;

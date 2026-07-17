@@ -123,4 +123,34 @@ TEST(AppendMismatchedChannels) {
   audio_history_buffer_free(buffer);
 }
 
+TEST(ReadLatestAverageChannelsLargeCount) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t* chunk = audio_chunk_create(4096, 2);
+  for (size_t t = 0; t < 4096; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = 2.0;
+    audio_chunk_get_channel(chunk, 1)[t] = 4.0;
+  }
+  audio_chunk_set_valid_frames(chunk, 4096);
+
+  audio_history_buffer_append(buffer, chunk);
+
+  float* dest = (float*)calloc(4096, sizeof(float));
+  bool enough_data = false;
+
+  audio_history_buffer_status_t status =
+      audio_history_buffer_read_latest(buffer, dest, 4096, -1, &enough_data);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
+  ASSERT_TRUE(enough_data);
+  ASSERT_NEAR(3.0f, dest[0], 1e-5);
+  ASSERT_NEAR(3.0f, dest[2047], 1e-5);
+  ASSERT_NEAR(3.0f, dest[2048], 1e-5);
+  ASSERT_NEAR(3.0f, dest[4095], 1e-5);
+
+  free(dest);
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
 TEST_MAIN()

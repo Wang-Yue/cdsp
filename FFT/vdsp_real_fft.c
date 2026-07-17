@@ -18,6 +18,8 @@ struct vdsp_real_fft {
   size_t half_n;
   vDSP_Length log2n;
   FFTSetupD setup;
+  double* work_re;
+  double* work_im;
 };
 
 /**
@@ -79,14 +81,21 @@ vdsp_real_fft_t* vdsp_real_fft_create(size_t length) {
     vDSP_destroy_fftsetupD(setup);
     return NULL;
   }
+  fft->setup = setup;
   size_t half_n = length / 2;
+  fft->work_re = (double*)calloc(half_n, sizeof(double));
+  fft->work_im = (double*)calloc(half_n, sizeof(double));
+  if (!fft->work_re || !fft->work_im) {
+    vdsp_real_fft_free(fft);
+    return NULL;
+  }
+
   fft->base.ctx = fft;
   fft->base.forward = vdsp_real_fft_forward_wrapper;
   fft->base.inverse = vdsp_real_fft_inverse_wrapper;
   fft->base.free = vdsp_real_fft_free_wrapper;
   fft->half_n = half_n;
   fft->log2n = log2n;
-  fft->setup = setup;
   return fft;
 }
 
@@ -123,16 +132,15 @@ void vdsp_real_fft_forward(vdsp_real_fft_t* fft, waveform_t real_in,
 
 void vdsp_real_fft_inverse(vdsp_real_fft_t* fft, waveform_t spec_re,
                            waveform_t spec_im, mutable_waveform_t real_out) {
-  if (!fft) return;
+  if (!fft || !fft->work_re || !fft->work_im) return;
   size_t n = fft->half_n;
-  double* re = (double*)spec_re;
-  double* im = (double*)spec_im;
+  memcpy(fft->work_re, spec_re, n * sizeof(double));
+  if (n > 1) {
+    memcpy(fft->work_im + 1, spec_im + 1, (n - 1) * sizeof(double));
+  }
+  fft->work_im[0] = spec_re[n];
 
-  // Temporarily repack Nyquist (re[N]) into im[0] for in-place vDSP IDFT
-  double orig_im0 = im[0];
-  im[0] = re[n];
-
-  DSPDoubleSplitComplex split = {re, im};
+  DSPDoubleSplitComplex split = {fft->work_re, fft->work_im};
   vDSP_fft_zripD(fft->setup, &split, 1, fft->log2n, FFT_INVERSE);
 
   // Asymmetric vDSP scaling: forward applies a `2×` factor, inverse does not.
@@ -143,13 +151,13 @@ void vdsp_real_fft_inverse(vdsp_real_fft_t* fft, waveform_t spec_re,
   // Re-interleave split-complex in-place back to 2N reals:
   // realOut[2k] = split.real[k], realOut[2k+1] = split.imag[k].
   vDSP_ztocD(&split, 1, (DSPDoubleComplex*)real_out, 2, (vDSP_Length)n);
-
-  im[0] = orig_im0;
 }
 
 void vdsp_real_fft_free(vdsp_real_fft_t* fft) {
   if (!fft) return;
   if (fft->setup) vDSP_destroy_fftsetupD(fft->setup);
+  if (fft->work_re) free(fft->work_re);
+  if (fft->work_im) free(fft->work_im);
   free(fft);
 }
 
@@ -159,6 +167,8 @@ struct vdsp_real_fftf {
   size_t half_n;
   vDSP_Length log2n;
   FFTSetup setup;
+  float* work_re;
+  float* work_im;
 };
 
 static void vdsp_real_fftf_forward_wrapper(void* ctx, const float* real_in,
@@ -194,7 +204,15 @@ vdsp_real_fftf_t* vdsp_real_fftf_create(size_t length) {
     vDSP_destroy_fftsetup(setup);
     return NULL;
   }
+  fft->setup = setup;
   size_t half_n = length / 2;
+  fft->work_re = (float*)calloc(half_n, sizeof(float));
+  fft->work_im = (float*)calloc(half_n, sizeof(float));
+  if (!fft->work_re || !fft->work_im) {
+    vdsp_real_fftf_free(fft);
+    return NULL;
+  }
+
   fft->base.ctx = fft;
   fft->base.forward = vdsp_real_fftf_forward_wrapper;
   fft->base.inverse = vdsp_real_fftf_inverse_wrapper;
@@ -234,16 +252,15 @@ void vdsp_real_fftf_forward(vdsp_real_fftf_t* fft, const float* real_in,
 
 void vdsp_real_fftf_inverse(vdsp_real_fftf_t* fft, const float* spec_re,
                             const float* spec_im, float* real_out) {
-  if (!fft) return;
+  if (!fft || !fft->work_re || !fft->work_im) return;
   size_t n = fft->half_n;
-  float* re = (float*)spec_re;
-  float* im = (float*)spec_im;
+  memcpy(fft->work_re, spec_re, n * sizeof(float));
+  if (n > 1) {
+    memcpy(fft->work_im + 1, spec_im + 1, (n - 1) * sizeof(float));
+  }
+  fft->work_im[0] = spec_re[n];
 
-  // Temporarily repack Nyquist (re[N]) into im[0] for in-place vDSP IDFT
-  float orig_im0 = im[0];
-  im[0] = re[n];
-
-  DSPSplitComplex split = {re, im};
+  DSPSplitComplex split = {fft->work_re, fft->work_im};
   vDSP_fft_zrip(fft->setup, &split, 1, fft->log2n, FFT_INVERSE);
 
   // Asymmetric vDSP scaling: forward applies a `2×` factor, inverse does not.
@@ -254,13 +271,13 @@ void vdsp_real_fftf_inverse(vdsp_real_fftf_t* fft, const float* spec_re,
   // Re-interleave split-complex in-place back to 2N reals:
   // realOut[2k] = split.real[k], realOut[2k+1] = split.imag[k].
   vDSP_ztoc(&split, 1, (DSPComplex*)real_out, 2, (vDSP_Length)n);
-
-  im[0] = orig_im0;
 }
 
 void vdsp_real_fftf_free(vdsp_real_fftf_t* fft) {
   if (!fft) return;
   if (fft->setup) vDSP_destroy_fftsetup(fft->setup);
+  if (fft->work_re) free(fft->work_re);
+  if (fft->work_im) free(fft->work_im);
   free(fft);
 }
 

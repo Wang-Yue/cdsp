@@ -122,7 +122,7 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       !analyzer->plan.ranges || !analyzer->out_magnitudes) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
-  if (n_bins == 0 || n_bins > 65536 || min_freq <= 0.0 ||
+  if (n_bins == 0 || n_bins > analyzer->out_capacity || min_freq <= 0.0 ||
       max_freq <= min_freq || max_freq > (double)samplerate / 2.0 ||
       samplerate == 0) {
     return SPECTRUM_ERROR_INVALID_PARAM;
@@ -174,10 +174,6 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                        half_n + 1);
 
   // 4. Geometric Binning via Cached Plan
-  // Reject if requested bins exceed preallocated capacity.
-  if (n_bins > analyzer->out_capacity) {
-    return SPECTRUM_ERROR_INVALID_PARAM;
-  }
 
   // Recompute the logarithmic binning plan if parameters changed.
   // This maps output frequency bins to ranges of FFT bins.

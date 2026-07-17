@@ -32,7 +32,9 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
   int m = 0;
   cJSON_ArrayForEach(mixer_child, mixers_obj) {
     named_mixer_config_t* nm = &config->mixers[m];
-    strncpy(nm->name, mixer_child->string, sizeof(nm->name) - 1);
+    const char* m_name = mixer_child->string ? mixer_child->string : "";
+    strncpy(nm->name, m_name, sizeof(nm->name) - 1);
+    nm->name[sizeof(nm->name) - 1] = '\0';
 
     if (!cJSON_IsObject(mixer_child)) {
       config_error_set(err, CONFIG_ERR_PARSE,

@@ -1,4 +1,5 @@
 #include "Audio/audio_buffers.h"
+#include "Audio/audio_chunk.h"
 #include "test_support.h"
 
 TEST(allocates_zeroed_storage) {
@@ -99,6 +100,32 @@ TEST(mutation_through_cached_pointer) {
   cached[3] = 99.0;
   ASSERT_DOUBLE_EQ(99.0, audio_buffers_get_channel(buffers, 0)[3]);
   audio_buffers_free(buffers);
+}
+
+TEST(SumChannelsInvalidFirstChannel) {
+  audio_chunk_t* chunk = audio_chunk_create(4, 2);
+  mutable_waveform_t c0 = audio_chunk_get_channel(chunk, 0);
+  mutable_waveform_t c1 = audio_chunk_get_channel(chunk, 1);
+  c0[0] = 1.0;
+  c0[1] = 2.0;
+  c0[2] = 3.0;
+  c0[3] = 4.0;
+  c1[0] = 10.0;
+  c1[1] = 20.0;
+  c1[2] = 30.0;
+  c1[3] = 40.0;
+  audio_chunk_set_valid_frames(chunk, 4);
+
+  int channels[] = {-1, 0, 1};
+  double out_sum[4] = {0};
+  audio_chunk_sum_channels(chunk, channels, 3, out_sum, 4);
+
+  ASSERT_DOUBLE_EQ(11.0, out_sum[0]);
+  ASSERT_DOUBLE_EQ(22.0, out_sum[1]);
+  ASSERT_DOUBLE_EQ(33.0, out_sum[2]);
+  ASSERT_DOUBLE_EQ(44.0, out_sum[3]);
+
+  audio_chunk_free(chunk);
 }
 
 TEST_MAIN()

@@ -32,7 +32,10 @@ static inline cdsp_sem_t cdsp_sem_create(void) {
  * @param sem The semaphore handle to destroy.
  */
 static inline void cdsp_sem_destroy(cdsp_sem_t sem) {
-  if (sem) dispatch_release(sem);
+  if (sem) {
+    while (dispatch_semaphore_wait(sem, DISPATCH_TIME_NOW) == 0);
+    dispatch_release(sem);
+  }
 }
 
 /**

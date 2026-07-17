@@ -179,6 +179,8 @@ bluestein_fft_t* bluestein_fft_create(size_t n, config_error_t* err) {
       !fft->alpha_post_im || !fft->b_real_f || !fft->b_imag_f || !fft->a_re ||
       !fft->a_im || !fft->a_re_f || !fft->a_im_f || !fft->p_re || !fft->p_im ||
       !fft->c_re || !fft->c_im) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate BluesteinFFT scratch buffers");
     bluestein_fft_free(fft);
     return NULL;
   }
@@ -202,6 +204,8 @@ bluestein_fft_t* bluestein_fft_create(size_t n, config_error_t* err) {
   double* b_re = (double*)calloc(m, sizeof(double));
   double* b_im = (double*)calloc(m, sizeof(double));
   if (!b_re || !b_im) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate BluesteinFFT kernel buffers");
     free(b_re);
     free(b_im);
     bluestein_fft_free(fft);

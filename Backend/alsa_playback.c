@@ -480,6 +480,8 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
 
   size_t frames = audio_chunk_get_valid_frames(chunk);
   if (frames == 0) return true;
+  size_t frames_to_write =
+      (frames > playback->chunk_size) ? playback->chunk_size : frames;
 
   // Convert the input audio chunk (planar double format) to the target
   // interleaved format buffer. Clip samples to valid range when converting to
@@ -487,7 +489,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   if (playback->format == SND_PCM_FORMAT_FLOAT_LE) {
     // Convert double to float.
     float* dst = (float*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         dst[f * playback->channels + c] = pcm_sample_encode_f32(val);
@@ -496,7 +498,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   } else if (playback->format == SND_PCM_FORMAT_S32_LE) {
     // Convert double to 32-bit signed integer.
     int32_t* dst = (int32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         dst[f * playback->channels + c] = pcm_sample_encode_s32(val);
@@ -505,7 +507,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   } else if (playback->format == SND_PCM_FORMAT_S24_3LE) {
     // Convert double to 24-bit signed integer, packed in 3 bytes.
     uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         size_t offset = (f * playback->channels + c) * 3;
@@ -515,7 +517,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   } else if (playback->format == SND_PCM_FORMAT_S24_LE) {
     // Convert double to 24-bit signed integer inside 32-bit containers.
     int32_t* dst = (int32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         dst[f * playback->channels + c] = pcm_sample_encode_s24(val);
@@ -524,7 +526,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
     // Direct copy for double format.
     double* dst = (double*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         dst[f * playback->channels + c] = audio_chunk_get_channel(chunk, c)[f];
       }
@@ -532,7 +534,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   } else if (playback->format == SND_PCM_FORMAT_S16_LE) {
     // Convert double to 16-bit signed integer.
     int16_t* dst = (int16_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
@@ -540,7 +542,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
     uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         dst[f * playback->channels + c] = pcm_sample_encode_dsd_u8(val);
@@ -548,7 +550,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
     uint16_t* dst = (uint16_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         uint16_t encoded = (uint16_t)pcm_sample_encode_s16(val);
@@ -562,7 +564,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
     uint16_t* dst = (uint16_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         uint16_t encoded = (uint16_t)pcm_sample_encode_s16(val);
@@ -576,7 +578,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
     uint32_t* dst = (uint32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         uint32_t encoded = pcm_sample_u32_from_f32((float)val);
@@ -590,7 +592,7 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
     uint32_t* dst = (uint32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < frames; f++) {
+    for (size_t f = 0; f < frames_to_write; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = audio_chunk_get_channel(chunk, c)[f];
         uint32_t encoded = pcm_sample_u32_from_f32((float)val);

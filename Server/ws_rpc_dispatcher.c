@@ -1771,13 +1771,17 @@ static void handle_cmd_get_channel_labels(websocket_server_t* server,
           ? cdsp_get_config_value(server->engine, "/devices/capture/labels")
           : NULL;
 
+  cJSON* play_item = play_labels ? cJSON_Parse(play_labels) : NULL;
+  if (!play_item && play_labels) play_item = cJSON_CreateString(play_labels);
+  if (!play_item) play_item = cJSON_CreateNull();
+
+  cJSON* cap_item = cap_labels ? cJSON_Parse(cap_labels) : NULL;
+  if (!cap_item && cap_labels) cap_item = cJSON_CreateString(cap_labels);
+  if (!cap_item) cap_item = cJSON_CreateNull();
+
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddItemToObject(
-      root, "playback",
-      play_labels ? cJSON_Parse(play_labels) : cJSON_CreateNull());
-  cJSON_AddItemToObject(
-      root, "capture",
-      cap_labels ? cJSON_Parse(cap_labels) : cJSON_CreateNull());
+  cJSON_AddItemToObject(root, "playback", play_item);
+  cJSON_AddItemToObject(root, "capture", cap_item);
   reply_ok(cmd_name, root, ds);
 
   if (play_labels) free(play_labels);
@@ -2171,7 +2175,7 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     strncpy(cmd_name, root->valuestring, sizeof(cmd_name) - 1);
   } else if (cJSON_IsObject(root)) {
     cJSON* child = root->child;
-    if (child) {
+    if (child && child->string) {
       strncpy(cmd_name, child->string, sizeof(cmd_name) - 1);
       arg = child;
     }

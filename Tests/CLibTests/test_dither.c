@@ -79,4 +79,21 @@ TEST(test_lip) {
   g_dither_vtable.free(filter);
 }
 
+TEST(test_zero_amplitude) {
+  double waveform[] = {0.5, -0.5, 0.25};
+  dither_config_t params = {.type = DITHER_TYPE_FLAT,
+                            .bits = 16,
+                            .amplitude = 0.0,
+                            .has_amplitude = true};
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* filter = g_dither_vtable.create("dither", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  g_dither_vtable.process(filter, waveform, 3);
+  ASSERT_FALSE(isnan(waveform[0]));
+  ASSERT_FALSE(isnan(waveform[1]));
+  ASSERT_FALSE(isnan(waveform[2]));
+  g_dither_vtable.free(filter);
+}
+
 TEST_MAIN()

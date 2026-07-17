@@ -599,7 +599,7 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   // (5 stages). Each stage saved cuts a length-N twiddle multiply pass
   // and the loop-overhead that comes with it. For N = 1120 = 2⁵·5·7 this
   // collapses 7 stages to 4: `[8, 4, 5, 7]`.
-  int fs[32];
+  int fs[64];
   int stage_count = 0;
   size_t rem = n;
   int two_pow = 0;

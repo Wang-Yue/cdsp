@@ -228,6 +228,12 @@ static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
   uint64_t last_change_ns = cdsp_time_now_ns();
 
   while (1) {
+    if (engine_shared_state_should_stop(loop->shared)) {
+      logger_info(&g_logger,
+                  "Playback hardware buffer drain aborted due to stop request");
+      break;
+    }
+
     size_t level = playback_backend_get_buffer_level(loop->playback);
     if (level == 0) {
       break;

@@ -215,6 +215,7 @@ static cJSON* parse_scalar_val(const char* str) {
   if ((str[0] == '"' && str[len - 1] == '"') ||
       (str[0] == '\'' && str[len - 1] == '\'')) {
     char* unquoted = (char*)malloc(len);
+    if (!unquoted) return NULL;
     size_t out_idx = 0;
     for (size_t i = 1; i < len - 1; ++i) {
       if (str[i] == '\\' && i + 1 < len - 1) {
@@ -326,6 +327,11 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
     stack_frame_t* top = &stack[depth - 1];
 
     if (is_list_item) {
+      if (top->node && (top->node->type & 0xFF) == cJSON_Object &&
+          top->node->child == NULL) {
+        top->node->type = cJSON_Array;
+        top->is_array = true;
+      }
       char* item_val = trim_str(content + 1);
       if (*item_val == '\0') {
         cJSON* new_obj = cJSON_CreateObject();
@@ -346,7 +352,7 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
           if (*val == '\0') {
             cJSON* child = cJSON_CreateObject();
             cJSON_AddItemToObject(new_obj, key, child);
-            if (depth < 64) {
+            if (depth + 1 < 64) {
               stack[depth] = (stack_frame_t){
                   .indent = indent + 2, .node = new_obj, .is_array = false};
               depth++;

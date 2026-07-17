@@ -9,6 +9,8 @@
 struct audio_history_buffer {
   size_t channels;
   spsc_audio_ring_buffer_t** buffers;
+  float* scratch;
+  size_t scratch_capacity;
 };
 
 size_t audio_history_buffer_get_channels(
@@ -16,6 +18,10 @@ size_t audio_history_buffer_get_channels(
   return history ? history->channels : 0;
 }
 #include <string.h>
+
+#ifdef ENABLE_ACCELERATE
+#include <Accelerate/Accelerate.h>
+#endif
 
 audio_history_buffer_t* audio_history_buffer_create(void) {
   audio_history_buffer_t* history =
@@ -34,6 +40,11 @@ static void audio_history_buffer_clear_internal(
     free(history->buffers);
     history->buffers = NULL;
   }
+  if (history->scratch) {
+    free(history->scratch);
+    history->scratch = NULL;
+    history->scratch_capacity = 0;
+  }
   history->channels = 0;
 }
 
@@ -45,7 +56,13 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
   if (channels > 0) {
     history->buffers = (spsc_audio_ring_buffer_t**)calloc(
         channels, sizeof(spsc_audio_ring_buffer_t*));
-    if (!history->buffers) {
+    if (!history->buffers) return;
+
+    history->channels = channels;
+    history->scratch_capacity = 16384;
+    history->scratch = (float*)calloc(history->scratch_capacity, sizeof(float));
+    if (!history->scratch) {
+      audio_history_buffer_clear_internal(history);
       return;
     }
     for (size_t ch = 0; ch < channels; ch++) {
@@ -108,6 +125,19 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
   }
   if (!dest || count == 0) return AUDIO_HISTORY_BUFFER_OK;
 
+  // If a specific channel is requested, read it directly and return.
+  if (channel >= 0) {
+    if (!history->buffers[channel]) return AUDIO_HISTORY_BUFFER_OK;
+    uint64_t written = spsc_audio_ring_buffer_get_total_samples_written(
+        history->buffers[channel]);
+    if (written < (uint64_t)count) return AUDIO_HISTORY_BUFFER_OK;
+
+    bool ok = spsc_audio_ring_buffer_read_latest_at(history->buffers[channel],
+                                                    dest, count, written);
+    if (enough_data) *enough_data = ok;
+    return AUDIO_HISTORY_BUFFER_OK;
+  }
+
   // Phase alignment logic: Find the minimum total samples written across all
   // channels. This ensures that when we read "latest" samples, we read from
   // the same point in time (phase-aligned) even if the producer is currently
@@ -127,14 +157,6 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     return AUDIO_HISTORY_BUFFER_OK;
   }
 
-  // If a specific channel is requested, read it directly and return.
-  if (channel >= 0) {
-    bool ok = spsc_audio_ring_buffer_read_latest_at(history->buffers[channel],
-                                                    dest, count, min_written);
-    if (enough_data) *enough_data = ok;
-    return AUDIO_HISTORY_BUFFER_OK;
-  }
-
   // Otherwise, we need to average all channels.
   if (count > AUDIO_HISTORY_BUFFER_CAPACITY) {
     return AUDIO_HISTORY_BUFFER_OK;
@@ -151,33 +173,43 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     return AUDIO_HISTORY_BUFFER_OK;
   }
 
-  // Step 2: Read subsequent channels into local stack scratch memory to prevent
-  // data races on multi-threaded reads, then accumulate into dest.
+  // Step 2: Read subsequent channels into pre-allocated scratch memory to
+  // prevent data races on multi-threaded reads, then accumulate into dest.
+  size_t read_cnt = count;
   float stack_scratch[2048];
-  if (count > 2048) {
-    count = 2048;
-  }
   float* local_scratch = stack_scratch;
+  if (read_cnt > 2048) {
+    if (history->scratch && history->scratch_capacity >= read_cnt) {
+      local_scratch = history->scratch;
+    } else {
+      read_cnt = 2048;
+    }
+  }
 
   for (size_t ch = 1; ch < history->channels; ch++) {
     ok = spsc_audio_ring_buffer_read_latest_at(
-        history->buffers[ch], local_scratch, count, min_written);
+        history->buffers[ch], local_scratch, read_cnt, min_written);
     if (!ok) {
-      if (local_scratch != stack_scratch) free(local_scratch);
       return AUDIO_HISTORY_BUFFER_OK;
     }
-    // Fallback naive loop if Accelerate is not available.
-    for (size_t i = 0; i < count; i++) {
+#ifdef ENABLE_ACCELERATE
+    vDSP_vadd(dest, 1, local_scratch, 1, dest, 1, read_cnt);
+#else
+    for (size_t i = 0; i < read_cnt; i++) {
       dest[i] += local_scratch[i];
     }
+#endif
   }
 
   // Step 3: Scale the accumulated sum to get the average.
   float scale = 1.0f / (float)history->channels;
-  // Fallback naive loop.
+#ifdef ENABLE_ACCELERATE
+  vDSP_vsmul(dest, 1, &scale, dest, 1, count);
+#else
   for (size_t i = 0; i < count; i++) {
     dest[i] *= scale;
   }
+#endif
   if (enough_data) *enough_data = true;
   return AUDIO_HISTORY_BUFFER_OK;
 }

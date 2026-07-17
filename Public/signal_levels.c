@@ -82,6 +82,7 @@ static void get_labels_from_json(cJSON* devices, const char* dir_key,
     size_t count = cJSON_GetArraySize(labels);
     if (count > 0) {
       char** arr = (char**)malloc(count * sizeof(char*));
+      if (!arr) return;
       for (size_t i = 0; i < count; i++) {
         cJSON* item = cJSON_GetArrayItem(labels, i);
         arr[i] = (item && cJSON_IsString(item) && item->valuestring)

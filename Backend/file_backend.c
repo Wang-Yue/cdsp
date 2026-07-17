@@ -701,6 +701,19 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
 
   size_t bytes_read = 0;
   if (bytes_to_read > 0) {
+    if (bytes_to_read > capture->raw_buf_capacity) {
+      uint8_t* new_buf = (uint8_t*)realloc(capture->raw_buf, bytes_to_read);
+      if (!new_buf) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to reallocate file capture raw buffer");
+        }
+        audio_chunk_set_valid_frames(chunk, 0);
+        return false;
+      }
+      capture->raw_buf = new_buf;
+      capture->raw_buf_capacity = bytes_to_read;
+    }
     bytes_read = fread(capture->raw_buf, 1, bytes_to_read, capture->f);
     capture->total_bytes_read += bytes_read;
   }

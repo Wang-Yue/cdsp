@@ -14,8 +14,17 @@ typedef struct cJSON cJSON;
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 typedef SOCKET socket_t;
+#define CLOSE_SOCKET(s) closesocket(s)
+#define INVALID_SOCKET_VAL INVALID_SOCKET
+#define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
+#define IS_SOCKET_ERROR(r) ((r) == SOCKET_ERROR)
 #else
+#include <unistd.h>
 typedef int socket_t;
+#define CLOSE_SOCKET(s) close(s)
+#define INVALID_SOCKET_VAL (-1)
+#define IS_INVALID_SOCKET(s) ((s) < 0)
+#define IS_SOCKET_ERROR(r) ((r) < 0)
 #endif
 
 typedef struct {

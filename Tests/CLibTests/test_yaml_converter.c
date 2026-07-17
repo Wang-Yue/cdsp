@@ -157,4 +157,32 @@ TEST(YamlConverter_Validation) {
   free(result_yaml);
 }
 
+TEST(YamlConverter_KeyArrayParsing) {
+  const char* yaml_raw =
+      "pipeline:\n"
+      "  - type: Filter\n"
+      "    channel: 0\n"
+      "    names:\n"
+      "      - filter1\n"
+      "      - filter2\n";
+
+  char* err = NULL;
+  cJSON* json = cdsp_yaml_to_json(yaml_raw, &err);
+  ASSERT_TRUE(json != NULL);
+  ASSERT_TRUE(err == NULL);
+
+  cJSON* pipe = cJSON_GetObjectItem(json, "pipeline");
+  ASSERT_TRUE(pipe != NULL && cJSON_IsArray(pipe));
+
+  cJSON* step = cJSON_GetArrayItem(pipe, 0);
+  ASSERT_TRUE(step != NULL && cJSON_IsObject(step));
+
+  cJSON* names = cJSON_GetObjectItem(step, "names");
+  ASSERT_TRUE(names != NULL);
+  ASSERT_TRUE(cJSON_IsArray(names));
+  ASSERT_EQ(2, cJSON_GetArraySize(names));
+
+  cJSON_Delete(json);
+}
+
 TEST_MAIN()

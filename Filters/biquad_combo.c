@@ -406,15 +406,19 @@ static void* biquad_combo_filter_create(const char* name,
   }
 
   filter->num_sections = num;
-  filter->sections = (biquad_filter_t**)calloc(num, sizeof(biquad_filter_t*));
-  if (!filter->sections) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate BiquadCombo sections memory");
-    goto cleanup_fail;
-  }
+  if (num > 0) {
+    filter->sections = (biquad_filter_t**)calloc(num, sizeof(biquad_filter_t*));
+    if (!filter->sections) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Failed to allocate BiquadCombo sections memory");
+      goto cleanup_fail;
+    }
 
-  for (size_t i = 0; i < num; i++) {
-    filter->sections[i] = secs[i];
+    for (size_t i = 0; i < num; i++) {
+      filter->sections[i] = secs[i];
+    }
+  } else {
+    filter->sections = NULL;
   }
   return filter;
 

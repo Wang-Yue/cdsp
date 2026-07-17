@@ -395,6 +395,7 @@ static inline double sample_rng_0_1(uint32_t* state) {
 static double sample_dither(dither_filter_t* filter) {
   if (filter->type == DITHER_TYPE_NONE) return 0.0;
   double half_amp = filter->amplitude / 2.0;
+  if (half_amp <= 0.0) return 0.0;
   if (filter->type == DITHER_TYPE_FLAT) {
     // Generate TPDF dither using inverse transform sampling on [a, b] with peak
     // at c.

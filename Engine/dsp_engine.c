@@ -475,19 +475,24 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
 
   if (status != 0) return false;
   out_spec->count = res.count;
-  out_spec->frequencies = (double*)calloc(res.count, sizeof(double));
-  out_spec->magnitudes = (double*)calloc(res.count, sizeof(double));
-  if (!out_spec->frequencies || !out_spec->magnitudes) {
-    if (out_spec->frequencies) free(out_spec->frequencies);
-    if (out_spec->magnitudes) free(out_spec->magnitudes);
+  if (res.count > 0) {
+    out_spec->frequencies = (double*)calloc(res.count, sizeof(double));
+    out_spec->magnitudes = (double*)calloc(res.count, sizeof(double));
+    if (!out_spec->frequencies || !out_spec->magnitudes) {
+      if (out_spec->frequencies) free(out_spec->frequencies);
+      if (out_spec->magnitudes) free(out_spec->magnitudes);
+      out_spec->frequencies = NULL;
+      out_spec->magnitudes = NULL;
+      out_spec->count = 0;
+      return false;
+    }
+    for (size_t i = 0; i < res.count; i++) {
+      out_spec->frequencies[i] = (double)res.frequencies[i];
+      out_spec->magnitudes[i] = (double)res.magnitudes[i];
+    }
+  } else {
     out_spec->frequencies = NULL;
     out_spec->magnitudes = NULL;
-    out_spec->count = 0;
-    return false;
-  }
-  for (size_t i = 0; i < res.count; i++) {
-    out_spec->frequencies[i] = (double)res.frequencies[i];
-    out_spec->magnitudes[i] = (double)res.magnitudes[i];
   }
   return true;
 }
@@ -555,8 +560,28 @@ static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
   }
 
   float* tmp = (float*)calloc(n, sizeof(float));
+  if (!tmp) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    dsp_engine_free_samples(res);
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      snprintf(err->message, sizeof(err->message), "Out of memory");
+    }
+    return NULL;
+  }
+
   for (size_t ch = 0; ch < ch_count; ch++) {
     res->channels[ch] = (double*)calloc(n, sizeof(double));
+    if (!res->channels[ch]) {
+      pthread_mutex_unlock(&impl->state_mutex);
+      free(tmp);
+      dsp_engine_free_samples(res);
+      if (err) {
+        err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+        snprintf(err->message, sizeof(err->message), "Out of memory");
+      }
+      return NULL;
+    }
     bool enough = false;
     audio_history_buffer_status_t status =
         audio_history_buffer_read_latest(buf, tmp, n, (int)ch, &enough);
@@ -594,6 +619,12 @@ static bool dsp_engine_get_available_devices(void* ctx, const char* backend,
   if (!devs) return false;
   int n =
       audio_backend_registry_get_available_devices(backend, is_input, devs, 32);
+  if (n < 0) {
+    free(devs);
+    *out_devices = NULL;
+    *out_count = 0;
+    return false;
+  }
   *out_devices = devs;
   *out_count = (size_t)n;
   return true;

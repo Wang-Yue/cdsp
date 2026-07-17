@@ -37,7 +37,11 @@ size_t spsc_audio_ring_buffer_get_available_to_read(
   // consumer (which is typically the calling thread of this function).
   uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
   // Unsigned subtraction correctly handles overflow wrap-around.
-  return (size_t)(w - r);
+  size_t avail = (size_t)(w - r);
+  if (avail > ring->capacity) {
+    return ring->capacity;
+  }
+  return avail;
 }
 
 size_t spsc_audio_ring_buffer_get_available_to_write(
@@ -63,9 +67,14 @@ size_t spsc_audio_ring_buffer_get_capacity(
 }
 
 size_t spsc_queue_get_count(const spsc_queue_t* queue) {
+  if (!queue) return 0;
   uint64_t w = atomic_load_explicit(&queue->write_index, memory_order_acquire);
   uint64_t r = atomic_load_explicit(&queue->read_index, memory_order_relaxed);
-  return (size_t)(w - r);
+  size_t count = (size_t)(w - r);
+  if (count > queue->capacity) {
+    return queue->capacity;
+  }
+  return count;
 }
 
 size_t spsc_queue_get_capacity(const spsc_queue_t* queue) {

@@ -35,6 +35,9 @@ capture_backend_t* audio_backend_factory_create_capture(
       out_err->type = map_backend_error_type(berr.type);
       snprintf(out_err->message, sizeof(out_err->message), "%s", berr.message);
     }
+    if (backend) {
+      capture_backend_free(backend);
+    }
     return NULL;
   }
 
@@ -56,6 +59,9 @@ playback_backend_t* audio_backend_factory_create_playback(
     if (out_err) {
       out_err->type = map_backend_error_type(berr.type);
       snprintf(out_err->message, sizeof(out_err->message), "%s", berr.message);
+    }
+    if (backend) {
+      playback_backend_free(backend);
     }
     return NULL;
   }

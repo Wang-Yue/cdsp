@@ -77,11 +77,6 @@ char* engine_state_manager_get_config_path(const engine_state_manager_t* mgr);
 bool engine_state_manager_is_dirty(const engine_state_manager_t* mgr);
 
 /**
- * @brief Mark state changes as dirty or clean.
- */
-void engine_state_manager_set_dirty(engine_state_manager_t* mgr, bool dirty);
-
-/**
  * @brief Sync all fader volumes and mute states to processing_parameters.
  */
 void engine_state_manager_sync_to_processing_parameters(

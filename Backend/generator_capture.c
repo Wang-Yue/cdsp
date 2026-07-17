@@ -120,6 +120,14 @@ capture_backend_t* generator_capture_create(
   (void)params;
   (void)err;
 
+  if (sample_rate <= 0) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Invalid sample rate for generator");
+    }
+    return NULL;
+  }
+
   generator_capture_t* capture =
       (generator_capture_t*)calloc(1, sizeof(generator_capture_t));
   if (!capture) return NULL;

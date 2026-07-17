@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "websocket_server_internal.h"
+
 #ifdef _WIN32
 #include <winsock2.h>
 #else
@@ -53,6 +55,7 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
 }
 
 void ws_send_frame(socket_t fd, const char* response) {
+  if (fd < 0 || !response) return;
   size_t resp_len = strlen(response);
   char frame[16384];
   frame[0] = (char)0x81;

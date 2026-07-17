@@ -36,4 +36,16 @@ TEST(check_result) {
   g_diffeq_vtable.free(filter);
 }
 
+TEST(invalid_a0) {
+  double a_vals[] = {0.0, -0.146, 0.005};
+  double b_vals[] = {0.214, 0.429, 0.214};
+  diffeq_config_t params = {
+      .a = a_vals, .a_count = 3, .b = b_vals, .b_count = 3};
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  config_error_t err = {0};
+  int res = g_diffeq_vtable.validate(&cfg, 48000, &err);
+  ASSERT_NE(0, res);
+}
+
 TEST_MAIN()

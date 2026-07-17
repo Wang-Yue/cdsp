@@ -231,13 +231,17 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
                                audio_backend_error_t* err) {
   if (!core || !new_config) return false;
 
+  pthread_mutex_lock(&core->config_mutex);
   dsp_config_t* old_config = core->current_config;
+  pthread_mutex_unlock(&core->config_mutex);
 
   if (dsp_session_get_state(core) == PROCESSING_STATE_INACTIVE) {
+    pthread_mutex_lock(&core->config_mutex);
     if (old_config && old_config != new_config) {
       dsp_config_free(old_config);
     }
     core->current_config = new_config;
+    pthread_mutex_unlock(&core->config_mutex);
     return true;
   }
 

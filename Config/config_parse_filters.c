@@ -33,7 +33,9 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
   int f = 0;
   cJSON_ArrayForEach(filter_child, filters_obj) {
     named_filter_config_t* nf = &config->filters[f];
-    strncpy(nf->name, filter_child->string, sizeof(nf->name) - 1);
+    const char* f_name = filter_child->string ? filter_child->string : "";
+    strncpy(nf->name, f_name, sizeof(nf->name) - 1);
+    nf->name[sizeof(nf->name) - 1] = '\0';
 
     if (!cJSON_IsObject(filter_child)) {
       config_error_set(err, CONFIG_ERR_PARSE,
@@ -387,7 +389,9 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
   int p = 0;
   cJSON_ArrayForEach(proc_child, processors_obj) {
     named_processor_config_t* np = &config->processors[p];
-    strncpy(np->name, proc_child->string, sizeof(np->name) - 1);
+    const char* p_name = proc_child->string ? proc_child->string : "";
+    strncpy(np->name, p_name, sizeof(np->name) - 1);
+    np->name[sizeof(np->name) - 1] = '\0';
 
     if (!cJSON_IsObject(proc_child)) {
       config_error_set(err, CONFIG_ERR_PARSE,

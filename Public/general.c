@@ -49,8 +49,17 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 #endif
   cap_count += 3;  // File, Stdin, Generator
 
-  char** pb_arr = (char**)malloc(pb_count * sizeof(char*));
-  char** cap_arr = (char**)malloc(cap_count * sizeof(char*));
+  char** pb_arr = (char**)calloc(pb_count, sizeof(char*));
+  char** cap_arr = (char**)calloc(cap_count, sizeof(char*));
+  if (!pb_arr || !cap_arr) {
+    if (pb_arr) free(pb_arr);
+    if (cap_arr) free(cap_arr);
+    *out_playback_types = NULL;
+    *out_playback_count = 0;
+    *out_capture_types = NULL;
+    *out_capture_count = 0;
+    return;
+  }
 
   size_t pb_idx = 0;
 #if defined(ENABLE_COREAUDIO)

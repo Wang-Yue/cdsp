@@ -425,8 +425,17 @@ bool pipewire_capture_read(pipewire_capture_t* capture, size_t frames,
   }
   size_t requested = frames * capture->channels;
   if (requested > capture->decode_buf_size) {
-    capture->decode_buf =
+    float* new_buf =
         (float*)realloc(capture->decode_buf, requested * sizeof(float));
+    if (!new_buf) {
+      if (err) {
+        backend_error_init(
+            err, BACKEND_ERROR_READ_ERROR,
+            "Failed to reallocate PipeWire capture decode buffer");
+      }
+      return false;
+    }
+    capture->decode_buf = new_buf;
     capture->decode_buf_size = requested;
   }
 
@@ -790,8 +799,17 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
   size_t frames = audio_chunk_get_valid_frames(chunk);
   size_t requested = frames * playback->channels;
   if (requested > playback->encode_buf_size) {
-    playback->encode_buf =
+    float* new_buf =
         (float*)realloc(playback->encode_buf, requested * sizeof(float));
+    if (!new_buf) {
+      if (err) {
+        backend_error_init(
+            err, BACKEND_ERROR_WRITE_ERROR,
+            "Failed to reallocate PipeWire playback encode buffer");
+      }
+      return false;
+    }
+    playback->encode_buf = new_buf;
     playback->encode_buf_size = requested;
   }
 

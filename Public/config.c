@@ -59,7 +59,7 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
       curr = NULL;
       last_key = NULL;
       while (child) {
-        if (strcmp(child->string, segment) == 0) {
+        if (child->string && strcmp(child->string, segment) == 0) {
           curr = child;
           last_key = child->string;
           break;
@@ -70,7 +70,7 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
     } else if (cJSON_IsArray(curr)) {
       char* endptr = NULL;
       int idx = (int)strtol(segment, &endptr, 10);
-      if (endptr == segment || *endptr != '\0') return NULL;
+      if (idx < 0 || endptr == segment || *endptr != '\0') return NULL;
       curr = cJSON_GetArrayItem(curr, idx);
       last_idx = idx;
       last_key = NULL;
@@ -355,11 +355,13 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
   // Basic object merge patch
   cJSON* child = patch->child;
   while (child) {
-    cJSON* copy = cJSON_Duplicate(child, true);
-    if (cJSON_HasObjectItem(root, child->string)) {
-      cJSON_ReplaceItemInObject(root, child->string, copy);
-    } else {
-      cJSON_AddItemToObject(root, child->string, copy);
+    if (child->string) {
+      cJSON* copy = cJSON_Duplicate(child, true);
+      if (cJSON_HasObjectItem(root, child->string)) {
+        cJSON_ReplaceItemInObject(root, child->string, copy);
+      } else {
+        cJSON_AddItemToObject(root, child->string, copy);
+      }
     }
     child = child->next;
   }

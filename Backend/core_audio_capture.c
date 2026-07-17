@@ -653,10 +653,12 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
                          "Capture device disconnected");
     return false;
   }
+  size_t frames_to_read =
+      (frames > capture->chunk_size) ? capture->chunk_size : frames;
   // Verify all channels have enough samples ready in their rings.
   for (int ch = 0; ch < capture->channels; ch++) {
     if (spsc_audio_ring_buffer_get_available_to_read(
-            capture->capture_rings[ch]) < frames) {
+            capture->capture_rings[ch]) < frames_to_read) {
       return false;
     }
   }
@@ -666,14 +668,14 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
   // use Accelerate (vDSP) to convert them efficiently to double precision
   // for the destination audio chunk.
   for (int ch = 0; ch < capture->channels; ch++) {
-    size_t n = spsc_audio_ring_buffer_consume(capture->capture_rings[ch],
-                                              capture->read_scratch, frames);
+    size_t n = spsc_audio_ring_buffer_consume(
+        capture->capture_rings[ch], capture->read_scratch, frames_to_read);
     double* dst_ptr = audio_chunk_get_channel(chunk, ch);
     if (dst_ptr) {
       vDSP_vspdp(capture->read_scratch, 1, dst_ptr, 1, n);
     }
   }
-  audio_chunk_set_valid_frames(chunk, frames);
+  audio_chunk_set_valid_frames(chunk, frames_to_read);
   return true;
 }
 
