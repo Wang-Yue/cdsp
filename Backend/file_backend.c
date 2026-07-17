@@ -14,6 +14,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_path.h"
 #include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.file"};
@@ -566,7 +567,7 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
   if (capture->is_stdin) {
     capture->f = stdin;
   } else {
-    capture->f = fopen(capture->filename, "rb");
+    capture->f = cdsp_fopen(capture->filename, "rb");
     if (!capture->f) {
       if (err) {
         char err_msg[1024];
@@ -943,7 +944,7 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
   if (playback->is_stdout) {
     playback->f = stdout;
   } else {
-    playback->f = fopen(playback->filename, "wb");
+    playback->f = cdsp_fopen(playback->filename, "wb");
     if (!playback->f) {
       if (err) {
         char err_msg[1024];

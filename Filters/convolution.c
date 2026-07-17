@@ -2,6 +2,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "FFT/real_fft.h"
+#include "Utils/cdsp_path.h"
 #include "filter.h"
 
 struct convolution_filter {
@@ -103,7 +104,7 @@ static size_t get_raw_sample_size(binary_sample_format_t format) {
  * failure.
  */
 static double* load_wav_file(const char* path, int channel, size_t* out_count) {
-  FILE* f = fopen(path, "rb");
+  FILE* f = cdsp_fopen(path, "rb");
   if (!f) return NULL;
 
   uint8_t header[44];
@@ -228,7 +229,7 @@ static double* load_raw_file(const char* path, const char* format_str,
                              int skip_bytes, int read_bytes,
                              size_t* out_count) {
   if (strcmp(format_str, "TEXT") == 0) {
-    FILE* f = fopen(path, "r");
+    FILE* f = cdsp_fopen(path, "r");
     if (!f) return NULL;
     char line[128];
     bool skip_failed = false;
@@ -272,7 +273,7 @@ static double* load_raw_file(const char* path, const char* format_str,
     return result;
   }
 
-  FILE* f = fopen(path, "rb");
+  FILE* f = cdsp_fopen(path, "rb");
   if (!f) return NULL;
 
   if (skip_bytes > 0) {
@@ -427,7 +428,7 @@ static int convolution_config_validate(const filter_config_t* config,
                          "Conv filter missing filename");
         return -1;
       }
-      FILE* f = fopen(params->filename, "rb");
+      FILE* f = cdsp_fopen(params->filename, "rb");
       if (!f) {
         char msg[512];
         snprintf(msg, sizeof(msg),

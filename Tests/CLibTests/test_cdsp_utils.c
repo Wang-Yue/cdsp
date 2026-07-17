@@ -48,4 +48,23 @@ TEST(DoubleHelpersDecibelsAndEnvelope) {
   ASSERT_TRUE(smoothed_release >= 0.0);
 }
 
+#include "Utils/cdsp_path.h"
+
+TEST(PathTildeExpansion) {
+  char buf[512];
+  cdsp_expand_path("~/music.wav", buf, sizeof(buf));
+
+  const char* home = getenv("HOME");
+  if (home) {
+    char expected[512];
+    snprintf(expected, sizeof(expected), "%s/music.wav", home);
+    ASSERT_STR_EQ(expected, buf);
+  } else {
+    ASSERT_STR_EQ("~/music.wav", buf);
+  }
+
+  cdsp_expand_path("/absolute/path.wav", buf, sizeof(buf));
+  ASSERT_STR_EQ("/absolute/path.wav", buf);
+}
+
 TEST_MAIN()

@@ -10,10 +10,11 @@
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "Pipeline/config_loader.h"
+#include "Utils/cdsp_path.h"
 
 // Static utility to read file into string
 static char* read_file_to_str(const char* path) {
-  FILE* fp = fopen(path, "rb");
+  FILE* fp = cdsp_fopen(path, "rb");
   if (!fp) return NULL;
   fseek(fp, 0, SEEK_END);
   long len = ftell(fp);

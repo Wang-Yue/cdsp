@@ -798,6 +798,19 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
 
   int num_channels =
       capture_device_config_get_channels(&config->devices.capture);
+  if (num_channels <= 0) {
+    if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
+        config->devices.capture.is_wav) {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_PIPELINE,
+          "Failed to open WAV capture file '%s' or parse channels from header",
+          config->devices.capture.cfg.wav_file.filename);
+    } else {
+      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                       "Invalid capture channel count: %d", num_channels);
+    }
+    return -1;
+  }
   for (size_t i = 0; i < config->pipeline_count; i++) {
     const pipeline_step_config_t* step = &config->pipeline[i];
     if (step->bypassed) continue;

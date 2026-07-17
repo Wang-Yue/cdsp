@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_path.h"
 
 static const logger_t g_logger = {"dsp.pipeline.state"};
 
@@ -43,7 +44,7 @@ static void trim_trailing(char* str) {
 
 bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   if (!filename || !out_state) return false;
-  FILE* fp = fopen(filename, "r");
+  FILE* fp = cdsp_fopen(filename, "r");
   if (!fp) {
     logger_warn(&g_logger, "State file could not be opened: %s", filename);
     return false;
@@ -154,7 +155,7 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
     return false;
   }
 
-  FILE* fp = fopen(tmp_name, "w");
+  FILE* fp = cdsp_fopen(tmp_name, "w");
   if (!fp) {
     logger_error(&g_logger, "Failed to open state temporary file: %s",
                  tmp_name);

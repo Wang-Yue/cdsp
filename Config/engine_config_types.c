@@ -511,6 +511,8 @@ void playback_device_config_init(playback_device_config_t* config,
   }
 }
 
+#include "Utils/cdsp_path.h"
+
 int capture_device_config_get_channels(const capture_device_config_t* config) {
   if (!config) return 0;
   switch (config->type) {
@@ -528,7 +530,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
       if (config->is_wav) {
-        FILE* f = fopen(config->cfg.wav_file.filename, "rb");
+        FILE* f = cdsp_fopen(config->cfg.wav_file.filename, "rb");
         if (f) {
           uint8_t header[44];
           int wav_channels = 0;
