@@ -294,9 +294,6 @@ static resampler_error_t synchronous_resampler_process(
       // are the spectral zero-pad that extends the bandwidth. For
       // downsampling they discard everything above output Nyquist —
       // the band-limiting step.
-      if (resampler->sub_fft_in > resampler->sub_fft_out) {
-        resampler->working_spec_im[resampler->sub_fft_out] = 0.0;
-      }
       if (resampler->sub_fft_out + 1 > resampler->shared_bins) {
         size_t zero_count = resampler->sub_fft_out + 1 - resampler->shared_bins;
         memset(resampler->working_spec_re + resampler->shared_bins, 0,
@@ -391,19 +388,19 @@ static void* synchronous_resampler_create_impl(size_t channels,
   resampler->num_subchunks = num_subchunks;
   resampler->chunk_size = input_block;
   resampler->output_chunk_size = output_block;
-  resampler->shared_bins =
-      (sub_fft_in < sub_fft_out ? sub_fft_in : sub_fft_out) + 1;
+  if (sub_fft_in < sub_fft_out) {
+    resampler->shared_bins = sub_fft_in + 1;
+  } else {
+    resampler->shared_bins = sub_fft_out;
+  }
 
-  double n = (double)sub_fft_in;
-  double margin = 13.5 / n + 50.0 / (n * n);
   double cutoff;
   if (sub_fft_in > sub_fft_out) {
-    double target_nyquist = (double)sub_fft_out / (double)sub_fft_in;
-    cutoff = target_nyquist - margin;
-    if (cutoff < 1e-6) cutoff = 1e-6;
+    double cutoff_ratio =
+        calculate_cutoff(sub_fft_out, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
+    cutoff = cutoff_ratio * (double)sub_fft_out / (double)sub_fft_in;
   } else {
-    cutoff = 1.0 - margin;
-    if (cutoff < 1e-6) cutoff = 1e-6;
+    cutoff = calculate_cutoff(sub_fft_in, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
   }
   double* kernel =
       make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
