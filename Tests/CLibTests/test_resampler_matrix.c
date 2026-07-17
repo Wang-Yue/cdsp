@@ -26,7 +26,7 @@ static const rate_pair_t g_rate_grid[] = {
     {48000, 96000, "48→96k"},     {96000, 48000, "96→48k"},
     {44100, 88200, "44.1→88.2k"}, {88200, 44100, "88.2→44.1k"},
     {44100, 192000, "44.1→192k"}, {192000, 44100, "192→44.1k"},
-    {61900, 64000, "61.9→64k"}};
+    {61900, 64000, "61.9→64k"},   {48000, 48000, "48→48k"}};
 
 static const size_t g_rate_grid_count =
     sizeof(g_rate_grid) / sizeof(g_rate_grid[0]);
@@ -75,9 +75,11 @@ typedef struct {
   cell_t swift_sync;
   cell_t swift_poly;
   cell_t swift_sinc;
+  cell_t swift_slip;
   cell_t rubato_fft;
   cell_t rubato_poly;
   cell_t rubato_sinc;
+  cell_t rubato_slip;
 } row_t;
 
 typedef enum {
@@ -411,6 +413,9 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
       break;
+    case 3:
+      resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+      break;
 
     case 5:
       if (!check_rubato_available()) return NULL;
@@ -423,6 +428,10 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
     case 7:
       if (!check_rubato_available()) return NULL;
       return run_rubato("sinc-accurate", in_rate, out_rate, input, input_count,
+                        out_count);
+    case 8:
+      if (!check_rubato_available()) return NULL;
+      return run_rubato("slip", in_rate, out_rate, input, input_count,
                         out_count);
     default:
       return NULL;
@@ -549,6 +558,9 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
       strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
       cfg.has_profile = true;
+      break;
+    case 3:
+      resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
       break;
 
     default:
@@ -697,11 +709,17 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
   r.swift_sync = measure_quality_cell(in_rate, out_rate, 0);
   r.swift_poly = measure_quality_cell(in_rate, out_rate, 1);
   r.swift_sinc = measure_quality_cell(in_rate, out_rate, 2);
+  if (in_rate == out_rate) {
+    r.swift_slip = measure_quality_cell(in_rate, out_rate, 3);
+  }
 
   if (rubato_ok) {
     r.rubato_fft = measure_quality_cell(in_rate, out_rate, 5);
     r.rubato_poly = measure_quality_cell(in_rate, out_rate, 6);
     r.rubato_sinc = measure_quality_cell(in_rate, out_rate, 7);
+    if (in_rate == out_rate) {
+      r.rubato_slip = measure_quality_cell(in_rate, out_rate, 8);
+    }
   }
 
   double ns = 0.0, rtf = 0.0;
@@ -722,6 +740,12 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
     r.swift_sinc.has_ns_per_out_frame = true;
     r.swift_sinc.rtf_per_iter = rtf;
     r.swift_sinc.has_rtf_per_iter = true;
+  }
+  if (in_rate == out_rate && measure_swift_perf(in_rate, out_rate, 3, &ns, &rtf)) {
+    r.swift_slip.ns_per_out_frame = ns;
+    r.swift_slip.has_ns_per_out_frame = true;
+    r.swift_slip.rtf_per_iter = rtf;
+    r.swift_slip.has_rtf_per_iter = true;
   }
 
   if (rubato_ok && r.rubato_fft.has_sinad_db) {
@@ -746,6 +770,14 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
       r.rubato_sinc.has_ns_per_out_frame = true;
       r.rubato_sinc.rtf_per_iter = rtf;
       r.rubato_sinc.has_rtf_per_iter = true;
+    }
+  }
+  if (rubato_ok && in_rate == out_rate && r.rubato_slip.has_sinad_db) {
+    if (measure_rubato_perf("slip", in_rate, out_rate, &ns, &rtf)) {
+      r.rubato_slip.ns_per_out_frame = ns;
+      r.rubato_slip.has_ns_per_out_frame = true;
+      r.rubato_slip.rtf_per_iter = rtf;
+      r.rubato_slip.has_rtf_per_iter = true;
     }
   }
 
@@ -825,32 +857,35 @@ static void format_cell(bool has_val, double val, const char* format_str,
 static void print_table(const row_t* grid, size_t grid_count, const char* title,
                         metric_type_t metric, bool higher_is_better,
                         const char* format_str) {
-  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16];
+  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16], h6[16], h7[16];
   pad_to_14("Pair", pair_col);
   pad_to_14("C Sync", h0);
   pad_to_14("C Poly", h1);
   pad_to_14("C Sinc", h2);
-  pad_to_14("rubato Fft", h3);
-  pad_to_14("rubato Poly", h4);
-  pad_to_14("rubato Sinc", h5);
+  pad_to_14("C Slip", h3);
+  pad_to_14("rubato Fft", h4);
+  pad_to_14("rubato Poly", h5);
+  pad_to_14("rubato Sinc", h6);
+  pad_to_14("rubato Slip", h7);
 
   const char* direction_str =
       higher_is_better ? "higher is better" : "lower is better";
   printf("=== %s (%s) ===\n", title, direction_str);
-  printf("%s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5);
+  printf("%s %s %s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5, h6, h7);
 
   for (size_t r = 0; r < grid_count; r++) {
     const row_t* row = &grid[r];
-    const cell_t* cells[6] = {&row->swift_sync,  &row->swift_poly,
-                              &row->swift_sinc,  &row->rubato_fft,
-                              &row->rubato_poly, &row->rubato_sinc};
-    double vals[6];
-    bool has_vals[6];
+    const cell_t* cells[8] = {&row->swift_sync,  &row->swift_poly,
+                              &row->swift_sinc,  &row->swift_slip,
+                              &row->rubato_fft,  &row->rubato_poly,
+                              &row->rubato_sinc, &row->rubato_slip};
+    double vals[8];
+    bool has_vals[8];
     bool any_valid = false;
     double best_val = 0.0;
     bool has_best = false;
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 8; i++) {
       has_vals[i] = get_cell_metric(cells[i], metric, &vals[i]);
       if (has_vals[i]) {
         if (!any_valid) {
@@ -869,24 +904,26 @@ static void print_table(const row_t* grid, size_t grid_count, const char* title,
 
     if (!any_valid) continue;
 
-    char c0[16], c1[16], c2[16], c3[16], c4[16], c5[16];
+    char c0[16], c1[16], c2[16], c3[16], c4[16], c5[16], c6[16], c7[16];
     format_cell(has_vals[0], vals[0], format_str, has_best, best_val, c0);
     format_cell(has_vals[1], vals[1], format_str, has_best, best_val, c1);
     format_cell(has_vals[2], vals[2], format_str, has_best, best_val, c2);
     format_cell(has_vals[3], vals[3], format_str, has_best, best_val, c3);
     format_cell(has_vals[4], vals[4], format_str, has_best, best_val, c4);
     format_cell(has_vals[5], vals[5], format_str, has_best, best_val, c5);
+    format_cell(has_vals[6], vals[6], format_str, has_best, best_val, c6);
+    format_cell(has_vals[7], vals[7], format_str, has_best, best_val, c7);
 
     char label_col[16];
     pad_to_14(row->label, label_col);
-    printf("%s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5);
+    printf("%s %s %s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5, c6, c7);
   }
 }
 
 TEST(compareAcrossRateGrid) {
   bool rubato_ok = check_rubato_available();
 
-  row_t grid[9];
+  row_t grid[16];
   for (size_t i = 0; i < g_rate_grid_count; i++) {
     grid[i] = compute_row_for_rate_pair((int)i, g_rate_grid[i].in_rate,
                                         g_rate_grid[i].out_rate,
