@@ -104,9 +104,10 @@ processing_stop_reason_t dsp_session_get_stop_reason(
   return (processing_stop_reason_t){.type = STOP_REASON_NONE};
 }
 
-void dsp_session_stop_and_free(dsp_session_t* core,
-                               processing_stop_reason_t reason) {
-  if (!core) return;
+processing_stop_reason_t dsp_session_stop_and_free(
+    dsp_session_t* core, processing_stop_reason_t reason) {
+  processing_stop_reason_t final_reason = {.type = STOP_REASON_NONE};
+  if (!core) return final_reason;
 
   logger_info(&g_logger, "Stopping and destroying DSP session");
 
@@ -116,6 +117,7 @@ void dsp_session_stop_and_free(dsp_session_t* core,
     if (!core->threads_created) {
       engine_shared_state_shutdown_processed_queue(core->shared);
     }
+    final_reason = engine_shared_state_get_stop_reason(core->shared);
   }
 
   // Stop backends immediately to abort any blocking operations in threads.
@@ -220,6 +222,7 @@ void dsp_session_stop_and_free(dsp_session_t* core,
 #endif
 
   free(core);
+  return final_reason;
 }
 
 /// Rebuild or update the processing pipeline against `newConfig` without

@@ -1,6 +1,7 @@
 #include "engine_state_manager.h"
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +10,9 @@
 
 struct engine_state_manager {
   /** Target volumes for faders. */
-  double fader_volumes[FADER_COUNT];
+  _Atomic double fader_volumes[FADER_COUNT];
   /** Target mute states for faders. */
-  bool fader_mutes[FADER_COUNT];
+  _Atomic bool fader_mutes[FADER_COUNT];
   /** Path to the active configuration file. */
   char active_config_path[1024];
   /** True if active config path is set. */
@@ -34,8 +35,8 @@ engine_state_manager_t* engine_state_manager_create(void) {
   if (!mgr) return NULL;
 
   for (int i = 0; i < FADER_COUNT; i++) {
-    mgr->fader_volumes[i] = 0.0;
-    mgr->fader_mutes[i] = false;
+    atomic_init(&mgr->fader_volumes[i], 0.0);
+    atomic_init(&mgr->fader_mutes[i], false);
   }
   mgr->has_active_config_path = false;
   mgr->has_state_file_path = false;
@@ -60,8 +61,9 @@ void engine_state_manager_free(engine_state_manager_t* mgr) {
 void engine_state_manager_set_fader_volume(engine_state_manager_t* mgr,
                                            fader_t fader, float db) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return;
+  atomic_store_explicit(&mgr->fader_volumes[fader], (double)db,
+                        memory_order_relaxed);
   pthread_mutex_lock(&mgr->mutex);
-  mgr->fader_volumes[fader] = (double)db;
   mgr->dirty = true;
   mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
@@ -70,17 +72,15 @@ void engine_state_manager_set_fader_volume(engine_state_manager_t* mgr,
 float engine_state_manager_get_fader_volume(const engine_state_manager_t* mgr,
                                             fader_t fader) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return 0.0f;
-  pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
-  float val = (float)mgr->fader_volumes[fader];
-  pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
-  return val;
+  return (float)atomic_load_explicit(
+      (_Atomic double*)&mgr->fader_volumes[fader], memory_order_relaxed);
 }
 
 void engine_state_manager_set_fader_mute(engine_state_manager_t* mgr,
                                          fader_t fader, bool mute) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return;
+  atomic_store_explicit(&mgr->fader_mutes[fader], mute, memory_order_relaxed);
   pthread_mutex_lock(&mgr->mutex);
-  mgr->fader_mutes[fader] = mute;
   mgr->dirty = true;
   mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
@@ -89,10 +89,8 @@ void engine_state_manager_set_fader_mute(engine_state_manager_t* mgr,
 bool engine_state_manager_is_fader_muted(const engine_state_manager_t* mgr,
                                          fader_t fader) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return false;
-  pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
-  bool res = mgr->fader_mutes[fader];
-  pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
-  return res;
+  return atomic_load_explicit((_Atomic bool*)&mgr->fader_mutes[fader],
+                              memory_order_relaxed);
 }
 
 void engine_state_manager_set_state_file(engine_state_manager_t* mgr,
@@ -164,15 +162,13 @@ bool engine_state_manager_is_dirty(const engine_state_manager_t* mgr) {
 void engine_state_manager_sync_to_processing_parameters(
     const engine_state_manager_t* mgr, processing_parameters_t* params) {
   if (!mgr || !params) return;
-  pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
   for (int i = 0; i < FADER_COUNT; i++) {
-    double vol = mgr->fader_volumes[i];
-    bool mute = mgr->fader_mutes[i];
+    double vol = engine_state_manager_get_fader_volume(mgr, (fader_t)i);
+    bool mute = engine_state_manager_is_fader_muted(mgr, (fader_t)i);
     processing_parameters_set_target_volume_for_fader(params, vol, (fader_t)i);
     processing_parameters_set_current_volume_for_fader(params, vol, (fader_t)i);
     processing_parameters_set_muted_for_fader(params, mute, (fader_t)i);
   }
-  pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
 }
 
 void engine_state_manager_save_if_needed(engine_state_manager_t* mgr) {

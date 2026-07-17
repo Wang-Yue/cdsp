@@ -15,30 +15,33 @@
 #include "Pipeline/state_file.h"
 
 struct dsp_engine_impl {
-  /** Pointer to the active DSP session. */
-  dsp_session_t* session;
-  /** Spectrum analyzer instance. */
-  spectrum_analyzer_t* spectrum;
-  /** History buffer for captured audio. */
-  audio_history_buffer_t* capture_buffer;
-  /** History buffer for playback audio. */
-  audio_history_buffer_t* playback_buffer;
+  /** Active session and historical stop reason. */
+  struct {
+    dsp_session_t* active;
+    processing_stop_reason_t last_stop_reason;
+    bool has_last_stop_reason;
+  } session;
+
+  /** Audio history buffers and spectrum analyzer. */
+  struct {
+    audio_history_buffer_t* capture;
+    audio_history_buffer_t* playback;
+    spectrum_analyzer_t* spectrum;
+  } buffers;
+
+  /** Active and previous configuration JSON payloads. */
+  struct {
+    char* active_json;
+    char* previous_json;
+    _Atomic bool in_progress;
+  } config;
+
   /** State manager for volume/mute and path persistence. */
   engine_state_manager_t* state_mgr;
-  /** Reason for the last processing stop. */
-  processing_stop_reason_t last_stop_reason;
-  /** True if last stop reason is valid. */
-  bool has_last_stop_reason;
   /** Mutex for protecting state variables. */
   pthread_mutex_t state_mutex;
-  /** JSON representation of the active configuration. */
-  char* active_config_json;
-  /** JSON representation of the previous configuration. */
-  char* previous_config_json;
   /** Self-contained interface function pointer table. */
   dsp_engine_t iface;
-  /** True if configuration or reload is in progress. */
-  _Atomic bool config_in_progress;
 };
 
 typedef struct dsp_engine_impl dsp_engine_impl_t;
@@ -82,43 +85,45 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
                                                 dsp_config_t* config,
                                                 audio_backend_error_t* err) {
   if (!impl || !config) return false;
-  if (impl->session) {
-    dsp_session_collect_garbage(impl->session);
+  if (impl->session.active) {
+    dsp_session_collect_garbage(impl->session.active);
   }
 
-  if (impl->session &&
-      dsp_session_get_state(impl->session) != PROCESSING_STATE_INACTIVE) {
-    const dsp_config_t* cur_cfg = dsp_session_get_config(impl->session);
+  if (impl->session.active && dsp_session_get_state(impl->session.active) !=
+                                  PROCESSING_STATE_INACTIVE) {
+    const dsp_config_t* cur_cfg = dsp_session_get_config(impl->session.active);
     if (cur_cfg && devices_config_equal(&cur_cfg->devices, &config->devices)) {
       audio_backend_error_t berr;
-      if (dsp_session_reload_config(impl->session, config, &berr)) {
+      if (dsp_session_reload_config(impl->session.active, config, &berr)) {
         return true;
       } else {
-        dsp_session_stop_and_free(impl->session, (processing_stop_reason_t){
-                                                     .type = STOP_REASON_NONE});
-        impl->session = NULL;
+        dsp_session_stop_and_free(
+            impl->session.active,
+            (processing_stop_reason_t){.type = STOP_REASON_NONE});
+        impl->session.active = NULL;
         if (err) *err = berr;
         return false;
       }
     }
   }
 
-  if (impl->session) {
+  if (impl->session.active) {
     dsp_session_stop_and_free(
-        impl->session, (processing_stop_reason_t){.type = STOP_REASON_NONE});
-    impl->session = NULL;
+        impl->session.active,
+        (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    impl->session.active = NULL;
   }
 
   audio_history_buffer_reset(
-      impl->capture_buffer,
+      impl->buffers.capture,
       capture_device_config_get_channels(&config->devices.capture));
   audio_history_buffer_reset(
-      impl->playback_buffer,
+      impl->buffers.playback,
       playback_device_config_get_channels(&config->devices.playback));
 
   dsp_session_t* session = dsp_session_create_and_start(
-      config, engine_on_chunk_captured_callback, impl->capture_buffer,
-      engine_on_chunk_processed_callback, impl->playback_buffer, err);
+      config, engine_on_chunk_captured_callback, impl->buffers.capture,
+      engine_on_chunk_processed_callback, impl->buffers.playback, err);
   if (!session) {
     return false;
   }
@@ -128,8 +133,8 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
   engine_state_manager_sync_to_processing_parameters(impl->state_mgr,
                                                      session_params);
 
-  impl->session = session;
-  impl->has_last_stop_reason = false;
+  impl->session.active = session;
+  impl->session.has_last_stop_reason = false;
   return true;
 }
 
@@ -159,11 +164,11 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t* impl,
   }
   bool success = dsp_engine_set_config_struct_locked(impl, parsed, err);
   if (success) {
-    if (impl->previous_config_json) {
-      free(impl->previous_config_json);
+    if (impl->config.previous_json) {
+      free(impl->config.previous_json);
     }
-    impl->previous_config_json = impl->active_config_json;
-    impl->active_config_json = strdup(json);
+    impl->config.previous_json = impl->config.active_json;
+    impl->config.active_json = strdup(json);
   }
   return success;
 }
@@ -172,11 +177,11 @@ static bool dsp_engine_set_config_json(void* ctx, const char* json_str,
                                        audio_backend_error_t* out_err) {
   if (!ctx) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
-  atomic_store(&impl->config_in_progress, true);
+  atomic_store(&impl->config.in_progress, true);
   pthread_mutex_lock(&impl->state_mutex);
   bool res = dsp_engine_set_config_locked(impl, json_str, out_err);
   pthread_mutex_unlock(&impl->state_mutex);
-  atomic_store(&impl->config_in_progress, false);
+  atomic_store(&impl->config.in_progress, false);
   return res;
 }
 
@@ -184,16 +189,17 @@ static void dsp_engine_stop(void* ctx) {
   if (!ctx) return;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (impl->session) {
-    dsp_session_collect_garbage(impl->session);
+  if (impl->session.active) {
+    dsp_session_collect_garbage(impl->session.active);
     processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
-    dsp_session_is_stop_requested(impl->session, &reason);
-    if (reason.type != STOP_REASON_NONE) {
-      impl->last_stop_reason = reason;
-      impl->has_last_stop_reason = true;
+    dsp_session_is_stop_requested(impl->session.active, &reason);
+    processing_stop_reason_t final_reason =
+        dsp_session_stop_and_free(impl->session.active, reason);
+    if (final_reason.type != STOP_REASON_NONE) {
+      impl->session.last_stop_reason = final_reason;
+      impl->session.has_last_stop_reason = true;
     }
-    dsp_session_stop_and_free(impl->session, reason);
-    impl->session = NULL;
+    impl->session.active = NULL;
   }
   pthread_mutex_unlock(&impl->state_mutex);
 }
@@ -205,7 +211,8 @@ static void dsp_engine_set_fader_volume(void* ctx, fader_t fader, float db,
   pthread_mutex_lock(&impl->state_mutex);
   engine_state_manager_set_fader_volume(impl->state_mgr, fader, db);
 
-  processing_parameters_t* p = dsp_session_get_processing_params(impl->session);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
   if (p) {
     processing_parameters_set_target_volume_for_fader(p, (double)db, fader);
     if (instant) {
@@ -221,7 +228,8 @@ static void dsp_engine_set_fader_mute(void* ctx, fader_t fader, bool mute) {
   pthread_mutex_lock(&impl->state_mutex);
   engine_state_manager_set_fader_mute(impl->state_mgr, fader, mute);
 
-  processing_parameters_t* p = dsp_session_get_processing_params(impl->session);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
   if (p) {
     processing_parameters_set_muted_for_fader(p, mute, fader);
   }
@@ -243,21 +251,22 @@ static bool dsp_engine_get_fader_mute(void* ctx, fader_t fader) {
 static state_update_t dsp_engine_get_status_locked(dsp_engine_impl_t* impl) {
   state_update_t res = {0};
   if (!impl) return res;
-  if (impl->session) {
-    dsp_session_collect_garbage(impl->session);
-    res.state = dsp_session_get_state(impl->session);
-    processing_stop_reason_t r = dsp_session_get_stop_reason(impl->session);
+  if (impl->session.active) {
+    dsp_session_collect_garbage(impl->session.active);
+    res.state = dsp_session_get_state(impl->session.active);
+    processing_stop_reason_t r =
+        dsp_session_get_stop_reason(impl->session.active);
     if (r.type != STOP_REASON_NONE) {
       res.stop_reason = r;
-    } else if (impl->has_last_stop_reason) {
-      res.stop_reason = impl->last_stop_reason;
+    } else if (impl->session.has_last_stop_reason) {
+      res.stop_reason = impl->session.last_stop_reason;
     } else {
       res.stop_reason.type = STOP_REASON_NONE;
     }
   } else {
     res.state = PROCESSING_STATE_INACTIVE;
-    if (impl->has_last_stop_reason) {
-      res.stop_reason = impl->last_stop_reason;
+    if (impl->session.has_last_stop_reason) {
+      res.stop_reason = impl->session.last_stop_reason;
     } else {
       res.stop_reason.type = STOP_REASON_NONE;
     }
@@ -268,13 +277,13 @@ static state_update_t dsp_engine_get_status_locked(dsp_engine_impl_t* impl) {
 static bool dsp_engine_get_status(void* ctx, state_update_t* out_status) {
   if (!ctx || !out_status) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
-  if (atomic_load(&impl->config_in_progress)) {
+  if (atomic_load(&impl->config.in_progress)) {
     *out_status = (state_update_t){.state = PROCESSING_STATE_STARTING,
                                    .stop_reason = {.type = STOP_REASON_NONE}};
     return true;
   }
   pthread_mutex_lock(&impl->state_mutex);
-  if (atomic_load(&impl->config_in_progress)) {
+  if (atomic_load(&impl->config.in_progress)) {
     pthread_mutex_unlock(&impl->state_mutex);
     *out_status = (state_update_t){.state = PROCESSING_STATE_STARTING,
                                    .stop_reason = {.type = STOP_REASON_NONE}};
@@ -309,7 +318,7 @@ static int dsp_engine_get_capture_rate(void* ctx) {
   if (!ctx) return 0;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  const dsp_config_t* cfg = dsp_session_get_config(impl->session);
+  const dsp_config_t* cfg = dsp_session_get_config(impl->session.active);
   int rate = cfg ? cfg->devices.samplerate : 0;
   pthread_mutex_unlock(&impl->state_mutex);
   return rate;
@@ -323,7 +332,8 @@ static bool dsp_engine_get_processing_status(void* ctx, double* out_rate_adjust,
   if (!ctx) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  processing_parameters_t* p = dsp_session_get_processing_params(impl->session);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
   if (!p) {
     pthread_mutex_unlock(&impl->state_mutex);
     return false;
@@ -346,7 +356,8 @@ static void dsp_engine_reset_clipped_samples(void* ctx) {
   if (!ctx) return;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  processing_parameters_t* p = dsp_session_get_processing_params(impl->session);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
   if (p) {
     processing_parameters_reset_clipped_samples(p);
   }
@@ -357,8 +368,8 @@ static bool dsp_engine_get_active_config_json(void* ctx, char** out_json) {
   if (!ctx || !out_json) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (impl->active_config_json) {
-    *out_json = strdup(impl->active_config_json);
+  if (impl->config.active_json) {
+    *out_json = strdup(impl->config.active_json);
     pthread_mutex_unlock(&impl->state_mutex);
     return true;
   }
@@ -371,8 +382,8 @@ static bool dsp_engine_get_previous_config_json(void* ctx, char** out_json) {
   if (!ctx || !out_json) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (impl->previous_config_json) {
-    *out_json = strdup(impl->previous_config_json);
+  if (impl->config.previous_json) {
+    *out_json = strdup(impl->config.previous_json);
     pthread_mutex_unlock(&impl->state_mutex);
     return true;
   }
@@ -406,9 +417,10 @@ static void dsp_engine_free_vu_levels(vu_levels_t* levels) {
 static vu_levels_t dsp_engine_get_vu_levels_locked(dsp_engine_impl_t* impl) {
   vu_levels_t res = {0};
   if (!impl) return res;
-  processing_parameters_t* p = dsp_session_get_processing_params(impl->session);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
   if (!p) return res;
-  dsp_session_collect_garbage(impl->session);
+  dsp_session_collect_garbage(impl->session.active);
   res.playback_channels = processing_parameters_get_playback_channels(p);
   res.capture_channels = processing_parameters_get_capture_channels(p);
   if (res.playback_channels > 0) {
@@ -454,23 +466,23 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
   if (!ctx || !out_spec) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (!impl->session || !impl->spectrum) {
+  if (!impl->session.active || !impl->buffers.spectrum) {
     pthread_mutex_unlock(&impl->state_mutex);
     return false;
   }
-  const dsp_config_t* core_cfg = dsp_session_get_config(impl->session);
+  const dsp_config_t* core_cfg = dsp_session_get_config(impl->session.active);
   if (!core_cfg) {
     pthread_mutex_unlock(&impl->state_mutex);
     return false;
   }
   audio_history_buffer_t* buf =
-      is_capture ? impl->capture_buffer : impl->playback_buffer;
+      is_capture ? impl->buffers.capture : impl->buffers.playback;
   size_t samplerate = core_cfg->devices.samplerate;
 
   spectrum_result_t res;
-  spectrum_status_t status =
-      spectrum_analyzer_compute(impl->spectrum, buf, (int)channel, min_freq,
-                                max_freq, (size_t)n_bins, samplerate, &res);
+  spectrum_status_t status = spectrum_analyzer_compute(
+      impl->buffers.spectrum, buf, (int)channel, min_freq, max_freq,
+      (size_t)n_bins, samplerate, &res);
   pthread_mutex_unlock(&impl->state_mutex);
 
   if (status != 0) return false;
@@ -514,7 +526,7 @@ static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
   if (!ctx) return NULL;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (!impl->session) {
+  if (!impl->session.active) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
       err->type = AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING;
@@ -523,7 +535,7 @@ static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
     return NULL;
   }
   audio_history_buffer_t* buf =
-      is_capture ? impl->capture_buffer : impl->playback_buffer;
+      is_capture ? impl->buffers.capture : impl->buffers.playback;
   if (!audio_history_buffer_has_data(buf)) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
@@ -642,8 +654,8 @@ static bool dsp_engine_get_device_capabilities(
 
 static bool dsp_engine_check_stop_requested(
     dsp_engine_impl_t* impl, processing_stop_reason_t* out_reason) {
-  if (!impl || !impl->session) return false;
-  return dsp_session_is_stop_requested(impl->session, out_reason);
+  if (!impl || !impl->session.active) return false;
+  return dsp_session_is_stop_requested(impl->session.active, out_reason);
 }
 
 static void dsp_engine_set_state_file_path(void* ctx, const char* path) {
@@ -675,13 +687,13 @@ static void dsp_engine_free_impl(void* ctx) {
   if (!ctx) return;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   dsp_engine_stop(impl);
-  if (impl->spectrum) spectrum_analyzer_free(impl->spectrum);
-  if (impl->capture_buffer) audio_history_buffer_free(impl->capture_buffer);
-  if (impl->playback_buffer) audio_history_buffer_free(impl->playback_buffer);
+  if (impl->buffers.spectrum) spectrum_analyzer_free(impl->buffers.spectrum);
+  if (impl->buffers.capture) audio_history_buffer_free(impl->buffers.capture);
+  if (impl->buffers.playback) audio_history_buffer_free(impl->buffers.playback);
   if (impl->state_mgr) engine_state_manager_free(impl->state_mgr);
   pthread_mutex_destroy(&impl->state_mutex);
-  if (impl->active_config_json) free(impl->active_config_json);
-  if (impl->previous_config_json) free(impl->previous_config_json);
+  if (impl->config.active_json) free(impl->config.active_json);
+  if (impl->config.previous_json) free(impl->config.previous_json);
   free(impl);
 }
 
@@ -689,8 +701,8 @@ static void dsp_engine_poll_impl(void* ctx) {
   if (!ctx) return;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  if (impl->session) {
-    dsp_session_collect_garbage(impl->session);
+  if (impl->session.active) {
+    dsp_session_collect_garbage(impl->session.active);
   }
   pthread_mutex_unlock(&impl->state_mutex);
 
@@ -711,22 +723,22 @@ dsp_engine_t* dsp_engine_create(void) {
       (dsp_engine_impl_t*)calloc(1, sizeof(dsp_engine_impl_t));
   if (!impl) return NULL;
 
-  impl->spectrum = spectrum_analyzer_create();
-  impl->capture_buffer = audio_history_buffer_create();
-  impl->playback_buffer = audio_history_buffer_create();
+  impl->buffers.spectrum = spectrum_analyzer_create();
+  impl->buffers.capture = audio_history_buffer_create();
+  impl->buffers.playback = audio_history_buffer_create();
   impl->state_mgr = engine_state_manager_create();
 
-  if (!impl->spectrum || !impl->capture_buffer || !impl->playback_buffer ||
-      !impl->state_mgr) {
+  if (!impl->buffers.spectrum || !impl->buffers.capture ||
+      !impl->buffers.playback || !impl->state_mgr) {
     dsp_engine_free_impl(impl);
     return NULL;
   }
 
-  impl->has_last_stop_reason = false;
+  impl->session.has_last_stop_reason = false;
   pthread_mutex_init(&impl->state_mutex, NULL);
-  impl->active_config_json = NULL;
-  impl->previous_config_json = NULL;
-  atomic_init(&impl->config_in_progress, false);
+  impl->config.active_json = NULL;
+  impl->config.previous_json = NULL;
+  atomic_init(&impl->config.in_progress, false);
 
   impl->iface.ctx = impl;
   impl->iface.free = dsp_engine_free_impl;

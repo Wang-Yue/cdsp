@@ -123,9 +123,10 @@ processing_stop_reason_t dsp_session_get_stop_reason(
  *
  * @param session Pointer to the session to stop and free.
  * @param reason Reason for stopping.
+ * @return Final processing stop reason captured during teardown.
  */
-void dsp_session_stop_and_free(dsp_session_t* session,
-                               processing_stop_reason_t reason);
+processing_stop_reason_t dsp_session_stop_and_free(
+    dsp_session_t* session, processing_stop_reason_t reason);
 
 /**
  * @brief Reload the configuration.

@@ -51,15 +51,14 @@ struct engine_shared_state {
   audio_sync_queue_t* processed_queue;
 
   /**
-   * @brief The reason the engine stopped. See file-level note for publication
-   * discipline.
+   * @brief The reason the engine stopped.
    */
   processing_stop_reason_t stop_reason;
 
   /**
-   * @brief Mutex protecting access to the stop reason structure.
+   * @brief Sequence counter for lock-free atomic reads/writes of stop_reason.
    */
-  pthread_mutex_t stop_reason_mutex;
+  _Atomic uint32_t stop_seq;
 
   /**
    * @brief Resampler relative-ratio (≈ 1.0).
@@ -81,6 +80,13 @@ struct engine_shared_state {
    */
   _Atomic bool stop_once;
 };
+
+static void engine_shared_state_publish_stop_reason(
+    engine_shared_state_t* state, processing_stop_reason_t reason) {
+  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_release);
+  state->stop_reason = reason;
+  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_release);
+}
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
     engine_shared_state_t* state) {
@@ -127,11 +133,17 @@ pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
 processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state) {
   processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
-  if (state) {
-    pthread_mutex_lock((pthread_mutex_t*)&state->stop_reason_mutex);
+  if (!state) return reason;
+  uint32_t seq1 = 0;
+  uint32_t seq2 = 0;
+  do {
+    seq1 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
+                                memory_order_acquire);
+    if (seq1 % 2 != 0) continue;
     reason = state->stop_reason;
-    pthread_mutex_unlock((pthread_mutex_t*)&state->stop_reason_mutex);
-  }
+    seq2 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
+                                memory_order_acquire);
+  } while (seq1 != seq2);
   return reason;
 }
 
@@ -149,8 +161,8 @@ engine_shared_state_t* engine_shared_state_create(
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
+  atomic_init(&state->stop_seq, 0);
   state->pipeline_garbage_queue = spsc_queue_create(32);
-  pthread_mutex_init(&state->stop_reason_mutex, NULL);
 
   if (!state->captured_queue || !state->processed_queue ||
       !state->pipeline_garbage_queue) {
@@ -173,7 +185,6 @@ void engine_shared_state_free(engine_shared_state_t* state) {
     spsc_queue_free(state->pipeline_garbage_queue);
   }
 
-  pthread_mutex_destroy(&state->stop_reason_mutex);
   free(state);
 }
 
@@ -195,9 +206,7 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
-    pthread_mutex_lock(&state->stop_reason_mutex);
-    state->stop_reason = reason;
-    pthread_mutex_unlock(&state->stop_reason_mutex);
+    engine_shared_state_publish_stop_reason(state, reason);
 
     if (reason.type != STOP_REASON_DONE) {
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
@@ -216,16 +225,13 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
     // received subsequently while processing is blocked waiting on full queues,
     // override the reason and force INACTIVE state to prevent infinite joins
     // and deadlocks.
-    pthread_mutex_lock(&state->stop_reason_mutex);
-    if (state->stop_reason.type == STOP_REASON_DONE &&
-        reason.type != STOP_REASON_DONE) {
-      state->stop_reason = reason;
-      pthread_mutex_unlock(&state->stop_reason_mutex);
+    processing_stop_reason_t current_r =
+        engine_shared_state_get_stop_reason(state);
+    if (current_r.type == STOP_REASON_DONE && reason.type != STOP_REASON_DONE) {
+      engine_shared_state_publish_stop_reason(state, reason);
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
-    } else {
-      pthread_mutex_unlock(&state->stop_reason_mutex);
     }
   }
 }

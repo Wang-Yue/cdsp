@@ -16,14 +16,14 @@ graph TD
 ```
 
 ### 1.1. Inter-Thread Level (`engine_shared_state_t`)
-Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads.
+Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads and is 100% lock-free.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
 | `state_raw` | `_Atomic uint8_t` | Encodes `processing_state_t` (`INACTIVE`, `RUNNING`, `PAUSED`, `STALLED`). When set to `INACTIVE`, it serves as the global stop signal. | Lock-free atomic reads (`acquire` ordering) and writes (`release` ordering). |
 | `stop_once` | `_Atomic bool` | A latch/flag indicating whether a stop sequence has been initiated. Prevents multiple stop requests from colliding. | Checked and set atomically via Compare-And-Swap (CAS) `atomic_compare_exchange_strong_explicit`. |
-| `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Protected by `stop_reason_mutex`. |
-| `stop_reason_mutex` | `pthread_mutex_t` | Mutex protecting access to `stop_reason`. | C11 Mutex Lock. |
+| `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Read/written lock-free via sequence counter `stop_seq` (Seqlock pattern). |
+| `stop_seq` | `_Atomic uint32_t` | Monotonic sequence counter protecting `stop_reason` lock-free reads. | Atomic release/acquire increments. |
 | `captured_queue` | `audio_sync_queue_t*` | Sync queue from Capture -> Processing. | Lock-free SPSC + OS semaphore. |
 | `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
 
@@ -41,14 +41,14 @@ Defined in [dsp_session_internal.h](Engine/dsp_session_internal.h). Manages reso
 ---
 
 ### 1.3. Controller Level (`dsp_engine_t`)
-Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands.
+Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands, structured into domain sub-groups (`session`, `buffers`, `config`).
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
 | `state_mutex` | `pthread_mutex_t` | Serializes configuration changes, volumes, and status queries. | C11 Mutex Lock. |
-| `last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) after the active `dsp_session_t` has been freed. | Protected by `state_mutex`. |
-| `has_last_stop_reason` | `bool` | Flag indicating if `last_stop_reason` holds a valid stopped/error state. | Protected by `state_mutex`. |
-| `config_in_progress` | `_Atomic bool` | True if a configuration change or reload is actively running. Status queries check this flag to return `STARTING` without blocking on `state_mutex`. | Lock-free atomic reads and writes. |
+| `session.last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) returned by `dsp_session_stop_and_free()` after session destruction. | Protected by `state_mutex`. |
+| `session.has_last_stop_reason` | `bool` | Flag indicating if `last_stop_reason` holds a valid stopped/error state. | Protected by `state_mutex`. |
+| `config.in_progress` | `_Atomic bool` | True if a configuration change or reload is actively running. Status queries check this flag to return `STARTING` without blocking on `state_mutex`. | Lock-free atomic reads and writes. |
 
 ---
 
@@ -57,10 +57,11 @@ Defined in [engine_state_manager.h](Engine/engine_state_manager.h). Manages fade
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
-| `state_file` | `char*` | Path to state persistence file on disk. | Protected by `state_mutex`. |
-| `config_path` | `char*` | Path to active configuration file. | Protected by `state_mutex`. |
-| `change_counter` | `uint64_t` | Incrementing counter tracking state changes (volumes, mute, config path) to determine dirty status. | Protected by `state_mutex`. |
-| `last_saved_counter`| `uint64_t` | Change counter snapshot at last disk save. State is dirty when `change_counter != last_saved_counter`. | Protected by `state_mutex`. |
+| `fader_volumes` | `_Atomic double[5]` | Target volume levels in dB for audio faders. | Lock-free atomic reads and writes. |
+| `fader_mutes` | `_Atomic bool[5]` | Target mute flags for audio faders. | Lock-free atomic reads and writes. |
+| `state_file_path` | `char[1024]` | Path to state persistence file on disk. | Protected by `mutex`. |
+| `active_config_path` | `char[1024]` | Path to active configuration file. | Protected by `mutex`. |
+| `change_counter` | `uint64_t` | Monotonic counter tracking state modifications. | Protected by `mutex`. |
 
 ---
 
