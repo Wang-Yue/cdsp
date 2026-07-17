@@ -104,10 +104,6 @@ void AudioSettings::loadPreferences() {
         stringToResamplerInterpolation(s.value("resamplerInterpolation", "Cubic").toString().toStdString());
     resamplerSincInterpolation =
         stringToSincInterpolation(s.value("resamplerSincInterpolation", "Cubic").toString().toStdString());
-    resamplerAppleQuality =
-        stringToAppleResamplerQuality(s.value("resamplerAppleQuality", "Max").toString().toStdString());
-    resamplerAppleComplexity =
-        stringToAppleResamplerComplexity(s.value("resamplerAppleComplexity", "Normal").toString().toStdString());
 
     volume = s.value("volume", 0.0f).toFloat();
     isMuted = s.value("isMuted", false).toBool();
@@ -158,9 +154,6 @@ void AudioSettings::savePreferences() {
                QString::fromStdString(resamplerInterpolationToString(resamplerInterpolation)));
     s.setValue("resamplerSincInterpolation",
                QString::fromStdString(sincInterpolationToString(resamplerSincInterpolation)));
-    s.setValue("resamplerAppleQuality", QString::fromStdString(appleResamplerQualityToString(resamplerAppleQuality)));
-    s.setValue("resamplerAppleComplexity",
-               QString::fromStdString(appleResamplerComplexityToString(resamplerAppleComplexity)));
 
     s.setValue("volume", volume);
     s.setValue("isMuted", isMuted);

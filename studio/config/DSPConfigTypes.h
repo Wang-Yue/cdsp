@@ -114,7 +114,7 @@ enum class GainScale { dB, linear };
 std::string gainScaleToString(GainScale s);
 GainScale stringToGainScale(const std::string& str);
 
-enum class ResamplerType { Synchronous, Apple, AsyncSinc, AsyncPoly };
+enum class ResamplerType { Synchronous, AsyncSinc, AsyncPoly };
 std::string resamplerTypeToString(ResamplerType t);
 ResamplerType stringToResamplerType(const std::string& str);
 
@@ -124,17 +124,11 @@ ResamplerProfile stringToResamplerProfile(const std::string& str);
 
 enum class ResamplerInterpolation { Linear, Cubic, Quintic, Septic };
 enum class SincInterpolation { Nearest, Linear, Quadratic, Cubic };
-enum class AppleResamplerQuality { Min, Low, Medium, High, Max };
-enum class AppleResamplerComplexity { Linear, Normal, Mastering, MinimumPhase };
 
 std::string resamplerInterpolationToString(ResamplerInterpolation interp);
 ResamplerInterpolation stringToResamplerInterpolation(const std::string& str);
 std::string sincInterpolationToString(SincInterpolation interp);
 SincInterpolation stringToSincInterpolation(const std::string& str);
-std::string appleResamplerQualityToString(AppleResamplerQuality q);
-AppleResamplerQuality stringToAppleResamplerQuality(const std::string& str);
-std::string appleResamplerComplexityToString(AppleResamplerComplexity c);
-AppleResamplerComplexity stringToAppleResamplerComplexity(const std::string& str);
 
 enum class ConfigErrorType { ParseError, ValidationError, InvalidFilter, InvalidMixer, InvalidPipeline };
 
@@ -341,8 +335,6 @@ struct ResamplerConfig {
     ResamplerType type = ResamplerType::Synchronous;
     std::optional<std::string> profile;
     std::optional<std::string> interpolation;
-    std::optional<AppleResamplerQuality> appleQuality;
-    std::optional<AppleResamplerComplexity> appleComplexity;
     std::optional<int> sincLen;
     std::optional<int> oversamplingFactor;
     std::optional<std::string> window;

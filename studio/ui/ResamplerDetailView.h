@@ -45,8 +45,6 @@ private:
     QDoubleSpinBox* m_fCutoffSpin;
     QComboBox* m_sincInterpCombo;
     QComboBox* m_polyInterpCombo;
-    QComboBox* m_appleQualityCombo;
-    QComboBox* m_appleComplexityCombo;
 
     QLabel* m_capRateLabel;
     QLabel* m_pbRateLabel;

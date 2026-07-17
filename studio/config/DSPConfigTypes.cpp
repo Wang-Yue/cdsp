@@ -215,8 +215,6 @@ std::string resamplerTypeToString(ResamplerType t) {
     switch (t) {
     case ResamplerType::Synchronous:
         return "Synchronous";
-    case ResamplerType::Apple:
-        return "Apple";
     case ResamplerType::AsyncSinc:
         return "AsyncSinc";
     case ResamplerType::AsyncPoly:
@@ -273,61 +271,7 @@ ResamplerInterpolation stringToResamplerInterpolation(const std::string& str) {
     return ResamplerInterpolation::Linear;
 }
 
-std::string appleResamplerQualityToString(AppleResamplerQuality q) {
-    switch (q) {
-    case AppleResamplerQuality::Min:
-        return "Min";
-    case AppleResamplerQuality::Low:
-        return "Low";
-    case AppleResamplerQuality::Medium:
-        return "Medium";
-    case AppleResamplerQuality::High:
-        return "High";
-    case AppleResamplerQuality::Max:
-        return "Max";
-    }
-    return "Medium";
-}
-
-AppleResamplerQuality stringToAppleResamplerQuality(const std::string& str) {
-    if (str == "Min")
-        return AppleResamplerQuality::Min;
-    if (str == "Low")
-        return AppleResamplerQuality::Low;
-    if (str == "High")
-        return AppleResamplerQuality::High;
-    if (str == "Max")
-        return AppleResamplerQuality::Max;
-    return AppleResamplerQuality::Medium;
-}
-
-std::string appleResamplerComplexityToString(AppleResamplerComplexity c) {
-    switch (c) {
-    case AppleResamplerComplexity::Linear:
-        return "Linear";
-    case AppleResamplerComplexity::Normal:
-        return "Normal";
-    case AppleResamplerComplexity::Mastering:
-        return "Mastering";
-    case AppleResamplerComplexity::MinimumPhase:
-        return "MinimumPhase";
-    }
-    return "Normal";
-}
-
-AppleResamplerComplexity stringToAppleResamplerComplexity(const std::string& str) {
-    if (str == "Linear")
-        return AppleResamplerComplexity::Linear;
-    if (str == "Mastering")
-        return AppleResamplerComplexity::Mastering;
-    if (str == "MinimumPhase")
-        return AppleResamplerComplexity::MinimumPhase;
-    return AppleResamplerComplexity::Normal;
-}
-
 ResamplerType stringToResamplerType(const std::string& str) {
-    if (str == "Apple")
-        return ResamplerType::Apple;
     if (str == "AsyncSinc")
         return ResamplerType::AsyncSinc;
     if (str == "AsyncPoly")
@@ -1306,45 +1250,6 @@ QJsonObject ResamplerConfig::toJson() const {
         obj["window"] = QString::fromStdString(window.value());
     if (fCutoff.has_value())
         obj["f_cutoff"] = fCutoff.value();
-    if (appleQuality.has_value()) {
-        std::string qStr = "High";
-        switch (appleQuality.value()) {
-        case AppleResamplerQuality::Min:
-            qStr = "Min";
-            break;
-        case AppleResamplerQuality::Low:
-            qStr = "Low";
-            break;
-        case AppleResamplerQuality::Medium:
-            qStr = "Medium";
-            break;
-        case AppleResamplerQuality::High:
-            qStr = "High";
-            break;
-        case AppleResamplerQuality::Max:
-            qStr = "Max";
-            break;
-        }
-        obj["apple_quality"] = QString::fromStdString(qStr);
-    }
-    if (appleComplexity.has_value()) {
-        std::string cStr = "Normal";
-        switch (appleComplexity.value()) {
-        case AppleResamplerComplexity::Linear:
-            cStr = "Linear";
-            break;
-        case AppleResamplerComplexity::Normal:
-            cStr = "Normal";
-            break;
-        case AppleResamplerComplexity::Mastering:
-            cStr = "Mastering";
-            break;
-        case AppleResamplerComplexity::MinimumPhase:
-            cStr = "MinimumPhase";
-            break;
-        }
-        obj["apple_complexity"] = QString::fromStdString(cStr);
-    }
     return obj;
 }
 

@@ -43,7 +43,7 @@ void ResamplerDetailView::setupUi() {
     m_typeForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_typeCombo = new QComboBox(m_typeGroup);
-    m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly", "Apple"});
+    m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly"});
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
         updateVisibility();
         applySettings();
@@ -101,16 +101,6 @@ void ResamplerDetailView::setupUi() {
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Poly Interpolation:", m_polyInterpCombo);
 
-    m_appleQualityCombo = new QComboBox(m_typeGroup);
-    m_appleQualityCombo->addItems({"Min", "Low", "Medium", "High", "Max"});
-    connect(m_appleQualityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Apple Quality:", m_appleQualityCombo);
-
-    m_appleComplexityCombo = new QComboBox(m_typeGroup);
-    m_appleComplexityCombo->addItems({"Linear", "Normal", "Mastering", "MinimumPhase"});
-    connect(m_appleComplexityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Apple Algorithm:", m_appleComplexityCombo);
-
     mainLayout->addWidget(m_typeGroup);
 
     // Sample Rates Info Card
@@ -146,7 +136,6 @@ void ResamplerDetailView::updateVisibility() {
     std::string typeStr = m_typeCombo->currentText().toStdString();
     bool isAsyncSinc = (typeStr == "AsyncSinc");
     bool isAsyncPoly = (typeStr == "AsyncPoly");
-    bool isApple = (typeStr == "Apple");
     bool useProfile = m_useProfileCheck->isChecked();
 
     m_typeForm->setRowVisible(m_useProfileCheck, isAsyncSinc);
@@ -160,9 +149,6 @@ void ResamplerDetailView::updateVisibility() {
     m_typeForm->setRowVisible(m_sincInterpCombo, isAsyncSinc && !useProfile);
 
     m_typeForm->setRowVisible(m_polyInterpCombo, isAsyncPoly);
-
-    m_typeForm->setRowVisible(m_appleQualityCombo, isApple);
-    m_typeForm->setRowVisible(m_appleComplexityCombo, isApple);
 
     if (m_typeGroup && m_settings) {
         m_typeGroup->setEnabled(true);
@@ -193,10 +179,6 @@ void ResamplerDetailView::refreshUi() {
         QString::fromStdString(sincInterpolationToString(m_settings->resamplerSincInterpolation)));
     m_polyInterpCombo->setCurrentText(
         QString::fromStdString(resamplerInterpolationToString(m_settings->resamplerInterpolation)));
-    m_appleQualityCombo->setCurrentText(
-        QString::fromStdString(appleResamplerQualityToString(m_settings->resamplerAppleQuality)));
-    m_appleComplexityCombo->setCurrentText(
-        QString::fromStdString(appleResamplerComplexityToString(m_settings->resamplerAppleComplexity)));
 
     if (m_devices) {
         int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
@@ -225,9 +207,6 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerFCutoff = m_fCutoffSpin->value();
     m_settings->resamplerSincInterpolation = stringToSincInterpolation(m_sincInterpCombo->currentText().toStdString());
     m_settings->resamplerInterpolation = stringToResamplerInterpolation(m_polyInterpCombo->currentText().toStdString());
-    m_settings->resamplerAppleQuality = stringToAppleResamplerQuality(m_appleQualityCombo->currentText().toStdString());
-    m_settings->resamplerAppleComplexity =
-        stringToAppleResamplerComplexity(m_appleComplexityCombo->currentText().toStdString());
     m_settings->savePreferences();
 
     if (m_dspController) {

@@ -72,9 +72,6 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
         ResamplerConfig resCfg;
 
         ResamplerType effectiveType = m_settings->resamplerType;
-        if (m_engine && m_engine->isRustEngine() && effectiveType == ResamplerType::Apple) {
-            effectiveType = ResamplerType::AsyncSinc;
-        }
 
         resCfg.type = effectiveType;
         switch (effectiveType) {
@@ -119,10 +116,6 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
             }
             break;
         case ResamplerType::Synchronous:
-            break;
-        case ResamplerType::Apple:
-            resCfg.appleQuality = m_settings->resamplerAppleQuality;
-            resCfg.appleComplexity = m_settings->resamplerAppleComplexity;
             break;
         }
         config.devices.resampler = resCfg;

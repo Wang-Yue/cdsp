@@ -29,8 +29,6 @@ public:
     double resamplerFCutoff = 0.95;
     ResamplerInterpolation resamplerInterpolation = ResamplerInterpolation::Cubic;
     SincInterpolation resamplerSincInterpolation = SincInterpolation::Cubic;
-    AppleResamplerQuality resamplerAppleQuality = AppleResamplerQuality::Max;
-    AppleResamplerComplexity resamplerAppleComplexity = AppleResamplerComplexity::Normal;
 
     float volume = 0.0f;
     bool isMuted = false;
