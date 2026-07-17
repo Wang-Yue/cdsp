@@ -13,7 +13,7 @@ struct alsa_playback {
   char device_name[256];
   int sample_rate;
   int channels;
-  int chunk_size;
+  size_t chunk_size;
 
   bool has_format;
   alsa_sample_format_t requested_format;

@@ -50,11 +50,6 @@ static char* buf_detach(buf_t* b) {
   return res;
 }
 
-static void buf_free(buf_t* b) {
-  if (b->data) free(b->data);
-  b->data = NULL;
-}
-
 /* --- JSON to YAML Emitter --- */
 
 static bool needs_quotes(const char* str) {
