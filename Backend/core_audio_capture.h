@@ -56,7 +56,7 @@ typedef struct core_audio_capture core_audio_capture_t;
  * @return Pointer to the created capture_backend_t, or NULL on failure.
  */
 capture_backend_t* core_audio_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
     backend_error_t* err);
 
 /**

@@ -31,7 +31,7 @@ struct core_audio_capture {
   char device_name[256];
   int channels;
   double sample_rate;
-  int chunk_size;
+  size_t chunk_size;
   char sample_format[16];
   bool has_sample_format;
 
@@ -355,7 +355,7 @@ static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
 
 /// Create a CoreAudio capture backend instance.
 capture_backend_t* core_audio_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
     backend_error_t* err) {
   if (!config) {
     if (err)

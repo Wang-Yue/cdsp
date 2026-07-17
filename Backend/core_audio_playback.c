@@ -29,7 +29,7 @@ struct core_audio_playback {
   char device_name[256];
   int channels;
   double sample_rate;
-  int chunk_size;
+  size_t chunk_size;
   bool exclusive;
   char sample_format[16];
   bool has_sample_format;
@@ -216,7 +216,7 @@ static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
 
 /// Create a CoreAudio playback backend instance.
 playback_backend_t* core_audio_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
     backend_error_t* err) {
   if (!config) {
     if (err)

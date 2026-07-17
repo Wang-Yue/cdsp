@@ -45,7 +45,7 @@ typedef struct core_audio_playback core_audio_playback_t;
  * failure.
  */
 playback_backend_t* core_audio_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
     backend_error_t* err);
 
 /**
