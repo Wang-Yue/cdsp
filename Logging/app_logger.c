@@ -275,7 +275,7 @@ static void* worker_thread_func(void* arg) {
         // Advance read index.
         atomic_store_explicit(&logger->read_index, r + 1, memory_order_relaxed);
 
-        const char* lvl_str = "INFO";
+        const char* lvl_str;
         switch (rec.level) {
           case LOG_LEVEL_OFF:
             lvl_str = "OFF";
@@ -436,7 +436,7 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
 void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
                             const char* msg, const char* str) {
   if (!logger || !msg || !str || level > app_logger_get_level()) return;
-  const char* lvl_str = "INFO";
+  const char* lvl_str;
   switch (level) {
     case LOG_LEVEL_ERROR:
       lvl_str = "ERROR";

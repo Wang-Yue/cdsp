@@ -49,7 +49,8 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
   while (*ptr && curr) {
     char segment[128];
     size_t seg_len = 0;
-    while (*ptr && *ptr != '/' && seg_len < sizeof(segment) - 1) {
+    while (*ptr && *ptr != '/') {
+      if (seg_len >= sizeof(segment) - 1) return NULL;
       segment[seg_len++] = *ptr++;
     }
     segment[seg_len] = '\0';
@@ -381,7 +382,11 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
 bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   char* path = cdsp_get_config_file_path(engine);
   if (!path) {
-    if (out_err) strcpy(out_err->message, "No config file path set");
+    if (out_err) {
+      out_err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      snprintf(out_err->message, sizeof(out_err->message),
+               "No config file path set");
+    }
     return false;
   }
   char* file_str = read_file_to_str(path);

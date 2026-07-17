@@ -169,6 +169,8 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t* impl,
     }
     impl->config.previous_json = impl->config.active_json;
     impl->config.active_json = strdup(json);
+  } else {
+    dsp_config_free(parsed);
   }
   return success;
 }

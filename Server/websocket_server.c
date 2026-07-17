@@ -256,6 +256,24 @@ void websocket_server_set_engine(websocket_server_t* server,
 
 uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000ULL; }
 
+static void remove_client_session(websocket_server_t* server,
+                                  socket_t* client_fds, char (*last_state)[64],
+                                  int* num_clients, int index) {
+  CLOSE_SOCKET(client_fds[index]);
+  pthread_mutex_lock(&server->sessions_mutex);
+  client_session_clear(&server->client_sessions[index]);
+
+  for (int j = index; j < *num_clients - 1; j++) {
+    client_fds[j] = client_fds[j + 1];
+    strcpy(last_state[j], last_state[j + 1]);
+    server->client_sessions[j] = server->client_sessions[j + 1];
+    memset(&server->client_sessions[j + 1], 0, sizeof(client_session_t));
+  }
+  server->client_sessions[*num_clients - 1] = (client_session_t){0};
+  pthread_mutex_unlock(&server->sessions_mutex);
+  (*num_clients)--;
+}
+
 static void* server_thread_func(void* arg) {
   websocket_server_t* server = (websocket_server_t*)arg;
   socket_t client_fds[32];
@@ -656,20 +674,11 @@ static void* server_thread_func(void* arg) {
         if (fds[i + 1].revents & (POLLIN | POLLERR | POLLHUP)) {
           char buf[4096];
           int n = recv(client_fds[i], buf, sizeof(buf) - 1, 0);
+
           if (n <= 0) {
             logger_info(&server_logger, "Client disconnected on slot %d", i);
-            CLOSE_SOCKET(client_fds[i]);
-            pthread_mutex_lock(&server->sessions_mutex);
-            client_session_clear(&server->client_sessions[i]);
-
-            for (int j = i; j < num_clients - 1; j++) {
-              client_fds[j] = client_fds[j + 1];
-              strcpy(last_state[j], last_state[j + 1]);
-              server->client_sessions[j] = server->client_sessions[j + 1];
-            }
-            server->client_sessions[num_clients - 1] = (client_session_t){0};
-            pthread_mutex_unlock(&server->sessions_mutex);
-            num_clients--;
+            remove_client_session(server, client_fds, last_state, &num_clients,
+                                  i);
             i--;
           } else {
             buf[n] = '\0';
@@ -687,36 +696,15 @@ static void* server_thread_func(void* arg) {
                                         (size_t)(n - offset), &payload_len,
                                         &header_len, &mask, &opcode)) {
                 if (opcode == 0x08) {
-                  CLOSE_SOCKET(client_fds[i]);
-                  pthread_mutex_lock(&server->sessions_mutex);
-                  client_session_clear(&server->client_sessions[i]);
-                  for (int j = i; j < num_clients - 1; j++) {
-                    client_fds[j] = client_fds[j + 1];
-                    strcpy(last_state[j], last_state[j + 1]);
-                    server->client_sessions[j] = server->client_sessions[j + 1];
-                  }
-                  server->client_sessions[num_clients - 1] =
-                      (client_session_t){0};
-                  pthread_mutex_unlock(&server->sessions_mutex);
-                  num_clients--;
+                  remove_client_session(server, client_fds, last_state,
+                                        &num_clients, i);
                   i--;
                   break;
                 }
 
                 if (payload_len > 128 * 1024) {
-                  CLOSE_SOCKET(client_fds[i]);
-                  pthread_mutex_lock(&server->sessions_mutex);
-                  client_session_clear(&server->client_sessions[i]);
-
-                  for (int j = i; j < num_clients - 1; j++) {
-                    client_fds[j] = client_fds[j + 1];
-                    strcpy(last_state[j], last_state[j + 1]);
-                    server->client_sessions[j] = server->client_sessions[j + 1];
-                  }
-                  server->client_sessions[num_clients - 1] =
-                      (client_session_t){0};
-                  pthread_mutex_unlock(&server->sessions_mutex);
-                  num_clients--;
+                  remove_client_session(server, client_fds, last_state,
+                                        &num_clients, i);
                   i--;
                   break;
                 }
@@ -726,19 +714,8 @@ static void* server_thread_func(void* arg) {
 
                 char* payload = (char*)malloc(payload_len + 1);
                 if (!payload) {
-                  CLOSE_SOCKET(client_fds[i]);
-                  pthread_mutex_lock(&server->sessions_mutex);
-                  client_session_clear(&server->client_sessions[i]);
-
-                  for (int j = i; j < num_clients - 1; j++) {
-                    client_fds[j] = client_fds[j + 1];
-                    strcpy(last_state[j], last_state[j + 1]);
-                    server->client_sessions[j] = server->client_sessions[j + 1];
-                  }
-                  server->client_sessions[num_clients - 1] =
-                      (client_session_t){0};
-                  pthread_mutex_unlock(&server->sessions_mutex);
-                  num_clients--;
+                  remove_client_session(server, client_fds, last_state,
+                                        &num_clients, i);
                   i--;
                   break;
                 }
@@ -758,19 +735,8 @@ static void* server_thread_func(void* arg) {
 
                 if (!read_ok) {
                   free(payload);
-                  CLOSE_SOCKET(client_fds[i]);
-                  pthread_mutex_lock(&server->sessions_mutex);
-                  client_session_clear(&server->client_sessions[i]);
-
-                  for (int j = i; j < num_clients - 1; j++) {
-                    client_fds[j] = client_fds[j + 1];
-                    strcpy(last_state[j], last_state[j + 1]);
-                    server->client_sessions[j] = server->client_sessions[j + 1];
-                  }
-                  server->client_sessions[num_clients - 1] =
-                      (client_session_t){0};
-                  pthread_mutex_unlock(&server->sessions_mutex);
-                  num_clients--;
+                  remove_client_session(server, client_fds, last_state,
+                                        &num_clients, i);
                   i--;
                   break;
                 }

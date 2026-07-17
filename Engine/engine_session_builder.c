@@ -257,8 +257,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                  ? config->devices.stop_on_rate_change
                                  : false,
       .rate_measure_interval_s = config->devices.has_rate_measure_interval_s
-                                   ? config->devices.rate_measure_interval_s
-                                   : 1.0,
+                                     ? config->devices.rate_measure_interval_s
+                                     : 1.0,
   };
   core->capture_loop = engine_capture_loop_create(&cap_cfg);
 
@@ -401,6 +401,7 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
       if (err) {
         err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
         strncpy(err->message, cerr.message, sizeof(err->message) - 1);
+        err->message[sizeof(err->message) - 1] = '\0';
       }
       dsp_session_stop_and_free(
           core, (processing_stop_reason_t){.type = STOP_REASON_NONE});

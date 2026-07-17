@@ -326,7 +326,6 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
               playback->sample_rate, playback->channels,
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
-  bool open_succeeded = false;
 
   AudioComponentDescription desc = {
       .componentType = kAudioUnitType_Output,
@@ -518,13 +517,10 @@ bool core_audio_playback_open(core_audio_playback_t* playback,
   }
 
   logger_info(&g_logger, "CoreAudio playback successfully opened and started");
-  open_succeeded = true;
   return true;
 
 cleanup:
-  if (!open_succeeded) {
-    core_audio_playback_close(playback);
-  }
+  core_audio_playback_close(playback);
   return false;
 }
 

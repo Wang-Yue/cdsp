@@ -157,7 +157,7 @@ static OSStatus capture_callback(void* inRefCon,
 
   // Determine the number of valid frames produced based on buffer format.
   int frame_count = (int)inNumberFrames;
-  int actual_frames = frame_count;
+  int actual_frames;
   if (capture->is_interleaved) {
     size_t bytes_per_frame = sizeof(float) * capture->channels;
     actual_frames =
@@ -441,7 +441,6 @@ bool core_audio_capture_open(core_audio_capture_t* capture,
                              backend_error_t* err) {
   if (!capture) return false;
   core_audio_capture_close(capture);
-  bool open_succeeded = false;
 
   // Set up component query for HAL Output Audio Unit.
   AudioComponentDescription desc = {
@@ -631,13 +630,10 @@ bool core_audio_capture_open(core_audio_capture_t* capture,
     capture->pitch_control_active = true;
   }
 
-  open_succeeded = true;
   return true;
 
 cleanup:
-  if (!open_succeeded) {
-    core_audio_capture_close(capture);
-  }
+  core_audio_capture_close(capture);
   return false;
 }
 
@@ -713,12 +709,14 @@ void core_audio_capture_close(core_audio_capture_t* capture) {
     AudioUnitSetProperty(capture->audio_unit,
                          kAudioOutputUnitProperty_SetInputCallback,
                          kAudioUnitScope_Global, 0, &null_cb, sizeof(null_cb));
-    AudioComponentInstanceDispose(capture->audio_unit);
-    capture->audio_unit = NULL;
   }
   while (atomic_load_explicit(&capture->active_callbacks,
                               memory_order_acquire) > 0) {
     usleep(500);
+  }
+  if (capture->audio_unit) {
+    AudioComponentInstanceDispose(capture->audio_unit);
+    capture->audio_unit = NULL;
   }
   deallocate_render_buffers(capture);
   if (capture->read_scratch) {

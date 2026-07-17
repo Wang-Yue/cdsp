@@ -535,7 +535,8 @@ static resampler_error_t async_sinc_resampler_process(
     audio_chunk_t* output) {
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
-  if (valid_frames > resampler->max_input_frames) {
+  if (valid_frames > resampler->max_input_frames ||
+      resampler->needed_input_size > resampler->max_input_frames) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(output) != resampler->channels) {

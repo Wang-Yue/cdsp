@@ -83,9 +83,10 @@ struct engine_shared_state {
 
 static void engine_shared_state_publish_stop_reason(
     engine_shared_state_t* state, processing_stop_reason_t reason) {
-  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_release);
+  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_acq_rel);
   state->stop_reason = reason;
-  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_release);
+  atomic_thread_fence(memory_order_release);
+  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_acq_rel);
 }
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
