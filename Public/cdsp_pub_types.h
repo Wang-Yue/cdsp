@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Self-contained interface handle representing the DSP engine.
  */
@@ -145,5 +149,9 @@ typedef struct {
   size_t channels_count; /**< Number of channels. */
   size_t frames;         /**< Number of frames per channel. */
 } cdsp_audio_samples_t;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_TYPES_H

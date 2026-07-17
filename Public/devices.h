@@ -6,6 +6,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Representation of an audio device list entry.
  */
@@ -57,5 +61,9 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
  * @param desc Pointer to the descriptor structure.
  */
 void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_DEVICES_H

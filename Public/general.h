@@ -5,6 +5,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Get the CDSP version string.
  * @return Static version string (do not free).
@@ -65,5 +69,9 @@ void cdsp_set_log_level(const char* level_str);
  * @param engine Pointer to the engine.
  */
 void cdsp_stop(dsp_engine_t* engine);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_GENERAL_H

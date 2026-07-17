@@ -7,6 +7,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Spectrum data structure containing frequency and magnitude arrays.
  */
@@ -37,5 +41,9 @@ bool cdsp_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
  * @param spec Pointer to the spectrum data structure.
  */
 void cdsp_free_spectrum(cdsp_spectrum_t* spec);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_SPECTRUM_H

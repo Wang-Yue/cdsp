@@ -5,6 +5,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Get the currently loaded configuration file path (WebSocket:
  * GetConfigFilePath).
@@ -218,5 +222,9 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
  */
 bool cdsp_validate_config_file(const char* path, char** out_result,
                                bool* is_error);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_CONFIG_H

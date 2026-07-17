@@ -6,6 +6,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Get the current processing state of the engine.
  * @param engine Pointer to the engine.
@@ -104,5 +108,9 @@ cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
  * @param samples Pointer to the audio samples structure.
  */
 void cdsp_free_samples(cdsp_audio_samples_t* samples);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_PROCESSING_H

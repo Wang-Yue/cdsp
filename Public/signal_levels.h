@@ -6,6 +6,10 @@
 
 #include "cdsp_pub_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Get the current VU levels for capture and playback sides.
  *
@@ -51,5 +55,9 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
  * @param count The number of channels/elements.
  */
 void cdsp_free_channel_labels(char** labels, size_t count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CDSP_PUBLIC_SIGNAL_LEVELS_H
