@@ -1060,7 +1060,7 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
                                  StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
                                  StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
                                  StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
-                                 StageType::Limiter,     StageType::Volume,    StageType::MatrixMixer,
+                                 StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
                                  StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
                                  StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
                 if (stageTypeToCategory(st) == cat) {

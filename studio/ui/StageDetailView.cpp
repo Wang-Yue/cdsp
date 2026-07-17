@@ -1186,21 +1186,21 @@ void StageDetailView::buildStageOptionsUi() {
         break;
     }
 
-    case StageType::Limiter: {
-        auto limGroup = new QGroupBox("Peak Limiter", m_optionsContainer);
+    case StageType::Clipper: {
+        auto limGroup = new QGroupBox("Clipper", m_optionsContainer);
         auto formLayout = new QFormLayout(limGroup);
         formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
         limitSlider->setRange(-300, 0);
-        limitSlider->setValue(static_cast<int>(stage.limiterLimit * 10.0));
-        auto limitLbl = new QLabel(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1), limGroup);
+        limitSlider->setValue(static_cast<int>(stage.clipperLimit * 10.0));
+        auto limitLbl = new QLabel(QString("%1 dB").arg(stage.clipperLimit, 0, 'f', 1), limGroup);
         limitLbl->setFixedWidth(65);
         limitLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         limitLbl->setFont(QFont("monospace", 11));
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
-            stage.limiterLimit = val / 10.0;
-            limitLbl->setText(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1));
+            stage.clipperLimit = val / 10.0;
+            limitLbl->setText(QString("%1 dB").arg(stage.clipperLimit, 0, 'f', 1));
             applyConfig();
         });
         auto limitBox = new QHBoxLayout();
@@ -1209,9 +1209,9 @@ void StageDetailView::buildStageOptionsUi() {
         formLayout->addRow("Limit:", limitBox);
 
         auto softChk = new QCheckBox("Enable Soft Clipping", limGroup);
-        softChk->setChecked(stage.limiterSoftClip);
+        softChk->setChecked(stage.clipperSoftClip);
         connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) {
-            stage.limiterSoftClip = chk;
+            stage.clipperSoftClip = chk;
             applyConfig();
         });
         formLayout->addRow("", softChk);

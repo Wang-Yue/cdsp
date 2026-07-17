@@ -378,7 +378,7 @@ enum class FilterType {
     BiquadCombo,
     DiffEq,
     Dither,
-    Limiter,
+    Clipper,
     LookaheadLimiter
 };
 std::string filterTypeToString(FilterType t);
@@ -496,18 +496,19 @@ struct DitherParameters {
     static DitherParameters fromJson(const QJsonObject& json);
 };
 
-struct LimiterParameters {
+struct ClipperParameters {
     double clipLimit = 0.0;
     std::optional<bool> softClip;
     QJsonObject toJson() const;
-    static LimiterParameters fromJson(const QJsonObject& json);
+    static ClipperParameters fromJson(const QJsonObject& json);
 };
 
 struct LookaheadLimiterParameters {
     double limit = 0.0;
     double attack = 5.0;
     double release = 100.0;
-    std::optional<DelayUnit> unit;
+    std::optional<DelayUnit> attackUnit;
+    std::optional<DelayUnit> releaseUnit;
     QJsonObject toJson() const;
     static LookaheadLimiterParameters fromJson(const QJsonObject& json);
 };
@@ -531,7 +532,7 @@ struct FilterConfig {
     BiquadComboParameters comboParams;
     DiffEqParameters diffEqParams;
     DitherParameters ditherParams;
-    LimiterParameters limiterParams;
+    ClipperParameters clipperParams;
     LookaheadLimiterParameters lookaheadParams;
 
     QJsonObject toJson() const;
