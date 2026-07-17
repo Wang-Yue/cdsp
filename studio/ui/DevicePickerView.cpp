@@ -594,7 +594,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         });
         fileBox->addWidget(m_capWavFilePathEdit);
 
-        auto browseBtn = new QPushButton("Browse...", w);
+        auto browseBtn = new QPushButton("Open File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
             QString path = QFileDialog::getOpenFileName(w, "Select WAV File", "", "WAV Files (*.wav)");
             if (!path.isEmpty())
@@ -653,7 +653,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         });
         fileBox->addWidget(m_capRawFilePathEdit);
 
-        auto browseBtn = new QPushButton("Browse...", w);
+        auto browseBtn = new QPushButton("Open File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
             QString path = QFileDialog::getOpenFileName(w, "Select Raw File", "", "Raw Files (*.raw *.f64 *.f32)");
             if (!path.isEmpty())
@@ -1045,7 +1045,7 @@ QWidget* DevicePickerView::createPbFileView() {
     });
     fileBox->addWidget(m_pbRawFilePathEdit);
 
-    auto browseBtn = new QPushButton("Browse...", w);
+    auto browseBtn = new QPushButton("Select File...", w);
     connect(browseBtn, &QPushButton::clicked, [this, w]() {
         QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
         if (!path.isEmpty())
