@@ -154,12 +154,13 @@ int asio_capabilities_available_device_names(bool is_capture,
                                              char out_names[][256],
                                              int max_names) {
   (void)is_capture;
-  CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  bool com_initialized = SUCCEEDED(hr);
 
   HKEY hk;
   if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "Software\\ASIO", 0, KEY_READ, &hk) !=
       ERROR_SUCCESS) {
-    CoUninitialize();
+    if (com_initialized) CoUninitialize();
     return 0;
   }
 
@@ -173,7 +174,7 @@ int asio_capabilities_available_device_names(bool is_capture,
     snprintf(out_names[matched++], 256, "%s", subkey_name);
   }
   RegCloseKey(hk);
-  CoUninitialize();
+  if (com_initialized) CoUninitialize();
   return matched;
 }
 
@@ -193,7 +194,8 @@ bool asio_capabilities_default_device_name(bool is_capture, char* out_name,
 audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
-  CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  bool com_initialized = SUCCEEDED(hr);
   audio_device_descriptor_t* desc = NULL;
 
   CLSID clsid;
@@ -382,7 +384,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   }
 
   SAFE_RELEASE(iasio);
-  CoUninitialize();
+  if (com_initialized) CoUninitialize();
   return desc;
 
 error_cleanup:
@@ -390,7 +392,7 @@ error_cleanup:
     free_audio_device_descriptor(desc);
     desc = NULL;
   }
-  CoUninitialize();
+  if (com_initialized) CoUninitialize();
   return NULL;
 }
 

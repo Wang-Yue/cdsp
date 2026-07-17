@@ -303,14 +303,14 @@ static void process_channel(dop_decoder_channel_state_t* state,
       int32_t val24 = pcm_sample_encode_s24(raw);
       uint8_t marker24 = (uint8_t)(((uint32_t)val24 >> 16) & 0xFF);
 
-      if (marker32 == 0x05 || marker32 == 0xFA) {
-        state->is_32bit_container = true;
-        marker = marker32;
-        dsd_word = (uint16_t)((uint32_t)val32 & 0xFFFF);
-      } else if (marker24 == 0x05 || marker24 == 0xFA) {
+      if (marker24 == 0x05 || marker24 == 0xFA) {
         state->is_32bit_container = false;
         marker = marker24;
         dsd_word = (uint16_t)((uint32_t)val24 & 0xFFFF);
+      } else if (marker32 == 0x05 || marker32 == 0xFA) {
+        state->is_32bit_container = true;
+        marker = marker32;
+        dsd_word = (uint16_t)((uint32_t)val32 & 0xFFFF);
       } else {
         marker = marker24;
         dsd_word = (uint16_t)((uint32_t)val24 & 0xFFFF);

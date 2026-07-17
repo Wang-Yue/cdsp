@@ -183,6 +183,8 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
   }
 
   double freq_delta = capture->frequency / (double)capture->sample_rate;
+  freq_delta = fmod(freq_delta, 1.0);
+  if (freq_delta < 0.0) freq_delta += 1.0;
 
   switch (capture->signal_type) {
     case SIGNAL_TYPE_SINE: {

@@ -257,20 +257,23 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
     return -1;
   }
 
+  int sr = 0;
+  cJSON* sr_item = cJSON_GetObjectItemCaseSensitive(devices_obj, "samplerate");
+  if (cJSON_IsNumber(sr_item)) sr = sr_item->valueint;
+  int ch = 0;
+  cJSON* ch_item = cJSON_GetObjectItemCaseSensitive(devices_obj, "channels");
+  if (cJSON_IsNumber(ch_item)) ch = ch_item->valueint;
+
+  if (sr > 0 || ch > 0) {
+    replace_tokens_in_json_node(root, sr, ch);
+  }
+
   if (config_parse_devices(devices_obj, config, err) != 0) {
     cJSON_Delete(root);
     dsp_config_free(config);
     logger_error(&g_logger, "Config parsing failed in devices section: %s",
                  err ? err->message : "");
     return -1;
-  }
-
-  int sr = config->devices.samplerate;
-  int cap_ch = capture_device_config_get_channels(&config->devices.capture);
-  int play_ch = playback_device_config_get_channels(&config->devices.playback);
-  int ch = cap_ch > 0 ? cap_ch : play_ch;
-  if (sr > 0 || ch > 0) {
-    replace_tokens_in_json_node(root, sr, ch);
   }
 
   cJSON* pipeline_arr = cJSON_GetObjectItemCaseSensitive(root, "pipeline");

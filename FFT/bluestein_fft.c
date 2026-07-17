@@ -121,8 +121,8 @@ bluestein_fft_t* bluestein_fft_create(size_t n, config_error_t* err) {
     int min_k = (f == 1) ? 4 : 3;
     double target = (double)min_l / (double)f;
     int k = min_k;
-    while ((1 << k) < target) k++;
-    size_t m_val = (size_t)f * (1 << k);
+    while (((uint64_t)1 << k) < target) k++;
+    size_t m_val = (size_t)f * ((size_t)1 << k);
     if (m_val < best_m) best_m = m_val;
   }
   size_t m = best_m;

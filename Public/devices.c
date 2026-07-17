@@ -74,7 +74,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
   }
 
   cdsp_device_descriptor_t* pub =
-      (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
+      (cdsp_device_descriptor_t*)calloc(1, sizeof(cdsp_device_descriptor_t));
   if (!pub) {
     free_audio_device_descriptor(desc);
     return false;
@@ -86,8 +86,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
 
   pub->capability_sets_count = desc->capability_sets_count;
   if (desc->capability_sets_count > 0 && desc->capability_sets) {
-    pub->capability_sets = (cdsp_device_capability_set_t*)malloc(
-        desc->capability_sets_count * sizeof(cdsp_device_capability_set_t));
+    pub->capability_sets = (cdsp_device_capability_set_t*)calloc(
+        desc->capability_sets_count, sizeof(cdsp_device_capability_set_t));
     if (!pub->capability_sets) {
       free(pub);
       free_audio_device_descriptor(desc);
@@ -103,8 +103,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
 
       pub_set->capabilities_count = int_set->capabilities_count;
       if (int_set->capabilities_count > 0 && int_set->capabilities) {
-        pub_set->capabilities = (cdsp_channel_capability_t*)malloc(
-            int_set->capabilities_count * sizeof(cdsp_channel_capability_t));
+        pub_set->capabilities = (cdsp_channel_capability_t*)calloc(
+            int_set->capabilities_count, sizeof(cdsp_channel_capability_t));
         if (!pub_set->capabilities) {
           pub_set->capabilities_count = 0;
           continue;
@@ -118,8 +118,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
           pub_cap->samplerates_count = int_cap->samplerates_count;
 
           if (int_cap->samplerates_count > 0 && int_cap->samplerates) {
-            pub_cap->samplerates = (cdsp_samplerate_capability_t*)malloc(
-                int_cap->samplerates_count *
+            pub_cap->samplerates = (cdsp_samplerate_capability_t*)calloc(
+                int_cap->samplerates_count,
                 sizeof(cdsp_samplerate_capability_t));
             if (!pub_cap->samplerates) {
               pub_cap->samplerates_count = 0;
@@ -135,7 +135,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
 
               if (int_sr->formats_count > 0 && int_sr->formats) {
                 pub_sr->formats =
-                    (char**)malloc(int_sr->formats_count * sizeof(char*));
+                    (char**)calloc(int_sr->formats_count, sizeof(char*));
                 if (!pub_sr->formats) {
                   pub_sr->formats_count = 0;
                   continue;

@@ -19,6 +19,7 @@ struct convolution_filter {
   double* time_buf;
   double* spec_accum_re;
   double* spec_accum_im;
+  double* tail_scratch;
 };
 
 typedef struct convolution_filter convolution_filter_t;
@@ -396,6 +397,7 @@ static void convolution_filter_free(convolution_filter_t* filter) {
   if (filter->time_buf) free(filter->time_buf);
   if (filter->spec_accum_re) free(filter->spec_accum_re);
   if (filter->spec_accum_im) free(filter->spec_accum_im);
+  if (filter->tail_scratch) free(filter->tail_scratch);
   free(filter);
 }
 
@@ -603,9 +605,10 @@ static void* convolution_filter_create(const char* name,
   filter->time_buf = (double*)calloc(fft_len, sizeof(double));
   filter->spec_accum_re = (double*)calloc(spec_len, sizeof(double));
   filter->spec_accum_im = (double*)calloc(spec_len, sizeof(double));
+  filter->tail_scratch = (double*)calloc(chunk_size, sizeof(double));
 
   if (!filter->overlap_buffer || !filter->time_buf || !filter->spec_accum_re ||
-      !filter->spec_accum_im) {
+      !filter->spec_accum_im || !filter->tail_scratch) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate convolution scratch buffers");
     goto fail;
@@ -762,6 +765,14 @@ static void convolution_filter_process(convolution_filter_t* filter,
   while (processed + cs <= count) {
     process_chunk(filter, waveform + processed);
     processed += cs;
+  }
+  if (processed < count) {
+    size_t rem = count - processed;
+    double* temp = filter->tail_scratch;
+    memset(temp, 0, cs * sizeof(double));
+    memcpy(temp, waveform + processed, rem * sizeof(double));
+    process_chunk(filter, temp);
+    memcpy(waveform + processed, temp, rem * sizeof(double));
   }
 }
 

@@ -140,7 +140,10 @@ processing_stop_reason_t engine_shared_state_get_stop_reason(
   do {
     seq1 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
                                 memory_order_acquire);
-    if (seq1 % 2 != 0) continue;
+    if (seq1 % 2 != 0) {
+      seq2 = 0;
+      continue;
+    }
     reason = state->stop_reason;
     seq2 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
                                 memory_order_acquire);

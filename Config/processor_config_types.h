@@ -20,6 +20,7 @@
  * @brief Supported processor types.
  */
 typedef enum {
+  PROCESSOR_TYPE_INVALID = -1,   /**< Invalid/Unknown processor type. */
   PROCESSOR_TYPE_COMPRESSOR = 0, /**< Compressor processor. */
   PROCESSOR_TYPE_NOISE_GATE,     /**< Noise gate processor. */
   PROCESSOR_TYPE_RACE /**< RACE (Receiver Active Crosstalk Cancellation)

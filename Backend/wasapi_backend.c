@@ -62,7 +62,7 @@ struct wasapi_capture {
   audio_chunk_t* residual_chunk;
   size_t residual_frames;
   size_t residual_offset;
-  bool stopped;
+  _Atomic bool stopped;
 };
 
 struct wasapi_playback {
@@ -96,7 +96,7 @@ struct wasapi_playback {
   size_t transfer_buf_cap;
   float* write_buf;
   size_t write_buf_cap;
-  bool stopped;
+  _Atomic bool stopped;
 };
 
 /**
@@ -400,6 +400,7 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
   // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
+  atomic_init(&capture->stopped, false);
 
   HRESULT hr =
       CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
@@ -706,7 +707,7 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
 
   // 2. Loop to read packets from WASAPI device
   while (frames_read < frames) {
-    if (capture->stopped) {
+    if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
       return false;
     }
     if (GetTickCount() - start_time > 1000) {
@@ -1345,6 +1346,7 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
 
   playback->paused = false;
   playback->started = false;
+  atomic_init(&playback->stopped, false);
 
   logger_info(
       &g_logger,
@@ -1375,10 +1377,11 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  playback->transfer_buf_cap = playback->chunk_size * playback->channels;
+  playback->transfer_buf_cap =
+      playback->buffer_frame_count * playback->channels;
   playback->transfer_buf =
       (float*)malloc(playback->transfer_buf_cap * sizeof(float));
-  playback->write_buf_cap = playback->chunk_size * playback->channels;
+  playback->write_buf_cap = playback->buffer_frame_count * playback->channels;
   playback->write_buf = (float*)malloc(playback->write_buf_cap * sizeof(float));
   if (!playback->transfer_buf || !playback->write_buf) {
     if (err) {
@@ -1394,6 +1397,8 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
     int ret = pthread_create(&playback->thread, NULL,
                              wasapi_playback_thread_func, playback);
     if (ret != 0) {
+      atomic_store_explicit(&playback->thread_running, false,
+                            memory_order_release);
       if (err) {
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Failed to create playback thread");
@@ -1558,7 +1563,7 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
     DWORD start_time = GetTickCount();
 
     while (written < requested) {
-      if (playback->stopped) {
+      if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Playback stream stopped");
@@ -1748,7 +1753,7 @@ void wasapi_playback_set_is_paused(wasapi_playback_t* playback, bool paused) {
 
 void wasapi_capture_stop(wasapi_capture_t* capture) {
   if (!capture) return;
-  capture->stopped = true;
+  atomic_store_explicit(&capture->stopped, true, memory_order_release);
   if (capture->client) {
     IAudioClient_Stop(capture->client);
   }
@@ -1759,7 +1764,7 @@ void wasapi_capture_stop(wasapi_capture_t* capture) {
 
 void wasapi_playback_stop(wasapi_playback_t* playback) {
   if (!playback) return;
-  playback->stopped = true;
+  atomic_store_explicit(&playback->stopped, true, memory_order_release);
   if (playback->client) {
     IAudioClient_Stop(playback->client);
   }

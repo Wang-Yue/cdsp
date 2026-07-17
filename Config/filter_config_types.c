@@ -76,7 +76,7 @@ const char* filter_type_to_string(filter_type_t type) {
 }
 
 filter_type_t filter_type_from_string(const char* str) {
-  if (!str) return FILTER_TYPE_GAIN;
+  if (!str) return FILTER_TYPE_INVALID;
   if (strcmp(str, "Gain") == 0) return FILTER_TYPE_GAIN;
   if (strcmp(str, "Volume") == 0) return FILTER_TYPE_VOLUME;
   if (strcmp(str, "Loudness") == 0) return FILTER_TYPE_LOUDNESS;
@@ -89,5 +89,5 @@ filter_type_t filter_type_from_string(const char* str) {
   if (strcmp(str, "Clipper") == 0) return FILTER_TYPE_CLIPPER;
   if (strcmp(str, "LookaheadLimiter") == 0)
     return FILTER_TYPE_LOOKAHEAD_LIMITER;
-  return FILTER_TYPE_GAIN;
+  return FILTER_TYPE_INVALID;
 }

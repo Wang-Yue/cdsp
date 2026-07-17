@@ -624,11 +624,12 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   // In case of write failure (e.g., underrun), attempt to recover and retry the
   // write once.
   snd_pcm_sframes_t rc =
-      snd_pcm_writei(playback->pcm, playback->interleaved_buf, frames);
+      snd_pcm_writei(playback->pcm, playback->interleaved_buf, frames_to_write);
   if (rc < 0) {
     rc = snd_pcm_recover(playback->pcm, rc, 0);
     if (rc >= 0) {
-      rc = snd_pcm_writei(playback->pcm, playback->interleaved_buf, frames);
+      rc = snd_pcm_writei(playback->pcm, playback->interleaved_buf,
+                          frames_to_write);
     }
     if (rc < 0) {
       if (err)

@@ -12,10 +12,20 @@
 #include <sys/stat.h>
 #endif
 
+#include <stdatomic.h>
+
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_path.h"
 #include "Utils/cdsp_time.h"
+
+#ifdef _WIN32
+#define fseek_64 _fseeki64
+#define ftell_64 _ftelli64
+#else
+#define fseek_64 fseeko
+#define ftell_64 ftello
+#endif
 
 static const logger_t g_logger = {"dsp.backend.file"};
 
@@ -35,15 +45,15 @@ struct file_capture {
   int chunk_size;
   binary_sample_format_t format;
   bool is_wav;
-  size_t skip_bytes;
-  size_t read_bytes;
-  size_t total_bytes_read;
+  uint64_t skip_bytes;
+  uint64_t read_bytes;
+  uint64_t total_bytes_read;
   size_t extra_samples;
   size_t extra_samples_generated;
   uint8_t* raw_buf;
   size_t raw_buf_capacity;
   uint64_t last_read_time_ns;
-  bool is_paused;
+  _Atomic bool is_paused;
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
@@ -62,14 +72,14 @@ struct file_playback {
   bool is_wav;
   bool use_rf64;
   bool is_seekable;
-  size_t total_bytes_written;
+  uint64_t total_bytes_written;
   uint8_t* raw_buf;
   size_t raw_buf_capacity;
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
   size_t total_frames_written;
-  bool stopped;
+  _Atomic bool stopped;
 #endif
 };
 
@@ -78,8 +88,8 @@ typedef struct {
   uint32_t sample_rate;
   uint16_t channels;
   binary_sample_format_t format;
-  uint32_t data_bytes;
-  uint32_t data_start_offset;
+  uint64_t data_bytes;
+  uint64_t data_start_offset;
 } wav_info_t;
 
 /**
@@ -149,8 +159,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
   uint16_t channels = 0;
   binary_sample_format_t format = BINARY_SAMPLE_FORMAT_INVALID;
   uint64_t rf64_data_size = 0;
-  uint32_t data_bytes = 0;
-  uint32_t data_start_offset = 0;
+  uint64_t data_bytes = 0;
+  uint64_t data_start_offset = 0;
 
   uint8_t chunk_id[4];
   uint32_t chunk_size;
@@ -162,7 +172,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
 
     if (memcmp(chunk_id, "ds64", 4) == 0) {
       if (chunk_size < 24) {
-        snprintf(err_msg, err_msg_len, "Invalid ds64 chunk size %u", chunk_size);
+        snprintf(err_msg, err_msg_len, "Invalid ds64 chunk size %u",
+                 chunk_size);
         return false;
       }
       uint8_t ds64_payload[24];
@@ -170,17 +181,16 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         snprintf(err_msg, err_msg_len, "Failed to read ds64 chunk payload");
         return false;
       }
-      rf64_data_size = ds64_payload[8] |
-                       ((uint64_t)ds64_payload[9] << 8) |
+      rf64_data_size = ds64_payload[8] | ((uint64_t)ds64_payload[9] << 8) |
                        ((uint64_t)ds64_payload[10] << 16) |
                        ((uint64_t)ds64_payload[11] << 24) |
                        ((uint64_t)ds64_payload[12] << 32) |
                        ((uint64_t)ds64_payload[13] << 40) |
                        ((uint64_t)ds64_payload[14] << 48) |
                        ((uint64_t)ds64_payload[15] << 56);
-      
+
       if (chunk_size > 24) {
-        if (fseek(f, chunk_size - 24, SEEK_CUR) != 0) {
+        if (fseek_64(f, chunk_size - 24, SEEK_CUR) != 0) {
           snprintf(err_msg, err_msg_len, "Failed to seek past ds64 chunk");
           return false;
         }
@@ -212,7 +222,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
 
       if (audio_format == 0xFFFE) {
         if (to_read < 24) {
-          snprintf(err_msg, err_msg_len, "fmt chunk too short for EXTENSIBLE format");
+          snprintf(err_msg, err_msg_len,
+                   "fmt chunk too short for EXTENSIBLE format");
           return false;
         }
         uint16_t sub_format = fmt_payload[24] | (fmt_payload[25] << 8);
@@ -221,7 +232,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         } else if (sub_format == 3) {
           audio_format = 3;
         } else {
-          snprintf(err_msg, err_msg_len, "Unsupported sub-format %d in EXTENSIBLE", sub_format);
+          snprintf(err_msg, err_msg_len,
+                   "Unsupported sub-format %d in EXTENSIBLE", sub_format);
           return false;
         }
       }
@@ -241,29 +253,30 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
       }
 
       if (format == BINARY_SAMPLE_FORMAT_INVALID) {
-        snprintf(err_msg, err_msg_len, "Unsupported bits per sample %d for format %d",
+        snprintf(err_msg, err_msg_len,
+                 "Unsupported bits per sample %d for format %d",
                  bits_per_sample, audio_format);
         return false;
       }
 
       if (chunk_size > to_read) {
-        if (fseek(f, chunk_size - to_read, SEEK_CUR) != 0) {
+        if (fseek_64(f, chunk_size - to_read, SEEK_CUR) != 0) {
           snprintf(err_msg, err_msg_len, "Failed to seek past fmt chunk");
           return false;
         }
       }
     } else if (memcmp(chunk_id, "data", 4) == 0) {
       found_data = true;
-      data_start_offset = ftell(f);
+      data_start_offset = (uint64_t)ftell_64(f);
       if (is_rf64 && chunk_size == 0xFFFFFFFF) {
-        data_bytes = rf64_data_size > 0xFFFFFFFF ? 0xFFFFFFFF : (uint32_t)rf64_data_size;
+        data_bytes = rf64_data_size;
       } else {
         data_bytes = chunk_size;
       }
       break;
     } else {
       uint32_t pad = chunk_size & 1;
-      if (fseek(f, chunk_size + pad, SEEK_CUR) != 0) {
+      if (fseek_64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
         snprintf(err_msg, err_msg_len, "Failed to seek past unknown chunk");
         return false;
       }
@@ -300,8 +313,7 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
  */
 static void write_wav_header_to_file(FILE* f, size_t channels,
                                      binary_sample_format_t format,
-                                     uint32_t sample_rate,
-                                     uint32_t data_bytes,
+                                     uint32_t sample_rate, uint32_t data_bytes,
                                      bool is_seekable) {
   uint8_t header[44];
   memset(header, 0, 44);
@@ -344,7 +356,7 @@ static void write_wav_header_to_file(FILE* f, size_t channels,
   header[42] = (data_bytes >> 16) & 0xFF;
   header[43] = (data_bytes >> 24) & 0xFF;
   if (is_seekable) {
-    fseek(f, 0, SEEK_SET);
+    fseek_64(f, 0, SEEK_SET);
   }
   fwrite(header, 1, 44, f);
 }
@@ -365,7 +377,7 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
   header[6] = 0xFF;
   header[7] = 0xFF;
   memcpy(header + 8, "WAVE", 4);
-  
+
   // ds64 chunk
   memcpy(header + 12, "ds64", 4);
   uint32_t ds64_size = 28;
@@ -373,30 +385,30 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
   header[17] = (ds64_size >> 8) & 0xFF;
   header[18] = (ds64_size >> 16) & 0xFF;
   header[19] = (ds64_size >> 24) & 0xFF;
-  
+
   // 64-bit RIFF size (36 + 8 + 28 + 8 + 8 + 16 + data_bytes)
-  uint64_t riff_size = data_bytes + 68;
+  uint64_t riff_size = data_bytes + 72;
   for (int i = 0; i < 8; i++) {
     header[20 + i] = (riff_size >> (i * 8)) & 0xFF;
   }
-  
+
   // 64-bit Data size
   for (int i = 0; i < 8; i++) {
     header[28 + i] = (data_bytes >> (i * 8)) & 0xFF;
   }
-  
+
   // 64-bit Sample count
   size_t sample_size = get_sample_size(format);
   uint64_t sample_count = data_bytes / (channels * sample_size);
   for (int i = 0; i < 8; i++) {
     header[36 + i] = (sample_count >> (i * 8)) & 0xFF;
   }
-  
+
   // table entry count is 0 (header[44..47])
-  
+
   // fmt chunk
   memcpy(header + 48, "fmt ", 4);
-  header[52] = 16; // fmt chunk size
+  header[52] = 16;  // fmt chunk size
   uint16_t format_tag = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
                          format == BINARY_SAMPLE_FORMAT_F64_LE)
                             ? 3
@@ -409,31 +421,30 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
   header[61] = (sample_rate >> 8) & 0xFF;
   header[62] = (sample_rate >> 16) & 0xFF;
   header[63] = (sample_rate >> 24) & 0xFF;
-  
+
   uint32_t byte_rate = sample_rate * channels * sample_size;
   header[64] = byte_rate & 0xFF;
   header[65] = (byte_rate >> 8) & 0xFF;
   header[66] = (byte_rate >> 16) & 0xFF;
   header[67] = (byte_rate >> 24) & 0xFF;
-  
+
   uint16_t block_align = channels * sample_size;
   header[68] = block_align & 0xFF;
   header[69] = (block_align >> 8) & 0xFF;
   uint16_t bits_per_sample = sample_size * 8;
   header[70] = bits_per_sample & 0xFF;
   header[71] = (bits_per_sample >> 8) & 0xFF;
-  
+
   // data chunk header
   memcpy(header + 72, "data", 4);
   header[76] = 0xFF;
   header[77] = 0xFF;
   header[78] = 0xFF;
   header[79] = 0xFF;
-  
-  fseek(f, 0, SEEK_SET);
+
+  fseek_64(f, 0, SEEK_SET);
   fwrite(header, 1, 80, f);
 }
-
 
 /**
  * @brief Decode multiple interleaved binary samples to deinterleaved double
@@ -761,16 +772,17 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
     capture->sample_rate = info.sample_rate;
     capture->channels = info.channels;
     capture->format = info.format;
+    capture->read_bytes = info.data_bytes;
 
     logger_info(&g_logger,
                 "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
                 info.sample_rate, info.channels,
                 binary_sample_format_to_string(info.format));
 
-    fseek(capture->f, info.data_start_offset, SEEK_SET);
+    fseek_64(capture->f, info.data_start_offset, SEEK_SET);
   } else {
     if (capture->skip_bytes > 0 && !capture->is_stdin) {
-      fseek(capture->f, capture->skip_bytes, SEEK_SET);
+      fseek_64(capture->f, capture->skip_bytes, SEEK_SET);
     }
   }
 
@@ -788,7 +800,7 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
     return false;
   }
   capture->raw_buf_capacity =
-      capture->chunk_size * capture->channels * sample_size;
+      capture->chunk_size * capture->channels * sample_size * 4;
   capture->raw_buf =
       (uint8_t*)calloc(capture->raw_buf_capacity, sizeof(uint8_t));
   if (!capture->raw_buf) {
@@ -822,7 +834,7 @@ bool file_capture_read(file_capture_t* capture, size_t frames,
     }
     return false;
   }
-  if (capture->is_paused) {
+  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
     audio_chunk_set_valid_frames(chunk, 0);
     return false;
   }
@@ -995,7 +1007,7 @@ void file_capture_destroy(file_capture_t* capture) {
 
 void file_capture_set_is_paused(file_capture_t* capture, bool paused) {
   if (capture) {
-    capture->is_paused = paused;
+    atomic_store_explicit(&capture->is_paused, paused, memory_order_release);
   }
 }
 
@@ -1075,8 +1087,9 @@ playback_backend_t* file_playback_create(const playback_device_config_t* config,
       config->cfg.raw_file.wav_header &&
       config->cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Wav files do not support the S24_4_RJ_LE sample format");
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Wav files do not support the S24_4_RJ_LE sample format");
     }
     return NULL;
   }
@@ -1155,7 +1168,7 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
     return false;
   }
   playback->raw_buf_capacity =
-      playback->chunk_size * playback->channels * sample_size;
+      playback->chunk_size * playback->channels * sample_size * 4;
   playback->raw_buf =
       (uint8_t*)calloc(playback->raw_buf_capacity, sizeof(uint8_t));
   if (!playback->raw_buf) {
@@ -1177,7 +1190,7 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
 
   playback->is_seekable = false;
   if (!playback->is_stdout && playback->f) {
-    if (fseek(playback->f, 0, SEEK_CUR) == 0) {
+    if (fseek_64(playback->f, 0, SEEK_CUR) == 0) {
       playback->is_seekable = true;
     }
   }
@@ -1191,7 +1204,8 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
     } else {
       if (playback->use_rf64) {
         logger_warn(&g_logger,
-                    "RF64 WAV output requires a seekable file, writing a streaming WAV header instead");
+                    "RF64 WAV output requires a seekable file, writing a "
+                    "streaming WAV header instead");
       }
       write_wav_header_to_file(playback->f, playback->channels,
                                playback->format, playback->sample_rate,
@@ -1230,7 +1244,8 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
 
   if (playback->is_wav && playback->is_seekable && !playback->use_rf64) {
     uint64_t max_bytes = 0xFFFFFFFFULL - 256;
-    if (playback->total_bytes_written + required_bytes > max_bytes) {
+    if (playback->total_bytes_written > max_bytes ||
+        required_bytes > (max_bytes - playback->total_bytes_written)) {
       logger_warn(&g_logger,
                   "Wav file reached the maximum size of a plain wav file. "
                   "Stopping write to avoid writing an invalid file.");
@@ -1300,8 +1315,7 @@ void file_playback_close(file_playback_t* playback) {
       } else {
         write_wav_header_to_file(playback->f, playback->channels,
                                  playback->format, playback->sample_rate,
-                                 (uint32_t)playback->total_bytes_written,
-                                 true);
+                                 (uint32_t)playback->total_bytes_written, true);
       }
     }
     if (!playback->is_stdout) {

@@ -55,7 +55,7 @@ struct core_audio_playback {
   _Atomic bool is_device_alive;
   _Atomic bool is_paused;
   bool is_interleaved;
-  bool stopped;
+  _Atomic bool stopped;
 };
 
 /**
@@ -121,7 +121,9 @@ static OSStatus playback_callback(void* inRefCon,
   (void)inTimeStamp;
   (void)inBusNumber;
   core_audio_playback_t* playback = (core_audio_playback_t*)inRefCon;
-  if (!playback || !ioData) return noErr;
+  if (!playback || !ioData || ioData->mNumberBuffers == 0 ||
+      !ioData->mBuffers[0].mData)
+    return noErr;
 
   int frame_count = (int)inNumberFrames;
 
@@ -258,6 +260,7 @@ playback_backend_t* core_audio_playback_create(
                          "Out of memory");
     return NULL;
   }
+  atomic_init(&playback->stopped, false);
   const char* config_device = playback_device_config_get_device(config);
   if (config_device && config_device[0] != '\0') {
     strncpy(playback->device_name, config_device,
@@ -548,7 +551,7 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
   // to yield CPU. The consumer (CoreAudio render thread) remains lock-free.
   uint32_t elapsed_ms = 0;
   while (true) {
-    if (playback->stopped) {
+    if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "Playback stream stopped");
@@ -574,6 +577,10 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
 
     // Timeout after 1 second to prevent infinite blocking if playback stalls.
     if (elapsed_ms >= 1000) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "CoreAudio write timeout");
+      }
       return false;  // Timeout 1s
     }
 
@@ -685,7 +692,7 @@ void core_audio_playback_set_is_paused(core_audio_playback_t* playback,
 /// Destroy and free the CoreAudio playback backend.
 void core_audio_playback_stop(core_audio_playback_t* playback) {
   if (!playback) return;
-  playback->stopped = true;
+  atomic_store_explicit(&playback->stopped, true, memory_order_release);
   if (playback->audio_unit) {
     AudioOutputUnitStop(playback->audio_unit);
   }

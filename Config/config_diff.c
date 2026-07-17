@@ -287,7 +287,10 @@ static bool filter_config_equal(const filter_config_t* a,
   switch (a->type) {
     case FILTER_TYPE_GAIN:
       return a->parameters.gain.gain == b->parameters.gain.gain &&
-             a->parameters.gain.inverted == b->parameters.gain.inverted;
+             a->parameters.gain.inverted == b->parameters.gain.inverted &&
+             a->parameters.gain.scale == b->parameters.gain.scale &&
+             a->parameters.gain.has_gain == b->parameters.gain.has_gain &&
+             a->parameters.gain.mute == b->parameters.gain.mute;
     case FILTER_TYPE_VOLUME:
       return volume_config_equal(&a->parameters.volume, &b->parameters.volume);
     case FILTER_TYPE_LOUDNESS:
@@ -333,6 +336,7 @@ static bool mixer_config_equal(const mixer_config_t* a,
     const mixer_mapping_t* ma = &a->mappings[i];
     const mixer_mapping_t* mb = &b->mappings[i];
     if (ma->dest != mb->dest) return false;
+    if (ma->mute != mb->mute) return false;
     if (ma->sources_count != mb->sources_count) return false;
     for (size_t j = 0; j < ma->sources_count; j++) {
       const mixer_source_t* sa = &ma->sources[j];
@@ -342,6 +346,7 @@ static bool mixer_config_equal(const mixer_config_t* a,
       if (sa->inverted != sb->inverted) return false;
       if (sa->scale != sb->scale) return false;
       if (sa->mute != sb->mute) return false;
+      if (sa->has_gain != sb->has_gain) return false;
     }
   }
   return true;
@@ -501,6 +506,15 @@ bool devices_config_equal(const devices_config_t* a,
   if (a->has_volume_limit != b->has_volume_limit) return false;
   if (a->queuelimit != b->queuelimit) return false;
   if (a->has_queuelimit != b->has_queuelimit) return false;
+  if (a->stop_on_rate_change != b->stop_on_rate_change) return false;
+  if (a->has_stop_on_rate_change != b->has_stop_on_rate_change) return false;
+  if (a->rate_measure_interval_s != b->rate_measure_interval_s) return false;
+  if (a->has_rate_measure_interval_s != b->has_rate_measure_interval_s)
+    return false;
+  if (a->multithreaded != b->multithreaded) return false;
+  if (a->has_multithreaded != b->has_multithreaded) return false;
+  if (a->worker_threads != b->worker_threads) return false;
+  if (a->has_worker_threads != b->has_worker_threads) return false;
 
   if (a->has_resampler != b->has_resampler) return false;
   if (a->has_resampler) {
@@ -691,6 +705,9 @@ bool devices_config_equal(const devices_config_t* a,
                       b->playback.cfg.coreaudio.device))
         return false;
       if (a->playback.cfg.coreaudio.format != b->playback.cfg.coreaudio.format)
+        return false;
+      if (a->playback.cfg.coreaudio.exclusive !=
+          b->playback.cfg.coreaudio.exclusive)
         return false;
       break;
 #endif

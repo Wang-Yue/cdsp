@@ -180,7 +180,7 @@ void level_history_get_max_since(const level_history_t* history,
     const level_sample_t* sample = &history->samples[idx];
     if (sample->timestamp_ms < since_ms) break;
     for (size_t c = 0; c < channels; c++) {
-      if (sample->levels[c] > out_levels[c]) {
+      if (sample->levels && sample->levels[c] > out_levels[c]) {
         out_levels[c] = sample->levels[c];
       }
     }
@@ -202,8 +202,10 @@ void level_history_get_rms_since(const level_history_t* history,
     const level_sample_t* sample = &history->samples[idx];
     if (sample->timestamp_ms < since_ms) break;
     for (size_t c = 0; c < channels; c++) {
-      double amp = db_to_amplitude(sample->levels[c]);
-      sums[c] += amp * amp;
+      if (sample->levels) {
+        double amp = db_to_amplitude(sample->levels[c]);
+        sums[c] += amp * amp;
+      }
     }
     count++;
     idx = (idx + 300 - 1) % 300;

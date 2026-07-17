@@ -543,27 +543,6 @@ static resampler_error_t async_sinc_resampler_process(
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   size_t output_frames = resampler->needed_output_size;
-  if (output_frames == 0) {
-    resampler->last_index -= (double)resampler->needed_input_size;
-    resampler->resample_ratio = resampler->target_ratio;
-
-    resampler->needed_input_size =
-        calculate_input_size(resampler->chunk_size, resampler->resample_ratio,
-                             resampler->target_ratio, resampler->last_index,
-                             resampler->sinc_len, resampler->fixed);
-    resampler->needed_output_size =
-        calculate_output_size(resampler->chunk_size, resampler->resample_ratio,
-                              resampler->target_ratio, resampler->last_index,
-                              resampler->sinc_len, resampler->fixed);
-
-    audio_chunk_set_valid_frames(output, 0);
-    return RESAMPLER_OK;
-  }
-  if (audio_chunk_get_frames(output) < output_frames) {
-    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
-  }
-
-  // Shift buffer, write new data, run inner.
   size_t s_len = resampler->sinc_len;
   size_t two_s_len = 2 * s_len;
 
@@ -586,6 +565,26 @@ static resampler_error_t async_sinc_resampler_process(
   }
 
   resampler->current_buffer_fill = resampler->needed_input_size;
+
+  if (output_frames == 0) {
+    resampler->last_index -= (double)resampler->needed_input_size;
+    resampler->resample_ratio = resampler->target_ratio;
+
+    resampler->needed_input_size =
+        calculate_input_size(resampler->chunk_size, resampler->resample_ratio,
+                             resampler->target_ratio, resampler->last_index,
+                             resampler->sinc_len, resampler->fixed);
+    resampler->needed_output_size =
+        calculate_output_size(resampler->chunk_size, resampler->resample_ratio,
+                              resampler->target_ratio, resampler->last_index,
+                              resampler->sinc_len, resampler->fixed);
+
+    audio_chunk_set_valid_frames(output, 0);
+    return RESAMPLER_OK;
+  }
+  if (audio_chunk_get_frames(output) < output_frames) {
+    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
+  }
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
   double t_ratio_end = 1.0 / resampler->target_ratio;
@@ -625,6 +624,9 @@ static resampler_error_t async_sinc_resampler_process(
 
   // Update state for next chunk.
   resampler->last_index = final_idx - (double)resampler->needed_input_size;
+  if (resampler->last_index < -(double)resampler->sinc_len) {
+    resampler->last_index = -(double)resampler->sinc_len;
+  }
   resampler->resample_ratio = resampler->target_ratio;
 
   size_t prev_needed_input_size = resampler->needed_input_size;

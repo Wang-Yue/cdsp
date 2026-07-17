@@ -20,7 +20,9 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
   if (!(first_byte & 0x80)) return false;
 
   uint8_t opcode = first_byte & 0x0F;
-  if (opcode != 0x01 && opcode != 0x02 && opcode != 0x08) return false;
+  if (opcode != 0x00 && opcode != 0x01 && opcode != 0x02 && opcode != 0x08 &&
+      opcode != 0x09 && opcode != 0x0A)
+    return false;
   *out_opcode = opcode;
 
   uint8_t len_byte = buf[1];
@@ -34,10 +36,11 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
     header_len = 4;
   } else if (payload_len == 127) {
     if (buf_len < 10) return false;
-    payload_len = 0;
+    uint64_t len64 = 0;
     for (int i = 0; i < 8; i++) {
-      payload_len = (payload_len << 8) | buf[2 + i];
+      len64 = (len64 << 8) | buf[2 + i];
     }
+    payload_len = (size_t)len64;
     header_len = 10;
   }
 
@@ -70,7 +73,7 @@ void ws_send_frame(socket_t fd, const char* response) {
   } else {
     frame[1] = (char)127;
     for (int i = 0; i < 8; i++) {
-      frame[2 + i] = (char)((resp_len >> ((7 - i) * 8)) & 0xFF);
+      frame[2 + i] = (char)(((uint64_t)resp_len >> ((7 - i) * 8)) & 0xFF);
     }
     header_len = 10;
   }

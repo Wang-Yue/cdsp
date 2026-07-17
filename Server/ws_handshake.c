@@ -101,43 +101,47 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
   if (!request || client_fd < 0) return false;
   if (strncmp(request, "GET ", 4) == 0 && strstr(request, "Upgrade: ")) {
     const char* key_ptr = strstr(request, "Sec-WebSocket-Key: ");
-    if (key_ptr) {
-      key_ptr += 19;
-      char key[64];
-      int k = 0;
-      while (*key_ptr && *key_ptr != '\r' && *key_ptr != '\n' && k < 63) {
-        key[k++] = *key_ptr++;
-      }
-      key[k] = '\0';
-      char concat[128];
-      snprintf(concat, sizeof(concat), "%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
-               key);
-      unsigned char hash[CC_SHA1_DIGEST_LENGTH];
-      CC_SHA1(concat, (CC_LONG)strlen(concat), hash);
-
-      static const char b64[] =
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-      char b64_hash[32];
-      int b_idx = 0;
-      for (int idx = 0; idx < 20; idx += 3) {
-        uint32_t val = (hash[idx] << 16) |
-                       ((idx + 1 < 20 ? hash[idx + 1] : 0) << 8) |
-                       (idx + 2 < 20 ? hash[idx + 2] : 0);
-        b64_hash[b_idx++] = b64[(val >> 18) & 63];
-        b64_hash[b_idx++] = b64[(val >> 12) & 63];
-        b64_hash[b_idx++] = (idx + 1 < 20) ? b64[(val >> 6) & 63] : '=';
-        b64_hash[b_idx++] = (idx + 2 < 20) ? b64[val & 63] : '=';
-      }
-      b64_hash[b_idx] = '\0';
-
-      char reply[512];
-      snprintf(reply, sizeof(reply),
-               "HTTP/1.1 101 Switching Protocols\r\nUpgrade: "
-               "websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
-               "%s\r\n\r\n",
-               b64_hash);
-      send(client_fd, reply, (int)strlen(reply), 0);
+    if (!key_ptr) {
+      const char* bad_request =
+          "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
+      send(client_fd, bad_request, (int)strlen(bad_request), 0);
+      return false;
     }
+    key_ptr += 19;
+    char key[64];
+    int k = 0;
+    while (*key_ptr && *key_ptr != '\r' && *key_ptr != '\n' && k < 63) {
+      key[k++] = *key_ptr++;
+    }
+    key[k] = '\0';
+    char concat[128];
+    snprintf(concat, sizeof(concat), "%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+             key);
+    unsigned char hash[CC_SHA1_DIGEST_LENGTH];
+    CC_SHA1(concat, (CC_LONG)strlen(concat), hash);
+
+    static const char b64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char b64_hash[32];
+    int b_idx = 0;
+    for (int idx = 0; idx < 20; idx += 3) {
+      uint32_t val = (hash[idx] << 16) |
+                     ((idx + 1 < 20 ? hash[idx + 1] : 0) << 8) |
+                     (idx + 2 < 20 ? hash[idx + 2] : 0);
+      b64_hash[b_idx++] = b64[(val >> 18) & 63];
+      b64_hash[b_idx++] = b64[(val >> 12) & 63];
+      b64_hash[b_idx++] = (idx + 1 < 20) ? b64[(val >> 6) & 63] : '=';
+      b64_hash[b_idx++] = (idx + 2 < 20) ? b64[val & 63] : '=';
+    }
+    b64_hash[b_idx] = '\0';
+
+    char reply[512];
+    snprintf(reply, sizeof(reply),
+             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: "
+             "websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
+             "%s\r\n\r\n",
+             b64_hash);
+    send(client_fd, reply, (int)strlen(reply), 0);
     return true;
   }
   return false;

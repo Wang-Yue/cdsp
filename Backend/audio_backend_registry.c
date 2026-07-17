@@ -28,7 +28,7 @@ int audio_backend_registry_get_available_devices(const char* backend,
     char names[32][256];
     int count =
         core_audio_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
+    if (out_devices && count > max_devices) count = max_devices;
     for (int i = 0; i < count; i++) {
       if (out_devices) {
         memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
@@ -43,7 +43,7 @@ int audio_backend_registry_get_available_devices(const char* backend,
 #if defined(ENABLE_ALSA)
     char names[32][256];
     int count = alsa_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
+    if (out_devices && count > max_devices) count = max_devices;
     for (int i = 0; i < count; i++) {
       if (out_devices) {
         memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
@@ -58,7 +58,7 @@ int audio_backend_registry_get_available_devices(const char* backend,
 #if defined(ENABLE_WASAPI)
     char names[32][256];
     int count = wasapi_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
+    if (out_devices && count > max_devices) count = max_devices;
     for (int i = 0; i < count; i++) {
       if (out_devices) {
         memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));
@@ -73,7 +73,7 @@ int audio_backend_registry_get_available_devices(const char* backend,
 #if defined(ENABLE_ASIO)
     char names[32][256];
     int count = asio_capabilities_available_device_names(input, names, 32);
-    if (count > max_devices) count = max_devices;
+    if (out_devices && count > max_devices) count = max_devices;
     for (int i = 0; i < count; i++) {
       if (out_devices) {
         memcpy(out_devices[i].name, names[i], sizeof(out_devices[i].name));

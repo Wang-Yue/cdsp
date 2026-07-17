@@ -150,7 +150,11 @@ void resampler_free(resampler_t* resampler) {
 
 int resampler_config_validate(const resampler_config_t* config,
                               config_error_t* err) {
-  if (!config) return 0;
+  if (!config) {
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
+                     "Null resampler configuration");
+    return -1;
+  }
 
   if (config->has_sinc_len && config->sinc_len <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,

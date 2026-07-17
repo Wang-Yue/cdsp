@@ -1,6 +1,7 @@
 // Non-interleaved float buffers, one vector per channel.
 #include "audio_chunk.h"
 
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,7 +16,7 @@ struct audio_chunk {
 struct round_robin_chunk_pool {
   audio_chunk_t** pool;
   size_t capacity;
-  size_t current_index;
+  _Atomic size_t current_index;
 };
 
 size_t audio_chunk_get_frames(const audio_chunk_t* chunk) {
@@ -89,10 +90,9 @@ round_robin_chunk_pool_t* round_robin_chunk_pool_create(size_t capacity,
 /// Retrieves the next available unique chunk buffer from the pool.
 audio_chunk_t* round_robin_chunk_pool_next(round_robin_chunk_pool_t* pool) {
   if (!pool || pool->capacity == 0) return NULL;
-  audio_chunk_t* chunk = pool->pool[pool->current_index];
-  // Advance the index in a circular fashion. This is not thread-safe.
-  pool->current_index = (pool->current_index + 1) % pool->capacity;
-  return chunk;
+  size_t idx =
+      atomic_fetch_add_explicit(&pool->current_index, 1, memory_order_relaxed);
+  return pool->pool[idx % pool->capacity];
 }
 
 void round_robin_chunk_pool_free(round_robin_chunk_pool_t* pool) {

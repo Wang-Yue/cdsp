@@ -474,8 +474,8 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
   free(json_str);
   if (ok && json_res && !*is_error) {
     cJSON* val_root = cJSON_Parse(json_res);
-    free(json_res);
     if (val_root) {
+      free(json_res);
       *out_result = cdsp_json_to_yaml(val_root);
       cJSON_Delete(val_root);
       return true;

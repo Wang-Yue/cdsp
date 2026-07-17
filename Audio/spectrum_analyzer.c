@@ -197,10 +197,10 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       double high_f = pow(10.0, high_log);
 
       // Convert frequency boundaries to FFT bin indices
-      int low_k =
-          (int)floor(low_f * (double)analyzer->fft_n / (double)samplerate);
-      int high_k =
-          (int)ceil(high_f * (double)analyzer->fft_n / (double)samplerate);
+      int low_k = (int)ceil(
+          (low_f * (double)analyzer->fft_n / (double)samplerate) - 0.5);
+      int high_k = (int)floor(
+          (high_f * (double)analyzer->fft_n / (double)samplerate) + 0.5);
       int nearest_k =
           (int)round(center_f * (double)analyzer->fft_n / (double)samplerate);
 
@@ -219,14 +219,13 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
   // bin range.
   for (size_t i = 0; i < n_bins; i++) {
     bin_range_t range = analyzer->plan.ranges[i];
-    int start = range.low_k > 0 ? range.low_k : 0;
-    int end =
-        range.high_k < (int)(half_n + 1) ? range.high_k : (int)(half_n + 1);
+    int start = range.low_k;
+    int end = range.high_k;
     if (start < 0) start = 0;
-    if (end > (int)(half_n + 1)) end = (int)(half_n + 1);
-    int len = end - start;
+    if (end > (int)half_n) end = (int)half_n;
+    int len = end - start + 1;
 
-    if (start < end && len > 0) {
+    if (start <= end && len > 0) {
       analyzer->out_magnitudes[i] =
           dsp_ops_float_max(analyzer->db_magnitudes + start, len);
     } else {

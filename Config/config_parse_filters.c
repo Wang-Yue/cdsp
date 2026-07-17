@@ -48,6 +48,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
     cJSON* type = cJSON_GetObjectItemCaseSensitive(filter_child, "type");
     if (cJSON_IsString(type) && type->valuestring) {
       f_conf->type = filter_type_from_string(type->valuestring);
+      if (f_conf->type == FILTER_TYPE_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Filter '%s': unknown filter type '%s'", nf->name,
+                         type->valuestring);
+        return -1;
+      }
     }
 
     cJSON* params =
@@ -449,6 +455,12 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
     cJSON* type = cJSON_GetObjectItemCaseSensitive(proc_child, "type");
     if (cJSON_IsString(type) && type->valuestring) {
       p_conf->type = processor_type_from_string(type->valuestring);
+      if (p_conf->type == PROCESSOR_TYPE_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Processor '%s': unknown processor type '%s'",
+                         np->name, type->valuestring);
+        return -1;
+      }
     }
 
     cJSON* params = cJSON_GetObjectItemCaseSensitive(proc_child, "parameters");

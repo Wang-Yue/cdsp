@@ -46,6 +46,7 @@ fader_t fader_from_string(const char* str);
  * @brief Supported filter types.
  */
 typedef enum {
+  FILTER_TYPE_INVALID = -1, /**< Invalid/Unknown filter type. */
   FILTER_TYPE_GAIN = 0,     /**< Gain filter. */
   FILTER_TYPE_VOLUME,       /**< Volume control filter. */
   FILTER_TYPE_LOUDNESS,     /**< Loudness compensation filter. */
@@ -341,9 +342,9 @@ typedef struct {
 typedef struct {
   double ramp_time_ms;   /**< Volume ramp time (milliseconds). */
   bool has_ramp_time_ms; /**< True if `ramp_time_ms` is specified. */
-  double limit;       /**< Volume limit (dB). */
-  bool has_limit;     /**< True if `limit` is specified. */
-  fader_t fader;      /**< Fader associated with this volume control. */
+  double limit;          /**< Volume limit (dB). */
+  bool has_limit;        /**< True if `limit` is specified. */
+  fader_t fader;         /**< Fader associated with this volume control. */
 } volume_config_t;
 
 /**

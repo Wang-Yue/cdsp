@@ -249,7 +249,10 @@ const char* mixer_get_name(const mixer_t* mixer) {
 }
 
 int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
-  if (!mixer) return 0;
+  if (!mixer) {
+    config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Null mixer configuration");
+    return -1;
+  }
 
   bool* seen_dests = (bool*)calloc(
       mixer->channels_out > 0 ? mixer->channels_out : 1, sizeof(bool));

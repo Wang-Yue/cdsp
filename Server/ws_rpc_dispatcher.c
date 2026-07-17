@@ -2171,7 +2171,8 @@ static void handle_cmd_set_update_interval(websocket_server_t* server,
 void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                                      const char* command_text,
                                      dyn_string_t* ds) {
-  if (!server || !ds || !command_text) return;
+  if (!server || !ds || !command_text || client_idx < 0 || client_idx >= 32)
+    return;
 
   cJSON* root = cJSON_Parse(command_text);
   if (!root) {

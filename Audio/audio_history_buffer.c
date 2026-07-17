@@ -9,8 +9,6 @@
 struct audio_history_buffer {
   size_t channels;
   spsc_audio_ring_buffer_t** buffers;
-  float* scratch;
-  size_t scratch_capacity;
 };
 
 size_t audio_history_buffer_get_channels(
@@ -40,11 +38,6 @@ static void audio_history_buffer_clear_internal(
     free(history->buffers);
     history->buffers = NULL;
   }
-  if (history->scratch) {
-    free(history->scratch);
-    history->scratch = NULL;
-    history->scratch_capacity = 0;
-  }
   history->channels = 0;
 }
 
@@ -59,12 +52,6 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
     if (!history->buffers) return;
 
     history->channels = channels;
-    history->scratch_capacity = 16384;
-    history->scratch = (float*)calloc(history->scratch_capacity, sizeof(float));
-    if (!history->scratch) {
-      audio_history_buffer_clear_internal(history);
-      return;
-    }
     for (size_t ch = 0; ch < channels; ch++) {
       history->buffers[ch] =
           spsc_audio_ring_buffer_create(AUDIO_HISTORY_BUFFER_CAPACITY);
