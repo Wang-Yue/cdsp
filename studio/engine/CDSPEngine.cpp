@@ -184,6 +184,7 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
     memset(&res, 0, sizeof(res));
     bool success = cdsp_get_spectrum(m_engine, isCapture, channel, minFreq, maxFreq, nBins, &res);
     if (!success || !res.frequencies || !res.magnitudes || res.count == 0) {
+        cdsp_free_spectrum(&res);
         return false;
     }
 
@@ -231,6 +232,8 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
         for (size_t i = 0; i < count; ++i) {
             result.push_back(AudioDevice{devs[i].name});
         }
+    }
+    if (devs) {
         free(devs);
     }
     return result;
@@ -244,8 +247,12 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
     memset(&devErr, 0, sizeof(devErr));
     cdsp_device_descriptor_t* desc = nullptr;
     bool success = cdsp_get_device_capabilities(backend.c_str(), device.c_str(), isCapture, &desc, &devErr);
-    if (!success || !desc)
+    if (!success || !desc) {
+        if (desc) {
+            cdsp_free_device_capabilities(desc);
+        }
         return std::nullopt;
+    }
 
     AudioDeviceDescriptor res;
     res.name = desc->name;
