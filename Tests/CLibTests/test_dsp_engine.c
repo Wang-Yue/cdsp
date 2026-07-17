@@ -548,7 +548,24 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_TRUE(parsed != NULL);
 
   const char* json_override =
-#if defined(_WIN32)
+#if defined(__linux__)
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"device\": \"null\",\n"
+      "            \"channels\": 4\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"device\": \"null\",\n"
+      "            \"channels\": 4\n"
+      "        }\n"
+      "    }\n"
+      "}";
+#elif defined(_WIN32)
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 48000,\n"
