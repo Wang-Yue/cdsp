@@ -71,8 +71,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_VOLUME: {
           volume_config_t* vp = &f_conf->parameters.volume;
-          vp->has_ramp_time =
-              parse_json_double(params, "ramp_time", &vp->ramp_time);
+          vp->has_ramp_time_ms =
+              parse_json_double(params, "ramp_time_ms", &vp->ramp_time_ms);
           vp->has_limit = parse_json_double(params, "limit", &vp->limit);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {

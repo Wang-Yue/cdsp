@@ -727,17 +727,17 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;
     dev->has_capture_samplerate = (dev->capture_samplerate > 0);
   }
-  if (parse_json_double(dev_obj, "volume_ramp_time", &dev->volume_ramp_time)) {
-    dev->has_volume_ramp_time = (dev->volume_ramp_time > 0.0);
+  if (parse_json_double(dev_obj, "volume_ramp_time_ms", &dev->volume_ramp_time_ms)) {
+    dev->has_volume_ramp_time_ms = (dev->volume_ramp_time_ms > 0.0);
   }
   if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {
     dev->has_volume_limit = (dev->volume_limit > 0.0);
   }
   dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change",
                                                  &dev->stop_on_rate_change);
-  if (parse_json_double(dev_obj, "rate_measure_interval",
-                        &dev->rate_measure_interval)) {
-    dev->has_rate_measure_interval = (dev->rate_measure_interval > 0.0);
+  if (parse_json_double(dev_obj, "rate_measure_interval_s",
+                        &dev->rate_measure_interval_s)) {
+    dev->has_rate_measure_interval_s = (dev->rate_measure_interval_s > 0.0);
   }
   dev->has_multithreaded =
       parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);

@@ -256,8 +256,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
       .stop_on_rate_change = config->devices.has_stop_on_rate_change
                                  ? config->devices.stop_on_rate_change
                                  : false,
-      .rate_measure_interval = config->devices.has_rate_measure_interval
-                                   ? config->devices.rate_measure_interval
+      .rate_measure_interval_s = config->devices.has_rate_measure_interval_s
+                                   ? config->devices.rate_measure_interval_s
                                    : 1.0,
   };
   core->capture_loop = engine_capture_loop_create(&cap_cfg);

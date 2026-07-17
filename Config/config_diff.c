@@ -113,8 +113,8 @@ static bool biquad_config_equal(const biquad_config_t* a,
  */
 static bool volume_config_equal(const volume_config_t* a,
                                 const volume_config_t* b) {
-  if (a->ramp_time != b->ramp_time) return false;
-  if (a->has_ramp_time != b->has_ramp_time) return false;
+  if (a->ramp_time_ms != b->ramp_time_ms) return false;
+  if (a->has_ramp_time_ms != b->has_ramp_time_ms) return false;
   if (a->limit != b->limit) return false;
   if (a->has_limit != b->has_limit) return false;
   if (a->fader != b->fader) return false;
@@ -495,8 +495,8 @@ bool devices_config_equal(const devices_config_t* a,
   if (a->has_silence_threshold != b->has_silence_threshold) return false;
   if (a->silence_timeout_s != b->silence_timeout_s) return false;
   if (a->has_silence_timeout_s != b->has_silence_timeout_s) return false;
-  if (a->volume_ramp_time != b->volume_ramp_time) return false;
-  if (a->has_volume_ramp_time != b->has_volume_ramp_time) return false;
+  if (a->volume_ramp_time_ms != b->volume_ramp_time_ms) return false;
+  if (a->has_volume_ramp_time_ms != b->has_volume_ramp_time_ms) return false;
   if (a->volume_limit != b->volume_limit) return false;
   if (a->has_volume_limit != b->has_volume_limit) return false;
   if (a->queuelimit != b->queuelimit) return false;

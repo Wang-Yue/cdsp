@@ -807,8 +807,8 @@ typedef struct {
                                  disabled. */
   bool has_silence_timeout_s; /**< True if silence_timeout_s is specified. */
   double
-      volume_ramp_time; /**< Volume ramp time (milliseconds) for mute/unmute. */
-  bool has_volume_ramp_time; /**< True if volume_ramp_time is specified. */
+      volume_ramp_time_ms; /**< Volume ramp time (milliseconds) for mute/unmute. */
+  bool has_volume_ramp_time_ms; /**< True if volume_ramp_time_ms is specified. */
   double volume_limit;       /**< Maximum volume limit (dB). */
   bool has_volume_limit;     /**< True if volume_limit is specified. */
   int queuelimit;            /**< Queue limit for rate adjustment. */
@@ -816,8 +816,8 @@ typedef struct {
   bool stop_on_rate_change;  /**< Stop engine if rate change is detected. */
   bool
       has_stop_on_rate_change; /**< True if stop_on_rate_change is specified. */
-  double rate_measure_interval;   /**< Interval for measuring rate (seconds). */
-  bool has_rate_measure_interval; /**< True if rate_measure_interval is
+  double rate_measure_interval_s;   /**< Interval for measuring rate (seconds). */
+  bool has_rate_measure_interval_s; /**< True if rate_measure_interval_s is
                                      specified. */
   bool multithreaded;             /**< Use multithreaded processing. */
   bool has_multithreaded;         /**< True if multithreaded is specified. */

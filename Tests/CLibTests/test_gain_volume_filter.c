@@ -69,8 +69,8 @@ TEST(VolumeUnityGain) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
@@ -94,8 +94,8 @@ TEST(VolumeAttenuation) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
                                                     FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
@@ -121,8 +121,8 @@ TEST(VolumeMuteRampsToZero) {
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
@@ -149,8 +149,8 @@ TEST(VolumeRamp) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_config_t params = {.ramp_time = ramp_time_ms,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = ramp_time_ms,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
@@ -198,8 +198,8 @@ TEST(VolumeChangeThreshold) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};
@@ -236,8 +236,8 @@ TEST(VolumeLimit) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
   processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
                                                     FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 10.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};

@@ -62,7 +62,7 @@ typedef struct {
   double silence_threshold_db;
   double silence_timeout_seconds;
   bool stop_on_rate_change;
-  double rate_measure_interval;
+  double rate_measure_interval_s;
 } engine_capture_loop_config_t;
 
 /**

@@ -394,8 +394,8 @@ static void compare_volume(double current_volume_db, bool mute,
   processing_parameters_set_current_volume(params,
                                            mute ? -100.0 : current_volume_db);
 
-  volume_config_t vol_params = {.ramp_time = 0.0,
-                                .has_ramp_time = true,
+  volume_config_t vol_params = {.ramp_time_ms = 0.0,
+                                .has_ramp_time_ms = true,
                                 .limit = 50.0,
                                 .has_limit = true,
                                 .fader = FADER_MAIN};

@@ -383,8 +383,8 @@ TEST(PipelineFilterChannelOutOfBounds) {
 TEST(PipelineVolumeChange) {
   dsp_config_t config;
   init_default_config(&config);
-  config.devices.volume_ramp_time = 0.0;
-  config.devices.has_volume_ramp_time = true;
+  config.devices.volume_ramp_time_ms = 0.0;
+  config.devices.has_volume_ramp_time_ms = true;
 
   processing_parameters_t* params = processing_parameters_create(2, 2);
   pipeline_t* pipeline = pipeline_create(&config, params, 0, NULL);
@@ -418,8 +418,8 @@ TEST(PipelineVolumeChange) {
 TEST(PipelineMute) {
   dsp_config_t config;
   init_default_config(&config);
-  config.devices.volume_ramp_time = 0.0;
-  config.devices.has_volume_ramp_time = true;
+  config.devices.volume_ramp_time_ms = 0.0;
+  config.devices.has_volume_ramp_time_ms = true;
 
   processing_parameters_t* params = processing_parameters_create(2, 2);
   pipeline_t* pipeline = pipeline_create(&config, params, 0, NULL);

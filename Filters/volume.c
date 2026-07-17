@@ -75,11 +75,11 @@ static int volume_config_validate(const filter_config_t* config,
   if (!config || config->type != FILTER_TYPE_VOLUME) return -1;
   const volume_config_t* params = &config->parameters.volume;
   if (!params) return 0;
-  if (params->has_ramp_time) {
-    if (params->ramp_time < 0.0) {
+  if (params->has_ramp_time_ms) {
+    if (params->ramp_time_ms < 0.0) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Volume ramp time cannot be negative, got %g",
-                       params->ramp_time);
+                       params->ramp_time_ms);
       return -1;
     }
   }
@@ -131,7 +131,7 @@ static void* volume_filter_create(const char* name,
   }
   filter->fader = params ? params->fader : FADER_MAIN;
   double ramp_time_ms =
-      (params && params->has_ramp_time) ? params->ramp_time : 400.0;
+      (params && params->has_ramp_time_ms) ? params->ramp_time_ms : 400.0;
   filter->volume_limit = (params && params->has_limit) ? params->limit : 50.0;
   filter->chunk_size = chunk_size;
   filter->processing_parameters = proc_params;

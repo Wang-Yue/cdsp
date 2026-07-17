@@ -580,8 +580,8 @@ TEST(Volume_AllocationFree) {
   processing_parameters_set_target_volume_for_fader(proc_params, -6.0,
                                                     FADER_MAIN);
   processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);
-  volume_config_t params = {.ramp_time = 0.0,
-                            .has_ramp_time = true,
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
                             .limit = 50.0,
                             .has_limit = true,
                             .fader = FADER_MAIN};

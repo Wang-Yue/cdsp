@@ -81,7 +81,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   }
 
   loop->rate_watcher = sample_rate_watcher_create((double)config->samplerate,
-                                                  config->rate_measure_interval,
+                                                  config->rate_measure_interval_s,
                                                   config->stop_on_rate_change);
   if (!loop->rate_watcher) {
     engine_capture_loop_free(loop);

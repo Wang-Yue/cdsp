@@ -265,10 +265,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
 
   // Create the implicit master volume filter
   volume_config_t vol_params = {
-      .ramp_time = config->devices.has_volume_ramp_time
-                       ? config->devices.volume_ramp_time
+      .ramp_time_ms = config->devices.has_volume_ramp_time_ms
+                       ? config->devices.volume_ramp_time_ms
                        : 400.0,
-      .has_ramp_time = true,
+      .has_ramp_time_ms = true,
       .limit = config->devices.has_volume_limit ? config->devices.volume_limit
                                                 : 50.0,
       .has_limit = true};
