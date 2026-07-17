@@ -418,6 +418,100 @@ TEST(FileBackendF64RoundTrip) {
   run_format_roundtrip_test(BINARY_SAMPLE_FORMAT_F64_LE, 1e-12);
 }
 
+static void run_wav_format_roundtrip_test(binary_sample_format_t format, double eps) {
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_wav_fmt_%d.wav", getpid());
+  remove(wav_filename);
+
+  // 1. Playback / Write
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.is_wav = true;
+  play_cfg.has_is_wav = true;
+  play_cfg.cfg.raw_file.channels = 2;
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = format;
+  play_cfg.cfg.raw_file.has_format = true;
+  play_cfg.cfg.raw_file.wav_header = true;
+  play_cfg.cfg.raw_file.has_wav_header = true;
+  play_cfg.cfg.raw_file.use_rf64 = false;
+  play_cfg.cfg.raw_file.has_use_rf64 = true;
+
+  backend_error_t err;
+  playback_backend_t* playback =
+      file_playback_create(&play_cfg, 44100, 64, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  audio_chunk_t* write_chunk = audio_chunk_create(10, 2);
+  for (size_t f = 0; f < 10; f++) {
+    audio_chunk_get_channel(write_chunk, 0)[f] = (double)f / 10.0;
+    audio_chunk_get_channel(write_chunk, 1)[f] = -(double)f / 10.0;
+  }
+  audio_chunk_set_valid_frames(write_chunk, 10);
+
+  ASSERT_TRUE(playback_backend_write(playback, write_chunk, &err));
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+
+  // 2. Capture / Read
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.is_wav = true;
+  cap_cfg.has_is_wav = true;
+  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
+           "%s", wav_filename);
+  cap_cfg.cfg.wav_file.has_filename = true;
+
+  capture_backend_t* capture =
+      file_capture_create(&cap_cfg, 44100, 64, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  audio_chunk_t* read_chunk = audio_chunk_create(10, 2);
+  ASSERT_TRUE(capture_backend_read(capture, 10, read_chunk, &err));
+  ASSERT_EQ(10, audio_chunk_get_valid_frames(read_chunk));
+
+  for (size_t f = 0; f < 10; f++) {
+    ASSERT_NEAR((double)f / 10.0, audio_chunk_get_channel(read_chunk, 0)[f],
+                eps);
+    ASSERT_NEAR(-(double)f / 10.0, audio_chunk_get_channel(read_chunk, 1)[f],
+                eps);
+  }
+
+  audio_chunk_free(write_chunk);
+  audio_chunk_free(read_chunk);
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+
+  remove(wav_filename);
+}
+
+TEST(FileBackendWavS16RoundTrip) {
+  run_wav_format_roundtrip_test(BINARY_SAMPLE_FORMAT_S16_LE, 1e-4);
+}
+
+TEST(FileBackendWavS24RoundTrip) {
+  run_wav_format_roundtrip_test(BINARY_SAMPLE_FORMAT_S24_3_LE, 1e-6);
+}
+
+TEST(FileBackendWavS32RoundTrip) {
+  run_wav_format_roundtrip_test(BINARY_SAMPLE_FORMAT_S32_LE, 1e-9);
+}
+
+TEST(FileBackendWavF32RoundTrip) {
+  run_wav_format_roundtrip_test(BINARY_SAMPLE_FORMAT_F32_LE, 1e-6);
+}
+
+TEST(FileBackendWavF64RoundTrip) {
+  run_wav_format_roundtrip_test(BINARY_SAMPLE_FORMAT_F64_LE, 1e-12);
+}
+
 TEST(FileBackendRealtimeThrottling) {
   char raw_filename[256];
   snprintf(raw_filename, sizeof(raw_filename),

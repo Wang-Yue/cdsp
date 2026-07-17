@@ -1071,6 +1071,16 @@ playback_backend_t* file_playback_create(const playback_device_config_t* config,
   (void)sample_rate;
   (void)params;
   (void)err;
+  if (config->type == AUDIO_BACKEND_TYPE_FILE &&
+      config->cfg.raw_file.wav_header &&
+      config->cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Wav files do not support the S24_4_RJ_LE sample format");
+    }
+    return NULL;
+  }
+
   file_playback_t* playback =
       (file_playback_t*)calloc(1, sizeof(file_playback_t));
   if (!playback) return NULL;

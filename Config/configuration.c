@@ -70,6 +70,13 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                      "Playback channels must be positive");
     return -1;
   }
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_FILE &&
+      config->devices.playback.cfg.raw_file.wav_header &&
+      config->devices.playback.cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "Wav files do not support the S24_4_RJ_LE sample format");
+    return -1;
+  }
 
   if (config->devices.has_silence_timeout_s &&
       config->devices.silence_timeout_s < 0.0) {

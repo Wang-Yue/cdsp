@@ -728,4 +728,31 @@ TEST(ParseChannelLabels) {
   dsp_config_free(config);
 }
 
+TEST(RejectWavS24_4_RJ) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2,\n"
+      "            \"format\": \"S24_4_RJ_LE\",\n"
+      "            \"wav_header\": true\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(-1, res);
+  ASSERT_STR_EQ("Wav files do not support the S24_4_RJ_LE sample format", err.message);
+  ASSERT_TRUE(config == NULL);
+}
+
 TEST_MAIN()
