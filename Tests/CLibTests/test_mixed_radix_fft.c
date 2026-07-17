@@ -120,7 +120,7 @@ TEST(CompositeSizes) {
   }
 }
 
-TEST(RoundTrip) {
+TEST(MixedRadixRoundTrip) {
   size_t sizes[] = {3, 5, 7, 14, 21, 1029, 1120};
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
     size_t n = sizes[i];

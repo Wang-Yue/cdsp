@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "Engine/sample_rate_watcher.h"
+#include "Utils/cdsp_time.h"
 #include "test_support.h"
 
 TEST(SampleRateWatcherBasicNoChange) {
@@ -26,18 +27,19 @@ TEST(SampleRateWatcherBasicNoChange) {
 
 TEST(SampleRateWatcherRateChangeDetection) {
   sample_rate_watcher_t* watcher =
-      sample_rate_watcher_create(44100.0, 0.05, false);
+      sample_rate_watcher_create(44100.0, 0.15, false);
   ASSERT_TRUE(watcher != NULL);
 
   double measured_rate = 0.0;
-  // Send 96kHz frame rate chunks (4800 frames per tick instead of 2205)
   bool change_detected = false;
-  for (int i = 0; i < 20; i++) {
-    if (sample_rate_watcher_tick(watcher, 4800, &measured_rate)) {
+  for (int i = 0; i < 5; i++) {
+    cdsp_sleep_ms(160);
+    if (sample_rate_watcher_tick(watcher, 20000, &measured_rate)) {
       change_detected = true;
       break;
     }
   }
+  ASSERT_TRUE(change_detected);
 
   sample_rate_watcher_free(watcher);
 }

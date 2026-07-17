@@ -51,9 +51,6 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
 #define snprintf(buf, size, fmt, ...) \
   custom_snprintf(buf, size, fmt, ##__VA_ARGS__)
 
-static int g_test_count = 0;
-static int g_test_failures = 0;
-
 typedef void (*test_func_t)(void);
 typedef struct test_entry {
   const char* name;
@@ -61,8 +58,17 @@ typedef struct test_entry {
   struct test_entry* next;
 } test_entry_t;
 
+#ifndef CDSP_COMBINED_TEST_SUITE
+static int g_test_count = 0;
+static int g_test_failures = 0;
 static test_entry_t* g_test_head = NULL;
 static test_entry_t** g_test_tail = &g_test_head;
+#else
+extern int g_test_count;
+extern int g_test_failures;
+extern test_entry_t* g_test_head;
+extern test_entry_t** g_test_tail;
+#endif
 
 static inline void register_test(const char* name, test_func_t func) {
   test_entry_t* entry = (test_entry_t*)malloc(sizeof(test_entry_t));
@@ -159,6 +165,7 @@ static inline void register_test(const char* name, test_func_t func) {
     }                                                                     \
   } while (0)
 
+#ifndef CDSP_COMBINED_TEST_SUITE
 #define TEST_MAIN()                                                         \
   int main(int argc, char* argv[]) {                                        \
     if (argc > 1 && strcmp(argv[1], "--list") == 0) {                       \
@@ -201,5 +208,8 @@ static inline void register_test(const char* name, test_func_t func) {
            g_test_failures);                                                \
     return g_test_failures > 0 ? 1 : 0;                                     \
   }
+#else
+#define TEST_MAIN()
+#endif
 
 #endif  // CTESTS_TEST_SUPPORT_H

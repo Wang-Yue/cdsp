@@ -204,27 +204,24 @@ $(TEST_LIB_TARGET): $(TEST_OBJS)
 
 BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
-UNIT_TEST_BINS := $(filter-out $(BENCH_BINS), $(TEST_BINS))
+
+UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_websocket_server.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
+UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner
+UNIT_TEST_BINS := $(UNIT_TEST_RUNNER) $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server
 
 # Build benchmark binaries linked against main library (without clock_mock)
 $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(LIB_TARGET)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
 
-# Build test binaries by linking against libdsp_test.a
-ifeq ($(IS_WINDOWS),1)
-$(ROOT_DIR)/Tests/CLibTests/bin/test_hot_path_allocation: $(ROOT_DIR)/Tests/CLibTests/test_hot_path_allocation.c $(TEST_LIB_TARGET)
+# Build combined unit test runner binary
+$(UNIT_TEST_RUNNER): $(UNIT_TEST_SRCS) $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -o $@
-endif
+	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -o $@
 
 $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS) -o $@
-
-$(ROOT_DIR)/Tests/CLibTests/bin/test_%: $(ROOT_DIR)/Tests/CLibTests/test_%.c $(TEST_LIB_TARGET)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $< $(TEST_LIB_TARGET) $(LDFLAGS) -o $@
 
 
 RUST_HARNESS_DIR := $(ROOT_DIR)/Tests/RustHarnesses
