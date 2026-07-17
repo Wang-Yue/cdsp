@@ -40,6 +40,8 @@ static processor_impl_type_t processor_impl_type_from_config(
       return PROCESSOR_IMPL_NOISE_GATE;
     case PROCESSOR_TYPE_RACE:
       return PROCESSOR_IMPL_RACE;
+    case PROCESSOR_TYPE_INVALID:
+      break;
   }
   return PROCESSOR_IMPL_COMPRESSOR;
 }

@@ -266,8 +266,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   // Create the implicit master volume filter
   volume_config_t vol_params = {
       .ramp_time_ms = config->devices.has_volume_ramp_time_ms
-                       ? config->devices.volume_ramp_time_ms
-                       : 400.0,
+                          ? config->devices.volume_ramp_time_ms
+                          : 400.0,
       .has_ramp_time_ms = true,
       .limit = config->devices.has_volume_limit ? config->devices.volume_limit
                                                 : 50.0,
@@ -915,6 +915,8 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
             break;
           case PROCESSOR_TYPE_RACE:
             expected_channels = proc->parameters.race.channels;
+            break;
+          case PROCESSOR_TYPE_INVALID:
             break;
         }
         if (expected_channels != num_channels) {

@@ -72,6 +72,8 @@ static filter_instance_type_t filter_instance_type_from_config(
       return FILTER_INSTANCE_LOUDNESS;
     case FILTER_TYPE_VOLUME:
       return FILTER_INSTANCE_VOLUME;
+    case FILTER_TYPE_INVALID:
+      break;
   }
   return FILTER_INSTANCE_BIQUAD;
 }
