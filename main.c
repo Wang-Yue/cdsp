@@ -17,9 +17,7 @@
 #include "Public/processing.h"
 #include "Public/state.h"
 #include "Public/volume.h"
-#ifdef ENABLE_WEBSOCKET
 #include "Server/websocket_server.h"
-#endif
 #include "Utils/cdsp_time.h"
 #include "Utils/double_helpers.h"
 
@@ -123,11 +121,9 @@ int main(int argc, char** argv) {
   const char* config_path = NULL;
   const char* state_file_path = NULL;
   bool check_only = false;
-#ifdef ENABLE_WEBSOCKET
   uint16_t port = 0;
   bool has_port = false;
   const char* bind_address = "127.0.0.1";
-#endif
   bool wait_config = false;
   bool no_config = false;
   const char* log_level_str = "info";
@@ -166,7 +162,6 @@ int main(int argc, char** argv) {
         printf("Error: Missing value for %s\n", arg);
         return 1;
       }
-#ifdef ENABLE_WEBSOCKET
     } else if (strcmp(arg, "-p") == 0 || strcmp(arg, "--port") == 0) {
       if (i + 1 < argc) {
         port = (uint16_t)atoi(argv[++i]);
@@ -182,15 +177,6 @@ int main(int argc, char** argv) {
         printf("Error: Missing value for %s\n", arg);
         return 1;
       }
-#else
-    } else if (strcmp(arg, "-p") == 0 || strcmp(arg, "--port") == 0 ||
-               strcmp(arg, "-a") == 0 || strcmp(arg, "--address") == 0) {
-      printf(
-          "Note: WebSocket support is disabled in this build. Option %s "
-          "ignored.\n",
-          arg);
-      if (i + 1 < argc) i++;
-#endif
     } else if (strcmp(arg, "-l") == 0 || strcmp(arg, "--loglevel") == 0) {
       if (i + 1 < argc) {
         log_level_str = argv[++i];
@@ -450,7 +436,6 @@ int main(int argc, char** argv) {
     cdsp_set_config_file_path(engine, config_path);
   }
 
-#ifdef ENABLE_WEBSOCKET
   websocket_server_t* server = NULL;
   if (has_port) {
     server = websocket_server_create(port, bind_address);
@@ -463,7 +448,6 @@ int main(int argc, char** argv) {
       printf("Error starting WebSocket server\n");
     }
   }
-#endif
 
   printf("Press Ctrl+C to stop.\n");
   bool started = (config_path != NULL);
@@ -479,9 +463,7 @@ int main(int argc, char** argv) {
     }
   }
 
-#ifdef ENABLE_WEBSOCKET
   if (server) websocket_server_free(server);
-#endif
   cdsp_engine_free(engine);
   if (allocated_config_path) free(allocated_config_path);
   logger_info(&g_logger, "Application exit clean");

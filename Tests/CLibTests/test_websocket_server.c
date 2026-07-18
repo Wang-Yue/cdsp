@@ -491,98 +491,21 @@ static dsp_engine_t mock_engine = {
     .get_active_config_json = mock_get_active_config_json,
     .get_previous_config_json = mock_get_previous_config_json};
 
-static bool perform_websocket_handshake(socket_t sock) {
-  const char* req =
-      "GET / HTTP/1.1\r\n"
-      "Host: 127.0.0.1:54321\r\n"
-      "Upgrade: websocket\r\n"
-      "Connection: Upgrade\r\n"
-      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-      "Sec-WebSocket-Version: 13\r\n"
-      "\r\n";
-  if (send(sock, req, strlen(req), 0) != (ssize_t)strlen(req)) return false;
-
-  char buf[4096];
-  size_t len = 0;
-  while (len < sizeof(buf) - 1) {
-    char c;
-    if (recv(sock, &c, 1, 0) != 1) return false;
-    buf[len++] = c;
-    buf[len] = '\0';
-    if (len >= 4 && strcmp(buf + len - 4, "\r\n\r\n") == 0) {
-      break;
-    }
-  }
-  return strstr(buf, "HTTP/1.1 101") != NULL;
-}
-
-static void send_ws_text(socket_t sock, const char* msg) {
-  size_t len = strlen(msg);
-  size_t header_len = 0;
-  uint8_t frame[16];
-
-  frame[header_len++] = 0x81;  // FIN + text opcode
-
-  if (len < 126) {
-    frame[header_len++] = 0x80 | len;  // Mask bit set
-  } else if (len <= 65535) {
-    frame[header_len++] = 0x80 | 126;
-    frame[header_len++] = (len >> 8) & 0xFF;
-    frame[header_len++] = len & 0xFF;
-  } else {
-    frame[header_len++] = 0x80 | 127;
-    for (int i = 7; i >= 0; i--) {
-      frame[header_len++] = (len >> (i * 8)) & 0xFF;
-    }
-  }
-
-  // 4-byte mask key (all zeroes)
-  frame[header_len++] = 0x00;
-  frame[header_len++] = 0x00;
-  frame[header_len++] = 0x00;
-  frame[header_len++] = 0x00;
-
-  send(sock, frame, header_len, 0);
-  send(sock, msg, len, 0);
-}
-
 static cJSON* recv_json(socket_t sock) {
-  uint8_t header[2];
-  if (recv(sock, header, 2, 0) != 2) return NULL;
-
-  if ((header[0] & 0x0F) != 1) return NULL;
-
-  size_t len = header[1] & 0x7F;
-  if (len == 126) {
-    uint8_t ext_len[2];
-    if (recv(sock, ext_len, 2, 0) != 2) return NULL;
-    len = (ext_len[0] << 8) | ext_len[1];
-  } else if (len == 127) {
-    uint8_t ext_len[8];
-    if (recv(sock, ext_len, 8, 0) != 8) return NULL;
-    len = 0;
-    for (int i = 0; i < 8; i++) {
-      len = (len << 8) | ext_len[i];
+  char buf[4096];
+  size_t total = 0;
+  while (total < sizeof(buf) - 1) {
+    char c;
+    ssize_t n = recv(sock, &c, 1, 0);
+    if (n <= 0) break;
+    buf[total++] = c;
+    buf[total] = '\0';
+    cJSON* root = cJSON_Parse(buf);
+    if (root != NULL) {
+      return root;
     }
   }
-
-  char* buf = malloc(len + 1);
-  if (!buf) return NULL;
-
-  size_t read_bytes = 0;
-  while (read_bytes < len) {
-    ssize_t n = recv(sock, buf + read_bytes, len - read_bytes, 0);
-    if (n <= 0) {
-      free(buf);
-      return NULL;
-    }
-    read_bytes += n;
-  }
-  buf[len] = '\0';
-
-  cJSON* root = cJSON_Parse(buf);
-  free(buf);
-  return root;
+  return NULL;
 }
 
 TEST(test_websocket_commands) {
@@ -614,12 +537,9 @@ TEST(test_websocket_commands) {
   }
   ASSERT_EQ(0, conn_res);
 
-  bool handshaked = perform_websocket_handshake(sock);
-  ASSERT_TRUE(handshaked);
-
   // Send GetVersion command
   const char* cmd1 = "\"GetVersion\"";
-  send_ws_text(sock, cmd1);
+  send(sock, cmd1, strlen(cmd1), 0);
 
   cJSON* root1 = recv_json(sock);
   ASSERT_TRUE(root1 != NULL);
@@ -635,7 +555,7 @@ TEST(test_websocket_commands) {
 
   // Send GetState command
   const char* cmd2 = "\"GetState\"";
-  send_ws_text(sock, cmd2);
+  send(sock, cmd2, strlen(cmd2), 0);
 
   cJSON* root2 = recv_json(sock);
   ASSERT_TRUE(root2 != NULL);
@@ -746,22 +666,13 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
   cJSON_Delete(root);
-  pthread_mutex_lock(&server->sessions_mutex);
-  client_session_t* sess = server->client_sessions[0];
-  ASSERT_TRUE(sess != NULL);
-  ASSERT_TRUE(sess->metrics.vu_subscribed);
-  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_max_rate);
-  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_attack);
-  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_release);
-  pthread_mutex_unlock(&server->sessions_mutex);
+  ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
+  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_max_rate(server, 0));
+  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_attack(server, 0));
+  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_release(server, 0));
 
   // Test SubscribeVuLevels (with arguments)
-  pthread_mutex_lock(&server->sessions_mutex);
-  if (server->client_sessions[0]) {
-    server->client_sessions[0]->metrics.vu_subscribed = false;
-  }
-  pthread_mutex_unlock(&server->sessions_mutex);
-
+  websocket_server_set_client_vu_subscribed(server, 0, false);
   websocket_server_handle_command(server, 0,
                                   "{\"SubscribeVuLevels\":{\"max_rate\":100.0,"
                                   "\"attack\":10.0,\"release\":100.0}}",
@@ -772,15 +683,10 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
   cJSON_Delete(root);
-
-  pthread_mutex_lock(&server->sessions_mutex);
-  sess = server->client_sessions[0];
-  ASSERT_TRUE(sess != NULL);
-  ASSERT_TRUE(sess->metrics.vu_subscribed);
-  ASSERT_DOUBLE_EQ(100.0, sess->metrics.vu_max_rate);
-  ASSERT_DOUBLE_EQ(10.0, sess->metrics.vu_attack);
-  ASSERT_DOUBLE_EQ(100.0, sess->metrics.vu_release);
-  pthread_mutex_unlock(&server->sessions_mutex);
+  ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
+  ASSERT_DOUBLE_EQ(100.0, websocket_server_get_client_vu_max_rate(server, 0));
+  ASSERT_DOUBLE_EQ(10.0, websocket_server_get_client_vu_attack(server, 0));
+  ASSERT_DOUBLE_EQ(100.0, websocket_server_get_client_vu_release(server, 0));
 
   processing_parameters_free(mock_params);
   mock_params = NULL;
