@@ -2042,4 +2042,90 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   engine_shared_state_free(shared);
 }
 
+// Real-world scenario simulated:
+// Silence Auto-Pause & Resume bug on non-hardware inputs (Section 3.3).
+// Proves that when auto-pause triggers on a File capture stream, file_capture_read()
+// checks is_paused == true and immediately returns false without reading frames.
+// As a result, when loud non-silent audio arrives in the input file stream, the engine
+// remains permanently stuck in PAUSED and signal auto-resume fails.
+TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/silence_bug_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/silence_bug_out_%d.raw", getpid());
+  remove(in_file);
+  remove(out_file);
+
+  // Write 10000 frames of mono 16-bit audio:
+  // Part 1 (frames 0..4999): Zero silence samples
+  // Part 2 (frames 5000..9999): Maximum amplitude loud samples (32767)
+  FILE* f = fopen(in_file, "wb");
+  ASSERT_TRUE(f != NULL);
+  int16_t samples[10000] = {0};
+  for (int i = 5000; i < 10000; i++) {
+    samples[i] = 32767;
+  }
+  fwrite(samples, sizeof(int16_t), 10000, f);
+  fclose(f);
+
+  // Samplerate: 8000Hz, chunksize: 512, realtime capture: true, realtime playback: false.
+  // 5000 silent frames / 8000 = 0.625 seconds of silence.
+  // silence_timeout_s = 0.2s (triggers auto-pause after ~3 chunks of silence).
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 8000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"silence_threshold_db\": -40.0,\n"
+           "        \"silence_timeout_s\": 0.2,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  // 1. Wait 350ms for silence timeout to trigger PAUSED state
+  cdsp_sleep_ms(350);
+  cdsp_engine_poll(engine);
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_PAUSED);
+
+  // 2. Wait another 500ms while the input file reaches the loud non-silent audio frames (frames 5000+)
+  cdsp_sleep_ms(500);
+  cdsp_engine_poll(engine);
+
+  // EXPECTED DESIGN BEHAVIOR: Loud audio should resume streaming -> RUNNING
+  // ACTUAL BUG BEHAVIOR: File capture backend returns false on read when is_paused == true,
+  // preventing frame reading, so the engine stays stuck in PAUSED!
+  cdsp_processing_state_t state_after_loud_signal = cdsp_get_state(engine);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(in_file);
+  remove(out_file);
+
+  // Assert that state auto-resumes to RUNNING when loud audio arrives
+  ASSERT_EQ(state_after_loud_signal, CDSP_PROCESSING_STATE_RUNNING);
+}
+
 TEST_MAIN()
