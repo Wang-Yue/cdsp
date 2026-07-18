@@ -1,7 +1,6 @@
 #include "engine_state_manager.h"
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,10 +8,10 @@
 #include "Pipeline/state_file.h"
 
 struct engine_state_manager {
-  /** Target volumes for faders. */
-  _Atomic double fader_volumes[FADER_COUNT];
+  /** Target volumes for faders in dB. */
+  double fader_volumes[FADER_COUNT];
   /** Target mute states for faders. */
-  _Atomic bool fader_mutes[FADER_COUNT];
+  bool fader_mutes[FADER_COUNT];
   /** Path to the active configuration file. */
   char active_config_path[1024];
   /** True if active config path is set. */
@@ -34,10 +33,6 @@ engine_state_manager_t* engine_state_manager_create(void) {
       (engine_state_manager_t*)calloc(1, sizeof(engine_state_manager_t));
   if (!mgr) return NULL;
 
-  for (int i = 0; i < FADER_COUNT; i++) {
-    atomic_init(&mgr->fader_volumes[i], 0.0);
-    atomic_init(&mgr->fader_mutes[i], false);
-  }
   mgr->has_active_config_path = false;
   mgr->has_state_file_path = false;
   mgr->dirty = false;
@@ -61,9 +56,8 @@ void engine_state_manager_free(engine_state_manager_t* mgr) {
 void engine_state_manager_set_fader_volume(engine_state_manager_t* mgr,
                                            fader_t fader, float db) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return;
-  atomic_store_explicit(&mgr->fader_volumes[fader], (double)db,
-                        memory_order_relaxed);
   pthread_mutex_lock(&mgr->mutex);
+  mgr->fader_volumes[fader] = (double)db;
   mgr->dirty = true;
   mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
@@ -72,15 +66,17 @@ void engine_state_manager_set_fader_volume(engine_state_manager_t* mgr,
 float engine_state_manager_get_fader_volume(const engine_state_manager_t* mgr,
                                             fader_t fader) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return 0.0f;
-  return (float)atomic_load_explicit(
-      (_Atomic double*)&mgr->fader_volumes[fader], memory_order_relaxed);
+  pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
+  float vol = (float)mgr->fader_volumes[fader];
+  pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
+  return vol;
 }
 
 void engine_state_manager_set_fader_mute(engine_state_manager_t* mgr,
                                          fader_t fader, bool mute) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return;
-  atomic_store_explicit(&mgr->fader_mutes[fader], mute, memory_order_relaxed);
   pthread_mutex_lock(&mgr->mutex);
+  mgr->fader_mutes[fader] = mute;
   mgr->dirty = true;
   mgr->change_counter++;
   pthread_mutex_unlock(&mgr->mutex);
@@ -89,8 +85,10 @@ void engine_state_manager_set_fader_mute(engine_state_manager_t* mgr,
 bool engine_state_manager_is_fader_muted(const engine_state_manager_t* mgr,
                                          fader_t fader) {
   if (!mgr || fader < 0 || fader >= FADER_COUNT) return false;
-  return atomic_load_explicit((_Atomic bool*)&mgr->fader_mutes[fader],
-                              memory_order_relaxed);
+  pthread_mutex_lock((pthread_mutex_t*)&mgr->mutex);
+  bool mute = mgr->fader_mutes[fader];
+  pthread_mutex_unlock((pthread_mutex_t*)&mgr->mutex);
+  return mute;
 }
 
 void engine_state_manager_set_state_file(engine_state_manager_t* mgr,

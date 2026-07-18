@@ -57,11 +57,54 @@ Defined in [engine_state_manager.h](Engine/engine_state_manager.h). Manages fade
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
-| `fader_volumes` | `_Atomic double[5]` | Target volume levels in dB for audio faders. | Lock-free atomic reads and writes. |
-| `fader_mutes` | `_Atomic bool[5]` | Target mute flags for audio faders. | Lock-free atomic reads and writes. |
+| `fader_volumes` | `double[5]` | Target volume levels in dB for audio faders. | Protected by `mutex`. |
+| `fader_mutes` | `bool[5]` | Target mute flags for audio faders. | Protected by `mutex`. |
 | `state_file_path` | `char[1024]` | Path to state persistence file on disk. | Protected by `mutex`. |
 | `active_config_path` | `char[1024]` | Path to active configuration file. | Protected by `mutex`. |
 | `change_counter` | `uint64_t` | Monotonic counter tracking state modifications. | Protected by `mutex`. |
+
+---
+
+### 1.5. Atomic Variables & Accessing Threads Justification
+
+Atomic variables in the engine are strictly restricted to fields that are either accessed on the real-time audio hot path or required for non-blocking asynchronous coordination. Using atomic operations for these fields avoids acquiring OS mutex locks inside high-priority audio threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`), preventing priority inversion and audio dropouts/underruns.
+
+| Atomic Variable | Location | Accessing Threads | Necessity & Justification |
+| :--- | :--- | :--- | :--- |
+| `state_raw` (`_Atomic uint8_t`) | `engine_shared_state_t` | **Writers**: Capture loop (RUNNING/PAUSED/STALLED), Playback loop (INACTIVE on exit).<br>**Readers**: Capture/Processing/Playback loops, Main thread (`poll`/status query). | Audio loops check `state_raw` on every chunk/iteration to detect pause or stop states. Must be lock-free to prevent blocking audio loops on status checks. |
+| `stop_once` (`_Atomic bool`) | `engine_shared_state_t` | **Writers/Readers**: Any thread requesting a session stop (Capture, Processing, Playback, or Main controller thread). | Serves as a wait-free CAS gate (`atomic_compare_exchange_strong_explicit`). Ensures the first thread encountering EOF or hardware error sets the root-cause stop reason and initiates teardown without lock contention. |
+| `last_capture_time_ns` (`_Atomic uint64_t`) | `engine_shared_state_t` | **Writer**: Capture thread (every captured chunk read).<br>**Reader**: Main thread (`cdsp_engine_poll` external watchdog check). | Written by the Capture thread on every audio chunk. Relaxed atomic load/store allows the main thread to poll hardware stall status without locking the Capture thread. |
+| `resampler_ratio` (`_Atomic double`) | `engine_shared_state_t` | **Writer**: Playback thread (rate-adjust controller).<br>**Reader**: Processing thread (`processing_loop_resample`). | Both Playback and Processing threads are real-time audio loops. Atomic double allows lock-free propagation of clock drift correction between threads without mutex locks. |
+| `next_pipeline` (`_Atomic(pipeline_t*)`) | `engine_processing_loop_t` | **Writer**: Main thread (`dsp_session_reload_config`).<br>**Reader**: Processing thread (`processing_loop_check_pipeline_swap`). | Checked by the Processing thread on every chunk and 0-frame tick. Atomic exchange allows non-blocking DSP filter pipeline hot-reloads without locking the Processing thread. |
+| `is_shutdown` (`_Atomic bool`) | `audio_sync_queue_t` | **Writer**: Producer thread (Capture/Processing calling `shutdown`).<br>**Reader**: Consumer thread (Processing/Playback calling `dequeue_blocking`). | Checked inside the audio thread blocking dequeue loop to detect queue shutdown cleanly without acquiring mutex locks on the SPSC queue path. |
+| `config.in_progress` (`_Atomic bool`) | `dsp_engine_impl_t` | **Writer**: Main thread (`dsp_engine_set_config_json`).<br>**Reader**: External HTTP/WebSocket API server threads (`dsp_engine_get_status`). | Allows external API status queries to return `PROCESSING_STATE_STARTING` instantly without blocking on `state_mutex` while the main thread performs long-running JSON parsing or device creation. |
+
+---
+
+### 1.6. Mutex Isolation & Non-Audio-Thread Concurrency Model
+
+All mutexes in the CDSP Engine are strictly isolated to control paths, RPC/API handlers, or out-of-band error publishing. **No mutex is ever acquired on the real-time steady-state audio hot path** (Capture, Processing, Playback loops), satisfying real-time audio guarantees.
+
+| Mutex Name | Location | Accessing Threads | Purpose & Deadlock Prevention Analysis |
+| :--- | :--- | :--- | :--- |
+| `stop_reason_mutex` | `engine_shared_state_t` | Threads calling `engine_shared_state_request_stop()` or `get_stop_reason()` (Capture, Playback, Processing, Main thread). | Protects `stop_reason` (a 264-byte payload struct). **Leaf lock**: never acquires any other lock inside its critical section and is locked at most **once** during session teardown/stop publication. |
+| `config_mutex` | `dsp_session_t` | Main controller thread calling `dsp_session_get_config()` or `dsp_session_reload_config()`. | Guards access to `current_config`. **Leaf lock**: never acquires any other mutex while held. Used exclusively for control RPCs; never accessed by audio loops. |
+| `state_mutex` | `dsp_engine_impl_t` | Main thread executing API commands (`set_config_json`, `stop`, `set_fader_volume`, `get_status`, `poll`, `get_samples`, `get_spectrum`). | Serializes top-level state transitions, session building/destruction, and historical stop reasons. **Top-level controller lock**: acquires leaf locks in a strict top-down hierarchy. Audio loops operate entirely inside `dsp_session_t` and `engine_shared_state_t`, completely isolated from `state_mutex`. |
+| `mutex` | `engine_state_manager_t` | Main/API threads calling `set_fader_volume`, `set_fader_mute`, `get_fader_volume`, `set_config_path`, `save_if_needed`. | Protects fader volume/mute settings, paths, dirty flags, and change counters as unified atomic transactions. **Leaf lock with recursive type** (`PTHREAD_MUTEX_RECURSIVE`): nested internal calls on the same thread cannot self-deadlock. Audio threads update volume smoothly via `processing_parameters_t` (atomic gain factors) and **never** touch `engine_state_manager_t`. |
+
+#### Deadlock Prevention Architecture Rules
+To mathematically guarantee freedom from deadlocks across all thread interactions, the engine enforces four strict lock hierarchy rules:
+
+1. **Strict 2-Tier Lock Ordering Hierarchy**:
+   - **Level 1 (Top-Level Controller)**: `state_mutex` (`dsp_engine_impl_t`)
+   - **Level 2 (Leaf Locks)**: `config_mutex`, `stop_reason_mutex`, `engine_state_manager_t.mutex`
+   - Locking is strictly single-directional (Level 1 $\rightarrow$ Level 2). A Level 2 leaf lock **never** attempts to acquire `state_mutex` or any other Level 2 leaf lock.
+2. **Mutual Independence of Leaf Locks**:
+   - `config_mutex`, `stop_reason_mutex`, and `mgr->mutex` are completely independent. No function ever holds more than one leaf lock simultaneously, eliminating circular wait dependencies.
+3. **Re-entrant Self-Deadlock Immunity**:
+   - `engine_state_manager_t.mutex` is created as a `PTHREAD_MUTEX_RECURSIVE` lock. Internal methods (e.g. `save_if_needed()` calling `get_config_path()` or `get_fader_volume()`) executed on the main/API thread can safely re-acquire the lock without self-deadlocking.
+4. **Audio Thread Lock Exclusion**:
+   - Steady-state audio loops (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`) never acquire `state_mutex`, `config_mutex`, or `mgr->mutex`. The only lock touched by an audio loop is `stop_reason_mutex`, which is a leaf lock invoked strictly once on error/EOF exit paths outside the audio streaming loop.
 
 ---
 
