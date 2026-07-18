@@ -6,23 +6,11 @@
 #include <windows.h>
 #else
 #include <unistd.h>
-#if defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
 #endif
 
 static inline uint64_t cdsp_time_now_ns_internal(void) {
 #if defined(__APPLE__)
-#if defined(CLOCK_UPTIME_RAW)
   return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-#else
-  static mach_timebase_info_data_t s_timebase_info;
-  if (s_timebase_info.denom == 0) {
-    mach_timebase_info(&s_timebase_info);
-  }
-  uint64_t mach_now = mach_absolute_time();
-  return mach_now * s_timebase_info.numer / s_timebase_info.denom;
-#endif
 #elif defined(_WIN32)
   static LARGE_INTEGER freq;
   static BOOL has_freq = FALSE;
