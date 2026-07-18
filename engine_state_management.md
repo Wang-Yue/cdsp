@@ -108,6 +108,31 @@ To mathematically guarantee freedom from deadlocks across all thread interaction
 
 ---
 
+### 1.7. Ownership & Resource Lifecycle Guidelines (Double-Free & Memory Leak Prevention)
+
+To prevent double-frees, memory leaks, and dangling pointers during session building, configuration hot-reloads, and session teardown, the CDSP Engine adheres to strict single-ownership lifecycle contracts for all heap-allocated objects.
+
+#### 1. Lifecycle & Ownership Contract Matrix
+
+| Object Type | Owner Struct | Creation Function | Access Pattern | Destructor & Ownership Transfer Rules |
+| :--- | :--- | :--- | :--- | :--- |
+| `dsp_config_t` | `dsp_session_t` (or temporary in caller) | `config_loader_parse()` | Read-only under `config_mutex`. | **Transfer on Success**: Ownership transfers to `dsp_session_t` when assigned to `core->current_config`. Destructed by `dsp_session_stop_and_free()` via `dsp_config_free()`.<br>**Cleanup on Builder Failure**: If session creation fails before assignment to `core->current_config`, the caller (`dsp_engine_set_config_locked`) calls `dsp_config_free(parsed)` to prevent leaks. |
+| `dsp_session_t` | `dsp_engine_impl_t` (`session.active`) | `dsp_session_create_and_start()` | Accessed under `state_mutex`. | **Single Entry Point Destructor**: Always destroyed via `dsp_session_stop_and_free()`. Parent `dsp_engine_impl_t` sets `impl->session.active = NULL` immediately following destruction to prevent dangling pointer access. |
+| `pipeline_t` | `engine_processing_loop_t` (active) / `engine_shared_state_t` (garbage queue) | `pipeline_create()` | Touched exclusively by Processing thread or initialized on main thread. | **Hot-Reload Transfer**: Old pipelines swapped during hot-reloads are enqueued to `pipeline_garbage_queue`. Main thread calls `dsp_session_collect_garbage()` during `poll`/`set_config` to dequeue and `pipeline_free()` off the audio thread.<br>**Teardown**: `engine_processing_loop_free()` frees active and pending pipelines. If `processing_loop` was never created, `dsp_session_stop_and_free()` frees `core->pipeline` directly to prevent double-freeing. |
+| `engine_shared_state_t` | `dsp_session_t` | `engine_shared_state_create()` | Inter-thread lock-free access. | **Drain Before Free**: `dsp_session_stop_and_free()` drains `captured_queue` and `processed_queue` via `spsc_queue_drain()` before freeing backends and pools, preventing stale chunk references.<br>**Garbage Drain**: `engine_shared_state_free()` dequeues and frees any uncollected pipelines remaining in `pipeline_garbage_queue`. |
+| `audio_chunk_t` | `round_robin_chunk_pool_t` | `round_robin_chunk_pool_create()` | Recycled lock-free on audio loops. | **Zero Allocation Hot-Path**: Chunks are pre-allocated during session startup and owned by round-robin pools. Never dynamically `malloc`'d or `free`'d during streaming.<br>**Pool Destruction**: Pools are freed in `dsp_session_stop_and_free()` after worker threads have been joined. |
+| `pthread_t` worker threads | `dsp_session_t` | `pthread_create()` in `engine_session_spawn_worker_threads()` | Managed by OS thread scheduler. | **Strict Join Guard**: `dsp_session_stop_and_free()` invokes `pthread_join()` **only** if `threads_created == true`. If thread creation fails mid-way, `engine_session_spawn_worker_threads()` manually stops and joins already-created threads before returning `false`, ensuring no uninitialized handles are joined. |
+
+#### 2. Rules for Modifying Engine Resources
+When adding or modifying components in the engine, follow these strict memory safety rules:
+
+1. **Never Nullify Without Freeing**: When replacing pointers (e.g. `active_json`, `previous_json`, `current_config`), always free the existing object before overwriting or transfer ownership explicitly to a destructor queue.
+2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
+3. **Join Threads Before Freeing Shared Data**: `dsp_session_stop_and_free()` must join all worker threads (`capture_thread`, `processing_thread`, `playback_thread`) **before** freeing backends, pipelines, resamplers, or `engine_shared_state_t`.
+4. **Deferred Garbage Collection for Audio Threads**: Never call `free()` inside audio loop threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`). Defer object destruction (such as swapped pipelines) to lock-free SPSC garbage queues for main-thread cleanup.
+
+---
+
 ## 2. State Transition Matrices
 
 ### 2.1. Core Processing States (`processing_state_t`)
