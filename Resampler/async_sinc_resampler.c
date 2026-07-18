@@ -426,9 +426,9 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
 
         double p0 = sinc_dot_product(buf + p0t.idx + two_s_len,
                                      table + p0t.sub * s_len, s_len);
-        double p1 = sinc_dot_product(buf + p0t.idx + two_s_len,
+        double p1 = sinc_dot_product(buf + p1t.idx + two_s_len,
                                      table + p1t.sub * s_len, s_len);
-        double p2 = sinc_dot_product(buf + p0t.idx + two_s_len,
+        double p2 = sinc_dot_product(buf + p2t.idx + two_s_len,
                                      table + p2t.sub * s_len, s_len);
 
         // interp_quad (asynchro_sinc.rs:145-154).

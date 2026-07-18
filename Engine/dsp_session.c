@@ -252,7 +252,6 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
   // Evaluate the changes between the running config and the new config.
   config_change_t* change = config_change_create();
   if (!change) {
-    dsp_config_free(new_config);
     return false;
   }
   config_change_type_t change_type =
@@ -283,7 +282,6 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
       err->message[sizeof(err->message) - 1] = '\0';
     }
-    dsp_config_free(new_config);
     return false;
   }
 
