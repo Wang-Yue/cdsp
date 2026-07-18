@@ -192,6 +192,12 @@ static void processing_loop_check_pipeline_swap(
       pipeline_transfer_state(next_pipeline, loop->active_pipeline);
       if (!engine_shared_state_enqueue_garbage_pipeline(
               loop->shared, loop->active_pipeline)) {
+        // Ref: engine_state_management.md - Section 1.7.2 (Rule 4)
+        // Under normal operation, dsp_engine recycles garbage pipelines on the main thread
+        // prior to config reloads, so pipeline_garbage_queue will not overflow.
+        // In the unexpected event of a full queue, log a warning and free the old pipeline
+        // to prevent a memory leak.
+        logger_warn(&g_logger, "Garbage pipeline queue full; freeing on processing thread to prevent leak");
         pipeline_free(loop->active_pipeline);
       }
     }
