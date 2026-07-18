@@ -130,6 +130,7 @@ When adding or modifying components in the engine, follow these strict memory sa
 2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
 3. **Join Threads Before Freeing Shared Data**: `dsp_session_stop_and_free()` must join all worker threads (`capture_thread`, `processing_thread`, `playback_thread`) **before** freeing backends, pipelines, resamplers, or `engine_shared_state_t`.
 4. **Deferred Garbage Collection for Audio Threads**: Never call `free()` inside audio loop threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`). Defer object destruction (such as swapped pipelines) to lock-free SPSC garbage queues for main-thread cleanup.
+5. **Un-Enqueued Chunk Buffer Retention on Real-Time Drops**: When an audio loop thread (`EngineCaptureLoop` or `EngineProcessingLoop`) encounters a full SPSC queue in real-time mode (`enqueue` returns `false`), it must store the un-enqueued chunk pointer in a `pending_chunk` / `pending_scratch` variable and reuse it on the next loop iteration. It must **never** advance `round_robin_chunk_pool_next()`, preventing pool index wrap-around from retrieving and overwriting active chunk buffers currently sitting in the SPSC queue.
 
 ---
 
@@ -257,6 +258,10 @@ graph LR
 * **Capture Loop**: Obtains a pre-allocated chunk from `capture_pool`, reads PCM/DSD from the device backend, runs metering/silence checks, and pushes to `captured_queue`. It then signals `captured_queue`'s semaphore.
 * **Processing Loop**: Blocks on `captured_queue`'s semaphore. Once awakened, it dequeues the chunk, runs it through the DSP pipeline (resampler, mixers, channels, volume/mute), obtains a scratch chunk from the pool, copies the output, and enqueues it to `processed_queue`, signaling its semaphore.
 * **Playback Loop**: Blocks on `processed_queue`'s semaphore. Once awakened, it dequeues the processed chunk, runs the rate-adjust controller, and writes the frame samples to the physical playback backend.
+
+#### Real-Time Bounded Queue Drops & Chunk Reuse
+- **Non-Blocking Real-Time Drops**: In real-time streaming mode (`is_realtime == true`), if `captured_queue` or `processed_queue` reaches capacity, `enqueue` returns `false` (drop). The incoming/processed chunk is discarded, and drop counters (`captured_drop_counter` / `processed_drop_counter`) increment without blocking or spinning.
+- **Buffer Preservation**: When `enqueue` returns `false`, the audio thread retains the un-enqueued chunk buffer pointer (`loop->pending_chunk` or `loop->pending_scratch`). On the subsequent loop iteration, the thread reuses `pending_chunk` / `pending_scratch` instead of calling `round_robin_chunk_pool_next()`. This guarantees that `pool->current_index` does not advance during drops, preventing pool index wrap-around from retrieving and overwriting active chunks sitting inside downstream queues.
 
 ---
 

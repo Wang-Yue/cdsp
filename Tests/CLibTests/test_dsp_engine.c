@@ -1873,4 +1873,90 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   if (engine && engine->free) engine->free(engine->ctx);
 }
 
+// Real-world scenario simulated:
+// Real-time queue drop & pool wrap-around data integrity check (End-to-End).
+// Generator capture produces chunks in real-time mode unthrottled.
+// Playback is throttled to 100Hz real-time, forcing heavy real-time queue drops.
+// Chunks sitting in the playback queue must NOT be overwritten by pool index wrap-around.
+TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/queue_drop_out_%d.raw", getpid());
+  remove(out_file);
+
+  int chunk_size = 64;
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 100,\n"
+           "        \"chunksize\": 64,\n"
+           "        \"queuelimit\": 4,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"frequency\": 1000.0,\n"
+           "                \"level\": 0.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  // Run engine for 150ms while Generator pushes thousands of chunks and playback writes ~15 chunks
+  cdsp_sleep_ms(150);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Inspect written output chunks for data corruption / NaN / zero-fill spikes.
+  // Each chunk written by Generator Sine wave must be non-zero and valid S16 samples.
+  FILE* out_f = fopen(out_file, "rb");
+  size_t total_chunks_read = 0;
+  size_t corrupted_chunks = 0;
+
+  if (out_f) {
+    int16_t chunk_buf[64];
+    size_t chunk_idx = 0;
+    while (fread(chunk_buf, sizeof(int16_t), chunk_size, out_f) == (size_t)chunk_size) {
+      total_chunks_read++;
+      chunk_idx++;
+      // Check that chunk is not zeroed out or corrupted with garbage
+      bool non_zero = false;
+      for (int k = 0; k < chunk_size; k++) {
+        if (chunk_buf[k] != 0) {
+          non_zero = true;
+          break;
+        }
+      }
+      if (chunk_idx > 1 && !non_zero) {
+        corrupted_chunks++;
+      }
+    }
+    fclose(out_f);
+  }
+
+  ASSERT_TRUE(total_chunks_read > 0);
+  ASSERT_EQ(0, corrupted_chunks);
+
+  remove(out_file);
+}
+
 TEST_MAIN()

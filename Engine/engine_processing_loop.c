@@ -54,6 +54,7 @@ struct engine_processing_loop {
   audio_chunk_t* resampler_scratch;
   audio_chunk_t* pipeline_scratch;
   round_robin_chunk_pool_t* scratch_pool;
+  audio_chunk_t* pending_scratch;
 
   chunk_callback_t on_chunk_captured;
   void* on_chunk_captured_ctx;
@@ -323,11 +324,13 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // Step 2 & Section 3.1: Check and execute structural hot-reload pipeline swaps.
     processing_loop_check_pipeline_swap(loop);
 
-    // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool.
-    // We must use a pool because the pipeline output chunk is passed down the
-    // queue to the playback thread, and we cannot reuse it immediately.
-    audio_chunk_t* current_scratch =
-        round_robin_chunk_pool_next(loop->scratch_pool);
+    // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
+    // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool,
+    // or reuse an un-enqueued scratch chunk if the previous enqueue was dropped.
+    audio_chunk_t* current_scratch = loop->pending_scratch;
+    if (!current_scratch) {
+      current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
+    }
 
     // 5. Execute DSP filtering and mixing pipeline
     uint64_t pipe_start = cdsp_time_now_ns();
@@ -363,13 +366,17 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       dsd_encoder_encode(loop->dsd_encoder, chunk);
     }
 
+    // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops) & Section 1.7.2 (Rule 5)
     // 9. Enqueue the processed chunk to the playback queue.
     if (loop->is_realtime) {
       // Real-time hardware stream: non-blocking single-try push to avoid audio
-      // hiccups.
+      // hiccups. Retain un-enqueued scratch chunk in loop->pending_scratch on drop.
       if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
         loop->processed_drop_counter++;
         logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
+        loop->pending_scratch = chunk;
+      } else {
+        loop->pending_scratch = NULL;
       }
     } else {
       // Non-real-time file conversion: nanosleep wait while queue is full to
@@ -381,6 +388,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         }
         cdsp_sleep_ms(1);
       }
+      loop->pending_scratch = NULL;
     }
   }
 

@@ -40,6 +40,7 @@ struct engine_capture_loop {
   round_robin_chunk_pool_t* chunk_pool;
 
   uint64_t watchdog_last_success_ns;
+  audio_chunk_t* pending_chunk;
 
   sample_rate_watcher_t* rate_watcher;
   uint64_t captured_drop_counter;
@@ -87,6 +88,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   }
 
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
+  loop->pending_chunk = NULL;
   loop->captured_drop_counter = 0;
   loop->last_paused_tick_ns = 0;
 
@@ -258,20 +260,22 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                   (desired == PROCESSING_STATE_PAUSED));
   }
 
+  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops) & Section 1.7.2 (Rule 5)
   // Enqueue Captured Chunk:
   // Push the chunk pointer into the bounded lock-free SPSC queue.
-  // - Physical/Real-time hardware capture: if queue is full, incoming signal is
-  // lost anyway.
-  //   Increment drop counter, log warning, and continue without blocking or
-  //   spinning.
-  // - Non-real-time capture (File/Generator): sleep with nanosleep while
-  // waiting for queue space
+  // - Physical/Real-time hardware capture: if queue is full, incoming signal is lost anyway.
+  //   Increment drop counter and retain un-enqueued chunk in loop->pending_chunk to avoid
+  //   round-robin pool index wrap-around from overwriting active in-flight queued buffers.
+  // - Non-real-time capture (File/Generator): sleep with nanosleep while waiting for queue space
   //   so no samples are missed and CPU isn't consumed by spin loops.
   if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
     if (capture_backend_is_realtime(loop->capture)) {
       if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
         loop->captured_drop_counter++;
         logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+        loop->pending_chunk = chunk;
+      } else {
+        loop->pending_chunk = NULL;
       }
     } else {
       while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
@@ -280,7 +284,10 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
         }
         cdsp_sleep_ms(1);
       }
+      loop->pending_chunk = NULL;
     }
+  } else {
+    loop->pending_chunk = NULL;
   }
   return false;
 }
@@ -350,8 +357,13 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
       break;
     }
 
-    // 2. Fetch a chunk buffer from the pre-allocated round-robin pool.
-    audio_chunk_t* chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+    // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
+    // 2. Fetch a chunk buffer from the pre-allocated round-robin pool,
+    // or reuse an un-enqueued chunk if the previous enqueue was dropped due to full queue.
+    audio_chunk_t* chunk = loop->pending_chunk;
+    if (!chunk) {
+      chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+    }
     backend_error_t err;
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
 
