@@ -8,6 +8,13 @@
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_path.h"
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 static const logger_t g_logger = {"dsp.pipeline.state"};
 
 struct dsp_state_s {
@@ -179,9 +186,19 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
     fprintf(fp, "  - %.6f\n", state->volume[i]);
   }
 
+  fflush(fp);
+#ifdef _WIN32
+  _commit(fileno(fp));
+#elif defined(__APPLE__)
+  fcntl(fileno(fp), F_FULLFSYNC);
+#else
+  fsync(fileno(fp));
+#endif
   fclose(fp);
 
+#ifdef _WIN32
   remove(filename);
+#endif
   if (rename(tmp_name, filename) != 0) {
     logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);

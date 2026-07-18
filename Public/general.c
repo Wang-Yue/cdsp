@@ -67,44 +67,60 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
     return;
   }
 
-  size_t pb_idx = 0;
-#if defined(ENABLE_COREAUDIO)
-  pb_arr[pb_idx++] = strdup("CoreAudio");
-#endif
-#if defined(ENABLE_ALSA)
-  pb_arr[pb_idx++] = strdup("ALSA");
-#endif
-#if defined(ENABLE_PIPEWIRE)
-  pb_arr[pb_idx++] = strdup("PipeWire");
-#endif
-#if defined(ENABLE_WASAPI)
-  pb_arr[pb_idx++] = strdup("WASAPI");
-#endif
-#if defined(ENABLE_ASIO)
-  pb_arr[pb_idx++] = strdup("ASIO");
-#endif
-  pb_arr[pb_idx++] = strdup("File");
-  pb_arr[pb_idx++] = strdup("Stdout");
+#define SAFE_STRDUP(arr, idx, str)              \
+  do {                                          \
+    arr[idx] = strdup(str);                     \
+    if (!arr[idx]) {                            \
+      cdsp_free_device_types(pb_arr, pb_idx);   \
+      cdsp_free_device_types(cap_arr, cap_idx); \
+      *out_playback_types = NULL;               \
+      *out_playback_count = 0;                  \
+      *out_capture_types = NULL;                \
+      *out_capture_count = 0;                   \
+      return;                                   \
+    }                                           \
+    idx++;                                      \
+  } while (0)
 
+  size_t pb_idx = 0;
   size_t cap_idx = 0;
 #if defined(ENABLE_COREAUDIO)
-  cap_arr[cap_idx++] = strdup("CoreAudio");
+  SAFE_STRDUP(pb_arr, pb_idx, "CoreAudio");
 #endif
 #if defined(ENABLE_ALSA)
-  cap_arr[cap_idx++] = strdup("ALSA");
+  SAFE_STRDUP(pb_arr, pb_idx, "ALSA");
 #endif
 #if defined(ENABLE_PIPEWIRE)
-  cap_arr[cap_idx++] = strdup("PipeWire");
+  SAFE_STRDUP(pb_arr, pb_idx, "PipeWire");
 #endif
 #if defined(ENABLE_WASAPI)
-  cap_arr[cap_idx++] = strdup("WASAPI");
+  SAFE_STRDUP(pb_arr, pb_idx, "WASAPI");
 #endif
 #if defined(ENABLE_ASIO)
-  cap_arr[cap_idx++] = strdup("ASIO");
+  SAFE_STRDUP(pb_arr, pb_idx, "ASIO");
 #endif
-  cap_arr[cap_idx++] = strdup("File");
-  cap_arr[cap_idx++] = strdup("Stdin");
-  cap_arr[cap_idx++] = strdup("Generator");
+  SAFE_STRDUP(pb_arr, pb_idx, "File");
+  SAFE_STRDUP(pb_arr, pb_idx, "Stdout");
+#if defined(ENABLE_COREAUDIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "CoreAudio");
+#endif
+#if defined(ENABLE_ALSA)
+  SAFE_STRDUP(cap_arr, cap_idx, "ALSA");
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  SAFE_STRDUP(cap_arr, cap_idx, "PipeWire");
+#endif
+#if defined(ENABLE_WASAPI)
+  SAFE_STRDUP(cap_arr, cap_idx, "WASAPI");
+#endif
+#if defined(ENABLE_ASIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "ASIO");
+#endif
+  SAFE_STRDUP(cap_arr, cap_idx, "File");
+  SAFE_STRDUP(cap_arr, cap_idx, "Stdin");
+  SAFE_STRDUP(cap_arr, cap_idx, "Generator");
+
+#undef SAFE_STRDUP
 
   *out_playback_types = pb_arr;
   *out_playback_count = pb_count;

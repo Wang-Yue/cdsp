@@ -480,6 +480,12 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
   audio_history_buffer_t* buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
   size_t samplerate = core_cfg->devices.samplerate;
+  size_t buf_channels = audio_history_buffer_get_channels(buf);
+
+  if (channel != (uint32_t)-1 && (size_t)channel >= buf_channels) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    return false;
+  }
 
   spectrum_result_t res;
   spectrum_status_t status = spectrum_analyzer_compute(

@@ -89,7 +89,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
     pub->capability_sets = (cdsp_device_capability_set_t*)calloc(
         desc->capability_sets_count, sizeof(cdsp_device_capability_set_t));
     if (!pub->capability_sets) {
-      free(pub);
+      cdsp_free_device_capabilities(pub);
       free_audio_device_descriptor(desc);
       return false;
     }
@@ -106,8 +106,9 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
         pub_set->capabilities = (cdsp_channel_capability_t*)calloc(
             int_set->capabilities_count, sizeof(cdsp_channel_capability_t));
         if (!pub_set->capabilities) {
-          pub_set->capabilities_count = 0;
-          continue;
+          cdsp_free_device_capabilities(pub);
+          free_audio_device_descriptor(desc);
+          return false;
         }
 
         for (size_t j = 0; j < int_set->capabilities_count; j++) {
@@ -122,8 +123,9 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
                 int_cap->samplerates_count,
                 sizeof(cdsp_samplerate_capability_t));
             if (!pub_cap->samplerates) {
-              pub_cap->samplerates_count = 0;
-              continue;
+              cdsp_free_device_capabilities(pub);
+              free_audio_device_descriptor(desc);
+              return false;
             }
 
             for (size_t k = 0; k < int_cap->samplerates_count; k++) {
@@ -137,13 +139,22 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
                 pub_sr->formats =
                     (char**)calloc(int_sr->formats_count, sizeof(char*));
                 if (!pub_sr->formats) {
-                  pub_sr->formats_count = 0;
-                  continue;
+                  cdsp_free_device_capabilities(pub);
+                  free_audio_device_descriptor(desc);
+                  return false;
                 }
 
                 for (size_t l = 0; l < int_sr->formats_count; l++) {
-                  pub_sr->formats[l] =
-                      int_sr->formats[l] ? strdup(int_sr->formats[l]) : NULL;
+                  if (int_sr->formats[l]) {
+                    pub_sr->formats[l] = strdup(int_sr->formats[l]);
+                    if (!pub_sr->formats[l]) {
+                      cdsp_free_device_capabilities(pub);
+                      free_audio_device_descriptor(desc);
+                      return false;
+                    }
+                  } else {
+                    pub_sr->formats[l] = NULL;
+                  }
                 }
               } else {
                 pub_sr->formats = NULL;

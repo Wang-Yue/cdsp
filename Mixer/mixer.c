@@ -68,7 +68,7 @@ struct mixer_s {
  * @param mixer Pointer to mixer instance.
  * @param config Configuration containing mapping rules.
  */
-static void populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
+static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
   for (size_t i = 0; i < config->mapping_count; i++) {
     const mixer_mapping_t* map = &config->mapping[i];
     size_t dest = (size_t)map->dest;
@@ -91,7 +91,7 @@ static void populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
         (prepared_source_t*)calloc(valid_count, sizeof(prepared_source_t));
     if (!mixer->mapping[dest].sources) {
       mixer->mapping[dest].count = 0;
-      continue;
+      return false;
     }
     mixer->mapping[dest].count = valid_count;
 
@@ -115,6 +115,7 @@ static void populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
       idx++;
     }
   }
+  return true;
 }
 
 mixer_t* mixer_create(const char* name, const mixer_config_t* config,
@@ -141,7 +142,12 @@ mixer_t* mixer_create(const char* name, const mixer_config_t* config,
     return NULL;
   }
 
-  populate_mapping(mixer, config);
+  if (!populate_mapping(mixer, config)) {
+    logger_error(&g_logger, "Failed to populate mapping matrix for mixer '%s'",
+                 mixer->name);
+    mixer_free(mixer);
+    return NULL;
+  }
   logger_debug(&g_logger,
                "Created mixer '%s' (in_channels=%zu, out_channels=%zu)",
                mixer->name, mixer->channels_in, mixer->channels_out);
@@ -251,6 +257,11 @@ const char* mixer_get_name(const mixer_t* mixer) {
 int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
   if (!mixer) {
     config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Null mixer configuration");
+    return -1;
+  }
+  if (mixer->channels_in <= 0 || mixer->channels_out <= 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                     "channels_in and channels_out must be greater than zero");
     return -1;
   }
 

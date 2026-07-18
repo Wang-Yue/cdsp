@@ -134,8 +134,8 @@ int* parse_int_array(const cJSON* arr, size_t* out_count) {
 }
 
 static void replace_tokens_in_json_node(cJSON* node, int samplerate,
-                                        int channels) {
-  if (!node) return;
+                                        int channels, int depth) {
+  if (!node || depth > 20) return;
 
   if (cJSON_IsString(node) && node->valuestring) {
     const char* str = node->valuestring;
@@ -179,14 +179,15 @@ static void replace_tokens_in_json_node(cJSON* node, int samplerate,
 
   cJSON* child = node->child;
   while (child) {
-    replace_tokens_in_json_node(child, samplerate, channels);
+    replace_tokens_in_json_node(child, samplerate, channels, depth + 1);
     child = child->next;
   }
 }
 
 static void resolve_relative_paths_in_json_node(cJSON* node,
-                                                const char* config_dir) {
-  if (!node || !config_dir || config_dir[0] == '\0') return;
+                                                const char* config_dir,
+                                                int depth) {
+  if (!node || !config_dir || config_dir[0] == '\0' || depth > 20) return;
 
   if (cJSON_IsString(node) && node->valuestring && node->string &&
       strcmp(node->string, "filename") == 0) {
@@ -204,7 +205,7 @@ static void resolve_relative_paths_in_json_node(cJSON* node,
 
   cJSON* child = node->child;
   while (child) {
-    resolve_relative_paths_in_json_node(child, config_dir);
+    resolve_relative_paths_in_json_node(child, config_dir, depth + 1);
     child = child->next;
   }
 }
@@ -244,7 +245,7 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
   }
 
   if (config_dir && config_dir[0] != '\0') {
-    resolve_relative_paths_in_json_node(root, config_dir);
+    resolve_relative_paths_in_json_node(root, config_dir, 0);
   }
 
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
@@ -265,7 +266,7 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
   if (cJSON_IsNumber(ch_item)) ch = ch_item->valueint;
 
   if (sr > 0 || ch > 0) {
-    replace_tokens_in_json_node(root, sr, ch);
+    replace_tokens_in_json_node(root, sr, ch, 0);
   }
 
   if (config_parse_devices(devices_obj, config, err) != 0) {

@@ -513,13 +513,14 @@ static void* dither_filter_create(const char* name,
   filter->type = dither_type;
   filter->previous_sample = 0.0;
 
-  if (dither_type == DITHER_TYPE_FLAT) {
+  if (dither_type == DITHER_TYPE_NONE) {
+    filter->amplitude = 0.0;
+  } else if (dither_type == DITHER_TYPE_FLAT) {
     filter->amplitude =
         (params && params->has_amplitude) ? params->amplitude : 2.0;
-  } else if (dither_type == DITHER_TYPE_HIGHPASS) {
-    filter->amplitude = 2.0;
   } else {
-    filter->amplitude = 0.0;
+    // HIGHPASS and all noise-shaping types require TPDF dither noise (2.0 LSB)
+    filter->amplitude = 2.0;
   }
 
   if (dither_type != DITHER_TYPE_NONE && dither_type != DITHER_TYPE_FLAT &&

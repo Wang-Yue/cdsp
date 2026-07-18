@@ -274,7 +274,13 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
   while (*cur) {
     const char* next_line = strchr(cur, '\n');
     size_t line_len = next_line ? (size_t)(next_line - cur) : strlen(cur);
-    if (line_len >= sizeof(line)) line_len = sizeof(line) - 1;
+    if (line_len >= sizeof(line)) {
+      if (out_err)
+        *out_err =
+            strdup("YAML line exceeds maximum length of 4095 characters");
+      if (root) cJSON_Delete(root);
+      return NULL;
+    }
     memcpy(line, cur, line_len);
     line[line_len] = '\0';
     cur = next_line ? next_line + 1 : cur + line_len;
@@ -301,6 +307,20 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
 
     bool is_list_item =
         (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'));
+
+#define PUSH_STACK(node_ptr, indent_val, array_flag)                           \
+  do {                                                                         \
+    if (depth >= 64) {                                                         \
+      if (out_err)                                                             \
+        *out_err = strdup(                                                     \
+            "YAML document nesting depth exceeds maximum of 63 levels");       \
+      if (root) cJSON_Delete(root);                                            \
+      return NULL;                                                             \
+    }                                                                          \
+    stack[depth] = (stack_frame_t){                                            \
+        .indent = (indent_val), .node = (node_ptr), .is_array = (array_flag)}; \
+    depth++;                                                                   \
+  } while (0)
 
     if (depth == 0) {
       if (is_list_item) {
@@ -331,11 +351,7 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
       if (*item_val == '\0') {
         cJSON* new_obj = cJSON_CreateObject();
         cJSON_AddItemToArray(top->node, new_obj);
-        if (depth < 64) {
-          stack[depth] = (stack_frame_t){
-              .indent = indent + 2, .node = new_obj, .is_array = false};
-          depth++;
-        }
+        PUSH_STACK(new_obj, indent + 2, false);
       } else {
         char* colon = strchr(item_val, ':');
         if (colon && !strchr(item_val, '"') && !strchr(item_val, '\'')) {
@@ -347,21 +363,11 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
           if (*val == '\0') {
             cJSON* child = cJSON_CreateObject();
             cJSON_AddItemToObject(new_obj, key, child);
-            if (depth + 1 < 64) {
-              stack[depth] = (stack_frame_t){
-                  .indent = indent + 2, .node = new_obj, .is_array = false};
-              depth++;
-              stack[depth] = (stack_frame_t){
-                  .indent = indent + 4, .node = child, .is_array = false};
-              depth++;
-            }
+            PUSH_STACK(new_obj, indent + 2, false);
+            PUSH_STACK(child, indent + 4, false);
           } else {
             cJSON_AddItemToObject(new_obj, key, parse_scalar_val(val));
-            if (depth < 64) {
-              stack[depth] = (stack_frame_t){
-                  .indent = indent + 2, .node = new_obj, .is_array = false};
-              depth++;
-            }
+            PUSH_STACK(new_obj, indent + 2, false);
           }
         } else {
           cJSON_AddItemToArray(top->node, parse_scalar_val(item_val));
@@ -382,17 +388,15 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
         if (*val == '\0') {
           cJSON* placeholder = cJSON_CreateObject();
           cJSON_AddItemToObject(top->node, key, placeholder);
-          if (depth < 64) {
-            stack[depth] = (stack_frame_t){
-                .indent = indent + 2, .node = placeholder, .is_array = false};
-            depth++;
-          }
+          PUSH_STACK(placeholder, indent + 2, false);
         } else {
           cJSON_AddItemToObject(top->node, key, parse_scalar_val(val));
         }
       }
     }
   }
+
+#undef PUSH_STACK
 
   if (!root) {
     if (out_err) *out_err = strdup("Empty or invalid YAML document");
