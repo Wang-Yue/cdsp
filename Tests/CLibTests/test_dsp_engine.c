@@ -2006,6 +2006,7 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   memset(&dcfg, 0, sizeof(dcfg));
   dcfg.devices.samplerate = 48000;
   dcfg.devices.chunksize = 64;
+  dcfg.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
   capture_device_config_set_channels(&dcfg.devices.capture, 1);
   dcfg.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   dcfg.devices.playback.cfg.raw_file.channels = 1;
