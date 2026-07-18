@@ -257,7 +257,7 @@ static void loudness_filter_process(loudness_filter_t* filter,
  */
 static void loudness_filter_transfer_state(loudness_filter_t* dest,
                                            const loudness_filter_t* src) {
-  if (!dest || !src) return;
+  if (!dest || !src || dest == src) return;
   g_biquad_vtable.transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
                                  src->high_shelf_filter);
