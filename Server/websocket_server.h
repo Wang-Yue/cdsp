@@ -8,16 +8,75 @@
 #ifndef CLIB_SERVER_WEBSOCKET_SERVER_H
 #define CLIB_SERVER_WEBSOCKET_SERVER_H
 
+#include <libwebsockets.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "Public/cdsp_pub_types.h"
+#include "ws_metrics.h"
 
-/**
- * @brief Opaque structure representing a WebSocket server.
- */
+typedef struct cJSON cJSON;
+
+typedef struct {
+  cdsp_processing_state_t state;
+  cdsp_stop_reason_t stop_reason;
+} ws_state_update_t;
+
+static inline const char* ws_processing_state_to_string(
+    cdsp_processing_state_t state) {
+  switch (state) {
+    case CDSP_PROCESSING_STATE_INACTIVE:
+      return "Inactive";
+    case CDSP_PROCESSING_STATE_STARTING:
+      return "Starting";
+    case CDSP_PROCESSING_STATE_RUNNING:
+      return "Running";
+    case CDSP_PROCESSING_STATE_PAUSED:
+      return "Paused";
+    case CDSP_PROCESSING_STATE_STALLED:
+      return "Stalled";
+    default:
+      return "Inactive";
+  }
+}
+
+typedef struct client_session_s {
+  session_metrics_t metrics;
+
+  struct lws* wsi;
+  char* pending_write;
+  size_t pending_write_len;
+  pthread_mutex_t write_mutex;
+} client_session_t;
+
+struct websocket_server {
+  uint16_t port;
+  char host[128];
+  dsp_engine_t* engine;
+
+  struct lws_context* context;
+  _Atomic bool running;
+  pthread_t thread;
+  pthread_t metrics_thread;
+
+  uint32_t update_interval;
+
+  ws_metrics_state_t metrics;
+
+  pthread_mutex_t sessions_mutex;
+  client_session_t* client_sessions[32];
+};
+
 typedef struct websocket_server websocket_server_t;
+
+void websocket_server_queue_message(client_session_t* session, const char* msg);
+void client_session_clear(client_session_t* session);
+cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason);
+cJSON* create_state_event_value(cdsp_processing_state_t state,
+                                const cdsp_stop_reason_t* reason);
 
 /**
  * @brief Create a new WebSocket control server on the specified port and host.
@@ -61,16 +120,7 @@ void websocket_server_stop(websocket_server_t* server);
  */
 void websocket_server_free(websocket_server_t* server);
 
-// MARK: - Command Handler
-
-typedef struct dyn_string_s {
-  char* data;
-  size_t capacity;
-  size_t length;
-} dyn_string_t;
-
-void dyn_string_init(dyn_string_t* ds, size_t initial_cap);
-void dyn_string_free(dyn_string_t* ds);
+#include "dyn_string.h"
 
 /**
  * @brief Handle a control command text (either simple quoted string or JSON
@@ -84,18 +134,5 @@ void dyn_string_free(dyn_string_t* ds);
 void websocket_server_handle_command(websocket_server_t* server, int client_idx,
                                      const char* command_text,
                                      dyn_string_t* ds);
-
-// MARK: - Testing Helpers
-
-bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
-                                               int client_idx);
-double websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
-                                               int client_idx);
-double websocket_server_get_client_vu_attack(const websocket_server_t* server,
-                                             int client_idx);
-double websocket_server_get_client_vu_release(const websocket_server_t* server,
-                                              int client_idx);
-void websocket_server_set_client_vu_subscribed(websocket_server_t* server,
-                                               int client_idx, bool subscribed);
 
 #endif  // CLIB_SERVER_WEBSOCKET_SERVER_H

@@ -16,7 +16,7 @@
 #include "Public/signal_levels.h"
 #include "Public/spectrum.h"
 #include "Public/volume.h"
-#include "websocket_server_internal.h"
+#include "websocket_server.h"
 
 static inline bool ws_engine_get_status(dsp_engine_t* engine,
                                         ws_state_update_t* out_status) {
@@ -816,7 +816,7 @@ static void handle_cmd_subscribe_state(websocket_server_t* server,
   (void)arg;
   if (server) {
     pthread_mutex_lock(&server->sessions_mutex);
-    server->client_sessions[client_idx]->state_subscribed = true;
+    server->client_sessions[client_idx]->metrics.state_subscribed = true;
     pthread_mutex_unlock(&server->sessions_mutex);
   }
   reply_ok(cmd_name, NULL, ds);
@@ -846,11 +846,11 @@ static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
   } else {
     if (server) {
       pthread_mutex_lock(&server->sessions_mutex);
-      server->client_sessions[client_idx]->vu_subscribed = true;
-      server->client_sessions[client_idx]->vu_max_rate = max_rate;
-      server->client_sessions[client_idx]->vu_attack = attack;
-      server->client_sessions[client_idx]->vu_release = release;
-      server->client_sessions[client_idx]->last_vu_push_time = 0;
+      server->client_sessions[client_idx]->metrics.vu_subscribed = true;
+      server->client_sessions[client_idx]->metrics.vu_max_rate = max_rate;
+      server->client_sessions[client_idx]->metrics.vu_attack = attack;
+      server->client_sessions[client_idx]->metrics.vu_release = release;
+      server->client_sessions[client_idx]->metrics.last_vu_push_time = 0;
       pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
@@ -869,10 +869,13 @@ static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
       strcmp(side, "both") == 0) {
     if (server) {
       pthread_mutex_lock(&server->sessions_mutex);
-      server->client_sessions[client_idx]->signal_levels_subscribed = true;
-      snprintf(server->client_sessions[client_idx]->signal_levels_side,
-               sizeof(server->client_sessions[client_idx]->signal_levels_side),
-               "%s", side);
+      server->client_sessions[client_idx]->metrics.signal_levels_subscribed =
+          true;
+      snprintf(
+          server->client_sessions[client_idx]->metrics.signal_levels_side,
+          sizeof(
+              server->client_sessions[client_idx]->metrics.signal_levels_side),
+          "%s", side);
       pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
@@ -913,14 +916,15 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   if (ok) {
     if (server) {
       pthread_mutex_lock(&server->sessions_mutex);
-      server->client_sessions[client_idx]->spectrum_subscribed = true;
-      server->client_sessions[client_idx]->spectrum_is_capture = is_capture;
-      server->client_sessions[client_idx]->spectrum_channel = channel;
-      server->client_sessions[client_idx]->spectrum_min_freq = min_freq;
-      server->client_sessions[client_idx]->spectrum_max_freq = max_freq;
-      server->client_sessions[client_idx]->spectrum_n_bins = n_bins;
-      server->client_sessions[client_idx]->spectrum_max_rate = max_rate;
-      server->client_sessions[client_idx]->last_spectrum_push_time = 0;
+      server->client_sessions[client_idx]->metrics.spectrum_subscribed = true;
+      server->client_sessions[client_idx]->metrics.spectrum_is_capture =
+          is_capture;
+      server->client_sessions[client_idx]->metrics.spectrum_channel = channel;
+      server->client_sessions[client_idx]->metrics.spectrum_min_freq = min_freq;
+      server->client_sessions[client_idx]->metrics.spectrum_max_freq = max_freq;
+      server->client_sessions[client_idx]->metrics.spectrum_n_bins = n_bins;
+      server->client_sessions[client_idx]->metrics.spectrum_max_rate = max_rate;
+      server->client_sessions[client_idx]->metrics.last_spectrum_push_time = 0;
       pthread_mutex_unlock(&server->sessions_mutex);
     }
     reply_ok(cmd_name, NULL, ds);
@@ -939,15 +943,16 @@ static void handle_cmd_stop_subscription(websocket_server_t* server,
   if (server) {
     pthread_mutex_lock(&server->sessions_mutex);
     bool active =
-        server->client_sessions[client_idx]->state_subscribed ||
-        server->client_sessions[client_idx]->vu_subscribed ||
-        server->client_sessions[client_idx]->signal_levels_subscribed ||
-        server->client_sessions[client_idx]->spectrum_subscribed;
+        server->client_sessions[client_idx]->metrics.state_subscribed ||
+        server->client_sessions[client_idx]->metrics.vu_subscribed ||
+        server->client_sessions[client_idx]->metrics.signal_levels_subscribed ||
+        server->client_sessions[client_idx]->metrics.spectrum_subscribed;
     if (active) {
-      server->client_sessions[client_idx]->state_subscribed = false;
-      server->client_sessions[client_idx]->vu_subscribed = false;
-      server->client_sessions[client_idx]->signal_levels_subscribed = false;
-      server->client_sessions[client_idx]->spectrum_subscribed = false;
+      server->client_sessions[client_idx]->metrics.state_subscribed = false;
+      server->client_sessions[client_idx]->metrics.vu_subscribed = false;
+      server->client_sessions[client_idx]->metrics.signal_levels_subscribed =
+          false;
+      server->client_sessions[client_idx]->metrics.spectrum_subscribed = false;
       pthread_mutex_unlock(&server->sessions_mutex);
       reply_ok(cmd_name, NULL, ds);
     } else {
@@ -1454,23 +1459,23 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
     pthread_mutex_lock(&server->sessions_mutex);
     if (is_capture) {
       if (is_rms) {
-        since = server->client_sessions[client_idx]->last_cap_rms_time;
-        server->client_sessions[client_idx]->last_cap_rms_time = now;
-        hist = &server->capture_rms_history;
+        since = server->client_sessions[client_idx]->metrics.last_cap_rms_time;
+        server->client_sessions[client_idx]->metrics.last_cap_rms_time = now;
+        hist = &server->metrics.capture_rms_history;
       } else {
-        since = server->client_sessions[client_idx]->last_cap_peak_time;
-        server->client_sessions[client_idx]->last_cap_peak_time = now;
-        hist = &server->capture_peak_history;
+        since = server->client_sessions[client_idx]->metrics.last_cap_peak_time;
+        server->client_sessions[client_idx]->metrics.last_cap_peak_time = now;
+        hist = &server->metrics.capture_peak_history;
       }
     } else {
       if (is_rms) {
-        since = server->client_sessions[client_idx]->last_pb_rms_time;
-        server->client_sessions[client_idx]->last_pb_rms_time = now;
-        hist = &server->playback_rms_history;
+        since = server->client_sessions[client_idx]->metrics.last_pb_rms_time;
+        server->client_sessions[client_idx]->metrics.last_pb_rms_time = now;
+        hist = &server->metrics.playback_rms_history;
       } else {
-        since = server->client_sessions[client_idx]->last_pb_peak_time;
-        server->client_sessions[client_idx]->last_pb_peak_time = now;
-        hist = &server->playback_peak_history;
+        since = server->client_sessions[client_idx]->metrics.last_pb_peak_time;
+        server->client_sessions[client_idx]->metrics.last_pb_peak_time = now;
+        hist = &server->metrics.playback_peak_history;
       }
     }
     pthread_mutex_unlock(&server->sessions_mutex);
@@ -1535,11 +1540,11 @@ static void handle_get_signal_since_helper(websocket_server_t* server,
       uint64_t since = now - (uint64_t)(secs * 1000.0);
       level_history_t* hist = NULL;
       if (is_capture) {
-        hist = is_rms ? &server->capture_rms_history
-                      : &server->capture_peak_history;
+        hist = is_rms ? &server->metrics.capture_rms_history
+                      : &server->metrics.capture_peak_history;
       } else {
-        hist = is_rms ? &server->playback_rms_history
-                      : &server->playback_peak_history;
+        hist = is_rms ? &server->metrics.playback_rms_history
+                      : &server->metrics.playback_peak_history;
       }
       size_t ch = hist->channels;
       double* vals = (double*)calloc(ch, sizeof(double));
@@ -1634,35 +1639,35 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
       status.state == CDSP_PROCESSING_STATE_RUNNING) {
     pthread_mutex_lock(&server->sessions_mutex);
     uint64_t cap_rms_since =
-        server->client_sessions[client_idx]->last_cap_rms_time;
+        server->client_sessions[client_idx]->metrics.last_cap_rms_time;
     uint64_t cap_pk_since =
-        server->client_sessions[client_idx]->last_cap_peak_time;
+        server->client_sessions[client_idx]->metrics.last_cap_peak_time;
     uint64_t pb_rms_since =
-        server->client_sessions[client_idx]->last_pb_rms_time;
+        server->client_sessions[client_idx]->metrics.last_pb_rms_time;
     uint64_t pb_pk_since =
-        server->client_sessions[client_idx]->last_pb_peak_time;
+        server->client_sessions[client_idx]->metrics.last_pb_peak_time;
     uint64_t now = get_time_ms();
-    server->client_sessions[client_idx]->last_cap_rms_time = now;
-    server->client_sessions[client_idx]->last_cap_peak_time = now;
-    server->client_sessions[client_idx]->last_pb_rms_time = now;
-    server->client_sessions[client_idx]->last_pb_peak_time = now;
+    server->client_sessions[client_idx]->metrics.last_cap_rms_time = now;
+    server->client_sessions[client_idx]->metrics.last_cap_peak_time = now;
+    server->client_sessions[client_idx]->metrics.last_pb_rms_time = now;
+    server->client_sessions[client_idx]->metrics.last_pb_peak_time = now;
     pthread_mutex_unlock(&server->sessions_mutex);
 
-    size_t c_ch = server->capture_rms_history.channels;
-    size_t p_ch = server->playback_rms_history.channels;
+    size_t c_ch = server->metrics.capture_rms_history.channels;
+    size_t p_ch = server->metrics.playback_rms_history.channels;
     double* c_rms = (double*)calloc(c_ch, sizeof(double));
     double* c_pk = (double*)calloc(c_ch, sizeof(double));
     double* p_rms = (double*)calloc(p_ch, sizeof(double));
     double* p_pk = (double*)calloc(p_ch, sizeof(double));
 
-    level_history_get_rms_since(&server->capture_rms_history, cap_rms_since,
-                                c_rms);
-    level_history_get_max_since(&server->capture_peak_history, cap_pk_since,
-                                c_pk);
-    level_history_get_rms_since(&server->playback_rms_history, pb_rms_since,
-                                p_rms);
-    level_history_get_max_since(&server->playback_peak_history, pb_pk_since,
-                                p_pk);
+    level_history_get_rms_since(&server->metrics.capture_rms_history,
+                                cap_rms_since, c_rms);
+    level_history_get_max_since(&server->metrics.capture_peak_history,
+                                cap_pk_since, c_pk);
+    level_history_get_rms_since(&server->metrics.playback_rms_history,
+                                pb_rms_since, p_rms);
+    level_history_get_max_since(&server->metrics.playback_peak_history,
+                                pb_pk_since, p_pk);
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
@@ -1700,17 +1705,21 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
       uint64_t now = get_time_ms();
       uint64_t since = now - (uint64_t)(secs * 1000.0);
 
-      size_t c_ch = server->capture_rms_history.channels;
-      size_t p_ch = server->playback_rms_history.channels;
+      size_t c_ch = server->metrics.capture_rms_history.channels;
+      size_t p_ch = server->metrics.playback_rms_history.channels;
       double* c_rms = (double*)calloc(c_ch, sizeof(double));
       double* c_pk = (double*)calloc(c_ch, sizeof(double));
       double* p_rms = (double*)calloc(p_ch, sizeof(double));
       double* p_pk = (double*)calloc(p_ch, sizeof(double));
 
-      level_history_get_rms_since(&server->capture_rms_history, since, c_rms);
-      level_history_get_max_since(&server->capture_peak_history, since, c_pk);
-      level_history_get_rms_since(&server->playback_rms_history, since, p_rms);
-      level_history_get_max_since(&server->playback_peak_history, since, p_pk);
+      level_history_get_rms_since(&server->metrics.capture_rms_history, since,
+                                  c_rms);
+      level_history_get_max_since(&server->metrics.capture_peak_history, since,
+                                  c_pk);
+      level_history_get_rms_since(&server->metrics.playback_rms_history, since,
+                                  p_rms);
+      level_history_get_max_since(&server->metrics.playback_peak_history, since,
+                                  p_pk);
 
       cJSON* root = cJSON_CreateObject();
       cJSON_AddItemToObject(root, "playback_rms",
@@ -1749,12 +1758,12 @@ static void handle_cmd_get_signal_peaks_since_start(websocket_server_t* server,
   cJSON* root = cJSON_CreateObject();
   cJSON_AddItemToObject(
       root, "capture",
-      cJSON_CreateDoubleArray(server->capture_global_peaks,
-                              (int)server->capture_global_peaks_count));
-  cJSON_AddItemToObject(
-      root, "playback",
-      cJSON_CreateDoubleArray(server->playback_global_peaks,
-                              (int)server->playback_global_peaks_count));
+      cJSON_CreateDoubleArray(server->metrics.capture_global_peaks,
+                              (int)server->metrics.capture_global_peaks_count));
+  cJSON_AddItemToObject(root, "playback",
+                        cJSON_CreateDoubleArray(
+                            server->metrics.playback_global_peaks,
+                            (int)server->metrics.playback_global_peaks_count));
   reply_ok(cmd_name, root, ds);
 }
 
@@ -1763,11 +1772,11 @@ static void handle_cmd_reset_signal_peaks_since_start(
     cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-    server->capture_global_peaks[i] = -1000.0;
+  for (size_t i = 0; i < server->metrics.capture_global_peaks_count; i++) {
+    server->metrics.capture_global_peaks[i] = -1000.0;
   }
-  for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-    server->playback_global_peaks[i] = -1000.0;
+  for (size_t i = 0; i < server->metrics.playback_global_peaks_count; i++) {
+    server->metrics.playback_global_peaks[i] = -1000.0;
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -2468,5 +2477,94 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     }
   }
   pthread_mutex_unlock(&server->sessions_mutex);
+  cJSON_Delete(root);
+}
+
+void ws_rpc_emit_state_event(client_session_t* session,
+                             cdsp_processing_state_t state,
+                             const cdsp_stop_reason_t* reason) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "StateEvent", inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+  cJSON_AddItemToObject(inner, "value",
+                        create_state_event_value(state, reason));
+  char* p_str = cJSON_PrintUnformatted(root);
+  websocket_server_queue_message(session, p_str);
+  free(p_str);
+  cJSON_Delete(root);
+}
+
+void ws_rpc_emit_vu_event(client_session_t* session, const double* pb_rms,
+                          const double* pb_peak, size_t pb_ch,
+                          const double* cap_rms, const double* cap_peak,
+                          size_t cap_ch) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "VuEvent", inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+
+  cJSON* val = cJSON_CreateObject();
+  cJSON* rms_arr = cJSON_CreateDoubleArray(pb_rms, (int)pb_ch);
+  cJSON* peak_arr = cJSON_CreateDoubleArray(pb_peak, (int)pb_ch);
+  cJSON_AddItemToObject(val, "playback_rms", rms_arr);
+  cJSON_AddItemToObject(val, "playback_peak", peak_arr);
+
+  if (cap_ch > 0 && cap_rms && cap_peak) {
+    cJSON* cap_rms_arr = cJSON_CreateDoubleArray(cap_rms, (int)cap_ch);
+    cJSON* cap_peak_arr = cJSON_CreateDoubleArray(cap_peak, (int)cap_ch);
+    cJSON_AddItemToObject(val, "capture_rms", cap_rms_arr);
+    cJSON_AddItemToObject(val, "capture_peak", cap_peak_arr);
+  }
+
+  cJSON_AddItemToObject(inner, "value", val);
+  char* p_str = cJSON_PrintUnformatted(root);
+  websocket_server_queue_message(session, p_str);
+  free(p_str);
+  cJSON_Delete(root);
+}
+
+void ws_rpc_emit_signal_levels_event(client_session_t* session,
+                                     const double* rms, const double* peak,
+                                     size_t ch) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "SignalLevelsEvent", inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+
+  cJSON* val = cJSON_CreateObject();
+  cJSON_AddItemToObject(val, "rms", cJSON_CreateDoubleArray(rms, (int)ch));
+  cJSON_AddItemToObject(val, "peak", cJSON_CreateDoubleArray(peak, (int)ch));
+  cJSON_AddItemToObject(inner, "value", val);
+
+  char* p_str = cJSON_PrintUnformatted(root);
+  websocket_server_queue_message(session, p_str);
+  free(p_str);
+  cJSON_Delete(root);
+}
+
+void ws_rpc_emit_spectrum_event(websocket_server_t* server,
+                                client_session_t* session) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON* inner = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "SpectrumEvent", inner);
+  cJSON_AddStringToObject(inner, "result", "Ok");
+
+  cJSON* val = cJSON_CreateObject();
+  cdsp_spectrum_t spec = {0};
+  if (cdsp_get_spectrum(server->engine, session->metrics.spectrum_is_capture,
+                        session->metrics.spectrum_channel,
+                        session->metrics.spectrum_min_freq,
+                        session->metrics.spectrum_max_freq,
+                        session->metrics.spectrum_n_bins, &spec)) {
+    cJSON* bins_arr = cJSON_CreateDoubleArray(spec.magnitudes, (int)spec.count);
+    cJSON_AddItemToObject(val, "bins", bins_arr);
+    cJSON_AddItemToObject(inner, "value", val);
+    cdsp_free_spectrum(&spec);
+  }
+
+  char* p_str = cJSON_PrintUnformatted(root);
+  websocket_server_queue_message(session, p_str);
+  free(p_str);
   cJSON_Delete(root);
 }

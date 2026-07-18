@@ -746,13 +746,22 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
   cJSON_Delete(root);
-  ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
-  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_max_rate(server, 0));
-  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_attack(server, 0));
-  ASSERT_DOUBLE_EQ(0.0, websocket_server_get_client_vu_release(server, 0));
+  pthread_mutex_lock(&server->sessions_mutex);
+  client_session_t* sess = server->client_sessions[0];
+  ASSERT_TRUE(sess != NULL);
+  ASSERT_TRUE(sess->metrics.vu_subscribed);
+  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_max_rate);
+  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_attack);
+  ASSERT_DOUBLE_EQ(0.0, sess->metrics.vu_release);
+  pthread_mutex_unlock(&server->sessions_mutex);
 
   // Test SubscribeVuLevels (with arguments)
-  websocket_server_set_client_vu_subscribed(server, 0, false);
+  pthread_mutex_lock(&server->sessions_mutex);
+  if (server->client_sessions[0]) {
+    server->client_sessions[0]->metrics.vu_subscribed = false;
+  }
+  pthread_mutex_unlock(&server->sessions_mutex);
+
   websocket_server_handle_command(server, 0,
                                   "{\"SubscribeVuLevels\":{\"max_rate\":100.0,"
                                   "\"attack\":10.0,\"release\":100.0}}",
@@ -763,10 +772,15 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
   cJSON_Delete(root);
-  ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
-  ASSERT_DOUBLE_EQ(100.0, websocket_server_get_client_vu_max_rate(server, 0));
-  ASSERT_DOUBLE_EQ(10.0, websocket_server_get_client_vu_attack(server, 0));
-  ASSERT_DOUBLE_EQ(100.0, websocket_server_get_client_vu_release(server, 0));
+
+  pthread_mutex_lock(&server->sessions_mutex);
+  sess = server->client_sessions[0];
+  ASSERT_TRUE(sess != NULL);
+  ASSERT_TRUE(sess->metrics.vu_subscribed);
+  ASSERT_DOUBLE_EQ(100.0, sess->metrics.vu_max_rate);
+  ASSERT_DOUBLE_EQ(10.0, sess->metrics.vu_attack);
+  ASSERT_DOUBLE_EQ(100.0, sess->metrics.vu_release);
+  pthread_mutex_unlock(&server->sessions_mutex);
 
   processing_parameters_free(mock_params);
   mock_params = NULL;

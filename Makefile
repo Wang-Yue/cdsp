@@ -184,7 +184,7 @@ TEST_LIB_TARGET := $(SRC_ROOT)/libdsp_test.a
 
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
 ifeq ($(ENABLE_WEBSOCKET),1)
-    SERVER_SRCS := $(SRC_ROOT)/Server/websocket_server.c $(SRC_ROOT)/Server/ws_rpc_dispatcher.c
+    SERVER_SRCS := $(SRC_ROOT)/Server/websocket_server.c $(SRC_ROOT)/Server/ws_rpc_dispatcher.c $(SRC_ROOT)/Server/ws_metrics.c $(SRC_ROOT)/Server/dyn_string.c
 else
     SERVER_SRCS :=
 endif
