@@ -10,6 +10,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef CDSP_TEST
+#include <stdlib.h>
+
+static inline uint32_t cdsp_sem_scale_timeout_ms(uint32_t ms) {
+  if (ms == 0) return 0;
+  const char* env = getenv("CDSP_TIME_SCALE");
+  uint32_t scale = 15;
+  if (env && env[0] != '\0') {
+    int s = atoi(env);
+    if (s > 0) scale = (uint32_t)s;
+  }
+  uint32_t scaled = ms / scale;
+  return (scaled == 0 && ms > 0) ? 1 : scaled;
+}
+#endif
+
 #ifdef __APPLE__
 #include <dispatch/dispatch.h>
 
@@ -62,6 +78,9 @@ static inline void cdsp_sem_wait(cdsp_sem_t sem) {
  */
 static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   if (!sem) return false;
+#ifdef CDSP_TEST
+  timeout_ms = cdsp_sem_scale_timeout_ms(timeout_ms);
+#endif
   dispatch_time_t timeout =
       dispatch_time(DISPATCH_TIME_NOW, (int64_t)timeout_ms * 1000000LL);
   return dispatch_semaphore_wait(sem, timeout) == 0;
@@ -107,6 +126,9 @@ static inline void cdsp_sem_wait(cdsp_sem_t sem) {
 
 static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   if (!sem) return false;
+#ifdef CDSP_TEST
+  timeout_ms = cdsp_sem_scale_timeout_ms(timeout_ms);
+#endif
   struct timespec ts = {0};
   if (clock_gettime(CLOCK_REALTIME, &ts) != 0) return false;
   uint64_t nsec = (uint64_t)ts.tv_nsec + (uint64_t)timeout_ms * 1000000ULL;
@@ -143,6 +165,9 @@ static inline void cdsp_sem_wait(cdsp_sem_t sem) {
 
 static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   if (!sem) return false;
+#ifdef CDSP_TEST
+  timeout_ms = cdsp_sem_scale_timeout_ms(timeout_ms);
+#endif
   return WaitForSingleObject(sem, (DWORD)timeout_ms) == WAIT_OBJECT_0;
 }
 
