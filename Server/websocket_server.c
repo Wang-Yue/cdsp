@@ -161,6 +161,7 @@ static struct lws_protocols protocols[] = {
     LWS_PROTOCOL_LIST_TERM};
 
 static void* lws_service_thread(void* arg) {
+  if (!arg) return NULL;
   websocket_server_t* server = (websocket_server_t*)arg;
   while (atomic_load_explicit(&server->running, memory_order_acquire)) {
     lws_service(server->context, 50);
@@ -169,6 +170,7 @@ static void* lws_service_thread(void* arg) {
 }
 
 static void* metrics_thread_func(void* arg) {
+  if (!arg) return NULL;
   websocket_server_t* server = (websocket_server_t*)arg;
   while (atomic_load_explicit(&server->running, memory_order_acquire)) {
     cdsp_sleep_ms(50);
