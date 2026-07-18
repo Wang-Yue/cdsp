@@ -109,12 +109,19 @@ static void delay_filter_free(delay_filter_t* filter) {
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
+#include <math.h>
+
 static int delay_config_validate(const filter_config_t* config, int sample_rate,
                                  config_error_t* err) {
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DELAY) return -1;
   const delay_config_t* params = &config->parameters.delay;
   if (!params) return 0;
+  if (!isfinite(params->delay)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Delay must be a finite number");
+    return -1;
+  }
   if (params->delay < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "Delay cannot be negative, got %g", params->delay);

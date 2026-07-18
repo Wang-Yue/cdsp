@@ -21,6 +21,8 @@ typedef struct gain_filter gain_filter_t;
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
+#include <math.h>
+
 static int gain_config_validate(const filter_config_t* config, int sample_rate,
                                 config_error_t* err) {
   (void)sample_rate;
@@ -28,6 +30,11 @@ static int gain_config_validate(const filter_config_t* config, int sample_rate,
   const gain_config_t* params = &config->parameters.gain;
   if (!params) return 0;
   if (params->has_gain) {
+    if (!isfinite(params->gain)) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "gain must be a finite number");
+      return -1;
+    }
     if (params->scale == GAIN_SCALE_LINEAR) {
       if (params->gain < -10.0 || params->gain > 10.0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,

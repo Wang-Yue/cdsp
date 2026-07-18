@@ -138,10 +138,20 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
                      params->limit);
     return -1;
   }
+  if (!isfinite(params->attack)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: attack must be finite");
+    return -1;
+  }
   if (params->attack < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                      "Lookahead Limiter: attack cannot be negative, got %g",
                      params->attack);
+    return -1;
+  }
+  if (!isfinite(params->release)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Lookahead Limiter: release must be finite");
     return -1;
   }
   if (params->release < 0.0) {
