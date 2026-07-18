@@ -145,8 +145,9 @@ processing_stop_reason_t engine_shared_state_get_stop_reason(
       continue;
     }
     reason = state->stop_reason;
+    atomic_thread_fence(memory_order_acquire);
     seq2 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
-                                memory_order_acquire);
+                                memory_order_relaxed);
   } while (seq1 != seq2);
   return reason;
 }
