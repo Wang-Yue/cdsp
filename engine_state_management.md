@@ -297,7 +297,7 @@ sequenceDiagram
    - If the level stays below the threshold for longer than the timeout, the silence counter updates.
 2. **Auto-Pause Transition**:
    - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
-   - It pauses both capture and playback backends (Note: physical hardware capture backends like CoreAudio/ALSA/WASAPI do not implement `set_is_paused` and continue reading frames, which the capture loop discards before queueing; playback backends suspend DAC rendering). In paused mode, backends yield CPU cycles.
+   - It pauses both capture and playback backends (Note: playback backends suspend DAC rendering; capture backends continue reading frames so the capture loop can evaluate peak levels for auto-resume. Non-hardware capture backends like File/Generator yield CPU with a 10ms sleep during `is_paused` to match hardware sample-rate pacing).
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms.
    - The processing thread wakes up on these 0-frame chunks, checks and performs any pending pipeline swaps, and propagates them downstream.
