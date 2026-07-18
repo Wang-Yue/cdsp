@@ -297,6 +297,19 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     playback_backend_prefill_silence(loop->playback, prefill_frames, &berr);
   }
 
+  if (berr.type != BACKEND_ERROR_NONE) {
+    logger_error(&g_logger,
+                 "Playback thread failed to prefill hardware silence: %s",
+                 berr.message);
+    processing_stop_reason_t reason = {
+        .type = STOP_REASON_PLAYBACK_ERROR,
+        .format_change_rate = 0,
+    };
+    snprintf(reason.message, sizeof(reason.message), "%s", berr.message);
+    engine_shared_state_request_stop(loop->shared, reason);
+    return;
+  }
+
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
   log_rate_adjust_mode(loop);
