@@ -7,4 +7,7 @@ bin/
 .DS_Store
 target/
 win_deps/
-linux_sysroot/
+sysroot-*/
+.sysroot_deb_cache/
+setup_rpi_sysroot.py
+
