@@ -238,7 +238,7 @@ sequenceDiagram
    - If either thread fails to open the device asynchronously, it requests an abort via `engine_shared_state_request_stop()` with the specific error type (e.g., `STOP_REASON_CAPTURE_ERROR` or `STOP_REASON_PLAYBACK_ERROR`), which immediately transitions the raw state to `INACTIVE`.
 
 10. **Transition to `RUNNING`**:
-    - Once the capture thread successfully opens its capture backend device, it sets `state_raw` to `PROCESSING_STATE_RUNNING` immediately prior to reading the first frame, notifying the controller that the session is streaming.
+    - Once the capture thread enters `engine_capture_loop_run()`, it checks if `state_raw` is `PROCESSING_STATE_STARTING` and sets `state_raw` to `PROCESSING_STATE_RUNNING` immediately prior to loop execution, notifying the controller that the session is active and streaming.
 
 ---
 
@@ -449,7 +449,10 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
       // WINNER: Only this block executes once.
-      engine_shared_state_publish_stop_reason(state, reason); // Thread-safe write under stop_reason_mutex
+      // Thread-safe publish of stop_reason under stop_reason_mutex:
+      pthread_mutex_lock(&state->stop_reason_mutex);
+      state->stop_reason = reason;
+      pthread_mutex_unlock(&state->stop_reason_mutex);
       ...
   } else {
       // LOSER: Stop has already been requested by someone else.
