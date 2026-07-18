@@ -263,7 +263,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 3: Playback Loop opens the playback device backend asynchronously.
+  // Step 9: Playback Loop opens the playback device backend asynchronously.
   if (!playback_backend_open(loop->playback, &berr)) {
     logger_error(&g_logger,
                  "Playback thread failed to open playback backend: %s",
@@ -278,7 +278,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   }
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 3: Pre-fill hardware DAC buffer with silence frames asynchronously.
+  // Step 9: Pre-fill hardware DAC buffer with silence frames asynchronously.
   // Prefill playback silence to feed the DAC immediately on start,
   // preventing immediate buffer underrun errors. If rate adjust is enabled,
   // we match its target level; otherwise, we pre-fill chunk_size.

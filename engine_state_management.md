@@ -20,12 +20,14 @@ Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
-| `state_raw` | `_Atomic uint8_t` | Encodes `processing_state_t` (`INACTIVE`, `RUNNING`, `PAUSED`, `STALLED`). When set to `INACTIVE`, it serves as the global stop signal. | Lock-free atomic reads (`acquire` ordering) and writes (`release` ordering). |
+| `state_raw` | `_Atomic uint8_t` | Encodes `processing_state_t` (`INACTIVE`, `STARTING`, `RUNNING`, `PAUSED`, `STALLED`). When set to `INACTIVE`, it serves as the global stop signal. | Lock-free atomic reads (`acquire` ordering) and writes (`release` ordering). |
 | `stop_once` | `_Atomic bool` | A latch/flag indicating whether a stop sequence has been initiated. Prevents multiple stop requests from colliding. | Checked and set atomically via Compare-And-Swap (CAS) `atomic_compare_exchange_strong_explicit`. |
 | `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Read and written under protection of `stop_reason_mutex`. |
 | `stop_reason_mutex` | `pthread_mutex_t` | Mutex protecting `stop_reason` against concurrent read/write data races. | C11 Mutex Lock (isolated from hot-path processing loop). |
 | `captured_queue` | `audio_sync_queue_t*` | Sync queue from Capture -> Processing. | Lock-free SPSC + OS semaphore. |
 | `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
+| `pipeline_garbage_queue` | `spsc_queue_t*` | Garbage collection queue for swapped DSP pipelines during hot-reloads. | Lock-free SPSC queue. |
+| `resampler_ratio` | `_Atomic double` | Relative resampler target speed ratio for dynamic clock drift correction. | Lock-free atomic reads and writes (`relaxed` ordering). |
 | `last_capture_time_ns` | `_Atomic uint64_t` | Telemetry timestamp of the last successfully captured chunk in nanoseconds. Checked by the external watchdog to detect driver freezes. | Lock-free atomic reads and writes (`relaxed` ordering). |
 
 ---
@@ -53,7 +55,7 @@ Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfa
 ---
 
 ### 1.4. State Persistence Level (`engine_state_manager_t`)
-Defined in [engine_state_manager.h](Engine/engine_state_manager.h). Manages fader volume/mute settings, config path, and state file serialization.
+Defined in [engine_state_manager.c](Engine/engine_state_manager.c) (opaque handle declared in [engine_state_manager.h](Engine/engine_state_manager.h)). Manages fader volume/mute settings, config path, and state file serialization.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -102,7 +104,7 @@ To mathematically guarantee freedom from deadlocks across all thread interaction
 2. **Mutual Independence of Leaf Locks**:
    - `config_mutex`, `stop_reason_mutex`, and `mgr->mutex` are completely independent. No function ever holds more than one leaf lock simultaneously, eliminating circular wait dependencies.
 3. **Re-entrant Self-Deadlock Immunity**:
-   - `engine_state_manager_t.mutex` is created as a `PTHREAD_MUTEX_RECURSIVE` lock. Internal methods (e.g. `save_if_needed()` calling `get_config_path()` or `get_fader_volume()`) executed on the main/API thread can safely re-acquire the lock without self-deadlocking.
+   - `engine_state_manager_t.mutex` is created as a `PTHREAD_MUTEX_RECURSIVE` lock. Internal methods executed on the main/API thread can safely re-acquire the lock without self-deadlocking (in implementation, `save_if_needed()` releases `mgr->mutex` prior to invoking getter sub-routines while recursive initialization guarantees safety for nested callers).
 4. **Audio Thread Lock Exclusion**:
    - Steady-state audio loops (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`) never acquire `state_mutex`, `config_mutex`, or `mgr->mutex`. The only lock touched by an audio loop is `stop_reason_mutex`, which is a leaf lock invoked strictly once on error/EOF exit paths outside the audio streaming loop.
 

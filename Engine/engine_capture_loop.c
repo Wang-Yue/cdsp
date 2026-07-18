@@ -323,7 +323,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 3: Capture Loop opens the capture device backend asynchronously.
+  // Step 9: Capture Loop opens the capture device backend asynchronously.
   if (!capture_backend_open(loop->capture, &berr)) {
     logger_error(&g_logger, "Capture thread failed to open capture backend: %s",
                  berr.message);
@@ -340,7 +340,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   }
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 4: Once capture open succeeds, transition the state_raw state to RUNNING.
+  // Step 10: Once capture open succeeds, transition the state_raw state to RUNNING.
   if (engine_shared_state_get_state(loop->shared) ==
       PROCESSING_STATE_STARTING) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);

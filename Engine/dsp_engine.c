@@ -96,7 +96,7 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
       if (dsp_session_reload_config(impl->session.active, config, &berr)) {
         return true;
       } else {
-        dsp_session_stop_and_free(
+        impl->session.last_stop_reason = dsp_session_stop_and_free(
             impl->session.active,
             (processing_stop_reason_t){.type = STOP_REASON_NONE});
         impl->session.active = NULL;
@@ -107,7 +107,7 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
   }
 
   if (impl->session.active) {
-    dsp_session_stop_and_free(
+    impl->session.last_stop_reason = dsp_session_stop_and_free(
         impl->session.active,
         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     impl->session.active = NULL;
