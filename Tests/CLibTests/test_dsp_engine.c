@@ -4,14 +4,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "Audio/audio_chunk.h"
+#include "Backend/file_backend.h"
+#include "Backend/generator_capture.h"
 #include "Engine/dsp_engine.h"
 #include "Engine/engine_capture_loop.h"
 #include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
-#include "Audio/audio_chunk.h"
-#include "Backend/file_backend.h"
-#include "Backend/generator_capture.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/pipeline.h"
@@ -735,8 +735,9 @@ TEST(DSPEngineE2E_GeneratorFile) {
 }
 
 // Real-world scenario simulated:
-// Offline batch processing (e.g., loading an audio file from disk, applying DSP filters,
-// and saving/writing the processed result to another file as fast as CPU permits).
+// Offline batch processing (e.g., loading an audio file from disk, applying DSP
+// filters, and saving/writing the processed result to another file as fast as
+// CPU permits).
 TEST(DSPEngineE2E_FileFile) {
   char in_file[256];
   char out_file[256];
@@ -808,8 +809,9 @@ TEST(DSPEngineE2E_FileFile) {
 }
 
 // Real-world scenario simulated:
-// High-performance offline rendering. Verifies that when realtime constraints are not
-// requested, the engine processes samples unthrottled far faster than real-time speed.
+// High-performance offline rendering. Verifies that when realtime constraints
+// are not requested, the engine processes samples unthrottled far faster than
+// real-time speed.
 TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   char out_filename[256];
   snprintf(out_filename, sizeof(out_filename), "/tmp/e2e_out_speed_%d.raw",
@@ -1242,29 +1244,31 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
 }
 
 // Real-world scenario simulated:
-// Fully offline file processing (e.g. converting a track format or offline DSP offline processing).
-// Runs as fast as CPU permits (unthrottled).
+// Fully offline file processing (e.g. converting a track format or offline DSP
+// offline processing). Runs as fast as CPU permits (unthrottled).
 TEST(DSPEngineE2E_FileFile_Realtime_FF) {
   run_e2e_file_file_test(false, false, 480000, true);
 }
 
 // Real-world scenario simulated:
-// Recording from a physical hardware capture device (mic/line-in, which delivers chunks in real-time)
-// and saving/writing the output to a local raw PCM file on disk (throttled by capture speed).
+// Recording from a physical hardware capture device (mic/line-in, which
+// delivers chunks in real-time) and saving/writing the output to a local raw
+// PCM file on disk (throttled by capture speed).
 TEST(DSPEngineE2E_FileFile_Realtime_TF) {
   run_e2e_file_file_test(true, false, 480000, true);
 }
 
 // Real-world scenario simulated:
 // Playing back a local music file from disk (e.g., raw PCM audio track)
-// and outputting it to a real-world physical DAC device in real-time (throttled by playback DAC speed).
+// and outputting it to a real-world physical DAC device in real-time (throttled
+// by playback DAC speed).
 TEST(DSPEngineE2E_FileFile_Realtime_FT) {
   run_e2e_file_file_test(false, true, 480000, true);
 }
 
 // Real-world scenario simulated:
-// Live real-time audio routing (e.g. mic capture -> DSP processing -> DAC playback).
-// Both ends run in real-time (fully throttled).
+// Live real-time audio routing (e.g. mic capture -> DSP processing -> DAC
+// playback). Both ends run in real-time (fully throttled).
 TEST(DSPEngineE2E_FileFile_Realtime_TT) {
   run_e2e_file_file_test(true, true, 480000, true);
 }
@@ -1282,9 +1286,10 @@ static void* stop_thread_func(void* arg) {
 }
 
 // Real-world scenario simulated:
-// Host application stop command race conditions. Simulates a user clicking "Stop" in the UI
-// while the playback thread concurrently runs into a device error or shutdown.
-// Verifies that cdsp_stop() does not block indefinitely (deadlock) when threads teardown.
+// Host application stop command race conditions. Simulates a user clicking
+// "Stop" in the UI while the playback thread concurrently runs into a device
+// error or shutdown. Verifies that cdsp_stop() does not block indefinitely
+// (deadlock) when threads teardown.
 TEST(DSPEngineE2E_DeadlockGuard) {
   char in_file[256];
   char out_file[256];
@@ -1382,14 +1387,16 @@ extern volatile bool g_generator_mock_hang;
 extern volatile int g_pipeline_swaps_count;
 
 // Real-world scenario simulated:
-// Physical audio hardware driver crash/lockup (synchronous lockup inside backend read call).
-// Verifies that the external watchdog stall detector running on the main controller thread
-// successfully flags the engine state as STALLED instead of remaining stuck in RUNNING.
+// Physical audio hardware driver crash/lockup (synchronous lockup inside
+// backend read call). Verifies that the external watchdog stall detector
+// running on the main controller thread successfully flags the engine state as
+// STALLED instead of remaining stuck in RUNNING.
 TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   g_generator_mock_hang = false;
 
   char out_file[256];
-  snprintf(out_file, sizeof(out_file), "/tmp/watchdog_hang_out_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/watchdog_hang_out_%d.raw",
+           getpid());
   remove(out_file);
 
   char json[1024];
@@ -1452,14 +1459,16 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
 }
 
 // Real-world scenario simulated:
-// Staging a filter configuration hot-reload while the audio pipeline is auto-paused (e.g. during silence).
-// Verifies that the reload and structural pipeline swap apply immediately without waiting
-// for the audio signal to resume.
+// Staging a filter configuration hot-reload while the audio pipeline is
+// auto-paused (e.g. during silence). Verifies that the reload and structural
+// pipeline swap apply immediately without waiting for the audio signal to
+// resume.
 TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   g_pipeline_swaps_count = 0;
 
   char out_file[256];
-  snprintf(out_file, sizeof(out_file), "/tmp/paused_reload_out_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/paused_reload_out_%d.raw",
+           getpid());
   remove(out_file);
 
   char json_initial[2048];
@@ -1568,9 +1577,10 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 }
 
 // Real-world scenario simulated:
-// Auto-pause and auto-resume. Simulates the audio signal dropping below the threshold
-// to trigger fader-mute auto-pause, then a configuration reload with loud noise occurs,
-// causing the system to automatically resume back to RUNNING.
+// Auto-pause and auto-resume. Simulates the audio signal dropping below the
+// threshold to trigger fader-mute auto-pause, then a configuration reload with
+// loud noise occurs, causing the system to automatically resume back to
+// RUNNING.
 TEST(DSPEngineE2E_AutoPauseResume) {
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/e2e_autopause_%d.raw", getpid());
@@ -1591,7 +1601,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
            "                \"freq\": 1000.0,\n"
-           "                \"level\": -100.0\n" // Silent
+           "                \"level\": -100.0\n"  // Silent
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -1620,7 +1630,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
            "                \"freq\": 1000.0,\n"
-           "                \"level\": -20.0\n" // Loud
+           "                \"level\": -20.0\n"  // Loud
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -1676,8 +1686,9 @@ TEST(DSPEngineE2E_AutoPauseResume) {
 }
 
 // Real-world scenario simulated:
-// Client app volume/mute changes. Simulates adjusting the playback fader gain (volume)
-// and toggling mute on the fly, verifying that level meters reflect changes instantly.
+// Client app volume/mute changes. Simulates adjusting the playback fader gain
+// (volume) and toggling mute on the fly, verifying that level meters reflect
+// changes instantly.
 TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/e2e_fader_%d.raw", getpid());
@@ -1696,7 +1707,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
            "                \"freq\": 1000.0,\n"
-           "                \"level\": -6.0\n"\
+           "                \"level\": -6.0\n"
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -1737,8 +1748,8 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   // Fetch muted VU levels - playback fader is post-mute, so it should be silent
   memset(&vu, 0, sizeof(vu));
   ASSERT_TRUE(cdsp_get_vu_levels(engine, &vu));
-  ASSERT_TRUE(vu.playback_peak[0] < -150.0); // Muted
-  ASSERT_TRUE(vu.capture_peak[0] > -20.0);    // Capture is pre-fader, still loud
+  ASSERT_TRUE(vu.playback_peak[0] < -150.0);  // Muted
+  ASSERT_TRUE(vu.capture_peak[0] > -20.0);  // Capture is pre-fader, still loud
   cdsp_free_vu_levels(&vu);
 
   // Unmute main fader and set fader volume
@@ -1753,10 +1764,11 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
 }
 
 // Real-world scenario simulated:
-// Graceful File-to-File rendering completion (EOF Queue Draining Flow - Section 3.5).
-// Verifies that when the input file reaches EOF, the capture and processing threads
-// terminate early, but the engine state remains RUNNING while the playback thread is still
-// draining the queue in real-time. Once fully played, the state transitions to INACTIVE.
+// Graceful File-to-File rendering completion (EOF Queue Draining Flow -
+// Section 3.5). Verifies that when the input file reaches EOF, the capture and
+// processing threads terminate early, but the engine state remains RUNNING
+// while the playback thread is still draining the queue in real-time. Once
+// fully played, the state transitions to INACTIVE.
 TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   char in_file[256];
   char out_file[256];
@@ -1776,28 +1788,29 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   // Set low samplerate (1000Hz) and chunk size (512), with realtime playback.
   // Each chunk takes 512 / 1000 = 512ms to play. Total playback time = 1024ms.
   char json[1024];
-  snprintf(json, sizeof(json),
-           "{\n"
-           "    \"devices\": {\n"
-           "        \"samplerate\": 1000,\n"
-           "        \"chunksize\": 512,\n"
-           "        \"queuelimit\": 16,\n"
-           "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
-           "            \"filename\": \"%s\",\n"
-           "            \"format\": \"S16_LE\",\n"
-           "            \"channels\": 2\n"
-           "        },\n"
-           "        \"playback\": {\n"
-           "            \"type\": \"File\",\n"
-           "            \"filename\": \"%s\",\n"
-           "            \"format\": \"S16_LE\",\n"
-           "            \"channels\": 2,\n"
-           "            \"realtime\": true\n" // Playback throttled to real-time!
-           "        }\n"
-           "    }\n"
-           "}",
-           in_file, out_file);
+  snprintf(
+      json, sizeof(json),
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 1000,\n"
+      "        \"chunksize\": 512,\n"
+      "        \"queuelimit\": 16,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"%s\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"%s\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2,\n"
+      "            \"realtime\": true\n"  // Playback throttled to real-time!
+      "        }\n"
+      "    }\n"
+      "}",
+      in_file, out_file);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -1808,16 +1821,16 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   ASSERT_TRUE(success);
 
   // 1. Sleep for 200ms.
-  // Capture and Processing threads should have finished reading/processing the 2 chunks
-  // and exited. Playback is still playing chunk 1 (takes 512ms).
+  // Capture and Processing threads should have finished reading/processing the
+  // 2 chunks and exited. Playback is still playing chunk 1 (takes 512ms).
   cdsp_sleep_ms(200);
 
   // State must still be RUNNING (not inactive!) because queue is draining.
   cdsp_engine_poll(engine);
   ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
 
-  // 2. Sleep for another 1000ms (total 1200ms, which is > 1024ms total playback time).
-  // Playback has finished playing both chunks and exited.
+  // 2. Sleep for another 1000ms (total 1200ms, which is > 1024ms total playback
+  // time). Playback has finished playing both chunks and exited.
   cdsp_sleep_ms(1000);
 
   // State must transition to INACTIVE after draining.
@@ -1833,7 +1846,8 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
 // Real-world scenario simulated:
 // Immediate startup failure abort (Section 3.6).
 // Simulates configure failure (e.g. invalid capture file path).
-// Verifies that initialization fails cleanly and immediately transitions the engine state to INACTIVE.
+// Verifies that initialization fails cleanly and immediately transitions the
+// engine state to INACTIVE.
 TEST(DSPEngineE2E_StartupFailure_Abort) {
   char json[1024];
   snprintf(json, sizeof(json),
@@ -1844,7 +1858,9 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        \"queuelimit\": 16,\n"
            "        \"capture\": {\n"
            "            \"type\": \"File\",\n"
-           "            \"filename\": \"/nonexistent_directory/nonexistent_file.raw\",\n" // Invalid file path!
+           "            \"filename\": "
+           "\"/nonexistent_directory/nonexistent_file.raw\",\n"  // Invalid file
+                                                                 // path!
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        },\n"
@@ -1863,11 +1879,12 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
   bool success = engine->set_config_json(engine->ctx, json, &err);
-  
+
   // The configuration is syntactically valid and threads spawn successfully
   ASSERT_TRUE(success);
 
-  // Wait for the capture thread to start and fail to open the nonexistent file backend
+  // Wait for the capture thread to start and fail to open the nonexistent file
+  // backend
   cdsp_sleep_ms(100);
 
   // Engine state must transition to INACTIVE
@@ -1883,10 +1900,12 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
 }
 
 // Real-world scenario simulated:
-// Real-time hardware capture under queue drop pressure (Section 3.2 & Section 1.7.2 Rule 5).
-// When the captured SPSC queue reaches 100% capacity, incoming real-time audio chunks are dropped.
-// Verifies that un-enqueued chunks are retained in loop->pending_chunk so round-robin pool index
-// does not advance or wrap around into active in-flight queued buffers, avoiding audio corruption.
+// Real-time hardware capture under queue drop pressure (Section 3.2 &
+// Section 1.7.2 Rule 5). When the captured SPSC queue reaches 100% capacity,
+// incoming real-time audio chunks are dropped. Verifies that un-enqueued chunks
+// are retained in loop->pending_chunk so round-robin pool index does not
+// advance or wrap around into active in-flight queued buffers, avoiding audio
+// corruption.
 TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   // Shared state with queue depth 2
   engine_shared_state_t* shared = engine_shared_state_create(2, 2);
@@ -1906,7 +1925,8 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
 
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-  capture_backend_t* cap_backend = generator_capture_create(&cap_cfg, 48000, 64, NULL, &berr);
+  capture_backend_t* cap_backend =
+      generator_capture_create(&cap_cfg, 48000, 64, NULL, &berr);
   ASSERT_TRUE(cap_backend != NULL);
 
   engine_capture_loop_config_t loop_cfg = {
@@ -1937,17 +1957,20 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   // Now captured_queue is FULL.
   // Run 10 drop iterations. In real-time mode, enqueue fails for each chunk.
   // Now captured_queue is FULL.
-  // Run 10 capture steps on full queue. In real-time mode, enqueue fails (drops).
+  // Run 10 capture steps on full queue. In real-time mode, enqueue fails
+  // (drops).
   for (int i = 0; i < 10; i++) {
     engine_capture_loop_step(loop);
   }
 
   // Dequeue chunk0 sitting in captured_queue
-  audio_chunk_t* dequeued0 = engine_shared_state_dequeue_captured_blocking(shared);
+  audio_chunk_t* dequeued0 =
+      engine_shared_state_dequeue_captured_blocking(shared);
   ASSERT_EQ(chunk0, dequeued0);
 
-  // Verify that chunk0 is NOT returned as the next available pool chunk after drop iterations!
-  // Without pending_chunk retention, pool wrap-around causes next_pool_chunk == chunk0 (overwriting active queue buffer).
+  // Verify that chunk0 is NOT returned as the next available pool chunk after
+  // drop iterations! Without pending_chunk retention, pool wrap-around causes
+  // next_pool_chunk == chunk0 (overwriting active queue buffer).
   audio_chunk_t* next_pool_chunk = round_robin_chunk_pool_next(pool);
   ASSERT_NE(chunk0, next_pool_chunk);
 
@@ -1963,10 +1986,11 @@ static void* proc_thread_worker(void* arg) {
 }
 
 // Real-world scenario simulated:
-// Non-realtime session immediate abort during backend error or user stop (Section 3.6).
-// When a non-realtime worker thread (e.g. file conversion) is waiting on a full queue while an
-// immediate abort occurs, verifies that worker threads break out of the outer processing loop
-// immediately rather than draining all remaining buffered chunks in captured_queue.
+// Non-realtime session immediate abort during backend error or user stop
+// (Section 3.6). When a non-realtime worker thread (e.g. file conversion) is
+// waiting on a full queue while an immediate abort occurs, verifies that worker
+// threads break out of the outer processing loop immediately rather than
+// draining all remaining buffered chunks in captured_queue.
 TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   // Shared state with queue depth 4
   engine_shared_state_t* shared = engine_shared_state_create(4, 4);
@@ -2009,7 +2033,8 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   engine_processing_loop_t* loop = engine_processing_loop_create(&loop_cfg);
   ASSERT_TRUE(loop != NULL);
 
-  // Fill processed_queue to capacity (4 chunks) so processing thread blocks when trying to enqueue
+  // Fill processed_queue to capacity (4 chunks) so processing thread blocks
+  // when trying to enqueue
   for (int i = 0; i < 4; i++) {
     audio_chunk_t* pchunk = round_robin_chunk_pool_next(pool);
     ASSERT_TRUE(engine_shared_state_enqueue_processed(shared, pchunk));
@@ -2024,18 +2049,22 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   pthread_t thread;
   pthread_create(&thread, NULL, proc_thread_worker, loop);
 
-  // Allow processing thread to dequeue 1 captured chunk and enter while (!enqueue_processed) sleep loop
+  // Allow processing thread to dequeue 1 captured chunk and enter while
+  // (!enqueue_processed) sleep loop
   cdsp_sleep_ms(10);
 
   // Request immediate abort (STOP_REASON_PLAYBACK_ERROR)
   processing_stop_reason_t stop_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
-  snprintf(stop_reason.message, sizeof(stop_reason.message), "Mock error abort");
+  snprintf(stop_reason.message, sizeof(stop_reason.message),
+           "Mock error abort");
   engine_shared_state_request_stop(shared, stop_reason);
 
   pthread_join(thread, NULL);
 
-  // Assert that processing thread exited immediately without draining the remaining captured chunks!
-  size_t remaining_captured = spsc_queue_get_count(engine_shared_state_get_captured_queue(shared));
+  // Assert that processing thread exited immediately without draining the
+  // remaining captured chunks!
+  size_t remaining_captured =
+      spsc_queue_get_count(engine_shared_state_get_captured_queue(shared));
   ASSERT_TRUE(remaining_captured > 0);
 
   engine_processing_loop_free(loop);
@@ -2046,10 +2075,11 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
 
 // Real-world scenario simulated:
 // Silence Auto-Pause & Resume bug on non-hardware inputs (Section 3.3).
-// Proves that when auto-pause triggers on a File capture stream, file_capture_read()
-// checks is_paused == true and immediately returns false without reading frames.
-// As a result, when loud non-silent audio arrives in the input file stream, the engine
-// remains permanently stuck in PAUSED and signal auto-resume fails.
+// Proves that when auto-pause triggers on a File capture stream,
+// file_capture_read() checks is_paused == true and immediately returns false
+// without reading frames. As a result, when loud non-silent audio arrives in
+// the input file stream, the engine remains permanently stuck in PAUSED and
+// signal auto-resume fails.
 TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   char in_file[256];
   char out_file[256];
@@ -2070,8 +2100,8 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   fwrite(samples, sizeof(int16_t), 10000, f);
   fclose(f);
 
-  // Samplerate: 8000Hz, chunksize: 512, realtime capture: true, realtime playback: false.
-  // 5000 silent frames / 8000 = 0.625 seconds of silence.
+  // Samplerate: 8000Hz, chunksize: 512, realtime capture: true, realtime
+  // playback: false. 5000 silent frames / 8000 = 0.625 seconds of silence.
   // silence_timeout_s = 0.2s (triggers auto-pause after ~3 chunks of silence).
   char json[1024];
   snprintf(json, sizeof(json),
@@ -2112,13 +2142,15 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   cdsp_engine_poll(engine);
   ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_PAUSED);
 
-  // 2. Wait another 500ms while the input file reaches the loud non-silent audio frames (frames 5000+)
+  // 2. Wait another 500ms while the input file reaches the loud non-silent
+  // audio frames (frames 5000+)
   cdsp_sleep_ms(500);
   cdsp_engine_poll(engine);
 
   // EXPECTED DESIGN BEHAVIOR: Loud audio should resume streaming -> RUNNING
-  // ACTUAL BUG BEHAVIOR: File capture backend returns false on read when is_paused == true,
-  // preventing frame reading, so the engine stays stuck in PAUSED!
+  // ACTUAL BUG BEHAVIOR: File capture backend returns false on read when
+  // is_paused == true, preventing frame reading, so the engine stays stuck in
+  // PAUSED!
   cdsp_processing_state_t state_after_loud_signal = cdsp_get_state(engine);
 
   cdsp_stop(engine);
@@ -2132,10 +2164,10 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
 
 // Real-world scenario simulated:
 // Immediate Abort Teardown queue draining bug in playback loop (Section 3.6).
-// Proves that when an immediate error abort (STOP_REASON_PLAYBACK_ERROR) occurs,
-// engine_playback_loop_run() currently lacks a should_stop() check inside its
-// while (dequeue_processed_blocking) loop, causing it to drain and render all queued chunks
-// to DAC/file instead of aborting immediately.
+// Proves that when an immediate error abort (STOP_REASON_PLAYBACK_ERROR)
+// occurs, engine_playback_loop_run() currently lacks a should_stop() check
+// inside its while (dequeue_processed_blocking) loop, causing it to drain and
+// render all queued chunks to DAC/file instead of aborting immediately.
 TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
   engine_shared_state_t* shared = engine_shared_state_create(8, 8);
   ASSERT_TRUE(shared != NULL);
@@ -2155,10 +2187,12 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
   play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
   play_cfg.cfg.raw_file.channels = 1;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  snprintf(play_cfg.cfg.raw_file.filename, sizeof(play_cfg.cfg.raw_file.filename), "%s", out_file);
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "%s", out_file);
 
   backend_error_t berr;
-  playback_backend_t* pb = file_playback_create(&play_cfg, 48000, 64, NULL, &berr);
+  playback_backend_t* pb =
+      file_playback_create(&play_cfg, 48000, 64, NULL, &berr);
   ASSERT_TRUE(pb != NULL);
 
   engine_playback_loop_config_t loop_cfg = {
@@ -2186,15 +2220,17 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
 
   // Request immediate abort (STOP_REASON_PLAYBACK_ERROR)
   processing_stop_reason_t stop_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
-  snprintf(stop_reason.message, sizeof(stop_reason.message), "Hardware DAC failure");
+  snprintf(stop_reason.message, sizeof(stop_reason.message),
+           "Hardware DAC failure");
   engine_shared_state_request_stop(shared, stop_reason);
 
   // Run playback loop
   engine_playback_loop_run(loop);
 
-  // According to Section 3.6 (Immediate Abort Teardown), the playback loop MUST NOT drain
-  // queued chunks when should_stop() is true during an error abort.
-  size_t remaining_processed = spsc_queue_get_count(engine_shared_state_get_processed_queue(shared));
+  // According to Section 3.6 (Immediate Abort Teardown), the playback loop MUST
+  // NOT drain queued chunks when should_stop() is true during an error abort.
+  size_t remaining_processed =
+      spsc_queue_get_count(engine_shared_state_get_processed_queue(shared));
 
   engine_playback_loop_free(loop);
   processing_parameters_free(params);
@@ -2202,31 +2238,38 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
   engine_shared_state_free(shared);
   remove(out_file);
 
-  // Assert that remaining chunks were NOT drained and written to DAC during immediate abort
+  // Assert that remaining chunks were NOT drained and written to DAC during
+  // immediate abort
   ASSERT_TRUE(remaining_processed > 0);
 }
 
 // Real-world scenario simulated:
-// Concurrent graceful EOF completion and hardware DAC/playback failure during teardown (Section 4).
-// Proves that when Thread A (capture EOF) wins CAS on stop_once but has not yet finished publishing
-// STOP_REASON_DONE under stop_reason_mutex, a concurrent request_stop(STOP_REASON_PLAYBACK_ERROR)
-// from Thread B (hardware DAC failure) enters the LOSER branch and reads STOP_REASON_NONE.
-// Current code assumes STOP_REASON_NONE != STOP_REASON_DONE, skipping error publication and state INACTIVE
-// transition, silently dropping the hardware error and leaving session worker threads hanging.
+// Concurrent graceful EOF completion and hardware DAC/playback failure during
+// teardown (Section 4). Proves that when Thread A (capture EOF) wins CAS on
+// stop_once but has not yet finished publishing STOP_REASON_DONE under
+// stop_reason_mutex, a concurrent request_stop(STOP_REASON_PLAYBACK_ERROR) from
+// Thread B (hardware DAC failure) enters the LOSER branch and reads
+// STOP_REASON_NONE. Current code assumes STOP_REASON_NONE != STOP_REASON_DONE,
+// skipping error publication and state INACTIVE transition, silently dropping
+// the hardware error and leaving session worker threads hanging.
 TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
   engine_shared_state_t* shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
-  // Step 1: Simulate Thread A winning CAS with unpublished / non-error stop (STOP_REASON_NONE)
+  // Step 1: Simulate Thread A winning CAS with unpublished / non-error stop
+  // (STOP_REASON_NONE)
   engine_shared_state_request_stop(
       shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
 
-  // Step 2: Thread B requests a critical hardware error stop while stop_once is true
+  // Step 2: Thread B requests a critical hardware error stop while stop_once is
+  // true
   processing_stop_reason_t err_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
-  snprintf(err_reason.message, sizeof(err_reason.message), "Hardware DAC failure");
+  snprintf(err_reason.message, sizeof(err_reason.message),
+           "Hardware DAC failure");
   engine_shared_state_request_stop(shared, err_reason);
 
-  // Expected behavior: Critical hardware error MUST be published and state MUST be INACTIVE
+  // Expected behavior: Critical hardware error MUST be published and state MUST
+  // be INACTIVE
   ASSERT_EQ(STOP_REASON_PLAYBACK_ERROR,
             engine_shared_state_get_stop_reason(shared).type);
   ASSERT_TRUE(engine_shared_state_should_stop(shared));
@@ -2236,16 +2279,19 @@ TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
 }
 
 // Real-world scenario simulated:
-// Main thread application cleanup following successful EOF audio rendering completion (Section 4 & Section 3.5).
-// Proves that when a graceful EOF teardown finishes (stop_reason set to STOP_REASON_DONE), a subsequent
-// dsp_session_stop_and_free() or dsp_engine_stop() call on the main thread passing default STOP_REASON_NONE
-// triggers current condition (reason.type != STOP_REASON_DONE), overwriting STOP_REASON_DONE with
-// STOP_REASON_NONE and destroying completion diagnostic records.
+// Main thread application cleanup following successful EOF audio rendering
+// completion (Section 4 & Section 3.5). Proves that when a graceful EOF
+// teardown finishes (stop_reason set to STOP_REASON_DONE), a subsequent
+// dsp_session_stop_and_free() or dsp_engine_stop() call on the main thread
+// passing default STOP_REASON_NONE triggers current condition (reason.type !=
+// STOP_REASON_DONE), overwriting STOP_REASON_DONE with STOP_REASON_NONE and
+// destroying completion diagnostic records.
 TEST(DSPEngine_Repro_StopReason_None_Overwriting_Done) {
   engine_shared_state_t* shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
-  // Step 1: Graceful EOF teardown finishes, setting stop_reason to STOP_REASON_DONE
+  // Step 1: Graceful EOF teardown finishes, setting stop_reason to
+  // STOP_REASON_DONE
   processing_stop_reason_t eof_reason = {.type = STOP_REASON_DONE};
   engine_shared_state_request_stop(shared, eof_reason);
 
@@ -2255,14 +2301,50 @@ TEST(DSPEngine_Repro_StopReason_None_Overwriting_Done) {
   processing_stop_reason_t default_reason = {.type = STOP_REASON_NONE};
   engine_shared_state_request_stop(shared, default_reason);
 
-  // Expected behavior: STOP_REASON_DONE MUST NOT be overwritten by STOP_REASON_NONE
+  // Expected behavior: STOP_REASON_DONE MUST NOT be overwritten by
+  // STOP_REASON_NONE
   ASSERT_EQ(STOP_REASON_DONE, engine_shared_state_get_stop_reason(shared).type);
 
   engine_shared_state_free(shared);
 }
 
+// Real-world scenario simulated:
+// User clicks "Stop" or session is destroyed while engine is in graceful EOF
+// drain mode (Section 4 & Section 3.5). Reproduces bug where
+// request_stop(STOP_REASON_NONE) arriving after request_stop(STOP_REASON_DONE)
+// ignored the stop request in the LOSER branch because reason.type !=
+// STOP_REASON_NONE was false, leaving state_raw as RUNNING/STARTING and
+// processed_queue open, causing Playback thread to hang indefinitely on join.
+TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
+  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  ASSERT_TRUE(shared != NULL);
+
+  // Step 1: Capture thread reaches EOF and requests graceful stop
+  processing_stop_reason_t eof_reason = {.type = STOP_REASON_DONE};
+  engine_shared_state_request_stop(shared, eof_reason);
+
+  ASSERT_EQ(STOP_REASON_DONE, engine_shared_state_get_stop_reason(shared).type);
+  ASSERT_FALSE(engine_shared_state_should_stop(shared));
+
+  // Step 2: User clicks "Stop" or dsp_session_stop_and_free is called, passing
+  // STOP_REASON_NONE
+  processing_stop_reason_t stop_cmd = {.type = STOP_REASON_NONE};
+  engine_shared_state_request_stop(shared, stop_cmd);
+
+  // Expected behavior:
+  // 1. stop_reason MUST remain STOP_REASON_DONE (not overwritten by NONE)
+  ASSERT_EQ(STOP_REASON_DONE, engine_shared_state_get_stop_reason(shared).type);
+
+  // 2. Engine state MUST transition to INACTIVE
+  ASSERT_TRUE(engine_shared_state_should_stop(shared));
+  ASSERT_EQ(PROCESSING_STATE_INACTIVE, engine_shared_state_get_state(shared));
+
+  // 3. Processed queue MUST be shut down so blocking dequeue returns NULL
+  // immediately
+  audio_chunk_t* chunk = engine_shared_state_dequeue_processed_blocking(shared);
+  ASSERT_TRUE(chunk == NULL);
+
+  engine_shared_state_free(shared);
+}
+
 TEST_MAIN()
-
-
-
-
