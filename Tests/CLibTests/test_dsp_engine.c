@@ -6,9 +6,11 @@
 
 #include "Engine/dsp_engine.h"
 #include "Engine/engine_capture_loop.h"
+#include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
 #include "Audio/audio_chunk.h"
+#include "Backend/file_backend.h"
 #include "Backend/generator_capture.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
@@ -2126,6 +2128,82 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
 
   // Assert that state auto-resumes to RUNNING when loud audio arrives
   ASSERT_EQ(state_after_loud_signal, CDSP_PROCESSING_STATE_RUNNING);
+}
+
+// Real-world scenario simulated:
+// Immediate Abort Teardown queue draining bug in playback loop (Section 3.6).
+// Proves that when an immediate error abort (STOP_REASON_PLAYBACK_ERROR) occurs,
+// engine_playback_loop_run() currently lacks a should_stop() check inside its
+// while (dequeue_processed_blocking) loop, causing it to drain and render all queued chunks
+// to DAC/file instead of aborting immediately.
+TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
+  engine_shared_state_t* shared = engine_shared_state_create(8, 8);
+  ASSERT_TRUE(shared != NULL);
+
+  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(8, 64, 1);
+  ASSERT_TRUE(pool != NULL);
+
+  processing_parameters_t* params = processing_parameters_create(1, 1);
+  ASSERT_TRUE(params != NULL);
+
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/abort_drain_out_%d.raw", getpid());
+  remove(out_file);
+
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.cfg.raw_file.channels = 1;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  snprintf(play_cfg.cfg.raw_file.filename, sizeof(play_cfg.cfg.raw_file.filename), "%s", out_file);
+
+  backend_error_t berr;
+  playback_backend_t* pb = file_playback_create(&play_cfg, 48000, 64, NULL, &berr);
+  ASSERT_TRUE(pb != NULL);
+
+  engine_playback_loop_config_t loop_cfg = {
+      .shared = shared,
+      .capture = NULL,
+      .playback = pb,
+      .processing_params = params,
+      .dsd_encoder = NULL,
+      .chunk_size = 64,
+      .pipeline_rate = 48000,
+      .target_level = 0,
+      .rate_adjust_enabled = false,
+      .adjust_period = 0.0,
+  };
+
+  engine_playback_loop_t* loop = engine_playback_loop_create(&loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  // Push 4 chunks into processed_queue
+  for (int i = 0; i < 4; i++) {
+    audio_chunk_t* chunk = round_robin_chunk_pool_next(pool);
+    audio_chunk_set_valid_frames(chunk, 64);
+    ASSERT_TRUE(engine_shared_state_enqueue_processed(shared, chunk));
+  }
+
+  // Request immediate abort (STOP_REASON_PLAYBACK_ERROR)
+  processing_stop_reason_t stop_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
+  snprintf(stop_reason.message, sizeof(stop_reason.message), "Hardware DAC failure");
+  engine_shared_state_request_stop(shared, stop_reason);
+
+  // Run playback loop
+  engine_playback_loop_run(loop);
+
+  // According to Section 3.6 (Immediate Abort Teardown), the playback loop MUST NOT drain
+  // queued chunks when should_stop() is true during an error abort.
+  size_t remaining_processed = spsc_queue_get_count(engine_shared_state_get_processed_queue(shared));
+
+  engine_playback_loop_free(loop);
+  processing_parameters_free(params);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+  remove(out_file);
+
+  // Assert that remaining chunks were NOT drained and written to DAC during immediate abort
+  ASSERT_TRUE(remaining_processed > 0);
 }
 
 TEST_MAIN()
