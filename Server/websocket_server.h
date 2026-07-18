@@ -58,7 +58,7 @@ struct websocket_server {
   dsp_engine_t* engine;
 
   struct lws_context* context;
-  _Atomic bool running;
+  _Atomic int running;
   pthread_t thread;
   pthread_t metrics_thread;
 
