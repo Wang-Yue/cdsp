@@ -1,4 +1,4 @@
-// WebSocket control server
+// WebSocket control server using libwebsockets
 // Provides runtime control API compatible with the CamillaDSP monitor control
 // protocol
 
@@ -21,34 +21,9 @@
 #include "Public/spectrum.h"
 #include "Utils/cdsp_time.h"
 #include "websocket_server_internal.h"
-#include "ws_framing.h"
-#include "ws_handshake.h"
 #include "ws_rpc_dispatcher.h"
 
 static const logger_t server_logger = {"dsp.server.websocket"};
-
-#ifdef _WIN32
-#include <ws2tcpip.h>
-#define CLOSE_SOCKET(s) closesocket(s)
-#define INVALID_SOCKET_VAL INVALID_SOCKET
-#define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
-#define IS_SOCKET_ERROR(r) ((r) == SOCKET_ERROR)
-#define GET_SOCKET_ERROR() WSAGetLastError()
-#define poll_sockets WSAPoll
-#else
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#define CLOSE_SOCKET(s) close(s)
-#define INVALID_SOCKET_VAL (-1)
-#define IS_INVALID_SOCKET(s) ((s) < 0)
-#define IS_SOCKET_ERROR(r) ((r) < 0)
-#define GET_SOCKET_ERROR() errno
-#define poll_sockets poll
-#endif
 
 void dyn_string_init(dyn_string_t* ds, size_t initial_cap) {
   ds->data = (char*)calloc(initial_cap, sizeof(char));
@@ -99,6 +74,8 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   ds->length = (size_t)needed;
   va_end(args);
 }
+
+uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000; }
 
 double db_to_amplitude(double db) {
   if (db <= -1000.0) return 0.0;
@@ -202,125 +179,168 @@ void level_history_get_rms_since(const level_history_t* history,
     const level_sample_t* sample = &history->samples[idx];
     if (sample->timestamp_ms < since_ms) break;
     for (size_t c = 0; c < channels; c++) {
-      if (sample->levels) {
-        double amp = db_to_amplitude(sample->levels[c]);
-        sums[c] += amp * amp;
+      if (sample->levels && sums) {
+        double val = db_to_amplitude(sample->levels[c]);
+        sums[c] += val * val;
       }
     }
     count++;
     idx = (idx + 300 - 1) % 300;
   }
-  if (count > 0) {
+  if (count > 0 && sums) {
     for (size_t c = 0; c < channels; c++) {
-      double mean_square = sums[c] / (double)count;
-      out_levels[c] = amplitude_to_db(sqrt(mean_square));
+      out_levels[c] = amplitude_to_db(sqrt(sums[c] / (double)count));
     }
   }
-  free(sums);
+  if (sums) free(sums);
 }
 
-static double smoothing_alpha(double delta_ms, double time_constant_ms) {
-  if (time_constant_ms <= 0.0) return 1.0;
-  double delta_sec = delta_ms / 1000.0;
-  double time_constant_sec = time_constant_ms / 1000.0;
-  return 1.0 - exp(-delta_sec / time_constant_sec);
+static double smoothing_alpha(double dt_ms, double tc_ms) {
+  if (tc_ms <= 0.0) return 1.0;
+  return 1.0 - exp(-dt_ms / tc_ms);
 }
 
-websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
-  websocket_server_t* server =
-      (websocket_server_t*)calloc(1, sizeof(websocket_server_t));
-  if (!server) return NULL;
-  server->port = port;
-  if (host && host[0]) {
-    strncpy(server->host, host, sizeof(server->host) - 1);
-  } else {
-    strncpy(server->host, "127.0.0.1", sizeof(server->host) - 1);
+static void queue_message(client_session_t* session, const char* msg) {
+  if (!session || !msg) return;
+  pthread_mutex_lock(&session->write_mutex);
+  if (session->pending_write) {
+    free(session->pending_write);
   }
-  server->server_fd = INVALID_SOCKET_VAL;
-  server->update_interval = 100;
-  atomic_init(&server->running, false);
-
-  pthread_mutexattr_t attr;
-  pthread_mutexattr_init(&attr);
-  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init(&server->sessions_mutex, &attr);
-  pthread_mutexattr_destroy(&attr);
-
-  return server;
+  session->pending_write = strdup(msg);
+  session->pending_write_len = strlen(msg);
+  pthread_mutex_unlock(&session->write_mutex);
+  lws_callback_on_writable(session->wsi);
 }
 
-void websocket_server_set_engine(websocket_server_t* server,
-                                 dsp_engine_t* engine) {
-  if (server) {
-    server->engine = engine;
+// libwebsockets callback protocol handler
+static int callback_camilladsp(struct lws* wsi,
+                               enum lws_callback_reasons reason, void* user,
+                               void* in, size_t len) {
+  struct lws_context* ctx = lws_get_context(wsi);
+  websocket_server_t* server = (websocket_server_t*)lws_context_user(ctx);
+  client_session_t* session = (client_session_t*)user;
+
+  switch (reason) {
+    case LWS_CALLBACK_ESTABLISHED: {
+      pthread_mutex_init(&session->write_mutex, NULL);
+      session->wsi = wsi;
+      session->pending_write = NULL;
+      session->pending_write_len = 0;
+
+      pthread_mutex_lock(&server->sessions_mutex);
+      for (int i = 0; i < 32; i++) {
+        if (!server->client_sessions[i]) {
+          server->client_sessions[i] = session;
+          break;
+        }
+      }
+      pthread_mutex_unlock(&server->sessions_mutex);
+      break;
+    }
+
+    case LWS_CALLBACK_CLOSED: {
+      pthread_mutex_lock(&server->sessions_mutex);
+      for (int i = 0; i < 32; i++) {
+        if (server->client_sessions[i] == session) {
+          server->client_sessions[i] = NULL;
+          break;
+        }
+      }
+      pthread_mutex_unlock(&server->sessions_mutex);
+
+      pthread_mutex_lock(&session->write_mutex);
+      if (session->pending_write) {
+        free(session->pending_write);
+        session->pending_write = NULL;
+      }
+      pthread_mutex_unlock(&session->write_mutex);
+      pthread_mutex_destroy(&session->write_mutex);
+
+      client_session_clear(session);
+      break;
+    }
+
+    case LWS_CALLBACK_RECEIVE: {
+      char* in_str = malloc(len + 1);
+      if (in_str) {
+        memcpy(in_str, in, len);
+        in_str[len] = '\0';
+
+        dyn_string_t ds;
+        dyn_string_init(&ds, 1024);
+
+        int client_idx = -1;
+        pthread_mutex_lock(&server->sessions_mutex);
+        for (int i = 0; i < 32; i++) {
+          if (server->client_sessions[i] == session) {
+            client_idx = i;
+            break;
+          }
+        }
+        pthread_mutex_unlock(&server->sessions_mutex);
+
+        websocket_server_handle_command(server, client_idx, in_str, &ds);
+        free(in_str);
+
+        if (ds.data && ds.length > 0) {
+          queue_message(session, ds.data);
+        }
+        dyn_string_free(&ds);
+      }
+      break;
+    }
+
+    case LWS_CALLBACK_SERVER_WRITEABLE: {
+      pthread_mutex_lock(&session->write_mutex);
+      if (session->pending_write) {
+        unsigned char* buf = malloc(LWS_PRE + session->pending_write_len + 1);
+        if (buf) {
+          memcpy(buf + LWS_PRE, session->pending_write,
+                 session->pending_write_len);
+          lws_write(wsi, buf + LWS_PRE, session->pending_write_len,
+                    LWS_WRITE_TEXT);
+          free(buf);
+        }
+        free(session->pending_write);
+        session->pending_write = NULL;
+        session->pending_write_len = 0;
+      }
+      pthread_mutex_unlock(&session->write_mutex);
+      break;
+    }
+
+    default:
+      break;
   }
+
+  return 0;
 }
 
-uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000ULL; }
+static struct lws_protocols protocols[] = {
+    {"camilladsp-protocol", callback_camilladsp, sizeof(client_session_t),
+     1024 * 1024, 0, NULL, 0},
+    LWS_PROTOCOL_LIST_TERM};
 
-static void remove_client_session(websocket_server_t* server,
-                                  struct pollfd* fds, socket_t* client_fds,
-                                  char (*last_state)[64], int* num_clients,
-                                  int index) {
-  CLOSE_SOCKET(client_fds[index]);
-  pthread_mutex_lock(&server->sessions_mutex);
-  client_session_clear(&server->client_sessions[index]);
-
-  for (int j = index; j < *num_clients - 1; j++) {
-    fds[j + 1] = fds[j + 2];
-    client_fds[j] = client_fds[j + 1];
-    strcpy(last_state[j], last_state[j + 1]);
-    server->client_sessions[j] = server->client_sessions[j + 1];
-    memset(&server->client_sessions[j + 1], 0, sizeof(client_session_t));
-  }
-  server->client_sessions[*num_clients - 1] = (client_session_t){0};
-  pthread_mutex_unlock(&server->sessions_mutex);
-  (*num_clients)--;
-}
-
-static void* server_thread_func(void* arg) {
+static void* lws_service_thread(void* arg) {
   websocket_server_t* server = (websocket_server_t*)arg;
-  socket_t client_fds[32];
-  char last_state[32][64];
-  int num_clients = 0;
+  while (atomic_load_explicit(&server->running, memory_order_acquire)) {
+    lws_service(server->context, 50);
+  }
+  return NULL;
+}
 
+static void* metrics_thread_func(void* arg) {
+  websocket_server_t* server = (websocket_server_t*)arg;
+  char last_state[32][64];
+  for (int i = 0; i < 32; i++) {
+    last_state[i][0] = '\0';
+  }
   uint64_t last_broadcast_time_ms = 0;
 
   while (atomic_load_explicit(&server->running, memory_order_acquire)) {
-    struct pollfd fds[33];
-    fds[0].fd = server->server_fd;
-    fds[0].events = POLLIN;
-    for (int i = 0; i < num_clients; i++) {
-      fds[i + 1].fd = client_fds[i];
-      fds[i + 1].events = POLLIN;
-    }
-    int ret = poll_sockets(fds, num_clients + 1, 50);
-
+    cdsp_sleep_ms(50);
     pthread_mutex_lock(&server->sessions_mutex);
 
-    typedef struct {
-      socket_t fd;
-      char* msg;
-    } pending_send_t;
-
-    pending_send_t pending[128];
-    size_t pending_count = 0;
-
-#define QUEUE_PENDING(target_fd, str)            \
-  do {                                           \
-    char* m_ = (str);                            \
-    if (m_) {                                    \
-      if (pending_count < 128) {                 \
-        pending[pending_count].fd = (target_fd); \
-        pending[pending_count].msg = m_;         \
-        pending_count++;                         \
-      } else {                                   \
-        free(m_);                                \
-      }                                          \
-    }                                            \
-  } while (0)
-
-    // Periodic broadcast tick
     uint64_t now = get_time_ms();
     if (now - last_broadcast_time_ms >= server->update_interval) {
       last_broadcast_time_ms = now;
@@ -413,8 +433,9 @@ static void* server_thread_func(void* arg) {
         }
       }
 
-      for (int i = 0; i < num_clients; i++) {
-        client_session_t* session = &server->client_sessions[i];
+      for (int i = 0; i < 32; i++) {
+        client_session_t* session = server->client_sessions[i];
+        if (!session) continue;
 
         if (session->state_subscribed &&
             strcmp(last_state[i], state_str) != 0) {
@@ -426,7 +447,9 @@ static void* server_thread_func(void* arg) {
           cJSON_AddItemToObject(
               inner, "value",
               create_state_event_value(status.state, &status.stop_reason));
-          QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
+          char* p_str = cJSON_PrintUnformatted(root);
+          queue_message(session, p_str);
+          free(p_str);
           cJSON_Delete(root);
         }
 
@@ -545,70 +568,64 @@ static void* server_thread_func(void* arg) {
               }
             }
 
-            cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "VuLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
-            cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
-            cJSON_AddItemToObject(
-                val_value, "playback_rms",
-                cJSON_CreateDoubleArray(session->vu_pb_rms, (int)pb_channels));
-            cJSON_AddItemToObject(
-                val_value, "playback_peak",
-                cJSON_CreateDoubleArray(session->vu_pb_peak, (int)pb_channels));
-            cJSON_AddItemToObject(val_value, "capture_rms",
-                                  cJSON_CreateDoubleArray(session->vu_cap_rms,
-                                                          (int)cap_channels));
-            cJSON_AddItemToObject(val_value, "capture_peak",
-                                  cJSON_CreateDoubleArray(session->vu_cap_peak,
-                                                          (int)cap_channels));
-            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
-            cJSON_Delete(root);
             session->last_vu_push_time = now;
+
+            cJSON* root = cJSON_CreateObject();
+            cJSON* inner = cJSON_CreateObject();
+            cJSON_AddItemToObject(root, "VuEvent", inner);
+            cJSON_AddStringToObject(inner, "result", "Ok");
+
+            cJSON* val = cJSON_CreateObject();
+            cJSON* rms_arr = cJSON_CreateDoubleArray(session->vu_pb_rms,
+                                                     session->vu_pb_channels);
+            cJSON* peak_arr = cJSON_CreateDoubleArray(session->vu_pb_peak,
+                                                      session->vu_pb_channels);
+            cJSON_AddItemToObject(val, "playback_rms", rms_arr);
+            cJSON_AddItemToObject(val, "playback_peak", peak_arr);
+
+            if (cap_channels > 0 && session->vu_cap_rms &&
+                session->vu_cap_peak) {
+              cJSON* cap_rms_arr = cJSON_CreateDoubleArray(
+                  session->vu_cap_rms, session->vu_cap_channels);
+              cJSON* cap_peak_arr = cJSON_CreateDoubleArray(
+                  session->vu_cap_peak, session->vu_cap_channels);
+              cJSON_AddItemToObject(val, "capture_rms", cap_rms_arr);
+              cJSON_AddItemToObject(val, "capture_peak", cap_peak_arr);
+            }
+
+            cJSON_AddItemToObject(inner, "value", val);
+            char* p_str = cJSON_PrintUnformatted(root);
+            queue_message(session, p_str);
+            free(p_str);
+            cJSON_Delete(root);
           }
         }
 
         if (session->signal_levels_subscribed) {
-          bool send_pb = strcmp(session->signal_levels_side, "playback") == 0 ||
-                         strcmp(session->signal_levels_side, "both") == 0;
-          bool send_cap = strcmp(session->signal_levels_side, "capture") == 0 ||
-                          strcmp(session->signal_levels_side, "both") == 0;
+          cJSON* root = cJSON_CreateObject();
+          cJSON* inner = cJSON_CreateObject();
+          cJSON_AddItemToObject(root, "SignalLevelsEvent", inner);
+          cJSON_AddStringToObject(inner, "result", "Ok");
 
-          if (send_pb && pb_channels > 0) {
-            cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
-            cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
-            cJSON_AddStringToObject(val_value, "side", "playback");
-            cJSON_AddItemToObject(
-                val_value, "rms",
-                cJSON_CreateDoubleArray(current_pb_rms, (int)pb_channels));
-            cJSON_AddItemToObject(
-                val_value, "peak",
-                cJSON_CreateDoubleArray(current_pb_peak, (int)pb_channels));
-            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
-            cJSON_Delete(root);
+          cJSON* val = cJSON_CreateObject();
+          cJSON* rms_arr = NULL;
+          cJSON* peak_arr = NULL;
+
+          if (strcmp(session->signal_levels_side, "capture") == 0) {
+            rms_arr = cJSON_CreateDoubleArray(current_cap_rms, cap_channels);
+            peak_arr = cJSON_CreateDoubleArray(current_cap_peak, cap_channels);
+          } else {
+            rms_arr = cJSON_CreateDoubleArray(current_pb_rms, pb_channels);
+            peak_arr = cJSON_CreateDoubleArray(current_pb_peak, pb_channels);
           }
-          if (send_cap && cap_channels > 0) {
-            cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
-            cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
-            cJSON_AddStringToObject(val_value, "side", "capture");
-            cJSON_AddItemToObject(
-                val_value, "rms",
-                cJSON_CreateDoubleArray(current_cap_rms, (int)cap_channels));
-            cJSON_AddItemToObject(
-                val_value, "peak",
-                cJSON_CreateDoubleArray(current_cap_peak, (int)cap_channels));
-            QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
-            cJSON_Delete(root);
-          }
+          cJSON_AddItemToObject(val, "rms", rms_arr);
+          cJSON_AddItemToObject(val, "peak", peak_arr);
+          cJSON_AddItemToObject(inner, "value", val);
+
+          char* p_str = cJSON_PrintUnformatted(root);
+          queue_message(session, p_str);
+          free(p_str);
+          cJSON_Delete(root);
         }
 
         if (session->spectrum_subscribed) {
@@ -616,260 +633,110 @@ static void* server_thread_func(void* arg) {
                                 ? 1000.0 / session->spectrum_max_rate
                                 : 0.0;
           if (now - session->last_spectrum_push_time >= interval) {
+            cJSON* root = cJSON_CreateObject();
+            cJSON* inner = cJSON_CreateObject();
+            cJSON_AddItemToObject(root, "SpectrumEvent", inner);
+            cJSON_AddStringToObject(inner, "result", "Ok");
+
+            cJSON* val = cJSON_CreateObject();
             cdsp_spectrum_t spec = {0};
-            bool spec_ok =
-                server && server->engine &&
-                cdsp_get_spectrum(server->engine, session->spectrum_is_capture,
+            if (cdsp_get_spectrum(server->engine, session->spectrum_is_capture,
                                   session->spectrum_channel,
                                   session->spectrum_min_freq,
                                   session->spectrum_max_freq,
-                                  session->spectrum_n_bins, &spec);
-            if (spec_ok) {
-              cJSON* root = cJSON_CreateObject();
-              cJSON* val = cJSON_CreateObject();
-              cJSON_AddItemToObject(root, "SpectrumEvent", val);
-              cJSON_AddStringToObject(val, "result", "Ok");
-              cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
-              QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
-              cJSON_Delete(root);
+                                  session->spectrum_n_bins, &spec)) {
+              cJSON* bins_arr =
+                  cJSON_CreateDoubleArray(spec.magnitudes, (int)spec.count);
+              cJSON_AddItemToObject(val, "bins", bins_arr);
+              cJSON_AddItemToObject(inner, "value", val);
               cdsp_free_spectrum(&spec);
-              session->last_spectrum_push_time = now;
             }
+
+            char* p_str = cJSON_PrintUnformatted(root);
+            queue_message(session, p_str);
+            free(p_str);
+            cJSON_Delete(root);
+
+            session->last_spectrum_push_time = now;
           }
         }
       }
-
-      cdsp_free_vu_levels(&vu);
     }
     pthread_mutex_unlock(&server->sessions_mutex);
-
-    for (size_t k = 0; k < pending_count; k++) {
-      ws_send_frame(pending[k].fd, pending[k].msg);
-      free(pending[k].msg);
-    }
-
-    if (ret > 0) {
-      if (fds[0].revents & POLLIN) {
-        socket_t cfd = accept(server->server_fd, NULL, NULL);
-        if (!IS_INVALID_SOCKET(cfd) && num_clients < 32) {
-          logger_info(&server_logger, "Accepted client connection on slot %d",
-                      num_clients);
-          client_fds[num_clients] = cfd;
-          last_state[num_clients][0] = '\0';
-
-          pthread_mutex_lock(&server->sessions_mutex);
-          client_session_t* session = &server->client_sessions[num_clients];
-          *session = (client_session_t){0};
-          uint64_t now_ms = get_time_ms();
-          session->last_cap_peak_time = now_ms;
-          session->last_cap_rms_time = now_ms;
-          session->last_pb_peak_time = now_ms;
-          session->last_pb_rms_time = now_ms;
-          pthread_mutex_unlock(&server->sessions_mutex);
-
-          num_clients++;
-        } else if (!IS_INVALID_SOCKET(cfd)) {
-          logger_warn(&server_logger,
-                      "Max clients (32) reached, rejecting new connection");
-          CLOSE_SOCKET(cfd);
-        }
-      }
-      for (int i = 0; i < num_clients; i++) {
-        if (fds[i + 1].revents & (POLLIN | POLLERR | POLLHUP)) {
-          char buf[4096];
-          int n = recv(client_fds[i], buf, sizeof(buf) - 1, 0);
-
-          if (n <= 0) {
-            logger_info(&server_logger, "Client disconnected on slot %d", i);
-            remove_client_session(server, fds, client_fds, last_state,
-                                  &num_clients, i);
-            i--;
-          } else {
-            buf[n] = '\0';
-            if (ws_handle_handshake(buf, client_fds[i])) {
-              continue;
-            }
-
-            int offset = 0;
-            while (offset < n) {
-              size_t payload_len = 0;
-              size_t header_len = 0;
-              unsigned char* mask = NULL;
-              uint8_t opcode = 0;
-              if (ws_parse_frame_header((const unsigned char*)&buf[offset],
-                                        (size_t)(n - offset), &payload_len,
-                                        &header_len, &mask, &opcode)) {
-                if (opcode == 0x08) {
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  i--;
-                  break;
-                }
-
-                if (payload_len > 128 * 1024) {
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  i--;
-                  break;
-                }
-
-                size_t to_copy = (size_t)(n - offset - header_len);
-                if (to_copy > payload_len) to_copy = payload_len;
-
-                char* payload = (char*)malloc(payload_len + 1);
-                if (!payload) {
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  i--;
-                  break;
-                }
-
-                memcpy(payload, &buf[offset + header_len], to_copy);
-                size_t total_read = to_copy;
-                bool read_ok = true;
-                while (total_read < payload_len) {
-                  int r = recv(client_fds[i], payload + total_read,
-                               (int)(payload_len - total_read), 0);
-                  if (r <= 0) {
-                    read_ok = false;
-                    break;
-                  }
-                  total_read += (size_t)r;
-                }
-
-                if (!read_ok) {
-                  free(payload);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  i--;
-                  break;
-                }
-
-                if (mask) {
-                  for (size_t p = 0; p < payload_len; p++) {
-                    payload[p] ^= mask[p % 4];
-                  }
-                }
-                payload[payload_len] = '\0';
-
-                logger_debug(&server_logger, "Received WS frame: %s", payload);
-
-                dyn_string_t ds;
-                dyn_string_init(&ds, 4096);
-                websocket_server_handle_command(server, i, payload, &ds);
-
-                if (ds.data && ds.data[0] != '\0') {
-                  logger_debug(&server_logger, "Sending WS response: %s",
-                               ds.data);
-                  ws_send_frame(client_fds[i], ds.data);
-                }
-                dyn_string_free(&ds);
-                free(payload);
-
-                offset += header_len + payload_len;
-              } else {
-                logger_debug(&server_logger, "Received raw TCP: %s",
-                             &buf[offset]);
-
-                dyn_string_t ds;
-                dyn_string_init(&ds, 4096);
-                websocket_server_handle_command(server, i, &buf[offset], &ds);
-                if (ds.data && ds.data[0] != '\0') {
-                  logger_debug(&server_logger, "Sending raw TCP response: %s",
-                               ds.data);
-                  send(client_fds[i], ds.data, (int)strlen(ds.data), 0);
-                }
-                dyn_string_free(&ds);
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  for (int i = 0; i < num_clients; i++) {
-    CLOSE_SOCKET(client_fds[i]);
   }
   return NULL;
+}
+
+websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
+  websocket_server_t* server =
+      (websocket_server_t*)calloc(1, sizeof(websocket_server_t));
+  if (!server) return NULL;
+
+  server->port = port;
+  if (host) {
+    strncpy(server->host, host, sizeof(server->host) - 1);
+  } else {
+    strcpy(server->host, "127.0.0.1");
+  }
+  server->update_interval = 100;
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&server->sessions_mutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+
+  return server;
+}
+
+void websocket_server_set_engine(websocket_server_t* server,
+                                 dsp_engine_t* engine) {
+  if (server) server->engine = engine;
 }
 
 bool websocket_server_start(websocket_server_t* server) {
   if (!server || atomic_load_explicit(&server->running, memory_order_acquire))
     return false;
 
-#ifdef _WIN32
-  WSADATA wsaData;
-  if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-    logger_error(&server_logger, "WSAStartup failed");
-    return false;
-  }
-#endif
+  struct lws_context_creation_info info;
+  memset(&info, 0, sizeof(info));
+  info.port = server->port;
+  info.iface = server->host[0] != '\0' ? server->host : NULL;
+  info.protocols = protocols;
+  info.user = server;
+  info.gid = -1;
+  info.uid = -1;
+  info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 
-  server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (IS_INVALID_SOCKET(server->server_fd)) {
-    logger_error(&server_logger,
-                 "Failed to create server socket: %s (errno=%d)",
-                 strerror(errno), errno);
-#ifdef _WIN32
-    WSACleanup();
-#endif
-    return false;
-  }
+  lws_set_log_level(LLL_ERR | LLL_WARN, NULL);
 
-  int opt = 1;
-#ifdef _WIN32
-  setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt,
-             sizeof(opt));
-#else
-  setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-  struct sockaddr_in addr = {0};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(server->port);
-  inet_pton(AF_INET, server->host, &addr.sin_addr);
-
-  if (IS_SOCKET_ERROR(
-          bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)))) {
-    logger_error(&server_logger, "Failed to bind WebSocket server on %s:%d",
-                 server->host, server->port);
-    CLOSE_SOCKET(server->server_fd);
-    server->server_fd = INVALID_SOCKET_VAL;
-#ifdef _WIN32
-    WSACleanup();
-#endif
-    return false;
-  }
-
-  if (IS_SOCKET_ERROR(listen(server->server_fd, 10))) {
-    logger_error(
-        &server_logger,
-        "Failed to listen on WebSocket server socket on %s:%d: %s (errno=%d)",
-        server->host, server->port, strerror(errno), errno);
-    CLOSE_SOCKET(server->server_fd);
-    server->server_fd = INVALID_SOCKET_VAL;
-#ifdef _WIN32
-    WSACleanup();
-#endif
+  server->context = lws_create_context(&info);
+  if (!server->context) {
+    logger_error(&server_logger, "Failed to create libwebsockets context");
     return false;
   }
 
   atomic_store_explicit(&server->running, true, memory_order_release);
-  if (pthread_create(&server->thread, NULL, server_thread_func, server) != 0) {
-    logger_error(&server_logger,
-                 "Failed to create WebSocket server thread: %s (errno=%d)",
-                 strerror(errno), errno);
+
+  if (pthread_create(&server->thread, NULL, lws_service_thread, server) != 0) {
+    logger_error(&server_logger, "Failed to create LWS service thread");
+    lws_context_destroy(server->context);
+    server->context = NULL;
     atomic_store_explicit(&server->running, false, memory_order_release);
-    CLOSE_SOCKET(server->server_fd);
-    server->server_fd = INVALID_SOCKET_VAL;
-#ifdef _WIN32
-    WSACleanup();
-#endif
     return false;
   }
 
-  logger_info(&server_logger, "WebSocket control server listening on %s:%d",
+  if (pthread_create(&server->metrics_thread, NULL, metrics_thread_func,
+                     server) != 0) {
+    logger_error(&server_logger, "Failed to create metrics broadcast thread");
+    atomic_store_explicit(&server->running, false, memory_order_release);
+    pthread_join(server->thread, NULL);
+    lws_context_destroy(server->context);
+    server->context = NULL;
+    return false;
+  }
+
+  logger_info(&server_logger,
+              "WebSocket control server listening on %s:%d using libwebsockets",
               server->host, server->port);
   return true;
 }
@@ -879,14 +746,14 @@ void websocket_server_stop(websocket_server_t* server) {
     return;
   logger_info(&server_logger, "Stopping WebSocket control server");
   atomic_store_explicit(&server->running, false, memory_order_release);
+
   pthread_join(server->thread, NULL);
-  if (!IS_INVALID_SOCKET(server->server_fd)) {
-    CLOSE_SOCKET(server->server_fd);
-    server->server_fd = INVALID_SOCKET_VAL;
+  pthread_join(server->metrics_thread, NULL);
+
+  if (server->context) {
+    lws_context_destroy(server->context);
+    server->context = NULL;
   }
-#ifdef _WIN32
-  WSACleanup();
-#endif
 }
 
 void websocket_server_free(websocket_server_t* server) {
@@ -901,9 +768,16 @@ void websocket_server_free(websocket_server_t* server) {
   if (server->capture_global_peaks) free(server->capture_global_peaks);
   if (server->playback_global_peaks) free(server->playback_global_peaks);
 
+  pthread_mutex_lock(&server->sessions_mutex);
   for (size_t i = 0; i < 32; i++) {
-    client_session_clear(&server->client_sessions[i]);
+    if (server->client_sessions[i]) {
+      client_session_clear(server->client_sessions[i]);
+      pthread_mutex_destroy(&server->client_sessions[i]->write_mutex);
+      free(server->client_sessions[i]);
+      server->client_sessions[i] = NULL;
+    }
   }
+  pthread_mutex_unlock(&server->sessions_mutex);
 
   pthread_mutex_destroy(&server->sessions_mutex);
   free(server);
@@ -913,7 +787,10 @@ bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
                                                int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return false;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  bool res = server->client_sessions[client_idx].vu_subscribed;
+  bool res = false;
+  if (server->client_sessions[client_idx]) {
+    res = server->client_sessions[client_idx]->vu_subscribed;
+  }
   pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
   return res;
 }
@@ -922,7 +799,10 @@ double websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
                                                int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_max_rate;
+  double res = 0.0;
+  if (server->client_sessions[client_idx]) {
+    res = server->client_sessions[client_idx]->vu_max_rate;
+  }
   pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
   return res;
 }
@@ -931,7 +811,10 @@ double websocket_server_get_client_vu_attack(const websocket_server_t* server,
                                              int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_attack;
+  double res = 0.0;
+  if (server->client_sessions[client_idx]) {
+    res = server->client_sessions[client_idx]->vu_attack;
+  }
   pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
   return res;
 }
@@ -940,7 +823,10 @@ double websocket_server_get_client_vu_release(const websocket_server_t* server,
                                               int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_release;
+  double res = 0.0;
+  if (server->client_sessions[client_idx]) {
+    res = server->client_sessions[client_idx]->vu_release;
+  }
   pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
   return res;
 }
@@ -950,6 +836,8 @@ void websocket_server_set_client_vu_subscribed(websocket_server_t* server,
                                                bool subscribed) {
   if (!server || client_idx < 0 || client_idx >= 32) return;
   pthread_mutex_lock(&server->sessions_mutex);
-  server->client_sessions[client_idx].vu_subscribed = subscribed;
+  if (server->client_sessions[client_idx]) {
+    server->client_sessions[client_idx]->vu_subscribed = subscribed;
+  }
   pthread_mutex_unlock(&server->sessions_mutex);
 }

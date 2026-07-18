@@ -1,6 +1,7 @@
 #ifndef CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H
 #define CLIB_SERVER_WEBSOCKET_SERVER_INTERNAL_H
 
+#include <libwebsockets.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -92,6 +93,10 @@ typedef struct {
   double* vu_cap_peak;
   size_t vu_pb_channels;
   size_t vu_cap_channels;
+  struct lws* wsi;
+  char* pending_write;
+  size_t pending_write_len;
+  pthread_mutex_t write_mutex;
 } client_session_t;
 
 struct websocket_server {
@@ -99,9 +104,10 @@ struct websocket_server {
   char host[128];
   dsp_engine_t* engine;
 
-  socket_t server_fd;
+  struct lws_context* context;
   _Atomic bool running;
   pthread_t thread;
+  pthread_t metrics_thread;
 
   uint32_t update_interval;
 
@@ -116,7 +122,7 @@ struct websocket_server {
   size_t playback_global_peaks_count;
 
   pthread_mutex_t sessions_mutex;
-  client_session_t client_sessions[32];
+  client_session_t* client_sessions[32];
 };
 
 uint64_t get_time_ms(void);

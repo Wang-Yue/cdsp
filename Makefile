@@ -68,9 +68,21 @@ endif
 # Map Flags to CFLAGS preprocessor definitions
 $(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filter 1,$(ENABLE_$(f))),$(eval CFLAGS += -DENABLE_$(f))))
 
+ENABLE_WEBSOCKET ?= 1
+ifeq ($(ENABLE_WEBSOCKET),1)
+    CFLAGS += -DENABLE_WEBSOCKET
+    ifeq ($(IS_DARWIN),1)
+        CFLAGS += -I/opt/homebrew/include
+        LDFLAGS_WS := -L/opt/homebrew/lib -lwebsockets
+    else
+        LDFLAGS_WS := -lwebsockets
+    endif
+else
+    LDFLAGS_WS :=
+endif
 
 # Map Flags to link options (LDFLAGS)
-LDFLAGS := -lm -lpthread
+LDFLAGS := -lm -lpthread $(LDFLAGS_WS)
 ifeq ($(IS_WINDOWS),1)
     # Windows Setup
     CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
@@ -171,7 +183,11 @@ TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SRCS))
 TEST_LIB_TARGET := $(SRC_ROOT)/libdsp_test.a
 
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
-SERVER_SRCS := $(wildcard $(SRC_ROOT)/Server/*.c)
+ifeq ($(ENABLE_WEBSOCKET),1)
+    SERVER_SRCS := $(SRC_ROOT)/Server/websocket_server.c $(SRC_ROOT)/Server/ws_rpc_dispatcher.c
+else
+    SERVER_SRCS :=
+endif
 CLI_SRC := $(SRC_ROOT)/main.c
 CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 
@@ -211,7 +227,11 @@ BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
 
 UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_websocket_server.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
 UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner
-UNIT_TEST_BINS := $(UNIT_TEST_RUNNER) $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server
+ifeq ($(ENABLE_WEBSOCKET),1)
+    UNIT_TEST_BINS := $(UNIT_TEST_RUNNER) $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server
+else
+    UNIT_TEST_BINS := $(UNIT_TEST_RUNNER)
+endif
 
 # Build benchmark binaries linked against main library (without clock_mock)
 $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(LIB_TARGET)
