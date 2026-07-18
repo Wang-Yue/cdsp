@@ -340,7 +340,7 @@ TEST(SlipResampler_Basic) {
   ASSERT_TRUE(res != NULL);
 
   size_t max_out = resampler_get_max_output_frames(res);
-  size_t expected_max_out = chunk_size + (chunk_size - 1) / (128 + 2); // 1007
+  size_t expected_max_out = chunk_size + (chunk_size - 1) / (128 + 2);  // 1007
   ASSERT_EQ(expected_max_out, max_out);
 
   audio_chunk_t* in_chunk = audio_chunk_create(chunk_size, 1);
@@ -362,13 +362,14 @@ TEST(SlipResampler_Basic) {
     ASSERT_DOUBLE_EQ((double)i, out_data[i]);
   }
 
-  // 2. Ratio 1.001000000001 -> Expect a slip (duplicate sample) in the first chunk
+  // 2. Ratio 1.001000000001 -> Expect a slip (duplicate sample) in the first
+  // chunk
   resampler_set_relative_ratio(res, 1.001000000001);
   err = resampler_process(res, in_chunk, out_chunk);
   ASSERT_EQ(RESAMPLER_OK, err);
   ASSERT_EQ(chunk_size + 1, audio_chunk_get_valid_frames(out_chunk));
   out_data = audio_chunk_get_channel(out_chunk, 0);
-  
+
   // First 437 samples are copied exactly
   for (size_t i = 0; i < 437; i++) {
     ASSERT_DOUBLE_EQ((double)i, out_data[i]);
@@ -384,7 +385,7 @@ TEST(SlipResampler_Basic) {
   ASSERT_EQ(RESAMPLER_OK, err);
   ASSERT_EQ(chunk_size - 1, audio_chunk_get_valid_frames(out_chunk));
   out_data = audio_chunk_get_channel(out_chunk, 0);
-  
+
   // First 436 samples are copied exactly
   for (size_t i = 0; i < 436; i++) {
     ASSERT_DOUBLE_EQ((double)i, out_data[i]);
@@ -480,7 +481,9 @@ static double* read_raw_f64(const char* path, size_t* out_count) {
 
 TEST(SlipResampler_Vs_Rubato) {
   if (!check_rubato_available()) {
-    printf("[SKIP] cdsp_resampler_compare harness not built/available. Skipping comparison test.\n");
+    printf(
+        "[SKIP] cdsp_resampler_compare harness not built/available. Skipping "
+        "comparison test.\n");
     return;
   }
 
@@ -494,7 +497,8 @@ TEST(SlipResampler_Vs_Rubato) {
   }
 
   int fs_in = 40000;
-  int fs_out = 40012; // ratio = 1.0003 (robust drift accumulation away from boundaries)
+  int fs_out =
+      40012;  // ratio = 1.0003 (robust drift accumulation away from boundaries)
   double ratio = (double)fs_out / (double)fs_in;
 
   char in_path[256];
@@ -506,8 +510,7 @@ TEST(SlipResampler_Vs_Rubato) {
   ASSERT_TRUE(write_raw_f64(input, total_frames, in_path));
 
   char cmd[1024];
-  snprintf(cmd, sizeof(cmd),
-           "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
+  snprintf(cmd, sizeof(cmd), "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
            g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
   int status = system(cmd);
   ASSERT_EQ(0, status);
@@ -519,7 +522,8 @@ TEST(SlipResampler_Vs_Rubato) {
   resampler_config_t cfg;
   resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
 
-  resampler_t* res = resampler_create_from_config(&cfg, fs_in, fs_in, 1, chunk_size, NULL);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, fs_in, fs_in, 1, chunk_size, NULL);
   ASSERT_TRUE(res != NULL);
   resampler_set_relative_ratio(res, ratio);
 
@@ -540,7 +544,8 @@ TEST(SlipResampler_Vs_Rubato) {
     ASSERT_EQ(RESAMPLER_OK, err);
 
     size_t got_out = audio_chunk_get_valid_frames(out_chunk);
-    printf("[C slip_process] chunk=%zu n_in=%zu n_out=%zu\n", c, chunk_size, got_out);
+    printf("[C slip_process] chunk=%zu n_in=%zu n_out=%zu\n", c, chunk_size,
+           got_out);
     fflush(stdout);
     const double* ch_out = audio_chunk_get_channel(out_chunk, 0);
     for (size_t i = 0; i < got_out; i++) {
@@ -558,7 +563,8 @@ TEST(SlipResampler_Vs_Rubato) {
   free(input);
   free(ref_data);
 
-  fs_out = 39988; // ratio = 0.9997 (robust drift accumulation away from boundaries)
+  fs_out =
+      39988;  // ratio = 0.9997 (robust drift accumulation away from boundaries)
   ratio = (double)fs_out / (double)fs_in;
 
   input = (double*)malloc(total_frames * sizeof(double));
@@ -568,8 +574,7 @@ TEST(SlipResampler_Vs_Rubato) {
   }
 
   remove(ref_path);
-  snprintf(cmd, sizeof(cmd),
-           "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
+  snprintf(cmd, sizeof(cmd), "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
            g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
   status = system(cmd);
   ASSERT_EQ(0, status);
@@ -614,6 +619,50 @@ TEST(SlipResampler_Vs_Rubato) {
   resampler_free(res);
   free(input);
   free(ref_data);
+}
+
+TEST(AsyncSinc_DriftCrash) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  cfg.sinc_len = 128;
+  cfg.has_sinc_len = true;
+  cfg.oversampling_factor = 1024;
+  cfg.has_oversampling_factor = true;
+  strncpy(cfg.window, "BlackmanHarris2", sizeof(cfg.window) - 1);
+  cfg.has_window = true;
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+  cfg.has_interpolation = true;
+  // do not set profile to force FIXED_ASYNC_INPUT
+
+  size_t chunk_size = 1024;
+  int channels = 2;
+  resampler_t* res = resampler_create_from_config(&cfg, 48000, 48000, channels,
+                                                  chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t max_out = resampler_get_max_output_frames(res);
+  audio_chunk_t* in_chunk = audio_chunk_create(chunk_size, channels);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out * 2, channels);
+
+  for (int ch = 0; ch < channels; ch++) {
+    double* in_data = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < chunk_size; i++) {
+      in_data[i] = sin(0.05 * i + ch);
+    }
+  }
+  audio_chunk_set_valid_frames(in_chunk, chunk_size);
+
+  resampler_error_t err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+
+  resampler_set_relative_ratio(res, 0.9);
+
+  err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  resampler_free(res);
 }
 
 TEST_MAIN()

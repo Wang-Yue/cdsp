@@ -96,4 +96,25 @@ TEST(test_zero_amplitude) {
   g_dither_vtable.free(filter);
 }
 
+TEST(test_noise_shaping_has_noise) {
+  double waveform[100] = {0.0};
+  dither_config_t params = {.type = DITHER_TYPE_FWEIGHTED_441, .bits = 8};
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* filter =
+      g_dither_vtable.create("dither_ns_test", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  g_dither_vtable.process(filter, waveform, 100);
+
+  bool found_nonzero = false;
+  for (size_t i = 0; i < 100; i++) {
+    if (waveform[i] != 0.0) {
+      found_nonzero = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_nonzero);
+  g_dither_vtable.free(filter);
+}
+
 TEST_MAIN()

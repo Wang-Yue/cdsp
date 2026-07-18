@@ -396,7 +396,16 @@ static double sample_dither(dither_filter_t* filter) {
   if (filter->type == DITHER_TYPE_NONE) return 0.0;
   double half_amp = filter->amplitude / 2.0;
   if (half_amp <= 0.0) return 0.0;
-  if (filter->type == DITHER_TYPE_FLAT) {
+  if (filter->type == DITHER_TYPE_HIGHPASS) {
+    // Generate high-pass TPDF dither by subtracting previous rectangular dither
+    // sample from the current rectangular dither sample.
+    double u = sample_rng_0_1(&filter->rng_state);
+    double new_sample = (2.0 * u - 1.0) * half_amp;
+    double high_passed = new_sample - filter->previous_sample;
+    filter->previous_sample = new_sample;
+    return high_passed;
+  } else {
+    // FLAT and all noise-shaping types use flat TPDF dither.
     // Generate TPDF dither using inverse transform sampling on [a, b] with peak
     // at c.
     double u = sample_rng_0_1(&filter->rng_state);
@@ -409,16 +418,7 @@ static double sample_dither(dither_filter_t* filter) {
     } else {
       return b - sqrt((1.0 - u) * (b - a) * (b - c));
     }
-  } else if (filter->type == DITHER_TYPE_HIGHPASS) {
-    // Generate high-pass TPDF dither by subtracting previous rectangular dither
-    // sample from the current rectangular dither sample.
-    double u = sample_rng_0_1(&filter->rng_state);
-    double new_sample = (2.0 * u - 1.0) * half_amp;
-    double high_passed = new_sample - filter->previous_sample;
-    filter->previous_sample = new_sample;
-    return high_passed;
   }
-  return 0.0;
 }
 
 // MARK: - DitherFilter
@@ -519,7 +519,8 @@ static void* dither_filter_create(const char* name,
     filter->amplitude =
         (params && params->has_amplitude) ? params->amplitude : 2.0;
   } else {
-    // HIGHPASS and all noise-shaping types require TPDF dither noise (2.0 LSB)
+    // HIGHPASS and all noise-shaping types require 2.0 LSB amplitude dither
+    // noise
     filter->amplitude = 2.0;
   }
 

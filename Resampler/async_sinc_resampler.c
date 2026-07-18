@@ -102,9 +102,11 @@ static inline size_t calculate_input_size(
   if (fixed == FIXED_ASYNC_INPUT) {
     return chunk_size;
   }
-  double avg_ratio = 0.5 * resample_ratio + 0.5 * target_ratio;
+  double inv_r1 = 1.0 / resample_ratio;
+  double inv_r2 = 1.0 / target_ratio;
+  double avg_t_ratio = 0.5 * (inv_r1 + inv_r2);
   double raw =
-      last_index + (double)chunk_size / avg_ratio + (double)interpolator_len;
+      last_index + (double)chunk_size * avg_t_ratio + (double)interpolator_len;
   return (size_t)ceil(raw);
 }
 
@@ -114,11 +116,23 @@ static inline size_t calculate_output_size(
   if (fixed == FIXED_ASYNC_OUTPUT) {
     return chunk_size;
   }
-  double avg_ratio = 0.5 * resample_ratio + 0.5 * target_ratio;
+  double inv_r1 = 1.0 / resample_ratio;
+  double inv_r2 = 1.0 / target_ratio;
+  double avg_t_ratio = 0.5 * (inv_r1 + inv_r2);
   double raw =
-      ((double)chunk_size - (double)(interpolator_len + 1) - last_index) *
-      avg_ratio;
+      ((double)chunk_size - (double)(interpolator_len + 1) - last_index) /
+      avg_t_ratio;
   return (size_t)floor(raw);
+}
+
+static void async_sinc_resampler_update_lengths(
+    async_sinc_resampler_t* resampler) {
+  resampler->needed_input_size = calculate_input_size(
+      resampler->chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->sinc_len, resampler->fixed);
+  resampler->needed_output_size = calculate_output_size(
+      resampler->chunk_size, resampler->resample_ratio, resampler->target_ratio,
+      resampler->last_index, resampler->sinc_len, resampler->fixed);
 }
 
 static void async_sinc_resampler_free(async_sinc_resampler_t* resampler) {
@@ -139,6 +153,7 @@ static void async_sinc_resampler_set_relative_ratio(
   if (multiplier > resampler->max_relative_ratio)
     multiplier = resampler->max_relative_ratio;
   resampler->target_ratio = resampler->base_ratio * multiplier;
+  async_sinc_resampler_update_lengths(resampler);
 }
 
 static double async_sinc_resampler_get_ratio(
@@ -549,16 +564,7 @@ static resampler_error_t async_sinc_resampler_process(
   if (output_frames == 0) {
     resampler->last_index -= (double)resampler->needed_input_size;
     resampler->resample_ratio = resampler->target_ratio;
-
-    resampler->needed_input_size =
-        calculate_input_size(resampler->chunk_size, resampler->resample_ratio,
-                             resampler->target_ratio, resampler->last_index,
-                             resampler->sinc_len, resampler->fixed);
-    resampler->needed_output_size =
-        calculate_output_size(resampler->chunk_size, resampler->resample_ratio,
-                              resampler->target_ratio, resampler->last_index,
-                              resampler->sinc_len, resampler->fixed);
-
+    async_sinc_resampler_update_lengths(resampler);
     audio_chunk_set_valid_frames(output, 0);
     return RESAMPLER_OK;
   }
@@ -626,13 +632,7 @@ static resampler_error_t async_sinc_resampler_process(
   resampler->resample_ratio = resampler->target_ratio;
 
   size_t prev_needed_input_size = resampler->needed_input_size;
-
-  resampler->needed_input_size = calculate_input_size(
-      resampler->chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, resampler->fixed);
-  resampler->needed_output_size = calculate_output_size(
-      resampler->chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, resampler->fixed);
+  async_sinc_resampler_update_lengths(resampler);
 
   size_t valid_out = (output_frames * valid_frames) / prev_needed_input_size;
   audio_chunk_set_valid_frames(output, valid_out);
@@ -743,12 +743,7 @@ static void* async_sinc_resampler_create_impl(
     return NULL;
   }
 
-  resampler->needed_input_size = calculate_input_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, fixed);
-  resampler->needed_output_size = calculate_output_size(
-      chunk_size, resampler->resample_ratio, resampler->target_ratio,
-      resampler->last_index, resampler->sinc_len, fixed);
+  async_sinc_resampler_update_lengths(resampler);
   resampler->current_buffer_fill = resampler->needed_input_size;
 
   if (fixed == FIXED_ASYNC_OUTPUT) {

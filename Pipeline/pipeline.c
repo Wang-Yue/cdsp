@@ -754,8 +754,8 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
             pipeline->last_error_got = audio_chunk_get_frames(scratch);
             return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
           }
-          pipeline->last_error_needed = mixer_get_channels_in(step->mixer);
-          pipeline->last_error_got = audio_chunk_get_channels(current_chunk);
+          pipeline->last_error_needed = mixer_get_channels_out(step->mixer);
+          pipeline->last_error_got = audio_chunk_get_channels(scratch);
           return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
         }
         current_chunk = scratch;
