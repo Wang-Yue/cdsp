@@ -209,6 +209,7 @@ sequenceDiagram
 
 1. **Staging & Lock-Free Status Indicator**:
    - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [dsp_engine.c](file:///Users/wangyue/cdsp/Engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
+   - **Configuration Change Decision Tree**: `dsp_engine_set_config_struct_locked()` evaluates `devices_config_equal(&cur_cfg->devices, &config->devices)`. If device backends, sample rates, or channels match, it triggers non-blocking pipeline hot-reload via `dsp_session_reload_config()`. If device settings differ, it triggers a full session teardown and rebuild.
 
 2. **Allocating Session Core & Mutex**:
    - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [engine_session_builder.c](file:///Users/wangyue/cdsp/Engine/engine_session_builder.c)).
@@ -336,7 +337,7 @@ sequenceDiagram
 
 1. **Stall Detection**:
    - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in shared state every time a chunk is read.
-   - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall.
+   - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall. *(Note: Stall detection requires the host application or server event loop to periodically invoke `cdsp_engine_poll()`)*.
    - The main thread checks if `state_raw == RUNNING`, `!should_stop()`, and `engine_shared_state_get_stop_reason(state).type == STOP_REASON_NONE` (safely queried under `stop_reason_mutex`). Checking `stop_reason.type == STOP_REASON_NONE` explicitly prevents false stall warnings during `PAUSED` mode or graceful EOF teardown (`STOP_REASON_DONE`). If the elapsed time since `last_capture_time_ns` exceeds 0.5s, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
 2. **Stall Recovery**:
    - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
@@ -461,11 +462,15 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
   } else {
       // LOSER: Stop has already been requested by someone else.
       processing_stop_reason_t current_r = state->stop_reason;
-      if ((current_r.type == STOP_REASON_DONE || current_r.type == STOP_REASON_NONE) &&
-          reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
-          state->stop_reason = reason;
+      if (current_r.type == STOP_REASON_DONE || current_r.type == STOP_REASON_NONE) {
+          if (reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
+              state->stop_reason = reason;
+          }
           pthread_mutex_unlock(&state->stop_reason_mutex);
-          ...
+
+          engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
+          audio_sync_queue_shutdown(state->captured_queue);
+          audio_sync_queue_shutdown(state->processed_queue);
       } else {
           pthread_mutex_unlock(&state->stop_reason_mutex);
       }
@@ -474,9 +479,10 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
 
 * **The First Thread (Winner)**: Acquires `stop_reason_mutex`, updates `stop_once` from `false` to `true` atomically via compare-exchange, sets the initial stop reason, and releases the mutex.
 * **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch while holding `stop_reason_mutex` to safely inspect the published `stop_reason`.
-  - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, but a new thread requests a hardware error abort (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch **overrides** the stop reason and forces an immediate queue shutdown.
+  - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, and any subsequent stop request occurs (e.g. user aborts, session teardown, or hardware error during drain), the loser branch forces an immediate `INACTIVE` state transition and queue shutdown to unblock waiting threads and prevent deadlocks on `pthread_join`.
+  - If the new request is a hardware error (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch also **overrides** the stop reason to preserve the error root cause.
   - Routine stops (`STOP_REASON_NONE`) or duplicate EOFs (`STOP_REASON_DONE`) do not overwrite an existing `STOP_REASON_DONE` or error reason.
-  - Otherwise, it releases the mutex without overwriting the stop reason to preserve the first error root cause.
+  - Otherwise, it releases the mutex without overwriting the stop reason or triggering duplicate queue shutdowns.
 
 
 

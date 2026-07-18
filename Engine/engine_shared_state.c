@@ -193,10 +193,11 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
 
-  // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety Gate
-  // Acquire stop_reason_mutex before checking CAS and writing stop_reason so that
-  // another thread entering the LOSER branch is guaranteed to observe the published
-  // stop_reason rather than reading STOP_REASON_NONE during an intermediate window.
+  // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety
+  // Gate Acquire stop_reason_mutex before checking CAS and writing stop_reason
+  // so that another thread entering the LOSER branch is guaranteed to observe
+  // the published stop_reason rather than reading STOP_REASON_NONE during an
+  // intermediate window.
   pthread_mutex_lock(&state->stop_reason_mutex);
   bool expected = false;
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
@@ -208,26 +209,32 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
 
     if (reason.type != STOP_REASON_DONE) {
       // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-      // Step 1: For non-graceful aborts (errors or user Stop), immediately transition
-      // engine state to INACTIVE and shut down both queues to wake up all blocked threads.
+      // Step 1: For non-graceful aborts (errors or user Stop), immediately
+      // transition engine state to INACTIVE and shut down both queues to wake
+      // up all blocked threads.
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
     } else {
-      // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue Drain)
-      // Step 1: For EOF, only shut down capture queue to let downstream threads finish draining.
+      // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
+      // (Queue Drain) Step 1: For EOF, only shut down capture queue to let
+      // downstream threads finish draining.
       audio_sync_queue_shutdown(state->captured_queue);
     }
   } else {
     // LOSER branch: Stop has already been requested by another thread.
-    // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety Gate
-    // If a graceful EOF was previously requested, but a subsequent non-graceful stop
-    // occurs (e.g. user aborts or error happens during drain), override the reason and
-    // force immediate INACTIVE state & queue shutdown to prevent deadlocks.
+    // Ref: engine_state_management.md - Section 4: The CAS Race-Condition
+    // Safety Gate If a graceful EOF was previously requested, but a subsequent
+    // stop request occurs (e.g. user aborts, session teardown, or hardware
+    // error during drain), force immediate INACTIVE state & queue shutdown to
+    // unblock waiting threads and prevent deadlocks. If the new request is a
+    // hardware error, update stop_reason to preserve root cause.
     processing_stop_reason_t current_r = state->stop_reason;
-    if ((current_r.type == STOP_REASON_DONE || current_r.type == STOP_REASON_NONE) &&
-        reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
-      state->stop_reason = reason;
+    if (current_r.type == STOP_REASON_DONE ||
+        current_r.type == STOP_REASON_NONE) {
+      if (reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
+        state->stop_reason = reason;
+      }
       pthread_mutex_unlock(&state->stop_reason_mutex);
 
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
@@ -238,8 +245,6 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
     }
   }
 }
-
-
 
 void engine_shared_state_shutdown_captured_queue(engine_shared_state_t* state) {
   if (state && state->captured_queue) {
@@ -303,11 +308,14 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
       }
     }
     uint8_t desired_raw = processing_state_to_raw_byte(new_state);
+    processing_state_t old_state = processing_state_from_raw_byte(expected);
     if (atomic_compare_exchange_weak_explicit(&state->state_raw, &expected,
                                               desired_raw, memory_order_release,
                                               memory_order_acquire)) {
-      logger_info(&g_logger, "Engine state transitioning to %s",
-                  processing_state_to_string(new_state));
+      if (old_state != new_state) {
+        logger_info(&g_logger, "Engine state transitioning to %s",
+                    processing_state_to_string(new_state));
+      }
       break;
     }
   }
@@ -317,7 +325,8 @@ void engine_shared_state_set_last_capture_time(engine_shared_state_t* state,
                                                uint64_t ns) {
   if (state) {
     // Relaxed ordering is sufficient since this is a simple telemetry timestamp
-    // polled by the external watchdog check and does not coordinate other memory stores.
+    // polled by the external watchdog check and does not coordinate other
+    // memory stores.
     atomic_store_explicit(&state->last_capture_time_ns, ns,
                           memory_order_relaxed);
   }
