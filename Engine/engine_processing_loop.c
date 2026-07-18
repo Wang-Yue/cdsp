@@ -291,8 +291,10 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     // downstream to wake up/keep the playback thread synchronized.
     if (frames == 0) {
       processing_loop_check_pipeline_swap(loop);
-      audio_chunk_t* current_scratch =
-          round_robin_chunk_pool_next(loop->scratch_pool);
+      audio_chunk_t* current_scratch = loop->pending_scratch;
+      if (!current_scratch) {
+        current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
+      }
       audio_chunk_set_valid_frames(current_scratch, 0);
       chunk = current_scratch;
       // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
@@ -300,7 +302,12 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       // to break out of the outer while (dequeue_captured_blocking) loop immediately.
       bool aborted = false;
       if (loop->is_realtime) {
-        engine_shared_state_enqueue_processed(loop->shared, chunk);
+        if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+          loop->processed_drop_counter++;
+          loop->pending_scratch = chunk;
+        } else {
+          loop->pending_scratch = NULL;
+        }
       } else {
         while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
           if (engine_shared_state_should_stop(loop->shared)) {
@@ -309,6 +316,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
           }
           cdsp_sleep_ms(1);
         }
+        loop->pending_scratch = NULL;
       }
       if (aborted) {
         break;
