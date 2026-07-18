@@ -129,6 +129,32 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
 }
 
 /**
+ * @brief Step 4: Creates the resampler codec if target pipeline rate differs from capture rate.
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 4)
+ */
+static bool engine_session_build_resampler(
+    dsp_session_t* core, dsp_config_t* config, double capture_rate,
+    size_t pipeline_rate, audio_backend_error_t* err) {
+  if (config->devices.has_resampler) {
+    config_error_t cerr;
+    config_error_init(&cerr);
+    core->resampler = resampler_create_from_config(
+        &config->devices.resampler, (size_t)capture_rate, pipeline_rate,
+        capture_device_config_get_channels(&config->devices.capture),
+        config->devices.chunksize, &cerr);
+    if (!core->resampler) {
+      if (err) {
+        err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+        strncpy(err->message, cerr.message, sizeof(err->message) - 1);
+        err->message[sizeof(err->message) - 1] = '\0';
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * @brief Step 5: Opens audio capture and playback backends via backend factory.
  * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 5)
  */
@@ -407,24 +433,11 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                                      : config->devices.samplerate);
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 4: Create resampler (sinc/poly/synchronous) if input capture rate != pipeline rate.
-  if (config->devices.has_resampler) {
-    config_error_t cerr;
-    config_error_init(&cerr);
-    core->resampler = resampler_create_from_config(
-        &config->devices.resampler, (size_t)capture_rate, pipeline_rate,
-        capture_device_config_get_channels(&config->devices.capture),
-        config->devices.chunksize, &cerr);
-    if (!core->resampler) {
-      if (err) {
-        err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-        strncpy(err->message, cerr.message, sizeof(err->message) - 1);
-        err->message[sizeof(err->message) - 1] = '\0';
-      }
-      dsp_session_stop_and_free(
-          core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
-      return NULL;
-    }
+  // Step 4: Call engine_session_build_resampler to allocate resampler if rates differ.
+  if (!engine_session_build_resampler(core, config, capture_rate, pipeline_rate, err)) {
+    dsp_session_stop_and_free(
+        core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    return NULL;
   }
 
   size_t requested_chunk_size = config->devices.chunksize;
