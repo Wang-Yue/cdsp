@@ -87,13 +87,6 @@ struct engine_shared_state {
   _Atomic uint64_t last_capture_time_ns;
 };
 
-static void engine_shared_state_publish_stop_reason(
-    engine_shared_state_t* state, processing_stop_reason_t reason) {
-  pthread_mutex_lock(&state->stop_reason_mutex);
-  state->stop_reason = reason;
-  pthread_mutex_unlock(&state->stop_reason_mutex);
-}
-
 spsc_queue_t* engine_shared_state_get_captured_queue(
     engine_shared_state_t* state) {
   return state ? audio_sync_queue_get_spsc_queue(state->captured_queue) : NULL;
@@ -200,15 +193,18 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
                                       processing_stop_reason_t reason) {
   if (!state) return;
 
-  bool expected = false;
   // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety Gate
-  // Use compare-exchange (CAS) on stop_once to ensure only the first thread to request
-  // a stop succeeds in setting the root cause stop reason.
+  // Acquire stop_reason_mutex before checking CAS and writing stop_reason so that
+  // another thread entering the LOSER branch is guaranteed to observe the published
+  // stop_reason rather than reading STOP_REASON_NONE during an intermediate window.
+  pthread_mutex_lock(&state->stop_reason_mutex);
+  bool expected = false;
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
     // WINNER branch: This thread is the first to request shutdown.
-    engine_shared_state_publish_stop_reason(state, reason);
+    state->stop_reason = reason;
+    pthread_mutex_unlock(&state->stop_reason_mutex);
 
     if (reason.type != STOP_REASON_DONE) {
       // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
@@ -228,16 +224,22 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
     // If a graceful EOF was previously requested, but a subsequent non-graceful stop
     // occurs (e.g. user aborts or error happens during drain), override the reason and
     // force immediate INACTIVE state & queue shutdown to prevent deadlocks.
-    processing_stop_reason_t current_r =
-        engine_shared_state_get_stop_reason(state);
-    if (current_r.type == STOP_REASON_DONE && reason.type != STOP_REASON_DONE) {
-      engine_shared_state_publish_stop_reason(state, reason);
+    processing_stop_reason_t current_r = state->stop_reason;
+    if ((current_r.type == STOP_REASON_DONE || current_r.type == STOP_REASON_NONE) &&
+        reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
+      state->stop_reason = reason;
+      pthread_mutex_unlock(&state->stop_reason_mutex);
+
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
+    } else {
+      pthread_mutex_unlock(&state->stop_reason_mutex);
     }
   }
 }
+
+
 
 void engine_shared_state_shutdown_captured_queue(engine_shared_state_t* state) {
   if (state && state->captured_queue) {

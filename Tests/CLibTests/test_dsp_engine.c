@@ -2217,7 +2217,7 @@ TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
   engine_shared_state_t* shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
-  // Step 1: Simulate Thread A winning CAS with a dummy/NONE stop request
+  // Step 1: Simulate Thread A winning CAS with unpublished / non-error stop (STOP_REASON_NONE)
   engine_shared_state_request_stop(
       shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
 

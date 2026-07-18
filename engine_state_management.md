@@ -449,26 +449,36 @@ One of the trickiest parts of shutdown is when multiple threads encounter errors
 Without a gate, these threads would overwrite the stop reason and attempt to shut down queues repeatedly, causing crashes or double-frees.
 
 ```c
+  pthread_mutex_lock(&state->stop_reason_mutex);
   bool expected = false;
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
       // WINNER: Only this block executes once.
-      // Thread-safe publish of stop_reason under stop_reason_mutex:
-      pthread_mutex_lock(&state->stop_reason_mutex);
       state->stop_reason = reason;
       pthread_mutex_unlock(&state->stop_reason_mutex);
       ...
   } else {
       // LOSER: Stop has already been requested by someone else.
-      ...
+      processing_stop_reason_t current_r = state->stop_reason;
+      if ((current_r.type == STOP_REASON_DONE || current_r.type == STOP_REASON_NONE) &&
+          reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE) {
+          state->stop_reason = reason;
+          pthread_mutex_unlock(&state->stop_reason_mutex);
+          ...
+      } else {
+          pthread_mutex_unlock(&state->stop_reason_mutex);
+      }
   }
 ```
 
-* **The First Thread (Winner)**: Atomic compare-exchange finds `stop_once` is `false`. It atomically updates it to `true` and returns `true`. It sets the initial, most accurate stop reason.
-* **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch.
-  - If a graceful EOF was previously requested (`stop_reason == STOP_REASON_DONE`), but a new thread requests an immediate abort (`reason.type != STOP_REASON_DONE`), the loser branch **overrides** the stop reason and forces an immediate queue shutdown.
-  - Otherwise, it does not overwrite the stop reason to preserve the first error root cause.
+* **The First Thread (Winner)**: Acquires `stop_reason_mutex`, updates `stop_once` from `false` to `true` atomically via compare-exchange, sets the initial stop reason, and releases the mutex.
+* **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch while holding `stop_reason_mutex` to safely inspect the published `stop_reason`.
+  - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, but a new thread requests a hardware error abort (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch **overrides** the stop reason and forces an immediate queue shutdown.
+  - Routine stops (`STOP_REASON_NONE`) or duplicate EOFs (`STOP_REASON_DONE`) do not overwrite an existing `STOP_REASON_DONE` or error reason.
+  - Otherwise, it releases the mutex without overwriting the stop reason to preserve the first error root cause.
+
+
 
 ---
 
