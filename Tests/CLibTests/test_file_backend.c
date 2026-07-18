@@ -296,17 +296,17 @@ TEST(FileBackendPauseThrottling) {
                 1e-6);
   }
 
-  // 4. Pause capture and verify read returns false with 0 valid frames
+  // 4. Set capture paused flag and verify read continues returning frames for metering/auto-resume
   capture_backend_set_is_paused(capture, true);
-  ASSERT_FALSE(capture_backend_read(capture, 50, read_chunk, &err));
-  ASSERT_EQ(0, audio_chunk_get_valid_frames(read_chunk));
+  ASSERT_TRUE(capture_backend_read(capture, 50, read_chunk, &err));
+  ASSERT_EQ(50, audio_chunk_get_valid_frames(read_chunk));
 
-  // 5. Unpause capture and read next 50 frames (should be frames 50..99)
+  // 5. Unpause capture and read next 50 frames (should be frames 100..149)
   capture_backend_set_is_paused(capture, false);
   ASSERT_TRUE(capture_backend_read(capture, 50, read_chunk, &err));
   ASSERT_EQ(50, audio_chunk_get_valid_frames(read_chunk));
   for (size_t f = 0; f < 50; f++) {
-    ASSERT_NEAR((double)(f + 50) / 200.0,
+    ASSERT_NEAR((double)(f + 100) / 200.0,
                 audio_chunk_get_channel(read_chunk, 0)[f], 1e-6);
   }
 

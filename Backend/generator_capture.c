@@ -183,8 +183,7 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
   }
 #endif
   if (capture->is_paused) {
-    audio_chunk_set_valid_frames(chunk, 0);
-    return false;
+    cdsp_sleep_ms(10);
   }
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
