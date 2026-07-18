@@ -306,6 +306,7 @@ sequenceDiagram
    - When a loud chunk is read (above the threshold), the silence counter resets.
    - The capture thread sets the state back to `PROCESSING_STATE_RUNNING`.
    - Both backends are unpaused, and chunk pushing resumes, waking up the downstream threads.
+   - **Rate Controller Reset on Resume**: Upon detecting the backend transition from paused to unpaused, the playback thread resets both the PI rate controller `stopwatch` timer and sample `averager` (`stopwatch_restart` and `averager_restart`). This prevents wall-clock time accumulated during silence from triggering an immediate rate adjustment with stale pre-pause samples, eliminating resampler ratio and pitch speed glitches upon auto-resuming.
 
 ---
 

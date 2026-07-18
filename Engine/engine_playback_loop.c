@@ -329,6 +329,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   bool reached_eos = true;
   audio_chunk_t* chunk = NULL;
+  bool was_paused = false;
   // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops & Section 3.6: Immediate Abort Teardown
   // Dequeue chunks from processed_queue. Blocks on processed semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
@@ -337,6 +338,22 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       reached_eos = false;
       break;
     }
+
+    bool is_paused = playback_backend_get_is_paused(loop->playback);
+    if (was_paused && !is_paused) {
+      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
+      // Step 3: Reset PI rate controller stopwatch and averager when auto-resuming from pause
+      // to prevent resampler ratio and pitch speed glitches caused by wall-clock time accumulation.
+      if (loop->rate_adjust_enabled) {
+        averager_restart(&averager);
+        stopwatch_restart(&stopwatch);
+      }
+      logger_info(
+          &g_logger,
+          "Playback auto-resumed from pause; reset rate adjust timer and averager");
+    }
+    was_paused = is_paused;
+
     size_t frames = audio_chunk_get_valid_frames(chunk);
     // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
     // Step 2: Ignore 0-frame control/tick chunks. Drop them immediately to bypass writing to hardware.
