@@ -265,6 +265,11 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
     return -1;
   }
 
+  if (mixer->mapping_count > 0 && !mixer->mapping) {
+    config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Null mapping array");
+    return -1;
+  }
+
   bool* seen_dests = (bool*)calloc(
       mixer->channels_out > 0 ? mixer->channels_out : 1, sizeof(bool));
   if (!seen_dests) return -1;
@@ -285,6 +290,13 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
       return -1;
     }
     seen_dests[dest] = true;
+
+    if (mixer->mapping[i].sources_count > 0 && !mixer->mapping[i].sources) {
+      config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                       "Null sources array for dest %d", dest);
+      free(seen_dests);
+      return -1;
+    }
 
     bool* seen_sources = (bool*)calloc(
         mixer->channels_in > 0 ? mixer->channels_in : 1, sizeof(bool));

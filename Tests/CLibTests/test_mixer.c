@@ -562,4 +562,27 @@ TEST(MixerInoutAPI_RejectsChannelMismatch) {
   mixer_free(mixer);
 }
 
+TEST(MixerConfigValidateNullMapping) {
+  mixer_config_t config = {
+      .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = NULL};
+  config_error_t err;
+  config_error_init(&err);
+  int res = mixer_config_validate(&config, &err);
+  ASSERT_EQ(-1, res);
+  ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
+  ASSERT_TRUE(strstr(err.message, "Null mapping array") != NULL);
+}
+
+TEST(MixerConfigValidateNullSources) {
+  mixer_mapping_t maps[1] = {{.dest = 0, .sources_count = 1, .sources = NULL}};
+  mixer_config_t config = {
+      .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = maps};
+  config_error_t err;
+  config_error_init(&err);
+  int res = mixer_config_validate(&config, &err);
+  ASSERT_EQ(-1, res);
+  ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
+  ASSERT_TRUE(strstr(err.message, "Null sources array for dest 0") != NULL);
+}
+
 TEST_MAIN()
