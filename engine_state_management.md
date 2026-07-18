@@ -26,6 +26,7 @@ Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is
 | `stop_reason_mutex` | `pthread_mutex_t` | Mutex protecting `stop_reason` against concurrent read/write data races. | C11 Mutex Lock (isolated from hot-path processing loop). |
 | `captured_queue` | `audio_sync_queue_t*` | Sync queue from Capture -> Processing. | Lock-free SPSC + OS semaphore. |
 | `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
+| `last_capture_time_ns` | `_Atomic uint64_t` | Telemetry timestamp of the last successfully captured chunk in nanoseconds. Checked by the external watchdog to detect driver freezes. | Lock-free atomic reads and writes (`relaxed` ordering). |
 
 ---
 
@@ -209,8 +210,10 @@ sequenceDiagram
 2. **Auto-Pause Transition**:
    - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
    - It pauses both capture and playback backends. In paused mode, backends yield CPU cycles.
-   - The capture thread stops pushing chunks to `captured_queue`.
-   - The processing and playback queues naturally drain, and the playback loop eventually blocks on the empty queue.
+   - The capture thread stops pushing active audio chunks to `captured_queue`.
+   - **Periodic 0-Frame Ticks**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms.
+   - The processing thread wakes up on these 0-frame chunks, checks and performs any pending pipeline swaps, and propagates them downstream.
+   - The playback thread blocks on `processed_queue` and drops 0-frame chunks immediately to bypass hardware writes and rate controllers.
 3. **Signal Auto-Resume**:
    - When a loud chunk is read (above the threshold), the silence counter resets.
    - The capture thread sets the state back to `PROCESSING_STATE_RUNNING`.
@@ -227,25 +230,29 @@ sequenceDiagram
     participant H as Hardware / Driver
     participant C as Capture Thread
     participant S as Shared State
+    participant M as Main Thread (Controller)
 
-    Note over C: read() blocks / returns no data
-    Note over C: UPTIME_RAW elapsed > 0.5s
-    C->>S: set_state(STALLED)
-    Note over C: Logs warning: "Capture device stalled"
+    Note over C: read() blocks infinitely inside driver
+    Note over M: cdsp_engine_poll() triggers periodically
+    M->>S: Get last capture time
+    Note over M: elapsed since last capture > 0.5s
+    M->>S: set_state(STALLED)
+    Note over M: Logs warning: "External watchdog: capture device stalled"
     
-    Note over H: Hardware/driver resumes sending data
-    Note over C: read() successfully returns a chunk
+    Note over H: Driver recovers, read() returns chunk
+    C->>S: Set last capture time
     C->>S: set_state(RUNNING)
-    Note over C: Logs info: "Capture recovered from stall"
+    Note over C: Logs info: "Capture recovered from stall (external)"
 ```
 
 1. **Stall Detection**:
-   - During normal reads, the capture thread updates `watchdog_last_success_ns`.
-   - If the capture read fails to return data chunks (but doesn't throw a fatal driver error), the loop checks the time elapsed since the last success.
-   - If it exceeds `0.5` seconds, the thread sets `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
+   - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in the shared state every time a chunk is read.
+   - If the capture backend read call blocks infinitely (e.g., driver freeze or hardware disconnect), the capture thread remains blocked inside `capture_backend_read` and cannot execute internal checks.
+   - The main controller thread running `cdsp_engine_poll()` reads the shared `last_capture_time_ns` periodically.
+   - If the elapsed time since `last_capture_time_ns` exceeds `0.5` seconds, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning. This ensures status queries show `STALLED` even when the capture thread is permanently hung.
 2. **Stall Recovery**:
-   - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the watchdog clears.
-   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
+   - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
+   - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
 
 ---
 

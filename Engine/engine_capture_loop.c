@@ -45,6 +45,7 @@ struct engine_capture_loop {
 
   sample_rate_watcher_t* rate_watcher;
   uint64_t captured_drop_counter;
+  uint64_t last_paused_tick_ns;
 };
 #include <stdlib.h>
 
@@ -91,6 +92,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
   loop->watchdog_triggered = false;
   loop->captured_drop_counter = 0;
+  loop->last_paused_tick_ns = 0;
 
   return loop;
 }
@@ -212,9 +214,16 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   // Watchdog Stall Recovery:
   // Reset the watchdog status if we successfully read data after a stall.
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
+  // Update the shared last capture timestamp so the external watchdog check is satisfied.
+  engine_shared_state_set_last_capture_time(loop->shared, loop->watchdog_last_success_ns);
   if (loop->watchdog_triggered) {
     loop->watchdog_triggered = false;
     logger_info(&g_logger, "Capture recovered from stall");
+  }
+  // If the external watchdog previously marked the engine as stalled, restore it to RUNNING.
+  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STALLED) {
+    engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
+    logger_info(&g_logger, "Capture recovered from stall (external)");
   }
 
   // Rate Watcher Measurement:
@@ -335,6 +344,19 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     if (engine_shared_state_get_state(loop->shared) ==
         PROCESSING_STATE_PAUSED) {
       sample_rate_watcher_reset(loop->rate_watcher);
+
+      // Periodically send an empty chunk (valid_frames = 0) downstream while paused.
+      // This wakes up the processing loop thread from its blocking dequeue wait,
+      // allowing configuration hot-reloads and parameter updates (e.g. volume/mute)
+      // to execute and apply immediately instead of being delayed indefinitely until
+      // audio signal resumes. Waking up at 5Hz (200ms) consumes negligible CPU.
+      uint64_t now = cdsp_time_now_ns();
+      if (now - loop->last_paused_tick_ns > 200000000ULL) { // 200ms
+        loop->last_paused_tick_ns = now;
+        audio_chunk_t* empty_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+        audio_chunk_set_valid_frames(empty_chunk, 0);
+        engine_shared_state_enqueue_captured(loop->shared, empty_chunk);
+      }
     }
 
     // 1. Hardware Sample-Rate Change Check

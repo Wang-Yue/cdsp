@@ -314,6 +314,13 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   audio_chunk_t* chunk = NULL;
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
+    size_t frames = audio_chunk_get_valid_frames(chunk);
+    // Ignore 0-frame control/tick chunks. We don't write them to hardware or update
+    // playback speed/rate control adjustments.
+    if (frames == 0) {
+      continue;
+    }
+
     // 1. Hardware Sample-Rate Change Check
     if (playback_loop_check_format_change(loop)) {
       reached_eos = false;

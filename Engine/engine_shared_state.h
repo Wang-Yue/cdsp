@@ -244,4 +244,29 @@ processing_state_t engine_shared_state_get_state(
 void engine_shared_state_set_state(engine_shared_state_t* state,
                                    processing_state_t new_state);
 
+/**
+ * @brief Sets the timestamp of the last successfully captured audio chunk in nanoseconds.
+ *
+ * This timestamp is updated by the capture thread loop every time it reads a
+ * chunk of audio from the capture backend. It is read by the main thread in
+ * the external watchdog check to detect capture backend stalls.
+ *
+ * @param state Pointer to the shared state instance.
+ * @param ns Nanosecond timestamp from cdsp_time_now_ns().
+ */
+void engine_shared_state_set_last_capture_time(engine_shared_state_t* state,
+                                               uint64_t ns);
+
+/**
+ * @brief Gets the timestamp of the last successfully captured audio chunk in nanoseconds.
+ *
+ * Used by the main thread to perform external watchdog stall checks, preventing
+ * hangs when the capture backend read call blocks indefinitely.
+ *
+ * @param state Pointer to the shared state instance.
+ * @return The nanosecond timestamp of the last captured chunk.
+ */
+uint64_t engine_shared_state_get_last_capture_time(
+    const engine_shared_state_t* state);
+
 #endif  // CLIB_ENGINE_ENGINE_SHARED_STATE_H

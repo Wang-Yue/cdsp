@@ -10,6 +10,10 @@
 
 static const logger_t g_logger = {"dsp.backend.generator"};
 
+#ifdef CDSP_TEST
+volatile bool g_generator_mock_hang = false;
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -169,6 +173,15 @@ bool generator_capture_open(generator_capture_t* capture,
 
 bool generator_capture_read(generator_capture_t* capture, size_t frames,
                             audio_chunk_t* chunk, backend_error_t* err) {
+#ifdef CDSP_TEST
+  if (g_generator_mock_hang) {
+    while (g_generator_mock_hang) {
+      cdsp_sleep_ms(10);
+    }
+    audio_chunk_set_valid_frames(chunk, 0);
+    return false;
+  }
+#endif
   if (capture->is_paused) {
     audio_chunk_set_valid_frames(chunk, 0);
     return false;

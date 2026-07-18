@@ -29,6 +29,10 @@
 #include "Resampler/resampler_error.h"
 #include "Utils/cdsp_time.h"
 
+#ifdef CDSP_TEST
+volatile int g_pipeline_swaps_count = 0;
+#endif
+
 struct pending_update {
   dsp_config_t* config;
   char** filters;
@@ -191,6 +195,9 @@ static void processing_loop_check_pipeline_swap(
       }
     }
     loop->active_pipeline = next_pipeline;
+#ifdef CDSP_TEST
+    g_pipeline_swaps_count++;
+#endif
   }
 }
 
@@ -266,6 +273,29 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
 
   while ((chunk = engine_shared_state_dequeue_captured_blocking(
               loop->shared)) != NULL) {
+    size_t frames = audio_chunk_get_valid_frames(chunk);
+    // Bypass audio processing for 0-frame control/tick chunks.
+    // We only execute the pipeline reload/swap check, then propagate the empty chunk
+    // downstream to wake up/keep the playback thread synchronized.
+    if (frames == 0) {
+      processing_loop_check_pipeline_swap(loop);
+      audio_chunk_t* current_scratch =
+          round_robin_chunk_pool_next(loop->scratch_pool);
+      audio_chunk_set_valid_frames(current_scratch, 0);
+      chunk = current_scratch;
+      if (loop->is_realtime) {
+        engine_shared_state_enqueue_processed(loop->shared, chunk);
+      } else {
+        while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+          if (engine_shared_state_should_stop(loop->shared)) {
+            break;
+          }
+          cdsp_sleep_ms(1);
+        }
+      }
+      continue;
+    }
+
     uint64_t res_start = 0;
     uint64_t res_end = 0;
     if (engine_shared_state_get_state(loop->shared) ==

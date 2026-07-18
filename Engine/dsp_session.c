@@ -41,6 +41,7 @@
 #include "Engine/dsp_session_internal.h"
 #include "Engine/engine_session_builder.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.session"};
 
@@ -76,6 +77,23 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
   if (req && out_reason) {
     *out_reason = engine_shared_state_get_stop_reason(core->shared);
   }
+
+  // External Watchdog Stall Check:
+  // If the engine state is RUNNING but the capture thread has not successfully
+  // enqueued/read any audio chunk for more than 500 ms, we transition the state
+  // to STALLED. Checking this on the main thread (during poll) prevents lockups
+  // when the capture backend read call blocks infinitely and cannot run its inline watchdog.
+  if (!req && engine_shared_state_get_state(core->shared) == PROCESSING_STATE_RUNNING) {
+    uint64_t last_capture_time = engine_shared_state_get_last_capture_time(core->shared);
+    if (last_capture_time > 0) {
+      double elapsed = (double)(cdsp_time_now_ns() - last_capture_time) / 1000000000.0;
+      if (elapsed > 0.5) {
+        engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
+        logger_warn(&g_logger, "External watchdog: capture device stalled (no data for %.3fs)", elapsed);
+      }
+    }
+  }
+
   return req;
 }
 

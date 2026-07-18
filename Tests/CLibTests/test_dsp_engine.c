@@ -1343,4 +1343,185 @@ TEST(DSPEngineE2E_DeadlockGuard) {
   remove(out_file);
 }
 
+extern volatile bool g_generator_mock_hang;
+extern volatile int g_pipeline_swaps_count;
+
+TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
+  g_generator_mock_hang = false;
+
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/watchdog_hang_out_%d.raw", getpid());
+  remove(out_file);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Noise\",\n"
+           "                \"level\": -20.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  cdsp_sleep_ms(100);
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
+
+  // Trigger the infinite hang in the capture thread
+  g_generator_mock_hang = true;
+
+  // Sleep for 1000ms real time (which is > 0.5s watchdog timeout)
+  cdsp_sleep_ms(1000);
+
+  // Poll the engine to trigger the external watchdog check!
+  cdsp_engine_poll(engine);
+
+  // Assert that it transitioned to STALLED (verifying the fix!)
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_STALLED);
+
+  // Release the mock hang so the thread can exit cleanly
+  g_generator_mock_hang = false;
+  cdsp_sleep_ms(50);
+
+  cdsp_stop(engine);
+
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(out_file);
+}
+
+TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
+  g_pipeline_swaps_count = 0;
+
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/paused_reload_out_%d.raw", getpid());
+  remove(out_file);
+
+  char json_initial[2048];
+  snprintf(json_initial, sizeof(json_initial),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"silence_threshold\": -50.0,\n"
+           "        \"silence_timeout_s\": 0.1,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Noise\",\n"
+           "                \"level\": -100.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  char json_new[2048];
+  snprintf(json_new, sizeof(json_new),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"silence_threshold\": -50.0,\n"
+           "        \"silence_timeout_s\": 0.1,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Noise\",\n"
+           "                \"level\": -100.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    },\n"
+           "    \"filters\": {\n"
+           "        \"mygain\": {\n"
+           "            \"type\": \"Gain\",\n"
+           "            \"parameters\": {\n"
+           "                \"gain\": -1.0\n"
+           "            }\n"
+           "        }\n"
+           "    },\n"
+           "    \"pipeline\": [\n"
+           "        {\n"
+           "            \"type\": \"Filter\",\n"
+           "            \"channel\": 0,\n"
+           "            \"names\": [\"mygain\"]\n"
+           "        }\n"
+           "    ]\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json_initial, &err);
+  ASSERT_TRUE(success);
+
+  // Wait for auto-pause to trigger
+  bool paused = false;
+  for (int i = 0; i < 50; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
+      paused = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(paused);
+
+  // Reload config with filters to trigger structural reload/swap
+  success = engine->set_config_json(engine->ctx, json_new, &err);
+  ASSERT_TRUE(success);
+
+  cdsp_sleep_ms(300);
+
+  // Assert that swap HAS occurred (verifying the fix!)
+  ASSERT_EQ(1, g_pipeline_swaps_count);
+
+  cdsp_stop(engine);
+
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(out_file);
+}
+
 TEST_MAIN()

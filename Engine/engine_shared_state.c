@@ -35,6 +35,7 @@
 
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.engine.state"};
 
@@ -79,6 +80,11 @@ struct engine_shared_state {
    * @brief Atomic flag to ensure stop logic is executed only once.
    */
   _Atomic bool stop_once;
+
+  /**
+   * @brief Timestamp of the last successfully captured chunk in nanoseconds.
+   */
+  _Atomic uint64_t last_capture_time_ns;
 };
 
 static void engine_shared_state_publish_stop_reason(
@@ -154,6 +160,7 @@ engine_shared_state_t* engine_shared_state_create(
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
+  atomic_init(&state->last_capture_time_ns, cdsp_time_now_ns());
   pthread_mutex_init(&state->stop_reason_mutex, NULL);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
@@ -300,4 +307,22 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
       break;
     }
   }
+}
+
+void engine_shared_state_set_last_capture_time(engine_shared_state_t* state,
+                                               uint64_t ns) {
+  if (state) {
+    // Relaxed ordering is sufficient since this is a simple telemetry timestamp
+    // polled by the external watchdog check and does not coordinate other memory stores.
+    atomic_store_explicit(&state->last_capture_time_ns, ns,
+                          memory_order_relaxed);
+  }
+}
+
+uint64_t engine_shared_state_get_last_capture_time(
+    const engine_shared_state_t* state) {
+  // Relaxed ordering pairs with the relaxed store above.
+  return state ? atomic_load_explicit(&state->last_capture_time_ns,
+                                      memory_order_relaxed)
+               : 0;
 }
