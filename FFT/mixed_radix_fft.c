@@ -51,7 +51,7 @@ struct mixed_radix_fft {
   double** twiddle_im;
   /// Mixed-radix digit-reversal permutation. `permutation[i]` is where
   /// input element `i` ends up in the post-permutation buffer.
-  int* permutation;
+  size_t* permutation;
   /// Active read/write buffers for the butterfly stages. Re-pointed at
   /// the caller's `realOut`/`imagOut` at the start of each `execute`
   /// call — the permutation step writes the post-permute samples
@@ -104,13 +104,13 @@ static void mixed_radix_fft_free_wrapper(void* ctx) {
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 2;
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
+  size_t block_size = m * 2;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
       double twR = tw_re[m + k];
       double twI = tw_im[m + k];
       double v1r = work_re[i1] * twR - work_im[i1] * twI;
@@ -143,16 +143,16 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 3;
+  size_t block_size = m * 3;
   // W3 = exp(-2π i / 3) = (-1/2, -√3/2). The constant `√3/2` recurs below.
   double s32 = sin(2.0 * M_PI / 3.0);
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
-      int i2 = i1 + m;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
+      size_t i2 = i1 + m;
       double tw1R = tw_re[m + k];
       double tw1I = tw_im[m + k];
       double tw2R = tw_re[2 * m + k];
@@ -196,15 +196,15 @@ static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 4;
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
-      int i2 = i1 + m;
-      int i3 = i2 + m;
+  size_t block_size = m * 4;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
+      size_t i2 = i1 + m;
+      size_t i3 = i2 + m;
       double t1R = tw_re[m + k];
       double t1I = tw_im[m + k];
       double t2R = tw_re[2 * m + k];
@@ -262,21 +262,21 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 5;
+  size_t block_size = m * 5;
   // Radix-5 uses these inner DFT constants. tw_5^k = exp(-2πi·k/5).
   double w1R = cos(2.0 * M_PI / 5.0);
   double w1I = -sin(2.0 * M_PI / 5.0);
   double w2R = cos(4.0 * M_PI / 5.0);
   double w2I = -sin(4.0 * M_PI / 5.0);
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
-      int i2 = i1 + m;
-      int i3 = i2 + m;
-      int i4 = i3 + m;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
+      size_t i2 = i1 + m;
+      size_t i3 = i2 + m;
+      size_t i4 = i3 + m;
       // Outer-stage twiddle on samples 1..4.
       double t1R = tw_re[m + k];
       double t1I = tw_im[m + k];
@@ -360,9 +360,9 @@ static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 7;
+  size_t block_size = m * 7;
   double w1R = cos(2.0 * M_PI / 7.0);
   double w1I = -sin(2.0 * M_PI / 7.0);
   double w2R = cos(4.0 * M_PI / 7.0);
@@ -372,20 +372,20 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
   // Cache the m-multiples once per stage call so the inner loop
   // computes each twiddle base address with one `add` instead of
   // a `mul` per iteration.
-  int m2 = m << 1;
-  int m3 = m2 + m;
-  int m4 = m << 2;
-  int m5 = m4 + m;
-  int m6 = m3 << 1;
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
-      int i2 = i1 + m;
-      int i3 = i2 + m;
-      int i4 = i3 + m;
-      int i5 = i4 + m;
-      int i6 = i5 + m;
+  size_t m2 = m << 1;
+  size_t m3 = m2 + m;
+  size_t m4 = m << 2;
+  size_t m5 = m4 + m;
+  size_t m6 = m3 << 1;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
+      size_t i2 = i1 + m;
+      size_t i3 = i2 + m;
+      size_t i4 = i3 + m;
+      size_t i5 = i4 + m;
+      size_t i6 = i5 + m;
       // Outer-stage twiddles on samples 1..6. Reuse the cached
       // `m2..m6` from above so the twiddle base addresses are
       // single `+` ops instead of `Int` multiplies with overflow
@@ -483,20 +483,20 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
  * @param tw_im Imaginary part of twiddle factors.
  */
 static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
-                                double* work_im, int m, const double* tw_re,
+                                double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
-  int block_size = m * 8;
+  size_t block_size = m * 8;
   double s2 = 0.7071067811865476;  // √2/2
-  for (int b = 0; b < (int)fft->n; b += block_size) {
-    for (int k = 0; k < m; k++) {
-      int i0 = b + k;
-      int i1 = i0 + m;
-      int i2 = i1 + m;
-      int i3 = i2 + m;
-      int i4 = i3 + m;
-      int i5 = i4 + m;
-      int i6 = i5 + m;
-      int i7 = i6 + m;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      size_t i0 = b + k;
+      size_t i1 = i0 + m;
+      size_t i2 = i1 + m;
+      size_t i3 = i2 + m;
+      size_t i4 = i3 + m;
+      size_t i5 = i4 + m;
+      size_t i6 = i5 + m;
+      size_t i7 = i6 + m;
       double t1R = tw_re[m + k];
       double t1I = tw_im[m + k];
       double t2R = tw_re[2 * m + k];
@@ -640,7 +640,7 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   fft->factors = (int*)calloc(stage_count, sizeof(int));
   fft->twiddle_re = (double**)calloc(stage_count, sizeof(double*));
   fft->twiddle_im = (double**)calloc(stage_count, sizeof(double*));
-  fft->permutation = (int*)calloc(n, sizeof(int));
+  fft->permutation = (size_t*)calloc(n, sizeof(size_t));
 
   if (!fft->factors || !fft->twiddle_re || !fft->twiddle_im ||
       !fft->permutation) {
@@ -655,10 +655,10 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   }
 
   // Allocate per-stage twiddle buffers.
-  int m = 1;
+  size_t m = 1;
   for (int s = 0; s < stage_count; s++) {
     int r = fs[s];
-    int len = m * r;
+    size_t len = m * (size_t)r;
     fft->twiddle_re[s] = (double*)calloc(len, sizeof(double));
     fft->twiddle_im[s] = (double*)calloc(len, sizeof(double));
     if (!fft->twiddle_re[s] || !fft->twiddle_im[s]) {
@@ -666,15 +666,15 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
       return NULL;
     }
     // twiddle[j*m + k] = W_{m·r}^(j·k) for j in 0..r-1, k in 0..m-1.
-    double invMR = 1.0 / (double)(m * r);
+    double invMR = 1.0 / (double)(m * (size_t)r);
     for (int j = 0; j < r; j++) {
-      for (int k = 0; k < m; k++) {
-        double theta = -2.0 * M_PI * (double)(j * k) * invMR;
-        fft->twiddle_re[s][j * m + k] = cos(theta);
-        fft->twiddle_im[s][j * m + k] = sin(theta);
+      for (size_t k = 0; k < m; k++) {
+        double theta = -2.0 * M_PI * (double)((size_t)j * k) * invMR;
+        fft->twiddle_re[s][(size_t)j * m + k] = cos(theta);
+        fft->twiddle_im[s][(size_t)j * m + k] = sin(theta);
       }
     }
-    m *= r;
+    m *= (size_t)r;
   }
 
   // Pre-compute the digit-reversal permutation. We store `factors` in
@@ -695,7 +695,7 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
       idx /= (size_t)r;
       rev += d * m_left;
     }
-    fft->permutation[i] = (int)rev;
+    fft->permutation[i] = rev;
   }
   // No internal work buffer: `execute` re-points `workRe`/`workIm`
   // at the caller's output for the duration of the call.
@@ -713,13 +713,13 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
   // Step 1: permute input. For inverse, conjugate as we go
   if (inverse) {
     for (size_t i = 0; i < fft->n; i++) {
-      int p = fft->permutation[i];
+      size_t p = fft->permutation[i];
       work_re[p] = real_in[i];
       work_im[p] = -imag_in[i];
     }
   } else {
     for (size_t i = 0; i < fft->n; i++) {
-      int p = fft->permutation[i];
+      size_t p = fft->permutation[i];
       work_re[p] = real_in[i];
       work_im[p] = imag_in[i];
     }
@@ -727,7 +727,7 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
 
   // Step 2: butterfly stages, all in-place on (work_re, work_im) =
   // (real_out, imag_out).
-  int m = 1;
+  size_t m = 1;
   for (int s = 0; s < fft->stage_count; s++) {
     int r = fft->factors[s];
     const double* twRe = fft->twiddle_re[s];
@@ -754,7 +754,7 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
       default:
         break;
     }
-    m *= r;
+    m *= (size_t)r;
   }
 
   // Step 3: re-conjugate the imaginary part for the inverse direction.
