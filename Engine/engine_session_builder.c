@@ -162,9 +162,8 @@ static bool engine_session_build_backends(
 }
 
 /**
- * @brief Step 6 & Step 7: Pre-allocates scratch audio chunks, creates
- * DSP pipeline, and allocates round-robin chunk pools.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 6 & 7)
+ * @brief Step 6: Pre-allocates scratch audio chunks and creates the DSP processing pipeline.
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 6)
  */
 static bool engine_session_build_pipeline_and_scratch(
     dsp_session_t* core, dsp_config_t* config, size_t capture_chunk_size,
@@ -202,7 +201,16 @@ static bool engine_session_build_pipeline_and_scratch(
     }
     return false;
   }
+  return true;
+}
 
+/**
+ * @brief Step 7: Pre-allocates lock-free chunk pools for thread communication.
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 7)
+ */
+static bool engine_session_build_chunk_pools(
+    dsp_session_t* core, dsp_config_t* config, size_t capture_chunk_size,
+    size_t playback_chunk_size) {
   // 7. Pre-allocate chunk pools.
   // Allocate memory for chunk pools ahead of time to guarantee that the capture
   // and processing loop threads never perform dynamic memory allocations on the
@@ -364,6 +372,11 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
   if (!config) return NULL;
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Note on Non-Builder steps:
+  //   - Step 1 (Staging & Lock-Free Status Indicator) occurs inside dsp_engine_set_config_json.
+  //   - Step 9 (Async Hardware Open & Prefill) occurs inside the worker thread runs.
+  //   - Step 10 (Transition to RUNNING) occurs inside engine_capture_loop_run.
+  //
   // Step 2: Allocate the core dsp_session_t struct container and initialize its config_mutex.
   dsp_session_t* core = (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
@@ -434,10 +447,19 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
   }
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 6 & Step 7: Call engine_session_build_pipeline_and_scratch to build DSP pipeline,
-  // allocate scratch buffers, and initialize worker thread chunk pools.
+  // Step 6: Call engine_session_build_pipeline_and_scratch to build DSP pipeline
+  // and allocate scratch buffers.
   if (!engine_session_build_pipeline_and_scratch(
           core, config, capture_chunk_size, playback_chunk_size, err)) {
+    dsp_session_stop_and_free(
+        core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+    return NULL;
+  }
+
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Step 7: Call engine_session_build_chunk_pools to pre-allocate lock-free chunk pools.
+  if (!engine_session_build_chunk_pools(core, config, capture_chunk_size,
+                                        playback_chunk_size)) {
     dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
