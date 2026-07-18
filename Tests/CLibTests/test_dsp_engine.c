@@ -6,11 +6,13 @@
 
 #include "Engine/dsp_engine.h"
 #include "Engine/engine_capture_loop.h"
+#include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
 #include "Audio/audio_chunk.h"
 #include "Backend/generator_capture.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
+#include "Pipeline/pipeline.h"
 #include "Public/config.h"
 #include "Public/devices.h"
 #include "Public/general.h"
@@ -1878,6 +1880,11 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   if (engine && engine->free) engine->free(engine->ctx);
 }
 
+// Real-world scenario simulated:
+// Real-time hardware capture under queue drop pressure (Section 3.2 & Section 1.7.2 Rule 5).
+// When the captured SPSC queue reaches 100% capacity, incoming real-time audio chunks are dropped.
+// Verifies that un-enqueued chunks are retained in loop->pending_chunk so round-robin pool index
+// does not advance or wrap around into active in-flight queued buffers, avoiding audio corruption.
 TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   // Shared state with queue depth 2
   engine_shared_state_t* shared = engine_shared_state_create(2, 2);
@@ -1943,6 +1950,94 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   ASSERT_NE(chunk0, next_pool_chunk);
 
   engine_capture_loop_free(loop);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+}
+
+static void* proc_thread_worker(void* arg) {
+  engine_processing_loop_t* loop = (engine_processing_loop_t*)arg;
+  engine_processing_loop_run(loop);
+  return NULL;
+}
+
+// Real-world scenario simulated:
+// Non-realtime session immediate abort during backend error or user stop (Section 3.6).
+// When a non-realtime worker thread (e.g. file conversion) is waiting on a full queue while an
+// immediate abort occurs, verifies that worker threads break out of the outer processing loop
+// immediately rather than draining all remaining buffered chunks in captured_queue.
+TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
+  // Shared state with queue depth 4
+  engine_shared_state_t* shared = engine_shared_state_create(4, 4);
+  ASSERT_TRUE(shared != NULL);
+
+  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(8, 64, 1);
+  ASSERT_TRUE(pool != NULL);
+
+  processing_parameters_t* params = processing_parameters_create(1, 1);
+  ASSERT_TRUE(params != NULL);
+
+  dsp_config_t dcfg;
+  memset(&dcfg, 0, sizeof(dcfg));
+  dcfg.devices.samplerate = 48000;
+  dcfg.devices.chunksize = 64;
+  capture_device_config_set_channels(&dcfg.devices.capture, 1);
+  dcfg.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  dcfg.devices.playback.cfg.raw_file.channels = 1;
+
+  pipeline_t* pipe = pipeline_create(&dcfg, params, 64, NULL);
+  ASSERT_TRUE(pipe != NULL);
+
+  engine_processing_loop_config_t loop_cfg = {
+      .shared = shared,
+      .processing_params = params,
+      .pipeline_rate = 48000,
+      .resampler = NULL,
+      .pipeline = pipe,
+      .dsd_encoder = NULL,
+      .resampler_scratch = NULL,
+      .pipeline_scratch = NULL,
+      .scratch_pool = pool,
+      .on_chunk_captured = NULL,
+      .on_chunk_captured_ctx = NULL,
+      .on_chunk_processed = NULL,
+      .on_chunk_processed_ctx = NULL,
+      .is_realtime = false,
+  };
+
+  engine_processing_loop_t* loop = engine_processing_loop_create(&loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  // Fill processed_queue to capacity (4 chunks) so processing thread blocks when trying to enqueue
+  for (int i = 0; i < 4; i++) {
+    audio_chunk_t* pchunk = round_robin_chunk_pool_next(pool);
+    ASSERT_TRUE(engine_shared_state_enqueue_processed(shared, pchunk));
+  }
+
+  // Fill captured_queue with 4 chunks to process
+  for (int i = 0; i < 4; i++) {
+    audio_chunk_t* cchunk = round_robin_chunk_pool_next(pool);
+    ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, cchunk));
+  }
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, proc_thread_worker, loop);
+
+  // Allow processing thread to dequeue 1 captured chunk and enter while (!enqueue_processed) sleep loop
+  cdsp_sleep_ms(10);
+
+  // Request immediate abort (STOP_REASON_PLAYBACK_ERROR)
+  processing_stop_reason_t stop_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
+  snprintf(stop_reason.message, sizeof(stop_reason.message), "Mock error abort");
+  engine_shared_state_request_stop(shared, stop_reason);
+
+  pthread_join(thread, NULL);
+
+  // Assert that processing thread exited immediately without draining the remaining captured chunks!
+  size_t remaining_captured = spsc_queue_get_count(engine_shared_state_get_captured_queue(shared));
+  ASSERT_TRUE(remaining_captured > 0);
+
+  engine_processing_loop_free(loop);
+  processing_parameters_free(params);
   round_robin_chunk_pool_free(pool);
   engine_shared_state_free(shared);
 }
