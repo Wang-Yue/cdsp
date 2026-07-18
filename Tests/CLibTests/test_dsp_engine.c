@@ -11,6 +11,7 @@
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
+#include "Public/volume.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"
 
@@ -688,6 +689,9 @@ TEST(DSPEngineE2E_CoreAudio) {
 #endif
 }
 
+// Real-world scenario simulated:
+// Capturing a synthetic signal generator (like a test tone calibration tool)
+// and recording/saving the output directly to a file (offline capturing).
 TEST(DSPEngineE2E_GeneratorFile) {
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/e2e_out_%d.raw", getpid());
@@ -721,6 +725,9 @@ TEST(DSPEngineE2E_GeneratorFile) {
   remove(out_file);
 }
 
+// Real-world scenario simulated:
+// Offline batch processing (e.g., loading an audio file from disk, applying DSP filters,
+// and saving/writing the processed result to another file as fast as CPU permits).
 TEST(DSPEngineE2E_FileFile) {
   char in_file[256];
   char out_file[256];
@@ -791,6 +798,9 @@ TEST(DSPEngineE2E_FileFile) {
   remove(out_file);
 }
 
+// Real-world scenario simulated:
+// High-performance offline rendering. Verifies that when realtime constraints are not
+// requested, the engine processes samples unthrottled far faster than real-time speed.
 TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   char out_filename[256];
   snprintf(out_filename, sizeof(out_filename), "/tmp/e2e_out_speed_%d.raw",
@@ -1222,18 +1232,30 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   }
 }
 
+// Real-world scenario simulated:
+// Fully offline file processing (e.g. converting a track format or offline DSP offline processing).
+// Runs as fast as CPU permits (unthrottled).
 TEST(DSPEngineE2E_FileFile_Realtime_FF) {
   run_e2e_file_file_test(false, false, 480000, true);
 }
 
+// Real-world scenario simulated:
+// Recording from a physical hardware capture device (mic/line-in, which delivers chunks in real-time)
+// and saving/writing the output to a local raw PCM file on disk (throttled by capture speed).
 TEST(DSPEngineE2E_FileFile_Realtime_TF) {
   run_e2e_file_file_test(true, false, 480000, true);
 }
 
+// Real-world scenario simulated:
+// Playing back a local music file from disk (e.g., raw PCM audio track)
+// and outputting it to a real-world physical DAC device in real-time (throttled by playback DAC speed).
 TEST(DSPEngineE2E_FileFile_Realtime_FT) {
   run_e2e_file_file_test(false, true, 480000, true);
 }
 
+// Real-world scenario simulated:
+// Live real-time audio routing (e.g. mic capture -> DSP processing -> DAC playback).
+// Both ends run in real-time (fully throttled).
 TEST(DSPEngineE2E_FileFile_Realtime_TT) {
   run_e2e_file_file_test(true, true, 480000, true);
 }
@@ -1250,6 +1272,10 @@ static void* stop_thread_func(void* arg) {
   return NULL;
 }
 
+// Real-world scenario simulated:
+// Host application stop command race conditions. Simulates a user clicking "Stop" in the UI
+// while the playback thread concurrently runs into a device error or shutdown.
+// Verifies that cdsp_stop() does not block indefinitely (deadlock) when threads teardown.
 TEST(DSPEngineE2E_DeadlockGuard) {
   char in_file[256];
   char out_file[256];
@@ -1346,6 +1372,10 @@ TEST(DSPEngineE2E_DeadlockGuard) {
 extern volatile bool g_generator_mock_hang;
 extern volatile int g_pipeline_swaps_count;
 
+// Real-world scenario simulated:
+// Physical audio hardware driver crash/lockup (synchronous lockup inside backend read call).
+// Verifies that the external watchdog stall detector running on the main controller thread
+// successfully flags the engine state as STALLED instead of remaining stuck in RUNNING.
 TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   g_generator_mock_hang = false;
 
@@ -1412,6 +1442,10 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   remove(out_file);
 }
 
+// Real-world scenario simulated:
+// Staging a filter configuration hot-reload while the audio pipeline is auto-paused (e.g. during silence).
+// Verifies that the reload and structural pipeline swap apply immediately without waiting
+// for the audio signal to resume.
 TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   g_pipeline_swaps_count = 0;
 
@@ -1520,6 +1554,191 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 
   cdsp_stop(engine);
 
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(out_file);
+}
+
+// Real-world scenario simulated:
+// Auto-pause and auto-resume. Simulates the audio signal dropping below the threshold
+// to trigger fader-mute auto-pause, then a configuration reload with loud noise occurs,
+// causing the system to automatically resume back to RUNNING.
+TEST(DSPEngineE2E_AutoPauseResume) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_autopause_%d.raw", getpid());
+  remove(out_file);
+
+  char json_silent[1024];
+  snprintf(json_silent, sizeof(json_silent),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"silence_threshold\": -50.0,\n"
+           "        \"silence_timeout_s\": 0.1,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -100.0\n" // Silent
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  char json_loud[1024];
+  snprintf(json_loud, sizeof(json_loud),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"silence_threshold\": -50.0,\n"
+           "        \"silence_timeout_s\": 0.1,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -20.0\n" // Loud
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json_silent, &err);
+  ASSERT_TRUE(success);
+
+  // Wait for auto-pause to trigger
+  bool paused = false;
+  for (int i = 0; i < 50; i++) {
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
+      paused = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(paused);
+
+  // Apply new config with loud noise
+  success = engine->set_config_json(engine->ctx, json_loud, &err);
+  ASSERT_TRUE(success);
+
+  // Wait for auto-resume to trigger
+  bool resumed = false;
+  for (int i = 0; i < 50; i++) {
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      resumed = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(resumed);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(out_file);
+}
+
+// Real-world scenario simulated:
+// Client app volume/mute changes. Simulates adjusting the playback fader gain (volume)
+// and toggling mute on the fly, verifying that level meters reflect changes instantly.
+TEST(DSPEngineE2E_FaderVolumeMuteControl) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_fader_%d.raw", getpid());
+  remove(out_file);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 1,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -6.0\n"\
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  cdsp_sleep_ms(100);
+
+  // Fetch initial VU levels
+  cdsp_vu_levels_t vu = {0};
+  ASSERT_TRUE(cdsp_get_vu_levels(engine, &vu));
+  ASSERT_TRUE(vu.capture_channels == 1);
+  ASSERT_TRUE(vu.playback_channels == 1);
+  ASSERT_TRUE(vu.capture_peak[0] > -20.0);
+  ASSERT_TRUE(vu.playback_peak[0] > -20.0);
+  cdsp_free_vu_levels(&vu);
+
+  // Mute main fader
+  cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, true);
+  ASSERT_TRUE(cdsp_get_fader_mute(engine, CDSP_FADER_MAIN));
+  cdsp_sleep_ms(100);
+
+  // Fetch muted VU levels - playback fader is post-mute, so it should be silent
+  memset(&vu, 0, sizeof(vu));
+  ASSERT_TRUE(cdsp_get_vu_levels(engine, &vu));
+  ASSERT_TRUE(vu.playback_peak[0] < -150.0); // Muted
+  ASSERT_TRUE(vu.capture_peak[0] > -20.0);    // Capture is pre-fader, still loud
+  cdsp_free_vu_levels(&vu);
+
+  // Unmute main fader and set fader volume
+  cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, false);
+  ASSERT_FALSE(cdsp_get_fader_mute(engine, CDSP_FADER_MAIN));
+  cdsp_set_fader_volume(engine, CDSP_FADER_MAIN, -12.0f, true);
+  ASSERT_EQ(-12.0f, cdsp_get_fader_volume(engine, CDSP_FADER_MAIN));
+
+  cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
   remove(out_file);
 }
