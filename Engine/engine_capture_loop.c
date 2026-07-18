@@ -292,6 +292,29 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   return false;
 }
 
+bool engine_capture_loop_step(engine_capture_loop_t* loop) {
+  if (!loop) return true;
+  // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
+  // Fetch a chunk buffer from the pre-allocated round-robin pool,
+  // or reuse an un-enqueued chunk if the previous enqueue was dropped due to full queue.
+  audio_chunk_t* chunk = loop->pending_chunk;
+  if (!chunk) {
+    chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+  }
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+  // Read raw PCM/DSD frame data from the capture backend.
+  bool got_data =
+      capture_backend_read(loop->capture, loop->chunk_size, chunk, &err);
+  if (!got_data) {
+    return capture_loop_handle_no_data(loop, &err);
+  }
+
+  // Process metering, DoP decode, silence gate, and push to SPSC queue.
+  return capture_loop_process_and_enqueue(loop, chunk);
+}
+
 void engine_capture_loop_run(engine_capture_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Capture thread started (realtime: %s)",
@@ -358,27 +381,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     }
 
     // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
-    // 2. Fetch a chunk buffer from the pre-allocated round-robin pool,
-    // or reuse an un-enqueued chunk if the previous enqueue was dropped due to full queue.
-    audio_chunk_t* chunk = loop->pending_chunk;
-    if (!chunk) {
-      chunk = round_robin_chunk_pool_next(loop->chunk_pool);
-    }
-    backend_error_t err;
-    backend_error_init(&err, BACKEND_ERROR_NONE, "");
-
-    // 3. Read raw PCM/DSD frame data from the capture backend.
-    bool got_data =
-        capture_backend_read(loop->capture, loop->chunk_size, chunk, &err);
-    if (!got_data) {
-      if (capture_loop_handle_no_data(loop, &err)) {
-        break;
-      }
-      continue;
-    }
-
-    // 4. Process metering, DoP decode, silence gate, and push to SPSC queue.
-    if (capture_loop_process_and_enqueue(loop, chunk)) {
+    // 2. Fetch chunk buffer (or pending_chunk on drop), read backend data, and enqueue to SPSC queue.
+    if (engine_capture_loop_step(loop)) {
       break;
     }
   }

@@ -5,6 +5,11 @@
 #include <unistd.h>
 
 #include "Engine/dsp_engine.h"
+#include "Engine/engine_capture_loop.h"
+#include "Engine/engine_shared_state.h"
+#include "Audio/audio_chunk.h"
+#include "Backend/generator_capture.h"
+#include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
 #include "Public/config.h"
 #include "Public/devices.h"
@@ -1873,90 +1878,73 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   if (engine && engine->free) engine->free(engine->ctx);
 }
 
-// Real-world scenario simulated:
-// Real-time queue drop & pool wrap-around data integrity check (End-to-End).
-// Generator capture produces chunks in real-time mode unthrottled.
-// Playback is throttled to 100Hz real-time, forcing heavy real-time queue drops.
-// Chunks sitting in the playback queue must NOT be overwritten by pool index wrap-around.
 TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
-  char out_file[256];
-  snprintf(out_file, sizeof(out_file), "/tmp/queue_drop_out_%d.raw", getpid());
-  remove(out_file);
+  // Shared state with queue depth 2
+  engine_shared_state_t* shared = engine_shared_state_create(2, 2);
+  ASSERT_TRUE(shared != NULL);
 
-  int chunk_size = 64;
+  // Pool with capacity 4 (chunk0, chunk1, chunk2, chunk3)
+  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(4, 64, 1);
+  ASSERT_TRUE(pool != NULL);
 
-  char json[1024];
-  snprintf(json, sizeof(json),
-           "{\n"
-           "    \"devices\": {\n"
-           "        \"samplerate\": 100,\n"
-           "        \"chunksize\": 64,\n"
-           "        \"queuelimit\": 4,\n"
-           "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
-           "            \"channels\": 1,\n"
-           "            \"signal\": {\n"
-           "                \"type\": \"Sine\",\n"
-           "                \"frequency\": 1000.0,\n"
-           "                \"level\": 0.0\n"
-           "            }\n"
-           "        },\n"
-           "        \"playback\": {\n"
-           "            \"type\": \"File\",\n"
-           "            \"filename\": \"%s\",\n"
-           "            \"format\": \"S16_LE\",\n"
-           "            \"channels\": 1,\n"
-           "            \"realtime\": true\n"
-           "        }\n"
-           "    }\n"
-           "}",
-           out_file);
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_GENERATOR;
+  cap_cfg.cfg.generator.channels = 1;
+  cap_cfg.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
+  cap_cfg.cfg.generator.signal.frequency = 1000.0;
+  cap_cfg.cfg.generator.signal.level = 0.0;
 
-  dsp_engine_t* engine = dsp_engine_create();
-  ASSERT_TRUE(engine != NULL);
+  backend_error_t berr;
+  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  capture_backend_t* cap_backend = generator_capture_create(&cap_cfg, 48000, 64, NULL, &berr);
+  ASSERT_TRUE(cap_backend != NULL);
 
-  audio_backend_error_t err;
-  memset(&err, 0, sizeof(err));
-  bool success = engine->set_config_json(engine->ctx, json, &err);
-  ASSERT_TRUE(success);
+  engine_capture_loop_config_t loop_cfg = {
+      .shared = shared,
+      .capture = cap_backend,
+      .playback = NULL,
+      .processing_params = NULL,
+      .dop_decoder = NULL,
+      .chunk_pool = pool,
+      .chunk_size = 64,
+      .channels = 1,
+      .samplerate = 48000,
+      .silence_threshold_db = -100.0,
+      .silence_timeout_seconds = 0.0,
+      .stop_on_rate_change = false,
+      .rate_measure_interval_s = 0.0,
+  };
 
-  // Run engine for 150ms while Generator pushes thousands of chunks and playback writes ~15 chunks
-  cdsp_sleep_ms(150);
+  engine_capture_loop_t* loop = engine_capture_loop_create(&loop_cfg);
+  ASSERT_TRUE(loop != NULL);
 
-  cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  // Fill captured_queue (depth 2) with chunk0 and chunk1
+  audio_chunk_t* chunk0 = round_robin_chunk_pool_next(pool);
+  audio_chunk_t* chunk1 = round_robin_chunk_pool_next(pool);
+  ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, chunk0));
+  ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, chunk1));
 
-  // Inspect written output chunks for data corruption / NaN / zero-fill spikes.
-  // Each chunk written by Generator Sine wave must be non-zero and valid S16 samples.
-  FILE* out_f = fopen(out_file, "rb");
-  size_t total_chunks_read = 0;
-  size_t corrupted_chunks = 0;
-
-  if (out_f) {
-    int16_t chunk_buf[64];
-    size_t chunk_idx = 0;
-    while (fread(chunk_buf, sizeof(int16_t), chunk_size, out_f) == (size_t)chunk_size) {
-      total_chunks_read++;
-      chunk_idx++;
-      // Check that chunk is not zeroed out or corrupted with garbage
-      bool non_zero = false;
-      for (int k = 0; k < chunk_size; k++) {
-        if (chunk_buf[k] != 0) {
-          non_zero = true;
-          break;
-        }
-      }
-      if (chunk_idx > 1 && !non_zero) {
-        corrupted_chunks++;
-      }
-    }
-    fclose(out_f);
+  // Now captured_queue is FULL.
+  // Run 10 drop iterations. In real-time mode, enqueue fails for each chunk.
+  // Now captured_queue is FULL.
+  // Run 10 capture steps on full queue. In real-time mode, enqueue fails (drops).
+  for (int i = 0; i < 10; i++) {
+    engine_capture_loop_step(loop);
   }
 
-  ASSERT_TRUE(total_chunks_read > 0);
-  ASSERT_EQ(0, corrupted_chunks);
+  // Dequeue chunk0 sitting in captured_queue
+  audio_chunk_t* dequeued0 = engine_shared_state_dequeue_captured_blocking(shared);
+  ASSERT_EQ(chunk0, dequeued0);
 
-  remove(out_file);
+  // Verify that chunk0 is NOT returned as the next available pool chunk after drop iterations!
+  // Without pending_chunk retention, pool wrap-around causes next_pool_chunk == chunk0 (overwriting active queue buffer).
+  audio_chunk_t* next_pool_chunk = round_robin_chunk_pool_next(pool);
+  ASSERT_NE(chunk0, next_pool_chunk);
+
+  engine_capture_loop_free(loop);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
 }
 
 TEST_MAIN()

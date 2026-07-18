@@ -91,4 +91,14 @@ void engine_capture_loop_free(engine_capture_loop_t* loop);
  */
 void engine_capture_loop_run(engine_capture_loop_t* loop);
 
+#ifdef CDSP_TEST
+/**
+ * @brief Executes a single iteration step of the capture loop.
+ *
+ * @param loop Pointer to the capture loop instance.
+ * @return true if the loop should exit, false otherwise.
+ */
+bool engine_capture_loop_step(engine_capture_loop_t* loop);
+#endif
+
 #endif  // CLIB_ENGINE_ENGINE_CAPTURE_LOOP_H
