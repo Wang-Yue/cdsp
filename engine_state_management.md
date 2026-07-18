@@ -87,7 +87,7 @@ All mutexes in the CDSP Engine are strictly isolated to control paths, RPC/API h
 
 | Mutex Name | Location | Accessing Threads | Purpose & Deadlock Prevention Analysis |
 | :--- | :--- | :--- | :--- |
-| `stop_reason_mutex` | `engine_shared_state_t` | Threads calling `engine_shared_state_request_stop()` or `get_stop_reason()` (Capture, Playback, Processing, Main thread). | Protects `stop_reason` (a 264-byte payload struct). **Leaf lock**: never acquires any other lock inside its critical section and is locked at most **once** during session teardown/stop publication. |
+| `stop_reason_mutex` | `engine_shared_state_t` | Threads calling `engine_shared_state_request_stop()` or `get_stop_reason()` (Capture, Playback, Processing, Main thread). | Protects `stop_reason` (a 264-byte payload struct). **Leaf lock**: never acquires any other lock inside its critical section and is locked briefly during stop publication or queries. |
 | `config_mutex` | `dsp_session_t` | Main controller thread calling `dsp_session_get_config()` or `dsp_session_reload_config()`. | Guards access to `current_config`. **Leaf lock**: never acquires any other mutex while held. Used exclusively for control RPCs; never accessed by audio loops. |
 | `state_mutex` | `dsp_engine_impl_t` | Main thread executing API commands (`set_config_json`, `stop`, `set_fader_volume`, `get_status`, `poll`, `get_samples`, `get_spectrum`). | Serializes top-level state transitions, session building/destruction, and historical stop reasons. **Top-level controller lock**: acquires leaf locks in a strict top-down hierarchy. Audio loops operate entirely inside `dsp_session_t` and `engine_shared_state_t`, completely isolated from `state_mutex`. |
 | `mutex` | `engine_state_manager_t` | Main/API threads calling `set_fader_volume`, `set_fader_mute`, `get_fader_volume`, `set_config_path`, `save_if_needed`. | Protects fader volume/mute settings, paths, dirty flags, and change counters as unified atomic transactions. **Leaf lock with recursive type** (`PTHREAD_MUTEX_RECURSIVE`): nested internal calls on the same thread cannot self-deadlock. Audio threads update volume smoothly via `processing_parameters_t` (atomic gain factors) and **never** touch `engine_state_manager_t`. |
@@ -143,6 +143,7 @@ stateDiagram-v2
     [*] --> INACTIVE
     INACTIVE --> STARTING : set_config
     STARTING --> RUNNING : spawn_threads / capture_starts
+    STARTING --> INACTIVE : abort / error
     RUNNING --> PAUSED : silence_timeout
     PAUSED --> RUNNING : signal_detected
     RUNNING --> STALLED : watchdog_timeout (>0.5s)
@@ -236,7 +237,7 @@ sequenceDiagram
    - If either thread fails to open the device asynchronously, it requests an abort via `engine_shared_state_request_stop()` with the specific error type (e.g., `STOP_REASON_CAPTURE_ERROR` or `STOP_REASON_PLAYBACK_ERROR`), which immediately transitions the raw state to `INACTIVE`.
 
 10. **Transition to `RUNNING`**:
-    - Once the capture thread successfully opens its device and reads the first frame, it sets `state_raw` to `PROCESSING_STATE_RUNNING`, notifying the controller that the session is streaming.
+    - Once the capture thread successfully opens its capture backend device, it sets `state_raw` to `PROCESSING_STATE_RUNNING` immediately prior to reading the first frame, notifying the controller that the session is streaming.
 
 ---
 
@@ -289,7 +290,7 @@ sequenceDiagram
    - If the level stays below the threshold for longer than the timeout, the silence counter updates.
 2. **Auto-Pause Transition**:
    - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
-   - It pauses both capture and playback backends. In paused mode, backends yield CPU cycles.
+   - It pauses both capture and playback backends (Note: physical hardware capture backends like CoreAudio/ALSA/WASAPI do not implement `set_is_paused` and continue reading frames, which the capture loop discards before queueing; playback backends suspend DAC rendering). In paused mode, backends yield CPU cycles.
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms.
    - The processing thread wakes up on these 0-frame chunks, checks and performs any pending pipeline swaps, and propagates them downstream.
@@ -315,21 +316,20 @@ sequenceDiagram
     Note over C: read() blocks infinitely inside driver
     Note over M: cdsp_engine_poll() triggers periodically
     M->>S: Get last capture time
-    Note over M: elapsed since last capture > 0.5s
+    Note over M: elapsed since last capture > watchdog_timeout_seconds
     M->>S: set_state(STALLED)
-    Note over M: Logs warning: "External watchdog: capture device stalled"
+    Note over M: Logs warning: "Watchdog: capture device stalled"
     
     Note over H: Driver recovers, read() returns chunk
     C->>S: Set last capture time
     C->>S: set_state(RUNNING)
-    Note over C: Logs info: "Capture recovered from stall (external)"
+    Note over C: Logs info: "Capture recovered from stall"
 ```
 
 1. **Stall Detection**:
    - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in the shared state every time a chunk is read.
-   - If the capture backend read call blocks infinitely (e.g., driver freeze or hardware disconnect), the capture thread remains blocked inside `capture_backend_read` and cannot execute internal checks.
-   - The main controller thread running `cdsp_engine_poll()` reads the shared `last_capture_time_ns` periodically.
-   - If the elapsed time since `last_capture_time_ns` exceeds `0.5` seconds, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning. This ensures status queries show `STALLED` even when the capture thread is permanently hung.
+   - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall.
+   - If `state_raw == RUNNING` and `stop_once == false`, and the elapsed time since `last_capture_time_ns` exceeds `watchdog_timeout_seconds`, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning. This ensures status queries show `STALLED` even when the capture thread is permanently hung, while preventing false triggers during `PAUSED` mode or graceful EOF teardown.
 2. **Stall Recovery**:
    - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
    - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
@@ -444,7 +444,7 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
       // WINNER: Only this block executes once.
-      state->stop_reason = reason;
+      engine_shared_state_publish_stop_reason(state, reason); // Thread-safe write under stop_reason_mutex
       ...
   } else {
       // LOSER: Stop has already been requested by someone else.

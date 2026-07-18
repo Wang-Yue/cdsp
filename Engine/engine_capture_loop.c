@@ -40,8 +40,6 @@ struct engine_capture_loop {
   round_robin_chunk_pool_t* chunk_pool;
 
   uint64_t watchdog_last_success_ns;
-  bool watchdog_triggered;
-  double watchdog_timeout_seconds;
 
   sample_rate_watcher_t* rate_watcher;
   uint64_t captured_drop_counter;
@@ -88,9 +86,7 @@ engine_capture_loop_t* engine_capture_loop_create(
     return NULL;
   }
 
-  loop->watchdog_timeout_seconds = 0.5;
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
-  loop->watchdog_triggered = false;
   loop->captured_drop_counter = 0;
   loop->last_paused_tick_ns = 0;
 
@@ -181,21 +177,6 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
     return false;
   }
 
-  // Watchdog / Stall Monitor:
-  // If the engine is running but we get no data chunks from the capture device
-  // for more than watchdog_timeout_seconds, set state to STALLED and log a
-  // warning.
-  if (!loop->watchdog_triggered) {
-    uint64_t now = cdsp_time_now_ns();
-    double elapsed =
-        (double)(now - loop->watchdog_last_success_ns) / 1000000000.0;
-    if (elapsed > loop->watchdog_timeout_seconds) {
-      loop->watchdog_triggered = true;
-      engine_shared_state_set_state(loop->shared, PROCESSING_STATE_STALLED);
-      logger_warn(&g_logger, "Capture device stalled — no data for %fs",
-                  loop->watchdog_timeout_seconds);
-    }
-  }
   // Block/wait up to 20ms using the backend's synchronization mechanism (e.g.
   // semaphore). This yields CPU time while maintaining real-time scheduling
   // priority.
@@ -218,19 +199,14 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
 static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                              audio_chunk_t* chunk) {
   // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-  // Step 1: Stall Detection. Update the shared timestamp so the external watchdog is satisfied.
+  // Step 1: Update shared last capture timestamp so the main-thread watchdog check is satisfied.
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
-  // Update the shared last capture timestamp so the external watchdog check is satisfied.
   engine_shared_state_set_last_capture_time(loop->shared, loop->watchdog_last_success_ns);
-  if (loop->watchdog_triggered) {
-    loop->watchdog_triggered = false;
-    logger_info(&g_logger, "Capture recovered from stall");
-  }
-  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-  // Step 2: Stall Recovery. If the external watchdog previously marked us STALLED, restore to RUNNING.
+
+  // Step 2: Stall Recovery. If the main-thread watchdog previously marked us STALLED, restore to RUNNING.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STALLED) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
-    logger_info(&g_logger, "Capture recovered from stall (external)");
+    logger_info(&g_logger, "Capture recovered from stall");
   }
 
   // Rate Watcher Measurement:
