@@ -160,7 +160,7 @@ sequenceDiagram
 
 8. **Spawning Worker Threads**:
    - `engine_session_spawn_worker_threads()` spawns the Capture thread, Processing thread, and Playback thread in parallel.
-   - If any thread spawning fails, the builder sets `threads_created = false`, triggers an immediate shutdown (`dsp_session_stop_and_free()`), and returns `NULL` to abort the start.
+   - If any thread spawning fails, the builder manually stops and joins already-created worker threads, triggers session destruction via `dsp_session_stop_and_free()`, and returns `NULL` to abort the start.
 
 9. **Asynchronous Hardware Open & Prefill**:
    - **Playback Loop Setup**: The Playback thread opens the playback backend device and pre-fills it with silence frames (PCM zero-fill or DSD silence pattern) to prevent immediate buffer underrun errors on startup.

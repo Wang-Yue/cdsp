@@ -21,11 +21,8 @@
  * Read uses acquire ordering; write uses release ordering. When the state
  * transitions to `PROCESSING_STATE_INACTIVE`, it serves as the signal that the
  * engine should stop.
- * - `stop_reason`: Published using the release-store on `state_raw` to
- * `PROCESSING_STATE_INACTIVE` as the synchronisation edge. A reader that
- * acquire-loads the state and observes `PROCESSING_STATE_INACTIVE` is
- * guaranteed by release-acquire ordering to see the writer's prior
- * `stop_reason` assignment.
+ * - `stop_reason`: Protected by `stop_reason_mutex` against concurrent read/write
+ * data races (isolated from hot-path processing loops).
  * - `stop_once`: CAS-guarded "first caller wins" stop flag, ensuring stop logic
  * is executed only once.
  *
