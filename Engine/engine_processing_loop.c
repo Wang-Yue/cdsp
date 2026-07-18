@@ -295,15 +295,23 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
           round_robin_chunk_pool_next(loop->scratch_pool);
       audio_chunk_set_valid_frames(current_scratch, 0);
       chunk = current_scratch;
+      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
+      // In non-realtime mode during 0-frame tick full-queue wait, set aborted = true on should_stop()
+      // to break out of the outer while (dequeue_captured_blocking) loop immediately.
+      bool aborted = false;
       if (loop->is_realtime) {
         engine_shared_state_enqueue_processed(loop->shared, chunk);
       } else {
         while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
           if (engine_shared_state_should_stop(loop->shared)) {
+            aborted = true;
             break;
           }
           cdsp_sleep_ms(1);
         }
+      }
+      if (aborted) {
+        break;
       }
       continue;
     }
