@@ -387,14 +387,19 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     } else {
       // Non-real-time file conversion: nanosleep wait while queue is full to
       // preserve every sample frame.
+      bool aborted = false;
       while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
         if (engine_shared_state_should_stop(loop->shared)) {
           // Immediately abort enqueuing if the session is stopping/inactive.
+          aborted = true;
           break;
         }
         cdsp_sleep_ms(1);
       }
       loop->pending_scratch = NULL;
+      if (aborted) {
+        break;
+      }
     }
   }
 
