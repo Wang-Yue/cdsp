@@ -329,10 +329,14 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   bool reached_eos = true;
   audio_chunk_t* chunk = NULL;
-  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops
+  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops & Section 3.6: Immediate Abort Teardown
   // Dequeue chunks from processed_queue. Blocks on processed semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
+    if (engine_shared_state_should_stop(loop->shared)) {
+      reached_eos = false;
+      break;
+    }
     size_t frames = audio_chunk_get_valid_frames(chunk);
     // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
     // Step 2: Ignore 0-frame control/tick chunks. Drop them immediately to bypass writing to hardware.

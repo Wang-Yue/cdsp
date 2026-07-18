@@ -317,10 +317,13 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
 
   audio_chunk_t* chunk = NULL;
 
-  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops
+  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops & Section 3.6: Immediate Abort Teardown
   // Dequeue chunks from captured_queue. Blocks on captured semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_captured_blocking(
               loop->shared)) != NULL) {
+    if (engine_shared_state_should_stop(loop->shared)) {
+      break;
+    }
     size_t frames = audio_chunk_get_valid_frames(chunk);
     // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
     // Step 2: Detect 0-frame tick chunk. Bypass resampling/DSP, check for pending pipeline swaps,
