@@ -1743,4 +1743,134 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   remove(out_file);
 }
 
+// Real-world scenario simulated:
+// Graceful File-to-File rendering completion (EOF Queue Draining Flow - Section 3.5).
+// Verifies that when the input file reaches EOF, the capture and processing threads
+// terminate early, but the engine state remains RUNNING while the playback thread is still
+// draining the queue in real-time. Once fully played, the state transitions to INACTIVE.
+TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/teardown_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/teardown_out_%d.raw", getpid());
+  remove(in_file);
+  remove(out_file);
+
+  // Write exactly 1024 frames of stereo 16-bit audio (1024 * 2 samples)
+  // At chunk size 512, this represents exactly 2 chunks of audio.
+  FILE* f = fopen(in_file, "wb");
+  ASSERT_TRUE(f != NULL);
+  int16_t input_samples[1024 * 2] = {0};
+  fwrite(input_samples, sizeof(int16_t), 1024 * 2, f);
+  fclose(f);
+
+  // Set low samplerate (1000Hz) and chunk size (512), with realtime playback.
+  // Each chunk takes 512 / 1000 = 512ms to play. Total playback time = 1024ms.
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 1000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2,\n"
+           "            \"realtime\": true\n" // Playback throttled to real-time!
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  // 1. Sleep for 200ms.
+  // Capture and Processing threads should have finished reading/processing the 2 chunks
+  // and exited. Playback is still playing chunk 1 (takes 512ms).
+  cdsp_sleep_ms(200);
+
+  // State must still be RUNNING (not inactive!) because queue is draining.
+  cdsp_engine_poll(engine);
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
+
+  // 2. Sleep for another 1000ms (total 1200ms, which is > 1024ms total playback time).
+  // Playback has finished playing both chunks and exited.
+  cdsp_sleep_ms(1000);
+
+  // State must transition to INACTIVE after draining.
+  cdsp_engine_poll(engine);
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_INACTIVE);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(in_file);
+  remove(out_file);
+}
+
+// Real-world scenario simulated:
+// Immediate startup failure abort (Section 3.6).
+// Simulates configure failure (e.g. invalid capture file path).
+// Verifies that initialization fails cleanly and immediately transitions the engine state to INACTIVE.
+TEST(DSPEngineE2E_StartupFailure_Abort) {
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"/nonexistent_directory/nonexistent_file.raw\",\n" // Invalid file path!
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"/tmp/startup_fail_out.raw\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  
+  // The configuration is syntactically valid and threads spawn successfully
+  ASSERT_TRUE(success);
+
+  // Wait for the capture thread to start and fail to open the nonexistent file backend
+  cdsp_sleep_ms(100);
+
+  // Engine state must transition to INACTIVE
+  cdsp_engine_poll(engine);
+  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_INACTIVE);
+
+  // Stop reason must be set to capture error
+  cdsp_stop_reason_t stop_reason;
+  cdsp_get_stop_reason(engine, &stop_reason);
+  ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
+
+  if (engine && engine->free) engine->free(engine->ctx);
+}
+
 TEST_MAIN()
