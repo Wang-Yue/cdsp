@@ -7,6 +7,21 @@ This report documents the static Call Graph Audit for the three real-time audio 
 
 ---
 
+## 0. Architectural Motivation: Why Call Graph Auditing is Required
+
+In real-time audio DSP systems, meeting strict low-latency constraints (e.g. 512 frames @ 44.1kHz = 11.6ms deadline per chunk) requires absolute guarantees that real-time threads never block unpredictably. Static Call Graph Auditing is performed for four essential architectural reasons:
+
+1. **Deterministic Latency & Dropout Prevention**:
+   Acquiring a `pthread_mutex_lock` or invoking dynamic memory allocators (`malloc`/`free`) inside steady-state audio loops causes OS thread stalls. In real-time audio, even a microsecond stall can miss a DAC hardware buffer deadline, producing audible pops, clicks, or stream drops.
+2. **Preventing Priority Inversion**:
+   Audio threads run at OS Real-Time scheduling priority (`SCHED_FIFO` / `TH_OPT_REALTIME`). If a real-time audio thread attempts to acquire a lock held by a low-priority API thread (e.g., HTTP/WebSocket server or JSON parser), the high-priority thread is blocked waiting for low-priority execution. Call Graph Auditing proves that audio loops do not touch locks shared with control-plane threads.
+3. **Protection Against Implicit Lock Contamination During Refactoring**:
+   As codebases grow, developers may inadvertently call utility functions or third-party helpers that internally acquire locks or allocate memory. Static Call Graph AST analysis recursively inspects 100% of reachable call trees from the audio loop entry points, ensuring new additions do not accidentally introduce hidden locks into steady-state audio streaming.
+4. **Automated CI/CD Concurrency Governance**:
+   Documented architectural promises must be continuously verified. Integrating static call graph auditing into `Tools/generate_callgraph.py` automatically enforces lock-free invariants on every build and pull request.
+
+---
+
 ## 1. Audit Summary & Key Invariants
 
 | Audio Loop | Total Reachable Functions | Lock Reachability on Steady Path | Dynamic Lock / Alloc Risk | Audit Result |

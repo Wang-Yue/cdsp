@@ -108,6 +108,19 @@ To mathematically guarantee freedom from deadlocks across all thread interaction
 4. **Audio Thread Lock Exclusion**:
    - Steady-state audio loops (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`) never acquire `state_mutex`, `config_mutex`, or `mgr->mutex`. The only lock touched by an audio loop is `stop_reason_mutex`, which is a leaf lock invoked strictly once on error/EOF exit paths outside the audio streaming loop.
 
+#### 1.6.1. Why Call Graph Auditing is Mandatory (Architectural Rationale)
+
+To guarantee real-time audio performance and long-term codebase health, static Call Graph Auditing is enforced for all audio loops (`Tools/generate_callgraph.py`). The audit exists to address four critical audio architecture risks:
+
+1. **Hard Real-Time Latency & Underrun Elimination**:
+   - At high sample rates and small chunk sizes (e.g. 512 frames at 44.1kHz = 11.6ms budget per chunk), invoking `pthread_mutex_lock` or memory allocation primitives (`malloc`/`free`) on the steady-state hot path introduces unpredictable OS thread stalls. Stalls lead directly to buffer underruns, audible clicks, and driver dropouts.
+2. **Prevention of Priority Inversion**:
+   - Audio worker threads run under high OS Real-Time scheduling policies (`SCHED_FIFO` on Linux, `TH_OPT_REALTIME` on Darwin). If a real-time audio thread attempts to acquire a mutex held by a low-priority control thread (e.g. a WebSocket server or JSON config parser thread), the real-time thread is suspended waiting for the low-priority thread. This **Priority Inversion** ruins real-time guarantees regardless of thread priority settings.
+3. **Protection Against Implicit Lock Contamination**:
+   - During code refactoring and feature additions, developers might call utility functions or third-party helpers that secretly acquire internal locks. Static Call Graph analysis recursively traces 100% of reachable call trees from `engine_*_loop_run()` down to leaf functions, proving statically that no locks exist on steady-state execution paths.
+4. **Continuous CI/CD Concurrency Governance**:
+   - Design document claims must be verified by code inspection and automated tooling. Integrating Call Graph Auditing into the build and test pipeline ensures that locking invariants are automatically enforced on every pull request and future code modification.
+
 ---
 
 ### 1.7. Ownership & Resource Lifecycle Guidelines (Double-Free & Memory Leak Prevention)
