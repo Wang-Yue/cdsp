@@ -70,13 +70,22 @@ $(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filt
 
 ENABLE_WEBSOCKET ?= 1
 ifeq ($(ENABLE_WEBSOCKET),1)
-    # Check if libwebsockets is available via pkg-config
-    HAS_WEBSOCKET := $(shell pkg-config --exists libwebsockets && echo 1 || echo 0)
-    ifeq ($(HAS_WEBSOCKET),0)
-        # On macOS, homebrew might not be in pkg-config path, so check homebrew explicitly
-        ifeq ($(IS_DARWIN),1)
-            ifeq ($(shell [ -f /opt/homebrew/include/libwebsockets.h ] && echo 1 || echo 0),1)
-                HAS_WEBSOCKET := 1
+    ifeq ($(IS_WINDOWS),1)
+        # WebSockets are disabled by default on Windows unless headers are in win_deps
+        ifeq ($(shell [ -f $(ROOT_DIR)/win_deps/include/libwebsockets.h ] && echo 1 || echo 0),1)
+            HAS_WEBSOCKET := 1
+        else
+            HAS_WEBSOCKET := 0
+        endif
+    else
+        # Linux / macOS: check if libwebsockets is available via pkg-config
+        HAS_WEBSOCKET := $(shell pkg-config --exists libwebsockets && echo 1 || echo 0)
+        ifeq ($(HAS_WEBSOCKET),0)
+            # On macOS, homebrew might not be in pkg-config path, so check homebrew explicitly
+            ifeq ($(IS_DARWIN),1)
+                ifeq ($(shell [ -f /opt/homebrew/include/libwebsockets.h ] && echo 1 || echo 0),1)
+                    HAS_WEBSOCKET := 1
+                endif
             endif
         endif
     endif
@@ -86,6 +95,9 @@ ifeq ($(ENABLE_WEBSOCKET),1)
         ifeq ($(IS_DARWIN),1)
             CFLAGS += -I/opt/homebrew/include
             LDFLAGS_WS := -L/opt/homebrew/lib -lwebsockets
+        else ifeq ($(IS_WINDOWS),1)
+            CFLAGS += -I$(ROOT_DIR)/win_deps/include
+            LDFLAGS_WS := -L$(ROOT_DIR)/win_deps/lib -lwebsockets
         else
             CFLAGS += $(shell pkg-config --cflags libwebsockets 2>/dev/null || echo "")
             LDFLAGS_WS := $(shell pkg-config --libs libwebsockets 2>/dev/null || echo "-lwebsockets")
