@@ -39,7 +39,6 @@ struct engine_capture_loop {
   silence_counter_t* silence_counter;
   round_robin_chunk_pool_t* chunk_pool;
 
-  uint64_t watchdog_last_success_ns;
   audio_chunk_t* pending_chunk;
 
   sample_rate_watcher_t* rate_watcher;
@@ -87,7 +86,6 @@ engine_capture_loop_t* engine_capture_loop_create(
     return NULL;
   }
 
-  loop->watchdog_last_success_ns = cdsp_time_now_ns();
   loop->pending_chunk = NULL;
   loop->captured_drop_counter = 0;
   loop->last_paused_tick_ns = 0;
@@ -174,7 +172,7 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   // If the engine is in a PAUSED state (no active input signal), reset the
   // watchdog timer to avoid triggering stall warnings while waiting for signal.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
-    loop->watchdog_last_success_ns = cdsp_time_now_ns();
+    engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
     capture_backend_wait(loop->capture, 20);
     return false;
   }
@@ -202,8 +200,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                              audio_chunk_t* chunk) {
   // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
   // Step 1: Update shared last capture timestamp so the main-thread watchdog check is satisfied.
-  loop->watchdog_last_success_ns = cdsp_time_now_ns();
-  engine_shared_state_set_last_capture_time(loop->shared, loop->watchdog_last_success_ns);
+  engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
 
   // Step 2: Stall Recovery. If the main-thread watchdog previously marked us STALLED, restore to RUNNING.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STALLED) {
@@ -348,7 +345,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
   set_realtime_thread_priority("Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
-  loop->watchdog_last_success_ns = cdsp_time_now_ns();
+  engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
 
   while (1) {
     if (engine_shared_state_should_stop(loop->shared)) {
