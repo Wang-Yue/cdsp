@@ -59,9 +59,22 @@ static inline void cdsp_sleep_us_internal(uint64_t us) {
 #endif
 }
 
+#ifdef CDSP_TEST
+#include <stdlib.h>
+
+static uint64_t get_time_scale(void) {
+  const char* env = getenv("CDSP_TIME_SCALE");
+  if (env && env[0] != '\0') {
+    int scale = atoi(env);
+    if (scale > 0) return (uint64_t)scale;
+  }
+  return 15;
+}
+#endif
+
 uint64_t cdsp_time_now_ns(void) {
 #ifdef CDSP_TEST
-  return cdsp_time_now_ns_internal() * 15;
+  return cdsp_time_now_ns_internal() * get_time_scale();
 #else
   return cdsp_time_now_ns_internal();
 #endif
@@ -69,7 +82,8 @@ uint64_t cdsp_time_now_ns(void) {
 
 void cdsp_sleep_ms(uint32_t ms) {
 #ifdef CDSP_TEST
-  uint32_t scaled_ms = ms / 15;
+  uint64_t scale = get_time_scale();
+  uint32_t scaled_ms = (uint32_t)(ms / scale);
   if (scaled_ms == 0 && ms > 0) scaled_ms = 1;
   cdsp_sleep_ms_internal(scaled_ms);
 #else
@@ -79,7 +93,8 @@ void cdsp_sleep_ms(uint32_t ms) {
 
 void cdsp_sleep_us(uint64_t us) {
 #ifdef CDSP_TEST
-  uint64_t scaled_us = us / 15;
+  uint64_t scale = get_time_scale();
+  uint64_t scaled_us = us / scale;
   if (scaled_us == 0 && us > 0) scaled_us = 1;
   cdsp_sleep_us_internal(scaled_us);
 #else
