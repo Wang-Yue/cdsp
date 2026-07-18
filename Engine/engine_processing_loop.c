@@ -268,6 +268,45 @@ static void processing_loop_record_metrics(engine_processing_loop_t* loop,
   processing_parameters_add_clipped_samples(loop->processing_params, clipped);
 }
 
+/**
+ * @brief Enqueues an output scratch chunk to the processed queue.
+ * Handles realtime single-try drop retention vs non-realtime retry with abort checks.
+ *
+ * @param loop Pointer to the processing loop context.
+ * @param chunk Audio chunk to enqueue.
+ * @return true to continue processing loop, false if an immediate abort was requested.
+ */
+static bool processing_loop_enqueue_output(engine_processing_loop_t* loop,
+                                            audio_chunk_t* chunk) {
+  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops) & Section 1.7.2 (Rule 5)
+  if (loop->is_realtime) {
+    // Real-time hardware stream: non-blocking single-try push to avoid audio
+    // hiccups. Retain un-enqueued scratch chunk in loop->pending_scratch on drop.
+    if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+      loop->processed_drop_counter++;
+      logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
+      loop->pending_scratch = chunk;
+    } else {
+      loop->pending_scratch = NULL;
+    }
+    return true;
+  } else {
+    // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
+    // In non-realtime mode during full-queue wait, return false on should_stop()
+    // to break out of the outer while (dequeue_captured_blocking) loop immediately.
+    bool aborted = false;
+    while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
+      if (engine_shared_state_should_stop(loop->shared)) {
+        aborted = true;
+        break;
+      }
+      cdsp_sleep_ms(1);
+    }
+    loop->pending_scratch = NULL;
+    return !aborted;
+  }
+}
+
 void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Processing thread started");
@@ -296,29 +335,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
       }
       audio_chunk_set_valid_frames(current_scratch, 0);
-      chunk = current_scratch;
-      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-      // In non-realtime mode during 0-frame tick full-queue wait, set aborted = true on should_stop()
-      // to break out of the outer while (dequeue_captured_blocking) loop immediately.
-      bool aborted = false;
-      if (loop->is_realtime) {
-        if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-          loop->processed_drop_counter++;
-          loop->pending_scratch = chunk;
-        } else {
-          loop->pending_scratch = NULL;
-        }
-      } else {
-        while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-          if (engine_shared_state_should_stop(loop->shared)) {
-            aborted = true;
-            break;
-          }
-          cdsp_sleep_ms(1);
-        }
-        loop->pending_scratch = NULL;
-      }
-      if (aborted) {
+      // Ref: engine_state_management.md - Section 3.2 (RT Drops) & Section 3.6 (Immediate Abort Teardown)
+      if (!processing_loop_enqueue_output(loop, current_scratch)) {
         break;
       }
       continue;
@@ -388,35 +406,10 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       dsd_encoder_encode(loop->dsd_encoder, chunk);
     }
 
-    // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops) & Section 1.7.2 (Rule 5)
+    // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort Teardown)
     // 9. Enqueue the processed chunk to the playback queue.
-    if (loop->is_realtime) {
-      // Real-time hardware stream: non-blocking single-try push to avoid audio
-      // hiccups. Retain un-enqueued scratch chunk in loop->pending_scratch on drop.
-      if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-        loop->processed_drop_counter++;
-        logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
-        loop->pending_scratch = chunk;
-      } else {
-        loop->pending_scratch = NULL;
-      }
-    } else {
-      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-      // In non-realtime mode during full-queue wait, set aborted = true on should_stop()
-      // to break out of the outer while (dequeue_captured_blocking) loop immediately.
-      bool aborted = false;
-      while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
-        if (engine_shared_state_should_stop(loop->shared)) {
-          // Immediately abort enqueuing if the session is stopping/inactive.
-          aborted = true;
-          break;
-        }
-        cdsp_sleep_ms(1);
-      }
-      loop->pending_scratch = NULL;
-      if (aborted) {
-        break;
-      }
+    if (!processing_loop_enqueue_output(loop, chunk)) {
+      break;
     }
   }
 
