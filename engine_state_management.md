@@ -135,19 +135,40 @@ sequenceDiagram
     Note over S: state_raw becomes RUNNING<br/>(Status queries now return RUNNING)
 ```
 
-1. **Config change triggers `STARTING`**:
-   - `dsp_engine_set_config()` sets `config_in_progress` to `true`.
-   - The session builder initializes the shared state's `state_raw` to `PROCESSING_STATE_STARTING`.
-   - The session builder allocates the resampler, processing pipeline, and backend structures (without opening hardware).
-2. **Asynchronous Startup Spawning**:
-   - The builder spawns the Capture, Processing, and Playback loops in parallel.
-   - The builder returns the session handle to the engine, which sets `config_in_progress` to `false`. The client's command returns successfully.
-3. **Hardware Open & Prefill on Loop Threads**:
-   - The **Playback Thread** opens the playback device backend and pre-fills silence frames (using DSD silence if DSD is active) asynchronously.
-   - The **Capture Thread** opens the capture device backend.
-   - If either backend fails to open, it requests an immediate abort with the specific error reason.
-4. **Transition to `RUNNING`**:
-   - Once the capture thread successfully opens its device, it sets the shared state to `PROCESSING_STATE_RUNNING`.
+1. **Staging & Lock-Free Status Indicator**:
+   - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [dsp_engine.c](file:///Users/wangyue/cdsp/Engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
+
+2. **Allocating Session Core & Mutex**:
+   - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [engine_session_builder.c](file:///Users/wangyue/cdsp/Engine/engine_session_builder.c)).
+
+3. **Shared State & DSD/DoP Helpers Setup**:
+   - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`).
+   - If DoP is enabled on capture/playback, it allocates `dop_decoder_t`. If DSD is enabled on playback, it allocates `dsd_encoder_t`.
+
+4. **Resampler Sizing & Allocation**:
+   - The resampler ratio is calculated. If the configured capture rate differs from the target pipeline rate, `resampler_create_from_config()` allocates a synchronous, asynchronous sinc, or asynchronous poly resampler.
+   - The effective playback chunk size is determined based on the resampler's maximum output frame expansion.
+
+5. **Audio Backend Factories (Without Opening)**:
+   - `engine_session_build_backends()` calls the backend factory to allocate `capture_backend_t` and `playback_backend_t` handles (e.g. CoreAudio, ALSA, ASIO, File, or Generator). No hardware syscalls are made here; only handle descriptors are created.
+
+6. **DSP Processing Pipeline & Scratch Chunks**:
+   - `engine_session_build_pipeline_and_scratch()` parses filter configurations, creates the step pipeline (`pipeline_t`), and allocates the `resampler_scratch` and `pipeline_scratch` audio chunks used for processing.
+
+7. **Thread Chunk Pools Sizing**:
+   - Pre-allocates two round-robin chunk pools (`capture_chunk_pool` and `processing_scratch_pool`) to completely avoid memory allocations on the audio thread hot path during steady-state processing.
+
+8. **Spawning Worker Threads**:
+   - `engine_session_spawn_worker_threads()` spawns the Capture thread, Processing thread, and Playback thread in parallel.
+   - If any thread spawning fails, the builder sets `threads_created = false`, triggers an immediate shutdown (`dsp_session_stop_and_free()`), and returns `NULL` to abort the start.
+
+9. **Asynchronous Hardware Open & Prefill**:
+   - **Playback Loop Setup**: The Playback thread opens the playback backend device and pre-fills it with silence frames (PCM zero-fill or DSD silence pattern) to prevent immediate buffer underrun errors on startup.
+   - **Capture Loop Setup**: The Capture thread opens the capture backend device and starts reading frames.
+   - If either thread fails to open the device asynchronously, it requests an abort via `engine_shared_state_request_stop()` with the specific error type (e.g., `STOP_REASON_CAPTURE_ERROR` or `STOP_REASON_PLAYBACK_ERROR`), which immediately transitions the raw state to `INACTIVE`.
+
+10. **Transition to `RUNNING`**:
+    - Once the capture thread successfully opens its device and reads the first frame, it sets `state_raw` to `PROCESSING_STATE_RUNNING`, notifying the controller that the session is streaming.
 
 ---
 
