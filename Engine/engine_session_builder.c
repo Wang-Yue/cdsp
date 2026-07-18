@@ -285,7 +285,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                  : config->devices.samplerate),
       .silence_threshold_db = config->devices.has_silence_threshold
                                   ? config->devices.silence_threshold
-                                  : 0.0,
+                                  : -90.0,
       .silence_timeout_seconds = config->devices.has_silence_timeout_s
                                      ? config->devices.silence_timeout_s
                                      : 0.0,
