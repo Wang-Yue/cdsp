@@ -201,31 +201,33 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   if (!state) return;
 
   bool expected = false;
-  // Use compare-exchange (CAS) to ensure that only the first thread to request
-  // a stop succeeds. We write the stop reason and transition state to INACTIVE,
-  // then release-store stop_requested to true.
+  // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety Gate
+  // Use compare-exchange (CAS) on stop_once to ensure only the first thread to request
+  // a stop succeeds in setting the root cause stop reason.
   if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
                                               true, memory_order_acq_rel,
                                               memory_order_acquire)) {
+    // WINNER branch: This thread is the first to request shutdown.
     engine_shared_state_publish_stop_reason(state, reason);
 
     if (reason.type != STOP_REASON_DONE) {
+      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
+      // Step 1: For non-graceful aborts (errors or user Stop), immediately transition
+      // engine state to INACTIVE and shut down both queues to wake up all blocked threads.
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
-      // Immediately shut down both queues on error or user stop to wake up
-      // capture and playback threads and prevent shutdown deadlocks.
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
     } else {
-      // Graceful EOF stop: only shut down capture queue to let playback
-      // thread finish draining the processed queue.
+      // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue Drain)
+      // Step 1: For EOF, only shut down capture queue to let downstream threads finish draining.
       audio_sync_queue_shutdown(state->captured_queue);
     }
   } else {
-    // If stop was gracefully requested (STOP_REASON_DONE) to flush queues on
-    // EOF, but a non-graceful stop request (like user Stop or device error) is
-    // received subsequently while processing is blocked waiting on full queues,
-    // override the reason and force INACTIVE state to prevent infinite joins
-    // and deadlocks.
+    // LOSER branch: Stop has already been requested by another thread.
+    // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety Gate
+    // If a graceful EOF was previously requested, but a subsequent non-graceful stop
+    // occurs (e.g. user aborts or error happens during drain), override the reason and
+    // force immediate INACTIVE state & queue shutdown to prevent deadlocks.
     processing_stop_reason_t current_r =
         engine_shared_state_get_stop_reason(state);
     if (current_r.type == STOP_REASON_DONE && reason.type != STOP_REASON_DONE) {

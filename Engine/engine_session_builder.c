@@ -361,6 +361,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                                               audio_backend_error_t* err) {
   if (!config) return NULL;
 
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Step 1: Allocate dsp_session_t, initialize configs, and allocate the resampler,
+  // processing pipeline, and backend device structures (without opening hardware yet).
   dsp_session_t* core = (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
 
@@ -430,6 +433,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
     return NULL;
   }
 
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Step 2: Spawn Capture, Processing, and Playback loop threads in parallel.
+  // The builder returns the session handle to the engine, which clears in_progress.
   if (!engine_session_spawn_worker_threads(core, config, capture_chunk_size,
                                            playback_chunk_size, pipeline_rate,
                                            err)) {

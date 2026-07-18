@@ -271,9 +271,14 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
 
   audio_chunk_t* chunk = NULL;
 
+  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops
+  // Dequeue chunks from captured_queue. Blocks on captured semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_captured_blocking(
               loop->shared)) != NULL) {
     size_t frames = audio_chunk_get_valid_frames(chunk);
+    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
+    // Step 2: Detect 0-frame tick chunk. Bypass resampling/DSP, check for pending pipeline swaps,
+    // and propagate downstream.
     // Bypass audio processing for 0-frame control/tick chunks.
     // We only execute the pipeline reload/swap check, then propagate the empty chunk
     // downstream to wake up/keep the playback thread synchronized.
@@ -314,7 +319,8 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
     }
 
-    // 3. Hot-reload pipeline swap if requested
+    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
+    // Step 2 & Section 3.1: Check and execute structural hot-reload pipeline swaps.
     processing_loop_check_pipeline_swap(loop);
 
     // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool.
@@ -378,6 +384,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     }
   }
 
+  // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue Drain)
+  // Step 2: Once captured queue is shut down and empty, dequeue returns NULL.
+  // Shutdown processed queue and exit thread.
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
   }

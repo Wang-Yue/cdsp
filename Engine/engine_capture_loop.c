@@ -151,6 +151,9 @@ static bool capture_loop_check_format_change(engine_capture_loop_t* loop) {
 static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
                                         const backend_error_t* err) {
   if (err->type == BACKEND_ERROR_READ_EOF) {
+    // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue Drain)
+    // Step 1: Capture loop reaches EOF, requests stop with STOP_REASON_DONE,
+    // shuts down the captured queue, and exits without setting state to INACTIVE.
     logger_info(&g_logger,
                 "Capture reached End-of-Stream; stopping engine gracefully");
     processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
@@ -160,6 +163,9 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   }
   // If reading fails with an error, trigger an engine stop.
   if (err->type != BACKEND_ERROR_NONE) {
+    // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
+    // Step 1: Capture thread detects a hardware read error, requests stop with
+    // CAPTURE_ERROR, which immediately transitions state to INACTIVE and wakes all loops.
     logger_error(&g_logger, "Capture error: %s", err->message);
     processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
     snprintf(reason.message, sizeof(reason.message), "%s", err->message);
@@ -211,8 +217,8 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
  */
 static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                              audio_chunk_t* chunk) {
-  // Watchdog Stall Recovery:
-  // Reset the watchdog status if we successfully read data after a stall.
+  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
+  // Step 1: Stall Detection. Update the shared timestamp so the external watchdog is satisfied.
   loop->watchdog_last_success_ns = cdsp_time_now_ns();
   // Update the shared last capture timestamp so the external watchdog check is satisfied.
   engine_shared_state_set_last_capture_time(loop->shared, loop->watchdog_last_success_ns);
@@ -220,7 +226,8 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     loop->watchdog_triggered = false;
     logger_info(&g_logger, "Capture recovered from stall");
   }
-  // If the external watchdog previously marked the engine as stalled, restore it to RUNNING.
+  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
+  // Step 2: Stall Recovery. If the external watchdog previously marked us STALLED, restore to RUNNING.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STALLED) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
     logger_info(&g_logger, "Capture recovered from stall (external)");
@@ -261,11 +268,9 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   double loudest_peak = processing_parameters_update_capture_levels(
       loop->processing_params, chunk);
 
-  // Silence/Auto-pause Gate:
-  // Update the silence counter. If the signal level is below the threshold
-  // for longer than the timeout duration, desired is set to
-  // PROCESSING_STATE_PAUSED. We toggle the backends' state to paused to stop
-  // downstream devices.
+  // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
+  // Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state and toggle
+  // capture/playback hardware backends is_paused status accordingly.
   processing_state_t desired =
       silence_counter_update(loop->silence_counter, loudest_peak);
   processing_state_t current = engine_shared_state_get_state(loop->shared);
@@ -311,6 +316,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Step 3: Capture Loop opens the capture device backend asynchronously.
   if (!capture_backend_open(loop->capture, &berr)) {
     logger_error(&g_logger, "Capture thread failed to open capture backend: %s",
                  berr.message);
@@ -326,7 +333,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     return;
   }
 
-  // Once open succeeds, transition state to RUNNING if starting
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+  // Step 4: Once capture open succeeds, transition the state_raw state to RUNNING.
   if (engine_shared_state_get_state(loop->shared) ==
       PROCESSING_STATE_STARTING) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
@@ -345,7 +353,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         PROCESSING_STATE_PAUSED) {
       sample_rate_watcher_reset(loop->rate_watcher);
 
-      // Periodically send an empty chunk (valid_frames = 0) downstream while paused.
+      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
+      // Step 2: Periodic 0-Frame Ticks are enqueued downstream every 200ms during pause
+      // to wake up processing loop for pending pipeline swaps.
       // This wakes up the processing loop thread from its blocking dequeue wait,
       // allowing configuration hot-reloads and parameter updates (e.g. volume/mute)
       // to execute and apply immediately instead of being delayed indefinitely until
