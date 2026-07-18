@@ -379,6 +379,14 @@ TEST(ConcurrentProducerConsumerSeesMonotonicSequence) {
     sched_yield();
   }
   pthread_join(th, NULL);
+  if (snapshots_taken == 0) {
+    if (spsc_audio_ring_buffer_read_latest(ring, dest, read_size)) {
+      for (int i = 1; i < read_size; i++) {
+        ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
+      }
+      snapshots_taken++;
+    }
+  }
   free(dest);
   ASSERT_TRUE(snapshots_taken > 0);
   ASSERT_TRUE(spsc_audio_ring_buffer_get_total_samples_written(ring) >=

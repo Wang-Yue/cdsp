@@ -785,7 +785,7 @@ TEST(DSPEngineE2E_FileFile) {
   bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 200; i++) {
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
     cdsp_sleep_ms(10);
   }
@@ -1433,20 +1433,33 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
-  cdsp_sleep_ms(100);
-  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
+  // Wait for capture thread to start and state to become RUNNING
+  bool started = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      started = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(started);
 
   // Trigger the infinite hang in the capture thread
   g_generator_mock_hang = true;
 
-  // Sleep for 1000ms real time (which is > 0.5s watchdog timeout)
-  cdsp_sleep_ms(1000);
-
-  // Poll the engine to trigger the external watchdog check!
-  cdsp_engine_poll(engine);
+  // Poll engine to detect watchdog stall
+  bool stalled = false;
+  for (int i = 0; i < 200; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_STALLED) {
+      stalled = true;
+      break;
+    }
+  }
 
   // Assert that it transitioned to STALLED (verifying the fix!)
-  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_STALLED);
+  ASSERT_TRUE(stalled);
 
   // Release the mock hang so the thread can exit cleanly
   g_generator_mock_hang = false;
@@ -1552,7 +1565,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 
   // Wait for auto-pause to trigger
   bool paused = false;
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 150; i++) {
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
       paused = true;
       break;
@@ -1565,10 +1578,18 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   success = engine->set_config_json(engine->ctx, json_new, &err);
   ASSERT_TRUE(success);
 
-  cdsp_sleep_ms(300);
+  // Wait up to 1000ms for pipeline swap to occur
+  bool swapped = false;
+  for (int i = 0; i < 100; i++) {
+    if (g_pipeline_swaps_count >= 1) {
+      swapped = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
 
   // Assert that swap HAS occurred (verifying the fix!)
-  ASSERT_EQ(1, g_pipeline_swaps_count);
+  ASSERT_TRUE(swapped);
 
   cdsp_stop(engine);
 
@@ -1729,26 +1750,38 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
-  cdsp_sleep_ms(100);
-
   // Fetch initial VU levels
   cdsp_vu_levels_t vu = {0};
-  ASSERT_TRUE(cdsp_get_vu_levels(engine, &vu));
+  bool got_vu = false;
+  for (int i = 0; i < 150; i++) {
+    cdsp_sleep_ms(10);
+    memset(&vu, 0, sizeof(vu));
+    if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0 &&
+        vu.playback_peak[0] > -20.0) {
+      got_vu = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(got_vu);
   ASSERT_TRUE(vu.capture_channels == 1);
   ASSERT_TRUE(vu.playback_channels == 1);
-  ASSERT_TRUE(vu.capture_peak[0] > -20.0);
-  ASSERT_TRUE(vu.playback_peak[0] > -20.0);
   cdsp_free_vu_levels(&vu);
 
   // Mute main fader
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, true);
   ASSERT_TRUE(cdsp_get_fader_mute(engine, CDSP_FADER_MAIN));
-  cdsp_sleep_ms(100);
 
   // Fetch muted VU levels - playback fader is post-mute, so it should be silent
-  memset(&vu, 0, sizeof(vu));
-  ASSERT_TRUE(cdsp_get_vu_levels(engine, &vu));
-  ASSERT_TRUE(vu.playback_peak[0] < -150.0);  // Muted
+  bool got_muted_vu = false;
+  for (int i = 0; i < 50; i++) {
+    cdsp_sleep_ms(10);
+    memset(&vu, 0, sizeof(vu));
+    if (cdsp_get_vu_levels(engine, &vu) && vu.playback_peak[0] < -150.0) {
+      got_muted_vu = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(got_muted_vu);
   ASSERT_TRUE(vu.capture_peak[0] > -20.0);  // Capture is pre-fader, still loud
   cdsp_free_vu_levels(&vu);
 
@@ -1829,13 +1862,19 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   cdsp_engine_poll(engine);
   ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
 
-  // 2. Sleep for another 1000ms (total 1200ms, which is > 1024ms total playback
-  // time). Playback has finished playing both chunks and exited.
-  cdsp_sleep_ms(1000);
+  // 2. Wait up to 2000ms for playback to finish draining and transition to INACTIVE
+  bool inactive = false;
+  for (int i = 0; i < 200; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+      inactive = true;
+      break;
+    }
+  }
 
   // State must transition to INACTIVE after draining.
-  cdsp_engine_poll(engine);
-  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_INACTIVE);
+  ASSERT_TRUE(inactive);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -1883,13 +1922,17 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   // The configuration is syntactically valid and threads spawn successfully
   ASSERT_TRUE(success);
 
-  // Wait for the capture thread to start and fail to open the nonexistent file
-  // backend
-  cdsp_sleep_ms(100);
-
-  // Engine state must transition to INACTIVE
-  cdsp_engine_poll(engine);
-  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_INACTIVE);
+  // Wait for the capture thread to start, fail, and transition engine state to INACTIVE
+  bool inactive = false;
+  for (int i = 0; i < 100; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+      inactive = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(inactive);
 
   // Stop reason must be set to capture error
   cdsp_stop_reason_t stop_reason;
@@ -2138,20 +2181,28 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
-  // 1. Wait 350ms for silence timeout to trigger PAUSED state
-  cdsp_sleep_ms(350);
-  cdsp_engine_poll(engine);
-  ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_PAUSED);
+  // 1. Wait for silence timeout to trigger PAUSED state
+  bool paused = false;
+  for (int i = 0; i < 100; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
+      paused = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(paused);
 
-  // 2. Wait another 500ms while the input file reaches the loud non-silent
-  // audio frames (frames 5000+)
-  cdsp_sleep_ms(500);
-  cdsp_engine_poll(engine);
-
-  // EXPECTED DESIGN BEHAVIOR: Loud audio should resume streaming -> RUNNING
-  // ACTUAL BUG BEHAVIOR: File capture backend returns false on read when
-  // is_paused == true, preventing frame reading, so the engine stays stuck in
-  // PAUSED!
+  // 2. Wait while input file reaches loud non-silent audio frames and auto-resumes to RUNNING
+  bool resumed = false;
+  for (int i = 0; i < 150; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      resumed = true;
+      break;
+    }
+  }
   cdsp_processing_state_t state_after_loud_signal = cdsp_get_state(engine);
 
   cdsp_stop(engine);

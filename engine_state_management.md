@@ -74,7 +74,7 @@ Atomic variables in the engine are strictly restricted to fields that are either
 | Atomic Variable | Location | Accessing Threads | Necessity & Justification |
 | :--- | :--- | :--- | :--- |
 | `state_raw` (`_Atomic uint8_t`) | `engine_shared_state_t` | **Writers**: Capture loop (RUNNING/PAUSED/STALLED), Playback loop (INACTIVE on exit).<br>**Readers**: Capture/Processing/Playback loops, Main thread (`poll`/status query). | Audio loops check `state_raw` on every chunk/iteration to detect pause or stop states. Must be lock-free to prevent blocking audio loops on status checks. |
-| `stop_once` (`_Atomic bool`) | `engine_shared_state_t` | **Writers/Readers**: Any thread requesting a session stop (Capture, Processing, Playback, or Main controller thread). | Serves as a wait-free CAS gate (`atomic_compare_exchange_strong_explicit`). Ensures the first thread encountering EOF or hardware error sets the root-cause stop reason and initiates teardown without lock contention. |
+| `stop_once` (`_Atomic bool`) | `engine_shared_state_t` | **Writers/Readers**: Any thread requesting a session stop (Capture, Processing, Playback, or Main controller thread). | Serves as a single-execution latch (`atomic_compare_exchange_strong_explicit`). Executed under `stop_reason_mutex` to atomically publish `stop_reason` and initiate teardown without publication window races. |
 | `last_capture_time_ns` (`_Atomic uint64_t`) | `engine_shared_state_t` | **Writer**: Capture thread (every captured chunk read).<br>**Reader**: Main thread (`cdsp_engine_poll` external watchdog check). | Written by the Capture thread on every audio chunk. Relaxed atomic load/store allows the main thread to poll hardware stall status without locking the Capture thread. |
 | `resampler_ratio` (`_Atomic double`) | `engine_shared_state_t` | **Writer**: Playback thread (rate-adjust controller).<br>**Reader**: Processing thread (`processing_loop_resample`). | Both Playback and Processing threads are real-time audio loops. Atomic double allows lock-free propagation of clock drift correction between threads without mutex locks. |
 | `next_pipeline` (`_Atomic(pipeline_t*)`) | `engine_processing_loop_t` | **Writer**: Main thread (`dsp_session_reload_config`).<br>**Reader**: Processing thread (`processing_loop_check_pipeline_swap`). | Checked by the Processing thread on every chunk and 0-frame tick. Atomic exchange allows non-blocking DSP filter pipeline hot-reloads without locking the Processing thread. |
@@ -174,6 +174,9 @@ stateDiagram-v2
 * **`RUNNING`**: Active audio capture and playback.
 * **`PAUSED`**: Audio levels are below the silence threshold. Worker loops still run but backends are paused to yield CPU time.
 * **`STALLED`**: The watchdog detected that no chunks have arrived from the hardware capture backend for too long, indicating driver or hardware starvation.
+
+> [!IMPORTANT]
+> **Terminal State Guard Invariant**: In `engine_shared_state_set_state()`, once `stop_once` has been set to `true`, any attempt to transition `state_raw` to `RUNNING`, `PAUSED`, or `STALLED` is ignored; only transitions to `INACTIVE` are permitted. This prevents late driver callbacks or delayed worker threads from resurrecting a stopping engine back into active states.
 
 ---
 
@@ -490,7 +493,8 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
   }
 ```
 
-* **The First Thread (Winner)**: Acquires `stop_reason_mutex`, updates `stop_once` from `false` to `true` atomically via compare-exchange, sets the initial stop reason, and releases the mutex.
+* **Publication Safety via `stop_reason_mutex`**: `stop_reason_mutex` is acquired **prior** to performing the CAS on `stop_once`. This ensures that any concurrent thread entering the `else` (loser) branch is guaranteed to see the fully populated `stop_reason` struct written by the winner, eliminating publication window data races where a reader could observe `stop_once == true` but inspect an uninitialized `STOP_REASON_NONE`.
+* **The First Thread (Winner)**: Acquires `stop_reason_mutex`, sets `stop_once` from `false` to `true` atomically via compare-exchange, sets the initial root-cause stop reason, and releases the mutex.
 * **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch while holding `stop_reason_mutex` to safely inspect the published `stop_reason`.
   - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, and any subsequent stop request occurs (e.g. user aborts, session teardown, or hardware error during drain), the loser branch forces an immediate `INACTIVE` state transition and queue shutdown to unblock waiting threads and prevent deadlocks on `pthread_join`.
   - If the new request is a hardware error (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch also **overrides** the stop reason to preserve the error root cause.
