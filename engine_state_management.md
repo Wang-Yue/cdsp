@@ -425,9 +425,10 @@ sequenceDiagram
    - **Crucial**: State is immediately changed to `INACTIVE`.
    - **Crucial**: Both `captured_queue` and `processed_queue` are immediately shut down.
 2. **Unblocking Worker Threads**:
-   - The Capture and Processing threads might be blocked waiting on semaphores (sleeping) or blocked waiting to push to full queues (spinning).
+   - The Capture and Processing threads might be blocked waiting on semaphores (sleeping) or blocked waiting to push to full queues (spinning/sleeping).
    - Calling `shutdown` on the queues wakes up all semaphores immediately.
    - The threads check `engine_shared_state_should_stop()`, which returns `true` (since state is `INACTIVE`).
+   - In non-realtime mode, if a worker thread is waiting in a retry loop on a full queue when `should_stop()` returns `true`, it sets an abort flag to break out of the outer chunk-dequeuing loop immediately rather than continuing to process remaining items in `captured_queue`.
    - All loops break and threads terminate immediately.
 3. **Controller Teardown**:
    - The controller joins all terminated threads and frees session allocations safely.

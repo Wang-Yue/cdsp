@@ -385,8 +385,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
         loop->pending_scratch = NULL;
       }
     } else {
-      // Non-real-time file conversion: nanosleep wait while queue is full to
-      // preserve every sample frame.
+      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
+      // In non-realtime mode during full-queue wait, set aborted = true on should_stop()
+      // to break out of the outer while (dequeue_captured_blocking) loop immediately.
       bool aborted = false;
       while (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
         if (engine_shared_state_should_stop(loop->shared)) {
