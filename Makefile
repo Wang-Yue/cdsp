@@ -107,8 +107,8 @@ else
         CFLAGS += -DNO_DBUS
     endif
     ifeq ($(USE_LIBDISPATCH),1)
-        CFLAGS += -DUSE_LIBDISPATCH -I/usr/libexec/swift/lib/swift
-        LDFLAGS += -L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux
+        CFLAGS += -DUSE_LIBDISPATCH $(shell pkg-config --cflags libdispatch 2>/dev/null || echo "-I/usr/libexec/swift/lib/swift")
+        LDFLAGS += $(shell pkg-config --libs libdispatch 2>/dev/null || echo "-L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux")
     else
         ifeq ($(ENABLE_OPENMP),1)
             CFLAGS += -fopenmp -DUSE_OPENMP

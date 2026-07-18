@@ -44,10 +44,15 @@ int* parse_int_array(const cJSON* arr, size_t* out_count);
 
 static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
                                   size_t dest_sz) {
+  if (dest_sz == 0) return false;
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(dest, item->valuestring, dest_sz - 1);
-    dest[dest_sz - 1] = '\0';
+    size_t len = strlen(item->valuestring);
+    if (len >= dest_sz) {
+      len = dest_sz - 1;
+    }
+    memcpy(dest, item->valuestring, len);
+    dest[len] = '\0';
     return true;
   }
   return false;
