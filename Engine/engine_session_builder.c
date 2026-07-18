@@ -270,7 +270,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                                 size_t playback_chunk_size,
                                                 size_t pipeline_rate,
                                                 audio_backend_error_t* err) {
-  // 8. Instantiate the loop orchestrators.
+  // Prep for Step 8: Instantiate the loop orchestrators.
   engine_capture_loop_config_t cap_cfg = {
       .shared = core->shared,
       .capture = core->capture,
@@ -349,7 +349,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
     return false;
   }
 
-  // 9. Spawn worker threads.
+  // Step 8: Spawn worker threads (parallel execution starts here).
   // The threads are spawned in STARTING state (initialized by
   // engine_shared_state_create) and will transition to RUNNING once they
   // successfully open their backends. Wrap `pthread_create` construction so
