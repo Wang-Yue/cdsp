@@ -232,7 +232,13 @@ processing_stop_reason_t dsp_session_stop_and_free(
 /// full teardown when they differ.
 bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
                                audio_backend_error_t* err) {
-  if (!core || !new_config) return false;
+  if (!core || !new_config) {
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      strcpy(err->message, "Invalid session or configuration arguments");
+    }
+    return false;
+  }
 
   pthread_mutex_lock(&core->config_mutex);
   dsp_config_t* old_config = core->current_config;
@@ -252,6 +258,11 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
   // Evaluate the changes between the running config and the new config.
   config_change_t* change = config_change_create();
   if (!change) {
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      strcpy(err->message,
+             "Failed to allocate memory for configuration diffing");
+    }
     return false;
   }
   config_change_type_t change_type =
@@ -289,6 +300,11 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
     engine_processing_loop_set_pipeline(core->processing_loop, new_pipeline);
   } else {
     pipeline_free(new_pipeline);
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
+      strcpy(err->message, "Processing loop unavailable");
+    }
+    return false;
   }
 
   pthread_mutex_lock(&core->config_mutex);

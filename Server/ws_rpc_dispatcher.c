@@ -1478,7 +1478,6 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
         hist = &server->metrics.playback_peak_history;
       }
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
     size_t ch = hist->channels;
     double* vals = (double*)calloc(ch, sizeof(double));
     if (is_rms) {
@@ -1486,6 +1485,7 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
     } else {
       level_history_get_max_since(hist, since, vals);
     }
+    pthread_mutex_unlock(&server->sessions_mutex);
     reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
     free(vals);
   } else {
@@ -1651,8 +1651,6 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
     server->client_sessions[client_idx]->metrics.last_cap_peak_time = now;
     server->client_sessions[client_idx]->metrics.last_pb_rms_time = now;
     server->client_sessions[client_idx]->metrics.last_pb_peak_time = now;
-    pthread_mutex_unlock(&server->sessions_mutex);
-
     size_t c_ch = server->metrics.capture_rms_history.channels;
     size_t p_ch = server->metrics.playback_rms_history.channels;
     double* c_rms = (double*)calloc(c_ch, sizeof(double));
@@ -1668,6 +1666,7 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
                                 pb_rms_since, p_rms);
     level_history_get_max_since(&server->metrics.playback_peak_history,
                                 pb_pk_since, p_pk);
+    pthread_mutex_unlock(&server->sessions_mutex);
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
@@ -1712,6 +1711,7 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
       double* p_rms = (double*)calloc(p_ch, sizeof(double));
       double* p_pk = (double*)calloc(p_ch, sizeof(double));
 
+      pthread_mutex_lock(&server->sessions_mutex);
       level_history_get_rms_since(&server->metrics.capture_rms_history, since,
                                   c_rms);
       level_history_get_max_since(&server->metrics.capture_peak_history, since,
@@ -1720,6 +1720,7 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
                                   p_rms);
       level_history_get_max_since(&server->metrics.playback_peak_history, since,
                                   p_pk);
+      pthread_mutex_unlock(&server->sessions_mutex);
 
       cJSON* root = cJSON_CreateObject();
       cJSON_AddItemToObject(root, "playback_rms",

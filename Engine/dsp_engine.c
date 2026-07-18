@@ -93,7 +93,7 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
                                   PROCESSING_STATE_INACTIVE) {
     const dsp_config_t* cur_cfg = dsp_session_get_config(impl->session.active);
     if (cur_cfg && devices_config_equal(&cur_cfg->devices, &config->devices)) {
-      audio_backend_error_t berr;
+      audio_backend_error_t berr = {0};
       if (dsp_session_reload_config(impl->session.active, config, &berr)) {
         return true;
       } else {

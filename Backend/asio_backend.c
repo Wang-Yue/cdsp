@@ -176,6 +176,8 @@ struct asio_capture {
   float* callback_buf;
   size_t callback_buf_size;
   bool stopped;
+  double pending_rate;
+  bool has_pending_rate_change;
 };
 
 struct asio_playback {
@@ -201,6 +203,8 @@ struct asio_playback {
   float* callback_buf;
   size_t callback_buf_size;
   bool stopped;
+  double pending_rate;
+  bool has_pending_rate_change;
 };
 
 // Global active backend references
@@ -880,7 +884,18 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
  *
  * @param sRate The new sample rate.
  */
-static void asio_sample_rate_did_change(ASIOSampleRate sRate) { (void)sRate; }
+static void asio_sample_rate_did_change(ASIOSampleRate sRate) {
+  AcquireSRWLockExclusive(&g_asio_shared.lock);
+  if (g_active_capture) {
+    g_active_capture->pending_rate = (double)sRate;
+    g_active_capture->has_pending_rate_change = true;
+  }
+  if (g_active_playback) {
+    g_active_playback->pending_rate = (double)sRate;
+    g_active_playback->has_pending_rate_change = true;
+  }
+  ReleaseSRWLockExclusive(&g_asio_shared.lock);
+}
 
 /**
  * @brief ASIO driver message callback.
@@ -1185,6 +1200,21 @@ static void asio_capture_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
+  asio_capture_t* capture = (asio_capture_t*)ctx;
+  if (!capture) return false;
+  AcquireSRWLockExclusive(&g_asio_shared.lock);
+  bool changed = capture->has_pending_rate_change;
+  if (changed) {
+    if (out_rate) {
+      *out_rate = capture->pending_rate;
+    }
+    capture->has_pending_rate_change = false;
+  }
+  ReleaseSRWLockExclusive(&g_asio_shared.lock);
+  return changed;
+}
+
 static void asio_capture_stop_internal(void* ctx) {
   void asio_capture_stop(asio_capture_t * capture);
   asio_capture_stop((asio_capture_t*)ctx);
@@ -1194,7 +1224,7 @@ static const capture_backend_vtable_t asio_capture_vtable = {
     .open = asio_capture_open_internal,
     .read = asio_capture_read_internal,
     .close = asio_capture_close_internal,
-    .get_pending_rate_change = NULL,
+    .get_pending_rate_change = asio_capture_get_pending_rate_change,
     .is_pitch_control_supported = NULL,
     .set_pitch = NULL,
     .wait_for_data = asio_capture_wait_for_data,
@@ -1490,6 +1520,21 @@ static void asio_playback_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  if (!playback) return false;
+  AcquireSRWLockExclusive(&g_asio_shared.lock);
+  bool changed = playback->has_pending_rate_change;
+  if (changed) {
+    if (out_rate) {
+      *out_rate = playback->pending_rate;
+    }
+    playback->has_pending_rate_change = false;
+  }
+  ReleaseSRWLockExclusive(&g_asio_shared.lock);
+  return changed;
+}
+
 static void asio_playback_stop_internal(void* ctx) {
   void asio_playback_stop(asio_playback_t * playback);
   asio_playback_stop((asio_playback_t*)ctx);
@@ -1500,7 +1545,7 @@ static const playback_backend_vtable_t asio_playback_vtable = {
     .write = asio_playback_write_internal,
     .close = asio_playback_close_internal,
     .get_buffer_level = asio_playback_get_buffer_level,
-    .get_pending_rate_change = NULL,
+    .get_pending_rate_change = asio_playback_get_pending_rate_change,
     .prefill_silence = NULL,
     .get_is_paused = NULL,
     .set_is_paused = NULL,

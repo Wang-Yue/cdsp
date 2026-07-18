@@ -19,6 +19,7 @@
 //     Darwin — no syscall).
 #include "engine_capture_loop.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #include "Audio/silence_counter.h"
@@ -34,8 +35,6 @@ struct engine_capture_loop {
   size_t chunk_size;
   size_t channels;
   size_t samplerate;
-  double last_observed_pending_rate;
-  bool has_last_observed_pending_rate;
 
   silence_counter_t* silence_counter;
   round_robin_chunk_pool_t* chunk_pool;
@@ -80,9 +79,9 @@ engine_capture_loop_t* engine_capture_loop_create(
     return NULL;
   }
 
-  loop->rate_watcher = sample_rate_watcher_create((double)config->samplerate,
-                                                  config->rate_measure_interval_s,
-                                                  config->stop_on_rate_change);
+  loop->rate_watcher = sample_rate_watcher_create(
+      (double)config->samplerate, config->rate_measure_interval_s,
+      config->stop_on_rate_change);
   if (!loop->rate_watcher) {
     engine_capture_loop_free(loop);
     return NULL;
@@ -123,10 +122,7 @@ static bool capture_loop_check_format_change(engine_capture_loop_t* loop) {
   // signal a host rebuild stop reason.
   double rate = 0.0;
   if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {
-    if (!loop->has_last_observed_pending_rate ||
-        rate != loop->last_observed_pending_rate) {
-      loop->last_observed_pending_rate = rate;
-      loop->has_last_observed_pending_rate = true;
+    if (fabs(rate - (double)loop->samplerate) >= 0.5) {
       logger_warn(&g_logger,
                   "Capture device rate changed to %f Hz; stopping engine",
                   rate);

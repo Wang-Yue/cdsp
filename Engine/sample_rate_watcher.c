@@ -70,7 +70,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
     watcher->deviation_count = 0;
   }
 
-  if (watcher->deviation_count >= 3) {
+  if (watcher->deviation_count >= 4) {
     logger_error(&g_logger,
                  "Sample rate deviation persistent! Measured rate: %.1fHz "
                  "(target %.1fHz)",

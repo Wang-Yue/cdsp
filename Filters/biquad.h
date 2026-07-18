@@ -23,6 +23,11 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
                                      const filter_config_t* config,
                                      int sample_rate);
 
+/**
+ * @brief Gets the name of the biquad filter section.
+ */
+const char* biquad_filter_get_name(const biquad_filter_t* filter);
+
 struct filter_vtable;
 extern const struct filter_vtable g_biquad_vtable;
 

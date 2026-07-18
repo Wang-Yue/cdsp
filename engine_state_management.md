@@ -22,8 +22,8 @@ Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is
 | :--- | :--- | :--- | :--- |
 | `state_raw` | `_Atomic uint8_t` | Encodes `processing_state_t` (`INACTIVE`, `RUNNING`, `PAUSED`, `STALLED`). When set to `INACTIVE`, it serves as the global stop signal. | Lock-free atomic reads (`acquire` ordering) and writes (`release` ordering). |
 | `stop_once` | `_Atomic bool` | A latch/flag indicating whether a stop sequence has been initiated. Prevents multiple stop requests from colliding. | Checked and set atomically via Compare-And-Swap (CAS) `atomic_compare_exchange_strong_explicit`. |
-| `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Read/written lock-free via sequence counter `stop_seq` (Seqlock pattern). |
-| `stop_seq` | `_Atomic uint32_t` | Monotonic sequence counter protecting `stop_reason` lock-free reads. | Atomic release/acquire increments. |
+| `stop_reason` | `processing_stop_reason_t` | A 264-byte struct containing the type of stop, error messages, or format change samplerates. | Read and written under protection of `stop_reason_mutex`. |
+| `stop_reason_mutex` | `pthread_mutex_t` | Mutex protecting `stop_reason` against concurrent read/write data races. | C11 Mutex Lock (isolated from hot-path processing loop). |
 | `captured_queue` | `audio_sync_queue_t*` | Sync queue from Capture -> Processing. | Lock-free SPSC + OS semaphore. |
 | `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
 

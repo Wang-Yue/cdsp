@@ -57,12 +57,15 @@ struct wasapi_capture {
   IAudioClient* client;
   IAudioCaptureClient* capture_client;
   IAudioSessionControl* session_control;
+  IAudioSessionEvents* session_events_listener;
   UINT32 buffer_frame_count;
   HANDLE event;
   audio_chunk_t* residual_chunk;
   size_t residual_frames;
   size_t residual_offset;
   _Atomic bool stopped;
+  double pending_rate;
+  bool has_pending_rate_change;
 };
 
 struct wasapi_playback {
@@ -84,6 +87,7 @@ struct wasapi_playback {
   IAudioClient* client;
   IAudioRenderClient* render_client;
   IAudioSessionControl* session_control;
+  IAudioSessionEvents* session_events_listener;
   UINT32 buffer_frame_count;
   _Atomic bool paused;
   HANDLE event;
@@ -97,7 +101,131 @@ struct wasapi_playback {
   float* write_buf;
   size_t write_buf_cap;
   _Atomic bool stopped;
+  double pending_rate;
+  bool has_pending_rate_change;
 };
+
+// Custom COM IAudioSessionEvents implementation in C
+typedef struct {
+  IAudioSessionEventsVtbl* lpVtbl;
+  LONG ref_count;
+  void* parent;
+  bool is_capture;
+} CDSPAudioSessionEvents;
+
+static HRESULT STDMETHODCALLTYPE session_QueryInterface(
+    IAudioSessionEvents* This, REFIID riid, void** ppvObject) {
+  if (IsEqualIID(riid, &IID_IAudioSessionEvents) ||
+      IsEqualIID(riid, &IID_IUnknown)) {
+    *ppvObject = This;
+    This->lpVtbl->AddRef(This);
+    return S_OK;
+  }
+  *ppvObject = NULL;
+  return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE session_AddRef(IAudioSessionEvents* This) {
+  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+  return InterlockedIncrement(&self->ref_count);
+}
+
+static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents* This) {
+  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+  ULONG rc = InterlockedDecrement(&self->ref_count);
+  if (rc == 0) {
+    free(self);
+  }
+  return rc;
+}
+
+static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(
+    IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) {
+  (void)This;
+  (void)NewDisplayName;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(
+    IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) {
+  (void)This;
+  (void)NewIconPath;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE
+session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume,
+                              BOOL NewMute, LPCGUID EventContext) {
+  (void)This;
+  (void)NewVolume;
+  (void)NewMute;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(
+    IAudioSessionEvents* This, DWORD ChannelCount,
+    float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) {
+  (void)This;
+  (void)ChannelCount;
+  (void)NewChannelVolumeArray;
+  (void)ChangedChannel;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(
+    IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) {
+  (void)This;
+  (void)NewGroupingParam;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE
+session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
+  (void)This;
+  (void)NewState;
+  return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
+    IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
+  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+  if (DisconnectReason == DisconnectReasonFormatChanged) {
+    if (self->is_capture) {
+      struct wasapi_capture* capture = (struct wasapi_capture*)self->parent;
+      capture->pending_rate = 0.0;  // 0.0 signals format change reload
+      capture->has_pending_rate_change = true;
+    } else {
+      struct wasapi_playback* playback = (struct wasapi_playback*)self->parent;
+      playback->pending_rate = 0.0;
+      playback->has_pending_rate_change = true;
+    }
+  }
+  return S_OK;
+}
+
+static IAudioSessionEventsVtbl g_session_events_vtbl = {
+    session_QueryInterface,
+    session_AddRef,
+    session_Release,
+    session_OnDisplayNameChanged,
+    session_OnIconPathChanged,
+    session_OnSimpleVolumeChanged,
+    session_OnChannelVolumeChanged,
+    session_OnGroupingParamChanged,
+    session_OnStateChanged,
+    session_OnSessionDisconnected};
+
+static IAudioSessionEvents* wasapi_session_events_create(void* parent,
+                                                         bool is_capture) {
+  CDSPAudioSessionEvents* events =
+      (CDSPAudioSessionEvents*)calloc(1, sizeof(CDSPAudioSessionEvents));
+  if (!events) return NULL;
+  events->lpVtbl = &g_session_events_vtbl;
+  events->ref_count = 1;
+  events->parent = parent;
+  events->is_capture = is_capture;
+  return (IAudioSessionEvents*)events;
+}
 
 /**
  * @brief Decodes interleaved audio samples from WASAPI input buffer format to
@@ -616,6 +744,14 @@ bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
 
   IAudioClient_GetService(capture->client, &IID_IAudioSessionControl,
                           (void**)&capture->session_control);
+  if (capture->session_control) {
+    capture->session_events_listener =
+        wasapi_session_events_create(capture, true);
+    if (capture->session_events_listener) {
+      IAudioSessionControl_RegisterAudioSessionNotification(
+          capture->session_control, capture->session_events_listener);
+    }
+  }
 
   capture->residual_chunk =
       audio_chunk_create(capture->chunk_size * 4, capture->channels);
@@ -799,6 +935,14 @@ void wasapi_capture_close(wasapi_capture_t* capture) {
     SAFE_RELEASE(capture->capture_client);
     SAFE_RELEASE(capture->client);
   }
+  if (capture->session_control) {
+    if (capture->session_events_listener) {
+      IAudioSessionControl_UnregisterAudioSessionNotification(
+          capture->session_control, capture->session_events_listener);
+      SAFE_RELEASE(capture->session_events_listener);
+    }
+    SAFE_RELEASE(capture->session_control);
+  }
   if (capture->event) {
     CloseHandle(capture->event);
     capture->event = NULL;
@@ -818,9 +962,15 @@ void wasapi_capture_close(wasapi_capture_t* capture) {
 
 bool wasapi_capture_get_pending_rate_change(wasapi_capture_t* capture,
                                             double* out_rate) {
-  (void)capture;
-  (void)out_rate;
-  return false;
+  if (!capture) return false;
+  bool changed = capture->has_pending_rate_change;
+  if (changed) {
+    if (out_rate) {
+      *out_rate = capture->pending_rate;
+    }
+    capture->has_pending_rate_change = false;
+  }
+  return changed;
 }
 
 bool wasapi_capture_pitch_control_supported(wasapi_capture_t* capture) {
@@ -1343,6 +1493,14 @@ bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
 
   IAudioClient_GetService(playback->client, &IID_IAudioSessionControl,
                           (void**)&playback->session_control);
+  if (playback->session_control) {
+    playback->session_events_listener =
+        wasapi_session_events_create(playback, false);
+    if (playback->session_events_listener) {
+      IAudioSessionControl_RegisterAudioSessionNotification(
+          playback->session_control, playback->session_events_listener);
+    }
+  }
 
   playback->paused = false;
   playback->started = false;
@@ -1642,6 +1800,14 @@ void wasapi_playback_close(wasapi_playback_t* playback) {
     SAFE_RELEASE(playback->render_client);
     SAFE_RELEASE(playback->client);
   }
+  if (playback->session_control) {
+    if (playback->session_events_listener) {
+      IAudioSessionControl_UnregisterAudioSessionNotification(
+          playback->session_control, playback->session_events_listener);
+      SAFE_RELEASE(playback->session_events_listener);
+    }
+    SAFE_RELEASE(playback->session_control);
+  }
   if (playback->event) {
     CloseHandle(playback->event);
     playback->event = NULL;
@@ -1675,9 +1841,15 @@ size_t wasapi_playback_get_buffer_level(wasapi_playback_t* playback) {
 
 bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
                                              double* out_rate) {
-  (void)playback;
-  (void)out_rate;
-  return false;
+  if (!playback) return false;
+  bool changed = playback->has_pending_rate_change;
+  if (changed) {
+    if (out_rate) {
+      *out_rate = playback->pending_rate;
+    }
+    playback->has_pending_rate_change = false;
+  }
+  return changed;
 }
 
 bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,

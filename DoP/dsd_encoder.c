@@ -213,6 +213,9 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
                  channels);
     return NULL;
   }
+  if (mode == DSD_MODE_DOP) {
+    dsd_bit_depth = 16;
+  }
   if (dsd_bit_depth != 8 && dsd_bit_depth != 16 && dsd_bit_depth != 32) {
     dsd_bit_depth = 16;
   }

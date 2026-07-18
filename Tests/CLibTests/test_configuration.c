@@ -225,6 +225,8 @@ TEST(ValidatePipelineFilterChannelOutOfRange) {
   memset(&nf, 0, sizeof(nf));
   strcpy(nf.name, "myfilter");
   nf.filter.type = FILTER_TYPE_GAIN;
+  nf.filter.parameters.gain.gain = 0.0;
+  nf.filter.parameters.gain.has_gain = true;
 
   config.filters = &nf;
   config.filters_count = 1;
@@ -378,6 +380,8 @@ TEST(ValidatePipelineBypassedStep) {
   memset(&nf, 0, sizeof(nf));
   strcpy(nf.name, "myfilter");
   nf.filter.type = FILTER_TYPE_GAIN;
+  nf.filter.parameters.gain.gain = 0.0;
+  nf.filter.parameters.gain.has_gain = true;
 
   config.filters = &nf;
   config.filters_count = 1;
@@ -751,7 +755,8 @@ TEST(RejectWavS24_4_RJ) {
   config_error_init(&err);
   int res = dsp_config_parse_json(json, &config, &err);
   ASSERT_EQ(-1, res);
-  ASSERT_STR_EQ("Wav files do not support the S24_4_RJ_LE sample format", err.message);
+  ASSERT_STR_EQ("Wav files do not support the S24_4_RJ_LE sample format",
+                err.message);
   ASSERT_TRUE(config == NULL);
 }
 

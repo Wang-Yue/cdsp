@@ -56,9 +56,9 @@ struct engine_shared_state {
   processing_stop_reason_t stop_reason;
 
   /**
-   * @brief Sequence counter for lock-free atomic reads/writes of stop_reason.
+   * @brief Mutex protecting stop_reason from data races.
    */
-  _Atomic uint32_t stop_seq;
+  pthread_mutex_t stop_reason_mutex;
 
   /**
    * @brief Resampler relative-ratio (≈ 1.0).
@@ -83,10 +83,9 @@ struct engine_shared_state {
 
 static void engine_shared_state_publish_stop_reason(
     engine_shared_state_t* state, processing_stop_reason_t reason) {
-  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_acq_rel);
+  pthread_mutex_lock(&state->stop_reason_mutex);
   state->stop_reason = reason;
-  atomic_thread_fence(memory_order_release);
-  atomic_fetch_add_explicit(&state->stop_seq, 1, memory_order_acq_rel);
+  pthread_mutex_unlock(&state->stop_reason_mutex);
 }
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
@@ -135,20 +134,9 @@ processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state) {
   processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
   if (!state) return reason;
-  uint32_t seq1 = 0;
-  uint32_t seq2 = 0;
-  do {
-    seq1 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
-                                memory_order_acquire);
-    if (seq1 % 2 != 0) {
-      seq2 = 0;
-      continue;
-    }
-    reason = state->stop_reason;
-    atomic_thread_fence(memory_order_acquire);
-    seq2 = atomic_load_explicit((_Atomic uint32_t*)&state->stop_seq,
-                                memory_order_relaxed);
-  } while (seq1 != seq2);
+  pthread_mutex_lock((pthread_mutex_t*)&state->stop_reason_mutex);
+  reason = state->stop_reason;
+  pthread_mutex_unlock((pthread_mutex_t*)&state->stop_reason_mutex);
   return reason;
 }
 
@@ -166,7 +154,7 @@ engine_shared_state_t* engine_shared_state_create(
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
-  atomic_init(&state->stop_seq, 0);
+  pthread_mutex_init(&state->stop_reason_mutex, NULL);
   state->pipeline_garbage_queue = spsc_queue_create(32);
 
   if (!state->captured_queue || !state->processed_queue ||
@@ -190,6 +178,7 @@ void engine_shared_state_free(engine_shared_state_t* state) {
     spsc_queue_free(state->pipeline_garbage_queue);
   }
 
+  pthread_mutex_destroy(&state->stop_reason_mutex);
   free(state);
 }
 

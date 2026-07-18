@@ -1,5 +1,6 @@
 #include "engine_config_types.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -552,7 +553,8 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
                   }
                   break;
                 } else {
-                  if (fseek(f, chunk_size, SEEK_CUR) != 0) {
+                  if (chunk_size > (uint32_t)LONG_MAX ||
+                      fseek(f, (long)chunk_size, SEEK_CUR) != 0) {
                     break;
                   }
                 }

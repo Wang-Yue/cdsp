@@ -322,13 +322,24 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
     depth++;                                                                   \
   } while (0)
 
+#define CHECK_OOM(ptr)                                                     \
+  do {                                                                     \
+    if (!(ptr)) {                                                          \
+      if (out_err) *out_err = strdup("Out of memory during YAML parsing"); \
+      if (root) cJSON_Delete(root);                                        \
+      return NULL;                                                         \
+    }                                                                      \
+  } while (0)
+
     if (depth == 0) {
       if (is_list_item) {
         root = cJSON_CreateArray();
+        CHECK_OOM(root);
         stack[0] =
             (stack_frame_t){.indent = indent, .node = root, .is_array = true};
       } else {
         root = cJSON_CreateObject();
+        CHECK_OOM(root);
         stack[0] =
             (stack_frame_t){.indent = indent, .node = root, .is_array = false};
       }
@@ -350,27 +361,34 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
       char* item_val = trim_str(content + 1);
       if (*item_val == '\0') {
         cJSON* new_obj = cJSON_CreateObject();
+        CHECK_OOM(new_obj);
         cJSON_AddItemToArray(top->node, new_obj);
         PUSH_STACK(new_obj, indent + 2, false);
       } else {
         char* colon = strchr(item_val, ':');
         if (colon && !strchr(item_val, '"') && !strchr(item_val, '\'')) {
           cJSON* new_obj = cJSON_CreateObject();
+          CHECK_OOM(new_obj);
           cJSON_AddItemToArray(top->node, new_obj);
           *colon = '\0';
           char* key = trim_str(item_val);
           char* val = trim_str(colon + 1);
           if (*val == '\0') {
             cJSON* child = cJSON_CreateObject();
+            CHECK_OOM(child);
             cJSON_AddItemToObject(new_obj, key, child);
             PUSH_STACK(new_obj, indent + 2, false);
             PUSH_STACK(child, indent + 4, false);
           } else {
-            cJSON_AddItemToObject(new_obj, key, parse_scalar_val(val));
+            cJSON* scalar = parse_scalar_val(val);
+            CHECK_OOM(scalar);
+            cJSON_AddItemToObject(new_obj, key, scalar);
             PUSH_STACK(new_obj, indent + 2, false);
           }
         } else {
-          cJSON_AddItemToArray(top->node, parse_scalar_val(item_val));
+          cJSON* scalar = parse_scalar_val(item_val);
+          CHECK_OOM(scalar);
+          cJSON_AddItemToArray(top->node, scalar);
         }
       }
     } else {
@@ -387,16 +405,20 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
 
         if (*val == '\0') {
           cJSON* placeholder = cJSON_CreateObject();
+          CHECK_OOM(placeholder);
           cJSON_AddItemToObject(top->node, key, placeholder);
           PUSH_STACK(placeholder, indent + 2, false);
         } else {
-          cJSON_AddItemToObject(top->node, key, parse_scalar_val(val));
+          cJSON* scalar = parse_scalar_val(val);
+          CHECK_OOM(scalar);
+          cJSON_AddItemToObject(top->node, key, scalar);
         }
       }
     }
   }
 
 #undef PUSH_STACK
+#undef CHECK_OOM
 
   if (!root) {
     if (out_err) *out_err = strdup("Empty or invalid YAML document");

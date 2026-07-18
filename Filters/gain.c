@@ -28,27 +28,28 @@ static int gain_config_validate(const filter_config_t* config, int sample_rate,
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_GAIN) return -1;
   const gain_config_t* params = &config->parameters.gain;
-  if (!params) return 0;
-  if (params->has_gain) {
-    if (!isfinite(params->gain)) {
+  if (!params || !params->has_gain) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "gain is a required parameter for the Gain filter");
+    return -1;
+  }
+  if (!isfinite(params->gain)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "gain must be a finite number");
+    return -1;
+  }
+  if (params->scale == GAIN_SCALE_LINEAR) {
+    if (params->gain < -10.0 || params->gain > 10.0) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "gain must be a finite number");
+                       "linear gain must be in [-10, 10], got %g",
+                       params->gain);
       return -1;
     }
-    if (params->scale == GAIN_SCALE_LINEAR) {
-      if (params->gain < -10.0 || params->gain > 10.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "linear gain must be in [-10, 10], got %g",
-                         params->gain);
-        return -1;
-      }
-    } else {
-      if (params->gain < -150.0 || params->gain > 150.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "gain must be in [-150, 150] dB, got %g",
-                         params->gain);
-        return -1;
-      }
+  } else {
+    if (params->gain < -150.0 || params->gain > 150.0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "gain must be in [-150, 150] dB, got %g", params->gain);
+      return -1;
     }
   }
   return 0;
@@ -83,16 +84,13 @@ static void* gain_filter_create(const char* name, const filter_config_t* config,
   } else {
     strcpy(filter->name, "gain");
   }
-  filter->muted = params ? params->mute : false;
-  double gain_val = (params && params->has_gain) ? params->gain : 0.0;
-
-  // Convert dB to linear gain if necessary, otherwise use linear gain directly.
-  double computed_gain = (params && params->scale == GAIN_SCALE_LINEAR)
-                             ? gain_val
-                             : double_from_db(gain_val);
+  filter->muted = params->mute;
+  double computed_gain = (params->scale == GAIN_SCALE_LINEAR)
+                             ? params->gain
+                             : double_from_db(params->gain);
 
   // Apply phase inversion if configured.
-  if (params && params->inverted) {
+  if (params->inverted) {
     computed_gain *= -1.0;
   }
   filter->linear_gain = computed_gain;

@@ -222,6 +222,7 @@ void ws_metrics_broadcast_tick(websocket_server_t* server) {
     last_state_initialized = true;
   }
 
+  pthread_mutex_lock(&server->sessions_mutex);
   for (int i = 0; i < 32; i++) {
     client_session_t* session = server->client_sessions[i];
     if (!session) continue;
@@ -377,4 +378,5 @@ void ws_metrics_broadcast_tick(websocket_server_t* server) {
       }
     }
   }
+  pthread_mutex_unlock(&server->sessions_mutex);
 }

@@ -1,5 +1,7 @@
 #include "biquad_combo.h"
 
+#include <stdio.h>
+
 #include "biquad.h"
 #include "filter.h"
 
@@ -93,9 +95,9 @@ size_t biquad_combo_linkwitz_riley_q(int order, double* out_q, size_t max_q) {
  * @param sample_rate Audio sample rate in Hz.
  * @return Pointer to the created biquad_filter_t, or NULL on failure.
  */
-static biquad_filter_t* create_section(biquad_type_t type, double freq,
-                                       double q, double gain, double slope,
-                                       double bandwidth,
+static biquad_filter_t* create_section(const char* sec_name, biquad_type_t type,
+                                       double freq, double q, double gain,
+                                       double slope, double bandwidth,
                                        steepness_type_t steepness_type,
                                        int sample_rate, config_error_t* err) {
   biquad_config_t bp = {.type = type,
@@ -106,8 +108,8 @@ static biquad_filter_t* create_section(biquad_type_t type, double freq,
                         .bandwidth = bandwidth,
                         .steepness_type = steepness_type};
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = bp};
-  return (biquad_filter_t*)g_biquad_vtable.create("combo_sec", &cfg,
-                                                  sample_rate, 0, NULL, err);
+  return (biquad_filter_t*)g_biquad_vtable.create(sec_name, &cfg, sample_rate,
+                                                  0, NULL, err);
 }
 
 /**
@@ -306,9 +308,11 @@ static void* biquad_combo_filter_create(const char* name,
         } else {
           t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
         }
-        secs[num++] =
-            create_section(t, params->freq, q_vals[i] > 0 ? q_vals[i] : 0.707,
-                           0.0, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+        char name_buf[32];
+        snprintf(name_buf, sizeof(name_buf), "sec_%zu", i);
+        secs[num++] = create_section(
+            name_buf, t, params->freq, q_vals[i] > 0 ? q_vals[i] : 0.707, 0.0,
+            0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
       }
       break;
     }
@@ -319,29 +323,27 @@ static void* biquad_combo_filter_create(const char* name,
       size_t nq = biquad_combo_linkwitz_riley_q(params->order, q_vals, 32);
       for (size_t i = 0; i < nq; i++) {
         biquad_type_t t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
-        secs[num++] = create_section(t, params->freq, q_vals[i], 0.0, 0.0, 0.0,
-                                     STEEPNESS_TYPE_Q, sample_rate, err);
+        char name_buf[32];
+        snprintf(name_buf, sizeof(name_buf), "sec_%zu", i);
+        secs[num++] =
+            create_section(name_buf, t, params->freq, q_vals[i], 0.0, 0.0, 0.0,
+                           STEEPNESS_TYPE_Q, sample_rate, err);
       }
       break;
     }
     // MARK: - Tilt EQ
     case BIQUAD_COMBO_TYPE_TILT: {
-      // Tilt EQ tilts the frequency response around a center frequency.
-      // It is implemented here using a low shelf at 110Hz and a high shelf at
-      // 3500Hz, both with a gentle Q of 0.35, to approximate a tilt.
       double gain = params->has_gain ? params->gain : 0.0;
-      secs[num++] =
-          create_section(BIQUAD_TYPE_LOWSHELF, 110.0, 0.35, -gain / 2.0, 0.0,
-                         0.0, STEEPNESS_TYPE_Q, sample_rate, err);
-      secs[num++] =
-          create_section(BIQUAD_TYPE_HIGHSHELF, 3500.0, 0.35, gain / 2.0, 0.0,
-                         0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+      secs[num++] = create_section("low_shelf", BIQUAD_TYPE_LOWSHELF, 110.0,
+                                   0.35, -gain / 2.0, 0.0, 0.0,
+                                   STEEPNESS_TYPE_Q, sample_rate, err);
+      secs[num++] = create_section("high_shelf", BIQUAD_TYPE_HIGHSHELF, 3500.0,
+                                   0.35, gain / 2.0, 0.0, 0.0, STEEPNESS_TYPE_Q,
+                                   sample_rate, err);
       break;
     }
     // MARK: - Graphic EQ
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
-      // Graphic EQ with bands logarithmically spaced between freq_min and
-      // freq_max.
       size_t nb = params->gains_count > 0 ? params->gains_count : 1;
       double fmin = params->freq_min > 0 ? params->freq_min : 20.0;
       double fmax = params->freq_max > 0 ? params->freq_max : 20000.0;
@@ -351,12 +353,13 @@ static void* biquad_combo_filter_create(const char* name,
       for (size_t i = 0; i < nb; i++) {
         if (num >= 32) break;
         double g = params->gains[i];
-        // Skip bands with negligible gain to save processing time.
         if (fabs(g) <= 0.001) continue;
         double log_freq = log_min + ((double)i + 0.5) * bw;
         double f = pow(2.0, log_freq);
+        char name_buf[32];
+        snprintf(name_buf, sizeof(name_buf), "band_%zu", i);
         secs[num++] =
-            create_section(BIQUAD_TYPE_PEAKING, f, 0.0, g, 0.0, bw,
+            create_section(name_buf, BIQUAD_TYPE_PEAKING, f, 0.0, g, 0.0, bw,
                            STEEPNESS_TYPE_BANDWIDTH, sample_rate, err);
       }
       break;
@@ -365,33 +368,33 @@ static void* biquad_combo_filter_create(const char* name,
     case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ: {
       // Low shelf
       if (params->qls > 0.001 && fabs(params->gls) > 0.001) {
-        secs[num++] = create_section(BIQUAD_TYPE_LOWSHELF,
+        secs[num++] = create_section("ls", BIQUAD_TYPE_LOWSHELF,
                                      params->fls > 0 ? params->fls : 80.0,
                                      params->qls, params->gls, 0.0, 0.0,
                                      STEEPNESS_TYPE_Q, sample_rate, err);
       }
       // Mid bands
       if (params->qp1 > 0.001 && fabs(params->gp1) > 0.001) {
-        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+        secs[num++] = create_section("p1", BIQUAD_TYPE_PEAKING,
                                      params->fp1 > 0 ? params->fp1 : 250.0,
                                      params->qp1, params->gp1, 0.0, 0.0,
                                      STEEPNESS_TYPE_Q, sample_rate, err);
       }
       if (params->qp2 > 0.001 && fabs(params->gp2) > 0.001) {
-        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+        secs[num++] = create_section("p2", BIQUAD_TYPE_PEAKING,
                                      params->fp2 > 0 ? params->fp2 : 1000.0,
                                      params->qp2, params->gp2, 0.0, 0.0,
                                      STEEPNESS_TYPE_Q, sample_rate, err);
       }
       if (params->qp3 > 0.001 && fabs(params->gp3) > 0.001) {
-        secs[num++] = create_section(BIQUAD_TYPE_PEAKING,
+        secs[num++] = create_section("p3", BIQUAD_TYPE_PEAKING,
                                      params->fp3 > 0 ? params->fp3 : 4000.0,
                                      params->qp3, params->gp3, 0.0, 0.0,
                                      STEEPNESS_TYPE_Q, sample_rate, err);
       }
       // High shelf
       if (params->qhs > 0.001 && fabs(params->ghs) > 0.001) {
-        secs[num++] = create_section(BIQUAD_TYPE_HIGHSHELF,
+        secs[num++] = create_section("hs", BIQUAD_TYPE_HIGHSHELF,
                                      params->fhs > 0 ? params->fhs : 12000.0,
                                      params->qhs, params->ghs, 0.0, 0.0,
                                      STEEPNESS_TYPE_Q, sample_rate, err);
@@ -457,10 +460,16 @@ static void biquad_combo_filter_process(biquad_combo_filter_t* filter,
 static void biquad_combo_filter_transfer_state(
     biquad_combo_filter_t* dest, const biquad_combo_filter_t* src) {
   if (!dest || !src) return;
-  size_t count = dest->num_sections < src->num_sections ? dest->num_sections
-                                                        : src->num_sections;
-  for (size_t i = 0; i < count; i++) {
-    g_biquad_vtable.transfer_state(dest->sections[i], src->sections[i]);
+  for (size_t i = 0; i < dest->num_sections; i++) {
+    const char* dest_name = biquad_filter_get_name(dest->sections[i]);
+    if (!dest_name) continue;
+    for (size_t j = 0; j < src->num_sections; j++) {
+      const char* src_name = biquad_filter_get_name(src->sections[j]);
+      if (src_name && strcmp(dest_name, src_name) == 0) {
+        g_biquad_vtable.transfer_state(dest->sections[i], src->sections[j]);
+        break;
+      }
+    }
   }
 }
 

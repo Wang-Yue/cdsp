@@ -826,16 +826,16 @@ bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
 
 bool file_capture_read(file_capture_t* capture, size_t frames,
                        audio_chunk_t* chunk, backend_error_t* err) {
+  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return false;
+  }
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
           "Chunk channels count does not match capture channels");
     }
-    return false;
-  }
-  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
-    audio_chunk_set_valid_frames(chunk, 0);
     return false;
   }
 

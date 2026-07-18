@@ -616,6 +616,10 @@ static void biquad_filter_transfer_state(biquad_filter_t* dest,
 #endif
 }
 
+const char* biquad_filter_get_name(const biquad_filter_t* filter) {
+  return filter ? filter->name : NULL;
+}
+
 const filter_vtable_t g_biquad_vtable = {
     .validate = biquad_config_validate,
     .create = biquad_filter_create,
