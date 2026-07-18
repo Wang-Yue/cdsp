@@ -47,8 +47,7 @@ Defined in [dsp_engine.c](Engine/dsp_engine.c). The top-level controller interfa
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
 | `state_mutex` | `pthread_mutex_t` | Serializes configuration changes, volumes, and status queries. | C11 Mutex Lock. |
-| `session.last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) returned by `dsp_session_stop_and_free()` after session destruction. | Protected by `state_mutex`. |
-| `session.has_last_stop_reason` | `bool` | Flag indicating if `last_stop_reason` holds a valid stopped/error state. | Protected by `state_mutex`. |
+| `session.last_stop_reason` | `processing_stop_reason_t` | Persists the stop reason (e.g. EOF or Error) returned by `dsp_session_stop_and_free()` after session destruction. If empty/none, its type is `STOP_REASON_NONE`. | Protected by `state_mutex`. |
 | `config.in_progress` | `_Atomic bool` | True if a configuration change or reload is actively running. Status queries check this flag to return `STARTING` without blocking on `state_mutex`. | Lock-free atomic reads and writes. |
 
 ---
@@ -71,26 +70,18 @@ Defined in [engine_state_manager.h](Engine/engine_state_manager.h). Manages fade
 ### 2.1. Core Processing States (`processing_state_t`)
 The raw state of the engine is stored in `state_raw` inside `engine_shared_state_t`:
 
-```
-                     ┌──────────────┐
-                     │   INACTIVE   │◀──────────────────────────────┐
-                     └──────────────┘                               │
-                            │ (set config)                          │
-                            ▼                                       │
-                     ┌──────────────┐                               │
-                     │   STARTING   │                               │
-                     └──────────────┘                               │
-                            │ (spawn threads)                       │
-                            ▼                                       │ (abort or error)
-                     ┌──────────────┐                               │
-                     │   RUNNING    │───────────────────────────────┤
-                     └──────────────┘                               │
-                       ▲          │                                 │
-    (signal detected)  │          │ (no signal / silence timeout)   │
-                       │          ▼                                 │
-                     ┌──────────────┐                               │
-                     │    PAUSED    │───────────────────────────────┘
-                     └──────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> INACTIVE
+    INACTIVE --> STARTING : set_config
+    STARTING --> RUNNING : spawn_threads / capture_starts
+    RUNNING --> PAUSED : silence_timeout
+    PAUSED --> RUNNING : signal_detected
+    RUNNING --> STALLED : watchdog_timeout (>0.5s)
+    STALLED --> RUNNING : read_success
+    RUNNING --> INACTIVE : abort / error / stop
+    PAUSED --> INACTIVE : abort / error / stop
+    STALLED --> INACTIVE : abort / error / stop
 ```
 
 * **`INACTIVE`**: Threads are stopped or in the process of shutting down. `engine_shared_state_should_stop()` returns `true`.

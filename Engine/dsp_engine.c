@@ -19,7 +19,6 @@ struct dsp_engine_impl {
   struct {
     dsp_session_t* active;
     processing_stop_reason_t last_stop_reason;
-    bool has_last_stop_reason;
   } session;
 
   /** Audio history buffers and spectrum analyzer. */
@@ -134,7 +133,7 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
                                                      session_params);
 
   impl->session.active = session;
-  impl->session.has_last_stop_reason = false;
+  impl->session.last_stop_reason.type = STOP_REASON_NONE;
   return true;
 }
 
@@ -197,10 +196,7 @@ static void dsp_engine_stop(void* ctx) {
     dsp_session_is_stop_requested(impl->session.active, &reason);
     processing_stop_reason_t final_reason =
         dsp_session_stop_and_free(impl->session.active, reason);
-    if (final_reason.type != STOP_REASON_NONE) {
-      impl->session.last_stop_reason = final_reason;
-      impl->session.has_last_stop_reason = true;
-    }
+    impl->session.last_stop_reason = final_reason;
     impl->session.active = NULL;
   }
   pthread_mutex_unlock(&impl->state_mutex);
@@ -260,18 +256,12 @@ static state_update_t dsp_engine_get_status_locked(dsp_engine_impl_t* impl) {
         dsp_session_get_stop_reason(impl->session.active);
     if (r.type != STOP_REASON_NONE) {
       res.stop_reason = r;
-    } else if (impl->session.has_last_stop_reason) {
-      res.stop_reason = impl->session.last_stop_reason;
     } else {
-      res.stop_reason.type = STOP_REASON_NONE;
+      res.stop_reason = impl->session.last_stop_reason;
     }
   } else {
     res.state = PROCESSING_STATE_INACTIVE;
-    if (impl->session.has_last_stop_reason) {
-      res.stop_reason = impl->session.last_stop_reason;
-    } else {
-      res.stop_reason.type = STOP_REASON_NONE;
-    }
+    res.stop_reason = impl->session.last_stop_reason;
   }
   return res;
 }
@@ -742,7 +732,7 @@ dsp_engine_t* dsp_engine_create(void) {
     return NULL;
   }
 
-  impl->session.has_last_stop_reason = false;
+  impl->session.last_stop_reason.type = STOP_REASON_NONE;
   pthread_mutex_init(&impl->state_mutex, NULL);
   impl->config.active_json = NULL;
   impl->config.previous_json = NULL;
