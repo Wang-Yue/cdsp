@@ -53,7 +53,9 @@ else ifeq ($(IS_DARWIN),1)
     ENABLE_OPENMP ?= 0
 else
     # Linux (Default)
-    CFLAGS += -march=native
+    ifeq ($(CROSS_COMPILE),)
+        CFLAGS += -march=native
+    endif
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 1
@@ -98,8 +100,12 @@ else ifeq ($(IS_DARWIN),1)
 else
     # Linux
     CFLAGS += -D_GNU_SOURCE
-    CFLAGS += $(shell pkg-config --cflags dbus-1 2>/dev/null || echo "")
-    LDFLAGS += $(shell pkg-config --libs dbus-1 2>/dev/null || echo "-ldbus-1")
+    ifneq ($(ENABLE_DBUS),0)
+        CFLAGS += $(shell pkg-config --cflags dbus-1 2>/dev/null || echo "")
+        LDFLAGS += $(shell pkg-config --libs dbus-1 2>/dev/null || echo "-ldbus-1")
+    else
+        CFLAGS += -DNO_DBUS
+    endif
     ifeq ($(USE_LIBDISPATCH),1)
         CFLAGS += -DUSE_LIBDISPATCH -I/usr/libexec/swift/lib/swift
         LDFLAGS += -L/usr/libexec/swift/lib/swift/linux -ldispatch -lBlocksRuntime -Wl,-rpath,/usr/libexec/swift/lib/swift/linux

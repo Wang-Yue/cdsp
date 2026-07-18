@@ -97,7 +97,10 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   }
 }
 #elif defined(__linux__)
+#if !defined(NO_DBUS) && !defined(DISABLE_DBUS)
 #include <dbus/dbus.h>
+#define CDSP_HAS_DBUS 1
+#endif
 #include <sched.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -119,6 +122,7 @@ typedef struct {
   RtPriorityThreadInfoInternal thread_info;
 } RtPriorityHandleInternal;
 
+#if defined(CDSP_HAS_DBUS)
 static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
                                int64_t* out_val, DBusError* err) {
   DBusMessage* msg = dbus_message_new_method_call(
@@ -376,6 +380,7 @@ static bool promote_current_thread_to_real_time_internal(
       conn, thread_info, audio_buffer_frames, audio_samplerate_hz, out_handle,
       err);
 }
+#endif
 
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
@@ -403,6 +408,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     }
   }
 
+#if defined(CDSP_HAS_DBUS)
   // 2. Fall back to RealtimeKit (rtkit) via direct D-Bus client connection.
   DBusError dbus_err;
   dbus_error_init(&dbus_err);
@@ -434,6 +440,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   dbus_error_free(&dbus_err);
   dbus_connection_close(conn);
   dbus_connection_unref(conn);
+#endif
 
 fallback:
   logger_warn(&g_logger,
