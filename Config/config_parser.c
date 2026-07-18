@@ -235,7 +235,7 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
 
   cJSON* root = cJSON_Parse(json);
   if (!root) {
-    free(config);
+    dsp_config_free(config);
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to parse JSON (syntax error or invalid JSON)");
     logger_error(&g_logger,
@@ -250,7 +250,7 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (!devices_obj) {
     cJSON_Delete(root);
-    free(config);
+    dsp_config_free(config);
     config_error_set(err, CONFIG_ERR_PARSE, "Config must contain 'devices'");
     logger_error(&g_logger,
                  "Config parsing failed: Config must contain 'devices' object");
