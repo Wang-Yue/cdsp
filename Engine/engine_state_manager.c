@@ -38,6 +38,9 @@ engine_state_manager_t* engine_state_manager_create(void) {
   mgr->dirty = false;
   mgr->change_counter = 0;
 
+  // Ref: engine_state_management.md - Section 1.6: Mutex Isolation & Non-Audio-Thread Concurrency Model
+  // PTHREAD_MUTEX_RECURSIVE prevents self-deadlocks when nested internal calls on the main/API thread
+  // (e.g. state persistence transactions) re-acquire mgr->mutex. Audio loops never touch this lock.
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);

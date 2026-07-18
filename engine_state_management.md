@@ -130,7 +130,7 @@ When adding or modifying components in the engine, follow these strict memory sa
 
 1. **Never Nullify Without Freeing**: When replacing pointers (e.g. `active_json`, `previous_json`, `current_config`), always free the existing object before overwriting or transfer ownership explicitly to a destructor queue.
 2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
-3. **Join Threads Before Freeing Shared Data**: `dsp_session_stop_and_free()` must join all worker threads (`capture_thread`, `processing_thread`, `playback_thread`) **before** freeing backends, pipelines, resamplers, or `engine_shared_state_t`.
+3. **Stop Backend Devices Before Thread Joining**: `dsp_session_stop_and_free()` must invoke `capture_backend_stop()` and `playback_backend_stop()` to interrupt and unblock any synchronous OS kernel driver read/write syscalls **before** calling `pthread_join()`. All worker threads (`capture_thread`, `processing_thread`, `playback_thread`) must be joined before freeing backends, pipelines, resamplers, or `engine_shared_state_t`.
 4. **Deferred Garbage Collection for Audio Threads**: Never call `free()` inside audio loop threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`). Defer object destruction (such as swapped pipelines) to lock-free SPSC garbage queues for main-thread cleanup.
 5. **Un-Enqueued Chunk Buffer Retention on Real-Time Drops**: When an audio loop thread (`EngineCaptureLoop` or `EngineProcessingLoop`) encounters a full SPSC queue in real-time mode (`enqueue` returns `false`), it must store the un-enqueued chunk pointer in a `pending_chunk` / `pending_scratch` variable and reuse it on the next loop iteration. It must **never** advance `round_robin_chunk_pool_next()`, preventing pool index wrap-around from retrieving and overwriting active chunk buffers currently sitting in the SPSC queue.
 
@@ -336,7 +336,7 @@ sequenceDiagram
 1. **Stall Detection**:
    - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in shared state every time a chunk is read.
    - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall.
-   - The main thread checks if `state_raw == RUNNING`, `!should_stop()`, and `stop_reason == STOP_REASON_NONE`. Checking `stop_reason == STOP_REASON_NONE` explicitly prevents false stall warnings during `PAUSED` mode or graceful EOF teardown (`STOP_REASON_DONE`). If the elapsed time since `last_capture_time_ns` exceeds 0.5s, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
+   - The main thread checks if `state_raw == RUNNING`, `!should_stop()`, and `engine_shared_state_get_stop_reason(state).type == STOP_REASON_NONE` (safely queried under `stop_reason_mutex`). Checking `stop_reason.type == STOP_REASON_NONE` explicitly prevents false stall warnings during `PAUSED` mode or graceful EOF teardown (`STOP_REASON_DONE`). If the elapsed time since `last_capture_time_ns` exceeds 0.5s, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
 2. **Stall Recovery**:
    - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
    - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
@@ -432,8 +432,9 @@ sequenceDiagram
    - The threads check `engine_shared_state_should_stop()`, which returns `true` (since state is `INACTIVE`).
    - In non-realtime mode, if a worker thread is waiting in a retry loop on a full queue when `should_stop()` returns `true`, it sets an abort flag to break out of the outer chunk-dequeuing loop immediately rather than continuing to process remaining items in `captured_queue`.
    - All loops break and threads terminate immediately.
-3. **Controller Teardown**:
-   - The controller joins all terminated threads and frees session allocations safely.
+3. **Controller Teardown & Non-Blocking Hardware Abort**:
+   - Prior to joining worker threads, `dsp_session_stop_and_free()` invokes `capture_backend_stop()` and `playback_backend_stop()` to interrupt and unblock any synchronous OS kernel driver read/write syscalls.
+   - It then joins all terminated threads via `pthread_join()` and frees session allocations safely.
 
 ---
 

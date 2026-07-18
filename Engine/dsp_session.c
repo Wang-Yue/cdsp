@@ -79,6 +79,8 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
   }
 
   // Watchdog Stall Check:
+  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
+  // Step 1: Query stop_reason safely under stop_reason_mutex (engine_shared_state_get_stop_reason).
   // If the engine state is RUNNING and no stop sequence has been initiated, but the capture
   // thread has not successfully enqueued/read any audio chunk for more than the stall timeout,
   // we transition the state to STALLED. Checking this on the main thread (during poll) prevents
@@ -140,7 +142,9 @@ processing_stop_reason_t dsp_session_stop_and_free(
     final_reason = engine_shared_state_get_stop_reason(core->shared);
   }
 
-  // Stop backends immediately to abort any blocking operations in threads.
+  // Ref: engine_state_management.md - Section 1.7.2 Rule 3 & Section 3.6 Step 3
+  // Stop backends immediately to abort any blocking OS kernel driver read/write operations
+  // in worker threads BEFORE invoking pthread_join().
   if (core->capture) {
     capture_backend_stop(core->capture);
   }
