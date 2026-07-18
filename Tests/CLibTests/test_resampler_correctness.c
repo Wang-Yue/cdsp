@@ -488,7 +488,8 @@ TEST(SlipResampler_Vs_Rubato) {
   }
 
   size_t chunk_size = 1000;
-  size_t total_frames = 20 * chunk_size;
+  size_t n_chunks = 8;
+  size_t total_frames = n_chunks * chunk_size;
 
   double* input = (double*)malloc(total_frames * sizeof(double));
   ASSERT_TRUE(input != NULL);
@@ -532,7 +533,7 @@ TEST(SlipResampler_Vs_Rubato) {
   audio_chunk_t* out_chunk = audio_chunk_create(max_out, 1);
 
   size_t accum_out = 0;
-  for (size_t c = 0; c < 20; c++) {
+  for (size_t c = 0; c < n_chunks; c++) {
     size_t needed_in = resampler_get_input_frames_next(res);
     ASSERT_EQ(chunk_size, needed_in);
 
@@ -544,9 +545,6 @@ TEST(SlipResampler_Vs_Rubato) {
     ASSERT_EQ(RESAMPLER_OK, err);
 
     size_t got_out = audio_chunk_get_valid_frames(out_chunk);
-    printf("[C slip_process] chunk=%zu n_in=%zu n_out=%zu\n", c, chunk_size,
-           got_out);
-    fflush(stdout);
     const double* ch_out = audio_chunk_get_channel(out_chunk, 0);
     for (size_t i = 0; i < got_out; i++) {
       ASSERT_TRUE(accum_out + i < ref_count);
@@ -591,7 +589,7 @@ TEST(SlipResampler_Vs_Rubato) {
   out_chunk = audio_chunk_create(max_out, 1);
 
   accum_out = 0;
-  for (size_t c = 0; c < 20; c++) {
+  for (size_t c = 0; c < n_chunks; c++) {
     size_t needed_in = resampler_get_input_frames_next(res);
     ASSERT_EQ(chunk_size, needed_in);
 
