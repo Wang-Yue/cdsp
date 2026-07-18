@@ -188,7 +188,7 @@ static inline double pcm_sample_decode_s24(int32_t val24) {
  */
 static inline int32_t pcm_sample_encode_s24_msb(double val) {
   int32_t val24 = pcm_sample_encode_s24(val);
-  return val24 << 8;
+  return (int32_t)((uint32_t)val24 << 8);
 }
 
 /**

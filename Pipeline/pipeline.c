@@ -110,9 +110,10 @@ static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
 /// Transfer filter states between two filter chains matching the same channel.
 static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
                                    const parallel_filter_chain_t* src_chain) {
-  bool used[128] = {0};
+  if (!dest_chain || !src_chain || src_chain->filters_count == 0) return;
+  bool used[512] = {0};
   size_t max_src =
-      src_chain->filters_count < 128 ? src_chain->filters_count : 128;
+      src_chain->filters_count < 512 ? src_chain->filters_count : 512;
 
   for (size_t i = 0; i < dest_chain->filters_count; i++) {
     filter_t* dest_f = dest_chain->filters[i];

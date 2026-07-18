@@ -141,13 +141,13 @@ AudioDeviceID core_audio_device_default_id(core_audio_scope_t scope) {
                        : kAudioHardwarePropertyDefaultOutputDevice,
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
-  AudioDeviceID id = 0;
+  AudioDeviceID id = kAudioObjectUnknown;
   uint32_t size = sizeof(AudioDeviceID);
   if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL,
                                  &size, &id) == noErr) {
     return id;
   }
-  return 0;
+  return kAudioObjectUnknown;
 }
 
 /// HAL ID of a named device, or the system default when `name` is
@@ -164,7 +164,7 @@ AudioDeviceID core_audio_device_id_for_name(const char* name,
       return devices[i].id;
     }
   }
-  return core_audio_device_default_id(scope);
+  return kAudioObjectUnknown;
 }
 
 // MARK: - Sample-rate control

@@ -56,6 +56,7 @@ struct core_audio_playback {
   _Atomic bool is_paused;
   bool is_interleaved;
   _Atomic bool stopped;
+  _Atomic int active_callbacks;
 };
 
 /**
@@ -121,9 +122,16 @@ static OSStatus playback_callback(void* inRefCon,
   (void)inTimeStamp;
   (void)inBusNumber;
   core_audio_playback_t* playback = (core_audio_playback_t*)inRefCon;
-  if (!playback || !ioData || ioData->mNumberBuffers == 0 ||
-      !ioData->mBuffers[0].mData)
+  if (!playback) return noErr;
+
+  atomic_fetch_add_explicit(&playback->active_callbacks, 1,
+                            memory_order_relaxed);
+  if (!ioData || ioData->mNumberBuffers == 0 || !ioData->mBuffers[0].mData ||
+      atomic_load_explicit(&playback->stopped, memory_order_relaxed)) {
+    atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
+                              memory_order_relaxed);
     return noErr;
+  }
 
   int frame_count = (int)inNumberFrames;
 
@@ -183,6 +191,8 @@ static OSStatus playback_callback(void* inRefCon,
     }
   }
 
+  atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
+                            memory_order_relaxed);
   return noErr;
 }
 
@@ -627,6 +637,16 @@ void core_audio_playback_close(core_audio_playback_t* playback) {
   }
   if (playback->audio_unit) {
     AudioOutputUnitStop(playback->audio_unit);
+    AURenderCallbackStruct null_cb = {0};
+    AudioUnitSetProperty(playback->audio_unit,
+                         kAudioUnitProperty_SetRenderCallback,
+                         kAudioUnitScope_Input, 0, &null_cb, sizeof(null_cb));
+  }
+  while (atomic_load_explicit(&playback->active_callbacks,
+                              memory_order_acquire) > 0) {
+    usleep(500);
+  }
+  if (playback->audio_unit) {
     AudioComponentInstanceDispose(playback->audio_unit);
     playback->audio_unit = NULL;
   }

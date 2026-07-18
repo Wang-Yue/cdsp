@@ -246,14 +246,19 @@ static const sdm_preset_t sdm_presets[] = {
 static const sdm_preset_t* sdm_find_preset(sdm_filter_t filter_name,
                                            uint32_t freq) {
   size_t count = sizeof(sdm_presets) / sizeof(sdm_presets[0]);
+  const sdm_preset_t* best_match = NULL;
   for (size_t i = 0; i < count; i++) {
-    if ((filter_name == SDM_FILTER_INVALID ||
-         sdm_presets[i].name == filter_name) &&
-        sdm_presets[i].freq <= freq) {
-      return &sdm_presets[i];
+    if (filter_name == SDM_FILTER_INVALID ||
+        sdm_presets[i].name == filter_name) {
+      if (sdm_presets[i].freq <= freq) {
+        return &sdm_presets[i];
+      }
+      if (!best_match) {
+        best_match = &sdm_presets[i];
+      }
     }
   }
-  return NULL;
+  return best_match;
 }
 
 void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
@@ -280,8 +285,6 @@ void sigma_delta_modulator_init(sigma_delta_modulator_t* mod,
 
 sigma_delta_modulator_t* sigma_delta_modulator_create(sdm_filter_t filter_name,
                                                       uint32_t freq) {
-  const sdm_preset_t* preset = sdm_find_preset(filter_name, freq);
-  if (!preset) return NULL;
   sigma_delta_modulator_t* mod =
       (sigma_delta_modulator_t*)calloc(1, sizeof(sigma_delta_modulator_t));
   if (!mod) return NULL;

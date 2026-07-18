@@ -152,6 +152,8 @@ static OSStatus capture_callback(void* inRefCon,
     if (capture->callback_error_count < 3) {
       capture->callback_error_count++;
     }
+    atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                              memory_order_relaxed);
     return noErr;
   }
 
@@ -171,7 +173,11 @@ static OSStatus capture_callback(void* inRefCon,
   }
 
   int frames = actual_frames < frame_count ? actual_frames : frame_count;
-  if (frames <= 0) return noErr;
+  if (frames <= 0) {
+    atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                              memory_order_relaxed);
+    return noErr;
+  }
 
   // Push the captured samples into the lock-free ring buffers.
   if (capture->is_interleaved) {

@@ -43,6 +43,15 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
         step->type = PIPELINE_STEP_TYPE_MIXER;
       else if (strcmp(type_str, "Processor") == 0)
         step->type = PIPELINE_STEP_TYPE_PROCESSOR;
+      else {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Pipeline step %d: invalid type '%s'", s, type_str);
+        return -1;
+      }
+    } else {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Pipeline step %d: missing 'type'", s);
+      return -1;
     }
 
     step->has_name =

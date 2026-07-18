@@ -325,7 +325,7 @@ static void process_channel(dop_decoder_channel_state_t* state,
 
     // Hysteretic state machine updates:
     if (valid) {
-      state->consec_valid++;
+      if (state->consec_valid < 1000) state->consec_valid++;
       state->consec_invalid = 0;
       state->last_marker = marker;
       // Confirm container choice after 4 consecutive valid frames.
@@ -337,7 +337,7 @@ static void process_channel(dop_decoder_channel_state_t* state,
         state->is_active = true;
       }
     } else {
-      state->consec_invalid++;
+      if (state->consec_invalid < 1000) state->consec_invalid++;
       state->consec_valid = 0;
       // Lose lock only if we exceed the deactivation threshold (hysteresis).
       if (state->consec_invalid >= DOP_DEACTIVATE_THRESHOLD) {

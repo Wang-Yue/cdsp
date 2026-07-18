@@ -199,6 +199,10 @@ static cJSON* parse_scalar_val(const char* str) {
   if (!str || !*str || strcmp(str, "~") == 0 || strcasecmp(str, "null") == 0) {
     return cJSON_CreateNull();
   }
+  if (*str == '[' || *str == '{') {
+    cJSON* parsed = cJSON_Parse(str);
+    if (parsed) return parsed;
+  }
   if (strcasecmp(str, "true") == 0 || strcasecmp(str, "yes") == 0) {
     return cJSON_CreateTrue();
   }
@@ -366,7 +370,8 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
         PUSH_STACK(new_obj, indent + 2, false);
       } else {
         char* colon = strchr(item_val, ':');
-        if (colon && !strchr(item_val, '"') && !strchr(item_val, '\'')) {
+        char* first_q = strpbrk(item_val, "\"'");
+        if (colon && (!first_q || colon < first_q)) {
           cJSON* new_obj = cJSON_CreateObject();
           CHECK_OOM(new_obj);
           cJSON_AddItemToArray(top->node, new_obj);
