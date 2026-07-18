@@ -2206,4 +2206,150 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
   ASSERT_TRUE(remaining_processed > 0);
 }
 
+// Real-world scenario simulated:
+// Concurrent graceful EOF completion and hardware DAC/playback failure during teardown (Section 4).
+// Proves that when Thread A (capture EOF) wins CAS on stop_once but has not yet finished publishing
+// STOP_REASON_DONE under stop_reason_mutex, a concurrent request_stop(STOP_REASON_PLAYBACK_ERROR)
+// from Thread B (hardware DAC failure) enters the LOSER branch and reads STOP_REASON_NONE.
+// Current code assumes STOP_REASON_NONE != STOP_REASON_DONE, skipping error publication and state INACTIVE
+// transition, silently dropping the hardware error and leaving session worker threads hanging.
+TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
+  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  ASSERT_TRUE(shared != NULL);
+
+  // Step 1: Simulate Thread A winning CAS with a dummy/NONE stop request
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+
+  // Step 2: Thread B requests a critical hardware error stop while stop_once is true
+  processing_stop_reason_t err_reason = {.type = STOP_REASON_PLAYBACK_ERROR};
+  snprintf(err_reason.message, sizeof(err_reason.message), "Hardware DAC failure");
+  engine_shared_state_request_stop(shared, err_reason);
+
+  // Expected behavior: Critical hardware error MUST be published and state MUST be INACTIVE
+  ASSERT_EQ(STOP_REASON_PLAYBACK_ERROR,
+            engine_shared_state_get_stop_reason(shared).type);
+  ASSERT_TRUE(engine_shared_state_should_stop(shared));
+  ASSERT_EQ(PROCESSING_STATE_INACTIVE, engine_shared_state_get_state(shared));
+
+  engine_shared_state_free(shared);
+}
+
+// Real-world scenario simulated:
+// Main thread application cleanup following successful EOF audio rendering completion (Section 4 & Section 3.5).
+// Proves that when a graceful EOF teardown finishes (stop_reason set to STOP_REASON_DONE), a subsequent
+// dsp_session_stop_and_free() or dsp_engine_stop() call on the main thread passing default STOP_REASON_NONE
+// triggers current condition (reason.type != STOP_REASON_DONE), overwriting STOP_REASON_DONE with
+// STOP_REASON_NONE and destroying completion diagnostic records.
+TEST(DSPEngine_Repro_StopReason_None_Overwriting_Done) {
+  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  ASSERT_TRUE(shared != NULL);
+
+  // Step 1: Graceful EOF teardown finishes, setting stop_reason to STOP_REASON_DONE
+  processing_stop_reason_t eof_reason = {.type = STOP_REASON_DONE};
+  engine_shared_state_request_stop(shared, eof_reason);
+
+  ASSERT_EQ(STOP_REASON_DONE, engine_shared_state_get_stop_reason(shared).type);
+
+  // Step 2: Main thread calls cleanup with default STOP_REASON_NONE
+  processing_stop_reason_t default_reason = {.type = STOP_REASON_NONE};
+  engine_shared_state_request_stop(shared, default_reason);
+
+  // Expected behavior: STOP_REASON_DONE MUST NOT be overwritten by STOP_REASON_NONE
+  ASSERT_EQ(STOP_REASON_DONE, engine_shared_state_get_stop_reason(shared).type);
+
+  engine_shared_state_free(shared);
+}
+
+static void* capture_backpressure_worker_func(void* arg) {
+  engine_capture_loop_t* loop = (engine_capture_loop_t*)arg;
+  engine_capture_loop_step(loop);
+  return NULL;
+}
+
+// Real-world scenario simulated:
+// Non-realtime audio processing (e.g. offline File rendering or Signal Generator capture) experiencing downstream DSP or Playback backpressure (Section 3.4).
+// Proves that when non-realtime capture fills captured_queue, the capture thread blocks in a 1ms retry sleep loop waiting for space.
+// Current code only updates last_capture_time_ns at chunk entry and omits refreshes inside the retry loop,
+// causing last_capture_time_ns to become stale (>0.5s) during backpressure and falsely triggering a Watchdog Stall
+// (PROCESSING_STATE_STALLED) on the main controller thread despite the capture thread being completely healthy.
+TEST(DSPEngine_Repro_FalsePositiveWatchdogStall_NonRealtimeBackpressure) {
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+
+  capture_device_config_t dev_cfg = {
+      .type = AUDIO_BACKEND_TYPE_GENERATOR,
+      .cfg.generator =
+          {
+              .channels = 2,
+              .signal =
+                  {
+                      .type = SIGNAL_TYPE_SINE,
+                      .frequency = 440.0,
+                      .level = 0.5,
+                  },
+          },
+  };
+  backend_error_t berr = {0};
+  capture_backend_t* cap_backend =
+      generator_capture_create(&dev_cfg, 48000, 64, params, &berr);
+  ASSERT_TRUE(cap_backend != NULL);
+  ASSERT_TRUE(capture_backend_open(cap_backend, &berr));
+
+  engine_shared_state_t* shared = engine_shared_state_create(4, 4);
+  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(8, 64, 2);
+
+  engine_capture_loop_config_t config = {
+      .capture = cap_backend,
+      .shared = shared,
+      .processing_params = params,
+      .chunk_pool = pool,
+      .dop_decoder = NULL,
+      .samplerate = 48000,
+      .channels = 2,
+      .chunk_size = 64,
+  };
+  engine_capture_loop_t* capture_loop = engine_capture_loop_create(&config);
+  ASSERT_TRUE(capture_loop != NULL);
+
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  // Fill captured_queue completely so next enqueue inside loop_step will block in retry loop
+  for (int i = 0; i < 4; i++) {
+    audio_chunk_t* c = round_robin_chunk_pool_next(pool);
+    audio_chunk_set_valid_frames(c, 64);
+    ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, c));
+  }
+
+  // Start capture worker thread which calls engine_capture_loop_step() and blocks
+  pthread_t thread;
+  pthread_create(&thread, NULL, capture_backpressure_worker_func, capture_loop);
+
+  // Sleep for 600ms while capture thread is waiting on backpressure
+  cdsp_sleep_ms(600);
+
+  uint64_t last_time = engine_shared_state_get_last_capture_time(shared);
+  uint64_t now = cdsp_time_now_ns();
+  double elapsed_sec = (double)(now - last_time) / 1000000000.0;
+
+  // Cleanup worker thread
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_DONE});
+  pthread_join(thread, NULL);
+
+  engine_capture_loop_free(capture_loop);
+  capture_backend_close(cap_backend);
+  capture_backend_free(cap_backend);
+  processing_parameters_free(params);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+
+  // Assert that last_capture_time was refreshed during backpressure sleep loop
+  ASSERT_TRUE(elapsed_sec < 0.3);
+}
+
 TEST_MAIN()
+
+
+
