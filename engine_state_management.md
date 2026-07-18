@@ -332,9 +332,9 @@ sequenceDiagram
 ```
 
 1. **Stall Detection**:
-   - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in the shared state every time a chunk is read.
+   - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in shared state every time a chunk is read.
    - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall.
-   - If `state_raw == RUNNING` and `stop_once == false`, and the elapsed time since `last_capture_time_ns` exceeds `watchdog_timeout_seconds`, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning. This ensures status queries show `STALLED` even when the capture thread is permanently hung, while preventing false triggers during `PAUSED` mode or graceful EOF teardown.
+   - The main thread checks if `state_raw == RUNNING`, `!should_stop()`, and `stop_reason == STOP_REASON_NONE`. Checking `stop_reason == STOP_REASON_NONE` explicitly prevents false stall warnings during `PAUSED` mode or graceful EOF teardown (`STOP_REASON_DONE`). If the elapsed time since `last_capture_time_ns` exceeds 0.5s, the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
 2. **Stall Recovery**:
    - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
    - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
