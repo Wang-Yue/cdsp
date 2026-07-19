@@ -31,7 +31,6 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 
-
 struct core_audio_playback {
   char device_name[256];
   int channels;
@@ -206,8 +205,6 @@ static void core_audio_playback_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
 }
-
-
 
 /// Close the CoreAudio playback device and release HAL resources.
 static void core_audio_playback_close(void* ctx) {
@@ -466,8 +463,7 @@ cleanup:
 }
 
 /// Write an audio chunk into the playback ring buffers.
-static bool core_audio_playback_write(void* ctx,
-                                      const audio_chunk_t* chunk,
+static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
                                       backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return false;
@@ -546,8 +542,6 @@ static bool core_audio_playback_write(void* ctx,
   return true;
 }
 
-
-
 /// Get the current buffer level in samples.
 static size_t core_audio_playback_get_buffer_level(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
@@ -558,8 +552,8 @@ static size_t core_audio_playback_get_buffer_level(void* ctx) {
 }
 
 /// Get any pending sample rate change detected on the playback device.
-static bool core_audio_playback_get_pending_rate_change(
-    void* ctx, double* out_rate) {
+static bool core_audio_playback_get_pending_rate_change(void* ctx,
+                                                        double* out_rate) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback || !playback->rate_watcher) return false;
   return rate_change_watcher_get_pending_change(playback->rate_watcher,
@@ -567,8 +561,7 @@ static bool core_audio_playback_get_pending_rate_change(
 }
 
 /// Push zero samples into the playback ring buffer before real audio arrives.
-static bool core_audio_playback_prefill_silence(void* ctx,
-                                                size_t frames,
+static bool core_audio_playback_prefill_silence(void* ctx, size_t frames,
                                                 backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   (void)err;
@@ -592,8 +585,7 @@ static bool core_audio_playback_get_is_paused(void* ctx) {
 }
 
 /// Set playback paused status.
-static void core_audio_playback_set_is_paused(void* ctx,
-                                              bool paused) {
+static void core_audio_playback_set_is_paused(void* ctx, bool paused) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (playback) {
     atomic_store_explicit(&playback->is_paused, paused, memory_order_release);
@@ -633,7 +625,8 @@ static void core_audio_playback_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ * @return Pointer to the created playback_backend_t instance, or NULL on
+ * failure.
  */
 static playback_backend_t* core_audio_playback_create(
     const playback_device_config_t* config, int sample_rate, int chunk_size,

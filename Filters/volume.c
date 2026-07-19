@@ -216,8 +216,8 @@ void volume_filter_prepare_chunk(volume_filter_t* filter) {
 }
 
 /// Conforms to `Filter`. Processes a single channel's waveform slice.
-static void volume_filter_process(void* instance,
-                                  mutable_waveform_t waveform, size_t count) {
+static void volume_filter_process(void* instance, mutable_waveform_t waveform,
+                                  size_t count) {
   volume_filter_t* filter = (volume_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->ramp_step == 0) {
@@ -271,8 +271,7 @@ void volume_filter_advance_ramp(volume_filter_t* filter) {
  * @param dest The destination volume filter instance.
  * @param src The source volume filter instance.
  */
-static void volume_filter_transfer_state(void* dest_ptr,
-                                         const void* src_ptr) {
+static void volume_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   volume_filter_t* dest = (volume_filter_t*)dest_ptr;
   const volume_filter_t* src = (const volume_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;

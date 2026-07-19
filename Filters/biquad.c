@@ -514,8 +514,8 @@ static void* biquad_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void biquad_filter_process(void* instance,
-                                  mutable_waveform_t waveform, size_t count) {
+static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
+                                  size_t count) {
   biquad_filter_t* filter = (biquad_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
 #ifdef ENABLE_ACCELERATE
@@ -605,8 +605,7 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
  * @param dest The destination biquad filter instance.
  * @param src The source biquad filter instance.
  */
-static void biquad_filter_transfer_state(void* dest_ptr,
-                                         const void* src_ptr) {
+static void biquad_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   biquad_filter_t* dest = (biquad_filter_t*)dest_ptr;
   const biquad_filter_t* src = (const biquad_filter_t*)src_ptr;
   if (!dest || !src) return;

@@ -377,10 +377,11 @@ static void lookahead_limiter_filter_process(void* instance,
   }
 }
 
-static void lookahead_limiter_filter_transfer_state(
-    void* dest_ptr, const void* src_ptr) {
+static void lookahead_limiter_filter_transfer_state(void* dest_ptr,
+                                                    const void* src_ptr) {
   lookahead_limiter_filter_t* dest = (lookahead_limiter_filter_t*)dest_ptr;
-  const lookahead_limiter_filter_t* src = (const lookahead_limiter_filter_t*)src_ptr;
+  const lookahead_limiter_filter_t* src =
+      (const lookahead_limiter_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   dest->release_gain = src->release_gain;

@@ -218,8 +218,8 @@ static void* loudness_filter_create(const char* name,
  * @param waveform The waveform containing the samples to be processed.
  * @param count The number of samples to process.
  */
-static void loudness_filter_process(void* instance,
-                                    mutable_waveform_t waveform, size_t count) {
+static void loudness_filter_process(void* instance, mutable_waveform_t waveform,
+                                    size_t count) {
   loudness_filter_t* filter = (loudness_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (!filter->processing_parameters) return;

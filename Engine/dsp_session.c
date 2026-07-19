@@ -79,17 +79,23 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
   }
 
   // Watchdog Stall Check:
-  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-  // Step 1: Query stop_reason safely under stop_reason_mutex (engine_shared_state_get_stop_reason).
-  // If the engine state is RUNNING and no stop sequence has been initiated, but the capture
-  // thread has not successfully enqueued/read any audio chunk for more than the stall timeout,
-  // we transition the state to STALLED. Checking this on the main thread (during poll) prevents
-  // lockups when the capture backend read call blocks infinitely in kernel space.
-  if (!req && engine_shared_state_get_stop_reason(core->shared).type == STOP_REASON_NONE &&
+  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery
+  // Flow Step 1: Query stop_reason safely under stop_reason_mutex
+  // (engine_shared_state_get_stop_reason). If the engine state is RUNNING and
+  // no stop sequence has been initiated, but the capture thread has not
+  // successfully enqueued/read any audio chunk for more than the stall timeout,
+  // we transition the state to STALLED. Checking this on the main thread
+  // (during poll) prevents lockups when the capture backend read call blocks
+  // infinitely in kernel space.
+  if (!req &&
+      engine_shared_state_get_stop_reason(core->shared).type ==
+          STOP_REASON_NONE &&
       engine_shared_state_get_state(core->shared) == PROCESSING_STATE_RUNNING) {
-    uint64_t last_capture_time = engine_shared_state_get_last_capture_time(core->shared);
+    uint64_t last_capture_time =
+        engine_shared_state_get_last_capture_time(core->shared);
     if (last_capture_time > 0) {
-      double elapsed = (double)(cdsp_time_now_ns() - last_capture_time) / 1000000000.0;
+      double elapsed =
+          (double)(cdsp_time_now_ns() - last_capture_time) / 1000000000.0;
       double timeout_sec = 0.5;
       if (core->current_config) {
         size_t sr = core->current_config->devices.has_capture_samplerate
@@ -105,7 +111,9 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
       }
       if (elapsed > timeout_sec) {
         engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
-        logger_warn(&g_logger, "Watchdog: capture device stalled (no data for %.3fs)", elapsed);
+        logger_warn(&g_logger,
+                    "Watchdog: capture device stalled (no data for %.3fs)",
+                    elapsed);
       }
     }
   }
@@ -155,8 +163,8 @@ processing_stop_reason_t dsp_session_stop_and_free(
   }
 
   // Ref: engine_state_management.md - Section 1.7.2 Rule 3 & Section 3.6 Step 3
-  // Stop backends immediately to abort any blocking OS kernel driver read/write operations
-  // in worker threads BEFORE invoking pthread_join().
+  // Stop backends immediately to abort any blocking OS kernel driver read/write
+  // operations in worker threads BEFORE invoking pthread_join().
   if (core->capture) {
     capture_backend_stop(core->capture);
   }
@@ -276,9 +284,10 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
     return false;
   }
 
-  // Defensive garbage collection: dsp_engine_set_config_struct_locked already calls
-  // dsp_session_collect_garbage prior to reload, but calling it here defensively
-  // ensures uncollected pipelines are freed even if dsp_session_reload_config is called directly.
+  // Defensive garbage collection: dsp_engine_set_config_struct_locked already
+  // calls dsp_session_collect_garbage prior to reload, but calling it here
+  // defensively ensures uncollected pipelines are freed even if
+  // dsp_session_reload_config is called directly.
   dsp_session_collect_garbage(core);
 
   pthread_mutex_lock(&core->config_mutex);

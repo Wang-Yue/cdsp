@@ -480,8 +480,8 @@ error_cleanup:
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return True on success, false otherwise.
  */
-static bool alsa_capture_read(void* ctx, size_t frames,
-                       audio_chunk_t* chunk, backend_error_t* err) {
+static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
+                              backend_error_t* err) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture || !capture->pcm) return false;
 
@@ -615,14 +615,14 @@ static void alsa_capture_close(void* ctx) {
 }
 
 /**
- * @brief Checks if there is a pending sample rate change detected by the device.
+ * @brief Checks if there is a pending sample rate change detected by the
+ * device.
  *
  * @param ctx Pointer to the ALSA capture instance.
  * @param out_rate Pointer to store the new sample rate if a change is pending.
  * @return True if a rate change is pending, false otherwise.
  */
-static bool alsa_capture_get_pending_rate_change(void* ctx,
-                                                 double* out_rate) {
+static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   (void)ctx;
   (void)out_rate;
   return false;
@@ -714,13 +714,12 @@ static void alsa_capture_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to the processing parameters for telemetry updates.
  * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return Pointer to the generic capture_backend_t interface, or NULL on failure.
+ * @return Pointer to the generic capture_backend_t interface, or NULL on
+ * failure.
  */
-static capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
-                                       int sample_rate, int chunk_size,
-                                       bool full_duplex,
-                                       processing_parameters_t* params,
-                                       backend_error_t* err) {
+static capture_backend_t* alsa_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)full_duplex;
   (void)err;
   alsa_capture_t* capture = (alsa_capture_t*)calloc(1, sizeof(alsa_capture_t));

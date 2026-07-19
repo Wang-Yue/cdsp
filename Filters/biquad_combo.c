@@ -458,8 +458,8 @@ static void biquad_combo_filter_process(void* instance,
  * @param dest The destination combo filter instance.
  * @param src The source combo filter instance.
  */
-static void biquad_combo_filter_transfer_state(
-    void* dest_ptr, const void* src_ptr) {
+static void biquad_combo_filter_transfer_state(void* dest_ptr,
+                                               const void* src_ptr) {
   biquad_combo_filter_t* dest = (biquad_combo_filter_t*)dest_ptr;
   const biquad_combo_filter_t* src = (const biquad_combo_filter_t*)src_ptr;
   if (!dest || !src) return;

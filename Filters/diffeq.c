@@ -140,8 +140,8 @@ static void* diffeq_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void diffeq_filter_process(void* instance,
-                                  mutable_waveform_t waveform, size_t count) {
+static void diffeq_filter_process(void* instance, mutable_waveform_t waveform,
+                                  size_t count) {
   diffeq_filter_t* filter = (diffeq_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   size_t nb = filter->b_count;
@@ -200,8 +200,7 @@ static void diffeq_filter_process(void* instance,
   filter->idx_y = idx_y;
 }
 
-static void diffeq_filter_transfer_state(void* dest_ptr,
-                                          const void* src_ptr) {
+static void diffeq_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   diffeq_filter_t* dest = (diffeq_filter_t*)dest_ptr;
   const diffeq_filter_t* src = (const diffeq_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;

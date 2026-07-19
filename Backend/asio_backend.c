@@ -18,8 +18,6 @@
 
 static const logger_t g_logger = {"dsp.backend.asio"};
 
-
-
 #define SAFE_RELEASE(punk)         \
   if ((punk) != NULL) {            \
     (punk)->lpVtbl->Release(punk); \
@@ -677,8 +675,6 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
   return true;
 }
 
-
-
 static bool init_asio_device(const char* device_name, double sample_rate,
                              bool is_dsd, IASIO** out_iasio, long* out_buf_size,
                              backend_error_t* err) {
@@ -1180,8 +1176,6 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
   return true;
 }
 
-
-
 /**
  * @brief Internal method to wait for capture data.
  *
@@ -1256,13 +1250,12 @@ static void asio_capture_stop(void* ctx) {
  * @param full_duplex True if the engine is running in full duplex mode.
  * @param params Processing parameters.
  * @param err Pointer to store error details if creation fails.
- * @return A pointer to the capture_backend_t interface wrapper, or NULL on error.
+ * @return A pointer to the capture_backend_t interface wrapper, or NULL on
+ * error.
  */
-static capture_backend_t* asio_capture_create(const capture_device_config_t* config,
-                                       int sample_rate, int chunk_size,
-                                       bool full_duplex,
-                                       processing_parameters_t* params,
-                                       backend_error_t* err) {
+static capture_backend_t* asio_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)params;
   (void)err;
   asio_capture_t* capture = (asio_capture_t*)calloc(1, sizeof(asio_capture_t));
@@ -1535,8 +1528,6 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
   return true;
 }
 
-
-
 /**
  * @brief Internal method to get the current buffer level of the playback
  * stream.
@@ -1565,7 +1556,8 @@ static void asio_playback_destroy_internal(void* ctx) {
 }
 
 /**
- * @brief Checks if there is a pending rate change for the ASIO playback backend.
+ * @brief Checks if there is a pending rate change for the ASIO playback
+ * backend.
  *
  * @param ctx Pointer to the asio_playback_t context.
  * @param out_rate Pointer to double to receive the new rate if pending.
@@ -1609,13 +1601,12 @@ static void asio_playback_stop(void* ctx) {
  * @param full_duplex True if the engine is running in full duplex mode.
  * @param params Processing parameters.
  * @param err Pointer to store error details if creation fails.
- * @return A pointer to the playback_backend_t interface wrapper, or NULL on error.
+ * @return A pointer to the playback_backend_t interface wrapper, or NULL on
+ * error.
  */
-static playback_backend_t* asio_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         bool full_duplex,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
+static playback_backend_t* asio_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)params;
   (void)err;
   asio_playback_t* playback =

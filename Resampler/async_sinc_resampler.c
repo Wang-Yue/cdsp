@@ -147,7 +147,7 @@ static void async_sinc_resampler_free(void* impl) {
 }
 
 static void async_sinc_resampler_set_relative_ratio(void* impl,
-                                                       double multiplier) {
+                                                    double multiplier) {
   async_sinc_resampler_t* resampler = (async_sinc_resampler_t*)impl;
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;

@@ -139,7 +139,7 @@ static void async_poly_resampler_free(void* impl) {
 }
 
 static void async_poly_resampler_set_relative_ratio(void* impl,
-                                                       double multiplier) {
+                                                    double multiplier) {
   async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;

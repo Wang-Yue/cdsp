@@ -185,39 +185,45 @@ static void synchronous_resampler_free(void* impl) {
 /// construction. The rate-adjust controller's relative multiplier
 /// has nowhere to go here — we accept it without effect.
 static void synchronous_resampler_set_relative_ratio(void* impl,
-                                                       double multiplier) {
+                                                     double multiplier) {
   (void)impl;
   (void)multiplier;
   // Fixed-ratio
 }
 
 static double synchronous_resampler_get_ratio(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->ratio : 1.0;
 }
 
 static size_t synchronous_resampler_get_max_output_frames(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->output_chunk_size : 0;
 }
 
 static size_t synchronous_resampler_get_chunk_size(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->chunk_size : 0;
 }
 
 static size_t synchronous_resampler_get_input_frames_next(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->chunk_size : 0;
 }
 
 static size_t synchronous_resampler_get_output_frames_next(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->output_chunk_size : 0;
 }
 
 static size_t synchronous_resampler_get_channels(const void* impl) {
-  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
   return resampler ? resampler->channels : 0;
 }
 

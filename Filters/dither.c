@@ -81,8 +81,6 @@ static double noise_shaper_process(noise_shaper_t* shaper, double scaled,
   return result_r;
 }
 
-
-
 // MARK: - Noise Shaper Factory
 static noise_shaper_t* noise_shaper_create_for_type(dither_type_t type) {
   switch (type) {
@@ -545,8 +543,8 @@ static void* dither_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void dither_filter_process(void* instance,
-                                  mutable_waveform_t waveform, size_t count) {
+static void dither_filter_process(void* instance, mutable_waveform_t waveform,
+                                  size_t count) {
   dither_filter_t* filter = (dither_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   double scalefact = filter->scalefact;
@@ -589,8 +587,7 @@ static void noise_shaper_transfer_state(noise_shaper_t* dest,
   }
 }
 
-static void dither_filter_transfer_state(void* dest_ptr,
-                                         const void* src_ptr) {
+static void dither_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   dither_filter_t* dest = (dither_filter_t*)dest_ptr;
   const dither_filter_t* src = (const dither_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;

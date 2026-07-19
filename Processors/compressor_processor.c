@@ -269,8 +269,7 @@ static void* compressor_processor_create(const char* name,
  * @param processor Pointer to compressor processor.
  * @param chunk Audio chunk to process in place.
  */
-static void compressor_processor_process(void* impl,
-                                         audio_chunk_t* chunk) {
+static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
   compressor_processor_t* processor = (compressor_processor_t*)impl;
   if (!processor || !chunk || !processor->scratch) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
@@ -368,8 +367,8 @@ static void compressor_processor_process(void* impl,
  * @param dest The destination compressor processor instance.
  * @param src The source compressor processor instance.
  */
-static void compressor_processor_transfer_state(
-    void* dest_ptr, const void* src_ptr) {
+static void compressor_processor_transfer_state(void* dest_ptr,
+                                                const void* src_ptr) {
   compressor_processor_t* dest = (compressor_processor_t*)dest_ptr;
   const compressor_processor_t* src = (const compressor_processor_t*)src_ptr;
   if (!dest || !src) return;

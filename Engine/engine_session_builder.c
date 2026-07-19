@@ -66,7 +66,8 @@ static void* playback_thread_func(void* arg) {
 /**
  * @brief Step 3: Allocates shared state queues, processing telemetry, and DoP
  * encoder/decoder codecs.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 3)
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+ * (Step 3)
  */
 static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
                                                       dsp_config_t* config) {
@@ -129,12 +130,15 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
 }
 
 /**
- * @brief Step 4: Creates the resampler codec if target pipeline rate differs from capture rate.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 4)
+ * @brief Step 4: Creates the resampler codec if target pipeline rate differs
+ * from capture rate. Ref: engine_state_management.md - Section 3.1: Startup &
+ * Initialization Flow (Step 4)
  */
-static bool engine_session_build_resampler(
-    dsp_session_t* core, dsp_config_t* config, double capture_rate,
-    size_t pipeline_rate, audio_backend_error_t* err) {
+static bool engine_session_build_resampler(dsp_session_t* core,
+                                           dsp_config_t* config,
+                                           double capture_rate,
+                                           size_t pipeline_rate,
+                                           audio_backend_error_t* err) {
   if (config->devices.has_resampler) {
     config_error_t cerr;
     config_error_init(&cerr);
@@ -156,7 +160,8 @@ static bool engine_session_build_resampler(
 
 /**
  * @brief Step 5: Opens audio capture and playback backends via backend factory.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 5)
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+ * (Step 5)
  */
 static bool engine_session_build_backends(
     dsp_session_t* core, dsp_config_t* config, size_t capture_rate,
@@ -188,8 +193,9 @@ static bool engine_session_build_backends(
 }
 
 /**
- * @brief Step 6: Pre-allocates scratch audio chunks and creates the DSP processing pipeline.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 6)
+ * @brief Step 6: Pre-allocates scratch audio chunks and creates the DSP
+ * processing pipeline. Ref: engine_state_management.md - Section 3.1: Startup &
+ * Initialization Flow (Step 6)
  */
 static bool engine_session_build_pipeline_and_scratch(
     dsp_session_t* core, dsp_config_t* config, size_t capture_chunk_size,
@@ -232,11 +238,13 @@ static bool engine_session_build_pipeline_and_scratch(
 
 /**
  * @brief Step 7: Pre-allocates lock-free chunk pools for thread communication.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 7)
+ * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
+ * (Step 7)
  */
-static bool engine_session_build_chunk_pools(
-    dsp_session_t* core, dsp_config_t* config, size_t capture_chunk_size,
-    size_t playback_chunk_size) {
+static bool engine_session_build_chunk_pools(dsp_session_t* core,
+                                             dsp_config_t* config,
+                                             size_t capture_chunk_size,
+                                             size_t playback_chunk_size) {
   // 7. Pre-allocate chunk pools.
   // Allocate memory for chunk pools ahead of time to guarantee that the capture
   // and processing loop threads never perform dynamic memory allocations on the
@@ -261,8 +269,9 @@ static bool engine_session_build_chunk_pools(
 }
 
 /**
- * @brief Step 8: Instantiates engine worker loop orchestrators and spawns worker threads.
- * Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow (Step 8)
+ * @brief Step 8: Instantiates engine worker loop orchestrators and spawns
+ * worker threads. Ref: engine_state_management.md - Section 3.1: Startup &
+ * Initialization Flow (Step 8)
  */
 static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                                 dsp_config_t* config,
@@ -397,13 +406,16 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                                               audio_backend_error_t* err) {
   if (!config) return NULL;
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Note on Non-Builder steps:
-  //   - Step 1 (Staging & Lock-Free Status Indicator) occurs inside dsp_engine_set_config_json.
-  //   - Step 9 (Async Hardware Open & Prefill) occurs inside the worker thread runs.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Note on Non-Builder steps:
+  //   - Step 1 (Staging & Lock-Free Status Indicator) occurs inside
+  //   dsp_engine_set_config_json.
+  //   - Step 9 (Async Hardware Open & Prefill) occurs inside the worker thread
+  //   runs.
   //   - Step 10 (Transition to RUNNING) occurs inside engine_capture_loop_run.
   //
-  // Step 2: Allocate the core dsp_session_t struct container and initialize its config_mutex.
+  // Step 2: Allocate the core dsp_session_t struct container and initialize its
+  // config_mutex.
   dsp_session_t* core = (dsp_session_t*)calloc(1, sizeof(dsp_session_t));
   if (!core) return NULL;
 
@@ -418,9 +430,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
   core->on_chunk_processed = on_processed;
   core->on_chunk_processed_ctx = processed_ctx;
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 3: Call engine_session_build_shared_state_and_dop to allocate shared state
-  // and initialize DoP/DSD codecs.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 3: Call engine_session_build_shared_state_and_dop to allocate
+  // shared state and initialize DoP/DSD codecs.
   if (!engine_session_build_shared_state_and_dop(core, config)) {
     dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
@@ -432,9 +444,11 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                                      ? config->devices.capture_samplerate
                                      : config->devices.samplerate);
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 4: Call engine_session_build_resampler to allocate resampler if rates differ.
-  if (!engine_session_build_resampler(core, config, capture_rate, pipeline_rate, err)) {
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 4: Call engine_session_build_resampler to allocate resampler if
+  // rates differ.
+  if (!engine_session_build_resampler(core, config, capture_rate, pipeline_rate,
+                                      err)) {
     dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
@@ -449,8 +463,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
                       : capture_chunk_size;
   core->effective_playback_chunk_size = playback_chunk_size;
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 5: Call engine_session_build_backends to allocate capture/playback backend handles.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 5: Call engine_session_build_backends to allocate
+  // capture/playback backend handles.
   if (!engine_session_build_backends(core, config, (size_t)capture_rate,
                                      pipeline_rate, capture_chunk_size,
                                      playback_chunk_size, err)) {
@@ -459,9 +474,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
     return NULL;
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 6: Call engine_session_build_pipeline_and_scratch to build DSP pipeline
-  // and allocate scratch buffers.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 6: Call engine_session_build_pipeline_and_scratch to build DSP
+  // pipeline and allocate scratch buffers.
   if (!engine_session_build_pipeline_and_scratch(
           core, config, capture_chunk_size, playback_chunk_size, err)) {
     dsp_session_stop_and_free(
@@ -469,8 +484,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
     return NULL;
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 7: Call engine_session_build_chunk_pools to pre-allocate lock-free chunk pools.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 7: Call engine_session_build_chunk_pools to pre-allocate
+  // lock-free chunk pools.
   if (!engine_session_build_chunk_pools(core, config, capture_chunk_size,
                                         playback_chunk_size)) {
     dsp_session_stop_and_free(
@@ -478,8 +494,9 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
     return NULL;
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 8: Call engine_session_spawn_worker_threads to spawn worker threads in parallel.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 8: Call engine_session_spawn_worker_threads to spawn worker
+  // threads in parallel.
   if (!engine_session_spawn_worker_threads(core, config, capture_chunk_size,
                                            playback_chunk_size, pipeline_rate,
                                            err)) {

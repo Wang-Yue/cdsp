@@ -514,7 +514,8 @@ static void pipewire_capture_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ * @return Pointer to the created capture_backend_t instance, or NULL on
+ * failure.
  */
 static capture_backend_t* pipewire_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
@@ -736,8 +737,8 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
  * @param err Pointer to a backend_error_t struct to report errors.
  * @return true if successful, false otherwise.
  */
-static bool pipewire_playback_write(void* ctx,
-                                const audio_chunk_t* chunk, backend_error_t* err) {
+static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
+                                    backend_error_t* err) {
   pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return false;
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
@@ -886,8 +887,7 @@ static bool pipewire_playback_get_pending_rate_change(void* ctx,
  * @param err Pointer to a backend_error_t struct to report errors.
  * @return true if successful, false otherwise.
  */
-static bool pipewire_playback_prefill_silence(void* ctx,
-                                              size_t frames,
+static bool pipewire_playback_prefill_silence(void* ctx, size_t frames,
                                               backend_error_t* err) {
   pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   (void)err;
@@ -916,8 +916,7 @@ static bool pipewire_playback_get_is_paused(void* ctx) {
  * @param ctx Pointer to the PipeWire playback instance.
  * @param paused true to pause, false to resume.
  */
-static void pipewire_playback_set_is_paused(void* ctx,
-                                            bool paused) {
+static void pipewire_playback_set_is_paused(void* ctx, bool paused) {
   pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
@@ -963,7 +962,8 @@ static void pipewire_playback_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ * @return Pointer to the created playback_backend_t instance, or NULL on
+ * failure.
  */
 static playback_backend_t* pipewire_playback_create(
     const playback_device_config_t* config, int sample_rate, int chunk_size,

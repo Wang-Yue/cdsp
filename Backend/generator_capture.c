@@ -61,10 +61,6 @@ static uint64_t get_time_ns(void) { return cdsp_time_now_ns(); }
  */
 static double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
-
-
-
-
 /**
  * @brief Open the generator capture device.
  *
@@ -223,8 +219,7 @@ static bool generator_capture_pitch_control_supported(void* ctx) {
  * @param ctx Pointer to the generator capture instance.
  * @param multiplier The pitch multiplier.
  */
-static void generator_capture_set_pitch(void* ctx,
-                                        double multiplier) {
+static void generator_capture_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
 }
@@ -265,8 +260,7 @@ static void generator_capture_destroy(void* ctx) {
  * @param ctx Pointer to the generator capture instance.
  * @param paused true to pause, false to resume.
  */
-static void generator_capture_set_is_paused(void* ctx,
-                                            bool paused) {
+static void generator_capture_set_is_paused(void* ctx, bool paused) {
   generator_capture_t* capture = (generator_capture_t*)ctx;
   if (capture) {
     capture->is_paused = paused;
@@ -282,7 +276,8 @@ static void generator_capture_set_is_paused(void* ctx,
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ * @return Pointer to the created capture_backend_t instance, or NULL on
+ * failure.
  */
 static capture_backend_t* generator_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,

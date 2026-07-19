@@ -224,8 +224,8 @@ static void* delay_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void delay_filter_process(void* instance,
-                                 mutable_waveform_t waveform, size_t count) {
+static void delay_filter_process(void* instance, mutable_waveform_t waveform,
+                                 size_t count) {
   delay_filter_t* filter = (delay_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   // Apply integer delay using the circular buffer.
@@ -284,8 +284,7 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
   return 0.0;
 }
 
-static void delay_filter_transfer_state(void* dest_ptr,
-                                        const void* src_ptr) {
+static void delay_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   delay_filter_t* dest = (delay_filter_t*)dest_ptr;
   const delay_filter_t* src = (const delay_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;

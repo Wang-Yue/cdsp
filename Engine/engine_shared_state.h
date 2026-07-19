@@ -21,8 +21,8 @@
  * Read uses acquire ordering; write uses release ordering. When the state
  * transitions to `PROCESSING_STATE_INACTIVE`, it serves as the signal that the
  * engine should stop.
- * - `stop_reason`: Protected by `stop_reason_mutex` against concurrent read/write
- * data races (isolated from hot-path processing loops).
+ * - `stop_reason`: Protected by `stop_reason_mutex` against concurrent
+ * read/write data races (isolated from hot-path processing loops).
  * - `stop_once`: CAS-guarded "first caller wins" stop flag, ensuring stop logic
  * is executed only once.
  *
@@ -237,7 +237,8 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
                                    processing_state_t new_state);
 
 /**
- * @brief Sets the timestamp of the last successfully captured audio chunk in nanoseconds.
+ * @brief Sets the timestamp of the last successfully captured audio chunk in
+ * nanoseconds.
  *
  * This timestamp is updated by the capture thread loop every time it reads a
  * chunk of audio from the capture backend. It is read by the main thread in
@@ -250,7 +251,8 @@ void engine_shared_state_set_last_capture_time(engine_shared_state_t* state,
                                                uint64_t ns);
 
 /**
- * @brief Gets the timestamp of the last successfully captured audio chunk in nanoseconds.
+ * @brief Gets the timestamp of the last successfully captured audio chunk in
+ * nanoseconds.
  *
  * Used by the main thread to perform external watchdog stall checks, preventing
  * hangs when the capture backend read call blocks indefinitely.

@@ -178,9 +178,10 @@ static bool dsp_engine_set_config_json(void* ctx, const char* json_str,
                                        audio_backend_error_t* out_err) {
   if (!ctx) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 1: Set config_in_progress to true. Status queries check this atomic flag
-  // to return STARTING immediately without blocking on the state_mutex.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 1: Set config_in_progress to true. Status queries check this
+  // atomic flag to return STARTING immediately without blocking on the
+  // state_mutex.
   atomic_store(&impl->config.in_progress, true);
   pthread_mutex_lock(&impl->state_mutex);
   bool res = dsp_engine_set_config_locked(impl, json_str, out_err);
@@ -193,8 +194,8 @@ static void dsp_engine_stop(void* ctx) {
   if (!ctx) return;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-  // Step 3: Controller teardown stops backend devices, joins terminated threads,
-  // and cleans up session resources under the controller lock.
+  // Step 3: Controller teardown stops backend devices, joins terminated
+  // threads, and cleans up session resources under the controller lock.
   pthread_mutex_lock(&impl->state_mutex);
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
@@ -277,9 +278,9 @@ static bool dsp_engine_get_status(void* ctx, state_update_t* out_status) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   // Lock-free status query optimization:
   // Since configuration reloads hold state_mutex for a relatively long duration
-  // (while rebuilding the DSP pipeline), checking the atomic in_progress flag first
-  // allows status queries (e.g., from HTTP/WebSocket servers) to return STARTING
-  // instantly without blocking the caller on the mutex.
+  // (while rebuilding the DSP pipeline), checking the atomic in_progress flag
+  // first allows status queries (e.g., from HTTP/WebSocket servers) to return
+  // STARTING instantly without blocking the caller on the mutex.
   if (atomic_load(&impl->config.in_progress)) {
     *out_status = (state_update_t){.state = PROCESSING_STATE_STARTING,
                                    .stop_reason = {.type = STOP_REASON_NONE}};

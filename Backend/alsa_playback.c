@@ -520,11 +520,11 @@ static size_t alsa_playback_get_buffer_level(void* ctx) {
  * @brief Check if there is a pending sample rate change on the ALSA device.
  *
  * @param ctx Pointer to the ALSA playback instance.
- * @param[out] out_rate Pointer to store the new sample rate if a change is pending.
+ * @param[out] out_rate Pointer to store the new sample rate if a change is
+ * pending.
  * @return true if a rate change was detected, false otherwise.
  */
-static bool alsa_playback_get_pending_rate_change(void* ctx,
-                                                  double* out_rate) {
+static bool alsa_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   (void)ctx;
   (void)out_rate;
   return false;
@@ -677,13 +677,12 @@ static void alsa_playback_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Opaque processing parameters pointer.
  * @param[out] err Pointer to store error details if creation fails.
- * @return A pointer to the created playback_backend_t interface wrapper, or NULL on error.
+ * @return A pointer to the created playback_backend_t interface wrapper, or
+ * NULL on error.
  */
-static playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         bool full_duplex,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
+static playback_backend_t* alsa_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)full_duplex;
   (void)err;
   alsa_playback_t* playback =

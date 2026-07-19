@@ -1862,7 +1862,8 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   cdsp_engine_poll(engine);
   ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
 
-  // 2. Wait up to 2000ms for playback to finish draining and transition to INACTIVE
+  // 2. Wait up to 2000ms for playback to finish draining and transition to
+  // INACTIVE
   bool inactive = false;
   for (int i = 0; i < 200; i++) {
     cdsp_sleep_ms(10);
@@ -1922,7 +1923,8 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   // The configuration is syntactically valid and threads spawn successfully
   ASSERT_TRUE(success);
 
-  // Wait for the capture thread to start, fail, and transition engine state to INACTIVE
+  // Wait for the capture thread to start, fail, and transition engine state to
+  // INACTIVE
   bool inactive = false;
   for (int i = 0; i < 100; i++) {
     cdsp_sleep_ms(10);
@@ -2193,7 +2195,8 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   }
   ASSERT_TRUE(paused);
 
-  // 2. Wait while input file reaches loud non-silent audio frames and auto-resumes to RUNNING
+  // 2. Wait while input file reaches loud non-silent audio frames and
+  // auto-resumes to RUNNING
   bool resumed = false;
   for (int i = 0; i < 150; i++) {
     cdsp_sleep_ms(10);

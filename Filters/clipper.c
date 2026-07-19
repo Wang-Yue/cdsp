@@ -102,8 +102,8 @@ static void* clipper_filter_create(const char* name,
  * @param waveform The waveform data to process.
  * @param count The number of samples to process.
  */
-static void clipper_filter_process(void* instance,
-                                   mutable_waveform_t waveform, size_t count) {
+static void clipper_filter_process(void* instance, mutable_waveform_t waveform,
+                                   size_t count) {
   clipper_filter_t* filter = (clipper_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->soft_clip) {
@@ -141,9 +141,8 @@ static void clipper_filter_process(void* instance,
   }
 }
 
-const filter_vtable_t g_clipper_vtable = {
-    .validate = clipper_config_validate,
-    .create = clipper_filter_create,
-    .process = clipper_filter_process,
-    .transfer_state = NULL,
-    .free = clipper_filter_free};
+const filter_vtable_t g_clipper_vtable = {.validate = clipper_config_validate,
+                                          .create = clipper_filter_create,
+                                          .process = clipper_filter_process,
+                                          .transfer_state = NULL,
+                                          .free = clipper_filter_free};

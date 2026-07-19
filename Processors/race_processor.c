@@ -315,8 +315,7 @@ static void race_processor_process(void* impl, audio_chunk_t* chunk) {
  * @param dest The destination RACE processor instance.
  * @param src The source RACE processor instance.
  */
-static void race_processor_transfer_state(void* dest_ptr,
-                                          const void* src_ptr) {
+static void race_processor_transfer_state(void* dest_ptr, const void* src_ptr) {
   race_processor_t* dest = (race_processor_t*)dest_ptr;
   const race_processor_t* src = (const race_processor_t*)src_ptr;
   if (!dest || !src || dest == src) return;

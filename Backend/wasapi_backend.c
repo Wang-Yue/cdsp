@@ -689,8 +689,8 @@ error_cleanup:
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return true if successful, false otherwise.
  */
-static bool wasapi_capture_read(void* ctx, size_t frames,
-                                audio_chunk_t* chunk, backend_error_t* err) {
+static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
+                                backend_error_t* err) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
@@ -936,11 +936,9 @@ static void wasapi_capture_destroy(void* ctx) {
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return A pointer to the created capture_backend_t, or NULL on failure.
  */
-static capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         bool full_duplex,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
+static capture_backend_t* wasapi_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)full_duplex;
   (void)params;
   (void)err;
@@ -1475,8 +1473,8 @@ error_cleanup:
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return true if successful, false otherwise.
  */
-static bool wasapi_playback_write(void* ctx,
-                                const audio_chunk_t* chunk, backend_error_t* err) {
+static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
+                                  backend_error_t* err) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
   if (atomic_load_explicit(&playback->paused, memory_order_acquire))

@@ -30,7 +30,8 @@ static const logger_t g_logger = {"dsp.backend"};
 #include "file_backend.h"
 #include "generator_capture.h"
 
-static const capture_backend_vtable_t* get_capture_vtable(audio_backend_type_t type) {
+static const capture_backend_vtable_t* get_capture_vtable(
+    audio_backend_type_t type) {
   switch (type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -62,7 +63,8 @@ static const capture_backend_vtable_t* get_capture_vtable(audio_backend_type_t t
   }
 }
 
-static const playback_backend_vtable_t* get_playback_vtable(audio_backend_type_t type) {
+static const playback_backend_vtable_t* get_playback_vtable(
+    audio_backend_type_t type) {
   switch (type) {
 #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
@@ -112,7 +114,8 @@ capture_backend_t* create_capture_backend(const capture_device_config_t* config,
                          "Unsupported capture backend type");
     return NULL;
   }
-  return vtable->create(config, sample_rate, chunk_size, full_duplex, params, err);
+  return vtable->create(config, sample_rate, chunk_size, full_duplex, params,
+                        err);
 }
 
 playback_backend_t* create_playback_backend(
@@ -133,7 +136,8 @@ playback_backend_t* create_playback_backend(
                          "Unsupported playback backend type");
     return NULL;
   }
-  return vtable->create(config, sample_rate, chunk_size, full_duplex, params, err);
+  return vtable->create(config, sample_rate, chunk_size, full_duplex, params,
+                        err);
 }
 
 /// Open the capture device

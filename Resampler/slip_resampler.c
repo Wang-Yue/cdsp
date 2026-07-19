@@ -1,4 +1,5 @@
 #include "slip_resampler.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,7 +102,8 @@ static void slip_resampler_get_ratio_range(const slip_resampler_t* impl,
   }
 }
 
-static slip_resampler_t* slip_resampler_create_impl(size_t channels, size_t chunk_size,
+static slip_resampler_t* slip_resampler_create_impl(size_t channels,
+                                                    size_t chunk_size,
                                                     fixed_async_t fixed_mode) {
   slip_resampler_t* impl =
       (slip_resampler_t*)calloc(1, sizeof(slip_resampler_t));

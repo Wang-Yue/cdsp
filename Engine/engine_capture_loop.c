@@ -147,9 +147,10 @@ static bool capture_loop_check_format_change(engine_capture_loop_t* loop) {
 static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
                                         const backend_error_t* err) {
   if (err->type == BACKEND_ERROR_READ_EOF) {
-    // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue Drain)
-    // Step 1: Capture loop reaches EOF, requests stop with STOP_REASON_DONE,
-    // shuts down the captured queue, and exits without setting state to INACTIVE.
+    // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
+    // (Queue Drain) Step 1: Capture loop reaches EOF, requests stop with
+    // STOP_REASON_DONE, shuts down the captured queue, and exits without
+    // setting state to INACTIVE.
     logger_info(&g_logger,
                 "Capture reached End-of-Stream; stopping engine gracefully");
     processing_stop_reason_t reason = {.type = STOP_REASON_DONE};
@@ -161,7 +162,8 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   if (err->type != BACKEND_ERROR_NONE) {
     // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
     // Step 1: Capture thread detects a hardware read error, requests stop with
-    // CAPTURE_ERROR, which immediately transitions state to INACTIVE and wakes all loops.
+    // CAPTURE_ERROR, which immediately transitions state to INACTIVE and wakes
+    // all loops.
     logger_error(&g_logger, "Capture error: %s", err->message);
     processing_stop_reason_t reason = {.type = STOP_REASON_CAPTURE_ERROR};
     snprintf(reason.message, sizeof(reason.message), "%s", err->message);
@@ -198,11 +200,13 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
  */
 static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                              audio_chunk_t* chunk) {
-  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-  // Step 1: Update shared last capture timestamp so the main-thread watchdog check is satisfied.
+  // Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery
+  // Flow Step 1: Update shared last capture timestamp so the main-thread
+  // watchdog check is satisfied.
   engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
 
-  // Step 2: Stall Recovery. If the main-thread watchdog previously marked us STALLED, restore to RUNNING.
+  // Step 2: Stall Recovery. If the main-thread watchdog previously marked us
+  // STALLED, restore to RUNNING.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_STALLED) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
     logger_info(&g_logger, "Capture recovered from stall");
@@ -243,9 +247,9 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   double loudest_peak = processing_parameters_update_capture_levels(
       loop->processing_params, chunk);
 
-  // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
-  // Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state and toggle
-  // capture/playback hardware backends is_paused status accordingly.
+  // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
+  // Flow Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state and
+  // toggle capture/playback hardware backends is_paused status accordingly.
   processing_state_t desired =
       silence_counter_update(loop->silence_counter, loudest_peak);
   processing_state_t current = engine_shared_state_get_state(loop->shared);
@@ -257,13 +261,16 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                   (desired == PROCESSING_STATE_PAUSED));
   }
 
-  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue Drops) & Section 1.7.2 (Rule 5)
-  // Enqueue Captured Chunk:
-  // Push the chunk pointer into the bounded lock-free SPSC queue.
-  // - Physical/Real-time hardware capture: if queue is full, incoming signal is lost anyway.
-  //   Increment drop counter and retain un-enqueued chunk in loop->pending_chunk to avoid
-  //   round-robin pool index wrap-around from overwriting active in-flight queued buffers.
-  // - Non-real-time capture (File/Generator): sleep with nanosleep while waiting for queue space
+  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
+  // Drops) & Section 1.7.2 (Rule 5) Enqueue Captured Chunk: Push the chunk
+  // pointer into the bounded lock-free SPSC queue.
+  // - Physical/Real-time hardware capture: if queue is full, incoming signal is
+  // lost anyway.
+  //   Increment drop counter and retain un-enqueued chunk in
+  //   loop->pending_chunk to avoid round-robin pool index wrap-around from
+  //   overwriting active in-flight queued buffers.
+  // - Non-real-time capture (File/Generator): sleep with nanosleep while
+  // waiting for queue space
   //   so no samples are missed and CPU isn't consumed by spin loops.
   if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
     if (capture_backend_is_realtime(loop->capture)) {
@@ -293,7 +300,8 @@ bool engine_capture_loop_step(engine_capture_loop_t* loop) {
   if (!loop) return true;
   // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
   // Fetch a chunk buffer from the pre-allocated round-robin pool,
-  // or reuse an un-enqueued chunk if the previous enqueue was dropped due to full queue.
+  // or reuse an un-enqueued chunk if the previous enqueue was dropped due to
+  // full queue.
   audio_chunk_t* chunk = loop->pending_chunk;
   if (!chunk) {
     chunk = round_robin_chunk_pool_next(loop->chunk_pool);
@@ -319,8 +327,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
 
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 9: Capture Loop opens the capture device backend asynchronously.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 9: Capture Loop opens the capture device backend asynchronously.
   if (!capture_backend_open(loop->capture, &berr)) {
     logger_error(&g_logger, "Capture thread failed to open capture backend: %s",
                  berr.message);
@@ -336,8 +344,9 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     return;
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization Flow
-  // Step 10: Once capture open succeeds, transition the state_raw state to RUNNING.
+  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
+  // Flow Step 10: Once capture open succeeds, transition the state_raw state to
+  // RUNNING.
   if (engine_shared_state_get_state(loop->shared) ==
       PROCESSING_STATE_STARTING) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
@@ -356,17 +365,19 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
         PROCESSING_STATE_PAUSED) {
       sample_rate_watcher_reset(loop->rate_watcher);
 
-      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume Flow
-      // Step 2: Periodic 0-Frame Ticks are enqueued downstream every 200ms during pause
-      // to wake up processing loop for pending pipeline swaps.
-      // This wakes up the processing loop thread from its blocking dequeue wait,
-      // allowing configuration hot-reloads and parameter updates (e.g. volume/mute)
-      // to execute and apply immediately instead of being delayed indefinitely until
-      // audio signal resumes. Waking up at 5Hz (200ms) consumes negligible CPU.
+      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+      // Resume Flow Step 2: Periodic 0-Frame Ticks are enqueued downstream
+      // every 200ms during pause to wake up processing loop for pending
+      // pipeline swaps. This wakes up the processing loop thread from its
+      // blocking dequeue wait, allowing configuration hot-reloads and parameter
+      // updates (e.g. volume/mute) to execute and apply immediately instead of
+      // being delayed indefinitely until audio signal resumes. Waking up at 5Hz
+      // (200ms) consumes negligible CPU.
       uint64_t now = cdsp_time_now_ns();
-      if (now - loop->last_paused_tick_ns > 200000000ULL) { // 200ms
+      if (now - loop->last_paused_tick_ns > 200000000ULL) {  // 200ms
         loop->last_paused_tick_ns = now;
-        audio_chunk_t* empty_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+        audio_chunk_t* empty_chunk =
+            round_robin_chunk_pool_next(loop->chunk_pool);
         audio_chunk_set_valid_frames(empty_chunk, 0);
         engine_shared_state_enqueue_captured(loop->shared, empty_chunk);
       }
@@ -378,7 +389,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     }
 
     // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
-    // 2. Fetch chunk buffer (or pending_chunk on drop), read backend data, and enqueue to SPSC queue.
+    // 2. Fetch chunk buffer (or pending_chunk on drop), read backend data, and
+    // enqueue to SPSC queue.
     if (engine_capture_loop_step(loop)) {
       break;
     }

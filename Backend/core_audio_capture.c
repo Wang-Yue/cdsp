@@ -33,7 +33,6 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 
-
 struct core_audio_capture {
   char device_name[256];
   int channels;
@@ -537,7 +536,8 @@ cleanup:
 /// Read a chunk of audio from the capture ring buffers into the provided audio
 /// chunk.
 static bool core_audio_capture_read(void* ctx, size_t frames,
-                                    audio_chunk_t* chunk, backend_error_t* err) {
+                                    audio_chunk_t* chunk,
+                                    backend_error_t* err) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return false;
   // Verify that the hardware device is still alive using atomic access.
@@ -581,11 +581,9 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
   return true;
 }
 
-
-
 /// Get any pending sample rate change detected on the capture device.
 static bool core_audio_capture_get_pending_rate_change(void* ctx,
-                                                        double* out_rate) {
+                                                       double* out_rate) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->rate_watcher) return false;
   return rate_change_watcher_get_pending_change(capture->rate_watcher,
@@ -599,8 +597,7 @@ static bool core_audio_capture_pitch_control_supported(void* ctx) {
 }
 
 /// Apply a clock-pitch correction to the capture device.
-static void core_audio_capture_set_pitch(void* ctx,
-                                         double multiplier) {
+static void core_audio_capture_set_pitch(void* ctx, double multiplier) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->pitch_control_active ||
       capture->opened_device_id == 0)
@@ -615,8 +612,7 @@ static void core_audio_capture_set_pitch(void* ctx,
  * @param timeout_ms Timeout in milliseconds.
  * @return true if data is available, false if timed out or error occurred.
  */
-static bool core_audio_capture_wait(void* ctx,
-                                    uint32_t timeout_ms) {
+static bool core_audio_capture_wait(void* ctx, uint32_t timeout_ms) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->semaphore) return false;
   if (capture->stopped) return false;

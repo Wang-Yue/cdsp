@@ -741,7 +741,8 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
     r.swift_sinc.rtf_per_iter = rtf;
     r.swift_sinc.has_rtf_per_iter = true;
   }
-  if (in_rate == out_rate && measure_swift_perf(in_rate, out_rate, 3, &ns, &rtf)) {
+  if (in_rate == out_rate &&
+      measure_swift_perf(in_rate, out_rate, 3, &ns, &rtf)) {
     r.swift_slip.ns_per_out_frame = ns;
     r.swift_slip.has_ns_per_out_frame = true;
     r.swift_slip.rtf_per_iter = rtf;
@@ -857,7 +858,8 @@ static void format_cell(bool has_val, double val, const char* format_str,
 static void print_table(const row_t* grid, size_t grid_count, const char* title,
                         metric_type_t metric, bool higher_is_better,
                         const char* format_str) {
-  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16], h6[16], h7[16];
+  char pair_col[16], h0[16], h1[16], h2[16], h3[16], h4[16], h5[16], h6[16],
+      h7[16];
   pad_to_14("Pair", pair_col);
   pad_to_14("C Sync", h0);
   pad_to_14("C Poly", h1);
@@ -871,7 +873,8 @@ static void print_table(const row_t* grid, size_t grid_count, const char* title,
   const char* direction_str =
       higher_is_better ? "higher is better" : "lower is better";
   printf("=== %s (%s) ===\n", title, direction_str);
-  printf("%s %s %s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5, h6, h7);
+  printf("%s %s %s %s %s %s %s %s %s\n", pair_col, h0, h1, h2, h3, h4, h5, h6,
+         h7);
 
   for (size_t r = 0; r < grid_count; r++) {
     const row_t* row = &grid[r];
@@ -916,7 +919,8 @@ static void print_table(const row_t* grid, size_t grid_count, const char* title,
 
     char label_col[16];
     pad_to_14(row->label, label_col);
-    printf("%s %s %s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5, c6, c7);
+    printf("%s %s %s %s %s %s %s %s %s\n", label_col, c0, c1, c2, c3, c4, c5,
+           c6, c7);
   }
 }
 

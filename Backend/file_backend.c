@@ -713,8 +713,8 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
  * @param err Pointer to a backend_error_t struct to report errors.
  * @return true if successful, false otherwise.
  */
-static bool file_capture_read(void* ctx, size_t frames,
-                             audio_chunk_t* chunk, backend_error_t* err) {
+static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
+                              backend_error_t* err) {
   file_capture_t* capture = (file_capture_t*)ctx;
   if (!capture) return false;
   if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
@@ -869,8 +869,7 @@ static void file_capture_close(void* ctx) {
  * @param out_rate Pointer to double to store the pending sample rate.
  * @return true if a rate change is pending, false otherwise.
  */
-static bool file_capture_get_pending_rate_change(void* ctx,
-                                                 double* out_rate) {
+static bool file_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   (void)ctx;
   (void)out_rate;
   return false;
@@ -952,13 +951,12 @@ static void file_capture_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ * @return Pointer to the created capture_backend_t instance, or NULL on
+ * failure.
  */
-static capture_backend_t* file_capture_create(const capture_device_config_t* config,
-                                       int sample_rate, int chunk_size,
-                                       bool full_duplex,
-                                       processing_parameters_t* params,
-                                       backend_error_t* err) {
+static capture_backend_t* file_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)full_duplex;
   (void)params;
   (void)err;
@@ -1282,8 +1280,7 @@ static size_t file_playback_get_buffer_level(void* ctx) {
  * @param out_rate Pointer to double to store the pending sample rate.
  * @return true if a rate change is pending, false otherwise.
  */
-static bool file_playback_get_pending_rate_change(void* ctx,
-                                                  double* out_rate) {
+static bool file_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   (void)ctx;
   (void)out_rate;
   return false;
@@ -1364,13 +1361,12 @@ static void file_playback_destroy(void* ctx) {
  * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ * @return Pointer to the created playback_backend_t instance, or NULL on
+ * failure.
  */
-static playback_backend_t* file_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         bool full_duplex,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
+static playback_backend_t* file_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
   (void)sample_rate;
   (void)full_duplex;
   (void)params;

@@ -235,8 +235,7 @@ static void* noise_gate_processor_create(const char* name,
  * @param processor Pointer to noise gate processor.
  * @param chunk Audio chunk to process in place.
  */
-static void noise_gate_processor_process(void* impl,
-                                         audio_chunk_t* chunk) {
+static void noise_gate_processor_process(void* impl, audio_chunk_t* chunk) {
   noise_gate_processor_t* processor = (noise_gate_processor_t*)impl;
   if (!processor || !chunk || !processor->scratch) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
@@ -315,8 +314,8 @@ static void noise_gate_processor_process(void* impl,
  * @param dest The destination noise gate processor instance.
  * @param src The source noise gate processor instance.
  */
-static void noise_gate_processor_transfer_state(
-    void* dest_ptr, const void* src_ptr) {
+static void noise_gate_processor_transfer_state(void* dest_ptr,
+                                                const void* src_ptr) {
   noise_gate_processor_t* dest = (noise_gate_processor_t*)dest_ptr;
   const noise_gate_processor_t* src = (const noise_gate_processor_t*)src_ptr;
   if (!dest || !src) return;
