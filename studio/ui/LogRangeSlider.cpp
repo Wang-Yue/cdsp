@@ -18,7 +18,11 @@ void LogRangeSlider::setRange(double minFreq, double maxFreq) {
 }
 
 void LogRangeSlider::setMinMaxBounds(double minBound, double maxBound) {
-    m_minBound = std::max(1.0, minBound);
+    if (m_isLogarithmic) {
+        m_minBound = std::max(0.1, minBound);
+    } else {
+        m_minBound = minBound;
+    }
     m_maxBound = std::max(m_minBound + 1.0, maxBound);
     setRange(m_minFreq, m_maxFreq);
 }

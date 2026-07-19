@@ -381,22 +381,23 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     m_modalModeCheck = new QCheckBox("Apply Constraints", modalBox);
     connect(m_modalModeCheck, &QCheckBox::toggled, [this](bool checked) {
         m_session.modalMode = checked;
-        m_schroederCombo->setEnabled(checked);
-        m_modalMinQCombo->setEnabled(checked);
+        m_modalParamsContainer->setVisible(checked);
     });
     modalLayout->addWidget(m_modalModeCheck);
 
-    auto modalForm = new QFormLayout();
-    m_schroederCombo = new QComboBox(modalBox);
+    m_modalParamsContainer = new QWidget(modalBox);
+    auto modalForm = new QFormLayout(m_modalParamsContainer);
+    modalForm->setContentsMargins(0, 4, 0, 0);
+    m_schroederCombo = new QComboBox(m_modalParamsContainer);
     m_schroederCombo->addItems({"100 Hz", "150 Hz", "200 Hz", "250 Hz", "300 Hz", "400 Hz"});
     m_schroederCombo->setCurrentIndex(2); // 200 Hz
     connect(m_schroederCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         const double freqs[] = {100.0, 150.0, 200.0, 250.0, 300.0, 400.0};
         m_session.schroederHz = freqs[idx];
     });
-    modalForm->addRow("Schroeder Freq:", m_schroederCombo);
+    modalForm->addRow("Schroeder Corner:", m_schroederCombo);
 
-    m_modalMinQCombo = new QComboBox(modalBox);
+    m_modalMinQCombo = new QComboBox(m_modalParamsContainer);
     m_modalMinQCombo->addItems({"1.5", "2.0", "2.5", "3.0", "4.0"});
     m_modalMinQCombo->setCurrentIndex(1); // 2.0
     connect(m_modalMinQCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
@@ -405,10 +406,9 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     });
     modalForm->addRow("Minimum Q Limit:", m_modalMinQCombo);
 
-    m_schroederCombo->setEnabled(false);
-    m_modalMinQCombo->setEnabled(false);
+    m_modalParamsContainer->setVisible(false);
+    modalLayout->addWidget(m_modalParamsContainer);
 
-    modalLayout->addLayout(modalForm);
     layout->addWidget(createSidebarSection("Modal Region", modalBox));
 
     // 4. PEQ Design Section
@@ -452,11 +452,12 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     connect(m_firKindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.firKind = static_cast<FIRKind>(idx);
         m_phaseBlendContainer->setVisible(idx == 2);
+        refreshSessionUi();
     });
     firForm->addRow("Filter Type:", m_firKindCombo);
 
     m_firTapCombo = new QComboBox(firBox);
-    m_firTapCombo->addItems({"2048", "4096", "8192", "16384", "32768"});
+    m_firTapCombo->addItems({"2 048", "4 096", "8 192", "16 384", "32 768"});
     m_firTapCombo->setCurrentIndex(2); // 8192
     connect(m_firTapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         const int taps[] = {2048, 4096, 8192, 16384, 32768};
@@ -508,10 +509,12 @@ QWidget* RoomCorrectionDlg::createSidebar() {
 
 QWidget* RoomCorrectionDlg::createSidebarSection(const QString& title, QWidget* content) {
     auto group = new QGroupBox(title, this);
-    group->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; margin-top: 6px; } QGroupBox::title { "
-                         "subcontrol-origin: margin; left: 0px; }");
+    group->setStyleSheet("QGroupBox { font-weight: bold; font-size: 10px; color: #888; text-transform: uppercase; "
+                         "background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); "
+                         "border-radius: 8px; margin-top: 6px; padding: 10px; } "
+                         "QGroupBox::title { subcontrol-origin: margin; left: 8px; top: 0px; padding: 0 4px; }");
     auto layout = new QVBoxLayout(group);
-    layout->setContentsMargins(0, 12, 0, 4);
+    layout->setContentsMargins(6, 12, 6, 6);
     layout->addWidget(content);
     return group;
 }
@@ -556,6 +559,14 @@ void RoomCorrectionDlg::updateOutputChannels() {
 void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
+    if (m_session.isCapturing) {
+        m_measureMenuBtn->setText("Capturing… ▾");
+        m_measureMenuBtn->setEnabled(false);
+    } else {
+        m_measureMenuBtn->setText("Measure ▾");
+        m_measureMenuBtn->setEnabled(true);
+    }
+
     // Clear chips layout
     QLayoutItem* item;
     while ((item = m_positionsChipsLayout->takeAt(0)) != nullptr) {
@@ -578,11 +589,13 @@ void RoomCorrectionDlg::refreshSessionUi() {
     if (m_session.calibrationPath.empty()) {
         m_calPathLabel->setText("None loaded");
         m_clearCalBtn->setVisible(false);
+        m_exportCalFrdBtn->setVisible(false);
         m_exportCalFrdBtn->setEnabled(false);
     } else {
         QFileInfo fi(QString::fromStdString(m_session.calibrationPath));
         m_calPathLabel->setText(fi.fileName());
         m_clearCalBtn->setVisible(true);
+        m_exportCalFrdBtn->setVisible(true);
         m_exportCalFrdBtn->setEnabled(m_session.measuredFR.has_value());
     }
 
@@ -608,6 +621,15 @@ void RoomCorrectionDlg::refreshSessionUi() {
     m_phasePlotWidget->update();
     m_impulsePlotWidget->update();
     m_groupDelayPlotWidget->update();
+
+    // Button states
+    bool hasBands = m_session.correctionPreset.has_value() && !m_session.correctionPreset->bands.empty();
+    m_generatePeqBtn->setEnabled(!m_session.measuredMagDB.empty());
+    m_addToEqPresetsBtn->setEnabled(hasBands);
+
+    bool canGenerateFIR =
+        (m_session.firKind == FIRKind::MeasurementDriven) ? m_session.measuredFR.has_value() : hasBands;
+    m_addToFirPresetsBtn->setEnabled(canGenerateFIR);
 }
 
 void RoomCorrectionDlg::onGenerateMock(bool append) {
@@ -686,23 +708,6 @@ void RoomCorrectionDlg::onGenerateFIR() {
 }
 
 void RoomCorrectionDlg::onComputeSubwoofer() {
-    auto rec = m_session.computeSubwooferRecommendation();
-    if (rec.has_value()) {
-        QString text = QString("Subwoofer Recommendation:\n\n"
-                               "• Sub Delay Offset: %1 ms (%2 samples)\n"
-                               "• Recommended Crossover: %3 Hz\n"
-                               "• Confidence: %4%\n\n"
-                               "Rationale:\n%5")
-                           .arg(rec->subDelayMs, 0, 'f', 2)
-                           .arg(rec->delaySamples)
-                           .arg(rec->crossoverHz, 0, 'f', 0)
-                           .arg(rec->confidence * 100.0, 0, 'f', 0)
-                           .arg(QString::fromStdString(rec->summary));
-
-        QMessageBox::information(this, "Subwoofer Crossover Assist", text);
-    } else {
-        QMessageBox::warning(
-            this, "Subwoofer Assist",
-            "Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
-    }
+    SubwooferAssistDlg dlg(&m_session, this);
+    dlg.exec();
 }

@@ -172,11 +172,14 @@ void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
         auto nameLbl = new QLabel(QString::fromStdString(entry.name), container);
         nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
 
-        auto pathLbl = new QLabel(QString::fromStdString(entry.path), container);
+        auto pathLbl = new QLabel(container);
         QFont monoFont("monospace", 9);
         monoFont.setStyleHint(QFont::Monospace);
         pathLbl->setFont(monoFont);
         pathLbl->setStyleSheet("color: #8e8e93;");
+        QString fullPath = QString::fromStdString(entry.path);
+        pathLbl->setText(QFontMetrics(monoFont).elidedText(fullPath, Qt::ElideLeft, 440));
+        pathLbl->setToolTip(fullPath);
 
         itemLayout->addWidget(nameLbl);
         itemLayout->addWidget(pathLbl);

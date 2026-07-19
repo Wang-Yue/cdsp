@@ -180,7 +180,10 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    int topOffset = m_timeCombo ? m_timeCombo->parentWidget()->height() + 12 : 40;
+    int topOffset = 45;
+    if (m_timeCombo && m_timeCombo->parentWidget()) {
+        topOffset = m_timeCombo->geometry().bottom() + 10;
+    }
     QRect plotRect = rect().adjusted(0, topOffset, 0, 0);
 
     p.fillRect(plotRect, StyleTheme::cardBg());

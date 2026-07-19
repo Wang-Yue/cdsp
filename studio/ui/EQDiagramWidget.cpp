@@ -144,47 +144,6 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
 
-    // Equal-Loudness Contour Reference Curve Overlay
-    if (m_showLoudnessContour) {
-        double ref = 0.0;
-        double lowBoost = 0.0;
-        double highBoost = 0.0;
-
-        if (m_pipelineStore) {
-            for (const auto& stage : m_pipelineStore->stages) {
-                if (stage.type == StageType::Loudness && stage.isEnabled) {
-                    ref = stage.loudnessReference;
-                    lowBoost = stage.loudnessLowBoost;
-                    highBoost = stage.loudnessHighBoost;
-                    break;
-                }
-            }
-        }
-
-        double volumeDb = 0.0;
-        double A = std::max(0.0, ref - volumeDb);
-        double scaleRange = ref - (-60.0);
-        double factor = (scaleRange > 0.1) ? std::min(1.0, A / scaleRange) : 0.0;
-
-        double bassGain = lowBoost * factor;
-        double trebleGain = highBoost * factor;
-
-        QPainterPath loudnessPath;
-        for (int x = 0; x <= w; x += 2) {
-            double f = xToFreq(x, w);
-            double bassLoss = bassGain * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
-            double trebleLoss = trebleGain * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
-            double db = std::max(-24.0, std::min(24.0, bassLoss + trebleLoss));
-            double y = dbToY(db, h);
-            if (x == 0)
-                loudnessPath.moveTo(x, y);
-            else
-                loudnessPath.lineTo(x, y);
-        }
-        painter.setPen(QPen(QColor(255, 149, 0, 166), 1.5, Qt::DashLine));
-        painter.drawPath(loudnessPath);
-    }
-
     // Reference Target & Measured Frequency Response Curves Overlay
     if (m_overlay.active) {
         // Compute 200 Hz - 5000 Hz median offset (normDB)
@@ -276,9 +235,50 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         QColor c = bandColor(static_cast<int>(i));
         bool isSelected = (static_cast<int>(i) == m_selectedIndex);
         bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
-        c.setAlpha(isSelected ? 220 : (isHovered ? 140 : 70));
-        painter.setPen(QPen(c, isSelected ? 2.2 : (isHovered ? 1.5 : 1.0)));
+        c.setAlpha(isSelected ? 255 : (isHovered ? 140 : 89));
+        painter.setPen(QPen(c, isSelected ? 2.0 : (isHovered ? 1.5 : 1.0)));
         painter.drawPath(path);
+    }
+
+    // Equal-Loudness Contour Reference Curve Overlay (after individual band curves)
+    if (m_showLoudnessContour) {
+        double ref = 0.0;
+        double lowBoost = 0.0;
+        double highBoost = 0.0;
+
+        if (m_pipelineStore) {
+            for (const auto& stage : m_pipelineStore->stages) {
+                if (stage.type == StageType::Loudness && stage.isEnabled) {
+                    ref = stage.loudnessReference;
+                    lowBoost = stage.loudnessLowBoost;
+                    highBoost = stage.loudnessHighBoost;
+                    break;
+                }
+            }
+        }
+
+        double volumeDb = m_audioSettings ? static_cast<double>(m_audioSettings->volume) : 0.0;
+        double A = std::max(0.0, ref - volumeDb);
+        double scaleRange = ref - (-60.0);
+        double factor = (scaleRange > 0.1) ? std::min(1.0, A / scaleRange) : 0.0;
+
+        double bassGain = lowBoost * factor;
+        double trebleGain = highBoost * factor;
+
+        QPainterPath loudnessPath;
+        for (int x = 0; x <= w; x += 2) {
+            double f = xToFreq(x, w);
+            double bassLoss = bassGain * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
+            double trebleLoss = trebleGain * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
+            double db = std::max(-30.0, std::min(30.0, bassLoss + trebleLoss));
+            double y = dbToY(db, h);
+            if (x == 0)
+                loudnessPath.moveTo(x, y);
+            else
+                loudnessPath.lineTo(x, y);
+        }
+        painter.setPen(QPen(QColor(255, 149, 0, 166), 1.5, Qt::DashLine));
+        painter.drawPath(loudnessPath);
     }
 
     // Combined Response Curve Line Stroke (no fill)
@@ -293,7 +293,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             totalPath.lineTo(x, y);
         }
     }
-    painter.setPen(QPen(QColor("#007aff"), 2.5));
+    painter.setPen(QPen(StyleTheme::accent(), 2.5));
     painter.drawPath(totalPath);
 
     // Draggable Band Handles & Highlight Rings

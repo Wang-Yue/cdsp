@@ -107,18 +107,34 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     }
     case ColorPalette::Classic:
     default: {
+        float alpha = norm < 0.2f ? norm / 0.2f : 1.0f;
+        float r = 0.0f, g = 0.0f, b = 0.0f;
         if (norm < 0.35f) {
-            return QColor(52, 199, 89, static_cast<int>(255 * norm / 0.35f));
+            r = 0.0f;
+            g = 1.0f;
+            b = 0.0f;
         } else if (norm < 0.55f) {
             float t = (norm - 0.35f) / 0.2f;
-            return QColor(static_cast<int>(255 * t), 204, 0);
+            r = t;
+            g = 1.0f;
+            b = 0.0f;
         } else if (norm < 0.75f) {
             float t = (norm - 0.55f) / 0.2f;
-            return QColor(255, static_cast<int>(149 + 56 * (1.0f - t)), 0);
+            r = 1.0f;
+            g = 1.0f - t * 0.5f;
+            b = 0.0f;
+        } else if (norm < 0.95f) {
+            float t = (norm - 0.75f) / 0.2f;
+            r = 1.0f;
+            g = 0.5f - t * 0.5f;
+            b = 0.0f;
         } else {
-            float t = (norm - 0.75f) / 0.25f;
-            return QColor(255, static_cast<int>(59 * (1.0f - t)), 50);
+            r = 1.0f;
+            g = 0.0f;
+            b = 0.0f;
         }
+        return QColor(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255),
+                      static_cast<int>(alpha * 255));
     }
     }
 

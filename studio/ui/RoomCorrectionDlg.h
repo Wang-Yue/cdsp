@@ -8,6 +8,7 @@
 #include "ui/ImpulseResponsePlotWidget.h"
 #include "ui/MeasurementPositionRowWidget.h"
 #include "ui/PhasePlotWidget.h"
+#include "ui/SubwooferAssistDlg.h"
 #include "ui/WaterfallPlotWidget.h"
 
 #include <QCheckBox>
@@ -88,6 +89,7 @@ private:
 
     // Modal Region
     QCheckBox* m_modalModeCheck;
+    QWidget* m_modalParamsContainer;
     QComboBox* m_schroederCombo;
     QComboBox* m_modalMinQCombo;
 

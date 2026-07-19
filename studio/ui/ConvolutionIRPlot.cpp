@@ -51,7 +51,7 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     QPainterPath bgPath;
     bgPath.addRoundedRect(rect(), 6, 6);
     p.setClipPath(bgPath);
-    p.fillRect(rect(), StyleTheme::cardBg());
+    p.fillRect(rect(), palette().base().color());
 
     int plotTop = 4;
     if (!m_title.empty()) {
@@ -98,6 +98,6 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
             waveformPath.lineTo(x, y);
     }
 
-    p.setPen(QPen(StyleTheme::accent(), 1.0));
+    p.setPen(QPen(QColor(0, 122, 255), 1.0));
     p.drawPath(waveformPath);
 }

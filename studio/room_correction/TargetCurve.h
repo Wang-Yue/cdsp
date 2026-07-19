@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -68,6 +71,60 @@ public:
             }
         }
         return breakpoints.back().gainDB;
+    }
+
+    static std::optional<TargetCurve> parse(const std::string& text) {
+        std::vector<TargetBreakpoint> bps;
+        std::stringstream ss(text);
+        std::string rawLine;
+        while (std::getline(ss, rawLine)) {
+            size_t first = rawLine.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos)
+                continue;
+            std::string trimmed = rawLine.substr(first);
+            if (trimmed.empty() || trimmed[0] == '*' || trimmed[0] == '#' || trimmed[0] == ';')
+                continue;
+
+            std::stringstream lineStream(trimmed);
+            double f = 0.0, g = 0.0;
+            if (lineStream >> f >> g) {
+                bps.push_back(TargetBreakpoint(f, g));
+            }
+        }
+        if (bps.empty())
+            return std::nullopt;
+        return TargetCurve(bps);
+    }
+
+    static std::optional<TargetCurve> load(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open())
+            return std::nullopt;
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        return parse(buffer.str());
+    }
+
+    bool writeText(const std::string& path, const std::string& comment = "") const {
+        std::ofstream file(path);
+        if (!file.is_open())
+            return false;
+        file << "* Target Curve Data\n";
+        file << "* Exported by DSPMonitor\n";
+        if (!comment.empty()) {
+            std::stringstream ss(comment);
+            std::string line;
+            while (std::getline(ss, line)) {
+                file << "* " << line << "\n";
+            }
+        }
+        file << "* Frequency [Hz]   Gain [dB]\n";
+        char lineBuf[128];
+        for (const auto& bp : breakpoints) {
+            std::snprintf(lineBuf, sizeof(lineBuf), "%.6f %.6f\n", bp.freqHz, bp.gainDB);
+            file << lineBuf;
+        }
+        return file.good();
     }
 
     static TargetCurve flat() { return TargetCurve({TargetBreakpoint(20.0, 0.0), TargetBreakpoint(20000.0, 0.0)}); }

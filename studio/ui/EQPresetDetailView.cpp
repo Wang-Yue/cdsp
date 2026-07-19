@@ -51,7 +51,7 @@ void EQPresetDetailView::setupUi() {
 
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
-    m_nameEdit->setMaximumWidth(220);
+    m_nameEdit->setMaximumWidth(300);
     m_nameEdit->setPlaceholderText("Preset Name");
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
         if (m_isRefreshing)
@@ -64,44 +64,6 @@ void EQPresetDetailView::setupUi() {
         }
     });
     headerLayout->addWidget(m_nameEdit);
-
-    auto autoEqBtn = new QPushButton("🔍 AutoEQ", this);
-    connect(autoEqBtn, &QPushButton::clicked, [this]() {
-        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        if (dlg.exec() == QDialog::Accepted && m_pipeline) {
-            for (const auto& p : m_pipeline->eqPresets) {
-                if (p.id == m_preset.id) {
-                    m_preset = p;
-                    break;
-                }
-            }
-            refreshUi();
-        }
-    });
-    headerLayout->addWidget(autoEqBtn);
-
-    auto oratoryBtn = new QPushButton("🎧 Oratory1990", this);
-    connect(oratoryBtn, &QPushButton::clicked, [this]() {
-        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        if (dlg.exec() == QDialog::Accepted && m_pipeline) {
-            for (const auto& p : m_pipeline->eqPresets) {
-                if (p.id == m_preset.id) {
-                    m_preset = p;
-                    break;
-                }
-            }
-            refreshUi();
-        }
-    });
-    headerLayout->addWidget(oratoryBtn);
-
-    auto expBtn = new QPushButton("Export", this);
-    connect(expBtn, &QPushButton::clicked, this, &EQPresetDetailView::onExportCSV);
-    headerLayout->addWidget(expBtn);
-
-    auto impBtn = new QPushButton("Import", this);
-    connect(impBtn, &QPushButton::clicked, this, &EQPresetDetailView::onImportCSV);
-    headerLayout->addWidget(impBtn);
 
     headerLayout->addStretch();
 
@@ -195,6 +157,9 @@ void EQPresetDetailView::setupUi() {
 
     m_diagramWidget = new EQDiagramWidget(diagramModeWidget);
     m_diagramWidget->setPipelineStore(m_pipeline);
+    if (m_dspController) {
+        m_diagramWidget->setAudioSettings(m_dspController->settings());
+    }
     m_diagramWidget->onPresetChanged = [this]() {
         applyConfig();
         refreshUi();
@@ -904,5 +869,8 @@ void EQPresetDetailView::onCopyCSV() {
 void EQPresetDetailView::applyConfig() {
     if (m_pipeline) {
         m_pipeline->updateEQPreset(m_preset);
+    }
+    if (m_dspController) {
+        m_dspController->applyConfig();
     }
 }

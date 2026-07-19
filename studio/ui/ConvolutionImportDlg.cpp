@@ -72,7 +72,7 @@ void ConvolutionImportDlg::setupUi() {
 
     m_nameEdit = new QLineEdit(detailsGroup);
     m_nameEdit->setPlaceholderText("e.g., My Custom IR");
-    connect(m_nameEdit, &QLineEdit::textChanged, this, &ConvolutionImportDlg::updateItemsList);
+    connect(m_nameEdit, &QLineEdit::textChanged, this, &ConvolutionImportDlg::updateImportButtonState);
     form->addRow("Preset Name", m_nameEdit);
 
     m_kindEdit = new QLineEdit(detailsGroup);
@@ -269,10 +269,7 @@ void ConvolutionImportDlg::updateItemsList() {
             rateCombo->setFixedWidth(140);
             connect(rateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, rateCombo]() {
                 m_items[i].sampleRate = rateCombo->currentData().toInt();
-                m_warningLabel->setVisible(hasDuplicateRates());
-                bool disabled =
-                    m_items.empty() || m_nameEdit->text().trimmed().isEmpty() || hasDuplicateRates() || m_isImporting;
-                m_importBtn->setEnabled(!disabled);
+                updateImportButtonState();
             });
             grid->addWidget(rateCombo, 0, 1);
 
@@ -314,8 +311,11 @@ void ConvolutionImportDlg::updateItemsList() {
         }
     }
 
-    m_warningLabel->setVisible(hasDuplicateRates());
+    updateImportButtonState();
+}
 
+void ConvolutionImportDlg::updateImportButtonState() {
+    m_warningLabel->setVisible(hasDuplicateRates());
     bool disabled = m_items.empty() || m_nameEdit->text().trimmed().isEmpty() || hasDuplicateRates() || m_isImporting;
     m_importBtn->setEnabled(!disabled);
 }

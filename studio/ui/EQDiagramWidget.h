@@ -1,6 +1,7 @@
 #ifndef EQ_DIAGRAM_WIDGET_H
 #define EQ_DIAGRAM_WIDGET_H
 
+#include "models/AudioSettings.h"
 #include "models/EQPreset.h"
 #include "models/PipelineStore.h"
 #include "models/SpectrumEngine.h"
@@ -30,6 +31,10 @@ public:
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
+    void setAudioSettings(std::shared_ptr<AudioSettings> settings) {
+        m_audioSettings = settings;
+        update();
+    }
     void setReferenceOverlay(const EQReferenceOverlayData& overlay) {
         m_overlay = overlay;
         update();
@@ -80,6 +85,7 @@ private:
     bool m_showLoudnessContour = false;
     std::shared_ptr<SpectrumEngine> m_spectrum;
     std::shared_ptr<PipelineStore> m_pipelineStore;
+    std::shared_ptr<AudioSettings> m_audioSettings;
     EQReferenceOverlayData m_overlay;
 
     double fMin = 20.0;

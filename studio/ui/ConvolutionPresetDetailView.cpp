@@ -106,12 +106,15 @@ void ConvolutionPresetDetailView::setupUi() {
     irLayout->setContentsMargins(12, 16, 12, 12);
     irLayout->setSpacing(8);
 
-    auto rateBox = new QHBoxLayout();
-    auto prevLbl = new QLabel("Preview rate", irGroup);
+    m_rateBoxWidget = new QWidget(irGroup);
+    auto rateBox = new QHBoxLayout(m_rateBoxWidget);
+    rateBox->setContentsMargins(0, 0, 0, 0);
+
+    auto prevLbl = new QLabel("Preview rate", m_rateBoxWidget);
     prevLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::textSecondary().name()));
     rateBox->addWidget(prevLbl);
 
-    m_ratePreviewCombo = new QComboBox(irGroup);
+    m_ratePreviewCombo = new QComboBox(m_rateBoxWidget);
     m_ratePreviewCombo->setMaximumWidth(160);
     connect(m_ratePreviewCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
         if (m_ratePreviewCombo->currentIndex() < 0)
@@ -134,7 +137,7 @@ void ConvolutionPresetDetailView::setupUi() {
     rateBox->addWidget(m_ratePreviewCombo);
     rateBox->addStretch();
 
-    irLayout->addLayout(rateBox);
+    irLayout->addWidget(m_rateBoxWidget);
 
     m_irPlot = new ConvolutionIRPlot(irGroup);
     m_irPlot->setFixedHeight(180);
@@ -179,7 +182,7 @@ void ConvolutionPresetDetailView::refreshUi() {
     m_ratesLabel->setText(rates.empty() ? "—" : rateStrs.join(" / "));
 
     m_ratePreviewCombo->clear();
-    m_ratePreviewCombo->setVisible(rates.size() > 1);
+    m_rateBoxWidget->setVisible(rates.size() > 1);
 
     for (int r : rates) {
         m_ratePreviewCombo->addItem(QString("%1 Hz").arg(r), r);
@@ -247,14 +250,17 @@ void ConvolutionPresetDetailView::refreshUi() {
             rateLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
             fileRow->addWidget(rateLbl);
 
-            auto pathLbl = new QLabel(p, m_filesContainer);
+            auto pathLbl = new QLabel(m_filesContainer);
             pathLbl->setFont(QFont("monospace", 11));
+            pathLbl->setText(QFontMetrics(pathLbl->font()).elidedText(p, Qt::ElideMiddle, 280));
             pathLbl->setToolTip(p);
             fileRow->addWidget(pathLbl, 1);
 
             auto openBtn = new QPushButton("📁", m_filesContainer);
             openBtn->setFlat(true);
-            openBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+            openBtn->setToolTip("Reveal in Finder");
+            openBtn->setStyleSheet(QString("QPushButton { border: none; background: transparent; color: %1; }")
+                                       .arg(StyleTheme::textSecondary().name()));
             connect(openBtn, &QPushButton::clicked, [p]() {
 #ifdef Q_OS_MAC
                 QProcess::execute("/usr/bin/open", QStringList() << "-R" << p);

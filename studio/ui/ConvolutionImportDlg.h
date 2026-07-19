@@ -47,6 +47,7 @@ private:
 
     void setupUi();
     bool hasDuplicateRates() const;
+    void updateImportButtonState();
 };
 
 #endif // CONVOLUTION_IMPORT_DLG_H

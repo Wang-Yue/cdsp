@@ -186,7 +186,10 @@ void MeasurementSession::generateMockMeasurement(bool append) {
 void MeasurementSession::recordPosition(bool append, const std::string& inputDeviceName,
                                         const std::string& outputDeviceName, int inputChannel, int outputChannel,
                                         std::function<void(bool success, const std::string& message)> callback) {
-    status = "Recording hardware measurement sweep…";
+    if (isCapturing)
+        return;
+    isCapturing = true;
+    status = "Capturing — playing sweep…";
     emit sessionUpdated();
 
     if (!append)
@@ -195,28 +198,37 @@ void MeasurementSession::recordPosition(bool append, const std::string& inputDev
     SweepCaptureResult cap = SweepRecorder::capture(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, inputDeviceName,
                                                     outputDeviceName, inputChannel, outputChannel, -12.0);
 
+    isCapturing = false;
+
     if (cap.captured.empty()) {
-        status = "Measurement failed: no microphone samples captured.";
+        status = "Capture failed: no microphone samples captured.";
         emit sessionUpdated();
         if (callback)
             callback(false, "Microphone capture buffer empty.");
         return;
     }
 
-    ImpulseResponse rawIR(cap.captured);
-    ImpulseResponse windowed = rawIR.windowed(sampleRate / 200, sampleRate / 5, 0.1);
+    ImpulseResponse ir = SweepDeconvolver::deconvolve(cap.captured, sweepF1, sweepF2, sweepDurationSeconds, sampleRate);
+    ImpulseResponse windowed = ir.windowed(sampleRate / 200, sampleRate / 5, 0.1);
     FrequencyResponse fr = FrequencyResponse::from(windowed);
 
-    std::string name = "Measured Pos " + std::to_string(positions.size() + 1);
-    positions.push_back(MeasurementPosition(name, fr, windowed));
+    std::string positionName = "Position " + std::to_string(positions.size() + 1);
+    positions.push_back(MeasurementPosition(positionName, fr, windowed));
 
     recomputeAverage();
     if (!append) {
         correctionPreset = EQPreset("Room Correction", 0.0, {});
     }
 
-    status = "Hardware measurement completed (" + std::to_string(positions.size()) + " positions). Peak: " +
-             std::to_string(static_cast<int>(20.0 * std::log10(std::max(1e-6, cap.peakAbsolute)))) + " dB";
+    double latencyMs = static_cast<double>(cap.roundTripSamples) / static_cast<double>(sampleRate) * 1000.0;
+    std::string peakDB = (cap.peakAbsolute > 0.0)
+                             ? QString::number(20.0 * std::log10(cap.peakAbsolute), 'f', 1).toStdString() + " dBFS"
+                             : "—";
+    std::string warning =
+        (cap.peakAbsolute > 0.95) ? " · clipping risk!" : (cap.peakAbsolute < 0.05 ? " · low signal" : "");
+
+    status = "Captured " + positionName + " — peak " + peakDB + ", round-trip " +
+             QString::number(latencyMs, 'f', 0).toStdString() + " ms" + warning + ".";
     emit sessionUpdated();
 
     if (callback)

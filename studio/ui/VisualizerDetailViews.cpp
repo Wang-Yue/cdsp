@@ -2,9 +2,11 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QVBoxLayout>
 
 // ==================== AnalogVUDetailView ====================
@@ -286,7 +288,7 @@ void SpectrumDetailView::setupUi() {
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
         updateChannelCombo();
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_sourceCombo);
 
@@ -297,7 +299,7 @@ void SpectrumDetailView::setupUi() {
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_channelCombo);
 
@@ -307,7 +309,7 @@ void SpectrumDetailView::setupUi() {
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_binsSpin);
 
@@ -317,7 +319,7 @@ void SpectrumDetailView::setupUi() {
     m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->windowFunction));
     connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->windowFunction = static_cast<FFTWindowFunction>(idx);
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_windowCombo);
 
@@ -327,7 +329,7 @@ void SpectrumDetailView::setupUi() {
     m_smoothingCombo->setCurrentIndex(static_cast<int>(m_engine->smoothing));
     connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->smoothing = static_cast<OctaveSmoothing>(idx);
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_smoothingCombo);
 
@@ -337,7 +339,7 @@ void SpectrumDetailView::setupUi() {
     connect(m_decayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         static const float decayRates[] = {0.95f, 0.90f, 0.80f, 0.00f};
         m_engine->peakHoldDecayRate = decayRates[idx];
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout->addWidget(m_decayCombo);
 
@@ -355,7 +357,7 @@ void SpectrumDetailView::setupUi() {
         m_engine->minFreq = minF;
         m_engine->maxFreq = maxF;
         m_rangeLbl->setText(QString("Freq Range: %1 - %2 Hz").arg(static_cast<int>(minF)).arg(static_cast<int>(maxF)));
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout2->addWidget(m_rangeSlider, 1);
 
@@ -373,7 +375,7 @@ void SpectrumDetailView::setupUi() {
         m_engine->maxDB = maxDb;
         m_dbRangeLbl->setText(
             QString("dB Range: %1 - %2 dB").arg(static_cast<int>(minDb)).arg(static_cast<int>(maxDb)));
-        m_spectrumView->update();
+        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     });
     rowLayout2->addWidget(m_dbRangeSlider, 1);
 
@@ -429,6 +431,22 @@ void SpectrogramDetailView::setupUi() {
     auto headerBox = new QHBoxLayout();
     headerBox->addWidget(new QLabel("🎛 Spectrogram Configuration", panelGroup));
     headerBox->addStretch();
+
+    auto exportBtn = new QPushButton("Export Image…", panelGroup);
+    connect(exportBtn, &QPushButton::clicked, [this]() {
+        QString fileName = QFileDialog::getSaveFileName(this, "Export Spectrogram Image", "spectrogram.png",
+                                                        "PNG Images (*.png);;JPEG Images (*.jpg)");
+        if (!fileName.isEmpty()) {
+            QPixmap pixmap = m_spectrogramView->grab();
+            if (pixmap.save(fileName)) {
+                QMessageBox::information(this, "Export Successful", "Spectrogram image saved to: " + fileName);
+            } else {
+                QMessageBox::warning(this, "Export Failed", "Could not save image to specified path.");
+            }
+        }
+    });
+    headerBox->addWidget(exportBtn);
+
     auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
     connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombo]() {
         m_engine->resetToDefaults();
@@ -437,7 +455,7 @@ void SpectrogramDetailView::setupUi() {
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
         m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
         m_paletteCombo->setCurrentIndex(static_cast<int>(m_engine->colorPalette));
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -451,7 +469,7 @@ void SpectrogramDetailView::setupUi() {
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
         updateChannelCombo();
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     rowLayout->addWidget(m_sourceCombo);
 
@@ -462,7 +480,7 @@ void SpectrogramDetailView::setupUi() {
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     rowLayout->addWidget(m_channelCombo);
 
@@ -473,7 +491,7 @@ void SpectrogramDetailView::setupUi() {
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     rowLayout->addWidget(m_binsSpin);
 
@@ -483,7 +501,7 @@ void SpectrogramDetailView::setupUi() {
     m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
     connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->show3D = (idx == 1);
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     rowLayout->addWidget(m_modeCombo);
 
@@ -493,7 +511,7 @@ void SpectrogramDetailView::setupUi() {
     m_paletteCombo->setCurrentIndex(static_cast<int>(m_engine->colorPalette));
     connect(m_paletteCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->colorPalette = static_cast<ColorPalette>(idx);
-        m_spectrogramView->update();
+        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
     });
     rowLayout->addWidget(m_paletteCombo);
 
@@ -557,7 +575,8 @@ void VectorScopeDetailView::setupUi() {
         m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
         m_decayCombo->setCurrentIndex(1);
         m_autoScaleCheck->setChecked(m_engine->autoScale);
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
@@ -571,7 +590,8 @@ void VectorScopeDetailView::setupUi() {
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombos](int idx) {
         m_engine->isCapture = (idx == 0);
         updateChannelCombos();
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     rowLayout->addWidget(m_sourceCombo);
 
@@ -579,14 +599,16 @@ void VectorScopeDetailView::setupUi() {
     rowLayout->addWidget(m_channelLCombo);
     connect(m_channelLCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->channelL = idx;
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
 
     rowLayout->addWidget(new QLabel("Channel R:", panelGroup));
     rowLayout->addWidget(m_channelRCombo);
     connect(m_channelRCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->channelR = idx;
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     updateChannelCombos();
 
@@ -597,7 +619,8 @@ void VectorScopeDetailView::setupUi() {
     m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
     connect(m_framesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nFrames = static_cast<size_t>(val);
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     rowLayout->addWidget(m_framesSpin);
 
@@ -607,7 +630,8 @@ void VectorScopeDetailView::setupUi() {
     m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
     connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->showParticles = (idx == 1);
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     rowLayout->addWidget(m_modeCombo);
 
@@ -618,7 +642,8 @@ void VectorScopeDetailView::setupUi() {
     connect(m_decayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         static const float decayRates[] = {0.70f, 0.85f, 0.95f, 0.99f};
         m_engine->traceDecayRate = decayRates[idx];
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     rowLayout->addWidget(m_decayCombo);
 
@@ -626,7 +651,8 @@ void VectorScopeDetailView::setupUi() {
     m_autoScaleCheck->setChecked(m_engine->autoScale);
     connect(m_autoScaleCheck, &QCheckBox::toggled, [this](bool chk) {
         m_engine->autoScale = chk;
-        m_vectorView->update();
+        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                                 m_engine->channelR, m_engine->traceDecayRate);
     });
     rowLayout->addWidget(m_autoScaleCheck);
 

@@ -37,6 +37,7 @@ private:
     QLabel* m_latencyKeyLabel;
     QLabel* m_latencyValueLabel;
 
+    QWidget* m_rateBoxWidget;
     QComboBox* m_ratePreviewCombo;
     ConvolutionIRPlot* m_irPlot;
     QLabel* m_noIrLabel;

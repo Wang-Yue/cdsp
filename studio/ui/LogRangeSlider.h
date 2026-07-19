@@ -19,6 +19,9 @@ public:
     void setMinMaxBounds(double minBound, double maxBound);
     void setLogarithmic(bool isLog) {
         m_isLogarithmic = isLog;
+        if (m_isLogarithmic && m_minBound <= 0) {
+            m_minBound = 1.0;
+        }
         update();
     }
 
