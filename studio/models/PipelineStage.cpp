@@ -71,6 +71,73 @@ std::string stageTypeToString(StageType type) {
     return "Gain";
 }
 
+StageType stringToStageType(const std::string& str) {
+    if (str == "Balance" || str == "balance")
+        return StageType::Balance;
+    if (str == "Width" || str == "width")
+        return StageType::Width;
+    if (str == "M/S Proc" || str == "msProc" || str == "msproc")
+        return StageType::MSProc;
+    if (str == "Phase Invert" || str == "phaseInvert" || str == "phaseinvert")
+        return StageType::PhaseInvert;
+    if (str == "Crossfeed" || str == "crossfeed")
+        return StageType::Crossfeed;
+    if (str == "Split Width" || str == "splitWidth" || str == "splitwidth")
+        return StageType::SplitWidth;
+    if (str == "EQ" || str == "eq")
+        return StageType::EQ;
+    if (str == "Graphic EQ" || str == "graphicEQ" || str == "graphiceq")
+        return StageType::GraphicEQ;
+    if (str == "Convolution" || str == "convolution")
+        return StageType::Convolution;
+    if (str == "Loudness" || str == "loudness")
+        return StageType::Loudness;
+    if (str == "Emphasis" || str == "emphasis")
+        return StageType::Emphasis;
+    if (str == "DC Protection" || str == "dcProtection" || str == "dcprotection")
+        return StageType::DCProtection;
+    if (str == "Gain" || str == "gain")
+        return StageType::Gain;
+    if (str == "Delay" || str == "delay")
+        return StageType::Delay;
+    if (str == "Lookahead Limiter" || str == "lookaheadLimiter" || str == "lookaheadlimiter")
+        return StageType::LookaheadLimiter;
+    if (str == "Clipper" || str == "clipper")
+        return StageType::Clipper;
+    if (str == "Volume" || str == "volume")
+        return StageType::Volume;
+    if (str == "Matrix Mixer" || str == "mixer" || str == "matrixMixer" || str == "matrixmixer")
+        return StageType::MatrixMixer;
+    if (str == "Compressor" || str == "compressor")
+        return StageType::Compressor;
+    if (str == "Noise Gate" || str == "noiseGate" || str == "noisegate")
+        return StageType::NoiseGate;
+    if (str == "RACE" || str == "race")
+        return StageType::RACE;
+    if (str == "Dither" || str == "dither")
+        return StageType::Dither;
+    if (str == "Differential Equation" || str == "diffEq" || str == "diffeq" || str == "differentialEquation")
+        return StageType::DiffEq;
+    if (str == "Biquad Combo" || str == "biquadCombo" || str == "biquadcombo")
+        return StageType::BiquadCombo;
+
+    QString cleanInput = QString::fromStdString(str).remove(" ").remove("/").remove("-").remove("_").toLower();
+    for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
+                         StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
+                         StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
+                         StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
+                         StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
+                         StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
+                         StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
+                         StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
+        QString targetStr =
+            QString::fromStdString(stageTypeToString(st)).remove(" ").remove("/").remove("-").remove("_").toLower();
+        if (targetStr == cleanInput)
+            return st;
+    }
+    return StageType::Gain;
+}
+
 StageCategory stageTypeToCategory(StageType type) {
     switch (type) {
     case StageType::EQ:
@@ -267,6 +334,46 @@ PipelineStage::PipelineStage(StageType type, const std::string& name, bool isEna
         m1.dest = 1;
         m1.sources.push_back(MixerSource{1, 0.0, false});
         mixerMappings = {m0, m1};
+    }
+}
+
+void PipelineStage::setGraphicEQBandCount(int count) {
+    graphicEQBandCount = count;
+    if (graphicEQGains.size() != static_cast<size_t>(graphicEQBandCount)) {
+        graphicEQGains.resize(graphicEQBandCount, 0.0);
+    }
+}
+
+double PipelineStage::getGraphicEQGain(int index) const {
+    if (index < 0 || index >= static_cast<int>(graphicEQGains.size())) {
+        return 0.0;
+    }
+    return graphicEQGains[index];
+}
+
+void PipelineStage::setGraphicEQGain(int index, double gain) {
+    if (index >= 0 && index < static_cast<int>(graphicEQGains.size())) {
+        graphicEQGains[index] = gain;
+    }
+}
+
+double PipelineStage::getMixerSourceGain(int mappingIndex, int sourceIndex) const {
+    if (mappingIndex < 0 || mappingIndex >= static_cast<int>(mixerMappings.size())) {
+        return 0.0;
+    }
+    const auto& sources = mixerMappings[mappingIndex].sources;
+    if (sourceIndex < 0 || sourceIndex >= static_cast<int>(sources.size())) {
+        return 0.0;
+    }
+    return sources[sourceIndex].gain.value_or(0.0);
+}
+
+void PipelineStage::setMixerSourceGain(int mappingIndex, int sourceIndex, double gain) {
+    if (mappingIndex >= 0 && mappingIndex < static_cast<int>(mixerMappings.size())) {
+        auto& sources = mixerMappings[mappingIndex].sources;
+        if (sourceIndex >= 0 && sourceIndex < static_cast<int>(sources.size())) {
+            sources[sourceIndex].gain = gain;
+        }
     }
 }
 
@@ -499,22 +606,7 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     else if (json.contains("type"))
         typeStr = json["type"].toString().toStdString();
     if (!typeStr.empty()) {
-        QString cleanInput = QString::fromStdString(typeStr).remove(" ").remove("/").remove("-").remove("_").toLower();
-        for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
-                             StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
-                             StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
-                             StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
-                             StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
-                             StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
-                             StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
-                             StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
-            QString targetStr =
-                QString::fromStdString(stageTypeToString(st)).remove(" ").remove("/").remove("-").remove("_").toLower();
-            if (stageTypeToString(st) == typeStr || targetStr == cleanInput) {
-                s.type = st;
-                break;
-            }
-        }
+        s.type = stringToStageType(typeStr);
     }
     if (json.contains("isEnabled"))
         s.isEnabled = json["isEnabled"].toBool();
@@ -770,6 +862,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         }
     }
     std::sort(chList.begin(), chList.end());
+    chList.erase(std::unique(chList.begin(), chList.end()), chList.end());
 
     std::vector<int> monitorList;
     for (int c : stage.monitorChannels) {
@@ -778,6 +871,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         }
     }
     std::sort(monitorList.begin(), monitorList.end());
+    monitorList.erase(std::unique(monitorList.begin(), monitorList.end()), monitorList.end());
     if (monitorList.empty()) {
         monitorList = chList;
     }

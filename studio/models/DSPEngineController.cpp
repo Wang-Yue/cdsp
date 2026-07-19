@@ -61,14 +61,10 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     }
 
     if (m_settings) {
-        if (m_settings->queuelimit > 0)
-            config.devices.queuelimit = m_settings->queuelimit;
-        if (m_settings->stopOnRateChange)
-            config.devices.stopOnRateChange = m_settings->stopOnRateChange;
-        if (m_settings->rateMeasureInterval > 0)
-            config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;
-        if (m_settings->multithreaded)
-            config.devices.multithreaded = m_settings->multithreaded;
+        config.devices.queuelimit = m_settings->queuelimit;
+        config.devices.stopOnRateChange = m_settings->stopOnRateChange;
+        config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;
+        config.devices.multithreaded = m_settings->multithreaded;
         if (m_settings->multithreaded && m_settings->workerThreads > 0)
             config.devices.workerThreads = m_settings->workerThreads;
         if (m_settings->silenceTimeout > 0) {
@@ -110,10 +106,10 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
         config.devices.capture = m_devices->captureConfig.toCaptureDeviceConfig();
         config.devices.playback = m_devices->playbackConfig.toPlaybackDeviceConfig();
 
-        if (m_devices->exclusiveMode) {
-            if (config.devices.playback.backend == AudioBackendType::CoreAudio) {
-                config.devices.playback.coreAudio.exclusive = true;
-            } else if (config.devices.playback.backend == AudioBackendType::WASAPI) {
+        if (config.devices.playback.backend == AudioBackendType::CoreAudio) {
+            config.devices.playback.coreAudio.exclusive = m_devices->exclusiveMode;
+        } else if (config.devices.playback.backend == AudioBackendType::WASAPI) {
+            if (m_devices->exclusiveMode) {
                 config.devices.playback.wasapi.exclusive = true;
             }
         }
@@ -124,8 +120,7 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
             pb.backend = AudioBackendType::CoreAudio;
             pb.coreAudio.channels = m_devices->playbackConfig.channels;
             pb.coreAudio.device = m_devices->playbackConfig.deviceName();
-            if (m_devices->exclusiveMode)
-                pb.coreAudio.exclusive = true;
+            pb.coreAudio.exclusive = m_devices->exclusiveMode;
 #elif defined(_WIN32) || defined(Q_OS_WIN)
             pb.backend = AudioBackendType::WASAPI;
             pb.wasapi.channels = m_devices->playbackConfig.channels;

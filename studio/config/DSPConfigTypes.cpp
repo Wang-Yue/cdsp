@@ -63,6 +63,113 @@ ProcessingState uint8ToProcessingState(uint8_t rawByte) {
     }
 }
 
+uint8_t processingStateToUint8(ProcessingState state) {
+    switch (state) {
+    case ProcessingState::Inactive:
+        return 0;
+    case ProcessingState::Starting:
+        return 1;
+    case ProcessingState::Running:
+        return 2;
+    case ProcessingState::Paused:
+        return 3;
+    case ProcessingState::Stalled:
+        return 4;
+    }
+    return 0;
+}
+
+std::string logLevelToStdString(LogLevel level) {
+    switch (level) {
+    case LogLevel::Off:
+        return "Off";
+    case LogLevel::Error:
+        return "Error";
+    case LogLevel::Warn:
+        return "Warn";
+    case LogLevel::Info:
+        return "Info";
+    case LogLevel::Debug:
+        return "Debug";
+    case LogLevel::Trace:
+        return "Trace";
+    }
+    return "Info";
+}
+
+LogLevel stdStringToLogLevel(const std::string& str) {
+    if (str == "Off" || str == "off")
+        return LogLevel::Off;
+    if (str == "Error" || str == "error")
+        return LogLevel::Error;
+    if (str == "Warn" || str == "warn")
+        return LogLevel::Warn;
+    if (str == "Debug" || str == "debug")
+        return LogLevel::Debug;
+    if (str == "Trace" || str == "trace")
+        return LogLevel::Trace;
+    return LogLevel::Info;
+}
+
+uint8_t logLevelToRawByte(LogLevel level) {
+    switch (level) {
+    case LogLevel::Off:
+        return 0;
+    case LogLevel::Error:
+        return 1;
+    case LogLevel::Warn:
+        return 2;
+    case LogLevel::Info:
+        return 3;
+    case LogLevel::Debug:
+        return 4;
+    case LogLevel::Trace:
+        return 5;
+    }
+    return 3;
+}
+
+LogLevel rawByteToLogLevel(uint8_t rawByte) {
+    switch (rawByte) {
+    case 0:
+        return LogLevel::Off;
+    case 1:
+        return LogLevel::Error;
+    case 2:
+        return LogLevel::Warn;
+    case 4:
+        return LogLevel::Debug;
+    case 5:
+        return LogLevel::Trace;
+    default:
+        return LogLevel::Info;
+    }
+}
+
+std::string sampleFormatToString(SampleFormat fmt) {
+    switch (fmt) {
+    case SampleFormat::S16:
+        return "S16";
+    case SampleFormat::S24:
+        return "S24";
+    case SampleFormat::S32:
+        return "S32";
+    case SampleFormat::F32:
+        return "F32";
+    }
+    return "S16";
+}
+
+SampleFormat stringToSampleFormat(const std::string& str) {
+    if (str == "S24")
+        return SampleFormat::S24;
+    if (str == "S32")
+        return SampleFormat::S32;
+    if (str == "F32")
+        return SampleFormat::F32;
+    return SampleFormat::S16;
+}
+
 std::string audioBackendTypeToString(AudioBackendType type) {
     switch (type) {
     case AudioBackendType::CoreAudio:
@@ -1458,8 +1565,12 @@ LoudnessParameters LoudnessParameters::fromJson(const QJsonObject& json) {
         p.lowBoost = json["low_boost"].toDouble();
     if (json.contains("attenuate_mid"))
         p.attenuateMid = json["attenuate_mid"].toBool();
-    if (json.contains("fader"))
-        p.fader = stringToFader(json["fader"].toString().toStdString());
+    if (json.contains("fader")) {
+        if (json["fader"].isDouble())
+            p.fader = static_cast<Fader>(json["fader"].toInt());
+        else
+            p.fader = stringToFader(json["fader"].toString().toStdString());
+    }
     return p;
 }
 
@@ -1776,8 +1887,12 @@ VolumeParameters VolumeParameters::fromJson(const QJsonObject& json) {
         p.rampTime = json["ramp_time_ms"].toDouble();
     if (json.contains("limit"))
         p.limit = json["limit"].toDouble();
-    if (json.contains("fader"))
-        p.fader = stringToFader(json["fader"].toString().toStdString());
+    if (json.contains("fader")) {
+        if (json["fader"].isDouble())
+            p.fader = static_cast<Fader>(json["fader"].toInt());
+        else
+            p.fader = stringToFader(json["fader"].toString().toStdString());
+    }
     return p;
 }
 
@@ -1806,49 +1921,9 @@ FilterConfig FilterConfig::fromJson(const QJsonObject& json) {
     case FilterType::Loudness:
         f.loudnessParams = LoudnessParameters::fromJson(pObj);
         break;
-    case FilterType::Biquad: {
-        BiquadParameters b;
-        if (pObj.contains("type"))
-            b.type = stringToBiquadType(pObj["type"].toString().toStdString());
-        if (pObj.contains("freq"))
-            b.freq = pObj["freq"].toDouble();
-        if (pObj.contains("gain"))
-            b.gain = pObj["gain"].toDouble();
-        if (pObj.contains("q"))
-            b.q = pObj["q"].toDouble();
-        if (pObj.contains("bandwidth"))
-            b.bandwidth = pObj["bandwidth"].toDouble();
-        if (pObj.contains("slope"))
-            b.slope = pObj["slope"].toDouble();
-        if (pObj.contains("b0"))
-            b.b0 = pObj["b0"].toDouble();
-        if (pObj.contains("b1"))
-            b.b1 = pObj["b1"].toDouble();
-        if (pObj.contains("b2"))
-            b.b2 = pObj["b2"].toDouble();
-        if (pObj.contains("a1"))
-            b.a1 = pObj["a1"].toDouble();
-        if (pObj.contains("a2"))
-            b.a2 = pObj["a2"].toDouble();
-        if (pObj.contains("freq_z"))
-            b.freqNotch = pObj["freq_z"].toDouble();
-        if (pObj.contains("freq_p"))
-            b.freqPole = pObj["freq_p"].toDouble();
-        if (pObj.contains("q_p"))
-            b.qP = pObj["q_p"].toDouble();
-        if (pObj.contains("normalize_at_dc"))
-            b.normalizeAtDc = pObj["normalize_at_dc"].toBool();
-        if (pObj.contains("freq_act"))
-            b.freqAct = pObj["freq_act"].toDouble();
-        if (pObj.contains("q_act"))
-            b.qAct = pObj["q_act"].toDouble();
-        if (pObj.contains("freq_target"))
-            b.freqTarget = pObj["freq_target"].toDouble();
-        if (pObj.contains("q_target"))
-            b.qTarget = pObj["q_target"].toDouble();
-        f.biquadParams = b;
+    case FilterType::Biquad:
+        f.biquadParams = BiquadParameters::fromJson(pObj);
         break;
-    }
     case FilterType::Conv:
         f.convParams = ConvParameters::fromJson(pObj);
         break;
@@ -1888,49 +1963,9 @@ QJsonObject FilterConfig::toJson() const {
     case FilterType::Loudness:
         pObj = loudnessParams.toJson();
         break;
-    case FilterType::Biquad: {
-        QJsonObject bObj;
-        if (biquadParams.type.has_value())
-            bObj["type"] = QString::fromStdString(biquadTypeToString(biquadParams.type.value()));
-        if (biquadParams.freq.has_value())
-            bObj["freq"] = biquadParams.freq.value();
-        if (biquadParams.gain.has_value())
-            bObj["gain"] = biquadParams.gain.value();
-        if (biquadParams.q.has_value())
-            bObj["q"] = biquadParams.q.value();
-        if (biquadParams.bandwidth.has_value())
-            bObj["bandwidth"] = biquadParams.bandwidth.value();
-        if (biquadParams.slope.has_value())
-            bObj["slope"] = biquadParams.slope.value();
-        if (biquadParams.b0.has_value())
-            bObj["b0"] = biquadParams.b0.value();
-        if (biquadParams.b1.has_value())
-            bObj["b1"] = biquadParams.b1.value();
-        if (biquadParams.b2.has_value())
-            bObj["b2"] = biquadParams.b2.value();
-        if (biquadParams.a1.has_value())
-            bObj["a1"] = biquadParams.a1.value();
-        if (biquadParams.a2.has_value())
-            bObj["a2"] = biquadParams.a2.value();
-        if (biquadParams.freqNotch.has_value())
-            bObj["freq_z"] = biquadParams.freqNotch.value();
-        if (biquadParams.freqPole.has_value())
-            bObj["freq_p"] = biquadParams.freqPole.value();
-        if (biquadParams.qP.has_value())
-            bObj["q_p"] = biquadParams.qP.value();
-        if (biquadParams.normalizeAtDc.has_value())
-            bObj["normalize_at_dc"] = biquadParams.normalizeAtDc.value();
-        if (biquadParams.freqAct.has_value())
-            bObj["freq_act"] = biquadParams.freqAct.value();
-        if (biquadParams.qAct.has_value())
-            bObj["q_act"] = biquadParams.qAct.value();
-        if (biquadParams.freqTarget.has_value())
-            bObj["freq_target"] = biquadParams.freqTarget.value();
-        if (biquadParams.qTarget.has_value())
-            bObj["q_target"] = biquadParams.qTarget.value();
-        pObj = bObj;
+    case FilterType::Biquad:
+        pObj = biquadParams.toJson();
         break;
-    }
     case FilterType::Conv:
         pObj = convParams.toJson();
         break;

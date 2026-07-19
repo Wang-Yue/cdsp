@@ -1,6 +1,7 @@
 #ifndef BIQUAD_COEFFICIENTS_H
 #define BIQUAD_COEFFICIENTS_H
 
+#include <QJsonObject>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -50,6 +51,19 @@ struct BiquadParameters {
     std::optional<double> qAct;
     std::optional<double> freqTarget;
     std::optional<double> qTarget;
+
+    QJsonObject toJson() const;
+    static BiquadParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const BiquadParameters& other) const {
+        return type == other.type && freq == other.freq && gain == other.gain && q == other.q &&
+               bandwidth == other.bandwidth && slope == other.slope && a1 == other.a1 && a2 == other.a2 &&
+               b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && freqNotch == other.freqNotch &&
+               freqPole == other.freqPole && qP == other.qP && normalizeAtDc == other.normalizeAtDc &&
+               freqAct == other.freqAct && qAct == other.qAct && freqTarget == other.freqTarget &&
+               qTarget == other.qTarget;
+    }
+    bool operator!=(const BiquadParameters& other) const { return !(*this == other); }
 };
 
 struct BiquadCoefficients {
@@ -69,6 +83,11 @@ struct BiquadCoefficients {
 
     double gainDB(double freqHz, int sampleRate) const;
     double phaseRad(double freqHz, int sampleRate) const;
+
+    bool operator==(const BiquadCoefficients& other) const {
+        return b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && a1 == other.a1 && a2 == other.a2;
+    }
+    bool operator!=(const BiquadCoefficients& other) const { return !(*this == other); }
 };
 
 std::string biquadTypeToString(BiquadType type);

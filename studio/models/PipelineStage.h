@@ -45,6 +45,7 @@ enum class StageType {
 
 std::string stageCategoryToString(StageCategory cat);
 std::string stageTypeToString(StageType type);
+StageType stringToStageType(const std::string& str);
 StageCategory stageTypeToCategory(StageType type);
 std::string stageTypeToIcon(StageType type);
 
@@ -71,7 +72,7 @@ public:
     QUuid id;
     StageType type;
     std::string name;
-    bool isEnabled = true;
+    bool isEnabled = false;
 
     // Dynamic channel mapping
     std::vector<int> channels = {0, 1};
@@ -176,11 +177,17 @@ public:
     double graphicEQFreqMin = 20.0;
     double graphicEQFreqMax = 20000.0;
     int graphicEQBandCount = 31;
-    std::vector<double> graphicEQGains;
+    std::vector<double> graphicEQGains = std::vector<double>(31, 0.0);
 
     PipelineStage();
     explicit PipelineStage(StageType type, const std::string& name = "", bool isEnabled = false,
                            const std::vector<int>& channels = {0, 1});
+
+    void setGraphicEQBandCount(int count);
+    double getGraphicEQGain(int index) const;
+    void setGraphicEQGain(int index, double gain);
+    double getMixerSourceGain(int mappingIndex, int sourceIndex) const;
+    void setMixerSourceGain(int mappingIndex, int sourceIndex, double gain);
 
     int balanceLeftPercent() const;
     int balanceRightPercent() const;

@@ -42,7 +42,12 @@ bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage)
     memset(&err, 0, sizeof(err));
     bool success = cdsp_set_config_json(m_engine, configJson.c_str(), &err);
     if (!success) {
-        errorMessage = err.message;
+        std::string msg = err.message;
+        if (err.type == CDSP_BACKEND_ERR_CONFIG_PARSE) {
+            errorMessage = "Config parse error: " + msg;
+        } else {
+            errorMessage = "Command send error: " + msg;
+        }
     }
     return success;
 }
@@ -255,6 +260,9 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
     if (!success || !desc) {
         if (desc) {
             cdsp_free_device_capabilities(desc);
+        }
+        if (devErr.type != CDSP_DEVICE_ERROR_NONE) {
+            std::cerr << "[CDSPEngine] Device capabilities error: " << devErr.message << std::endl;
         }
         return std::nullopt;
     }

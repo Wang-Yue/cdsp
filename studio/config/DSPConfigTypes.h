@@ -18,8 +18,34 @@ Fader stringToFader(const std::string& str);
 
 enum class ProcessingState { Inactive, Starting, Running, Paused, Stalled };
 
+#include "models/LogManager.h"
+
 std::string processingStateToString(ProcessingState state);
 ProcessingState uint8ToProcessingState(uint8_t rawByte);
+uint8_t processingStateToUint8(ProcessingState state);
+
+std::string logLevelToStdString(LogLevel level);
+LogLevel stdStringToLogLevel(const std::string& str);
+uint8_t logLevelToRawByte(LogLevel level);
+LogLevel rawByteToLogLevel(uint8_t rawByte);
+
+enum class SampleFormat { S16, S24, S32, F32 };
+std::string sampleFormatToString(SampleFormat fmt);
+SampleFormat stringToSampleFormat(const std::string& str);
+
+enum class AudioBackendErrorType {
+    ConfigParse,
+    CommandSend,
+    InvalidSamplerate,
+    SpectrumCompute,
+    EngineNotRunning,
+    BufferEmpty
+};
+
+struct AudioBackendError {
+    AudioBackendErrorType type = AudioBackendErrorType::EngineNotRunning;
+    std::string message;
+};
 
 enum class StopReasonType {
     None,
@@ -35,15 +61,26 @@ struct ProcessingStopReason {
     StopReasonType type = StopReasonType::None;
     std::string message;
     int formatChangeRate = 0;
+
+    bool operator==(const ProcessingStopReason& other) const {
+        return type == other.type && message == other.message && formatChangeRate == other.formatChangeRate;
+    }
+    bool operator!=(const ProcessingStopReason& other) const { return !(*this == other); }
 };
 
 struct StateUpdate {
     ProcessingState state = ProcessingState::Inactive;
     ProcessingStopReason stopReason;
+
+    bool operator==(const StateUpdate& other) const { return state == other.state && stopReason == other.stopReason; }
+    bool operator!=(const StateUpdate& other) const { return !(*this == other); }
 };
 
 struct AudioDevice {
     std::string name;
+
+    bool operator==(const AudioDevice& other) const { return name == other.name; }
+    bool operator!=(const AudioDevice& other) const { return !(*this == other); }
 };
 
 struct VuLevels {
@@ -51,12 +88,25 @@ struct VuLevels {
     std::vector<float> playback_peak;
     std::vector<float> capture_rms;
     std::vector<float> capture_peak;
+
+    bool operator==(const VuLevels& other) const {
+        return playback_rms == other.playback_rms && playback_peak == other.playback_peak &&
+               capture_rms == other.capture_rms && capture_peak == other.capture_peak;
+    }
+    bool operator!=(const VuLevels& other) const { return !(*this == other); }
 };
 
 struct SpectrumData {
     std::vector<float> frequencies;
     std::vector<float> magnitudes;
+
+    bool operator==(const SpectrumData& other) const {
+        return frequencies == other.frequencies && magnitudes == other.magnitudes;
+    }
+    bool operator!=(const SpectrumData& other) const { return !(*this == other); }
 };
+
+using Spectrum = SpectrumData;
 
 struct AudioSamplesData {
     std::vector<std::vector<float>> channels;
@@ -70,7 +120,12 @@ struct AudioSamplesData {
         static const std::vector<float> empty;
         return channels.size() > 1 ? channels[1] : left();
     }
+
+    bool operator==(const AudioSamplesData& other) const { return channels == other.channels; }
+    bool operator!=(const AudioSamplesData& other) const { return !(*this == other); }
 };
+
+using AudioSamples = AudioSamplesData;
 
 struct SamplerateCapability {
     int samplerate = 0;
@@ -157,6 +212,9 @@ enum class ConfigErrorType { ParseError, ValidationError, InvalidFilter, Invalid
 struct ConfigError {
     ConfigErrorType type = ConfigErrorType::ValidationError;
     std::string message;
+
+    bool operator==(const ConfigError& other) const { return type == other.type && message == other.message; }
+    bool operator!=(const ConfigError& other) const { return !(*this == other); }
 };
 
 struct GeneratorConfig {
@@ -165,6 +223,11 @@ struct GeneratorConfig {
     double level = -6.0;
     QJsonObject toJson() const;
     static GeneratorConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const GeneratorConfig& other) const {
+        return type == other.type && freq == other.freq && level == other.level;
+    }
+    bool operator!=(const GeneratorConfig& other) const { return !(*this == other); }
 };
 
 struct CoreAudioCaptureConfig {
@@ -176,6 +239,12 @@ struct CoreAudioCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static CoreAudioCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const CoreAudioCaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && bypassDoP == o.bypassDoP &&
+               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const CoreAudioCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct CoreAudioPlaybackConfig {
@@ -188,6 +257,12 @@ struct CoreAudioPlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const CoreAudioPlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
+               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const CoreAudioPlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct WASAPICaptureConfig {
@@ -202,6 +277,13 @@ struct WASAPICaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static WASAPICaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const WASAPICaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
+               loopback == o.loopback && polling == o.polling && bypassDoP == o.bypassDoP &&
+               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const WASAPICaptureConfig& o) const { return !(*this == o); }
 };
 
 struct WASAPIPlaybackConfig {
@@ -215,6 +297,13 @@ struct WASAPIPlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static WASAPIPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const WASAPIPlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
+               polling == o.polling && outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter &&
+               channelLabels == o.channelLabels;
+    }
+    bool operator!=(const WASAPIPlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct ASIOCaptureConfig {
@@ -226,6 +315,12 @@ struct ASIOCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ASIOCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ASIOCaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && bypassDoP == o.bypassDoP &&
+               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const ASIOCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct ASIOPlaybackConfig {
@@ -237,6 +332,12 @@ struct ASIOPlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ASIOPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ASIOPlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
+               dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const ASIOPlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct ALSACaptureConfig {
@@ -249,6 +350,13 @@ struct ALSACaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ALSACaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ALSACaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format &&
+               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
+               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const ALSACaptureConfig& o) const { return !(*this == o); }
 };
 
 struct ALSAPlaybackConfig {
@@ -261,6 +369,13 @@ struct ALSAPlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ALSAPlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format &&
+               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
+               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct PulseAudioCaptureConfig {
@@ -273,6 +388,13 @@ struct PulseAudioCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static PulseAudioCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const PulseAudioCaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format &&
+               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
+               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const PulseAudioCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct PulseAudioPlaybackConfig {
@@ -285,6 +407,13 @@ struct PulseAudioPlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static PulseAudioPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const PulseAudioPlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format &&
+               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
+               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const PulseAudioPlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct WavFileCaptureConfig {
@@ -293,6 +422,11 @@ struct WavFileCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static WavFileCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const WavFileCaptureConfig& o) const {
+        return filename == o.filename && extraSamples == o.extraSamples && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const WavFileCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct RawFileCaptureConfig {
@@ -305,6 +439,12 @@ struct RawFileCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static RawFileCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const RawFileCaptureConfig& o) const {
+        return channels == o.channels && filename == o.filename && format == o.format && skipBytes == o.skipBytes &&
+               readBytes == o.readBytes && extraSamples == o.extraSamples && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const RawFileCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct RawFilePlaybackConfig {
@@ -316,6 +456,12 @@ struct RawFilePlaybackConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static RawFilePlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const RawFilePlaybackConfig& o) const {
+        return channels == o.channels && filename == o.filename && format == o.format && wavHeader == o.wavHeader &&
+               useRf64 == o.useRf64 && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const RawFilePlaybackConfig& o) const { return !(*this == o); }
 };
 
 struct GeneratorCaptureConfig {
@@ -324,6 +470,11 @@ struct GeneratorCaptureConfig {
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static GeneratorCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const GeneratorCaptureConfig& o) const {
+        return channels == o.channels && signal == o.signal && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const GeneratorCaptureConfig& o) const { return !(*this == o); }
 };
 
 struct CaptureDeviceConfig {
@@ -339,6 +490,13 @@ struct CaptureDeviceConfig {
 
     QJsonObject toJson() const;
     static CaptureDeviceConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const CaptureDeviceConfig& o) const {
+        return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
+               alsa == o.alsa && pulseAudio == o.pulseAudio && wavFile == o.wavFile && rawFile == o.rawFile &&
+               generator == o.generator;
+    }
+    bool operator!=(const CaptureDeviceConfig& o) const { return !(*this == o); }
 };
 
 struct PlaybackDeviceConfig {
@@ -352,6 +510,12 @@ struct PlaybackDeviceConfig {
 
     QJsonObject toJson() const;
     static PlaybackDeviceConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const PlaybackDeviceConfig& o) const {
+        return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
+               alsa == o.alsa && pulseAudio == o.pulseAudio && rawFile == o.rawFile;
+    }
+    bool operator!=(const PlaybackDeviceConfig& o) const { return !(*this == o); }
 };
 
 struct ResamplerConfig {
@@ -365,6 +529,12 @@ struct ResamplerConfig {
 
     QJsonObject toJson() const;
     static ResamplerConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ResamplerConfig& o) const {
+        return type == o.type && profile == o.profile && interpolation == o.interpolation && sincLen == o.sincLen &&
+               oversamplingFactor == o.oversamplingFactor && window == o.window && fCutoff == o.fCutoff;
+    }
+    bool operator!=(const ResamplerConfig& o) const { return !(*this == o); }
 };
 
 struct DevicesConfig {
@@ -389,6 +559,17 @@ struct DevicesConfig {
 
     QJsonObject toJson() const;
     static DevicesConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const DevicesConfig& o) const {
+        return samplerate == o.samplerate && chunksize == o.chunksize && enableRateAdjust == o.enableRateAdjust &&
+               targetLevel == o.targetLevel && adjustPeriod == o.adjustPeriod && resampler == o.resampler &&
+               capture == o.capture && playback == o.playback && captureSamplerate == o.captureSamplerate &&
+               silenceThreshold == o.silenceThreshold && silenceTimeout == o.silenceTimeout &&
+               volumeRampTime == o.volumeRampTime && volumeLimit == o.volumeLimit && queuelimit == o.queuelimit &&
+               stopOnRateChange == o.stopOnRateChange && rateMeasureInterval == o.rateMeasureInterval &&
+               multithreaded == o.multithreaded && workerThreads == o.workerThreads;
+    }
+    bool operator!=(const DevicesConfig& o) const { return !(*this == o); }
 };
 
 enum class FilterType {
@@ -414,6 +595,11 @@ struct GainParameters {
     std::optional<bool> mute;
     QJsonObject toJson() const;
     static GainParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const GainParameters& o) const {
+        return gain == o.gain && scale == o.scale && inverted == o.inverted && mute == o.mute;
+    }
+    bool operator!=(const GainParameters& o) const { return !(*this == o); }
 };
 
 struct LoudnessParameters {
@@ -424,6 +610,12 @@ struct LoudnessParameters {
     std::optional<Fader> fader;
     QJsonObject toJson() const;
     static LoudnessParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const LoudnessParameters& o) const {
+        return referenceLevel == o.referenceLevel && highBoost == o.highBoost && lowBoost == o.lowBoost &&
+               attenuateMid == o.attenuateMid && fader == o.fader;
+    }
+    bool operator!=(const LoudnessParameters& o) const { return !(*this == o); }
 };
 
 enum class ConvType { Values, Wav, Raw, Dummy };
@@ -439,6 +631,13 @@ struct ConvParameters {
     std::optional<int> readBytesLines;
     QJsonObject toJson() const;
     static ConvParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const ConvParameters& o) const {
+        return type == o.type && values == o.values && filename == o.filename && format == o.format &&
+               channel == o.channel && length == o.length && skipBytesLines == o.skipBytesLines &&
+               readBytesLines == o.readBytesLines;
+    }
+    bool operator!=(const ConvParameters& o) const { return !(*this == o); }
 };
 
 struct DelayParameters {
@@ -447,6 +646,11 @@ struct DelayParameters {
     std::optional<bool> subsample;
     QJsonObject toJson() const;
     static DelayParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const DelayParameters& o) const {
+        return delay == o.delay && unit == o.unit && subsample == o.subsample;
+    }
+    bool operator!=(const DelayParameters& o) const { return !(*this == o); }
 };
 
 enum class BiquadComboType {
@@ -475,6 +679,14 @@ struct BiquadComboParameters {
     std::vector<double> gains;
     QJsonObject toJson() const;
     static BiquadComboParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const BiquadComboParameters& o) const {
+        return type == o.type && freq == o.freq && order == o.order && gain == o.gain && fls == o.fls && qls == o.qls &&
+               gls == o.gls && fp1 == o.fp1 && qp1 == o.qp1 && gp1 == o.gp1 && fp2 == o.fp2 && qp2 == o.qp2 &&
+               gp2 == o.gp2 && fp3 == o.fp3 && qp3 == o.qp3 && gp3 == o.gp3 && fhs == o.fhs && qhs == o.qhs &&
+               ghs == o.ghs && freqMin == o.freqMin && freqMax == o.freqMax && gains == o.gains;
+    }
+    bool operator!=(const BiquadComboParameters& o) const { return !(*this == o); }
 };
 
 struct DiffEqParameters {
@@ -482,6 +694,9 @@ struct DiffEqParameters {
     std::vector<double> b;
     QJsonObject toJson() const;
     static DiffEqParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const DiffEqParameters& o) const { return a == o.a && b == o.b; }
+    bool operator!=(const DiffEqParameters& o) const { return !(*this == o); }
 };
 
 enum class DitherType {
@@ -517,6 +732,11 @@ struct DitherParameters {
     std::optional<double> amplitude;
     QJsonObject toJson() const;
     static DitherParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const DitherParameters& o) const {
+        return type == o.type && bits == o.bits && amplitude == o.amplitude;
+    }
+    bool operator!=(const DitherParameters& o) const { return !(*this == o); }
 };
 
 struct ClipperParameters {
@@ -524,6 +744,9 @@ struct ClipperParameters {
     std::optional<bool> softClip;
     QJsonObject toJson() const;
     static ClipperParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const ClipperParameters& o) const { return clipLimit == o.clipLimit && softClip == o.softClip; }
+    bool operator!=(const ClipperParameters& o) const { return !(*this == o); }
 };
 
 struct LookaheadLimiterParameters {
@@ -534,6 +757,12 @@ struct LookaheadLimiterParameters {
     std::optional<DelayUnit> releaseUnit;
     QJsonObject toJson() const;
     static LookaheadLimiterParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const LookaheadLimiterParameters& o) const {
+        return limit == o.limit && attack == o.attack && release == o.release && attackUnit == o.attackUnit &&
+               releaseUnit == o.releaseUnit;
+    }
+    bool operator!=(const LookaheadLimiterParameters& o) const { return !(*this == o); }
 };
 
 struct VolumeParameters {
@@ -542,6 +771,11 @@ struct VolumeParameters {
     std::optional<Fader> fader;
     QJsonObject toJson() const;
     static VolumeParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const VolumeParameters& o) const {
+        return rampTime == o.rampTime && limit == o.limit && fader == o.fader;
+    }
+    bool operator!=(const VolumeParameters& o) const { return !(*this == o); }
 };
 
 struct FilterConfig {
@@ -560,6 +794,15 @@ struct FilterConfig {
 
     QJsonObject toJson() const;
     static FilterConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const FilterConfig& o) const {
+        return type == o.type && gainParams == o.gainParams && volumeParams == o.volumeParams &&
+               loudnessParams == o.loudnessParams && biquadParams == o.biquadParams && convParams == o.convParams &&
+               delayParams == o.delayParams && comboParams == o.comboParams && diffEqParams == o.diffEqParams &&
+               ditherParams == o.ditherParams && clipperParams == o.clipperParams &&
+               lookaheadParams == o.lookaheadParams;
+    }
+    bool operator!=(const FilterConfig& o) const { return !(*this == o); }
 };
 
 struct MixerSource {
@@ -571,6 +814,11 @@ struct MixerSource {
     double gainValue() const { return gain.value_or(0.0); }
     QJsonObject toJson() const;
     static MixerSource fromJson(const QJsonObject& json);
+
+    bool operator==(const MixerSource& o) const {
+        return channel == o.channel && gain == o.gain && inverted == o.inverted && mute == o.mute && scale == o.scale;
+    }
+    bool operator!=(const MixerSource& o) const { return !(*this == o); }
 };
 
 struct MixerMapping {
@@ -579,6 +827,9 @@ struct MixerMapping {
     std::optional<bool> mute;
     QJsonObject toJson() const;
     static MixerMapping fromJson(const QJsonObject& json);
+
+    bool operator==(const MixerMapping& o) const { return dest == o.dest && sources == o.sources && mute == o.mute; }
+    bool operator!=(const MixerMapping& o) const { return !(*this == o); }
 };
 
 struct MixerConfig {
@@ -589,6 +840,12 @@ struct MixerConfig {
     std::vector<std::string> labels;
     QJsonObject toJson() const;
     static MixerConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const MixerConfig& o) const {
+        return channelsIn == o.channelsIn && channelsOut == o.channelsOut && mapping == o.mapping &&
+               description == o.description && labels == o.labels;
+    }
+    bool operator!=(const MixerConfig& o) const { return !(*this == o); }
 };
 
 enum class ProcessorType { Compressor, NoiseGate, RACE };
@@ -608,6 +865,13 @@ struct CompressorParameters {
     std::optional<double> clipLimit;
     QJsonObject toJson() const;
     static CompressorParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const CompressorParameters& o) const {
+        return channels == o.channels && monitorChannels == o.monitorChannels && processChannels == o.processChannels &&
+               attack == o.attack && release == o.release && threshold == o.threshold && factor == o.factor &&
+               makeupGain == o.makeupGain && softClip == o.softClip && clipLimit == o.clipLimit;
+    }
+    bool operator!=(const CompressorParameters& o) const { return !(*this == o); }
 };
 
 struct NoiseGateParameters {
@@ -620,6 +884,12 @@ struct NoiseGateParameters {
     double attenuation = -40.0;
     QJsonObject toJson() const;
     static NoiseGateParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const NoiseGateParameters& o) const {
+        return channels == o.channels && monitorChannels == o.monitorChannels && processChannels == o.processChannels &&
+               attack == o.attack && release == o.release && threshold == o.threshold && attenuation == o.attenuation;
+    }
+    bool operator!=(const NoiseGateParameters& o) const { return !(*this == o); }
 };
 
 struct RACEParameters {
@@ -632,6 +902,12 @@ struct RACEParameters {
     double attenuation = 6.0;
     QJsonObject toJson() const;
     static RACEParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const RACEParameters& o) const {
+        return channels == o.channels && channelA == o.channelA && channelB == o.channelB && delay == o.delay &&
+               subsampleDelay == o.subsampleDelay && delayUnit == o.delayUnit && attenuation == o.attenuation;
+    }
+    bool operator!=(const RACEParameters& o) const { return !(*this == o); }
 };
 
 struct ProcessorConfig {
@@ -641,6 +917,12 @@ struct ProcessorConfig {
     RACEParameters raceParams;
     QJsonObject toJson() const;
     static ProcessorConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const ProcessorConfig& o) const {
+        return type == o.type && compressorParams == o.compressorParams && noiseGateParams == o.noiseGateParams &&
+               raceParams == o.raceParams;
+    }
+    bool operator!=(const ProcessorConfig& o) const { return !(*this == o); }
 };
 
 enum class PipelineStepType { Filter, Mixer, Processor };
@@ -655,6 +937,12 @@ struct PipelineStep {
 
     QJsonObject toJson() const;
     static PipelineStep fromJson(const QJsonObject& json);
+
+    bool operator==(const PipelineStep& o) const {
+        return type == o.type && channel == o.channel && channels == o.channels && name == o.name && names == o.names &&
+               bypassed == o.bypassed;
+    }
+    bool operator!=(const PipelineStep& o) const { return !(*this == o); }
 };
 
 struct DSPConfiguration {
@@ -668,6 +956,12 @@ struct DSPConfiguration {
     QJsonObject toJsonObject() const;
     static DSPConfiguration fromJsonObject(const QJsonObject& json);
     static DSPConfiguration fromJsonString(const std::string& jsonStr);
+
+    bool operator==(const DSPConfiguration& o) const {
+        return devices == o.devices && filters == o.filters && mixers == o.mixers && processors == o.processors &&
+               pipeline == o.pipeline;
+    }
+    bool operator!=(const DSPConfiguration& o) const { return !(*this == o); }
 };
 
 #endif // DSP_CONFIG_TYPES_H

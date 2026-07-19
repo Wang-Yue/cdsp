@@ -82,6 +82,92 @@ std::optional<BiquadType> stringToBiquadType(const std::string& str) {
     return std::nullopt;
 }
 
+BiquadParameters BiquadParameters::fromJson(const QJsonObject& json) {
+    BiquadParameters b;
+    if (json.contains("type"))
+        b.type = stringToBiquadType(json["type"].toString().toStdString());
+    if (json.contains("freq"))
+        b.freq = json["freq"].toDouble();
+    if (json.contains("gain"))
+        b.gain = json["gain"].toDouble();
+    if (json.contains("q"))
+        b.q = json["q"].toDouble();
+    if (json.contains("bandwidth"))
+        b.bandwidth = json["bandwidth"].toDouble();
+    if (json.contains("slope"))
+        b.slope = json["slope"].toDouble();
+    if (json.contains("b0"))
+        b.b0 = json["b0"].toDouble();
+    if (json.contains("b1"))
+        b.b1 = json["b1"].toDouble();
+    if (json.contains("b2"))
+        b.b2 = json["b2"].toDouble();
+    if (json.contains("a1"))
+        b.a1 = json["a1"].toDouble();
+    if (json.contains("a2"))
+        b.a2 = json["a2"].toDouble();
+    if (json.contains("freq_z"))
+        b.freqNotch = json["freq_z"].toDouble();
+    if (json.contains("freq_p"))
+        b.freqPole = json["freq_p"].toDouble();
+    if (json.contains("q_p"))
+        b.qP = json["q_p"].toDouble();
+    if (json.contains("normalize_at_dc"))
+        b.normalizeAtDc = json["normalize_at_dc"].toBool();
+    if (json.contains("freq_act"))
+        b.freqAct = json["freq_act"].toDouble();
+    if (json.contains("q_act"))
+        b.qAct = json["q_act"].toDouble();
+    if (json.contains("freq_target"))
+        b.freqTarget = json["freq_target"].toDouble();
+    if (json.contains("q_target"))
+        b.qTarget = json["q_target"].toDouble();
+    return b;
+}
+
+QJsonObject BiquadParameters::toJson() const {
+    QJsonObject bObj;
+    if (type.has_value())
+        bObj["type"] = QString::fromStdString(biquadTypeToString(type.value()));
+    if (freq.has_value())
+        bObj["freq"] = freq.value();
+    if (gain.has_value())
+        bObj["gain"] = gain.value();
+    if (q.has_value())
+        bObj["q"] = q.value();
+    if (bandwidth.has_value())
+        bObj["bandwidth"] = bandwidth.value();
+    if (slope.has_value())
+        bObj["slope"] = slope.value();
+    if (b0.has_value())
+        bObj["b0"] = b0.value();
+    if (b1.has_value())
+        bObj["b1"] = b1.value();
+    if (b2.has_value())
+        bObj["b2"] = b2.value();
+    if (a1.has_value())
+        bObj["a1"] = a1.value();
+    if (a2.has_value())
+        bObj["a2"] = a2.value();
+    if (freqNotch.has_value())
+        bObj["freq_z"] = freqNotch.value();
+    if (freqPole.has_value())
+        bObj["freq_p"] = freqPole.value();
+    if (qP.has_value())
+        bObj["q_p"] = qP.value();
+    if (normalizeAtDc.has_value())
+        bObj["normalize_at_dc"] = normalizeAtDc.value();
+    if (freqAct.has_value())
+        bObj["freq_act"] = freqAct.value();
+    if (qAct.has_value())
+        bObj["q_act"] = qAct.value();
+    if (freqTarget.has_value())
+        bObj["freq_target"] = freqTarget.value();
+    if (qTarget.has_value())
+        bObj["q_target"] = qTarget.value();
+    return bObj;
+}
+
 std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParameters& params, int sampleRate) {
     if (!params.type.has_value() || sampleRate <= 0)
         return std::nullopt;

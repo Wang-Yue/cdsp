@@ -36,7 +36,8 @@ void PipelineStore::loadPipelineStages() {
         QJsonArray arr = QJsonDocument::fromJson(s.value(stagesKey).toByteArray()).array();
         for (const auto& item : arr)
             stages.push_back(PipelineStage::fromJson(item.toObject()));
-    } else {
+    }
+    if (stages.empty()) {
         stages = PipelineStage::defaultStages();
     }
 }
@@ -44,12 +45,6 @@ void PipelineStore::loadPipelineStages() {
 QUuid PipelineStore::addStage(StageType type) {
     pushUndoSnapshot();
     PipelineStage stage(type, "", true);
-    if (type == StageType::EQ && !eqPresets.empty()) {
-        stage.eqPresetId = eqPresets[0].id;
-    }
-    if (type == StageType::Convolution && !convPresets.empty()) {
-        stage.convPresetId = convPresets[0].id;
-    }
     stages.push_back(stage);
     savePipelineStages();
     emit pipelineChanged();
@@ -384,6 +379,9 @@ void PipelineStore::restoreFromJson(const QJsonObject& json) {
         for (const auto& item : json["stages"].toArray()) {
             stages.push_back(PipelineStage::fromJson(item.toObject()));
         }
+    }
+    if (stages.empty()) {
+        stages = PipelineStage::defaultStages();
     }
 
     if (json.contains("eqPresets")) {
