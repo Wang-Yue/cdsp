@@ -467,10 +467,8 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
 
 ```c
   pthread_mutex_lock(&state->stop_reason_mutex);
-  bool expected = false;
-  if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
-                                              true, memory_order_acq_rel,
-                                              memory_order_acquire)) {
+  bool already_stopped = atomic_exchange_explicit(&state->stop_once, true, memory_order_acq_rel);
+  if (!already_stopped) {
       // WINNER: Only this block executes once.
       state->stop_reason = reason;
       pthread_mutex_unlock(&state->stop_reason_mutex);
@@ -493,8 +491,8 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
   }
 ```
 
-* **Publication Safety via `stop_reason_mutex`**: `stop_reason_mutex` is acquired **prior** to performing the CAS on `stop_once`. This ensures that any concurrent thread entering the `else` (loser) branch is guaranteed to see the fully populated `stop_reason` struct written by the winner, eliminating publication window data races where a reader could observe `stop_once == true` but inspect an uninitialized `STOP_REASON_NONE`.
-* **The First Thread (Winner)**: Acquires `stop_reason_mutex`, sets `stop_once` from `false` to `true` atomically via compare-exchange, sets the initial root-cause stop reason, and releases the mutex.
+* **Publication Safety via `stop_reason_mutex`**: `stop_reason_mutex` is acquired **prior** to setting `stop_once`. This ensures that any concurrent thread entering the `else` (loser) branch is guaranteed to see the fully populated `stop_reason` struct written by the winner, eliminating publication window data races where a reader could observe `stop_once == true` but inspect an uninitialized `STOP_REASON_NONE`.
+* **The First Thread (Winner)**: Acquires `stop_reason_mutex`, sets `stop_once` to `true` atomically via `atomic_exchange_explicit`, sets the initial root-cause stop reason, and releases the mutex.
 * **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch while holding `stop_reason_mutex` to safely inspect the published `stop_reason`.
   - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, and any subsequent stop request occurs (e.g. user aborts, session teardown, or hardware error during drain), the loser branch forces an immediate `INACTIVE` state transition and queue shutdown to unblock waiting threads and prevent deadlocks on `pthread_join`.
   - If the new request is a hardware error (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch also **overrides** the stop reason to preserve the error root cause.

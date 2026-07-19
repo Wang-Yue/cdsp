@@ -199,10 +199,9 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   // the published stop_reason rather than reading STOP_REASON_NONE during an
   // intermediate window.
   pthread_mutex_lock(&state->stop_reason_mutex);
-  bool expected = false;
-  if (atomic_compare_exchange_strong_explicit(&state->stop_once, &expected,
-                                              true, memory_order_acq_rel,
-                                              memory_order_acquire)) {
+  bool already_stopped =
+      atomic_exchange_explicit(&state->stop_once, true, memory_order_acq_rel);
+  if (!already_stopped) {
     // WINNER branch: This thread is the first to request shutdown.
     state->stop_reason = reason;
     pthread_mutex_unlock(&state->stop_reason_mutex);
