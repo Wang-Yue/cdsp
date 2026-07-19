@@ -1369,26 +1369,26 @@ void StageDetailView::buildStageOptionsUi() {
         break;
     }
 
-    case StageType::Limiter: {
+    case StageType::Clipper: {
         auto limGroup = new QGroupBox("Clipper", m_optionsContainer);
         auto limVBox = new QVBoxLayout(limGroup);
         limVBox->setSpacing(12);
 
         auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
         limitSlider->setRange(-300, 0);
-        limitSlider->setValue(static_cast<int>(stage.limiterLimit * 10.0));
-        auto limitLbl = new QLabel(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1), limGroup);
+        limitSlider->setValue(static_cast<int>(stage.clipperLimit * 10.0));
+        auto limitLbl = new QLabel(QString("%1 dB").arg(stage.clipperLimit, 0, 'f', 1), limGroup);
         connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
-            stage.limiterLimit = val / 10.0;
-            limitLbl->setText(QString("%1 dB").arg(stage.limiterLimit, 0, 'f', 1));
+            stage.clipperLimit = val / 10.0;
+            limitLbl->setText(QString("%1 dB").arg(stage.clipperLimit, 0, 'f', 1));
             applyConfig();
         });
         limVBox->addLayout(createSliderRow("Limit", limitSlider, limitLbl, 90, 70));
 
         auto softChk = new QCheckBox("Enable Soft Clipping", limGroup);
-        softChk->setChecked(stage.limiterSoftClip);
+        softChk->setChecked(stage.clipperSoftClip);
         connect(softChk, &QCheckBox::toggled, [this, &stage](bool chk) {
-            stage.limiterSoftClip = chk;
+            stage.clipperSoftClip = chk;
             applyConfig();
         });
         limVBox->addWidget(softChk);

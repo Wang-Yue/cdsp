@@ -162,8 +162,8 @@ QString PipelineOverviewWidget::readableFilterName(const std::string& rawName, c
         return "DiffEq IIR/FIR";
     if (suffix == "combo")
         return QString("Biquad Combo (%1)").arg(QString::fromStdString(biquadComboTypeToString(stage.comboType)));
-    if (suffix == "limiter")
-        return QString("Peak Limiter (%1 dB)").arg(QString::asprintf("%+.1f", stage.limiterLimit));
+    if (suffix == "clipper")
+        return QString("Clipper (%1 dB)").arg(QString::asprintf("%+.1f", stage.clipperLimit));
     if (suffix == "geq")
         return QString("Graphic EQ (%1 Bands)").arg(stage.graphicEQBandCount);
 
@@ -493,13 +493,42 @@ void PipelineOverviewWidget::rebuildOverview() {
 
                     auto chTagsBox = new QHBoxLayout();
                     chTagsBox->setSpacing(2);
-                    for (int ch : chList) {
-                        auto chTag = new QLabel(QString::number(ch + 1), stepWidget);
+                    if (chList.size() == static_cast<size_t>(inCh) && inCh > 4) {
+                        auto chTag = new QLabel("All", stepWidget);
                         chTag->setAlignment(Qt::AlignCenter);
                         chTag->setStyleSheet(
-                            "background: rgba(0, 122, 255, 0.2); color: #007aff; font-size: 8px; font-weight: bold; "
+                            "background: rgba(142, 142, 147, 0.15); color: #8e8e93; font-size: 8px; font-weight: bold; "
                             "border-radius: 3px; padding: 1px 3px;");
                         chTagsBox->addWidget(chTag);
+                    } else if (chList.size() > 4) {
+                        bool isContiguous = true;
+                        for (size_t i = 1; i < chList.size(); ++i) {
+                            if (chList[i] != chList[i - 1] + 1) {
+                                isContiguous = false;
+                                break;
+                            }
+                        }
+                        QString labelText;
+                        if (isContiguous) {
+                            labelText = QString("%1–%2").arg(chList.front() + 1).arg(chList.back() + 1);
+                        } else {
+                            labelText = QString("%1 ch").arg(chList.size());
+                        }
+                        auto chTag = new QLabel(labelText, stepWidget);
+                        chTag->setAlignment(Qt::AlignCenter);
+                        chTag->setStyleSheet(
+                            "background: rgba(142, 142, 147, 0.15); color: #8e8e93; font-size: 8px; font-weight: bold; "
+                            "border-radius: 3px; padding: 1px 3px;");
+                        chTagsBox->addWidget(chTag);
+                    } else {
+                        for (int ch : chList) {
+                            auto chTag = new QLabel(QString::number(ch + 1), stepWidget);
+                            chTag->setAlignment(Qt::AlignCenter);
+                            chTag->setStyleSheet("background: rgba(0, 122, 255, 0.2); color: #007aff; font-size: 8px; "
+                                                 "font-weight: bold; "
+                                                 "border-radius: 3px; padding: 1px 3px;");
+                            chTagsBox->addWidget(chTag);
+                        }
                     }
                     stepHeader->addLayout(chTagsBox);
                     stepVBox->addLayout(stepHeader);

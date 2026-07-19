@@ -327,8 +327,8 @@ std::string filterTypeToString(FilterType t) {
         return "DiffEq";
     case FilterType::Dither:
         return "Dither";
-    case FilterType::Limiter:
-        return "Limiter";
+    case FilterType::Clipper:
+        return "Clipper";
     case FilterType::LookaheadLimiter:
         return "LookaheadLimiter";
     }
@@ -352,8 +352,8 @@ FilterType stringToFilterType(const std::string& str) {
         return FilterType::DiffEq;
     if (str == "Dither")
         return FilterType::Dither;
-    if (str == "Limiter")
-        return FilterType::Limiter;
+    if (str == "Clipper")
+        return FilterType::Clipper;
     if (str == "LookaheadLimiter")
         return FilterType::LookaheadLimiter;
     return FilterType::Gain;
@@ -1275,24 +1275,24 @@ DevicesConfig DevicesConfig::fromJson(const QJsonObject& json) {
         cfg.enableRateAdjust = json["enable_rate_adjust"].toBool();
     if (json.contains("target_level"))
         cfg.targetLevel = json["target_level"].toInt();
-    if (json.contains("adjust_period"))
-        cfg.adjustPeriod = json["adjust_period"].toDouble();
+    if (json.contains("adjust_interval_s"))
+        cfg.adjustPeriod = json["adjust_interval_s"].toDouble();
     if (json.contains("resampler"))
         cfg.resampler = ResamplerConfig::fromJson(json["resampler"].toObject());
     if (json.contains("silence_threshold"))
         cfg.silenceThreshold = json["silence_threshold"].toDouble();
-    if (json.contains("silence_timeout"))
-        cfg.silenceTimeout = json["silence_timeout"].toDouble();
-    if (json.contains("volume_ramp_time"))
-        cfg.volumeRampTime = json["volume_ramp_time"].toDouble();
+    if (json.contains("silence_timeout_s"))
+        cfg.silenceTimeout = json["silence_timeout_s"].toDouble();
+    if (json.contains("volume_ramp_time_ms"))
+        cfg.volumeRampTime = json["volume_ramp_time_ms"].toDouble();
     if (json.contains("volume_limit"))
         cfg.volumeLimit = json["volume_limit"].toDouble();
     if (json.contains("queuelimit"))
         cfg.queuelimit = json["queuelimit"].toInt();
     if (json.contains("stop_on_rate_change"))
         cfg.stopOnRateChange = json["stop_on_rate_change"].toBool();
-    if (json.contains("rate_measure_interval"))
-        cfg.rateMeasureInterval = json["rate_measure_interval"].toDouble();
+    if (json.contains("rate_measure_interval_s"))
+        cfg.rateMeasureInterval = json["rate_measure_interval_s"].toDouble();
     if (json.contains("multithreaded"))
         cfg.multithreaded = json["multithreaded"].toBool();
     if (json.contains("worker_threads"))
@@ -1312,7 +1312,7 @@ QJsonObject DevicesConfig::toJson() const {
     if (targetLevel.has_value())
         obj["target_level"] = targetLevel.value();
     if (adjustPeriod.has_value())
-        obj["adjust_period"] = adjustPeriod.value();
+        obj["adjust_interval_s"] = adjustPeriod.value();
     if (resampler.has_value())
         obj["resampler"] = resampler.value().toJson();
     if (captureSamplerate.has_value())
@@ -1320,9 +1320,9 @@ QJsonObject DevicesConfig::toJson() const {
     if (silenceThreshold.has_value())
         obj["silence_threshold"] = silenceThreshold.value();
     if (silenceTimeout.has_value())
-        obj["silence_timeout"] = silenceTimeout.value();
+        obj["silence_timeout_s"] = silenceTimeout.value();
     if (volumeRampTime.has_value())
-        obj["volume_ramp_time"] = volumeRampTime.value();
+        obj["volume_ramp_time_ms"] = volumeRampTime.value();
     if (volumeLimit.has_value())
         obj["volume_limit"] = volumeLimit.value();
     if (queuelimit.has_value())
@@ -1330,7 +1330,7 @@ QJsonObject DevicesConfig::toJson() const {
     if (stopOnRateChange.has_value())
         obj["stop_on_rate_change"] = stopOnRateChange.value();
     if (rateMeasureInterval.has_value())
-        obj["rate_measure_interval"] = rateMeasureInterval.value();
+        obj["rate_measure_interval_s"] = rateMeasureInterval.value();
     if (multithreaded.has_value())
         obj["multithreaded"] = multithreaded.value();
     if (workerThreads.has_value())
@@ -1643,8 +1643,8 @@ QJsonObject DitherParameters::toJson() const {
     return obj;
 }
 
-LimiterParameters LimiterParameters::fromJson(const QJsonObject& json) {
-    LimiterParameters p;
+ClipperParameters ClipperParameters::fromJson(const QJsonObject& json) {
+    ClipperParameters p;
     if (json.contains("clip_limit"))
         p.clipLimit = json["clip_limit"].toDouble();
     if (json.contains("soft_clip"))
@@ -1652,7 +1652,7 @@ LimiterParameters LimiterParameters::fromJson(const QJsonObject& json) {
     return p;
 }
 
-QJsonObject LimiterParameters::toJson() const {
+QJsonObject ClipperParameters::toJson() const {
     QJsonObject obj;
     obj["clip_limit"] = clipLimit;
     if (softClip.has_value())
@@ -1668,8 +1668,10 @@ LookaheadLimiterParameters LookaheadLimiterParameters::fromJson(const QJsonObjec
         p.attack = json["attack"].toDouble();
     if (json.contains("release"))
         p.release = json["release"].toDouble();
-    if (json.contains("unit"))
-        p.unit = stringToDelayUnit(json["unit"].toString().toStdString());
+    if (json.contains("attack_unit"))
+        p.attackUnit = stringToDelayUnit(json["attack_unit"].toString().toStdString());
+    if (json.contains("release_unit"))
+        p.releaseUnit = stringToDelayUnit(json["release_unit"].toString().toStdString());
     return p;
 }
 
@@ -1678,15 +1680,17 @@ QJsonObject LookaheadLimiterParameters::toJson() const {
     obj["limit"] = limit;
     obj["attack"] = attack;
     obj["release"] = release;
-    if (unit.has_value())
-        obj["unit"] = QString::fromStdString(delayUnitToString(unit.value()));
+    if (attackUnit.has_value())
+        obj["attack_unit"] = QString::fromStdString(delayUnitToString(attackUnit.value()));
+    if (releaseUnit.has_value())
+        obj["release_unit"] = QString::fromStdString(delayUnitToString(releaseUnit.value()));
     return obj;
 }
 
 VolumeParameters VolumeParameters::fromJson(const QJsonObject& json) {
     VolumeParameters p;
-    if (json.contains("ramp_time"))
-        p.rampTime = json["ramp_time"].toDouble();
+    if (json.contains("ramp_time_ms"))
+        p.rampTime = json["ramp_time_ms"].toDouble();
     if (json.contains("limit"))
         p.limit = json["limit"].toDouble();
     if (json.contains("fader"))
@@ -1697,7 +1701,7 @@ VolumeParameters VolumeParameters::fromJson(const QJsonObject& json) {
 QJsonObject VolumeParameters::toJson() const {
     QJsonObject obj;
     if (rampTime.has_value())
-        obj["ramp_time"] = rampTime.value();
+        obj["ramp_time_ms"] = rampTime.value();
     if (limit.has_value())
         obj["limit"] = limit.value();
     if (fader.has_value())
@@ -1777,8 +1781,8 @@ FilterConfig FilterConfig::fromJson(const QJsonObject& json) {
     case FilterType::Dither:
         f.ditherParams = DitherParameters::fromJson(pObj);
         break;
-    case FilterType::Limiter:
-        f.limiterParams = LimiterParameters::fromJson(pObj);
+    case FilterType::Clipper:
+        f.clipperParams = ClipperParameters::fromJson(pObj);
         break;
     case FilterType::LookaheadLimiter:
         f.lookaheadParams = LookaheadLimiterParameters::fromJson(pObj);
@@ -1859,8 +1863,8 @@ QJsonObject FilterConfig::toJson() const {
     case FilterType::Dither:
         pObj = ditherParams.toJson();
         break;
-    case FilterType::Limiter:
-        pObj = limiterParams.toJson();
+    case FilterType::Clipper:
+        pObj = clipperParams.toJson();
         break;
     case FilterType::LookaheadLimiter:
         pObj = lookaheadParams.toJson();

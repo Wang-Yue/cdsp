@@ -32,7 +32,7 @@ enum class StageType {
     Gain,
     Delay,
     LookaheadLimiter,
-    Limiter,
+    Clipper,
     Volume,
     MatrixMixer,
     Compressor,
@@ -167,8 +167,8 @@ public:
     double peqGhs = 0.0;
     double peqQhs = 0.707;
 
-    double limiterLimit = 0.0;
-    bool limiterSoftClip = false;
+    double clipperLimit = 0.0;
+    bool clipperSoftClip = false;
 
     double splitWidthCrossover = 150.0;
     double splitWidthAmount = 1.5;

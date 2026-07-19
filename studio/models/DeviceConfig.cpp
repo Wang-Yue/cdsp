@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <set>
 
 std::vector<int> DeviceConfig::supportedChannels() const {

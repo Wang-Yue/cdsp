@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct DeviceConfig {

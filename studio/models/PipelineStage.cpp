@@ -49,8 +49,8 @@ std::string stageTypeToString(StageType type) {
         return "Delay";
     case StageType::LookaheadLimiter:
         return "Lookahead Limiter";
-    case StageType::Limiter:
-        return "Limiter";
+    case StageType::Clipper:
+        return "Clipper";
     case StageType::Volume:
         return "Volume";
     case StageType::MatrixMixer:
@@ -81,7 +81,7 @@ StageCategory stageTypeToCategory(StageType type) {
     case StageType::Gain:
     case StageType::Delay:
     case StageType::Volume:
-    case StageType::Limiter:
+    case StageType::Clipper:
     case StageType::LookaheadLimiter:
     case StageType::Dither:
     case StageType::Loudness:
@@ -153,7 +153,7 @@ std::string stageTypeToIcon(StageType type) {
         return "📐";
     case StageType::BiquadCombo:
         return "🎚️";
-    case StageType::Limiter:
+    case StageType::Clipper:
         return "✂️";
     }
     return "🎚️";
@@ -469,8 +469,8 @@ QJsonObject PipelineStage::toJson() const {
     obj["peqGhs"] = peqGhs;
     obj["peqQhs"] = peqQhs;
 
-    obj["limiterLimit"] = limiterLimit;
-    obj["limiterSoftClip"] = limiterSoftClip;
+    obj["clipperLimit"] = clipperLimit;
+    obj["clipperSoftClip"] = clipperSoftClip;
 
     obj["splitWidthCrossover"] = splitWidthCrossover;
     obj["splitWidthAmount"] = splitWidthAmount;
@@ -500,7 +500,7 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
                              StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
                              StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
                              StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
-                             StageType::Limiter,     StageType::Volume,    StageType::MatrixMixer,
+                             StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
                              StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
                              StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
             QString targetStr = QString::fromStdString(stageTypeToString(st)).remove(" ").toLower();
@@ -692,10 +692,10 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     if (json.contains("peqQhs"))
         s.peqQhs = json["peqQhs"].toDouble();
 
-    if (json.contains("limiterLimit"))
-        s.limiterLimit = json["limiterLimit"].toDouble();
-    if (json.contains("limiterSoftClip"))
-        s.limiterSoftClip = json["limiterSoftClip"].toBool();
+    if (json.contains("clipperLimit"))
+        s.clipperLimit = json["clipperLimit"].toDouble();
+    if (json.contains("clipperSoftClip"))
+        s.clipperSoftClip = json["clipperSoftClip"].toBool();
 
     if (json.contains("splitWidthCrossover"))
         s.splitWidthCrossover = json["splitWidthCrossover"].toDouble();
@@ -1225,7 +1225,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         f.lookaheadParams.limit = stage.lookaheadLimit;
         f.lookaheadParams.attack = stage.lookaheadAttack;
         f.lookaheadParams.release = stage.lookaheadRelease;
-        f.lookaheadParams.unit = DelayUnit::ms;
+        f.lookaheadParams.attackUnit = DelayUnit::ms;
+        f.lookaheadParams.releaseUnit = DelayUnit::ms;
         res.filters[prefix + "_lookahead_limiter"] = f;
 
         res.steps.push_back(PipelineStep{PipelineStepType::Filter,
@@ -1414,17 +1415,17 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         break;
     }
 
-    case StageType::Limiter: {
+    case StageType::Clipper: {
         if (chList.empty())
             break;
         FilterConfig f;
-        f.type = FilterType::Limiter;
-        f.limiterParams.clipLimit = stage.limiterLimit;
-        f.limiterParams.softClip = stage.limiterSoftClip;
-        res.filters[prefix + "_limiter"] = f;
+        f.type = FilterType::Clipper;
+        f.clipperParams.clipLimit = stage.clipperLimit;
+        f.clipperParams.softClip = stage.clipperSoftClip;
+        res.filters[prefix + "_clipper"] = f;
 
         res.steps.push_back(PipelineStep{
-            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_limiter"}, std::nullopt});
+            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_clipper"}, std::nullopt});
         break;
     }
 

@@ -1110,7 +1110,6 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
             QTimer::singleShot(0, [this]() { applySettings(); });
         });
         form->addRow("Format", m_pbWavFileFormatCombo);
-
         m_pbWavFileChannelsSpin = new QSpinBox(w);
         m_pbWavFileChannelsSpin->setRange(1, 32);
         m_pbWavFileChannelsSpin->setMinimumWidth(110);
@@ -1121,7 +1120,6 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
             applySettings();
         });
         form->addRow("Channels", m_pbWavFileChannelsSpin);
-
         auto rf64Box = new QHBoxLayout();
         auto rf64Lbl = new QLabel("WAV Format", w);
         rf64Lbl->setFixedWidth(100);
@@ -1138,7 +1136,6 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
         rf64Box->addWidget(m_pbWavUseRf64Combo);
         rf64Box->addStretch();
         form->addRow("", rf64Box);
-
     } else {
         m_pbRawFilePathEdit = new QLineEdit(w);
         m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
