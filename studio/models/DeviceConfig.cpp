@@ -115,7 +115,7 @@ DeviceConfig DeviceConfig::enforced() const {
 
         auto fmts = res.supportedFormats();
         if (!fmts.empty() && std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
-            res.format = fmts.empty() ? "F32" : fmts[0];
+            res.format = fmts[0];
         }
     } else if (res.backend == AudioBackendType::WavFile) {
         if (!res.filename.empty()) {
@@ -229,15 +229,15 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         break;
     case AudioBackendType::WavFile:
         cap.wavFile.filename = filename.empty() ? "" : filename;
-        cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(extraSamples) : std::nullopt;
+        cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
         break;
     case AudioBackendType::RawFile:
         cap.rawFile.filename = filename.empty() ? "" : filename;
         cap.rawFile.channels = channels;
         cap.rawFile.format = fileFormat;
-        cap.rawFile.skipBytes = skipBytes > 0 ? std::make_optional(skipBytes) : std::nullopt;
-        cap.rawFile.readBytes = readBytes > 0 ? std::make_optional(readBytes) : std::nullopt;
-        cap.rawFile.extraSamples = extraSamples > 0 ? std::make_optional(extraSamples) : std::nullopt;
+        cap.rawFile.skipBytes = skipBytes > 0 ? std::make_optional(static_cast<int>(skipBytes)) : std::nullopt;
+        cap.rawFile.readBytes = readBytes > 0 ? std::make_optional(static_cast<int>(readBytes)) : std::nullopt;
+        cap.rawFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
         break;
     case AudioBackendType::SignalGenerator:
         cap.generator.channels = channels;
@@ -314,9 +314,9 @@ QJsonObject DeviceConfig::toJson() const {
     obj["fileFormat"] = QString::fromStdString(fileFormat);
     obj["isWav"] = isWav;
     obj["useRf64"] = useRf64;
-    obj["skipBytes"] = skipBytes;
-    obj["readBytes"] = readBytes;
-    obj["extraSamples"] = extraSamples;
+    obj["skipBytes"] = static_cast<qint64>(skipBytes);
+    obj["readBytes"] = static_cast<qint64>(readBytes);
+    obj["extraSamples"] = static_cast<qint64>(extraSamples);
     obj["generatorType"] = QString::fromStdString(generatorType);
     obj["generatorFreq"] = generatorFreq;
     obj["generatorLevel"] = generatorLevel;
@@ -356,11 +356,11 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
     if (json.contains("useRf64"))
         cfg.useRf64 = json["useRf64"].toBool();
     if (json.contains("skipBytes"))
-        cfg.skipBytes = json["skipBytes"].toInt();
+        cfg.skipBytes = json["skipBytes"].toInteger();
     if (json.contains("readBytes"))
-        cfg.readBytes = json["readBytes"].toInt();
+        cfg.readBytes = json["readBytes"].toInteger();
     if (json.contains("extraSamples"))
-        cfg.extraSamples = json["extraSamples"].toInt();
+        cfg.extraSamples = json["extraSamples"].toInteger();
     if (json.contains("generatorType"))
         cfg.generatorType = json["generatorType"].toString().toStdString();
     if (json.contains("generatorFreq"))

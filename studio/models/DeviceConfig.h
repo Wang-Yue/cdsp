@@ -4,6 +4,7 @@
 #include "config/DSPConfigTypes.h"
 
 #include <QJsonObject>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -33,9 +34,9 @@ struct DeviceConfig {
     std::string fileFormat = "S16_LE";
     bool isWav = false;
     bool useRf64 = false;
-    int skipBytes = 0;
-    int readBytes = 0;
-    int extraSamples = 0;
+    int64_t skipBytes = 0;
+    int64_t readBytes = 0;
+    int64_t extraSamples = 0;
 
     // Generator Backend Settings
     std::string generatorType = "Sine";

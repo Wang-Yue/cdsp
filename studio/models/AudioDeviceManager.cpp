@@ -135,10 +135,12 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     if (devChanged) {
         refreshDeviceCapabilities();
     } else {
-        validateSampleRates();
-        emit configChanged();
-        if (onConfigChanged)
-            onConfigChanged();
+        bool rateChanged = validateSampleRates();
+        if (!rateChanged) {
+            emit configChanged();
+            if (onConfigChanged)
+                onConfigChanged();
+        }
     }
 }
 
@@ -154,10 +156,12 @@ void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
     if (devChanged) {
         refreshDeviceCapabilities();
     } else {
-        validateSampleRates();
-        emit configChanged();
-        if (onConfigChanged)
-            onConfigChanged();
+        bool rateChanged = validateSampleRates();
+        if (!rateChanged) {
+            emit configChanged();
+            if (onConfigChanged)
+                onConfigChanged();
+        }
     }
 }
 
@@ -320,19 +324,20 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
 
                 captureConfig = captureConfig.enforced();
                 playbackConfig = playbackConfig.enforced();
-                validateSampleRates();
-                saveConfigs();
-
-                emit configChanged();
-                if (onConfigChanged)
-                    onConfigChanged();
+                bool rateChanged = validateSampleRates();
+                if (!rateChanged) {
+                    saveConfigs();
+                    emit configChanged();
+                    if (onConfigChanged)
+                        onConfigChanged();
+                }
             });
         }));
 }
 
-void AudioDeviceManager::validateSampleRates() {
+bool AudioDeviceManager::validateSampleRates() {
     if (m_isValidating)
-        return;
+        return false;
     m_isValidating = true;
 
     bool changed = false;
@@ -367,6 +372,8 @@ void AudioDeviceManager::validateSampleRates() {
     }
 
     if (changed) {
+        captureConfig = captureConfig.enforced();
+        playbackConfig = playbackConfig.enforced();
         saveConfigs();
         emit configChanged();
         if (onConfigChanged)
@@ -374,4 +381,5 @@ void AudioDeviceManager::validateSampleRates() {
     }
 
     m_isValidating = false;
+    return changed;
 }

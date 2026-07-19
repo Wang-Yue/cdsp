@@ -84,6 +84,8 @@ void AudioSettings::setSilenceThreshold(int val) {
 }
 
 void AudioSettings::setSilenceTimeout(int val) {
+    if (val < 0)
+        val = 0;
     silenceTimeout = val;
     notifyChange();
 }
@@ -99,7 +101,6 @@ void AudioSettings::setSilenceTimeoutDouble(double val) {
 void AudioSettings::notifyChange() {
     savePreferences();
     emit changed();
-    emit settingsChanged();
     if (onChanged)
         onChanged();
 }
@@ -126,10 +127,29 @@ void AudioSettings::loadPreferences() {
     resamplerFCutoff = s.value("resamplerFCutoff", 0.95).toDouble();
     if (resamplerFCutoff <= 0.0)
         resamplerFCutoff = 0.95;
-    resamplerInterpolation =
-        stringToResamplerInterpolation(s.value("resamplerInterpolation", "Cubic").toString().toStdString());
-    resamplerSincInterpolation =
-        stringToSincInterpolation(s.value("resamplerSincInterpolation", "Cubic").toString().toStdString());
+    std::string interpStr = s.value("resamplerInterpolation", "Cubic").toString().toStdString();
+    if (interpStr == "Linear")
+        resamplerInterpolation = ResamplerInterpolation::Linear;
+    else if (interpStr == "Cubic")
+        resamplerInterpolation = ResamplerInterpolation::Cubic;
+    else if (interpStr == "Quintic")
+        resamplerInterpolation = ResamplerInterpolation::Quintic;
+    else if (interpStr == "Septic")
+        resamplerInterpolation = ResamplerInterpolation::Septic;
+    else
+        resamplerInterpolation = ResamplerInterpolation::Cubic;
+
+    std::string sincInterpStr = s.value("resamplerSincInterpolation", "Cubic").toString().toStdString();
+    if (sincInterpStr == "Nearest")
+        resamplerSincInterpolation = SincInterpolation::Nearest;
+    else if (sincInterpStr == "Linear")
+        resamplerSincInterpolation = SincInterpolation::Linear;
+    else if (sincInterpStr == "Quadratic")
+        resamplerSincInterpolation = SincInterpolation::Quadratic;
+    else if (sincInterpStr == "Cubic")
+        resamplerSincInterpolation = SincInterpolation::Cubic;
+    else
+        resamplerSincInterpolation = SincInterpolation::Cubic;
 
     volume = s.value("volume", 0.0f).toFloat();
     isMuted = s.value("isMuted", false).toBool();
@@ -218,5 +238,6 @@ void AudioSettings::savePreferences() {
     s.setValue("show_vectorscope_in_dashboard", showVectorScopeInDashboard);
     s.setValue("show_analog_vu_in_dashboard", showAnalogVUInDashboard);
     s.setValue("show_signal_graph_in_dashboard", showSignalGraphInDashboard);
+    s.sync();
     emit settingsChanged();
 }

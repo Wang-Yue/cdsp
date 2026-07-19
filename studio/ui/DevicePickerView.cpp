@@ -691,7 +691,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 
         auto browseBtn = new QPushButton("Open File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
-            QString path = QFileDialog::getOpenFileName(w, "Select WAV File", "", "WAV Files (*.wav)");
+            QString path = QFileDialog::getOpenFileName(w, "Select WAV File", "", "WAV Files (*.wav);;All Files (*)");
             if (!path.isEmpty())
                 m_capWavFilePathEdit->setText(path);
         });
@@ -756,7 +756,8 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 
         auto browseBtn = new QPushButton("Open File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
-            QString path = QFileDialog::getOpenFileName(w, "Select Raw File", "", "Raw Files (*.raw *.f64 *.f32)");
+            QString path =
+                QFileDialog::getOpenFileName(w, "Select Raw File", "", "Raw Files (*.raw *.f64 *.f32);;All Files (*)");
             if (!path.isEmpty())
                 m_capRawFilePathEdit->setText(path);
         });
@@ -1155,7 +1156,8 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
 
         auto browseBtn = new QPushButton("Select File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
-            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "WAV Files (*.wav)");
+            QString path =
+                QFileDialog::getSaveFileName(w, "Select Output File", "", "WAV Files (*.wav);;All Files (*)");
             if (!path.isEmpty())
                 m_pbWavFilePathEdit->setText(path);
         });
@@ -1210,7 +1212,8 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
 
         auto browseBtn = new QPushButton("Select File...", w);
         connect(browseBtn, &QPushButton::clicked, [this, w]() {
-            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
+            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "",
+                                                        "Raw Files (*.raw *.f64 *.f32);;All Files (*)");
             if (!path.isEmpty())
                 m_pbRawFilePathEdit->setText(path);
         });
@@ -1242,6 +1245,42 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
     return w;
 }
 
+static int getCapStackIndex(AudioBackendType backend) {
+    switch (backend) {
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio:
+        return 0;
+    case AudioBackendType::RawFile:
+        return 1;
+    case AudioBackendType::WavFile:
+        return 2;
+    case AudioBackendType::SignalGenerator:
+        return 3;
+    }
+    return 0;
+}
+
+static int getPbStackIndex(AudioBackendType backend) {
+    switch (backend) {
+    case AudioBackendType::CoreAudio:
+    case AudioBackendType::WASAPI:
+    case AudioBackendType::ASIO:
+    case AudioBackendType::ALSA:
+    case AudioBackendType::PulseAudio:
+        return 0;
+    case AudioBackendType::RawFile:
+        return 1;
+    case AudioBackendType::WavFile:
+        return 2;
+    case AudioBackendType::SignalGenerator:
+        return 0;
+    }
+    return 0;
+}
+
 void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
@@ -1252,27 +1291,8 @@ void DevicePickerView::refreshUi() {
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
     if (capBackendIdx >= 0) {
         m_capBackendCombo->setCurrentIndex(capBackendIdx);
-        int stackIdx = 0;
-        switch (m_devices->captureConfig.backend) {
-        case AudioBackendType::CoreAudio:
-        case AudioBackendType::WASAPI:
-        case AudioBackendType::ASIO:
-        case AudioBackendType::ALSA:
-        case AudioBackendType::PulseAudio:
-            stackIdx = 0;
-            break;
-        case AudioBackendType::RawFile:
-            stackIdx = 1;
-            break;
-        case AudioBackendType::WavFile:
-            stackIdx = 2;
-            break;
-        case AudioBackendType::SignalGenerator:
-            stackIdx = 3;
-            break;
-        }
-        m_capStack->setCurrentIndex(stackIdx);
     }
+    m_capStack->setCurrentIndex(getCapStackIndex(m_devices->captureConfig.backend));
 
     // Capture Channels (Device Channels combo vs spinbox)
     auto capSuppCh = m_devices->captureConfig.supportedChannels();
@@ -1383,27 +1403,8 @@ void DevicePickerView::refreshUi() {
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
     if (pbBackendIdx >= 0) {
         m_pbBackendCombo->setCurrentIndex(pbBackendIdx);
-        int stackIdx = 0;
-        switch (m_devices->playbackConfig.backend) {
-        case AudioBackendType::CoreAudio:
-        case AudioBackendType::WASAPI:
-        case AudioBackendType::ASIO:
-        case AudioBackendType::ALSA:
-        case AudioBackendType::PulseAudio:
-            stackIdx = 0;
-            break;
-        case AudioBackendType::RawFile:
-            stackIdx = 1;
-            break;
-        case AudioBackendType::WavFile:
-            stackIdx = 2;
-            break;
-        case AudioBackendType::SignalGenerator:
-            stackIdx = 0;
-            break;
-        }
-        m_pbStack->setCurrentIndex(stackIdx);
     }
+    m_pbStack->setCurrentIndex(getPbStackIndex(m_devices->playbackConfig.backend));
 
     // Playback Channels (Device Channels combo vs spinbox)
     auto pbSuppCh = m_devices->playbackConfig.supportedChannels();
@@ -1481,8 +1482,10 @@ void DevicePickerView::refreshUi() {
         m_pbWavFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
     if (m_pbWavFileFormatCombo) {
         QString fmt = QString::fromStdString(m_devices->playbackConfig.fileFormat);
-        if (fmt == "S24_4_RJ_LE")
+        if (fmt == "S24_4_RJ_LE") {
             fmt = "S16_LE";
+            m_devices->playbackConfig.fileFormat = "S16_LE";
+        }
         m_pbWavFileFormatCombo->setCurrentText(fmt);
     }
     if (m_pbWavFileChannelsSpin)

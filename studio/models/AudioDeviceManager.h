@@ -29,7 +29,7 @@ public:
     void fetchDevices();
     void refreshDevices();
     void refreshDeviceCapabilities();
-    void validateSampleRates();
+    bool validateSampleRates();
     void startDeviceChangeListener();
     void stopDeviceChangeListener();
 
