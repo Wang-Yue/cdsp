@@ -275,6 +275,19 @@ callgraph-audit:
 test: test-rust-build $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
+SAN_BASE_CFLAGS := $(filter-out -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O1 -g -fno-omit-frame-pointer
+
+.PHONY: test-asan test-tsan
+test-asan:
+	@echo "\n🩺 Running Unit Tests under AddressSanitizer & UndefinedBehaviorSanitizer...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address,undefined" LDFLAGS="$(LDFLAGS) -fsanitize=address,undefined"
+
+test-tsan:
+	@echo "\n🩺 Running Unit Tests under ThreadSanitizer...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(LDFLAGS) -fsanitize=thread"
+
 run-test-runner:
 	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"
 	+@$(MAKE) $(ALL_TEST_CASES)
