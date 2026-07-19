@@ -16,6 +16,7 @@
 #include <stdio.h>
 
 #include "Audio/sample_conversion.h"
+#include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
@@ -59,7 +60,7 @@ struct wasapi_capture {
   IAudioSessionControl* session_control;
   IAudioSessionEvents* session_events_listener;
   UINT32 buffer_frame_count;
-  HANDLE event;
+  cdsp_sem_t semaphore;
   audio_chunk_t* residual_chunk;
   size_t residual_frames;
   size_t residual_offset;
@@ -90,7 +91,7 @@ struct wasapi_playback {
   IAudioSessionEvents* session_events_listener;
   UINT32 buffer_frame_count;
   _Atomic bool paused;
-  HANDLE event;
+  cdsp_sem_t semaphore;
   bool started;
 
   spsc_audio_ring_buffer_t* ring_buffer;
@@ -586,15 +587,16 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   }
 
   if (!capture->polling) {
-    capture->event = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!capture->event) {
+    capture->semaphore = cdsp_sem_create();
+    if (!capture->semaphore) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Failed to create event handle");
       goto error_cleanup;
     }
 
-    hr = IAudioClient_SetEventHandle(capture->client, capture->event);
+    hr = IAudioClient_SetEventHandle(capture->client,
+                                     (HANDLE)capture->semaphore);
     if (FAILED(hr)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -602,7 +604,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   } else {
-    capture->event = NULL;
+    capture->semaphore = NULL;
   }
 
   hr =
@@ -665,9 +667,9 @@ error_cleanup:
   if (capture->enumerator) {
     SAFE_RELEASE(capture->enumerator);
   }
-  if (capture->event) {
-    CloseHandle(capture->event);
-    capture->event = NULL;
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
   if (capture->com_initialized) {
     CoUninitialize();
@@ -802,7 +804,7 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
         cdsp_sleep_ms(1);
       } else {
         // Wait for the event to be signaled by WASAPI indicating data is ready.
-        if (WaitForSingleObject(capture->event, 2000) != WAIT_OBJECT_0) {
+        if (!cdsp_sem_timedwait(capture->semaphore, 2000)) {
           // Timeout or error wait
         }
       }
@@ -834,9 +836,9 @@ static void wasapi_capture_close(void* ctx) {
     }
     SAFE_RELEASE(capture->session_control);
   }
-  if (capture->event) {
-    CloseHandle(capture->event);
-    capture->event = NULL;
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
   SAFE_RELEASE(capture->mm_device);
   SAFE_RELEASE(capture->enumerator);
@@ -908,8 +910,8 @@ static bool wasapi_capture_wait(void* ctx, uint32_t timeout_ms) {
     cdsp_sleep_ms(1);
     return true;
   }
-  if (!capture->event) return false;
-  return WaitForSingleObject(capture->event, timeout_ms) == WAIT_OBJECT_0;
+  if (!capture->semaphore) return false;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 /**
@@ -1030,7 +1032,7 @@ static void* wasapi_playback_thread_func(void* arg) {
 
   while (
       atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
-    if (WaitForSingleObject(playback->event, 1000) != WAIT_OBJECT_0) {
+    if (!cdsp_sem_timedwait(playback->semaphore, 1000)) {
       continue;
     }
 
@@ -1314,15 +1316,16 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   }
 
   if (!playback->polling) {
-    playback->event = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!playback->event) {
+    playback->semaphore = cdsp_sem_create();
+    if (!playback->semaphore) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                            "Failed to create event handle");
       goto error_cleanup;
     }
 
-    hr = IAudioClient_SetEventHandle(playback->client, playback->event);
+    hr = IAudioClient_SetEventHandle(playback->client,
+                                     (HANDLE)playback->semaphore);
     if (FAILED(hr)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -1330,7 +1333,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   } else {
-    playback->event = NULL;
+    playback->semaphore = NULL;
   }
 
   hr = IAudioClient_GetBufferSize(playback->client,
@@ -1424,7 +1427,7 @@ error_cleanup:
   if (playback->thread_running) {
     atomic_store_explicit(&playback->thread_running, false,
                           memory_order_release);
-    if (playback->event) SetEvent(playback->event);
+    if (playback->semaphore) cdsp_sem_signal(playback->semaphore);
     pthread_join(playback->thread, NULL);
   }
   if (playback->ring_buffer) {
@@ -1454,9 +1457,9 @@ error_cleanup:
   if (playback->enumerator) {
     SAFE_RELEASE(playback->enumerator);
   }
-  if (playback->event) {
-    CloseHandle(playback->event);
-    playback->event = NULL;
+  if (playback->semaphore) {
+    cdsp_sem_destroy(playback->semaphore);
+    playback->semaphore = NULL;
   }
   if (playback->com_initialized) {
     CoUninitialize();
@@ -1649,7 +1652,7 @@ static void wasapi_playback_close(void* ctx) {
   if (playback->thread_running) {
     atomic_store_explicit(&playback->thread_running, false,
                           memory_order_release);
-    if (playback->event) SetEvent(playback->event);
+    if (playback->semaphore) cdsp_sem_signal(playback->semaphore);
     pthread_join(playback->thread, NULL);
   }
   if (playback->ring_buffer) {
@@ -1677,9 +1680,9 @@ static void wasapi_playback_close(void* ctx) {
     }
     SAFE_RELEASE(playback->session_control);
   }
-  if (playback->event) {
-    CloseHandle(playback->event);
-    playback->event = NULL;
+  if (playback->semaphore) {
+    cdsp_sem_destroy(playback->semaphore);
+    playback->semaphore = NULL;
   }
   SAFE_RELEASE(playback->mm_device);
   SAFE_RELEASE(playback->enumerator);
@@ -1843,8 +1846,8 @@ static void wasapi_playback_stop(void* ctx) {
   if (playback->client) {
     IAudioClient_Stop(playback->client);
   }
-  if (playback->event) {
-    SetEvent(playback->event);
+  if (playback->semaphore) {
+    cdsp_sem_signal(playback->semaphore);
   }
 }
 

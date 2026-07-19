@@ -12,6 +12,7 @@
 #include <windows.h>
 
 #include "Audio/sample_conversion.h"
+#include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
@@ -170,6 +171,7 @@ struct asio_capture {
 
   float* callback_buf;
   size_t callback_buf_size;
+  cdsp_sem_t semaphore;
   bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
@@ -205,7 +207,6 @@ struct asio_playback {
 // Global active backend references
 static asio_capture_t* g_active_capture = NULL;
 static asio_playback_t* g_active_playback = NULL;
-static HANDLE g_capture_event = NULL;
 
 typedef struct {
   SRWLOCK lock;
@@ -869,7 +870,9 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
 
       spsc_audio_ring_buffer_write(g_active_capture->ring_buffer,
                                    interleaved_buf, frames * channels, 1);
-      if (g_capture_event) SetEvent(g_capture_event);
+      if (g_active_capture->semaphore) {
+        cdsp_sem_signal(g_active_capture->semaphore);
+      }
     }
   }
 }
@@ -1018,9 +1021,9 @@ static void asio_capture_close_internal(void* ctx) {
     free(capture->channel_infos);
     capture->channel_infos = NULL;
   }
-  if (g_capture_event) {
-    CloseHandle(g_capture_event);
-    g_capture_event = NULL;
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
   if (g_active_capture == capture) g_active_capture = NULL;
 
@@ -1094,7 +1097,7 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
 
   size_t ring_size = capture->channels * capture->chunk_size * 8;
   capture->ring_buffer = spsc_audio_ring_buffer_create(ring_size);
-  g_capture_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+  capture->semaphore = cdsp_sem_create();
   g_active_capture = capture;
 
   if (!capture->full_duplex) {
@@ -1153,7 +1156,7 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
     if (capture->stopped) {
       return false;
     }
-    if (WaitForSingleObject(g_capture_event, 100) != WAIT_OBJECT_0) {
+    if (!cdsp_sem_timedwait(capture->semaphore, 100)) {
       if (!capture->is_running) return false;
     }
   }
@@ -1186,8 +1189,9 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
  * @return true if data became available, false if timed out.
  */
 static bool asio_capture_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  (void)ctx;
-  return WaitForSingleObject(g_capture_event, timeout_ms) == WAIT_OBJECT_0;
+  asio_capture_t* capture = (asio_capture_t*)ctx;
+  if (!capture || !capture->semaphore) return false;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 /**
@@ -1236,8 +1240,8 @@ static void asio_capture_stop(void* ctx) {
   if (capture->iasio) {
     capture->iasio->lpVtbl->stop(capture->iasio);
   }
-  if (g_capture_event) {
-    SetEvent(g_capture_event);
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
   }
 }
 

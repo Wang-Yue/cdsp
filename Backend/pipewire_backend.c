@@ -11,6 +11,7 @@
 #include <time.h>
 
 #include "Audio/sample_conversion.h"
+#include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
@@ -39,6 +40,7 @@ struct pipewire_capture {
   spsc_audio_ring_buffer_t* ring;
   float* decode_buf;
   size_t decode_buf_size;
+  cdsp_sem_t semaphore;
   bool stopped;
 };
 
@@ -95,6 +97,7 @@ static void on_capture_process(void* data) {
 
     spsc_audio_ring_buffer_write(c->ring, src + (offset / sizeof(float)),
                                  frames * c->channels, 1);
+    if (c->semaphore) cdsp_sem_signal(c->semaphore);
   }
 
   pw_stream_queue_buffer(c->stream, b);
@@ -301,6 +304,7 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
                                                 capture->channels * 64);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
   capture->decode_buf = (float*)calloc(capture->decode_buf_size, sizeof(float));
+  capture->semaphore = cdsp_sem_create();
 
   if (!capture->ring || !capture->decode_buf) {
     pipewire_capture_close(capture);
@@ -409,6 +413,11 @@ static void pipewire_capture_close(void* ctx) {
     spsc_audio_ring_buffer_free(capture->ring);
     capture->ring = NULL;
   }
+
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
+  }
   if (capture->decode_buf) {
     free(capture->decode_buf);
     capture->decode_buf = NULL;
@@ -460,18 +469,9 @@ static void pipewire_capture_set_pitch(void* ctx, double multiplier) {
  */
 static bool pipewire_capture_wait(void* ctx, uint32_t timeout_ms) {
   pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
-  if (!capture || !capture->ring) return false;
-  size_t requested = capture->chunk_size * capture->channels;
-  uint32_t elapsed = 0;
-  while (spsc_audio_ring_buffer_get_available_to_read(capture->ring) <
-         requested) {
-    if (elapsed >= timeout_ms) {
-      return false;
-    }
-    cdsp_sleep_ms(1);
-    elapsed += 1;
-  }
-  return true;
+  if (!capture || !capture->ring || !capture->semaphore) return false;
+  if (capture->stopped) return false;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 /**
@@ -487,6 +487,9 @@ static void pipewire_capture_stop(void* ctx) {
     capture->stopped = true;
     if (capture->stream) {
       pw_stream_set_active(capture->stream, false);
+    }
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
     }
     pw_thread_loop_unlock(capture->loop);
   }
