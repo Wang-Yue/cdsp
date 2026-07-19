@@ -106,31 +106,40 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
         config.devices.capture = m_devices->captureConfig.toCaptureDeviceConfig();
         config.devices.playback = m_devices->playbackConfig.toPlaybackDeviceConfig();
 
+#if defined(ENABLE_COREAUDIO)
         if (config.devices.playback.backend == AudioBackendType::CoreAudio) {
             config.devices.playback.coreAudio.exclusive = m_devices->exclusiveMode;
-        } else if (config.devices.playback.backend == AudioBackendType::WASAPI) {
+        }
+#endif
+#if defined(ENABLE_WASAPI)
+        if (config.devices.playback.backend == AudioBackendType::WASAPI) {
             if (m_devices->exclusiveMode) {
                 config.devices.playback.wasapi.exclusive = true;
             }
         }
+#endif
 
         if (m_devices->playbackConfig.backend == AudioBackendType::SignalGenerator) {
             PlaybackDeviceConfig pb;
-#if defined(__APPLE__) || defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
             pb.backend = AudioBackendType::CoreAudio;
             pb.coreAudio.channels = m_devices->playbackConfig.channels;
             pb.coreAudio.device = m_devices->playbackConfig.deviceName();
             pb.coreAudio.exclusive = m_devices->exclusiveMode;
-#elif defined(_WIN32) || defined(Q_OS_WIN)
+#elif defined(ENABLE_WASAPI)
             pb.backend = AudioBackendType::WASAPI;
             pb.wasapi.channels = m_devices->playbackConfig.channels;
             pb.wasapi.device = m_devices->playbackConfig.deviceName();
             if (m_devices->exclusiveMode)
                 pb.wasapi.exclusive = true;
-#else
+#elif defined(ENABLE_ALSA)
             pb.backend = AudioBackendType::ALSA;
             pb.alsa.channels = m_devices->playbackConfig.channels;
             pb.alsa.device = m_devices->playbackConfig.deviceName();
+#else
+            pb.backend = AudioBackendType::RawFile;
+            pb.rawFile.channels = m_devices->playbackConfig.channels;
+            pb.rawFile.filename = m_devices->playbackConfig.filename;
 #endif
             config.devices.playback = pb;
         }

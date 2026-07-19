@@ -11,12 +11,14 @@
 #include <vector>
 
 struct DeviceConfig {
-#if defined(__APPLE__) || defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
     AudioBackendType backend = AudioBackendType::CoreAudio;
-#elif defined(_WIN32) || defined(Q_OS_WIN)
+#elif defined(ENABLE_WASAPI)
     AudioBackendType backend = AudioBackendType::WASAPI;
-#else
+#elif defined(ENABLE_ALSA)
     AudioBackendType backend = AudioBackendType::ALSA;
+#else
+    AudioBackendType backend = AudioBackendType::RawFile;
 #endif
     AudioDeviceDescriptor capabilities;
 

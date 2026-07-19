@@ -168,23 +168,68 @@ struct AudioDeviceDescriptor {
     bool operator!=(const AudioDeviceDescriptor& other) const { return !(*this == other); }
 };
 
+#if !defined(ENABLE_COREAUDIO) && !defined(ENABLE_WASAPI) && !defined(ENABLE_ASIO) && !defined(ENABLE_ALSA) &&         \
+    !defined(ENABLE_PULSEAUDIO) && !defined(ENABLE_PIPEWIRE)
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+#define ENABLE_COREAUDIO 1
+#elif defined(_WIN32) || defined(Q_OS_WIN)
+#define ENABLE_WASAPI 1
+#define ENABLE_ASIO 1
+#elif defined(__linux__) || defined(Q_OS_LINUX)
+#define ENABLE_ALSA 1
+#define ENABLE_PULSEAUDIO 1
+#define ENABLE_PIPEWIRE 1
+#endif
+#endif
+
 enum class AudioBackendType {
+#if defined(ENABLE_COREAUDIO)
     CoreAudio,
+#endif
+#if defined(ENABLE_WASAPI)
     WASAPI,
+#endif
+#if defined(ENABLE_ASIO)
     ASIO,
+#endif
+#if defined(ENABLE_ALSA)
     ALSA,
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     PulseAudio,
+#endif
+#if defined(ENABLE_PIPEWIRE)
     PipeWire,
-    Stdin,
-    Stdout,
+#endif
     RawFile,
     WavFile,
     SignalGenerator
 };
 
 inline bool isHardwareBackend(AudioBackendType type) {
-    return type == AudioBackendType::CoreAudio || type == AudioBackendType::WASAPI || type == AudioBackendType::ASIO ||
-           type == AudioBackendType::ALSA || type == AudioBackendType::PulseAudio || type == AudioBackendType::PipeWire;
+    switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+    case AudioBackendType::PulseAudio:
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AudioBackendType::PipeWire:
+#endif
+        return true;
+    default:
+        return false;
+    }
 }
 
 std::string audioBackendTypeToString(AudioBackendType type);
@@ -247,6 +292,7 @@ struct GeneratorConfig {
     bool operator!=(const GeneratorConfig& other) const { return !(*this == other); }
 };
 
+#if defined(ENABLE_COREAUDIO)
 struct CoreAudioCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -281,7 +327,9 @@ struct CoreAudioPlaybackConfig {
     }
     bool operator!=(const CoreAudioPlaybackConfig& o) const { return !(*this == o); }
 };
+#endif
 
+#if defined(ENABLE_WASAPI)
 struct WASAPICaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -322,7 +370,9 @@ struct WASAPIPlaybackConfig {
     }
     bool operator!=(const WASAPIPlaybackConfig& o) const { return !(*this == o); }
 };
+#endif
 
+#if defined(ENABLE_ASIO)
 struct ASIOCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -356,7 +406,9 @@ struct ASIOPlaybackConfig {
     }
     bool operator!=(const ASIOPlaybackConfig& o) const { return !(*this == o); }
 };
+#endif
 
+#if defined(ENABLE_ALSA)
 struct ALSACaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -394,7 +446,9 @@ struct ALSAPlaybackConfig {
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };
+#endif
 
+#if defined(ENABLE_PULSEAUDIO)
 struct PulseAudioCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -432,7 +486,9 @@ struct PulseAudioPlaybackConfig {
     }
     bool operator!=(const PulseAudioPlaybackConfig& o) const { return !(*this == o); }
 };
+#endif
 
+#if defined(ENABLE_PIPEWIRE)
 struct PipeWireCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
@@ -472,32 +528,7 @@ struct PipeWirePlaybackConfig {
     }
     bool operator!=(const PipeWirePlaybackConfig& o) const { return !(*this == o); }
 };
-
-struct StdInCaptureConfig {
-    int channels = 2;
-    std::string format = "S16_LE";
-    std::vector<std::string> channelLabels;
-    QJsonObject toJson() const;
-    static StdInCaptureConfig fromJson(const QJsonObject& json);
-
-    bool operator==(const StdInCaptureConfig& o) const {
-        return channels == o.channels && format == o.format && channelLabels == o.channelLabels;
-    }
-    bool operator!=(const StdInCaptureConfig& o) const { return !(*this == o); }
-};
-
-struct StdOutPlaybackConfig {
-    int channels = 2;
-    std::string format = "S16_LE";
-    std::vector<std::string> channelLabels;
-    QJsonObject toJson() const;
-    static StdOutPlaybackConfig fromJson(const QJsonObject& json);
-
-    bool operator==(const StdOutPlaybackConfig& o) const {
-        return channels == o.channels && format == o.format && channelLabels == o.channelLabels;
-    }
-    bool operator!=(const StdOutPlaybackConfig& o) const { return !(*this == o); }
-};
+#endif
 
 struct WavFileCaptureConfig {
     std::string filename;
@@ -561,14 +592,35 @@ struct GeneratorCaptureConfig {
 };
 
 struct CaptureDeviceConfig {
-    AudioBackendType backend = AudioBackendType::CoreAudio;
+    AudioBackendType backend =
+#if defined(ENABLE_COREAUDIO)
+        AudioBackendType::CoreAudio;
+#elif defined(ENABLE_WASAPI)
+        AudioBackendType::WASAPI;
+#elif defined(ENABLE_ALSA)
+        AudioBackendType::ALSA;
+#else
+        AudioBackendType::RawFile;
+#endif
+
+#if defined(ENABLE_COREAUDIO)
     CoreAudioCaptureConfig coreAudio;
+#endif
+#if defined(ENABLE_WASAPI)
     WASAPICaptureConfig wasapi;
+#endif
+#if defined(ENABLE_ASIO)
     ASIOCaptureConfig asio;
+#endif
+#if defined(ENABLE_ALSA)
     ALSACaptureConfig alsa;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     PulseAudioCaptureConfig pulseAudio;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     PipeWireCaptureConfig pipeWire;
-    StdInCaptureConfig stdIn;
+#endif
     WavFileCaptureConfig wavFile;
     RawFileCaptureConfig rawFile;
     GeneratorCaptureConfig generator;
@@ -577,30 +629,85 @@ struct CaptureDeviceConfig {
     static CaptureDeviceConfig fromJson(const QJsonObject& json);
 
     bool operator==(const CaptureDeviceConfig& o) const {
-        return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
-               alsa == o.alsa && pulseAudio == o.pulseAudio && pipeWire == o.pipeWire && stdIn == o.stdIn &&
+        return backend == o.backend &&
+#if defined(ENABLE_COREAUDIO)
+               coreAudio == o.coreAudio &&
+#endif
+#if defined(ENABLE_WASAPI)
+               wasapi == o.wasapi &&
+#endif
+#if defined(ENABLE_ASIO)
+               asio == o.asio &&
+#endif
+#if defined(ENABLE_ALSA)
+               alsa == o.alsa &&
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+               pulseAudio == o.pulseAudio &&
+#endif
+#if defined(ENABLE_PIPEWIRE)
+               pipeWire == o.pipeWire &&
+#endif
                wavFile == o.wavFile && rawFile == o.rawFile && generator == o.generator;
     }
     bool operator!=(const CaptureDeviceConfig& o) const { return !(*this == o); }
 };
 
 struct PlaybackDeviceConfig {
-    AudioBackendType backend = AudioBackendType::CoreAudio;
+    AudioBackendType backend =
+#if defined(ENABLE_COREAUDIO)
+        AudioBackendType::CoreAudio;
+#elif defined(ENABLE_WASAPI)
+        AudioBackendType::WASAPI;
+#elif defined(ENABLE_ALSA)
+        AudioBackendType::ALSA;
+#else
+        AudioBackendType::RawFile;
+#endif
+
+#if defined(ENABLE_COREAUDIO)
     CoreAudioPlaybackConfig coreAudio;
+#endif
+#if defined(ENABLE_WASAPI)
     WASAPIPlaybackConfig wasapi;
+#endif
+#if defined(ENABLE_ASIO)
     ASIOPlaybackConfig asio;
+#endif
+#if defined(ENABLE_ALSA)
     ALSAPlaybackConfig alsa;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     PulseAudioPlaybackConfig pulseAudio;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     PipeWirePlaybackConfig pipeWire;
-    StdOutPlaybackConfig stdOut;
+#endif
     RawFilePlaybackConfig rawFile;
 
     QJsonObject toJson() const;
     static PlaybackDeviceConfig fromJson(const QJsonObject& json);
 
     bool operator==(const PlaybackDeviceConfig& o) const {
-        return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
-               alsa == o.alsa && pulseAudio == o.pulseAudio && pipeWire == o.pipeWire && stdOut == o.stdOut &&
+        return backend == o.backend &&
+#if defined(ENABLE_COREAUDIO)
+               coreAudio == o.coreAudio &&
+#endif
+#if defined(ENABLE_WASAPI)
+               wasapi == o.wasapi &&
+#endif
+#if defined(ENABLE_ASIO)
+               asio == o.asio &&
+#endif
+#if defined(ENABLE_ALSA)
+               alsa == o.alsa &&
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+               pulseAudio == o.pulseAudio &&
+#endif
+#if defined(ENABLE_PIPEWIRE)
+               pipeWire == o.pipeWire &&
+#endif
                rawFile == o.rawFile;
     }
     bool operator!=(const PlaybackDeviceConfig& o) const { return !(*this == o); }

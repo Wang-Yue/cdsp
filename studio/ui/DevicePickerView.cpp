@@ -111,32 +111,49 @@ void DevicePickerView::setupUi() {
     capBackendBox->addWidget(capBackendLbl);
 
     m_capBackendCombo = new QComboBox(capGroup);
-#if defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
     m_capBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
-#elif defined(Q_OS_WIN)
+#endif
+#if defined(ENABLE_WASAPI)
     m_capBackendCombo->addItem("WASAPI", static_cast<int>(AudioBackendType::WASAPI));
+#endif
+#if defined(ENABLE_ASIO)
     m_capBackendCombo->addItem("ASIO", static_cast<int>(AudioBackendType::ASIO));
-#else
+#endif
+#if defined(ENABLE_ALSA)
     m_capBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     m_capBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
+#endif
+#if defined(ENABLE_PIPEWIRE)
     m_capBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
-    m_capBackendCombo->addItem("Stdin", static_cast<int>(AudioBackendType::Stdin));
     m_capBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_capBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
     m_capBackendCombo->addItem("SignalGenerator", static_cast<int>(AudioBackendType::SignalGenerator));
 
     auto getCapStackIndex = [](AudioBackendType backend) {
         switch (backend) {
+#if defined(ENABLE_COREAUDIO)
         case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
         case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
         case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
+#endif
+#if defined(ENABLE_PULSEAUDIO)
         case AudioBackendType::PulseAudio:
+#endif
+#if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
+#endif
             return 0;
-        case AudioBackendType::Stdin:
-        case AudioBackendType::Stdout:
         case AudioBackendType::RawFile:
             return 1;
         case AudioBackendType::WavFile:
@@ -188,31 +205,48 @@ void DevicePickerView::setupUi() {
     pbBackendBox->addWidget(pbBackendLbl);
 
     m_pbBackendCombo = new QComboBox(pbGroup);
-#if defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
     m_pbBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
-#elif defined(Q_OS_WIN)
+#endif
+#if defined(ENABLE_WASAPI)
     m_pbBackendCombo->addItem("WASAPI", static_cast<int>(AudioBackendType::WASAPI));
+#endif
+#if defined(ENABLE_ASIO)
     m_pbBackendCombo->addItem("ASIO", static_cast<int>(AudioBackendType::ASIO));
-#else
+#endif
+#if defined(ENABLE_ALSA)
     m_pbBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     m_pbBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
+#endif
+#if defined(ENABLE_PIPEWIRE)
     m_pbBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
-    m_pbBackendCombo->addItem("Stdout", static_cast<int>(AudioBackendType::Stdout));
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_pbBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
 
     auto getPbStackIndex = [](AudioBackendType backend) {
         switch (backend) {
+#if defined(ENABLE_COREAUDIO)
         case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
         case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
         case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
+#endif
+#if defined(ENABLE_PULSEAUDIO)
         case AudioBackendType::PulseAudio:
+#endif
+#if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
+#endif
             return 0;
-        case AudioBackendType::Stdin:
-        case AudioBackendType::Stdout:
         case AudioBackendType::RawFile:
             return 1;
         case AudioBackendType::WavFile:
@@ -1257,15 +1291,25 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
 
 static int getCapStackIndex(AudioBackendType backend) {
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
+#endif
         return 0;
-    case AudioBackendType::Stdin:
-    case AudioBackendType::Stdout:
     case AudioBackendType::RawFile:
         return 1;
     case AudioBackendType::WavFile:
@@ -1278,15 +1322,25 @@ static int getCapStackIndex(AudioBackendType backend) {
 
 static int getPbStackIndex(AudioBackendType backend) {
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
+#endif
         return 0;
-    case AudioBackendType::Stdin:
-    case AudioBackendType::Stdout:
     case AudioBackendType::RawFile:
         return 1;
     case AudioBackendType::WavFile:
@@ -1380,9 +1434,19 @@ void DevicePickerView::refreshUi() {
     if (cutoffIdx >= 0)
         m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
 
-    bool isCapWasapi = (m_devices->captureConfig.backend == AudioBackendType::WASAPI);
-    bool isCapAlsa = (m_devices->captureConfig.backend == AudioBackendType::ALSA ||
-                      m_devices->captureConfig.backend == AudioBackendType::PulseAudio);
+    bool isCapWasapi = false;
+#if defined(ENABLE_WASAPI)
+    isCapWasapi = (m_devices->captureConfig.backend == AudioBackendType::WASAPI);
+#endif
+    bool isCapAlsa = false;
+#if defined(ENABLE_ALSA)
+    if (m_devices->captureConfig.backend == AudioBackendType::ALSA)
+        isCapAlsa = true;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+    if (m_devices->captureConfig.backend == AudioBackendType::PulseAudio)
+        isCapAlsa = true;
+#endif
     m_capWasapiExclusiveCheck->setVisible(isCapWasapi);
     m_capWasapiLoopbackCheck->setVisible(isCapWasapi);
     m_capWasapiPollingCheck->setVisible(isCapWasapi);
@@ -1477,7 +1541,11 @@ void DevicePickerView::refreshUi() {
     }
 
     m_exclusiveModeCheck->setChecked(m_devices->exclusiveMode);
-    m_pbWasapiPollingCheck->setVisible(m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
+    bool isPbWasapi = false;
+#if defined(ENABLE_WASAPI)
+    isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
+#endif
+    m_pbWasapiPollingCheck->setVisible(isPbWasapi);
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));

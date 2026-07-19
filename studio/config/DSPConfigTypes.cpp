@@ -172,22 +172,30 @@ SampleFormat stringToSampleFormat(const std::string& str) {
 
 std::string audioBackendTypeToString(AudioBackendType type) {
     switch (type) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return "CoreAudio";
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         return "WASAPI";
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         return "ASIO";
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         return "ALSA";
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         return "PulseAudio";
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         return "PipeWire";
-    case AudioBackendType::Stdin:
-        return "Stdin";
-    case AudioBackendType::Stdout:
-        return "Stdout";
+#endif
     case AudioBackendType::RawFile:
         return "RawFile";
     case AudioBackendType::WavFile:
@@ -195,29 +203,37 @@ std::string audioBackendTypeToString(AudioBackendType type) {
     case AudioBackendType::SignalGenerator:
         return "SignalGenerator";
     }
-    return "CoreAudio";
+    return "RawFile";
 }
 
 AudioBackendType stringToAudioBackendType(const std::string& str) {
     std::string lowerStr = str;
     std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::tolower);
 
+#if defined(ENABLE_COREAUDIO)
     if (lowerStr == "coreaudio")
         return AudioBackendType::CoreAudio;
+#endif
+#if defined(ENABLE_WASAPI)
     if (lowerStr == "wasapi")
         return AudioBackendType::WASAPI;
+#endif
+#if defined(ENABLE_ASIO)
     if (lowerStr == "asio")
         return AudioBackendType::ASIO;
+#endif
+#if defined(ENABLE_ALSA)
     if (lowerStr == "alsa")
         return AudioBackendType::ALSA;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     if (lowerStr == "pulseaudio" || lowerStr == "pulse")
         return AudioBackendType::PulseAudio;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     if (lowerStr == "pipewire")
         return AudioBackendType::PipeWire;
-    if (lowerStr == "stdin")
-        return AudioBackendType::Stdin;
-    if (lowerStr == "stdout")
-        return AudioBackendType::Stdout;
+#endif
     if (lowerStr == "rawfile" || lowerStr == "file")
         return AudioBackendType::RawFile;
     if (lowerStr == "wavfile")
@@ -225,12 +241,14 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
     if (lowerStr == "signalgenerator")
         return AudioBackendType::SignalGenerator;
 
-#if defined(_WIN32) || defined(Q_OS_WIN)
-    return AudioBackendType::WASAPI;
-#elif defined(__APPLE__) || defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
     return AudioBackendType::CoreAudio;
-#else
+#elif defined(ENABLE_WASAPI)
+    return AudioBackendType::WASAPI;
+#elif defined(ENABLE_ALSA)
     return AudioBackendType::ALSA;
+#else
+    return AudioBackendType::RawFile;
 #endif
 }
 
@@ -779,6 +797,7 @@ QJsonObject GeneratorConfig::toJson() const {
     return obj;
 }
 
+#if defined(ENABLE_COREAUDIO)
 CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json) {
     CoreAudioCaptureConfig cfg;
     if (json.contains("channels"))
@@ -864,6 +883,7 @@ QJsonObject CoreAudioPlaybackConfig::toJson() const {
     }
     return obj;
 }
+#endif
 
 WavFileCaptureConfig WavFileCaptureConfig::fromJson(const QJsonObject& json) {
     WavFileCaptureConfig cfg;
@@ -1004,6 +1024,7 @@ QJsonObject GeneratorCaptureConfig::toJson() const {
     return obj;
 }
 
+#if defined(ENABLE_WASAPI)
 WASAPICaptureConfig WASAPICaptureConfig::fromJson(const QJsonObject& json) {
     WASAPICaptureConfig cfg;
     if (json.contains("channels"))
@@ -1103,7 +1124,9 @@ QJsonObject WASAPIPlaybackConfig::toJson() const {
     }
     return obj;
 }
+#endif
 
+#if defined(ENABLE_ASIO)
 ASIOCaptureConfig ASIOCaptureConfig::fromJson(const QJsonObject& json) {
     ASIOCaptureConfig cfg;
     if (json.contains("channels"))
@@ -1183,7 +1206,9 @@ QJsonObject ASIOPlaybackConfig::toJson() const {
     }
     return obj;
 }
+#endif
 
+#if defined(ENABLE_ALSA)
 ALSACaptureConfig ALSACaptureConfig::fromJson(const QJsonObject& json) {
     ALSACaptureConfig cfg;
     if (json.contains("channels"))
@@ -1271,7 +1296,9 @@ QJsonObject ALSAPlaybackConfig::toJson() const {
     }
     return obj;
 }
+#endif
 
+#if defined(ENABLE_PULSEAUDIO)
 PulseAudioCaptureConfig PulseAudioCaptureConfig::fromJson(const QJsonObject& json) {
     PulseAudioCaptureConfig cfg;
     if (json.contains("channels"))
@@ -1359,7 +1386,9 @@ QJsonObject PulseAudioPlaybackConfig::toJson() const {
     }
     return obj;
 }
+#endif
 
+#if defined(ENABLE_PIPEWIRE)
 PipeWireCaptureConfig PipeWireCaptureConfig::fromJson(const QJsonObject& json) {
     PipeWireCaptureConfig cfg;
     if (json.contains("channels"))
@@ -1455,89 +1484,43 @@ QJsonObject PipeWirePlaybackConfig::toJson() const {
     }
     return obj;
 }
-
-StdInCaptureConfig StdInCaptureConfig::fromJson(const QJsonObject& json) {
-    StdInCaptureConfig cfg;
-    if (json.contains("channels"))
-        cfg.channels = json["channels"].toInt();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
-    }
-    return cfg;
-}
-
-QJsonObject StdInCaptureConfig::toJson() const {
-    QJsonObject obj;
-    obj["type"] = "Stdin";
-    obj["channels"] = channels;
-    obj["format"] = QString::fromStdString(format);
-    if (!channelLabels.empty()) {
-        QJsonArray arr;
-        for (const auto& l : channelLabels)
-            arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
-    }
-    return obj;
-}
-
-StdOutPlaybackConfig StdOutPlaybackConfig::fromJson(const QJsonObject& json) {
-    StdOutPlaybackConfig cfg;
-    if (json.contains("channels"))
-        cfg.channels = json["channels"].toInt();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
-    }
-    return cfg;
-}
-
-QJsonObject StdOutPlaybackConfig::toJson() const {
-    QJsonObject obj;
-    obj["type"] = "Stdout";
-    obj["channels"] = channels;
-    obj["format"] = QString::fromStdString(format);
-    if (!channelLabels.empty()) {
-        QJsonArray arr;
-        for (const auto& l : channelLabels)
-            arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
-    }
-    return obj;
-}
+#endif
 
 CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
     CaptureDeviceConfig cfg;
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         cfg.wasapi = WASAPICaptureConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         cfg.asio = ASIOCaptureConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         cfg.alsa = ALSACaptureConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         cfg.pulseAudio = PulseAudioCaptureConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cfg.pipeWire = PipeWireCaptureConfig::fromJson(json);
         break;
-    case AudioBackendType::Stdin:
-        cfg.stdIn = StdInCaptureConfig::fromJson(json);
-        break;
-    case AudioBackendType::Stdout:
-        break;
+#endif
     case AudioBackendType::WavFile:
         cfg.wavFile = WavFileCaptureConfig::fromJson(json);
         break;
@@ -1553,22 +1536,30 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject CaptureDeviceConfig::toJson() const {
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return coreAudio.toJson();
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         return wasapi.toJson();
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         return asio.toJson();
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         return alsa.toJson();
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         return pulseAudio.toJson();
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         return pipeWire.toJson();
-    case AudioBackendType::Stdin:
-        return stdIn.toJson();
-    case AudioBackendType::Stdout:
-        return stdIn.toJson();
+#endif
     case AudioBackendType::WavFile:
         return wavFile.toJson();
     case AudioBackendType::RawFile:
@@ -1576,7 +1567,7 @@ QJsonObject CaptureDeviceConfig::toJson() const {
     case AudioBackendType::SignalGenerator:
         return generator.toJson();
     }
-    return coreAudio.toJson();
+    return rawFile.toJson();
 }
 
 PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
@@ -1584,35 +1575,41 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         cfg.wasapi = WASAPIPlaybackConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         cfg.asio = ASIOPlaybackConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         cfg.alsa = ALSAPlaybackConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         cfg.pulseAudio = PulseAudioPlaybackConfig::fromJson(json);
         break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cfg.pipeWire = PipeWirePlaybackConfig::fromJson(json);
         break;
-    case AudioBackendType::Stdin:
-        break;
-    case AudioBackendType::Stdout:
-        cfg.stdOut = StdOutPlaybackConfig::fromJson(json);
-        break;
+#endif
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
         cfg.rawFile = RawFilePlaybackConfig::fromJson(json);
         break;
     case AudioBackendType::SignalGenerator:
-        cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json);
         break;
     }
     return cfg;
@@ -1620,29 +1617,37 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject PlaybackDeviceConfig::toJson() const {
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return coreAudio.toJson();
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         return wasapi.toJson();
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         return asio.toJson();
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         return alsa.toJson();
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         return pulseAudio.toJson();
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         return pipeWire.toJson();
-    case AudioBackendType::Stdin:
-        return stdOut.toJson();
-    case AudioBackendType::Stdout:
-        return stdOut.toJson();
+#endif
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
         return rawFile.toJson();
     case AudioBackendType::SignalGenerator:
         return rawFile.toJson();
     }
-    return coreAudio.toJson();
+    return rawFile.toJson();
 }
 
 ResamplerConfig ResamplerConfig::fromJson(const QJsonObject& json) {

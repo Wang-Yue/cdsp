@@ -197,12 +197,15 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     CaptureDeviceConfig cap;
     cap.backend = backend;
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         cap.wasapi.channels = channels;
         cap.wasapi.device = deviceName();
@@ -210,6 +213,8 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.wasapi.bypassDoP = bypassDoP;
         cap.wasapi.dopCutoffHz = dopCutoffHz;
         break;
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         cap.asio.channels = channels;
         cap.asio.device = deviceName();
@@ -217,16 +222,22 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.asio.bypassDoP = bypassDoP;
         cap.asio.dopCutoffHz = dopCutoffHz;
         break;
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         cap.alsa.channels = channels;
         cap.alsa.device = deviceName();
         cap.alsa.format = format;
         break;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         cap.pulseAudio.channels = channels;
         cap.pulseAudio.device = deviceName();
         cap.pulseAudio.format = format;
         break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cap.pipeWire.channels = channels;
         cap.pipeWire.device = deviceName();
@@ -240,12 +251,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         if (!autoconnectTo.empty())
             cap.pipeWire.autoconnectTo = autoconnectTo;
         break;
-    case AudioBackendType::Stdin:
-        cap.stdIn.channels = channels;
-        cap.stdIn.format = fileFormat;
-        break;
-    case AudioBackendType::Stdout:
-        break;
+#endif
     case AudioBackendType::WavFile:
         cap.wavFile.filename = filename.empty() ? "" : filename;
         cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
@@ -272,12 +278,15 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     PlaybackDeviceConfig pb;
     pb.backend = backend;
     switch (backend) {
+#if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         pb.coreAudio.channels = channels;
         pb.coreAudio.device = deviceName();
         pb.coreAudio.outputDoP = outputDoP;
         pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
         break;
+#endif
+#if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
         pb.wasapi.channels = channels;
         pb.wasapi.device = deviceName();
@@ -285,6 +294,8 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.wasapi.outputDoP = outputDoP;
         pb.wasapi.dsdEncoderFilter = dsdEncoderFilter;
         break;
+#endif
+#if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
         pb.asio.channels = channels;
         pb.asio.device = deviceName();
@@ -292,16 +303,22 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.asio.outputDoP = outputDoP;
         pb.asio.dsdEncoderFilter = dsdEncoderFilter;
         break;
+#endif
+#if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
         break;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
     case AudioBackendType::PulseAudio:
         pb.pulseAudio.channels = channels;
         pb.pulseAudio.device = deviceName();
         pb.pulseAudio.format = format;
         break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         pb.pipeWire.channels = channels;
         pb.pipeWire.device = deviceName();
@@ -315,12 +332,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         if (!autoconnectTo.empty())
             pb.pipeWire.autoconnectTo = autoconnectTo;
         break;
-    case AudioBackendType::Stdin:
-        break;
-    case AudioBackendType::Stdout:
-        pb.stdOut.channels = channels;
-        pb.stdOut.format = fileFormat;
-        break;
+#endif
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
         pb.rawFile.filename = filename.empty() ? "" : filename;
