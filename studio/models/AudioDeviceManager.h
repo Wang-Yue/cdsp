@@ -67,6 +67,9 @@ private:
 
     void* m_coreAudioListenerBlock = nullptr;
 
+    uint64_t m_fetchDevicesVersion = 0;
+    uint64_t m_capabilityRequestVersion = 0;
+
     void loadSavedConfigs();
 };
 

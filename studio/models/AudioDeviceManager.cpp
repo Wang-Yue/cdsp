@@ -26,6 +26,8 @@ AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::
 
 AudioDeviceManager::~AudioDeviceManager() {
     stopDeviceChangeListener();
+    m_fetchDevicesVersion++;
+    m_capabilityRequestVersion++;
     m_devicesWatcher.cancel();
     m_devicesWatcher.waitForFinished();
     m_capabilitiesWatcher.cancel();
@@ -163,17 +165,20 @@ void AudioDeviceManager::setExclusiveMode(bool exclusive) {
     if (m_isInitializing)
         return;
     exclusiveMode = exclusive;
-    if (!exclusiveMode && playbackConfig.outputDoP) {
-        playbackConfig.outputDoP = false;
-    }
     saveConfigs();
-    emit configChanged();
-    if (onConfigChanged)
-        onConfigChanged();
+    if (!exclusiveMode && playbackConfig.outputDoP) {
+        DeviceConfig newPb = playbackConfig;
+        newPb.outputDoP = false;
+        setPlaybackConfig(newPb);
+    } else {
+        emit configChanged();
+        if (onConfigChanged)
+            onConfigChanged();
+    }
 }
 
 std::vector<int> AudioDeviceManager::captureRateOptions() const {
-    if (m_settings->resamplerEnabled)
+    if (!m_settings || m_settings->resamplerEnabled)
         return captureConfig.supportedRates();
     auto cap = captureConfig.supportedRates();
     auto pb = playbackConfig.supportedRates();
@@ -193,12 +198,15 @@ std::vector<int> AudioDeviceManager::captureRateOptions() const {
 }
 
 std::vector<int> AudioDeviceManager::playbackRateOptions() const {
+    if (!m_settings)
+        return playbackConfig.supportedRates();
     return m_settings->resamplerEnabled ? playbackConfig.supportedRates() : captureRateOptions();
 }
 
 double AudioDeviceManager::latencyMs() const {
+    int chunkSize = m_settings ? m_settings->chunkSize : 1024;
     int rate = std::max(1, captureConfig.sampleRate);
-    return (static_cast<double>(m_settings->chunkSize) / static_cast<double>(rate)) * 1000.0;
+    return (static_cast<double>(chunkSize) / static_cast<double>(rate)) * 1000.0;
 }
 
 bool AudioDeviceManager::devicesAvailable() const {
@@ -232,8 +240,7 @@ void AudioDeviceManager::fetchDevices() {
     if (!engine)
         return;
 
-    m_devicesWatcher.cancel();
-    m_devicesWatcher.waitForFinished();
+    uint64_t version = ++m_fetchDevicesVersion;
 
     auto toLowerStr = [](std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
@@ -246,10 +253,12 @@ void AudioDeviceManager::fetchDevices() {
                                      ? toLowerStr(audioBackendTypeToString(playbackConfig.backend))
                                      : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
 
-    m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
+    m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, version, capBackendLower, pbBackendLower]() {
         auto cap = engine->getAvailableDevices(capBackendLower, true);
         auto pb = engine->getAvailableDevices(pbBackendLower, false);
-        QMetaObject::invokeMethod(this, [this, cap, pb]() {
+        QMetaObject::invokeMethod(this, [this, version, cap, pb]() {
+            if (version != m_fetchDevicesVersion)
+                return;
             captureDevices = cap;
             playbackDevices = pb;
             refreshDeviceCapabilities();
@@ -263,8 +272,7 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     if (!engine)
         return;
 
-    m_capabilitiesWatcher.cancel();
-    m_capabilitiesWatcher.waitForFinished();
+    uint64_t version = ++m_capabilityRequestVersion;
 
     std::string capName = captureConfig.deviceName().value_or("");
     std::string pbName = playbackConfig.deviceName().value_or("");
@@ -279,7 +287,7 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     bool isPbHw = isHardwareBackend(playbackConfig.backend);
 
     m_capabilitiesWatcher.setFuture(
-        QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
+        QtConcurrent::run([this, engine, version, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
             std::optional<AudioDeviceDescriptor> capDesc;
             std::optional<AudioDeviceDescriptor> pbDesc;
 
@@ -290,12 +298,13 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                 pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
             }
 
-            QMetaObject::invokeMethod(this, [this, capName, pbName, capDesc, pbDesc, isCapHw, isPbHw]() {
+            QMetaObject::invokeMethod(this, [this, version, capDesc, pbDesc, isCapHw, isPbHw]() {
+                if (version != m_capabilityRequestVersion)
+                    return;
+
                 if (isCapHw) {
                     if (capDesc.has_value()) {
                         captureConfig.capabilities = capDesc.value();
-                    } else {
-                        captureConfig.capabilities = AudioDeviceDescriptor{capName, {}};
                     }
                 } else {
                     captureConfig.capabilities = AudioDeviceDescriptor();
@@ -304,8 +313,6 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                 if (isPbHw) {
                     if (pbDesc.has_value()) {
                         playbackConfig.capabilities = pbDesc.value();
-                    } else {
-                        playbackConfig.capabilities = AudioDeviceDescriptor{pbName, {}};
                     }
                 } else {
                     playbackConfig.capabilities = AudioDeviceDescriptor();
@@ -348,11 +355,11 @@ void AudioDeviceManager::validateSampleRates() {
             changed = true;
         }
     }
-    if (!m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
+    if (m_settings && !m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
         captureConfig.sampleRate = playbackConfig.sampleRate;
         changed = true;
     }
-    if (m_settings->resamplerEnabled && m_settings->resamplerType == ResamplerType::Slip &&
+    if (m_settings && m_settings->resamplerEnabled && m_settings->resamplerType == ResamplerType::Slip &&
         captureConfig.sampleRate != playbackConfig.sampleRate) {
         m_settings->resamplerType = ResamplerType::Synchronous;
         m_settings->savePreferences();

@@ -378,7 +378,7 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
 }
 
 bool DeviceConfig::operator==(const DeviceConfig& other) const {
-    return backend == other.backend && capabilities.name == other.capabilities.name && channels == other.channels &&
+    return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&

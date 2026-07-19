@@ -77,6 +77,10 @@ struct SamplerateCapability {
     std::vector<std::string> formats;
     QJsonObject toJson() const;
     static SamplerateCapability fromJson(const QJsonObject& json);
+    bool operator==(const SamplerateCapability& other) const {
+        return samplerate == other.samplerate && formats == other.formats;
+    }
+    bool operator!=(const SamplerateCapability& other) const { return !(*this == other); }
 };
 
 struct ChannelCapability {
@@ -84,12 +88,18 @@ struct ChannelCapability {
     std::vector<SamplerateCapability> samplerates;
     QJsonObject toJson() const;
     static ChannelCapability fromJson(const QJsonObject& json);
+    bool operator==(const ChannelCapability& other) const {
+        return channels == other.channels && samplerates == other.samplerates;
+    }
+    bool operator!=(const ChannelCapability& other) const { return !(*this == other); }
 };
 
 struct DeviceCapabilitySet {
     std::vector<ChannelCapability> capabilities;
     QJsonObject toJson() const;
     static DeviceCapabilitySet fromJson(const QJsonObject& json);
+    bool operator==(const DeviceCapabilitySet& other) const { return capabilities == other.capabilities; }
+    bool operator!=(const DeviceCapabilitySet& other) const { return !(*this == other); }
 };
 
 struct AudioDeviceDescriptor {
@@ -97,6 +107,10 @@ struct AudioDeviceDescriptor {
     std::vector<DeviceCapabilitySet> capability_sets;
     QJsonObject toJson() const;
     static AudioDeviceDescriptor fromJson(const QJsonObject& json);
+    bool operator==(const AudioDeviceDescriptor& other) const {
+        return name == other.name && capability_sets == other.capability_sets;
+    }
+    bool operator!=(const AudioDeviceDescriptor& other) const { return !(*this == other); }
 };
 
 enum class AudioBackendType { CoreAudio, WASAPI, ASIO, ALSA, PulseAudio, RawFile, WavFile, SignalGenerator };

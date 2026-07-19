@@ -78,6 +78,24 @@ void AudioSettings::setMuted(bool muted, Fader fader) {
     savePreferences();
 }
 
+void AudioSettings::setSilenceThreshold(int val) {
+    silenceThreshold = val;
+    notifyChange();
+}
+
+void AudioSettings::setSilenceTimeout(int val) {
+    silenceTimeout = val;
+    notifyChange();
+}
+
+void AudioSettings::setSilenceThresholdDouble(double val) {
+    setSilenceThreshold(static_cast<int>(val));
+}
+
+void AudioSettings::setSilenceTimeoutDouble(double val) {
+    setSilenceTimeout(static_cast<int>(val));
+}
+
 void AudioSettings::notifyChange() {
     savePreferences();
     emit changed();
@@ -106,6 +124,8 @@ void AudioSettings::loadPreferences() {
         resamplerOversamplingFactor = 128;
     resamplerWindow = s.value("resamplerWindow", "BlackmanHarris").toString().toStdString();
     resamplerFCutoff = s.value("resamplerFCutoff", 0.95).toDouble();
+    if (resamplerFCutoff <= 0.0)
+        resamplerFCutoff = 0.95;
     resamplerInterpolation =
         stringToResamplerInterpolation(s.value("resamplerInterpolation", "Cubic").toString().toStdString());
     resamplerSincInterpolation =
@@ -126,11 +146,19 @@ void AudioSettings::loadPreferences() {
 
     silenceThreshold = s.value("silenceThreshold", -60).toInt();
     silenceTimeout = s.value("silenceTimeout", 0).toInt();
+    if (silenceTimeout < 0)
+        silenceTimeout = 0;
     queuelimit = s.value("queuelimit", 4).toInt();
+    if (queuelimit <= 0)
+        queuelimit = 4;
     stopOnRateChange = s.value("stopOnRateChange", false).toBool();
     rateMeasureInterval = s.value("rateMeasureInterval", 1.0).toDouble();
+    if (rateMeasureInterval <= 0.0)
+        rateMeasureInterval = 1.0;
     multithreaded = s.value("multithreaded", false).toBool();
     workerThreads = s.value("workerThreads", 0).toInt();
+    if (workerThreads < 0)
+        workerThreads = 0;
     darkMode = s.value("darkMode", false).toBool();
     autoStartEngine = s.value("autoStartEngine", false).toBool();
     logLevel = s.value("logLevel", 2).toInt();
