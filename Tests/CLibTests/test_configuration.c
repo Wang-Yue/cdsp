@@ -760,4 +760,32 @@ TEST(RejectWavS24_4_RJ) {
   ASSERT_TRUE(config == NULL);
 }
 
+TEST(RejectMissingResamplerWhenRatesDiffer) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"capture_samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(-1, res);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
+  ASSERT_TRUE(strstr(err.message, "requires a resampler to be configured") !=
+              NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
 TEST_MAIN()
