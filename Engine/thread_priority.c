@@ -2,7 +2,9 @@
 
 #include "Logging/app_logger.h"
 
+#ifndef CDSP_TEST
 static const logger_t g_logger = {"dsp.threadpriority"};
+#endif
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -23,6 +25,12 @@ static const logger_t g_logger = {"dsp.threadpriority"};
 #ifdef __APPLE__
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
+#ifdef CDSP_TEST
+  (void)name;
+  (void)buffer_frames;
+  (void)sample_rate;
+  return;
+#else
   if (buffer_frames == 0 || sample_rate == 0) {
     logger_warn(&g_logger,
                 "[%s] Invalid audio parameters for real-time priority: "
@@ -95,6 +103,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
     logger_warn(&g_logger, "[%s] Failed to set real-time thread policy: %d",
                 name ? name : "unknown", result);
   }
+#endif
 }
 #elif defined(__linux__)
 #if !defined(NO_DBUS) && !defined(DISABLE_DBUS)
@@ -453,6 +462,12 @@ fallback:
 #include <windows.h>
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
+#ifdef CDSP_TEST
+  (void)name;
+  (void)buffer_frames;
+  (void)sample_rate;
+  return;
+#else
   (void)buffer_frames;
   (void)sample_rate;
   HANDLE thread = GetCurrentThread();
@@ -466,6 +481,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 "[%s] Failed to set thread priority on Windows: err=%lu",
                 name ? name : "unknown", GetLastError());
   }
+#endif
 }
 #else
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
