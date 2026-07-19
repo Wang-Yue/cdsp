@@ -91,6 +91,18 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
     if (last_capture_time > 0) {
       double elapsed = (double)(cdsp_time_now_ns() - last_capture_time) / 1000000000.0;
       double timeout_sec = 0.5;
+      if (core->current_config) {
+        size_t sr = core->current_config->devices.has_capture_samplerate
+                        ? core->current_config->devices.capture_samplerate
+                        : core->current_config->devices.samplerate;
+        size_t chunk_size = core->current_config->devices.chunksize;
+        if (sr > 0 && chunk_size > 0) {
+          double chunk_duration = (double)chunk_size / (double)sr;
+          if (2.0 * chunk_duration > timeout_sec) {
+            timeout_sec = 2.0 * chunk_duration;
+          }
+        }
+      }
       if (elapsed > timeout_sec) {
         engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
         logger_warn(&g_logger, "Watchdog: capture device stalled (no data for %.3fs)", elapsed);

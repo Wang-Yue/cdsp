@@ -268,7 +268,11 @@ $(foreach bin,$(UNIT_TEST_BINS),\
   )\
 )
 
-test: test-rust-build $(UNIT_TEST_BINS)
+.PHONY: callgraph-audit
+callgraph-audit:
+	@python3 Tools/generate_callgraph.py > /dev/null && echo "✅ Static Call Graph Audit passed" || (echo "❌ Static Call Graph Audit failed" && exit 1)
+
+test: test-rust-build callgraph-audit $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
 run-test-runner:
