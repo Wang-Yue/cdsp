@@ -1177,6 +1177,8 @@ ASIOPlaybackConfig ASIOPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.format = json["format"].toString().toStdString();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
+    if (json.contains("output_dsd"))
+        cfg.outputDSD = json["output_dsd"].toBool();
     if (json.contains("dsd_encoder_filter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
     if (json.contains("channel_labels")) {
@@ -1196,6 +1198,8 @@ QJsonObject ASIOPlaybackConfig::toJson() const {
         obj["format"] = QString::fromStdString(format.value());
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
+    if (outputDSD.has_value())
+        obj["output_dsd"] = outputDSD.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
     if (!channelLabels.empty()) {
@@ -1267,6 +1271,8 @@ ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
     if (json.contains("link_mute_control"))
         cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("output_dsd"))
+        cfg.outputDSD = json["output_dsd"].toBool();
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -1288,6 +1294,8 @@ QJsonObject ALSAPlaybackConfig::toJson() const {
         obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
     if (linkMuteControl.has_value())
         obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (outputDSD.has_value())
+        obj["output_dsd"] = outputDSD.value();
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)

@@ -395,6 +395,7 @@ struct ASIOPlaybackConfig {
     std::optional<std::string> device;
     std::optional<std::string> format;
     std::optional<bool> outputDoP;
+    std::optional<bool> outputDSD;
     std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
@@ -402,7 +403,7 @@ struct ASIOPlaybackConfig {
 
     bool operator==(const ASIOPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
-               dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+               outputDSD == o.outputDSD && dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
     }
     bool operator!=(const ASIOPlaybackConfig& o) const { return !(*this == o); }
 };
@@ -435,6 +436,7 @@ struct ALSAPlaybackConfig {
     std::optional<bool> stopOnInactive;
     std::optional<std::string> linkVolumeControl;
     std::optional<std::string> linkMuteControl;
+    std::optional<bool> outputDSD;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
@@ -442,7 +444,7 @@ struct ALSAPlaybackConfig {
     bool operator==(const ALSAPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format &&
                stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+               linkMuteControl == o.linkMuteControl && outputDSD == o.outputDSD && channelLabels == o.channelLabels;
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };
