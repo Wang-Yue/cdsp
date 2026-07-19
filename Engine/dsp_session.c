@@ -276,6 +276,11 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
     return false;
   }
 
+  // Defensive garbage collection: dsp_engine_set_config_struct_locked already calls
+  // dsp_session_collect_garbage prior to reload, but calling it here defensively
+  // ensures uncollected pipelines are freed even if dsp_session_reload_config is called directly.
+  dsp_session_collect_garbage(core);
+
   pthread_mutex_lock(&core->config_mutex);
   dsp_config_t* old_config = core->current_config;
   pthread_mutex_unlock(&core->config_mutex);
