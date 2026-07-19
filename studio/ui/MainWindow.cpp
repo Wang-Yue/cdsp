@@ -763,19 +763,6 @@ void MainWindow::setupShortcuts() {
 
 void MainWindow::changeEvent(QEvent* event) {
     QMainWindow::changeEvent(event);
-    if (event->type() == QEvent::WindowStateChange) {
-        if (isMinimized()) {
-            setWindowState(windowState() & ~Qt::WindowMinimized);
-            toggleMiniPlayer();
-        }
-    } else if (event->type() == QEvent::ApplicationActivate) {
-        if (m_miniPlayer && m_miniPlayer->isVisible()) {
-            m_miniPlayer->hide();
-            showNormal();
-            raise();
-            activateWindow();
-        }
-    }
 }
 
 void MainWindow::toggleMute() {
