@@ -19,15 +19,7 @@
 
 #if defined(ENABLE_COREAUDIO)
 
-#include <AudioToolbox/AudioToolbox.h>
-#include <CoreAudio/CoreAudio.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
-#include "Utils/lock_free_ring_buffer.h"
 #include "audio_backend.h"
-#include "core_audio_device.h"
 
 /**
  * @brief Opaque structure representing the CoreAudio playback backend.

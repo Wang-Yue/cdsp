@@ -8,10 +8,6 @@
 
 #if defined(ENABLE_PIPEWIRE)
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "audio_backend.h"
 
 /**
@@ -23,11 +19,6 @@ typedef struct pipewire_capture pipewire_capture_t;
  * @brief Opaque structure representing the PipeWire playback backend.
  */
 typedef struct pipewire_playback pipewire_playback_t;
-
-/**
- * @brief Opaque structure representing processing parameters.
- */
-typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @brief Global virtual method table for PipeWire capture backend.

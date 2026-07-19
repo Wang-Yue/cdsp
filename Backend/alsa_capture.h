@@ -12,18 +12,12 @@
 
 #if defined(ENABLE_ALSA)
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "audio_backend.h"
 
 /**
  * @brief Opaque structure representing the ALSA capture backend instance.
  */
 typedef struct alsa_capture alsa_capture_t;
-
-typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @brief Global virtual method table for ALSA capture backend.

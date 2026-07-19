@@ -13,6 +13,8 @@
 
 #include "core_audio_playback.h"
 #if defined(ENABLE_COREAUDIO)
+#include <AudioToolbox/AudioToolbox.h>
+#include <CoreAudio/CoreAudio.h>
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
 #endif
@@ -24,6 +26,8 @@
 
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
+#include "core_audio_device.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 

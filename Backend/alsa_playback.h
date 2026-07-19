@@ -3,10 +3,6 @@
 
 #if defined(ENABLE_ALSA)
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "audio_backend.h"
 
 /**
@@ -22,8 +18,6 @@
  * @brief Opaque structure representing the ALSA playback backend.
  */
 typedef struct alsa_playback alsa_playback_t;
-
-typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @brief Global virtual method table for ALSA playback backend.

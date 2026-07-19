@@ -6,10 +6,6 @@
 #ifndef CLIB_BACKEND_FILE_BACKEND_H
 #define CLIB_BACKEND_FILE_BACKEND_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "audio_backend.h"
 
 /**
@@ -21,11 +17,6 @@ typedef struct file_capture file_capture_t;
  * @brief Opaque structure representing the file playback backend.
  */
 typedef struct file_playback file_playback_t;
-
-/**
- * @brief Opaque structure representing processing parameters.
- */
-typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @brief Global virtual method table for File capture backend.

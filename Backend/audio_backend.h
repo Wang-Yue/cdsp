@@ -266,8 +266,6 @@ struct playback_backend {
   const playback_backend_vtable_t* vtable; /**< Virtual method table */
 };
 
-typedef struct processing_parameters processing_parameters_t;
-
 // Factory functions
 
 /**

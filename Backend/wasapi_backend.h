@@ -11,10 +11,6 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "audio_backend.h"
 
 /**
@@ -28,12 +24,6 @@ typedef struct wasapi_capture wasapi_capture_t;
  * @brief Opaque structure representing a WASAPI playback session.
  */
 typedef struct wasapi_playback wasapi_playback_t;
-
-/**
- * @typedef processing_parameters_t
- * @brief Opaque structure representing processing parameters.
- */
-typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @brief Global virtual method table for WASAPI capture backend.
