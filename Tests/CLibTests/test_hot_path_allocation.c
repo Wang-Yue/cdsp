@@ -13,7 +13,10 @@
 #include "Audio/processing_parameters.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dsd_encoder.h"
+#include "Backend/audio_backend.h"
 #include "Engine/cdsp_sem.h"
+#include "Engine/engine_capture_loop.h"
+#include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
 #include "Filters/biquad.h"
@@ -1310,6 +1313,198 @@ TEST(Pipeline_AllocationFree) {
   audio_chunk_free(output);
   pipeline_free(pipeline);
   processing_parameters_free(params);
+}
+
+typedef struct {
+  engine_capture_loop_t* loop;
+  engine_shared_state_t* shared;
+  cdsp_sem_t thread_id_sem;
+  _Atomic uintptr_t watched_thread_id;
+} capture_loop_test_ctx_t;
+
+static void* test_capture_thread_run(void* arg) {
+  capture_loop_test_ctx_t* ctx = (capture_loop_test_ctx_t*)arg;
+  atomic_store(&ctx->watched_thread_id, (uintptr_t)pthread_self());
+  cdsp_sem_signal(ctx->thread_id_sem);
+  engine_capture_loop_run(ctx->loop);
+  return NULL;
+}
+
+static void capture_loop_iter(int i, void* arg) {
+  (void)i;
+  capture_loop_test_ctx_t* ctx = (capture_loop_test_ctx_t*)arg;
+  audio_chunk_t* chunk = engine_shared_state_dequeue_captured_blocking(ctx->shared);
+  (void)chunk;
+}
+
+TEST(EngineCaptureLoop_AllocationFree) {
+  backend_error_t err;
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.cfg.raw_file.channels = 2;
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename), "/dev/null");
+  cap_cfg.cfg.raw_file.has_filename = true;
+  cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
+  cap_cfg.cfg.raw_file.has_format = true;
+
+  capture_backend_t* capture = create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  engine_shared_state_t* shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  round_robin_chunk_pool_t* chunk_pool = round_robin_chunk_pool_create(32, 1024, 2);
+  ASSERT_TRUE(chunk_pool != NULL);
+
+  engine_capture_loop_config_t cap_loop_cfg = {
+      .shared = shared,
+      .capture = capture,
+      .playback = NULL,
+      .processing_params = NULL,
+      .dop_decoder = NULL,
+      .chunk_pool = chunk_pool,
+      .chunk_size = 1024,
+      .channels = 2,
+      .samplerate = 48000,
+      .silence_threshold_db = -100.0,
+      .silence_timeout_seconds = 0.0,
+      .stop_on_rate_change = false,
+      .rate_measure_interval_s = 1.0,
+  };
+
+  engine_capture_loop_t* loop = engine_capture_loop_create(&cap_loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  capture_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.loop = loop;
+  ctx.shared = shared;
+  ctx.thread_id_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_capture_thread_run, &ctx);
+
+  cdsp_sem_wait(ctx.thread_id_sem);
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence prior
+  // to entering the steady-state audio loop, one-time lazy allocations occur:
+  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/read).
+  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
+  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EngineCaptureLoop", tid, 2, 20,
+                                   capture_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_capture_loop_free(loop);
+  round_robin_chunk_pool_free(chunk_pool);
+  engine_shared_state_free(shared);
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+}
+
+typedef struct {
+  engine_playback_loop_t* loop;
+  engine_shared_state_t* shared;
+  cdsp_sem_t thread_id_sem;
+  round_robin_chunk_pool_t* pool;
+  _Atomic uintptr_t watched_thread_id;
+} playback_loop_test_ctx_t;
+
+static void* test_playback_thread_run(void* arg) {
+  playback_loop_test_ctx_t* ctx = (playback_loop_test_ctx_t*)arg;
+  atomic_store(&ctx->watched_thread_id, (uintptr_t)pthread_self());
+  cdsp_sem_signal(ctx->thread_id_sem);
+  engine_playback_loop_run(ctx->loop);
+  return NULL;
+}
+
+static void playback_loop_iter(int i, void* arg) {
+  (void)i;
+  playback_loop_test_ctx_t* ctx = (playback_loop_test_ctx_t*)arg;
+  audio_chunk_t* chunk = round_robin_chunk_pool_next(ctx->pool);
+  audio_chunk_set_valid_frames(chunk, 1024);
+  engine_shared_state_enqueue_processed(ctx->shared, chunk);
+}
+
+TEST(EnginePlaybackLoop_AllocationFree) {
+  backend_error_t err;
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.cfg.raw_file.channels = 2;
+  snprintf(play_cfg.cfg.raw_file.filename, sizeof(play_cfg.cfg.raw_file.filename), "/dev/null");
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+
+  playback_backend_t* playback = create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  engine_shared_state_t* shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(32, 1024, 2);
+  ASSERT_TRUE(pool != NULL);
+
+  engine_playback_loop_config_t play_loop_cfg = {
+      .shared = shared,
+      .capture = NULL,
+      .playback = playback,
+      .processing_params = NULL,
+      .dsd_encoder = NULL,
+      .pipeline_rate = 48000,
+      .chunk_size = 1024,
+      .rate_adjust_enabled = false,
+      .adjust_period = 10.0,
+      .target_level = 0,
+  };
+
+  engine_playback_loop_t* loop = engine_playback_loop_create(&play_loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  playback_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.loop = loop;
+  ctx.shared = shared;
+  ctx.pool = pool;
+  ctx.thread_id_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_playback_thread_run, &ctx);
+
+  cdsp_sem_wait(ctx.thread_id_sem);
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence prior
+  // to entering the steady-state audio loop, one-time lazy allocations occur:
+  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/write).
+  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
+  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EnginePlaybackLoop", tid, 2, 20,
+                                   playback_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_playback_loop_free(loop);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+  cdsp_sem_destroy(ctx.thread_id_sem);
 }
 
 TEST_MAIN()
