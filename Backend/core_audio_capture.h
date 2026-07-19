@@ -47,17 +47,9 @@
 typedef struct core_audio_capture core_audio_capture_t;
 
 /**
- * @brief Create a CoreAudio capture backend instance.
- *
- * @param config Configuration for the capture device.
- * @param sample_rate Target sample rate in Hz.
- * @param chunk_size Size of audio chunks to read.
- * @param err Pointer to backend error structure to report errors.
- * @return Pointer to the created capture_backend_t, or NULL on failure.
+ * @brief Global virtual method table for CoreAudio capture backend.
  */
-capture_backend_t* core_audio_capture_create(
-    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err);
+extern const capture_backend_vtable_t g_core_audio_capture_vtable;
 
 #endif  // ENABLE_COREAUDIO
 

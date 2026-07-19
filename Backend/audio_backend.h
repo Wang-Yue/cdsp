@@ -24,6 +24,7 @@
 
 typedef struct capture_backend capture_backend_t;
 typedef struct playback_backend playback_backend_t;
+typedef struct processing_parameters processing_parameters_t;
 
 /**
  * @struct capture_backend_vtable
@@ -31,6 +32,22 @@ typedef struct playback_backend playback_backend_t;
  * operations.
  */
 typedef struct {
+  /**
+   * @brief Create a capture backend instance.
+   * @param config Capture device configuration.
+   * @param sample_rate Nominal sample rate in Hz.
+   * @param chunk_size Buffer chunk size in frames.
+   * @param full_duplex True if running in full duplex mode.
+   * @param params Processing parameters.
+   * @param[out] err Pointer to store error details on failure.
+   * @return Allocated capture_backend_t interface pointer, or NULL on error.
+   */
+  capture_backend_t* (*create)(const capture_device_config_t* config,
+                               int sample_rate, int chunk_size,
+                               bool full_duplex,
+                               processing_parameters_t* params,
+                               backend_error_t* err);
+
   /**
    * @brief Open the capture device.
    * @param ctx Pointer to the backend instance context.
@@ -131,6 +148,22 @@ struct capture_backend {
  * operations.
  */
 typedef struct {
+  /**
+   * @brief Create a playback backend instance.
+   * @param config Playback device configuration.
+   * @param sample_rate Nominal sample rate in Hz.
+   * @param chunk_size Buffer chunk size in frames.
+   * @param full_duplex True if running in full duplex mode.
+   * @param params Processing parameters.
+   * @param[out] err Pointer to store error details on failure.
+   * @return Allocated playback_backend_t interface pointer, or NULL on error.
+   */
+  playback_backend_t* (*create)(const playback_device_config_t* config,
+                                int sample_rate, int chunk_size,
+                                bool full_duplex,
+                                processing_parameters_t* params,
+                                backend_error_t* err);
+
   /**
    * @brief Open the playback device.
    * @param ctx Pointer to the backend instance context.

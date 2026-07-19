@@ -45,68 +45,6 @@ struct alsa_capture {
 };
 
 /**
- * @brief Wrapper for opening the ALSA capture backend.
- */
-static bool alsa_capture_open(void* ctx, backend_error_t* err);
-static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                              backend_error_t* err);
-static void alsa_capture_close(void* ctx);
-static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate);
-static bool alsa_capture_pitch_control_supported(void* ctx);
-static void alsa_capture_set_pitch(void* ctx, double multiplier);
-static bool alsa_capture_wait(void* ctx, uint32_t timeout_ms);
-static void alsa_capture_stop(void* ctx);
-static void alsa_capture_destroy(void* ctx);
-
-static const capture_backend_vtable_t ALSA_CAPTURE_VTABLE = {
-    .open = alsa_capture_open,
-    .read = alsa_capture_read,
-    .close = alsa_capture_close,
-    .get_pending_rate_change = alsa_capture_get_pending_rate_change,
-    .is_pitch_control_supported = alsa_capture_pitch_control_supported,
-    .set_pitch = alsa_capture_set_pitch,
-    .wait_for_data = alsa_capture_wait,
-    .stop = alsa_capture_stop,
-    .destroy = alsa_capture_destroy};
-
-capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
-                                       int sample_rate, int chunk_size,
-                                       processing_parameters_t* params,
-                                       backend_error_t* err) {
-  (void)err;
-  alsa_capture_t* capture = (alsa_capture_t*)calloc(1, sizeof(alsa_capture_t));
-  if (!capture) return NULL;
-
-  snprintf(capture->device_name, sizeof(capture->device_name), "%s",
-           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
-
-  capture->sample_rate = sample_rate;
-  capture->channels = config->cfg.alsa.channels;
-  capture->chunk_size = chunk_size;
-
-  capture->has_format = config->cfg.alsa.has_format;
-  capture->requested_format = config->cfg.alsa.format;
-  capture->params = params;
-  capture->stop_on_inactive = config->cfg.alsa.stop_on_inactive;
-  snprintf(capture->link_volume_control, sizeof(capture->link_volume_control),
-           "%s", config->cfg.alsa.link_volume_control);
-  snprintf(capture->link_mute_control, sizeof(capture->link_mute_control), "%s",
-           config->cfg.alsa.link_mute_control);
-  pthread_mutex_init(&capture->mixer_mutex, NULL);
-
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
-  if (!backend) {
-    free(capture);
-    return NULL;
-  }
-  backend->ctx = capture;
-  backend->vtable = &ALSA_CAPTURE_VTABLE;
-  backend->is_realtime = true;
-  return backend;
-}
-
-/**
  * @brief Helper to query the volume of a mixer element in decibels.
  *
  * Retrieves the current playback or capture volume of the given mixer element,
@@ -766,5 +704,68 @@ static void alsa_capture_destroy(void* ctx) {
   pthread_mutex_destroy(&capture->mixer_mutex);
   free(capture);
 }
+
+/**
+ * @brief Creates a new ALSA capture backend instance.
+ *
+ * @param config Pointer to the capture device configuration.
+ * @param sample_rate The target sample rate.
+ * @param chunk_size The target chunk size (number of frames per read).
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Pointer to the processing parameters for telemetry updates.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return Pointer to the generic capture_backend_t interface, or NULL on failure.
+ */
+static capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
+                                       int sample_rate, int chunk_size,
+                                       bool full_duplex,
+                                       processing_parameters_t* params,
+                                       backend_error_t* err) {
+  (void)full_duplex;
+  (void)err;
+  alsa_capture_t* capture = (alsa_capture_t*)calloc(1, sizeof(alsa_capture_t));
+  if (!capture) return NULL;
+
+  snprintf(capture->device_name, sizeof(capture->device_name), "%s",
+           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
+
+  capture->sample_rate = sample_rate;
+  capture->channels = config->cfg.alsa.channels;
+  capture->chunk_size = chunk_size;
+
+  capture->has_format = config->cfg.alsa.has_format;
+  capture->requested_format = config->cfg.alsa.format;
+  capture->params = params;
+  capture->stop_on_inactive = config->cfg.alsa.stop_on_inactive;
+  snprintf(capture->link_volume_control, sizeof(capture->link_volume_control),
+           "%s", config->cfg.alsa.link_volume_control);
+  snprintf(capture->link_mute_control, sizeof(capture->link_mute_control), "%s",
+           config->cfg.alsa.link_mute_control);
+  pthread_mutex_init(&capture->mixer_mutex, NULL);
+
+  capture_backend_t* backend =
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  if (!backend) {
+    free(capture);
+    return NULL;
+  }
+  backend->ctx = capture;
+  backend->vtable = &g_alsa_capture_vtable;
+  backend->is_realtime = true;
+  return backend;
+}
+
+const capture_backend_vtable_t g_alsa_capture_vtable = {
+    .create = alsa_capture_create,
+    .open = alsa_capture_open,
+    .read = alsa_capture_read,
+    .close = alsa_capture_close,
+    .get_pending_rate_change = alsa_capture_get_pending_rate_change,
+    .is_pitch_control_supported = alsa_capture_pitch_control_supported,
+    .set_pitch = alsa_capture_set_pitch,
+    .wait_for_data = alsa_capture_wait,
+    .set_is_paused = NULL,
+    .stop = alsa_capture_stop,
+    .destroy = alsa_capture_destroy};
 
 #endif  // defined(ENABLE_ALSA)

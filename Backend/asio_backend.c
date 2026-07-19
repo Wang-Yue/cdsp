@@ -1246,21 +1246,23 @@ static void asio_capture_stop(void* ctx) {
   }
 }
 
-static const capture_backend_vtable_t asio_capture_vtable = {
-    .open = asio_capture_open_internal,
-    .read = asio_capture_read_internal,
-    .close = asio_capture_close_internal,
-    .get_pending_rate_change = asio_capture_get_pending_rate_change,
-    .is_pitch_control_supported = NULL,
-    .set_pitch = NULL,
-    .wait_for_data = asio_capture_wait_for_data,
-    .set_is_paused = NULL,
-    .stop = asio_capture_stop,
-    .destroy = asio_capture_destroy_internal};
-
-capture_backend_t* asio_capture_new(const capture_device_config_t* config,
-                                    int sample_rate, int chunk_size,
-                                    bool full_duplex, backend_error_t* err) {
+/**
+ * @brief Create a new ASIO capture backend instance.
+ *
+ * @param config Capture device configuration.
+ * @param sample_rate Nominal sample rate in Hz.
+ * @param chunk_size Buffer chunk size in frames.
+ * @param full_duplex True if the engine is running in full duplex mode.
+ * @param params Processing parameters.
+ * @param err Pointer to store error details if creation fails.
+ * @return A pointer to the capture_backend_t interface wrapper, or NULL on error.
+ */
+static capture_backend_t* asio_capture_create(const capture_device_config_t* config,
+                                       int sample_rate, int chunk_size,
+                                       bool full_duplex,
+                                       processing_parameters_t* params,
+                                       backend_error_t* err) {
+  (void)params;
   (void)err;
   asio_capture_t* capture = (asio_capture_t*)calloc(1, sizeof(asio_capture_t));
   if (!capture) return NULL;
@@ -1280,10 +1282,23 @@ capture_backend_t* asio_capture_new(const capture_device_config_t* config,
     return NULL;
   }
   backend->ctx = capture;
-  backend->vtable = &asio_capture_vtable;
+  backend->vtable = &g_asio_capture_vtable;
   backend->is_realtime = true;
   return backend;
 }
+
+const capture_backend_vtable_t g_asio_capture_vtable = {
+    .create = asio_capture_create,
+    .open = asio_capture_open_internal,
+    .read = asio_capture_read_internal,
+    .close = asio_capture_close_internal,
+    .get_pending_rate_change = asio_capture_get_pending_rate_change,
+    .is_pitch_control_supported = NULL,
+    .set_pitch = NULL,
+    .wait_for_data = asio_capture_wait_for_data,
+    .set_is_paused = NULL,
+    .stop = asio_capture_stop,
+    .destroy = asio_capture_destroy_internal};
 
 // ==========================================
 // Playback Backend Methods
@@ -1582,23 +1597,23 @@ static void asio_playback_stop(void* ctx) {
   }
 }
 
-static const playback_backend_vtable_t asio_playback_vtable = {
-    .open = asio_playback_open_internal,
-    .write = asio_playback_write_internal,
-    .close = asio_playback_close_internal,
-    .get_buffer_level = asio_playback_get_buffer_level,
-    .get_pending_rate_change = asio_playback_get_pending_rate_change,
-    .prefill_silence = NULL,
-    .get_is_paused = NULL,
-    .set_is_paused = NULL,
-    .pitch_control_supported = NULL,
-    .set_pitch = NULL,
-    .stop = asio_playback_stop,
-    .destroy = asio_playback_destroy_internal};
-
-playback_backend_t* asio_playback_new(const playback_device_config_t* config,
-                                      int sample_rate, int chunk_size,
-                                      bool full_duplex, backend_error_t* err) {
+/**
+ * @brief Create a new ASIO playback backend instance.
+ *
+ * @param config Playback device configuration.
+ * @param sample_rate Nominal sample rate in Hz.
+ * @param chunk_size Buffer chunk size in frames.
+ * @param full_duplex True if the engine is running in full duplex mode.
+ * @param params Processing parameters.
+ * @param err Pointer to store error details if creation fails.
+ * @return A pointer to the playback_backend_t interface wrapper, or NULL on error.
+ */
+static playback_backend_t* asio_playback_create(const playback_device_config_t* config,
+                                         int sample_rate, int chunk_size,
+                                         bool full_duplex,
+                                         processing_parameters_t* params,
+                                         backend_error_t* err) {
+  (void)params;
   (void)err;
   asio_playback_t* playback =
       (asio_playback_t*)calloc(1, sizeof(asio_playback_t));
@@ -1620,8 +1635,23 @@ playback_backend_t* asio_playback_new(const playback_device_config_t* config,
     return NULL;
   }
   backend->ctx = playback;
-  backend->vtable = &asio_playback_vtable;
+  backend->vtable = &g_asio_playback_vtable;
   return backend;
 }
+
+const playback_backend_vtable_t g_asio_playback_vtable = {
+    .create = asio_playback_create,
+    .open = asio_playback_open_internal,
+    .write = asio_playback_write_internal,
+    .close = asio_playback_close_internal,
+    .get_buffer_level = asio_playback_get_buffer_level,
+    .get_pending_rate_change = asio_playback_get_pending_rate_change,
+    .prefill_silence = NULL,
+    .get_is_paused = NULL,
+    .set_is_paused = NULL,
+    .pitch_control_supported = NULL,
+    .set_pitch = NULL,
+    .stop = asio_playback_stop,
+    .destroy = asio_playback_destroy_internal};
 
 #endif  // ENABLE_ASIO

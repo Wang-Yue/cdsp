@@ -26,24 +26,9 @@ typedef struct alsa_playback alsa_playback_t;
 typedef struct processing_parameters processing_parameters_t;
 
 /**
- * @brief Create an ALSA playback backend instance.
- *
- * @param config Configuration for the playback device.
- * @param sample_rate The nominal sample rate in Hz.
- * @param chunk_size The size of each audio chunk in frames.
- * @param params Opaque processing parameters pointer.
- * @param[out] err Pointer to store error details if creation fails.
- * @return A pointer to the created playback_backend_t interface wrapper, or
- * NULL on error.
+ * @brief Global virtual method table for ALSA playback backend.
  */
-playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err);
-
-#endif  // ENABLE_ALSA
-
-#endif  // CLIB_BACKEND_ALSA_PLAYBACK_H
+extern const playback_backend_vtable_t g_alsa_playback_vtable;
 
 #endif  // ENABLE_ALSA
 

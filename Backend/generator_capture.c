@@ -273,21 +273,21 @@ static void generator_capture_set_is_paused(void* ctx,
   }
 }
 
-static const capture_backend_vtable_t generator_capture_vtable = {
-    .open = generator_capture_open,
-    .read = generator_capture_read,
-    .close = generator_capture_close,
-    .get_pending_rate_change = generator_capture_get_pending_rate_change,
-    .is_pitch_control_supported = generator_capture_pitch_control_supported,
-    .set_pitch = generator_capture_set_pitch,
-    .wait_for_data = generator_capture_wait,
-    .set_is_paused = generator_capture_set_is_paused,
-    .stop = generator_capture_stop,
-    .destroy = generator_capture_destroy};
-
-capture_backend_t* generator_capture_create(
+/**
+ * @brief Create a generator capture backend instance.
+ *
+ * @param config Pointer to the capture device configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Pointer to processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ */
+static capture_backend_t* generator_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
   (void)params;
   (void)err;
 
@@ -320,7 +320,20 @@ capture_backend_t* generator_capture_create(
   }
 
   backend->ctx = capture;
-  backend->vtable = &generator_capture_vtable;
+  backend->vtable = &g_generator_capture_vtable;
   backend->is_realtime = true;
   return backend;
 }
+
+const capture_backend_vtable_t g_generator_capture_vtable = {
+    .create = generator_capture_create,
+    .open = generator_capture_open,
+    .read = generator_capture_read,
+    .close = generator_capture_close,
+    .get_pending_rate_change = generator_capture_get_pending_rate_change,
+    .is_pitch_control_supported = generator_capture_pitch_control_supported,
+    .set_pitch = generator_capture_set_pitch,
+    .wait_for_data = generator_capture_wait,
+    .set_is_paused = generator_capture_set_is_paused,
+    .stop = generator_capture_stop,
+    .destroy = generator_capture_destroy};

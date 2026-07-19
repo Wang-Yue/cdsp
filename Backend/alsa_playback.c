@@ -32,79 +32,6 @@ struct alsa_playback {
   pthread_mutex_t mixer_mutex;
   bool stopped;
 };
-
-/**
- * @brief Open the ALSA playback device.
- *
- * Wrapper for alsa_playback_open to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool alsa_playback_open(void* ctx, backend_error_t* err);
-static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
-                                backend_error_t* err);
-static void alsa_playback_close(void* ctx);
-static size_t alsa_playback_get_buffer_level(void* ctx);
-static bool alsa_playback_get_pending_rate_change(void* ctx, double* out_rate);
-static bool alsa_playback_prefill_silence(void* ctx, size_t frames,
-                                          backend_error_t* err);
-static bool alsa_playback_get_is_paused(void* ctx);
-static void alsa_playback_set_is_paused(void* ctx, bool paused);
-static bool alsa_playback_pitch_control_supported(void* ctx);
-static void alsa_playback_set_pitch(void* ctx, double multiplier);
-static void alsa_playback_stop(void* ctx);
-static void alsa_playback_destroy(void* ctx);
-
-static const playback_backend_vtable_t ALSA_PLAYBACK_VTABLE = {
-    .open = alsa_playback_open,
-    .write = alsa_playback_write,
-    .close = alsa_playback_close,
-    .get_buffer_level = alsa_playback_get_buffer_level,
-    .get_pending_rate_change = alsa_playback_get_pending_rate_change,
-    .prefill_silence = alsa_playback_prefill_silence,
-    .get_is_paused = alsa_playback_get_is_paused,
-    .set_is_paused = alsa_playback_set_is_paused,
-    .pitch_control_supported = alsa_playback_pitch_control_supported,
-    .set_pitch = alsa_playback_set_pitch,
-    .stop = alsa_playback_stop,
-    .destroy = alsa_playback_destroy};
-
-playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
-  (void)err;
-  alsa_playback_t* playback =
-      (alsa_playback_t*)calloc(1, sizeof(alsa_playback_t));
-  if (!playback) return NULL;
-
-  snprintf(playback->device_name, sizeof(playback->device_name), "%s",
-           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
-
-  playback->sample_rate = sample_rate;
-  playback->channels = config->cfg.alsa.channels;
-  playback->chunk_size = chunk_size;
-
-  playback->has_format = config->cfg.alsa.has_format;
-  playback->requested_format = config->cfg.alsa.format;
-  playback->params = params;
-  atomic_init(&playback->paused, false);
-  playback->currently_paused = false;
-  pthread_mutex_init(&playback->mixer_mutex, NULL);
-
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
-  if (!backend) {
-    free(playback);
-    return NULL;
-  }
-  backend->ctx = playback;
-  backend->vtable = &ALSA_PLAYBACK_VTABLE;
-  return backend;
-}
-
 /**
  * @brief Open the ALSA playback device.
  *
@@ -740,5 +667,67 @@ static void alsa_playback_destroy(void* ctx) {
   pthread_mutex_destroy(&playback->mixer_mutex);
   free(playback);
 }
+
+/**
+ * @brief Create an ALSA playback backend instance.
+ *
+ * @param config Configuration for the playback device.
+ * @param sample_rate The nominal sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Opaque processing parameters pointer.
+ * @param[out] err Pointer to store error details if creation fails.
+ * @return A pointer to the created playback_backend_t interface wrapper, or NULL on error.
+ */
+static playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
+                                         int sample_rate, int chunk_size,
+                                         bool full_duplex,
+                                         processing_parameters_t* params,
+                                         backend_error_t* err) {
+  (void)full_duplex;
+  (void)err;
+  alsa_playback_t* playback =
+      (alsa_playback_t*)calloc(1, sizeof(alsa_playback_t));
+  if (!playback) return NULL;
+
+  snprintf(playback->device_name, sizeof(playback->device_name), "%s",
+           config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
+
+  playback->sample_rate = sample_rate;
+  playback->channels = config->cfg.alsa.channels;
+  playback->chunk_size = chunk_size;
+
+  playback->has_format = config->cfg.alsa.has_format;
+  playback->requested_format = config->cfg.alsa.format;
+  playback->params = params;
+  atomic_init(&playback->paused, false);
+  playback->currently_paused = false;
+  pthread_mutex_init(&playback->mixer_mutex, NULL);
+
+  playback_backend_t* backend =
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  if (!backend) {
+    free(playback);
+    return NULL;
+  }
+  backend->ctx = playback;
+  backend->vtable = &g_alsa_playback_vtable;
+  return backend;
+}
+
+const playback_backend_vtable_t g_alsa_playback_vtable = {
+    .create = alsa_playback_create,
+    .open = alsa_playback_open,
+    .write = alsa_playback_write,
+    .close = alsa_playback_close,
+    .get_buffer_level = alsa_playback_get_buffer_level,
+    .get_pending_rate_change = alsa_playback_get_pending_rate_change,
+    .prefill_silence = alsa_playback_prefill_silence,
+    .get_is_paused = alsa_playback_get_is_paused,
+    .set_is_paused = alsa_playback_set_is_paused,
+    .pitch_control_supported = alsa_playback_pitch_control_supported,
+    .set_pitch = alsa_playback_set_pitch,
+    .stop = alsa_playback_stop,
+    .destroy = alsa_playback_destroy};
 
 #endif  // defined(ENABLE_ALSA)

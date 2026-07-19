@@ -30,110 +30,110 @@ static const logger_t g_logger = {"dsp.backend"};
 #include "file_backend.h"
 #include "generator_capture.h"
 
+static const capture_backend_vtable_t* get_capture_vtable(audio_backend_type_t type) {
+  switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+      return &g_core_audio_capture_vtable;
+#endif
+#if defined(ENABLE_ALSA)
+    case AUDIO_BACKEND_TYPE_ALSA:
+      return &g_alsa_capture_vtable;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AUDIO_BACKEND_TYPE_PIPEWIRE:
+      return &g_pipewire_capture_vtable;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AUDIO_BACKEND_TYPE_WASAPI:
+      return &g_wasapi_capture_vtable;
+#endif
+#if defined(ENABLE_ASIO)
+    case AUDIO_BACKEND_TYPE_ASIO:
+      return &g_asio_capture_vtable;
+#endif
+    case AUDIO_BACKEND_TYPE_GENERATOR:
+      return &g_generator_capture_vtable;
+    case AUDIO_BACKEND_TYPE_FILE:
+    case AUDIO_BACKEND_TYPE_STDIN_OUT:
+      return &g_file_capture_vtable;
+    default:
+      return NULL;
+  }
+}
+
+static const playback_backend_vtable_t* get_playback_vtable(audio_backend_type_t type) {
+  switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+      return &g_core_audio_playback_vtable;
+#endif
+#if defined(ENABLE_ALSA)
+    case AUDIO_BACKEND_TYPE_ALSA:
+      return &g_alsa_playback_vtable;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AUDIO_BACKEND_TYPE_PIPEWIRE:
+      return &g_pipewire_playback_vtable;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AUDIO_BACKEND_TYPE_WASAPI:
+      return &g_wasapi_playback_vtable;
+#endif
+#if defined(ENABLE_ASIO)
+    case AUDIO_BACKEND_TYPE_ASIO:
+      return &g_asio_playback_vtable;
+#endif
+    case AUDIO_BACKEND_TYPE_FILE:
+    case AUDIO_BACKEND_TYPE_STDIN_OUT:
+      return &g_file_playback_vtable;
+    default:
+      return NULL;
+  }
+}
+
 capture_backend_t* create_capture_backend(const capture_device_config_t* config,
                                           int sample_rate, int chunk_size,
                                           bool full_duplex,
                                           processing_parameters_t* params,
                                           backend_error_t* err) {
-#if !defined(ENABLE_ASIO)
-  (void)full_duplex;
-#endif
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Config is NULL");
     return NULL;
   }
-  switch (config->type) {
-#if defined(ENABLE_COREAUDIO)
-    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
-      return core_audio_capture_create(config, sample_rate, chunk_size, err);
-#endif
-#if defined(ENABLE_ALSA)
-    case AUDIO_BACKEND_TYPE_ALSA:
-      return alsa_capture_create(config, sample_rate, chunk_size, params, err);
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AUDIO_BACKEND_TYPE_PIPEWIRE:
-      return pipewire_capture_create(config, sample_rate, chunk_size, params,
-                                     err);
-#endif
-#if defined(ENABLE_WASAPI)
-    case AUDIO_BACKEND_TYPE_WASAPI:
-      return wasapi_capture_create(config, sample_rate, chunk_size, params,
-                                   err);
-#endif
-#if defined(ENABLE_ASIO)
-    case AUDIO_BACKEND_TYPE_ASIO:
-      return asio_capture_new(config, sample_rate, chunk_size, full_duplex,
-                              err);
-#endif
-    case AUDIO_BACKEND_TYPE_GENERATOR:
-      return generator_capture_create(config, sample_rate, chunk_size, params,
-                                      err);
-    case AUDIO_BACKEND_TYPE_FILE:
-    case AUDIO_BACKEND_TYPE_STDIN_OUT:
-      return file_capture_create(config, sample_rate, chunk_size, params, err);
-    default: {
-      logger_error(&g_logger, "Unsupported capture backend type: %s",
-                   audio_backend_type_to_string(config->type));
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Unsupported capture backend type");
-      return NULL;
-    }
+  const capture_backend_vtable_t* vtable = get_capture_vtable(config->type);
+  if (!vtable || !vtable->create) {
+    logger_error(&g_logger, "Unsupported capture backend type: %s",
+                 audio_backend_type_to_string(config->type));
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Unsupported capture backend type");
+    return NULL;
   }
+  return vtable->create(config, sample_rate, chunk_size, full_duplex, params, err);
 }
 
 playback_backend_t* create_playback_backend(
     const playback_device_config_t* config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
-#if !defined(ENABLE_ASIO)
-  (void)full_duplex;
-#endif
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Config is NULL");
     return NULL;
   }
-  switch (config->type) {
-#if defined(ENABLE_COREAUDIO)
-    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
-      return core_audio_playback_create(config, sample_rate, chunk_size, err);
-#endif
-#if defined(ENABLE_ALSA)
-    case AUDIO_BACKEND_TYPE_ALSA:
-      return alsa_playback_create(config, sample_rate, chunk_size, params, err);
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AUDIO_BACKEND_TYPE_PIPEWIRE:
-      return pipewire_playback_create(config, sample_rate, chunk_size, params,
-                                      err);
-#endif
-#if defined(ENABLE_WASAPI)
-    case AUDIO_BACKEND_TYPE_WASAPI:
-      return wasapi_playback_create(config, sample_rate, chunk_size, params,
-                                    err);
-#endif
-#if defined(ENABLE_ASIO)
-    case AUDIO_BACKEND_TYPE_ASIO:
-      return asio_playback_new(config, sample_rate, chunk_size, full_duplex,
-                               err);
-#endif
-
-    case AUDIO_BACKEND_TYPE_FILE:
-    case AUDIO_BACKEND_TYPE_STDIN_OUT:
-      return file_playback_create(config, sample_rate, chunk_size, params, err);
-    default: {
-      logger_error(&g_logger, "Unsupported playback backend type: %s",
-                   audio_backend_type_to_string(config->type));
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Unsupported playback backend type");
-      return NULL;
-    }
+  const playback_backend_vtable_t* vtable = get_playback_vtable(config->type);
+  if (!vtable || !vtable->create) {
+    logger_error(&g_logger, "Unsupported playback backend type: %s",
+                 audio_backend_type_to_string(config->type));
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Unsupported playback backend type");
+    return NULL;
   }
+  return vtable->create(config, sample_rate, chunk_size, full_duplex, params, err);
 }
 
 /// Open the capture device

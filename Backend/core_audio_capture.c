@@ -669,22 +669,22 @@ static void core_audio_capture_destroy(void* ctx) {
   free(capture);
 }
 
-static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
-    .open = core_audio_capture_open,
-    .read = core_audio_capture_read,
-    .close = core_audio_capture_close,
-    .get_pending_rate_change = core_audio_capture_get_pending_rate_change,
-    .is_pitch_control_supported = core_audio_capture_pitch_control_supported,
-    .set_pitch = core_audio_capture_set_pitch,
-    .wait_for_data = core_audio_capture_wait,
-    .set_is_paused = core_audio_capture_set_is_paused,
-    .stop = core_audio_capture_stop,
-    .destroy = core_audio_capture_destroy};
-
-/// Create a CoreAudio capture backend instance.
-capture_backend_t* core_audio_capture_create(
-    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err) {
+/**
+ * @brief Create a CoreAudio capture backend instance.
+ *
+ * @param config Configuration for the capture device.
+ * @param sample_rate Target sample rate in Hz.
+ * @param chunk_size Size of audio chunks to read.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Processing parameters.
+ * @param err Pointer to backend error structure to report errors.
+ * @return Pointer to the created capture_backend_t, or NULL on failure.
+ */
+static capture_backend_t* core_audio_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
+  (void)params;
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -767,8 +767,21 @@ capture_backend_t* core_audio_capture_create(
     return NULL;
   }
   backend->ctx = capture;
-  backend->vtable = &CORE_AUDIO_CAPTURE_VTABLE;
+  backend->vtable = &g_core_audio_capture_vtable;
   backend->is_realtime = true;
   return backend;
 }
+
+const capture_backend_vtable_t g_core_audio_capture_vtable = {
+    .create = core_audio_capture_create,
+    .open = core_audio_capture_open,
+    .read = core_audio_capture_read,
+    .close = core_audio_capture_close,
+    .get_pending_rate_change = core_audio_capture_get_pending_rate_change,
+    .is_pitch_control_supported = core_audio_capture_pitch_control_supported,
+    .set_pitch = core_audio_capture_set_pitch,
+    .wait_for_data = core_audio_capture_wait,
+    .set_is_paused = core_audio_capture_set_is_paused,
+    .stop = core_audio_capture_stop,
+    .destroy = core_audio_capture_destroy};
 #endif  // ENABLE_COREAUDIO

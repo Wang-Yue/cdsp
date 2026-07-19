@@ -9,7 +9,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "Backend/file_backend.h"
+#include "Backend/audio_backend.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"
 
@@ -34,7 +34,7 @@ TEST(FileBackendRawRoundTrip) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 44100, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -63,7 +63,7 @@ TEST(FileBackendRawRoundTrip) {
   cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 44100, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -106,7 +106,7 @@ TEST(FileBackendLargeReadDynamicRealloc) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 44100, 2048, NULL, &err);
+      create_playback_backend(&play_cfg, 44100, 2048, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -135,7 +135,7 @@ TEST(FileBackendLargeReadDynamicRealloc) {
 
   // Initialize capture with small chunk_size (64)
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 44100, 64, NULL, &err);
+      create_capture_backend(&cap_cfg, 44100, 64, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -182,7 +182,7 @@ TEST(FileBackendWavRoundTrip) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 16000, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, 16000, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -210,7 +210,7 @@ TEST(FileBackendWavRoundTrip) {
   // Notice we pass sample_rate = 0, channels = 0 to verify that the
   // open routine updates them from the WAV header!
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -254,7 +254,7 @@ TEST(FileBackendPauseThrottling) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 44100, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -283,7 +283,7 @@ TEST(FileBackendPauseThrottling) {
   cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 44100, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -339,7 +339,7 @@ static void run_format_roundtrip_test(binary_sample_format_t format,
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 44100, 64, NULL, &err);
+      create_playback_backend(&play_cfg, 44100, 64, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -367,7 +367,7 @@ static void run_format_roundtrip_test(binary_sample_format_t format,
   cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 44100, 64, NULL, &err);
+      create_capture_backend(&cap_cfg, 44100, 64, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -443,7 +443,7 @@ static void run_wav_format_roundtrip_test(binary_sample_format_t format, double 
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 44100, 64, NULL, &err);
+      create_playback_backend(&play_cfg, 44100, 64, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -469,7 +469,7 @@ static void run_wav_format_roundtrip_test(binary_sample_format_t format, double 
   cap_cfg.cfg.wav_file.has_filename = true;
 
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 44100, 64, NULL, &err);
+      create_capture_backend(&cap_cfg, 44100, 64, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -537,7 +537,7 @@ TEST(FileBackendRealtimeThrottling) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, sample_rate, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, sample_rate, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -566,7 +566,7 @@ TEST(FileBackendRealtimeThrottling) {
   cap_cfg.cfg.raw_file.has_realtime = true;
 
   capture_backend_t* capture_fast =
-      file_capture_create(&cap_cfg, sample_rate, 441, NULL, &err);
+      create_capture_backend(&cap_cfg, sample_rate, 441, false, NULL, &err);
   ASSERT_TRUE(capture_fast != NULL);
   ASSERT_TRUE(capture_backend_open(capture_fast, &err));
 
@@ -588,7 +588,7 @@ TEST(FileBackendRealtimeThrottling) {
   // 3. Read back with realtime = true and measure time
   cap_cfg.cfg.raw_file.realtime = true;
   capture_backend_t* capture_rt =
-      file_capture_create(&cap_cfg, sample_rate, 441, NULL, &err);
+      create_capture_backend(&cap_cfg, sample_rate, 441, false, NULL, &err);
   ASSERT_TRUE(capture_rt != NULL);
   ASSERT_TRUE(capture_backend_open(capture_rt, &err));
 
@@ -637,7 +637,7 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
 
   backend_error_t err;
   playback_backend_t* playback_fast =
-      file_playback_create(&play_cfg, sample_rate, 441, NULL, &err);
+      create_playback_backend(&play_cfg, sample_rate, 441, false, NULL, &err);
   ASSERT_TRUE(playback_fast != NULL);
   ASSERT_TRUE(playback_backend_open(playback_fast, &err));
 
@@ -662,7 +662,7 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
 
   play_cfg.cfg.raw_file.realtime = true;
   playback_backend_t* playback_rt =
-      file_playback_create(&play_cfg, sample_rate, 441, NULL, &err);
+      create_playback_backend(&play_cfg, sample_rate, 441, false, NULL, &err);
   ASSERT_TRUE(playback_rt != NULL);
   ASSERT_TRUE(playback_backend_open(playback_rt, &err));
 
@@ -710,7 +710,7 @@ TEST(FileBackendWavRealtimeThrottling) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, sample_rate, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, sample_rate, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -736,7 +736,7 @@ TEST(FileBackendWavRealtimeThrottling) {
   cap_cfg.cfg.wav_file.has_realtime = true;
 
   capture_backend_t* capture_fast =
-      file_capture_create(&cap_cfg, sample_rate, 160, NULL, &err);
+      create_capture_backend(&cap_cfg, sample_rate, 160, false, NULL, &err);
   ASSERT_TRUE(capture_fast != NULL);
   ASSERT_TRUE(capture_backend_open(capture_fast, &err));
 
@@ -757,7 +757,7 @@ TEST(FileBackendWavRealtimeThrottling) {
   // 3. Read back with realtime = true and measure time
   cap_cfg.cfg.wav_file.realtime = true;
   capture_backend_t* capture_rt =
-      file_capture_create(&cap_cfg, sample_rate, 160, NULL, &err);
+      create_capture_backend(&cap_cfg, sample_rate, 160, false, NULL, &err);
   ASSERT_TRUE(capture_rt != NULL);
   ASSERT_TRUE(capture_backend_open(capture_rt, &err));
 
@@ -834,7 +834,7 @@ TEST(FileBackendRF64Read) {
 
   backend_error_t err;
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -879,7 +879,7 @@ TEST(FileBackendRF64RoundTrip) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      file_playback_create(&play_cfg, 16000, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, 16000, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -912,7 +912,7 @@ TEST(FileBackendRF64RoundTrip) {
   cap_cfg.cfg.wav_file.has_filename = true;
 
   capture_backend_t* capture =
-      file_capture_create(&cap_cfg, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -993,7 +993,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
 
   backend_error_t err;
   capture_backend_t* capture_1 =
-      file_capture_create(&cap_cfg_1, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg_1, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture_1 != NULL);
   ASSERT_TRUE(capture_backend_open(capture_1, &err));
 
@@ -1014,7 +1014,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   play_cfg_1.cfg.raw_file.has_use_rf64 = true;
 
   playback_backend_t* playback_1 =
-      file_playback_create(&play_cfg_1, 16000, 1024, NULL, &err);
+      create_playback_backend(&play_cfg_1, 16000, 1024, false, NULL, &err);
   ASSERT_TRUE(playback_1 != NULL);
   ASSERT_TRUE(playback_backend_open(playback_1, &err));
 
@@ -1046,7 +1046,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   cap_cfg_2.cfg.wav_file.has_filename = true;
 
   capture_backend_t* capture_2 =
-      file_capture_create(&cap_cfg_2, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg_2, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture_2 != NULL);
   ASSERT_TRUE(capture_backend_open(capture_2, &err));
 
@@ -1067,7 +1067,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   play_cfg_2.cfg.raw_file.has_use_rf64 = true;
 
   playback_backend_t* playback_2 =
-      file_playback_create(&play_cfg_2, 16000, 1024, NULL, &err);
+      create_playback_backend(&play_cfg_2, 16000, 1024, false, NULL, &err);
   ASSERT_TRUE(playback_2 != NULL);
   ASSERT_TRUE(playback_backend_open(playback_2, &err));
 
@@ -1098,7 +1098,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   cap_cfg_final.cfg.wav_file.has_filename = true;
 
   capture_backend_t* capture_final =
-      file_capture_create(&cap_cfg_final, 0, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg_final, 0, 1024, false, NULL, &err);
   ASSERT_TRUE(capture_final != NULL);
   ASSERT_TRUE(capture_backend_open(capture_final, &err));
 

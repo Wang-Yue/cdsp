@@ -505,30 +505,21 @@ static void pipewire_capture_destroy(void* ctx) {
   }
 }
 
-static const capture_backend_vtable_t pipewire_capture_vtable = {
-    .open = pipewire_capture_open,
-    .read = pipewire_capture_read,
-    .close = pipewire_capture_close,
-    .get_pending_rate_change = pipewire_capture_get_pending_rate_change,
-    .is_pitch_control_supported = pipewire_capture_pitch_control_supported,
-    .set_pitch = pipewire_capture_set_pitch,
-    .wait_for_data = pipewire_capture_wait,
-    .stop = pipewire_capture_stop,
-    .destroy = pipewire_capture_destroy};
-
 /**
  * @brief Create a PipeWire capture backend instance.
  *
  * @param config Pointer to the capture device configuration.
  * @param sample_rate The sample rate in Hz.
  * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
  * @return Pointer to the created capture_backend_t instance, or NULL on failure.
  */
-capture_backend_t* pipewire_capture_create(
+static capture_backend_t* pipewire_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
   (void)params;
   (void)err;
   pipewire_capture_t* capture =
@@ -575,10 +566,22 @@ capture_backend_t* pipewire_capture_create(
     return NULL;
   }
   backend->ctx = capture;
-  backend->vtable = &pipewire_capture_vtable;
+  backend->vtable = &g_pipewire_capture_vtable;
   backend->is_realtime = true;
   return backend;
 }
+
+const capture_backend_vtable_t g_pipewire_capture_vtable = {
+    .create = pipewire_capture_create,
+    .open = pipewire_capture_open,
+    .read = pipewire_capture_read,
+    .close = pipewire_capture_close,
+    .get_pending_rate_change = pipewire_capture_get_pending_rate_change,
+    .is_pitch_control_supported = pipewire_capture_pitch_control_supported,
+    .set_pitch = pipewire_capture_set_pitch,
+    .wait_for_data = pipewire_capture_wait,
+    .stop = pipewire_capture_stop,
+    .destroy = pipewire_capture_destroy};
 
 // MARK: - Playback Backend implementation
 
@@ -951,31 +954,21 @@ static void pipewire_playback_destroy(void* ctx) {
   }
 }
 
-static const playback_backend_vtable_t pipewire_playback_vtable = {
-    .open = pipewire_playback_open,
-    .write = pipewire_playback_write,
-    .close = pipewire_playback_close,
-    .get_buffer_level = pipewire_playback_get_buffer_level,
-    .get_pending_rate_change = pipewire_playback_get_pending_rate_change,
-    .prefill_silence = pipewire_playback_prefill_silence,
-    .get_is_paused = pipewire_playback_get_is_paused,
-    .set_is_paused = pipewire_playback_set_is_paused,
-    .stop = pipewire_playback_stop,
-    .destroy = pipewire_playback_destroy};
-
 /**
  * @brief Create a PipeWire playback backend instance.
  *
  * @param config Pointer to the playback device configuration.
  * @param sample_rate The sample rate in Hz.
  * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
  * @param params Pointer to processing parameters.
  * @param err Pointer to a backend_error_t struct to report errors.
  * @return Pointer to the created playback_backend_t instance, or NULL on failure.
  */
-playback_backend_t* pipewire_playback_create(
+static playback_backend_t* pipewire_playback_create(
     const playback_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
   (void)params;
   (void)err;
   pipewire_playback_t* playback =
@@ -1023,8 +1016,21 @@ playback_backend_t* pipewire_playback_create(
     return NULL;
   }
   backend->ctx = playback;
-  backend->vtable = &pipewire_playback_vtable;
+  backend->vtable = &g_pipewire_playback_vtable;
   return backend;
 }
+
+const playback_backend_vtable_t g_pipewire_playback_vtable = {
+    .create = pipewire_playback_create,
+    .open = pipewire_playback_open,
+    .write = pipewire_playback_write,
+    .close = pipewire_playback_close,
+    .get_buffer_level = pipewire_playback_get_buffer_level,
+    .get_pending_rate_change = pipewire_playback_get_pending_rate_change,
+    .prefill_silence = pipewire_playback_prefill_silence,
+    .get_is_paused = pipewire_playback_get_is_paused,
+    .set_is_paused = pipewire_playback_set_is_paused,
+    .stop = pipewire_playback_stop,
+    .destroy = pipewire_playback_destroy};
 
 #endif  // ENABLE_PIPEWIRE

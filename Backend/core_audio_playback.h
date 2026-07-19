@@ -35,18 +35,9 @@
 typedef struct core_audio_playback core_audio_playback_t;
 
 /**
- * @brief Create a CoreAudio playback backend instance.
- *
- * @param config Pointer to the playback device configuration.
- * @param sample_rate The initial sample rate in Hz.
- * @param chunk_size The size of each audio chunk in frames.
- * @param err Pointer to a backend_error_t struct to report errors.
- * @return Pointer to the created playback_backend_t instance, or NULL on
- * failure.
+ * @brief Global virtual method table for CoreAudio playback backend.
  */
-playback_backend_t* core_audio_playback_create(
-    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err);
+extern const playback_backend_vtable_t g_core_audio_playback_vtable;
 
 #endif  // ENABLE_COREAUDIO
 

@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "Backend/pipewire_backend.h"
+#include "Backend/audio_backend.h"
 #include "test_support.h"
 
 TEST(PipeWirePlaybackBasic) {
@@ -20,7 +20,7 @@ TEST(PipeWirePlaybackBasic) {
 
   backend_error_t err;
   playback_backend_t* playback =
-      pipewire_playback_create(&play_cfg, 48000, 1024, NULL, &err);
+      create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);
   if (!playback) {
     printf("PipeWire playback backend creation failed: %s (skipping test)\n",
            err.message);
@@ -60,7 +60,7 @@ TEST(PipeWireCaptureBasic) {
 
   backend_error_t err;
   capture_backend_t* capture =
-      pipewire_capture_create(&cap_cfg, 48000, 1024, NULL, &err);
+      create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
   if (!capture) {
     printf("PipeWire capture backend creation failed: %s (skipping test)\n",
            err.message);

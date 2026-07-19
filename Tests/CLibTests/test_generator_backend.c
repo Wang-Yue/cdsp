@@ -7,7 +7,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "Backend/generator_capture.h"
+#include "Backend/audio_backend.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -25,7 +25,7 @@ TEST(GeneratorSineCorrectness) {
 
   backend_error_t err;
   capture_backend_t* backend =
-      generator_capture_create(&config, 44100, 1024, NULL, &err);
+      create_capture_backend(&config, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(backend != NULL);
 
   ASSERT_TRUE(capture_backend_open(backend, &err));
@@ -60,7 +60,7 @@ TEST(GeneratorSquareCorrectness) {
 
   backend_error_t err;
   capture_backend_t* backend =
-      generator_capture_create(&config, 44100, 1024, NULL, &err);
+      create_capture_backend(&config, 44100, 1024, false, NULL, &err);
   ASSERT_TRUE(backend != NULL);
 
   ASSERT_TRUE(capture_backend_open(backend, &err));
@@ -94,7 +94,7 @@ TEST(GeneratorNoThrottling) {
 
   backend_error_t err;
   capture_backend_t* backend =
-      generator_capture_create(&config, 1000, 100, NULL, &err);
+      create_capture_backend(&config, 1000, 100, false, NULL, &err);
   ASSERT_TRUE(backend != NULL);
 
   ASSERT_TRUE(capture_backend_open(backend, &err));

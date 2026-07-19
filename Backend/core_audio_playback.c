@@ -619,24 +619,22 @@ static void core_audio_playback_destroy(void* ctx) {
   free(playback);
 }
 
-static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
-    .open = core_audio_playback_open,
-    .write = core_audio_playback_write,
-    .close = core_audio_playback_close,
-    .get_buffer_level = core_audio_playback_get_buffer_level,
-    .get_pending_rate_change = core_audio_playback_get_pending_rate_change,
-    .prefill_silence = core_audio_playback_prefill_silence,
-    .get_is_paused = core_audio_playback_get_is_paused,
-    .set_is_paused = core_audio_playback_set_is_paused,
-    .pitch_control_supported = core_audio_playback_pitch_control_supported,
-    .set_pitch = core_audio_playback_set_pitch,
-    .stop = core_audio_playback_stop,
-    .destroy = core_audio_playback_destroy};
-
-/// Create a CoreAudio playback backend instance.
-playback_backend_t* core_audio_playback_create(
-    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err) {
+/**
+ * @brief Create a CoreAudio playback backend instance.
+ *
+ * @param config Pointer to the playback device configuration.
+ * @param sample_rate The initial sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ */
+static playback_backend_t* core_audio_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
+  (void)params;
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -705,7 +703,22 @@ playback_backend_t* core_audio_playback_create(
     return NULL;
   }
   backend->ctx = playback;
-  backend->vtable = &CORE_AUDIO_PLAYBACK_VTABLE;
+  backend->vtable = &g_core_audio_playback_vtable;
   return backend;
 }
+
+const playback_backend_vtable_t g_core_audio_playback_vtable = {
+    .create = core_audio_playback_create,
+    .open = core_audio_playback_open,
+    .write = core_audio_playback_write,
+    .close = core_audio_playback_close,
+    .get_buffer_level = core_audio_playback_get_buffer_level,
+    .get_pending_rate_change = core_audio_playback_get_pending_rate_change,
+    .prefill_silence = core_audio_playback_prefill_silence,
+    .get_is_paused = core_audio_playback_get_is_paused,
+    .set_is_paused = core_audio_playback_set_is_paused,
+    .pitch_control_supported = core_audio_playback_pitch_control_supported,
+    .set_pitch = core_audio_playback_set_pitch,
+    .stop = core_audio_playback_stop,
+    .destroy = core_audio_playback_destroy};
 #endif  // ENABLE_COREAUDIO

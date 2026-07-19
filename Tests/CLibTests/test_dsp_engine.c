@@ -1969,7 +1969,7 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   capture_backend_t* cap_backend =
-      generator_capture_create(&cap_cfg, 48000, 64, NULL, &berr);
+      create_capture_backend(&cap_cfg, 48000, 64, false, NULL, &berr);
   ASSERT_TRUE(cap_backend != NULL);
 
   engine_capture_loop_config_t loop_cfg = {
@@ -2245,7 +2245,7 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
 
   backend_error_t berr;
   playback_backend_t* pb =
-      file_playback_create(&play_cfg, 48000, 64, NULL, &berr);
+      create_playback_backend(&play_cfg, 48000, 64, false, NULL, &berr);
   ASSERT_TRUE(pb != NULL);
 
   engine_playback_loop_config_t loop_cfg = {

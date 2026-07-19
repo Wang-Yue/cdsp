@@ -943,22 +943,23 @@ static void file_capture_destroy(void* ctx) {
   free(capture);
 }
 
-static const capture_backend_vtable_t file_capture_vtable = {
-    .open = file_capture_open,
-    .read = file_capture_read,
-    .close = file_capture_close,
-    .get_pending_rate_change = file_capture_get_pending_rate_change,
-    .is_pitch_control_supported = file_capture_pitch_control_supported,
-    .set_pitch = file_capture_set_pitch,
-    .wait_for_data = file_capture_wait,
-    .set_is_paused = file_capture_set_is_paused,
-    .stop = file_capture_stop,
-    .destroy = file_capture_destroy};
-
-capture_backend_t* file_capture_create(const capture_device_config_t* config,
+/**
+ * @brief Create a file capture backend instance.
+ *
+ * @param config Pointer to the capture device configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Pointer to processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ */
+static capture_backend_t* file_capture_create(const capture_device_config_t* config,
                                        int sample_rate, int chunk_size,
+                                       bool full_duplex,
                                        processing_parameters_t* params,
                                        backend_error_t* err) {
+  (void)full_duplex;
   (void)params;
   (void)err;
   file_capture_t* capture = (file_capture_t*)calloc(1, sizeof(file_capture_t));
@@ -1026,7 +1027,7 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
     return NULL;
   }
   backend->ctx = capture;
-  backend->vtable = &file_capture_vtable;
+  backend->vtable = &g_file_capture_vtable;
 #ifdef CDSP_TEST
   backend->is_realtime = capture->realtime;
 #else
@@ -1034,6 +1035,19 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
 #endif
   return backend;
 }
+
+const capture_backend_vtable_t g_file_capture_vtable = {
+    .create = file_capture_create,
+    .open = file_capture_open,
+    .read = file_capture_read,
+    .close = file_capture_close,
+    .get_pending_rate_change = file_capture_get_pending_rate_change,
+    .is_pitch_control_supported = file_capture_pitch_control_supported,
+    .set_pitch = file_capture_set_pitch,
+    .wait_for_data = file_capture_wait,
+    .set_is_paused = file_capture_set_is_paused,
+    .stop = file_capture_stop,
+    .destroy = file_capture_destroy};
 
 // MARK: - File Playback Backend implementation
 
@@ -1341,23 +1355,24 @@ static void file_playback_destroy(void* ctx) {
   free(playback);
 }
 
-static const playback_backend_vtable_t file_playback_vtable = {
-    .open = file_playback_open,
-    .write = file_playback_write,
-    .close = file_playback_close,
-    .get_buffer_level = file_playback_get_buffer_level,
-    .get_pending_rate_change = file_playback_get_pending_rate_change,
-    .prefill_silence = file_playback_prefill_silence,
-    .get_is_paused = file_playback_get_is_paused,
-    .set_is_paused = file_playback_set_is_paused,
-    .stop = file_playback_stop,
-    .destroy = file_playback_destroy};
-
-playback_backend_t* file_playback_create(const playback_device_config_t* config,
+/**
+ * @brief Create a file playback backend instance.
+ *
+ * @param config Pointer to the playback device configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Pointer to processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ */
+static playback_backend_t* file_playback_create(const playback_device_config_t* config,
                                          int sample_rate, int chunk_size,
+                                         bool full_duplex,
                                          processing_parameters_t* params,
                                          backend_error_t* err) {
   (void)sample_rate;
+  (void)full_duplex;
   (void)params;
   (void)err;
   if (config->type == AUDIO_BACKEND_TYPE_FILE &&
@@ -1409,6 +1424,19 @@ playback_backend_t* file_playback_create(const playback_device_config_t* config,
     return NULL;
   }
   backend->ctx = playback;
-  backend->vtable = &file_playback_vtable;
+  backend->vtable = &g_file_playback_vtable;
   return backend;
 }
+
+const playback_backend_vtable_t g_file_playback_vtable = {
+    .create = file_playback_create,
+    .open = file_playback_open,
+    .write = file_playback_write,
+    .close = file_playback_close,
+    .get_buffer_level = file_playback_get_buffer_level,
+    .get_pending_rate_change = file_playback_get_pending_rate_change,
+    .prefill_silence = file_playback_prefill_silence,
+    .get_is_paused = file_playback_get_is_paused,
+    .set_is_paused = file_playback_set_is_paused,
+    .stop = file_playback_stop,
+    .destroy = file_playback_destroy};

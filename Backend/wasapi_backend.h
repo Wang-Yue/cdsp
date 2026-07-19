@@ -35,38 +35,15 @@ typedef struct wasapi_playback wasapi_playback_t;
  */
 typedef struct processing_parameters processing_parameters_t;
 
-// Capture backend factory & methods
+/**
+ * @brief Global virtual method table for WASAPI capture backend.
+ */
+extern const capture_backend_vtable_t g_wasapi_capture_vtable;
 
 /**
- * @brief Creates a WASAPI capture backend.
- *
- * @param config Configuration for the capture device.
- * @param sample_rate The sample rate in Hz.
- * @param chunk_size The chunk size in frames.
- * @param params Processing parameters.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return A pointer to the created capture_backend_t, or NULL on failure.
+ * @brief Global virtual method table for WASAPI playback backend.
  */
-capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err);
-
-// Playback backend factory & methods
-
-/**
- * @brief Creates a WASAPI playback backend.
- *
- * @param config Configuration for the playback device.
- * @param sample_rate The sample rate in Hz.
- * @param chunk_size The chunk size in frames.
- * @param params Processing parameters.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return A pointer to the created playback_backend_t, or NULL on failure.
- */
-playback_backend_t* wasapi_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err);
+extern const playback_backend_vtable_t g_wasapi_playback_vtable;
 
 #endif  // ENABLE_WASAPI
 

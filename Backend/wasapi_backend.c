@@ -925,31 +925,23 @@ static void wasapi_capture_destroy(void* ctx) {
   }
 }
 
-static const capture_backend_vtable_t wasapi_capture_vtable = {
-    .open = wasapi_capture_open,
-    .read = wasapi_capture_read,
-    .close = wasapi_capture_close,
-    .get_pending_rate_change = wasapi_capture_get_pending_rate_change,
-    .is_pitch_control_supported = wasapi_capture_pitch_control_supported,
-    .set_pitch = wasapi_capture_set_pitch,
-    .wait_for_data = wasapi_capture_wait,
-    .stop = wasapi_capture_stop,
-    .destroy = wasapi_capture_destroy};
-
 /**
  * @brief Creates a WASAPI capture backend.
  *
  * @param config Configuration for the capture device.
  * @param sample_rate The sample rate in Hz.
  * @param chunk_size The chunk size in frames.
+ * @param full_duplex True if running in full duplex mode.
  * @param params Processing parameters.
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return A pointer to the created capture_backend_t, or NULL on failure.
  */
-capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
+static capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
                                          int sample_rate, int chunk_size,
+                                         bool full_duplex,
                                          processing_parameters_t* params,
                                          backend_error_t* err) {
+  (void)full_duplex;
   (void)params;
   (void)err;
   wasapi_capture_t* capture =
@@ -980,10 +972,22 @@ capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
     return NULL;
   }
   backend->ctx = capture;
-  backend->vtable = &wasapi_capture_vtable;
+  backend->vtable = &g_wasapi_capture_vtable;
   backend->is_realtime = true;
   return backend;
 }
+
+const capture_backend_vtable_t g_wasapi_capture_vtable = {
+    .create = wasapi_capture_create,
+    .open = wasapi_capture_open,
+    .read = wasapi_capture_read,
+    .close = wasapi_capture_close,
+    .get_pending_rate_change = wasapi_capture_get_pending_rate_change,
+    .is_pitch_control_supported = wasapi_capture_pitch_control_supported,
+    .set_pitch = wasapi_capture_set_pitch,
+    .wait_for_data = wasapi_capture_wait,
+    .stop = wasapi_capture_stop,
+    .destroy = wasapi_capture_destroy};
 
 // MARK: - Playback Backend implementation
 
@@ -1104,43 +1108,6 @@ static void* wasapi_playback_thread_func(void* arg) {
     CoUninitialize();
   }
   return NULL;
-}
-
-playback_backend_t* wasapi_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
-  (void)params;
-  (void)err;
-  wasapi_playback_t* playback =
-      (wasapi_playback_t*)calloc(1, sizeof(wasapi_playback_t));
-  if (!playback) return NULL;
-
-  if (config->cfg.wasapi.has_device &&
-      strcmp(config->cfg.wasapi.device, "default") != 0) {
-    snprintf(playback->device, sizeof(playback->device), "%s",
-             config->cfg.wasapi.device);
-  } else {
-    playback->device[0] = '\0';
-  }
-
-  playback->sample_rate = sample_rate;
-  playback->channels = config->cfg.wasapi.channels;
-  playback->chunk_size = chunk_size;
-  playback->format = config->cfg.wasapi.format;
-  playback->exclusive = config->cfg.wasapi.exclusive;
-  playback->polling =
-      config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
-
-  atomic_init(&playback->paused, false);
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
-  if (!backend) {
-    free(playback);
-    return NULL;
-  }
-  backend->ctx = playback;
-  backend->vtable = &wasapi_playback_vtable;
-  return backend;
 }
 
 /**
@@ -1896,7 +1863,57 @@ static void wasapi_playback_destroy(void* ctx) {
   }
 }
 
-static const playback_backend_vtable_t wasapi_playback_vtable = {
+/**
+ * @brief Creates a WASAPI playback backend.
+ *
+ * @param config Configuration for the playback device.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The chunk size in frames.
+ * @param full_duplex True if running in full duplex mode.
+ * @param params Processing parameters.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return A pointer to the created playback_backend_t, or NULL on failure.
+ */
+static playback_backend_t* wasapi_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)full_duplex;
+  (void)params;
+  (void)err;
+  wasapi_playback_t* playback =
+      (wasapi_playback_t*)calloc(1, sizeof(wasapi_playback_t));
+  if (!playback) return NULL;
+
+  if (config->cfg.wasapi.has_device &&
+      strcmp(config->cfg.wasapi.device, "default") != 0) {
+    snprintf(playback->device, sizeof(playback->device), "%s",
+             config->cfg.wasapi.device);
+  } else {
+    playback->device[0] = '\0';
+  }
+
+  playback->sample_rate = sample_rate;
+  playback->channels = config->cfg.wasapi.channels;
+  playback->chunk_size = chunk_size;
+  playback->format = config->cfg.wasapi.format;
+  playback->exclusive = config->cfg.wasapi.exclusive;
+  playback->polling =
+      config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+
+  atomic_init(&playback->paused, false);
+  playback_backend_t* backend =
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  if (!backend) {
+    free(playback);
+    return NULL;
+  }
+  backend->ctx = playback;
+  backend->vtable = &g_wasapi_playback_vtable;
+  return backend;
+}
+
+const playback_backend_vtable_t g_wasapi_playback_vtable = {
+    .create = wasapi_playback_create,
     .open = wasapi_playback_open,
     .write = wasapi_playback_write,
     .close = wasapi_playback_close,

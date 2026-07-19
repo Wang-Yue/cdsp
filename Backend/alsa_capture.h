@@ -26,24 +26,9 @@ typedef struct alsa_capture alsa_capture_t;
 typedef struct processing_parameters processing_parameters_t;
 
 /**
- * @brief Creates a new ALSA capture backend instance.
- *
- * This function instantiates the ALSA capture backend, configuring it with the
- * provided device config, sample rate, and chunk size. It returns the generic
- * `capture_backend_t` interface.
- *
- * @param config Pointer to the capture device configuration.
- * @param sample_rate The target sample rate.
- * @param chunk_size The target chunk size (number of frames per read).
- * @param params Pointer to the processing parameters for telemetry updates.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return Pointer to the generic capture_backend_t interface, or NULL on
- * failure.
+ * @brief Global virtual method table for ALSA capture backend.
  */
-capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
-                                       int sample_rate, int chunk_size,
-                                       processing_parameters_t* params,
-                                       backend_error_t* err);
+extern const capture_backend_vtable_t g_alsa_capture_vtable;
 
 #endif  // ENABLE_ALSA
 
