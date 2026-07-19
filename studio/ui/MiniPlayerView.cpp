@@ -2,6 +2,8 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QAbstractButton>
+#include <QAbstractSlider>
 #include <QGraphicsOpacityEffect>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -518,6 +520,25 @@ void MiniPlayerView::setupUi() {
 
     mainLayout->addWidget(m_viewStack);
     updateEngineStatus(m_dsp->status);
+
+    topBarWidget->installEventFilter(this);
+    m_viewStack->installEventFilter(this);
+    if (pipeScroll)
+        pipeScroll->installEventFilter(this);
+    if (m_pipelineMiniCard)
+        m_pipelineMiniCard->installEventFilter(this);
+    if (m_spectrumView)
+        m_spectrumView->installEventFilter(this);
+    if (m_metersView)
+        m_metersView->installEventFilter(this);
+    if (m_analogVUView)
+        m_analogVUView->installEventFilter(this);
+    if (m_spectrogramView)
+        m_spectrogramView->installEventFilter(this);
+    if (m_vectorScopeView)
+        m_vectorScopeView->installEventFilter(this);
+
+    onFaderChanged(0);
 }
 
 void MiniPlayerView::closeAndRestoreMain() {
@@ -571,7 +592,22 @@ void MiniPlayerView::paintEvent(QPaintEvent* event) {
     QStyleOption opt;
     opt.initFrom(this);
     QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
+}
+
+bool MiniPlayerView::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                closeAndRestoreMain();
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void MiniPlayerView::refreshMeters() {
@@ -589,7 +625,7 @@ void MiniPlayerView::refreshMeters() {
         break;
     case 2: // Level Meters
         if (m_metersView) {
-            m_metersView->setLevels(st.playbackRms, st.playbackPeak, "Playback");
+            m_metersView->setLevels(st.playbackRms, st.playbackPeak, "");
         }
         break;
     case 3: // Analog VU

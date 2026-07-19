@@ -10,14 +10,59 @@ GeneralSettingsView::GeneralSettingsView(std::shared_ptr<AudioSettings> settings
     : QWidget(parent), m_settings(settings), m_monitoring(monitoring) {
     setupUi();
     refreshUi();
+
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, &GeneralSettingsView::refreshUi);
+        connect(m_settings.get(), &AudioSettings::changed, this, &GeneralSettingsView::refreshUi);
+    }
+}
+
+void GeneralSettingsView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    refreshUi();
 }
 
 void GeneralSettingsView::setupUi() {
-    setFixedWidth(450);
+    setFixedSize(450, 320);
 
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(24, 24, 24, 24);
     mainLayout->setSpacing(20);
+
+    // Appearance Group (Theme Switching: Light / Dark)
+    auto appGroup = new QGroupBox("Appearance", this);
+    auto appForm = new QFormLayout(appGroup);
+
+    auto themeBox = new QHBoxLayout();
+    auto themeTitleLabel = new QLabel("Theme Mode", appGroup);
+    themeTitleLabel->setFixedWidth(120);
+    themeBox->addWidget(themeTitleLabel);
+
+    m_lightThemeRadio = new QRadioButton("Light Mode", appGroup);
+    m_darkThemeRadio = new QRadioButton("Dark Mode", appGroup);
+
+    themeBox->addWidget(m_lightThemeRadio);
+    themeBox->addWidget(m_darkThemeRadio);
+    themeBox->addStretch();
+
+    appForm->addRow(themeBox);
+
+    auto themeBtnGroup = new QButtonGroup(this);
+    themeBtnGroup->addButton(m_lightThemeRadio, 0);
+    themeBtnGroup->addButton(m_darkThemeRadio, 1);
+
+    connect(themeBtnGroup, &QButtonGroup::idClicked, [this](int id) {
+        if (m_settings) {
+            bool isDark = (id == 1);
+            if (m_settings->darkMode != isDark) {
+                m_settings->darkMode = isDark;
+                m_settings->savePreferences();
+                emit m_settings->settingsChanged();
+            }
+        }
+    });
+
+    mainLayout->addWidget(appGroup);
 
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
@@ -124,15 +169,14 @@ void GeneralSettingsView::setupUi() {
 }
 
 void GeneralSettingsView::refreshUi() {
-    if (m_monitoring) {
-        int pollRate = static_cast<int>(m_monitoring->pollingRate());
-        m_pollingRateSlider->blockSignals(true);
-        m_pollingRateSlider->setValue(pollRate);
-        m_pollingRateSlider->blockSignals(false);
-        m_pollingRateLabel->setText(QString("%1 Hz").arg(pollRate));
-    }
-
     if (m_settings) {
+        m_lightThemeRadio->blockSignals(true);
+        m_darkThemeRadio->blockSignals(true);
+        m_lightThemeRadio->setChecked(!m_settings->darkMode);
+        m_darkThemeRadio->setChecked(m_settings->darkMode);
+        m_lightThemeRadio->blockSignals(false);
+        m_darkThemeRadio->blockSignals(false);
+
         m_silenceThresholdSlider->blockSignals(true);
         m_silenceThresholdSlider->setValue(m_settings->silenceThreshold);
         m_silenceThresholdSlider->blockSignals(false);
@@ -146,5 +190,13 @@ void GeneralSettingsView::refreshUi() {
         } else {
             m_silenceTimeoutLabel->setText(QString("%1 s").arg(m_settings->silenceTimeout));
         }
+    }
+
+    if (m_monitoring) {
+        int pollRate = static_cast<int>(m_monitoring->pollingRate());
+        m_pollingRateSlider->blockSignals(true);
+        m_pollingRateSlider->setValue(pollRate);
+        m_pollingRateSlider->blockSignals(false);
+        m_pollingRateLabel->setText(QString("%1 Hz").arg(pollRate));
     }
 }

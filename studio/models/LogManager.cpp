@@ -72,7 +72,7 @@ void LogManager::appendLog(LogLevel level, const QString& message) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_entries.push_back(entry);
         if (m_entries.size() > m_maxEntries) {
-            m_entries.erase(m_entries.begin());
+            m_entries.erase(m_entries.begin(), m_entries.begin() + (m_entries.size() - m_maxEntries));
         }
     }
     emit logAppended(entry);

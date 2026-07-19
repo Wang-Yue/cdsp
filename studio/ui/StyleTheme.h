@@ -280,6 +280,15 @@ public:
             QStatusBar QLabel {
                 color: #000000;
             }
+            QSplitter::handle {
+                background-color: #d1d1d6;
+            }
+            QSplitter::handle:horizontal {
+                width: 1px;
+            }
+            QSplitter::handle:vertical {
+                height: 1px;
+            }
         )";
     }
 
@@ -540,6 +549,15 @@ public:
             }
             QStatusBar QLabel {
                 color: #ffffff;
+            }
+            QSplitter::handle {
+                background-color: #2c2d3a;
+            }
+            QSplitter::handle:horizontal {
+                width: 1px;
+            }
+            QSplitter::handle:vertical {
+                height: 1px;
             }
         )";
     }

@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QTableWidget>
 #include <QWidget>
 
@@ -15,19 +16,24 @@ class ConsoleLogsView : public QWidget {
 public:
     explicit ConsoleLogsView(QWidget* parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void refreshLogs();
     void onLogAppended(const LogEntry& entry);
     void copyAllLogs();
 
 private:
-    QTableWidget* m_table;
-    QComboBox* m_levelFilterCombo;
-    QCheckBox* m_autoScrollCheck;
-    QPushButton* m_copyBtn;
-    QPushButton* m_clearBtn;
+    QWidget* m_headerWidget = nullptr;
+    QTableWidget* m_table = nullptr;
+    QComboBox* m_levelFilterCombo = nullptr;
+    QCheckBox* m_autoScrollCheck = nullptr;
+    QPushButton* m_copyBtn = nullptr;
+    QPushButton* m_clearBtn = nullptr;
 
     void setupUi();
+    void updateTheme();
 };
 
 #endif // CONSOLE_LOGS_VIEW_H

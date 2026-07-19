@@ -22,6 +22,7 @@
 
 #include <QAbstractSpinBox>
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
 #include <QContextMenuEvent>
@@ -108,6 +109,7 @@ private:
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_engine = std::make_shared<CDSPEngine>();
+    LogManager::instance()->setEngine(m_engine.get());
     m_settings = std::make_shared<AudioSettings>();
     m_devices = std::make_shared<AudioDeviceManager>(m_engine, m_settings);
     m_pipeline = std::make_shared<PipelineStore>();
@@ -214,6 +216,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 void MainWindow::updateTheme() {
     StyleTheme::applyTheme(qApp, m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
+    if (m_actThemeLight && m_actThemeDark) {
+        m_actThemeLight->blockSignals(true);
+        m_actThemeDark->blockSignals(true);
+        m_actThemeLight->setChecked(!m_settings->darkMode);
+        m_actThemeDark->setChecked(m_settings->darkMode);
+        m_actThemeLight->blockSignals(false);
+        m_actThemeDark->blockSignals(false);
+    }
     for (QWidget* w : qApp->allWidgets()) {
         w->update();
     }
@@ -297,7 +307,7 @@ void MainWindow::setupUi() {
 
     m_splitter->addWidget(m_sidebarTree);
     m_splitter->addWidget(rightPanel);
-    m_splitter->setSizes({260, 1020});
+    m_splitter->setSizes({260, 840});
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
     m_splitter->setCollapsible(0, false);
@@ -311,6 +321,8 @@ void MainWindow::setupStatusBar() {
     m_statusStateLabel = new QLabel("🔴 Inactive", this);
     m_statusSampleRateBadge = new QLabel("48000 Hz", this);
     m_statusBufferLabel = new QLabel("Buffer: 1024", this);
+    m_statusResamplerLabel = new QLabel("Resampler: Off", this);
+    m_statusStagesLabel = new QLabel("Stages: 0 active", this);
     m_statusActivePresetLabel = new QLabel("Preset: None", this);
     m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
     m_stopReasonBanner = new QLabel(this);
@@ -320,6 +332,8 @@ void MainWindow::setupStatusBar() {
     m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, "
                                            "0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
     m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusResamplerLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusStagesLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
     m_statusActivePresetLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
     m_statusRuntimeLabel->setStyleSheet("padding: 0 8px; color: #8e8e93; font-family: monospace;");
     m_stopReasonBanner->setStyleSheet(
@@ -330,6 +344,8 @@ void MainWindow::setupStatusBar() {
     bar->addWidget(m_statusStateLabel);
     bar->addWidget(m_statusSampleRateBadge);
     bar->addWidget(m_statusBufferLabel);
+    bar->addWidget(m_statusResamplerLabel);
+    bar->addWidget(m_statusStagesLabel);
     bar->addWidget(m_statusActivePresetLabel);
     bar->addWidget(m_statusRuntimeLabel);
     bar->addWidget(m_stopReasonBanner);
@@ -370,6 +386,22 @@ void MainWindow::setupMenuBar() {
     });
     fileMenu->addAction(m_actAddEqPreset);
 
+    m_actOratoryPreset = new QAction("Oratory Presets...", this);
+    connect(m_actOratoryPreset, &QAction::triggered, [this]() {
+        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
+        dlg.exec();
+    });
+    fileMenu->addAction(m_actOratoryPreset);
+
+    m_actAutoEqPreset = new QAction("AutoEQ Presets...", this);
+    connect(m_actAutoEqPreset, &QAction::triggered, [this]() {
+        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
+        dlg.exec();
+    });
+    fileMenu->addAction(m_actAutoEqPreset);
+
+    fileMenu->addSeparator();
+
     m_actImportConv = new QAction("Import IR File(s)...", this);
     m_actImportConv->setShortcuts({QKeySequence("Cmd+O"), QKeySequence("Ctrl+O")});
     connect(m_actImportConv, &QAction::triggered, [this]() {
@@ -377,6 +409,13 @@ void MainWindow::setupMenuBar() {
         dlg.exec();
     });
     fileMenu->addAction(m_actImportConv);
+
+    m_actRoomCorrection = new QAction("Room Correction...", this);
+    connect(m_actRoomCorrection, &QAction::triggered, [this]() {
+        RoomCorrectionDlg dlg(m_pipeline, this);
+        dlg.exec();
+    });
+    fileMenu->addAction(m_actRoomCorrection);
 
     fileMenu->addSeparator();
 
@@ -428,8 +467,40 @@ void MainWindow::setupMenuBar() {
 
     viewMenu->addSeparator();
 
+    // Theme Submenu under View
+    auto themeSubMenu = viewMenu->addMenu("Theme");
+    auto themeGroup = new QActionGroup(this);
+
+    m_actThemeLight = new QAction("Light Mode", this);
+    m_actThemeLight->setCheckable(true);
+    m_actThemeLight->setChecked(!m_settings->darkMode);
+    connect(m_actThemeLight, &QAction::triggered, [this]() {
+        if (m_settings->darkMode) {
+            m_settings->darkMode = false;
+            m_settings->savePreferences();
+            emit m_settings->settingsChanged();
+        }
+    });
+    themeGroup->addAction(m_actThemeLight);
+    themeSubMenu->addAction(m_actThemeLight);
+
+    m_actThemeDark = new QAction("Dark Mode", this);
+    m_actThemeDark->setCheckable(true);
+    m_actThemeDark->setChecked(m_settings->darkMode);
+    connect(m_actThemeDark, &QAction::triggered, [this]() {
+        if (!m_settings->darkMode) {
+            m_settings->darkMode = true;
+            m_settings->savePreferences();
+            emit m_settings->settingsChanged();
+        }
+    });
+    themeGroup->addAction(m_actThemeDark);
+    themeSubMenu->addAction(m_actThemeDark);
+
+    viewMenu->addSeparator();
+
     auto miniAct = new QAction("Toggle MiniPlayer", this);
-    miniAct->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
+    miniAct->setShortcuts({QKeySequence("Cmd+Shift+M"), QKeySequence("Ctrl+Shift+M")});
     connect(miniAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     viewMenu->addAction(miniAct);
 
@@ -628,6 +699,12 @@ void MainWindow::setupShortcuts() {
         addAction(m_actImportConv);
     if (m_actAddEqPreset)
         addAction(m_actAddEqPreset);
+    if (m_actRoomCorrection)
+        addAction(m_actRoomCorrection);
+    if (m_actOratoryPreset)
+        addAction(m_actOratoryPreset);
+    if (m_actAutoEqPreset)
+        addAction(m_actAutoEqPreset);
 
     // Space: Start/Stop Engine (Pause/Resume)
     auto actStartStop = new QAction(this);
@@ -798,6 +875,18 @@ void MainWindow::updateStatusBar() {
         }
     }
     m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
+    if (m_statusResamplerLabel) {
+        m_statusResamplerLabel->setText(m_settings->resamplerEnabled ? "Resampler: On" : "Resampler: Off");
+    }
+    if (m_statusStagesLabel) {
+        int activeCount = 0;
+        for (const auto& stage : m_pipeline->stages) {
+            if (stage.isEnabled) {
+                activeCount++;
+            }
+        }
+        m_statusStagesLabel->setText(QString("Stages: %1 active").arg(activeCount));
+    }
     updateMuteDisplay();
 }
 

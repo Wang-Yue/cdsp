@@ -4,7 +4,10 @@
 #include "models/AudioSettings.h"
 #include "models/MonitoringController.h"
 
+#include <QButtonGroup>
 #include <QLabel>
+#include <QRadioButton>
+#include <QShowEvent>
 #include <QSlider>
 #include <QWidget>
 #include <memory>
@@ -16,12 +19,18 @@ public:
     GeneralSettingsView(std::shared_ptr<AudioSettings> settings, std::shared_ptr<MonitoringController> monitoring,
                         QWidget* parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void refreshUi();
 
 private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
+
+    QRadioButton* m_lightThemeRadio;
+    QRadioButton* m_darkThemeRadio;
 
     QSlider* m_pollingRateSlider;
     QLabel* m_pollingRateLabel;

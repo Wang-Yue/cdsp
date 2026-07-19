@@ -77,6 +77,8 @@ private:
     QLabel* m_statusStateLabel;
     QLabel* m_statusSampleRateBadge;
     QLabel* m_statusBufferLabel;
+    QLabel* m_statusResamplerLabel;
+    QLabel* m_statusStagesLabel;
     QLabel* m_statusActivePresetLabel;
     QLabel* m_statusRuntimeLabel;
     QLabel* m_statusMuteLabel;
@@ -92,6 +94,11 @@ private:
     QAction* m_trayMuteAction = nullptr;
     QAction* m_actImportConv = nullptr;
     QAction* m_actAddEqPreset = nullptr;
+    QAction* m_actRoomCorrection = nullptr;
+    QAction* m_actOratoryPreset = nullptr;
+    QAction* m_actAutoEqPreset = nullptr;
+    QAction* m_actThemeLight = nullptr;
+    QAction* m_actThemeDark = nullptr;
 
     QMap<QString, QWidget*> m_pageCache;
     QString m_lastActiveTag = "dashboard";
