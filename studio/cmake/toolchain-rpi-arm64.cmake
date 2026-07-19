@@ -27,4 +27,18 @@ if(EXISTS "${CMAKE_SYSROOT}")
     set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
     set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
     set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -isystem ${CMAKE_SYSROOT}/usr/include/aarch64-linux-gnu -isystem ${CMAKE_SYSROOT}/usr/include/dbus-1.0 -isystem ${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/dbus-1.0/include -B${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu -B${CMAKE_SYSROOT}/usr/lib")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${CMAKE_SYSROOT}/usr/include/aarch64-linux-gnu -isystem ${CMAKE_SYSROOT}/usr/include/dbus-1.0 -isystem ${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/dbus-1.0/include -B${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu -B${CMAKE_SYSROOT}/usr/lib")
+
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath-link,${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu:${CMAKE_SYSROOT}/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-rpath-link,${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu:${CMAKE_SYSROOT}/lib/aarch64-linux-gnu -Wl,--allow-shlib-undefined")
+
+    list(APPEND CMAKE_PREFIX_PATH
+        "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/cmake"
+        "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/cmake/Qt6"
+    )
+
+    set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${CMAKE_SYSROOT}/usr/share/pkgconfig")
+    set(ENV{PKG_CONFIG_SYSROOT_DIR} "${CMAKE_SYSROOT}")
 endif()
