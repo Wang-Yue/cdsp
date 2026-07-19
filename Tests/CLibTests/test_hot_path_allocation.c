@@ -1337,6 +1337,114 @@ static void capture_loop_iter(int i, void* arg) {
   (void)chunk;
 }
 
+typedef struct {
+  engine_processing_loop_t* loop;
+  engine_shared_state_t* shared;
+  audio_chunk_t* input_chunk;
+  cdsp_sem_t thread_id_sem;
+  cdsp_sem_t processed_sem;
+  _Atomic uintptr_t watched_thread_id;
+} processing_loop_test_ctx_t;
+
+static void on_proc_chunk_processed_cb(void* ctx_ptr, const audio_chunk_t* chunk) {
+  (void)chunk;
+  processing_loop_test_ctx_t* c = (processing_loop_test_ctx_t*)ctx_ptr;
+  uintptr_t tid = (uintptr_t)pthread_self();
+  uintptr_t expected = 0;
+  if (atomic_compare_exchange_strong(&c->watched_thread_id, &expected, tid)) {
+    cdsp_sem_signal(c->thread_id_sem);
+  }
+  cdsp_sem_signal(c->processed_sem);
+}
+
+static void processing_loop_iter(int i, void* ctx_ptr) {
+  (void)i;
+  processing_loop_test_ctx_t* c = (processing_loop_test_ctx_t*)ctx_ptr;
+  engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
+  cdsp_sem_wait(c->processed_sem);
+  void* processed = spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
+  (void)processed;
+}
+
+TEST(EngineProcessingLoop_AllocationFree) {
+  dsp_config_t config;
+  init_default_config(&config);
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipeline = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline != NULL);
+
+  engine_shared_state_t* shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  audio_chunk_t* resampler_scratch = audio_chunk_create(1024, 2);
+  audio_chunk_t* pipeline_scratch = audio_chunk_create(1024, 2);
+  round_robin_chunk_pool_t* scratch_pool = round_robin_chunk_pool_create(32, 1024, 2);
+
+  processing_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.shared = shared;
+  ctx.input_chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(ctx.input_chunk, 1024);
+  ctx.thread_id_sem = cdsp_sem_create();
+  ctx.processed_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  engine_processing_loop_config_t proc_cfg = {
+      .shared = shared,
+      .processing_params = params,
+      .pipeline_rate = 44100,
+      .resampler = NULL,
+      .pipeline = pipeline,
+      .dsd_encoder = NULL,
+      .resampler_scratch = resampler_scratch,
+      .pipeline_scratch = pipeline_scratch,
+      .scratch_pool = scratch_pool,
+      .on_chunk_captured = NULL,
+      .on_chunk_captured_ctx = NULL,
+      .on_chunk_processed = on_proc_chunk_processed_cb,
+      .on_chunk_processed_ctx = &ctx,
+  };
+  engine_processing_loop_t* loop = engine_processing_loop_create(&proc_cfg);
+  ASSERT_TRUE(loop != NULL);
+  ctx.loop = loop;
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_processing_thread_run, loop);
+
+  // Warmup 1 chunk to register thread ID
+  engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
+  cdsp_sem_wait(ctx.thread_id_sem);
+  cdsp_sem_wait(ctx.processed_sem);
+  void* warmup_processed = spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
+  (void)warmup_processed;
+
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence prior
+  // to entering the steady-state audio loop, one-time lazy allocations occur:
+  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/read).
+  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
+  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EngineProcessingLoop", tid, 2, 20,
+                                   processing_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_processing_loop_free(loop);
+  audio_chunk_free(ctx.input_chunk);
+  audio_chunk_free(resampler_scratch);
+  audio_chunk_free(pipeline_scratch);
+  round_robin_chunk_pool_free(scratch_pool);
+  engine_shared_state_free(shared);
+  processing_parameters_free(params);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+  cdsp_sem_destroy(ctx.processed_sem);
+}
+
 TEST(EngineCaptureLoop_AllocationFree) {
   backend_error_t err;
   capture_device_config_t cap_cfg;
