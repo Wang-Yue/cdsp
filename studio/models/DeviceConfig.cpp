@@ -301,6 +301,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.asio.device = deviceName();
         pb.asio.format = format;
         pb.asio.outputDoP = outputDoP;
+        pb.asio.outputDSD = outputDSD;
         pb.asio.dsdEncoderFilter = dsdEncoderFilter;
         break;
 #endif
@@ -309,6 +310,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
+        pb.alsa.outputDSD = outputDSD;
         break;
 #endif
 #if defined(ENABLE_PULSEAUDIO)
@@ -359,6 +361,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["bypassDoP"] = bypassDoP;
     obj["dopCutoffHz"] = dopCutoffHz;
     obj["outputDoP"] = outputDoP;
+    obj["outputDSD"] = outputDSD;
     obj["dsdEncoderFilter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter));
     obj["filename"] = QString::fromStdString(filename);
     obj["fileFormat"] = QString::fromStdString(fileFormat);
@@ -399,6 +402,8 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
     if (json.contains("outputDoP"))
         cfg.outputDoP = json["outputDoP"].toBool();
+    if (json.contains("outputDSD"))
+        cfg.outputDSD = json["outputDSD"].toBool();
     if (json.contains("dsdEncoderFilter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsdEncoderFilter"].toString().toStdString());
     if (json.contains("filename"))
@@ -441,10 +446,11 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
-           dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
-           isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
-           readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&
-           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel &&
-           nodeName == other.nodeName && nodeDescription == other.nodeDescription &&
-           nodeGroupName == other.nodeGroupName && autoconnectTo == other.autoconnectTo;
+           outputDSD == other.outputDSD && dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename &&
+           fileFormat == other.fileFormat && isWav == other.isWav && useRf64 == other.useRf64 &&
+           skipBytes == other.skipBytes && readBytes == other.readBytes && extraSamples == other.extraSamples &&
+           generatorType == other.generatorType && generatorFreq == other.generatorFreq &&
+           generatorLevel == other.generatorLevel && nodeName == other.nodeName &&
+           nodeDescription == other.nodeDescription && nodeGroupName == other.nodeGroupName &&
+           autoconnectTo == other.autoconnectTo;
 }

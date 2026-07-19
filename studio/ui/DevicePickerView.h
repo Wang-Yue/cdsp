@@ -112,6 +112,7 @@ private:
     QLineEdit* m_pbPulseLinkVolumeEdit = nullptr;
     QLineEdit* m_pbPulseLinkMuteEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
+    QCheckBox* m_outputDSDCheck = nullptr;
     QLabel* m_sdmFilterLabel = nullptr;
     QComboBox* m_sdmFilterCombo = nullptr;
     QLabel* m_pbDopHintLabel = nullptr;

@@ -1131,6 +1131,14 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_outputDoPCheck);
 
+    m_outputDSDCheck = new QCheckBox("Output Native DSD (output_dsd)", w);
+    connect(m_outputDSDCheck, &QCheckBox::toggled, [this](bool) {
+        if (m_isRefreshing)
+            return;
+        applySettings();
+    });
+    form->addRow("", m_outputDSDCheck);
+
     auto sdmBox = new QHBoxLayout();
     m_sdmFilterLabel = new QLabel("SDM Filter", w);
     m_sdmFilterLabel->setFixedWidth(100);
@@ -1548,6 +1556,18 @@ void DevicePickerView::refreshUi() {
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
+    bool supportsNativeDSD = false;
+#if defined(ENABLE_ALSA)
+    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
+        supportsNativeDSD = true;
+#endif
+#if defined(ENABLE_ASIO)
+    if (m_devices->playbackConfig.backend == AudioBackendType::ASIO)
+        supportsNativeDSD = true;
+#endif
+    m_outputDSDCheck->setVisible(supportsNativeDSD);
+    m_outputDSDCheck->setChecked(m_devices->playbackConfig.outputDSD);
+
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));
     if (filterIdx >= 0)
         m_sdmFilterCombo->setCurrentIndex(filterIdx);
@@ -1705,6 +1725,7 @@ void DevicePickerView::applySettings() {
         }
 
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
+        pbCfg.outputDSD = m_outputDSDCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {
             pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
         }
