@@ -626,6 +626,40 @@ struct CaptureDeviceConfig {
     WavFileCaptureConfig wavFile;
     RawFileCaptureConfig rawFile;
     GeneratorCaptureConfig generator;
+    std::optional<std::string> deviceName() const {
+        switch (backend) {
+#if defined(ENABLE_COREAUDIO)
+        case AudioBackendType::CoreAudio:
+            return coreAudio.device;
+#endif
+#if defined(ENABLE_WASAPI)
+        case AudioBackendType::WASAPI:
+            return wasapi.device;
+#endif
+#if defined(ENABLE_ASIO)
+        case AudioBackendType::ASIO:
+            return asio.device;
+#endif
+#if defined(ENABLE_ALSA)
+        case AudioBackendType::ALSA:
+            return alsa.device;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+        case AudioBackendType::PulseAudio:
+            return pulseAudio.device;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+        case AudioBackendType::PipeWire:
+            return pipeWire.device;
+#endif
+        case AudioBackendType::WavFile:
+            return wavFile.filename;
+        case AudioBackendType::RawFile:
+            return rawFile.filename;
+        default:
+            return "Generator";
+        }
+    }
 
     QJsonObject toJson() const;
     static CaptureDeviceConfig fromJson(const QJsonObject& json);
@@ -686,6 +720,39 @@ struct PlaybackDeviceConfig {
     PipeWirePlaybackConfig pipeWire;
 #endif
     RawFilePlaybackConfig rawFile;
+
+    std::optional<std::string> deviceName() const {
+        switch (backend) {
+#if defined(ENABLE_COREAUDIO)
+        case AudioBackendType::CoreAudio:
+            return coreAudio.device;
+#endif
+#if defined(ENABLE_WASAPI)
+        case AudioBackendType::WASAPI:
+            return wasapi.device;
+#endif
+#if defined(ENABLE_ASIO)
+        case AudioBackendType::ASIO:
+            return asio.device;
+#endif
+#if defined(ENABLE_ALSA)
+        case AudioBackendType::ALSA:
+            return alsa.device;
+#endif
+#if defined(ENABLE_PULSEAUDIO)
+        case AudioBackendType::PulseAudio:
+            return pulseAudio.device;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+        case AudioBackendType::PipeWire:
+            return pipeWire.device;
+#endif
+        case AudioBackendType::RawFile:
+            return rawFile.filename;
+        default:
+            return std::nullopt;
+        }
+    }
 
     QJsonObject toJson() const;
     static PlaybackDeviceConfig fromJson(const QJsonObject& json);

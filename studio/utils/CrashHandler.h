@@ -8,9 +8,11 @@
 #include <string>
 
 #if defined(_WIN32)
+// clang-format off
+#include <windows.h>
+// clang-format on
 #include <dbghelp.h>
 #include <tchar.h>
-#include <windows.h>
 
 inline std::string getLogFilePath() {
     char path[MAX_PATH] = {0};

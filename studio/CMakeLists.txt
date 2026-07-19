@@ -23,8 +23,29 @@ if(APPLE)
     set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
     add_compile_definitions(ENABLE_COREAUDIO ENABLE_ACCELERATE)
 elseif(WIN32)
-    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid fftw3 fftw3f dbghelp)
-    add_compile_definitions(ENABLE_WASAPI ENABLE_ASIO _WIN32 COBJMACROS UNICODE _UNICODE _USE_MATH_DEFINES ENABLE_FFTW)
+    include(FetchContent)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+    # Build libfftw3 (double precision)
+    set(ENABLE_FLOAT OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        fftw3
+        URL https://www.fftw.org/fftw-3.3.10.tar.gz
+    )
+    FetchContent_MakeAvailable(fftw3)
+
+    # Build libfftw3f (single precision)
+    set(ENABLE_FLOAT ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        fftw3f
+        URL https://www.fftw.org/fftw-3.3.10.tar.gz
+    )
+    FetchContent_MakeAvailable(fftw3f)
+
+    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid dbghelp fftw3 fftw3f)
+    add_compile_definitions(ENABLE_WASAPI ENABLE_ASIO ENABLE_FFTW _WIN32 COBJMACROS UNICODE _UNICODE _USE_MATH_DEFINES)
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(ALSA alsa)
@@ -38,62 +59,64 @@ include(FetchContent)
 get_filename_component(USER_HOME "~" REALPATH)
 set(LOCAL_CDSP_DIR "${USER_HOME}/cdsp")
 
-if(EXISTS "${LOCAL_CDSP_DIR}/libdsp.a")
-    message(STATUS "Using local CDSP library at ${LOCAL_CDSP_DIR}")
+if(EXISTS "${LOCAL_CDSP_DIR}/libdsp.a" AND NOT CMAKE_CROSSCOMPILING)
+    message(STATUS "Using local CDSP prebuilt static library at ${LOCAL_CDSP_DIR}")
     set(CDSP_DIR "${LOCAL_CDSP_DIR}")
     set(CDSP_LIB "${LOCAL_CDSP_DIR}/libdsp.a")
 else()
-    message(STATUS "Local CDSP not found. Fetching Wang-Yue/cdsp from GitHub...")
-    FetchContent_Declare(
-        cdsp
-        GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
-        GIT_TAG        main
-    )
-    FetchContent_MakeAvailable(cdsp)
-    set(CDSP_DIR "${cdsp_SOURCE_DIR}")
-    if(EXISTS "${CDSP_DIR}/libdsp.a")
-        set(CDSP_LIB "${CDSP_DIR}/libdsp.a")
+    if(EXISTS "${LOCAL_CDSP_DIR}")
+        set(CDSP_DIR "${LOCAL_CDSP_DIR}")
     else()
-        file(GLOB_RECURSE CDSP_C_SOURCES
-            "${CDSP_DIR}/Engine/*.c"
-            "${CDSP_DIR}/Audio/*.c"
-            "${CDSP_DIR}/Backend/*.c"
-            "${CDSP_DIR}/Config/*.c"
-            "${CDSP_DIR}/FFT/*.c"
-            "${CDSP_DIR}/Filters/*.c"
-            "${CDSP_DIR}/Logging/*.c"
-            "${CDSP_DIR}/Mixer/*.c"
-            "${CDSP_DIR}/Pipeline/*.c"
-            "${CDSP_DIR}/Processors/*.c"
-            "${CDSP_DIR}/Resampler/*.c"
-            "${CDSP_DIR}/DoP/*.c"
-            "${CDSP_DIR}/Public/*.c"
-            "${CDSP_DIR}/Utils/*.c"
+        message(STATUS "Local CDSP not found. Fetching Wang-Yue/cdsp from GitHub...")
+        FetchContent_Declare(
+            cdsp
+            GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
+            GIT_TAG        main
         )
-        add_library(cdsp_static STATIC ${CDSP_C_SOURCES})
-        target_include_directories(cdsp_static PUBLIC
-            ${CDSP_DIR}
-            ${CDSP_DIR}/Engine
-            ${CDSP_DIR}/Audio
-            ${CDSP_DIR}/Backend
-            ${CDSP_DIR}/Config
-            ${CDSP_DIR}/FFT
-            ${CDSP_DIR}/Filters
-            ${CDSP_DIR}/Logging
-            ${CDSP_DIR}/Mixer
-            ${CDSP_DIR}/Pipeline
-            ${CDSP_DIR}/Processors
-            ${CDSP_DIR}/Resampler
-            ${CDSP_DIR}/DoP
-            ${CDSP_DIR}/Public
-            ${CDSP_DIR}/Utils
-        )
-        set(CDSP_LIB cdsp_static)
+        FetchContent_MakeAvailable(cdsp)
+        set(CDSP_DIR "${cdsp_SOURCE_DIR}")
     endif()
+    file(GLOB_RECURSE CDSP_C_SOURCES
+        "${CDSP_DIR}/Engine/*.c"
+        "${CDSP_DIR}/Audio/*.c"
+        "${CDSP_DIR}/Backend/*.c"
+        "${CDSP_DIR}/Config/*.c"
+        "${CDSP_DIR}/FFT/*.c"
+        "${CDSP_DIR}/Filters/*.c"
+        "${CDSP_DIR}/Logging/*.c"
+        "${CDSP_DIR}/Mixer/*.c"
+        "${CDSP_DIR}/Pipeline/*.c"
+        "${CDSP_DIR}/Processors/*.c"
+        "${CDSP_DIR}/Resampler/*.c"
+        "${CDSP_DIR}/DoP/*.c"
+        "${CDSP_DIR}/Public/*.c"
+        "${CDSP_DIR}/Utils/*.c"
+    )
+    add_library(cdsp_static STATIC ${CDSP_C_SOURCES})
+    target_include_directories(cdsp_static PUBLIC
+        ${CDSP_DIR}
+        ${CDSP_DIR}/Engine
+        ${CDSP_DIR}/Audio
+        ${CDSP_DIR}/Backend
+        ${CDSP_DIR}/Config
+        ${CDSP_DIR}/FFT
+        ${CDSP_DIR}/Filters
+        ${CDSP_DIR}/Logging
+        ${CDSP_DIR}/Mixer
+        ${CDSP_DIR}/Pipeline
+        ${CDSP_DIR}/Processors
+        ${CDSP_DIR}/Resampler
+        ${CDSP_DIR}/DoP
+        ${CDSP_DIR}/Public
+        ${CDSP_DIR}/Utils
+        ${fftw3_SOURCE_DIR}/api
+    )
+    set(CDSP_LIB cdsp_static)
 endif()
 
 include_directories(
     src
+    ${fftw3_SOURCE_DIR}/api
     ${CDSP_DIR}
     ${CDSP_DIR}/Engine
     ${CDSP_DIR}/Audio

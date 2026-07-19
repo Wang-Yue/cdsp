@@ -1,0 +1,23 @@
+# CMake Toolchain file for cross-compiling Monitor-Qt from macOS to Raspberry Pi (Linux ARM64 / aarch64)
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+
+# Set compilers (ARM64 Linux cross compilers)
+if(NOT CMAKE_C_COMPILER)
+    set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+endif()
+if(NOT CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+endif()
+
+# Sysroot path (defaults to ~/rpi-sysroot if not set via -DCMAKE_SYSROOT=...)
+if(NOT DEFINED CMAKE_SYSROOT)
+    get_filename_component(USER_HOME "~" REALPATH)
+    set(CMAKE_SYSROOT "${USER_HOME}/rpi-sysroot")
+endif()
+
+set(CMAKE_FIND_ROOT_PATH ${CMAKE_SYSROOT})
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

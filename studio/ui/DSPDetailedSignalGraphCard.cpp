@@ -149,8 +149,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
         captureStageChannels.push_back({b});
     }
 
-    QString captureName =
-        QString::fromStdString(settings->deviceConfig.capture.coreAudio.device.value_or("Capture Input"));
+    QString captureName = QString::fromStdString(settings->deviceConfig.capture.deviceName().value_or("Capture Input"));
     m_boxes.push_back(makeContainerBox("box_input", captureName, xPos(0), captureInputBlocks));
     stages.push_back(captureStageChannels);
 
@@ -399,8 +398,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
         }
     }
 
-    QString playName =
-        QString::fromStdString(settings->deviceConfig.playback.coreAudio.device.value_or("Playback Output"));
+    QString playName = QString::fromStdString(settings->deviceConfig.playback.deviceName().value_or("Playback Output"));
     m_boxes.push_back(makeContainerBox("box_output", playName, xPos(totalLength), playBoxBlocks));
 
     for (const auto& b : m_blocks) {
