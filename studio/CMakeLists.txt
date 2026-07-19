@@ -67,6 +67,8 @@ else()
             "${CDSP_DIR}/Processors/*.c"
             "${CDSP_DIR}/Resampler/*.c"
             "${CDSP_DIR}/DoP/*.c"
+            "${CDSP_DIR}/Public/*.c"
+            "${CDSP_DIR}/Utils/*.c"
         )
         add_library(cdsp_static STATIC ${CDSP_C_SOURCES})
         target_include_directories(cdsp_static PUBLIC
@@ -83,6 +85,8 @@ else()
             ${CDSP_DIR}/Processors
             ${CDSP_DIR}/Resampler
             ${CDSP_DIR}/DoP
+            ${CDSP_DIR}/Public
+            ${CDSP_DIR}/Utils
         )
         set(CDSP_LIB cdsp_static)
     endif()
@@ -103,6 +107,8 @@ include_directories(
     ${CDSP_DIR}/Processors
     ${CDSP_DIR}/Resampler
     ${CDSP_DIR}/DoP
+    ${CDSP_DIR}/Public
+    ${CDSP_DIR}/Utils
 )
 
 # Collect source files
