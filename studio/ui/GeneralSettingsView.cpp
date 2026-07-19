@@ -23,11 +23,12 @@ void GeneralSettingsView::showEvent(QShowEvent* event) {
 }
 
 void GeneralSettingsView::setupUi() {
-    setFixedSize(450, 320);
+    setMinimumWidth(450);
+    setMaximumWidth(650);
 
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(24, 24, 24, 24);
-    mainLayout->setSpacing(20);
+    mainLayout->setSpacing(16);
 
     // Appearance Group (Theme Switching: Light / Dark)
     auto appGroup = new QGroupBox("Appearance", this);
