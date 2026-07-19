@@ -55,6 +55,7 @@ void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<
     m_rms = rms;
     m_peak = peak;
     m_title = title;
+    m_hasExplicitLevels = true;
     update();
 }
 
@@ -63,28 +64,35 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
+    if (!parentWidget() || (!parentWidget()->inherits("QStackedWidget") && !parentWidget()->inherits("QGroupBox"))) {
         p.fillRect(rect(), StyleTheme::cardBg());
     }
 
     int w = width();
     int h = height();
 
-    p.setFont(QFont("sans-serif", 11, QFont::Bold));
-    p.setPen(StyleTheme::textSecondary());
-    p.drawText(16, 24, m_title);
+    if (!m_title.isEmpty()) {
+        p.setFont(QFont("sans-serif", 11, QFont::Bold));
+        p.setPen(StyleTheme::textSecondary());
+        p.drawText(16, 24, m_title);
+    }
 
+    std::vector<float> emptyVec;
     const std::vector<float>& rmsVec =
-        (!m_rms.empty()) ? m_rms : (m_levelState ? m_levelState->playbackRms : std::vector<float>{});
+        m_hasExplicitLevels
+            ? m_rms
+            : (m_levelState ? (m_isCapture ? m_levelState->captureRms : m_levelState->playbackRms) : emptyVec);
     const std::vector<float>& peakVec =
-        (!m_peak.empty()) ? m_peak : (m_levelState ? m_levelState->playbackPeak : std::vector<float>{});
+        m_hasExplicitLevels
+            ? m_peak
+            : (m_levelState ? (m_isCapture ? m_levelState->capturePeak : m_levelState->playbackPeak) : emptyVec);
 
     size_t chCount = std::max(rmsVec.size(), peakVec.size());
     if (chCount == 0)
         chCount = 2; // Default 2 channels
 
-    int barAreaTop = 36;
-    int barAreaHeight = h - 50;
+    int barAreaTop = m_title.isEmpty() ? 4 : 36;
+    int barAreaHeight = h - (m_title.isEmpty() ? 8 : 50);
     int barHeight = (barAreaHeight - static_cast<int>(chCount - 1) * 8) / static_cast<int>(chCount);
     barHeight = std::clamp(barHeight, 16, 24);
 
@@ -98,7 +106,9 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         // 1. Channel Label ("1", "2", "3"...)
         QString chLabel = QString::number(i + 1);
 
-        p.setFont(QFont("monospace", 10, QFont::Medium));
+        QFont chFont("monospace", 10, QFont::Medium);
+        chFont.setStyleHint(QFont::Monospace);
+        p.setFont(chFont);
         p.setPen(StyleTheme::textSecondary());
         p.drawText(0, y, labelW + 10, barHeight, Qt::AlignCenter, chLabel);
 
@@ -156,12 +166,18 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         }
 
         // 7. Stacked Monospace Numeric Readouts (%5.1f format)
-        p.setFont(QFont("monospace", 9, QFont::Normal));
-        p.setPen(StyleTheme::textSecondary());
+        QFont monoFont("monospace", 9, QFont::Normal);
+        monoFont.setStyleHint(QFont::Monospace);
+        p.setFont(monoFont);
         QString rmsStr = QString::asprintf("%5.1f", rmsVal);
         QString peakStr = QString::asprintf("%5.1f", peakVal);
 
+        p.setPen(StyleTheme::textSecondary());
         p.drawText(xStart + barW + 4, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
+
+        QColor tertiaryColor = StyleTheme::textSecondary();
+        tertiaryColor.setAlphaF(tertiaryColor.alphaF() * 0.6);
+        p.setPen(tertiaryColor);
         p.drawText(xStart + barW + 4, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
     }
 }

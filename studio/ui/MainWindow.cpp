@@ -26,16 +26,19 @@
 #include <QCheckBox>
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QDesktopServices>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QSplitter>
 #include <QTextEdit>
 #include <QToolBar>
 #include <QTreeWidgetItem>
+#include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
 #include <cmath>
@@ -305,15 +308,15 @@ void MainWindow::setupUi() {
 
 void MainWindow::setupStatusBar() {
     auto bar = statusBar();
-    m_statusStateLabel = new QLabel("State: Inactive", this);
+    m_statusStateLabel = new QLabel("🔴 Inactive", this);
     m_statusSampleRateBadge = new QLabel("48000 Hz", this);
     m_statusBufferLabel = new QLabel("Buffer: 1024", this);
-    m_statusActivePresetLabel = new QLabel("Preset: Default", this);
+    m_statusActivePresetLabel = new QLabel("Preset: None", this);
     m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
     m_stopReasonBanner = new QLabel(this);
     m_statusMuteLabel = new QLabel("Unmuted", this);
 
-    m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
+    m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
     m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, "
                                            "0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
     m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
@@ -347,6 +350,7 @@ void MainWindow::setupStatusBar() {
         }
     });
     m_runtimeUpdateTimer.setInterval(1000);
+    updateStatusBar();
 }
 
 void MainWindow::setupMenuBar() {
@@ -375,8 +379,31 @@ void MainWindow::setupMenuBar() {
     fileMenu->addAction(m_actImportConv);
 
     fileMenu->addSeparator();
+
+    auto closeAct = new QAction("Close Window", this);
+    closeAct->setShortcuts({QKeySequence("Cmd+W"), QKeySequence("Ctrl+W")});
+    connect(closeAct, &QAction::triggered, this, &QMainWindow::close);
+    fileMenu->addAction(closeAct);
+
+    fileMenu->addSeparator();
+
+    auto settingsAct = new QAction("Settings...", this);
+    settingsAct->setMenuRole(QAction::PreferencesRole);
+    settingsAct->setShortcuts({QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")});
+    connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
+    fileMenu->addAction(settingsAct);
+
+    auto aboutAct = new QAction("About CamillaDSP Monitor", this);
+    aboutAct->setMenuRole(QAction::AboutRole);
+    connect(aboutAct, &QAction::triggered, [this]() {
+        QMessageBox::about(this, "About CamillaDSP Monitor",
+                           "CamillaDSP Monitor\n\nA macOS / Qt audio DSP monitoring and pipeline controller.");
+    });
+    fileMenu->addAction(aboutAct);
+
     auto quitAct = new QAction("Quit CamillaDSP Monitor", this);
     quitAct->setShortcuts({QKeySequence("Cmd+Q"), QKeySequence("Ctrl+Q")});
+    quitAct->setMenuRole(QAction::QuitRole);
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
     fileMenu->addAction(quitAct);
 
@@ -397,9 +424,7 @@ void MainWindow::setupMenuBar() {
     setupViewAct("Vector Scope", {QKeySequence("Cmd+6"), QKeySequence("Ctrl+6")}, "vectorscope");
     setupViewAct("Analog VU Meter", {QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
     setupViewAct("Console Logs", {QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
-    setupViewAct("General Settings",
-                 {QKeySequence("Cmd+9"), QKeySequence("Ctrl+9"), QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")},
-                 "general_settings");
+    setupViewAct("General Settings", {QKeySequence("Cmd+9"), QKeySequence("Ctrl+9")}, "general_settings");
 
     viewMenu->addSeparator();
 
@@ -411,6 +436,7 @@ void MainWindow::setupMenuBar() {
     // 3. Audio Menu
     auto audioMenu = bar->addMenu("&Audio");
     auto startStopAct = new QAction("Start/Stop Engine", this);
+    startStopAct->setShortcut(QKeySequence(Qt::Key_Space));
     connect(startStopAct, &QAction::triggered, [this]() {
         if (m_dspController->status == ProcessingState::Running) {
             m_dspController->stopEngine();
@@ -421,6 +447,7 @@ void MainWindow::setupMenuBar() {
     audioMenu->addAction(startStopAct);
 
     auto muteAct = new QAction("Toggle Mute", this);
+    muteAct->setShortcut(QKeySequence(Qt::Key_M));
     connect(muteAct, &QAction::triggered, [this]() {
         auto focusW = QApplication::focusWidget();
         for (QWidget* w = focusW; w; w = w->parentWidget()) {
@@ -432,6 +459,40 @@ void MainWindow::setupMenuBar() {
         toggleMute();
     });
     audioMenu->addAction(muteAct);
+
+    // 4. Window Menu
+    auto windowMenu = bar->addMenu("&Window");
+    auto minAct = new QAction("Minimize", this);
+    minAct->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
+    connect(minAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
+    windowMenu->addAction(minAct);
+
+    auto zoomAct = new QAction("Zoom", this);
+    connect(zoomAct, &QAction::triggered, [this]() {
+        if (isMaximized()) {
+            showNormal();
+        } else {
+            showMaximized();
+        }
+    });
+    windowMenu->addAction(zoomAct);
+
+    windowMenu->addSeparator();
+
+    auto bringAllAct = new QAction("Bring All to Front", this);
+    connect(bringAllAct, &QAction::triggered, [this]() {
+        showNormal();
+        raise();
+        activateWindow();
+    });
+    windowMenu->addAction(bringAllAct);
+
+    // 5. Help Menu
+    auto helpMenu = bar->addMenu("&Help");
+    auto helpAct = new QAction("CamillaDSP Monitor Help", this);
+    connect(helpAct, &QAction::triggered,
+            [this]() { QDesktopServices::openUrl(QUrl("https://github.com/HSAudio/CamillaDSP")); });
+    helpMenu->addAction(helpAct);
 }
 
 void MainWindow::setupTrayIcon() {
@@ -689,25 +750,32 @@ void MainWindow::updateVolumeDisplay() {
 
 void MainWindow::updateStatusBar() {
     QString stateStr;
+    QString colorStyle;
     switch (m_dspController->status) {
     case ProcessingState::Running:
-        stateStr = "Running";
+        stateStr = "🟢 Running";
+        colorStyle = "padding: 0 8px; color: #34c759; font-weight: bold;";
         break;
     case ProcessingState::Starting:
-        stateStr = "Starting";
+        stateStr = "🟡 Starting";
+        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
         break;
     case ProcessingState::Paused:
-        stateStr = "Paused";
+        stateStr = "🟡 Paused";
+        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
         break;
     case ProcessingState::Stalled:
-        stateStr = "Stalled";
+        stateStr = "🟡 Stalled";
+        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
         break;
     case ProcessingState::Inactive:
     default:
-        stateStr = "Inactive";
+        stateStr = "🔴 Inactive";
+        colorStyle = "padding: 0 8px; color: #ff3b30; font-weight: bold;";
         break;
     }
     m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
+    m_statusStateLabel->setStyleSheet(colorStyle);
     m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
     if (m_statusSampleRateBadge) {
         m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
@@ -863,9 +931,9 @@ void MainWindow::refreshSidebarItems() {
     // 1. Audio Section
     auto audioGroup = new QTreeWidgetItem(m_sidebarTree, {"Audio"});
     audioGroup->setExpanded(true);
-    auto devItem = new QTreeWidgetItem(audioGroup, {"🔊  Devices"});
+    auto devItem = new QTreeWidgetItem(audioGroup, {"Devices"});
     devItem->setData(0, Qt::UserRole, "devices");
-    auto dashItem = new QTreeWidgetItem(audioGroup, {"📊  Dashboard"});
+    auto dashItem = new QTreeWidgetItem(audioGroup, {"Dashboard"});
     dashItem->setData(0, Qt::UserRole, "dashboard");
 
     // 2. Monitoring Section
@@ -875,7 +943,7 @@ void MainWindow::refreshSidebarItems() {
     auto levelsItem = new QTreeWidgetItem(monGroup);
     levelsItem->setData(0, Qt::UserRole, "levels");
     auto levelsW = new SidebarToggleRowWidget(
-        m_sidebarTree, levelsItem, "📊 Level Meters", m_settings->showLevelMetersInDashboard,
+        m_sidebarTree, levelsItem, "Level Meters", m_settings->showLevelMetersInDashboard,
         [this](bool c) {
             m_settings->showLevelMetersInDashboard = c;
             m_settings->savePreferences();
@@ -886,7 +954,7 @@ void MainWindow::refreshSidebarItems() {
     auto specItem = new QTreeWidgetItem(monGroup);
     specItem->setData(0, Qt::UserRole, "spectrum");
     auto specW = new SidebarToggleRowWidget(
-        m_sidebarTree, specItem, "📈 Spectrum", m_settings->showSpectrumInDashboard,
+        m_sidebarTree, specItem, "Spectrum", m_settings->showSpectrumInDashboard,
         [this](bool c) {
             m_settings->showSpectrumInDashboard = c;
             m_settings->savePreferences();
@@ -897,7 +965,7 @@ void MainWindow::refreshSidebarItems() {
     auto spectroItem = new QTreeWidgetItem(monGroup);
     spectroItem->setData(0, Qt::UserRole, "spectroscope");
     auto spectroW = new SidebarToggleRowWidget(
-        m_sidebarTree, spectroItem, "🌌 Spectroscope", m_settings->showSpectrogramInDashboard,
+        m_sidebarTree, spectroItem, "Spectroscope", m_settings->showSpectrogramInDashboard,
         [this](bool c) {
             m_settings->showSpectrogramInDashboard = c;
             m_settings->savePreferences();
@@ -908,7 +976,7 @@ void MainWindow::refreshSidebarItems() {
     auto vecItem = new QTreeWidgetItem(monGroup);
     vecItem->setData(0, Qt::UserRole, "vectorscope");
     auto vecW = new SidebarToggleRowWidget(
-        m_sidebarTree, vecItem, "🎯 Vector Scope", m_settings->showVectorScopeInDashboard,
+        m_sidebarTree, vecItem, "Vector Scope", m_settings->showVectorScopeInDashboard,
         [this](bool c) {
             m_settings->showVectorScopeInDashboard = c;
             m_settings->savePreferences();
@@ -919,7 +987,7 @@ void MainWindow::refreshSidebarItems() {
     auto vuItem = new QTreeWidgetItem(monGroup);
     vuItem->setData(0, Qt::UserRole, "analogVU");
     auto vuW = new SidebarToggleRowWidget(
-        m_sidebarTree, vuItem, "🎛️ Analog VU", m_settings->showAnalogVUInDashboard,
+        m_sidebarTree, vuItem, "Analog VU", m_settings->showAnalogVUInDashboard,
         [this](bool c) {
             m_settings->showAnalogVUInDashboard = c;
             m_settings->savePreferences();
@@ -927,7 +995,7 @@ void MainWindow::refreshSidebarItems() {
         [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(vuItem, 0, vuW);
 
-    auto logsItem = new QTreeWidgetItem(monGroup, {"💻  Console Logs"});
+    auto logsItem = new QTreeWidgetItem(monGroup, {"Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
 
     // 3. Pipeline Section
@@ -937,7 +1005,7 @@ void MainWindow::refreshSidebarItems() {
     auto resItem = new QTreeWidgetItem(pipeGroup);
     resItem->setData(0, Qt::UserRole, "resampler");
     auto resW = new SidebarToggleRowWidget(
-        m_sidebarTree, resItem, "🔄 Resampler", m_settings->resamplerEnabled,
+        m_sidebarTree, resItem, "Resampler", m_settings->resamplerEnabled,
         [this](bool c) {
             m_settings->resamplerEnabled = c;
             m_settings->savePreferences();
@@ -952,7 +1020,6 @@ void MainWindow::refreshSidebarItems() {
         auto sItem = new QTreeWidgetItem(pipeGroup);
         QUuid stageId = stage.id;
         sItem->setData(0, Qt::UserRole, QString("stage_%1").arg(stageId.toString()));
-        std::string icon = stageTypeToIcon(stage.type);
 
         QString rawName = QString::fromStdString(stage.name);
         static const QStringList legacySymbols = {"speaker.wave.3",
@@ -985,7 +1052,7 @@ void MainWindow::refreshSidebarItems() {
             }
         }
 
-        QString stageTitle = QString("%1  %2").arg(QString::fromStdString(icon), rawName);
+        QString stageTitle = rawName;
         auto stageW = new SidebarToggleRowWidget(
             m_sidebarTree, sItem, stageTitle, stage.isEnabled,
             [this, stageId](bool c) {
@@ -1002,34 +1069,34 @@ void MainWindow::refreshSidebarItems() {
         m_sidebarTree->setItemWidget(sItem, 0, stageW);
     }
 
-    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"➕ Add Stage..."});
+    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"Add Stage…"});
     addStageItem->setData(0, Qt::UserRole, "add_stage");
 
     // 4. Convolution Section
     auto convGroup = new QTreeWidgetItem(m_sidebarTree, {"Convolution"});
     convGroup->setExpanded(true);
     for (const auto& conv : m_pipeline->convPresets) {
-        auto cItem = new QTreeWidgetItem(convGroup, {QString("🌊  %1").arg(QString::fromStdString(conv.name))});
+        auto cItem = new QTreeWidgetItem(convGroup, {QString::fromStdString(conv.name)});
         cItem->setData(0, Qt::UserRole, QString("conv_%1").arg(conv.id.toString()));
     }
-    auto impConvItem = new QTreeWidgetItem(convGroup, {"📥  Import IR File(s)..."});
+    auto impConvItem = new QTreeWidgetItem(convGroup, {"Import IR File(s)…"});
     impConvItem->setData(0, Qt::UserRole, "import_conv");
 
-    auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️  Room Correction"});
+    auto roomItem = new QTreeWidgetItem(convGroup, {"Room Correction"});
     roomItem->setData(0, Qt::UserRole, "room_correction");
 
     // 5. EQ Presets Section
     auto eqGroup = new QTreeWidgetItem(m_sidebarTree, {"EQ Presets"});
     eqGroup->setExpanded(true);
     for (const auto& eq : m_pipeline->eqPresets) {
-        auto eItem = new QTreeWidgetItem(eqGroup, {QString("🎚️  %1").arg(QString::fromStdString(eq.name))});
+        auto eItem = new QTreeWidgetItem(eqGroup, {QString::fromStdString(eq.name)});
         eItem->setData(0, Qt::UserRole, QString("eq_%1").arg(eq.id.toString()));
     }
-    auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕  Add"});
+    auto addEqItem = new QTreeWidgetItem(eqGroup, {"Add"});
     addEqItem->setData(0, Qt::UserRole, "add_eq");
-    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧  Oratory"});
+    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"Oratory"});
     oratoryItem->setData(0, Qt::UserRole, "oratory_eq");
-    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🎧  AutoEQ"});
+    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"AutoEQ"});
     autoEqItem->setData(0, Qt::UserRole, "auto_eq");
 
     m_sidebarTree->blockSignals(false);

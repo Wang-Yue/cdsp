@@ -24,6 +24,8 @@ DashboardView::DashboardView(std::shared_ptr<MonitoringController> monitoring,
     setupUi();
 
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &DashboardView::refreshMeters);
+    connect(m_monitoring.get(), &MonitoringController::dashboardVisibilityChanged, this,
+            &DashboardView::updateVisibility);
 
     if (m_dspController) {
         if (m_dspController->settings()) {
@@ -46,23 +48,44 @@ DashboardView::DashboardView(std::shared_ptr<MonitoringController> monitoring,
 }
 
 void DashboardView::updateVisibility() {
-    if (!m_dspController || !m_dspController->settings())
-        return;
-    auto s = m_dspController->settings();
+    bool showSignalGraph = true;
+    bool showLevelMeters = true;
+    bool showAnalogVU = true;
+    bool showSpectrum = true;
+    bool showSpectrogram = true;
+    bool showVectorScope = true;
+
+    if (m_dspController && m_dspController->settings()) {
+        auto s = m_dspController->settings();
+        showSignalGraph = s->showSignalGraphInDashboard;
+        showLevelMeters = s->showLevelMetersInDashboard;
+        showAnalogVU = s->showAnalogVUInDashboard;
+        showSpectrum = s->showSpectrumInDashboard;
+        showSpectrogram = s->showSpectrogramInDashboard;
+        showVectorScope = s->showVectorScopeInDashboard;
+    } else if (m_monitoring) {
+        showSignalGraph = m_monitoring->showSignalGraphInDashboard();
+        showLevelMeters = m_monitoring->showLevelMetersInDashboard();
+        showAnalogVU = m_monitoring->showAnalogVUInDashboard();
+        showSpectrum = m_monitoring->showSpectrumInDashboard();
+        showSpectrogram = m_monitoring->showSpectrogramInDashboard();
+        showVectorScope = m_monitoring->showVectorScopeInDashboard();
+    }
+
     if (m_pipelineOverviewWidget)
-        m_pipelineOverviewWidget->setVisible(s->showSignalGraphInDashboard);
+        m_pipelineOverviewWidget->setVisible(showSignalGraph);
     if (m_signalGraphCard)
-        m_signalGraphCard->setVisible(s->showSignalGraphInDashboard);
+        m_signalGraphCard->setVisible(showSignalGraph);
     if (m_levelMetersGroup)
-        m_levelMetersGroup->setVisible(s->showLevelMetersInDashboard);
+        m_levelMetersGroup->setVisible(showLevelMeters);
     if (m_analogVUGroup)
-        m_analogVUGroup->setVisible(s->showAnalogVUInDashboard);
+        m_analogVUGroup->setVisible(showAnalogVU);
     if (m_spectrumGroup)
-        m_spectrumGroup->setVisible(s->showSpectrumInDashboard);
+        m_spectrumGroup->setVisible(showSpectrum);
     if (m_spectrogramGroup)
-        m_spectrogramGroup->setVisible(s->showSpectrogramInDashboard);
+        m_spectrogramGroup->setVisible(showSpectrogram);
     if (m_vectorScopeGroup)
-        m_vectorScopeGroup->setVisible(s->showVectorScopeInDashboard);
+        m_vectorScopeGroup->setVisible(showVectorScope);
 }
 
 void DashboardView::updateFaderUi() {
@@ -177,6 +200,8 @@ void DashboardView::setupUi() {
     capLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_captureMeters = new LevelMeterView(m_levelMetersGroup);
     m_captureMeters->setLevelState(&m_monitoring->levelState);
+    m_captureMeters->setIsCapture(true);
+    m_captureMeters->setFixedHeight(120);
     capCol->addWidget(capLbl);
     capCol->addWidget(m_captureMeters);
 
@@ -188,6 +213,8 @@ void DashboardView::setupUi() {
     pbLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
     m_playbackMeters->setLevelState(&m_monitoring->levelState);
+    m_playbackMeters->setIsCapture(false);
+    m_playbackMeters->setFixedHeight(120);
     pbCol->addWidget(pbLbl);
     pbCol->addWidget(m_playbackMeters);
 
@@ -278,22 +305,32 @@ void DashboardView::setupUi() {
     vuTitle->setFont(QFont("System", 13, QFont::Bold));
     vuHeaderBox->addWidget(vuTitle);
     vuHeaderBox->addStretch();
-    auto themeCombo = new QComboBox(m_analogVUGroup);
-    themeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
-    themeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
-    themeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
-    connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, themeCombo](int idx) {
-        auto settings = m_analogVUView->vuSettings();
-        settings.theme = static_cast<VUTheme>(themeCombo->itemData(idx).toInt());
-        m_analogVUView->setVUSettings(settings);
-    });
-    vuHeaderBox->addWidget(themeCombo);
+    m_vuThemeCombo = new QComboBox(m_analogVUGroup);
+    m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
+    m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
+    m_vuThemeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
+    vuHeaderBox->addWidget(m_vuThemeCombo);
     vuLayout->addLayout(vuHeaderBox);
 
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
     m_analogVUView->setLevelState(&m_monitoring->levelState);
     m_analogVUView->setFixedHeight(220);
     vuLayout->addWidget(m_analogVUView);
+
+    int curThemeIdx = m_vuThemeCombo->findData(static_cast<int>(m_analogVUView->vuSettings().theme));
+    if (curThemeIdx >= 0) {
+        m_vuThemeCombo->setCurrentIndex(curThemeIdx);
+    }
+
+    connect(m_vuThemeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (!m_analogVUView)
+            return;
+        auto settings = m_analogVUView->vuSettings();
+        settings.theme = static_cast<VUTheme>(m_vuThemeCombo->itemData(idx).toInt());
+        m_analogVUView->setVUSettings(settings);
+        settings.save();
+    });
+
     mainLayout->addWidget(m_analogVUGroup);
 
     // 6. Spectrum Card

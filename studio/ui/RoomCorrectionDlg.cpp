@@ -22,6 +22,7 @@ RoomCorrectionDlg::RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QW
     : QDialog(parent), m_pipeline(pipeline) {
     setWindowTitle("Room Correction Studio");
     resize(1150, 760);
+    setMinimumSize(960, 680);
     setupUi();
 
     connect(&m_session, &MeasurementSession::sessionUpdated, this, &RoomCorrectionDlg::refreshSessionUi);

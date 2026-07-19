@@ -26,7 +26,7 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
         if (view) {
             void* nsWindow = reinterpret_cast<void* (*)(void*, SEL)>(objc_msgSend)(view, sel_registerName("window"));
             if (nsWindow) {
-                unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 10);
+                unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 6);
                 reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(
                     nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
                 reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"),
@@ -43,6 +43,8 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
                                                                            sel_registerName("setTitleVisibility:"), 1L);
                 reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(nsWindow, sel_registerName("setHasShadow:"),
                                                                            true);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(nsWindow,
+                                                                           sel_registerName("setFloatingPanel:"), true);
             }
         }
     }
@@ -61,6 +63,7 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
     setMinimumSize(200, 80);
     setMaximumSize(1000, 300);
     resize(320, 90);
+    setFocusPolicy(Qt::StrongFocus);
 
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
@@ -85,12 +88,17 @@ void MiniPlayerView::showEvent(QShowEvent* event) {
     } else {
         if (auto screen = QGuiApplication::primaryScreen()) {
             QRect screenFrame = screen->availableGeometry();
-            int x = screenFrame.right() - 330;
-            int y = screenFrame.bottom() - 100;
+            int x = screenFrame.x() + screenFrame.width() - 330;
+            int y = screenFrame.y() + screenFrame.height() - 100;
             move(x, y);
         }
     }
-    int savedMode = settings.value("MiniPlayer/mode", 1).toInt();
+    int savedMode = 1;
+    if (settings.contains("mini_player_mode")) {
+        savedMode = settings.value("mini_player_mode", 1).toInt();
+    } else {
+        savedMode = settings.value("MiniPlayer/mode", 1).toInt();
+    }
     if (m_viewStack && savedMode >= 0 && savedMode < m_viewStack->count()) {
         m_viewStack->setCurrentIndex(savedMode);
         updateModeButtonStyles(savedMode);
@@ -104,7 +112,7 @@ Fader MiniPlayerView::currentFader() const {
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         QWidget* child = childAt(event->position().toPoint());
-        if (!child || child == this || child == m_pipelineMiniCard) {
+        if (!child || (!qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child))) {
             m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
             m_isDragging = true;
             event->accept();
@@ -159,9 +167,9 @@ void MiniPlayerView::onFaderChanged(int index) {
     m_volSlider->setValue(static_cast<int>(vol * 2.0f));
     m_volSlider->blockSignals(false);
     m_volValueLabel->setText(QString::asprintf("%+.0f", vol));
-    m_volValueLabel->setStyleSheet(
-        vol > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
-                   : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
+    m_volValueLabel->setStyleSheet(vol > 0.0f
+                                       ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                                       : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
     m_muteBtn->setText(muted ? "🔇" : "🔊");
     m_muteBtn->setStyleSheet(muted ? "QPushButton { background: transparent; color: #ff3b30; border: none; font-size: "
                                      "10px; padding: 0px; margin: 0px; }"
@@ -307,8 +315,8 @@ void MiniPlayerView::updateModeButtonStyles(int activeIndex) {
     for (int i = 0; i < static_cast<int>(m_modeBtns.size()); ++i) {
         if (i == activeIndex) {
             m_modeBtns[i]->setStyleSheet(
-                "QPushButton { background: transparent; color: #ffffff; border: none; font-size: 10px; font-weight: "
-                "bold; padding: 0px; margin: 0px; text-align: center; }");
+                "QPushButton { background: transparent; color: #ffffff; border: none; font-size: 10px; "
+                "padding: 0px; margin: 0px; text-align: center; }");
         } else {
             m_modeBtns[i]->setStyleSheet(
                 "QPushButton { background: transparent; color: rgba(255, 255, 255, 0.4); border: none; font-size: "
@@ -317,7 +325,9 @@ void MiniPlayerView::updateModeButtonStyles(int activeIndex) {
         }
     }
     QSettings settings;
+    settings.setValue("mini_player_mode", activeIndex);
     settings.setValue("MiniPlayer/mode", activeIndex);
+    refreshMeters();
 }
 
 void MiniPlayerView::setupUi() {
@@ -378,13 +388,12 @@ void MiniPlayerView::setupUi() {
         "5px; }");
 
     m_volValueLabel = new QLabel(QString::asprintf("%+.0f", currentVol), volWidget);
-    m_volValueLabel->setFont(QFont("monospace", 9, QFont::Bold));
+    m_volValueLabel->setFont(QFont("monospace", 9));
     m_volValueLabel->setFixedWidth(25);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_volValueLabel->setStyleSheet(
-        currentVol > 0.0f
-            ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
-            : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
+    m_volValueLabel->setStyleSheet(currentVol > 0.0f
+                                       ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                                       : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
 
     connect(m_volSlider, &QSlider::valueChanged, [this](int val) {
         Fader f = currentFader();
@@ -392,8 +401,8 @@ void MiniPlayerView::setupUi() {
         m_dsp->setFaderVolume(f, db);
         m_volValueLabel->setText(QString::asprintf("%+.0f", db));
         m_volValueLabel->setStyleSheet(
-            db > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
-                      : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
+            db > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                      : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
     });
 
     volLayout->addWidget(m_volSlider);

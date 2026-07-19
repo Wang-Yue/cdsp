@@ -13,9 +13,8 @@ void VUSettings::load() {
     hotSpotAlpha = settings.value("vu_hot_spot_alpha", 0.5).toDouble();
     lightWash = settings.value("vu_light_wash", 0.2).toDouble();
 
-    QVariant tVar = settings.value("vu_theme");
-    if (tVar.typeId() == QMetaType::QString) {
-        QString tStr = tVar.toString();
+    if (settings.contains("vu_theme")) {
+        QString tStr = settings.value("vu_theme").toString();
         if (tStr == "Dark Stealth") {
             theme = VUTheme::DarkStealth;
         } else if (tStr == "Warm Tube") {
@@ -24,12 +23,7 @@ void VUSettings::load() {
             theme = VUTheme::VintageAmber;
         }
     } else {
-        int t = tVar.toInt();
-        if (t >= 0 && t <= 2) {
-            theme = static_cast<VUTheme>(t);
-        } else {
-            theme = VUTheme::VintageAmber;
-        }
+        theme = VUTheme::VintageAmber;
     }
 }
 

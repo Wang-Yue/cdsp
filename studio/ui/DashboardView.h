@@ -14,6 +14,7 @@
 #include "ui/SpectrumView.h"
 #include "ui/VectorScopeView.h"
 
+#include <QComboBox>
 #include <QGroupBox>
 #include <QPushButton>
 #include <QSlider>
@@ -58,6 +59,7 @@ private:
     SpectrogramView* m_spectrogramView = nullptr;
     VectorScopeView* m_vectorScopeView = nullptr;
     AnalogVUMeterView* m_analogVUView = nullptr;
+    QComboBox* m_vuThemeCombo = nullptr;
 
     struct FaderRowWidgets {
         Fader fader;

@@ -19,6 +19,8 @@ public:
     explicit LevelMeterView(QWidget* parent = nullptr);
 
     void setLevelState(LevelState* levelState) { m_levelState = levelState; }
+    void setIsCapture(bool isCapture) { m_isCapture = isCapture; }
+    bool isCapture() const { return m_isCapture; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");
 
     QSize sizeHint() const override { return QSize(300, 120); }
@@ -34,6 +36,8 @@ private:
     std::vector<float> m_rms;
     std::vector<float> m_peak;
     QString m_title;
+    bool m_isCapture = false;
+    bool m_hasExplicitLevels = false;
 };
 
 class CompactLevelMeterBar : public QWidget {

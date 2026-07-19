@@ -105,8 +105,16 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
 
     p.save();
 
-    int labelHeight = static_cast<int>(18 * scale);
-    QRect dialRect = totalRect.adjusted(0, 0, 0, -labelHeight);
+    QRect innerRect = totalRect.adjusted(static_cast<int>(4 * scale), static_cast<int>(4 * scale),
+                                         -static_cast<int>(4 * scale), -static_cast<int>(4 * scale));
+    int vSpacing = static_cast<int>(6 * scale);
+
+    QFont labelFont("sans-serif", static_cast<int>(std::max(8.0, 11.0 * scale)), QFont::Black);
+    QFontMetrics labelFm(labelFont);
+    int labelHeight = labelFm.height();
+
+    QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), innerRect.height() - labelHeight - vSpacing);
+    QRect labelRect(innerRect.left(), dialRect.bottom() + vSpacing, innerRect.width(), labelHeight);
 
     QColor bulbAmberColor, bulbHotSpotColor, needleColor, arcColor, percentageMarksColor, redZoneColor;
     bool isDark = StyleTheme::isDark();
@@ -142,7 +150,9 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
     double baseH = dialRect.top() + h;
 
     p.save();
-    p.setClipRect(dialRect);
+    QPainterPath clipPath;
+    clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
+    p.setClipPath(clipPath);
 
     // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
@@ -179,7 +189,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
     static const VUMark vuMarks[] = {{-20, "20"}, {-10, "10"}, {-7, "7"}, {-5, "5"}, {-3, "3"}, {-2, "2"},
                                      {-1, "1"},   {0, "0"},    {1, "1"},  {2, "2"},  {3, "3"}};
 
-    QFont vintageFont("Serif", static_cast<int>(std::max(7.0, 10.0 * scale)), QFont::Normal);
+    QFont vintageFont("Rockwell", static_cast<int>(std::max(7.0, 10.0 * scale)), QFont::Normal);
     vintageFont.setStyleHint(QFont::Serif);
 
     for (const auto& m : vuMarks) {
@@ -254,27 +264,27 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
                      (radius + 2 * scale) * 2),
               55 * 16, static_cast<int>(redSpan_CCW * 16));
 
-    // 6. Perfected Needle
-    double nAngRad = (angleDeg - 90.0) * M_PI / 180.0;
-    double nR = radius + m_settings.needleExtension * scale;
-    QPointF ne(center.x() + std::cos(nAngRad) * nR, center.y() + std::sin(nAngRad) * nR);
-
-    p.setPen(QPen(needleColor, 1.2 * scale));
-    p.drawLine(center, ne);
-
-    // 7. Glass Surface Reflection
+    // 6. Glass Surface Reflection
     QLinearGradient glassGrad(dialRect.topLeft(), dialRect.bottomRight());
     glassGrad.setColorAt(0.0, QColor(255, 255, 255, 64)); // white 0.25 opacity
     glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));  // clear
     glassGrad.setColorAt(1.0, QColor(0, 0, 0, 13));       // black 0.05 opacity
     p.fillRect(dialRect, glassGrad);
 
-    // 8. ADDITIVE LIGHT WASH
+    // 7. ADDITIVE LIGHT WASH
     if (m_settings.lightWash > 0) {
         QColor lwColor = bulbAmberColor;
         lwColor.setAlphaF(m_settings.lightWash);
         p.fillRect(dialRect, lwColor);
     }
+
+    // 8. Perfected Needle (rendered on top of dial face multi-layer shaders)
+    double nAngRad = (angleDeg - 90.0) * M_PI / 180.0;
+    double nR = radius + m_settings.needleExtension * scale;
+    QPointF ne(center.x() + std::cos(nAngRad) * nR, center.y() + std::sin(nAngRad) * nR);
+
+    p.setPen(QPen(needleColor, 1.2 * scale));
+    p.drawLine(center, ne);
 
     p.restore(); // Restore clip region
 
@@ -285,8 +295,6 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
     p.drawPath(boxPath);
 
     // Channel Label (Positioned below the dial box)
-    QRect labelRect(totalRect.left(), dialRect.bottom() + static_cast<int>(4 * scale), totalRect.width(), labelHeight);
-    QFont labelFont("sans-serif", static_cast<int>(std::max(8.0, 11.0 * scale)), QFont::Black);
     p.setFont(labelFont);
     QColor lblColor = StyleTheme::textSecondary();
     lblColor.setAlphaF(lblColor.alphaF() * 0.8);
