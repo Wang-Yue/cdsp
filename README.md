@@ -83,14 +83,14 @@ sequenceDiagram
     Note over C: 1. Builds new pipeline in bg
     C->>A: 2. Atomic Exchange (next_pipeline)
     Note over A: 3. Core switches to new pipeline<br/>Copies state (zero allocations)
-    A->>C: 4. Enqueues old pipeline to Garbage Queue
+    A->>C: 4. Retires old pipeline via Atomic Pointer
     Note over C: 5. Deallocates old filters async
 ```
 
 1. **Background Compilation**: The **Control Thread** loads configuration parameters, performs synchronous disk reads (e.g. loading convolution WAV coefficient files), and allocates memory for the new pipeline in the background.
 2. **Atomic Swap**: The Control Thread publishes the new pipeline pointer via an atomic slot (`_Atomic(pipeline_t*)`).
 3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](Pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
-4. **Deferred GC**: The old pipeline pointer is enqueued onto a lock-free `pipeline_garbage_queue` (in [engine_shared_state.c](Engine/engine_shared_state.c)). The **Control Thread** periodically drains this queue and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
+4. **Deferred GC**: The old pipeline pointer is retired into a single atomic slot `retired_pipeline` (in [engine_shared_state.c](Engine/engine_shared_state.c)). The **Control Thread** periodically collects this pointer and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
 
 ### 2.3 Cross-Platform Vectorization & Dynamic Core Scheduling
 We leverage platform-native APIs and math acceleration frameworks depending on the target operating system:

@@ -67,9 +67,10 @@ struct engine_shared_state {
   _Atomic double resampler_ratio;
 
   /**
-   * @brief Deferred free queue for old pipeline structures.
+  /**
+   * @brief Single atomic pointer for swapped-out retired pipeline structure.
    */
-  spsc_queue_t* pipeline_garbage_queue;
+  _Atomic(pipeline_t*) retired_pipeline;
 
   /**
    * @brief Raw atomic state representation.
@@ -117,16 +118,18 @@ void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
   }
 }
 
-bool engine_shared_state_enqueue_garbage_pipeline(engine_shared_state_t* state,
-                                                  pipeline_t* pipeline) {
-  if (!state || !state->pipeline_garbage_queue || !pipeline) return false;
-  return spsc_queue_enqueue(state->pipeline_garbage_queue, pipeline);
+pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
+                                                pipeline_t* pipeline) {
+  if (!state || !pipeline) return NULL;
+  return atomic_exchange_explicit(&state->retired_pipeline, pipeline,
+                                 memory_order_acq_rel);
 }
 
-pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
+pipeline_t* engine_shared_state_collect_retired_pipeline(
     engine_shared_state_t* state) {
-  if (!state || !state->pipeline_garbage_queue) return NULL;
-  return (pipeline_t*)spsc_queue_dequeue(state->pipeline_garbage_queue);
+  if (!state) return NULL;
+  return atomic_exchange_explicit(&state->retired_pipeline, NULL,
+                                 memory_order_acquire);
 }
 
 processing_stop_reason_t engine_shared_state_get_stop_reason(
@@ -150,15 +153,14 @@ engine_shared_state_t* engine_shared_state_create(
   state->processed_queue = audio_sync_queue_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->resampler_ratio, 1.0);
+  atomic_init(&state->retired_pipeline, NULL);
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
   atomic_init(&state->last_capture_time_ns, cdsp_time_now_ns());
   pthread_mutex_init(&state->stop_reason_mutex, NULL);
-  state->pipeline_garbage_queue = spsc_queue_create(32);
 
-  if (!state->captured_queue || !state->processed_queue ||
-      !state->pipeline_garbage_queue) {
+  if (!state->captured_queue || !state->processed_queue) {
     engine_shared_state_free(state);
     return NULL;
   }
@@ -170,12 +172,10 @@ void engine_shared_state_free(engine_shared_state_t* state) {
   audio_sync_queue_free(state->captured_queue);
   audio_sync_queue_free(state->processed_queue);
 
-  if (state->pipeline_garbage_queue) {
-    void* p;
-    while ((p = spsc_queue_dequeue(state->pipeline_garbage_queue)) != NULL) {
-      pipeline_free((pipeline_t*)p);
-    }
-    spsc_queue_free(state->pipeline_garbage_queue);
+  pipeline_t* old = atomic_exchange_explicit(&state->retired_pipeline, NULL,
+                                             memory_order_acquire);
+  if (old) {
+    pipeline_free(old);
   }
 
   pthread_mutex_destroy(&state->stop_reason_mutex);

@@ -89,7 +89,7 @@ def extract_calls_detailed(func_name, body):
             in_while_loop = True
             while_brace_depth = current_brace_depth
 
-        if re.search(r'if\s*\([^)]*(?:err|rerr|perr|failed|STOP_REASON|EOF|!ok|!got_data|!success|!core|!loop|!state|!chunk|reached_eos|!engine_shared_state_enqueue_garbage_pipeline|rate_change|sample_rate_watcher)[^)]*\)', stripped):
+        if re.search(r'if\s*\([^)]*(?:err|rerr|perr|failed|STOP_REASON|EOF|!ok|!got_data|!success|!core|!loop|!state|!chunk|reached_eos|uncollected|rate_change|sample_rate_watcher)[^)]*\)', stripped):
             in_error_block = True
             error_brace_depth = current_brace_depth
 

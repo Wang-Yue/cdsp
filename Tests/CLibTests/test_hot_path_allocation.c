@@ -1047,9 +1047,8 @@ static void reload_iter_c(int i, void* ctx) {
       spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
   (void)processed;
 
-  pipeline_t* garbage = NULL;
-  while ((garbage = engine_shared_state_dequeue_garbage_pipeline(c->shared)) !=
-         NULL) {
+  pipeline_t* garbage = engine_shared_state_collect_retired_pipeline(c->shared);
+  if (garbage) {
     pipeline_free(garbage);
   }
 }
@@ -1151,9 +1150,8 @@ TEST(PipelineReload_AllocationFree) {
   void* processed =
       spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
   (void)processed;
-  pipeline_t* garbage = NULL;
-  while ((garbage = engine_shared_state_dequeue_garbage_pipeline(shared)) !=
-         NULL) {
+  pipeline_t* garbage = engine_shared_state_collect_retired_pipeline(shared);
+  if (garbage) {
     pipeline_free(garbage);
   }
 

@@ -371,9 +371,8 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
 void dsp_session_collect_garbage(dsp_session_t* core) {
   if (!core || !core->shared) return;
 
-  pipeline_t* p = NULL;
-  while ((p = engine_shared_state_dequeue_garbage_pipeline(core->shared)) !=
-         NULL) {
+  pipeline_t* p = engine_shared_state_collect_retired_pipeline(core->shared);
+  if (p) {
     pipeline_free(p);
   }
 }

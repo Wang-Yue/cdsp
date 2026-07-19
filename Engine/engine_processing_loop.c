@@ -179,8 +179,8 @@ static audio_chunk_t* processing_loop_resample(engine_processing_loop_t* loop,
  * @brief Checks if a hot-reloaded pipeline has been queued and atomically swaps
  * it in.
  *
- * Transfers active filter state to the new pipeline and enqueues the old
- * pipeline for off-thread garbage collection.
+ * Transfers active filter state to the new pipeline and retires the old
+ * pipeline for off-thread main-thread collection.
  *
  * @param loop Pointer to the processing loop context.
  */
@@ -190,17 +190,17 @@ static void processing_loop_check_pipeline_swap(
   if (next_pipeline) {
     if (loop->active_pipeline) {
       pipeline_transfer_state(next_pipeline, loop->active_pipeline);
-      if (!engine_shared_state_enqueue_garbage_pipeline(
-              loop->shared, loop->active_pipeline)) {
+      pipeline_t* uncollected = engine_shared_state_retire_pipeline(
+          loop->shared, loop->active_pipeline);
+      if (uncollected) {
         // Ref: engine_state_management.md - Section 1.7.2 (Rule 4)
-        // Under normal operation, dsp_engine recycles garbage pipelines on the
-        // main thread prior to config reloads, so pipeline_garbage_queue will
-        // not overflow. In the unexpected event of a full queue, log a warning
-        // and free the old pipeline to prevent a memory leak.
+        // Under normal operation, dsp_engine collects retired pipelines on the
+        // main thread prior to config reloads, so retired_pipeline will be NULL.
+        // In the unexpected event of an uncollected prior pipeline, log a warning
+        // and free the uncollected pipeline on the processing thread to prevent a memory leak.
         logger_warn(&g_logger,
-                    "Garbage pipeline queue full; freeing on processing thread "
-                    "to prevent leak");
-        pipeline_free(loop->active_pipeline);
+                    "Prior retired pipeline uncollected by main thread; freeing on processing thread");
+        pipeline_free(uncollected);
       }
     }
     loop->active_pipeline = next_pipeline;

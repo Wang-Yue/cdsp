@@ -103,21 +103,20 @@ void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
 typedef struct pipeline_s pipeline_t;
 
 /**
- * @brief Enqueues a swapped-out pipeline instance into the garbage queue for
- * deferred freeing.
+ * @brief Retires a swapped-out pipeline instance for off-thread collection.
  * @param state Pointer to the shared state instance.
- * @param pipeline Pointer to the pipeline object to enqueue.
- * @return true if enqueued successfully, false if the queue was full.
+ * @param pipeline Pointer to the pipeline object to retire.
+ * @return Pointer to any previously uncollected retired pipeline (normally NULL).
  */
-bool engine_shared_state_enqueue_garbage_pipeline(engine_shared_state_t* state,
-                                                  pipeline_t* pipeline);
+pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
+                                                pipeline_t* pipeline);
 
 /**
- * @brief Dequeues a pipeline instance from the garbage queue for cleanup.
+ * @brief Collects the retired pipeline instance for cleanup by the main thread.
  * @param state Pointer to the shared state instance.
- * @return Pointer to the dequeued pipeline object, or NULL if empty.
+ * @return Pointer to the retired pipeline object, or NULL if none.
  */
-pipeline_t* engine_shared_state_dequeue_garbage_pipeline(
+pipeline_t* engine_shared_state_collect_retired_pipeline(
     engine_shared_state_t* state);
 
 /**

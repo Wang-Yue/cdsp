@@ -83,8 +83,8 @@ graph TD
     audio_sync_queue_dequeue_blocking -->|OS Kernel Sleep| cdsp_sem_wait
 
     processing_loop_check_pipeline_swap -->|Atomic Exchange| atomic_exchange
-    processing_loop_check_pipeline_swap -->|Lock-Free Garbage SPSC| engine_shared_state_enqueue_garbage_pipeline
-    processing_loop_check_pipeline_swap -->|Garbage Queue Overflow Fallback| pipeline_free
+    processing_loop_check_pipeline_swap -->|Atomic Retire Pointer| engine_shared_state_retire_pipeline
+    processing_loop_check_pipeline_swap -->|Uncollected Pipeline Safety Fallback| pipeline_free
 
     pipeline_free -->|Fallback Heap Free| free
     pipeline_free -->|Fallback Chunk Free| audio_chunk_free
