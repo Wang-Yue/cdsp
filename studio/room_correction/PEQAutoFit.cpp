@@ -235,7 +235,12 @@ static BiquadParameters optimizeBand(const BiquadParameters& band, const std::ve
 
     for (int iter = 0; iter < 2; ++iter) {
         // Optimize Gain
-        curr.gain = goldenSectionSearch(-options.maxGainDB, options.maxGainDB, 0.02, false, [&](double g) {
+        double minG = -options.maxGainDB;
+        double maxG =
+            (options.modalMode && curr.type == BiquadType::Peaking && curr.freq.value_or(0.0) <= options.schroederHz)
+                ? 0.0
+                : options.maxGainDB;
+        curr.gain = goldenSectionSearch(minG, maxG, 0.02, false, [&](double g) {
             BiquadParameters b = curr;
             b.gain = g;
             return cost(b, rwb, frequencies, sampleRate);

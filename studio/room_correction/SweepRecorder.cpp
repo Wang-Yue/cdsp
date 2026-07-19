@@ -57,9 +57,6 @@ std::vector<double> SweepRecorder::trimAndAlign(const std::vector<double>& captu
 SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationSeconds, int sampleRate,
                                           const std::string& inputDeviceName, const std::string& outputDeviceName,
                                           int inputChannel, int outputChannel, double playbackGainDB) {
-    Q_UNUSED(inputChannel);
-    Q_UNUSED(outputChannel);
-
     auto [sweep, inv] = SweepGenerator::sweepAndInverse(f1, f2, durationSeconds, sampleRate, 0.02, 0.02);
     if (sweep.empty() || inv.empty())
         return {};
@@ -68,18 +65,6 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
     size_t leadSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t tailSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t totalPlaySamples = leadSamples + sweep.size() + tailSamples;
-
-    std::vector<float> playPcm(totalPlaySamples, 0.0f);
-    for (size_t i = 0; i < sweep.size(); ++i) {
-        playPcm[leadSamples + i] = static_cast<float>(sweep[i] * gainLin);
-    }
-
-    std::vector<double> capturedRaw;
-
-    QAudioFormat fmt;
-    fmt.setSampleRate(sampleRate);
-    fmt.setChannelCount(1);
-    fmt.setSampleFormat(QAudioFormat::Float);
 
     QAudioDevice targetInputDevice = QMediaDevices::defaultAudioInput();
     if (!inputDeviceName.empty()) {
@@ -101,7 +86,38 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
         }
     }
 
+    int outCh = !targetOutputDevice.isNull() ? std::max(1, targetOutputDevice.maximumChannelCount()) : 2;
+    int routeOutChannels = std::max(2, std::max(outCh, outputChannel + 1));
+    int inCh = !targetInputDevice.isNull() ? std::max(1, targetInputDevice.maximumChannelCount()) : 1;
+    int selInChannel = std::clamp(inputChannel, 0, inCh - 1);
+
+    std::vector<float> playPcm(totalPlaySamples * routeOutChannels, 0.0f);
+    for (size_t i = 0; i < sweep.size(); ++i) {
+        float val = static_cast<float>(sweep[i] * gainLin);
+        size_t frameIdx = leadSamples + i;
+        if (outputChannel < 0) {
+            for (int c = 0; c < routeOutChannels; ++c) {
+                playPcm[frameIdx * routeOutChannels + c] = val;
+            }
+        } else {
+            int targetC = std::clamp(outputChannel, 0, routeOutChannels - 1);
+            playPcm[frameIdx * routeOutChannels + targetC] = val;
+        }
+    }
+
+    std::vector<double> capturedRaw;
+
     if (!targetInputDevice.isNull() && !targetOutputDevice.isNull()) {
+        QAudioFormat outFmt;
+        outFmt.setSampleRate(sampleRate);
+        outFmt.setChannelCount(routeOutChannels);
+        outFmt.setSampleFormat(QAudioFormat::Float);
+
+        QAudioFormat inFmt;
+        inFmt.setSampleRate(sampleRate);
+        inFmt.setChannelCount(inCh);
+        inFmt.setSampleFormat(QAudioFormat::Float);
+
         QByteArray playBuf(reinterpret_cast<const char*>(playPcm.data()),
                            static_cast<qsizetype>(playPcm.size() * sizeof(float)));
         QBuffer playDevice(&playBuf);
@@ -111,8 +127,8 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
         QBuffer recordDevice(&recordBuf);
         recordDevice.open(QIODevice::WriteOnly);
 
-        QAudioSink sink(targetOutputDevice, fmt);
-        QAudioSource source(targetInputDevice, fmt);
+        QAudioSink sink(targetOutputDevice, outFmt);
+        QAudioSource source(targetInputDevice, inFmt);
 
         sink.start(&playDevice);
         source.start(&recordDevice);
@@ -128,9 +144,10 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
         source.stop();
 
         const float* ptr = reinterpret_cast<const float*>(recordBuf.constData());
-        size_t recordedCount = recordBuf.size() / sizeof(float);
-        for (size_t i = 0; i < recordedCount; ++i) {
-            capturedRaw.push_back(static_cast<double>(ptr[i]));
+        size_t totalFloats = recordBuf.size() / sizeof(float);
+        size_t totalFrames = totalFloats / inCh;
+        for (size_t i = 0; i < totalFrames; ++i) {
+            capturedRaw.push_back(static_cast<double>(ptr[i * inCh + selInChannel]));
         }
     }
 

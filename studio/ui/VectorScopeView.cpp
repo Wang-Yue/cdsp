@@ -51,6 +51,9 @@ void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParti
     m_channelL = channelL;
     m_channelR = channelR;
     m_traceDecayRate = traceDecayRate;
+    if (m_samples.channels.empty() && m_samples.left().empty() && m_samples.right().empty()) {
+        m_persistenceBuffer = QImage();
+    }
     update();
 }
 

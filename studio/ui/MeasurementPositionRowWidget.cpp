@@ -11,14 +11,21 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
     layout->setContentsMargins(6, 3, 6, 3);
     layout->setSpacing(6);
 
-    // Styling as a compact chip matching SwiftUI positionChip
-    setStyleSheet("MeasurementPositionRowWidget { "
-                  "  background-color: rgba(255, 255, 255, 0.06); "
-                  "  border-radius: 6px; "
-                  "  border: 1px solid rgba(255, 255, 255, 0.1); "
-                  "} "
-                  "QLineEdit { background: transparent; border: none; font-family: monospace; font-size: 11px; } "
-                  "QComboBox { font-size: 10px; font-family: monospace; padding: 2px 4px; }");
+    auto updateStyle = [this](bool enabled) {
+        QString bg = enabled ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.02)";
+        QString textCol = enabled ? "#ffffff" : "#888888";
+        setStyleSheet(QString("MeasurementPositionRowWidget { "
+                              "  background-color: %1; "
+                              "  border-radius: 6px; "
+                              "  border: 1px solid rgba(255, 255, 255, 0.08); "
+                              "} "
+                              "QLineEdit { background: transparent; border: none; font-family: monospace; font-size: "
+                              "11px; color: %2; } "
+                              "QComboBox { font-size: 10px; font-family: monospace; padding: 2px 4px; }")
+                          .arg(bg, textCol));
+    };
+
+    updateStyle(position.isEnabled);
 
     m_enableCheck = new QCheckBox(this);
     m_enableCheck->setChecked(position.isEnabled);
@@ -45,7 +52,8 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
                                "QToolButton:hover { color: #ff5555; }");
     layout->addWidget(m_deleteBtn);
 
-    connect(m_enableCheck, &QCheckBox::toggled, [this](bool) {
+    connect(m_enableCheck, &QCheckBox::toggled, [this, updateStyle](bool checked) {
+        updateStyle(checked);
         if (m_session) {
             m_session->togglePosition(m_id);
             emit positionChanged();

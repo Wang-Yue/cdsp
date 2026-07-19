@@ -526,7 +526,7 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             QPointF midPoint(p0.x() + dx * 0.65, p0.y() + (p1.y() - p0.y()) * 0.65);
             painter.setFont(QFont("monospace", 8, QFont::DemiBold));
             painter.setPen(StyleTheme::textSecondary());
-            painter.drawText(QRectF(midPoint.x() - 30, midPoint.y() - 14, 60, 20), Qt::AlignCenter, arrow.label);
+            painter.drawText(QRectF(midPoint.x() - 35, midPoint.y() - 14, 70, 28), Qt::AlignCenter, arrow.label);
         }
     }
 

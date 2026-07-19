@@ -90,24 +90,23 @@ QWidget* RoomCorrectionDlg::createHeaderToolbar() {
     m_measureMenuBtn = new QPushButton("Measure ▾", toolbar);
     auto measureMenu = new QMenu(m_measureMenuBtn);
 
-    auto realSection = measureMenu->addSection("Real measurement");
-    (void)realSection;
-    auto newCapAction = measureMenu->addAction("🎤 New Capture");
-    connect(newCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(false); });
+    measureMenu->addSection("Real measurement");
+    m_newCapAction = measureMenu->addAction("🎤 New Capture");
+    connect(m_newCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(false); });
 
-    auto addCapAction = measureMenu->addAction("➕ Add Capture as Position");
-    connect(addCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(true); });
+    m_addCapAction = measureMenu->addAction("➕ Add Capture as Position");
+    connect(m_addCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(true); });
 
     measureMenu->addSection("Mock");
-    auto newMockAction = measureMenu->addAction("🎲 New Mock Measurement");
-    connect(newMockAction, &QAction::triggered, [this]() { onGenerateMock(false); });
+    m_newMockAction = measureMenu->addAction("🎲 New Mock Measurement");
+    connect(m_newMockAction, &QAction::triggered, [this]() { onGenerateMock(false); });
 
-    auto addMockAction = measureMenu->addAction("➕ Add Mock Position");
-    connect(addMockAction, &QAction::triggered, [this]() { onGenerateMock(true); });
+    m_addMockAction = measureMenu->addAction("➕ Add Mock Position");
+    connect(m_addMockAction, &QAction::triggered, [this]() { onGenerateMock(true); });
 
     measureMenu->addSection("Import");
-    auto importAction = measureMenu->addAction("📥 Import FRD as Position…");
-    connect(importAction, &QAction::triggered, this, &RoomCorrectionDlg::onImportFRD);
+    m_importFrdAction = measureMenu->addAction("📥 Import FRD as Position…");
+    connect(m_importFrdAction, &QAction::triggered, this, &RoomCorrectionDlg::onImportFRD);
 
     m_measureMenuBtn->setMenu(measureMenu);
     layout->addWidget(m_measureMenuBtn);
@@ -559,13 +558,25 @@ void RoomCorrectionDlg::updateOutputChannels() {
 void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
-    if (m_session.isCapturing) {
+    bool isCap = m_session.isCapturing;
+    bool hasPos = !m_session.positions.empty();
+
+    if (isCap) {
         m_measureMenuBtn->setText("Capturing… ▾");
         m_measureMenuBtn->setEnabled(false);
     } else {
         m_measureMenuBtn->setText("Measure ▾");
         m_measureMenuBtn->setEnabled(true);
     }
+
+    if (m_newCapAction)
+        m_newCapAction->setEnabled(!isCap);
+    if (m_addCapAction)
+        m_addCapAction->setEnabled(!isCap && hasPos);
+    if (m_newMockAction)
+        m_newMockAction->setEnabled(true);
+    if (m_addMockAction)
+        m_addMockAction->setEnabled(hasPos);
 
     // Clear chips layout
     QLayoutItem* item;

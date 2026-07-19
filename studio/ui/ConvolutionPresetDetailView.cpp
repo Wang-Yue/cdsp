@@ -41,9 +41,11 @@ void ConvolutionPresetDetailView::setupUi() {
     m_nameEdit = new QLineEdit(headerWidget);
     m_nameEdit->setFont(QFont("sans-serif", 14, QFont::Bold));
     m_nameEdit->setMaximumWidth(300);
-    connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
-        m_preset.name = m_nameEdit->text().toStdString();
-        m_pipeline->updateConvPreset(m_preset);
+    connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
+        if (m_preset.name != text.toStdString()) {
+            m_preset.name = text.toStdString();
+            m_pipeline->updateConvPreset(m_preset);
+        }
     });
     headerLayout->addWidget(m_nameEdit);
 

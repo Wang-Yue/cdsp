@@ -108,7 +108,7 @@ void PhasePlotWidget::resizeEvent(QResizeEvent* event) {
         m_unwrapBtn->move(12, height() - 34);
     }
     if (m_exportBtn) {
-        m_exportBtn->move(width() - 325, 10);
+        m_exportBtn->move(width() - 122, 10);
     }
 }
 
@@ -230,17 +230,20 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
 
     // Legend
-    painter.fillRect(QRect(w - 200, 10, 190, 44),
+    int legendHeight =
+        (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) ? 42 : 24;
+    painter.fillRect(QRect(w - 315, 8, 180, legendHeight),
                      StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
-    painter.setPen(QPen(QColor(0, 150, 255), 2));
-    painter.drawLine(w - 190, 24, w - 165, 24);
-    painter.setPen(StyleTheme::textPrimary());
-    painter.drawText(w - 155, 28, "Measured Phase");
+    painter.setFont(QFont("Monospace", 9));
+    painter.setPen(QPen(QColor(0, 150, 255), 1.5));
+    painter.drawLine(w - 307, 18, w - 289, 18);
+    painter.setPen(StyleTheme::textSecondary());
+    painter.drawText(w - 283, 21, "Measured");
 
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
-        painter.setPen(QPen(QColor(255, 140, 0), 2));
-        painter.drawLine(w - 190, 42, w - 165, 42);
-        painter.setPen(StyleTheme::textPrimary());
-        painter.drawText(w - 155, 46, "Corrected (measured + EQ)");
+        painter.setPen(QPen(QColor(255, 140, 0), 1.6));
+        painter.drawLine(w - 307, 34, w - 289, 34);
+        painter.setPen(StyleTheme::textSecondary());
+        painter.drawText(w - 283, 37, "Corrected (measured + EQ)");
     }
 }

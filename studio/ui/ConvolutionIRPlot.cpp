@@ -33,7 +33,7 @@ void ConvolutionIRPlot::loadIR() {
     }
     m_samples = ConvCoefficientLoader::loadCoefficients(m_path, "AUTO", 0, 48000);
     if (m_samples.empty()) {
-        m_errorMsg = "Could not load IR file.";
+        m_errorMsg = "Could not load IR file: " + QString::fromStdString(m_path).toStdString();
     } else {
         m_errorMsg.clear();
     }

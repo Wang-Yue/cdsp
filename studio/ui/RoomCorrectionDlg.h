@@ -52,6 +52,11 @@ private:
 
     // Header Toolbar
     QPushButton* m_measureMenuBtn;
+    QAction* m_newCapAction = nullptr;
+    QAction* m_addCapAction = nullptr;
+    QAction* m_newMockAction = nullptr;
+    QAction* m_addMockAction = nullptr;
+    QAction* m_importFrdAction = nullptr;
     QTabBar* m_paneTabBar;
     QToolButton* m_sidebarToggleBtn;
 

@@ -242,7 +242,7 @@ void ConvolutionImportDlg::updateItemsList() {
             delBtn->setStyleSheet("color: #ff3b30; font-size: 14px; border: none; background: transparent;");
             connect(delBtn, &QPushButton::clicked, [this, i]() {
                 m_items.erase(m_items.begin() + i);
-                updateItemsList();
+                QMetaObject::invokeMethod(this, [this]() { updateItemsList(); }, Qt::QueuedConnection);
             });
             topRow->addWidget(delBtn);
 
@@ -285,7 +285,7 @@ void ConvolutionImportDlg::updateItemsList() {
             fmtCombo->setFixedWidth(140);
             connect(fmtCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, fmtCombo]() {
                 m_items[i].format = fmtCombo->currentText();
-                updateItemsList();
+                QMetaObject::invokeMethod(this, [this]() { updateItemsList(); }, Qt::QueuedConnection);
             });
             grid->addWidget(fmtCombo, 1, 1);
 
@@ -362,7 +362,7 @@ void ConvolutionImportDlg::onAddFilesClicked() {
 
         if (m_nameEdit->text().isEmpty()) {
             QString base = fi.baseName();
-            base.remove(QRegularExpression("[-_]\\d+Hz|[-_]\\d+k", QRegularExpression::CaseInsensitiveOption));
+            base.remove(QRegularExpression("-\\d+Hz|_\\d+", QRegularExpression::CaseInsensitiveOption));
             m_nameEdit->setText(base);
         }
     }

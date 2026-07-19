@@ -115,7 +115,9 @@ void SpectrumView::setSpectrum(const SpectrumData& data, OctaveSmoothing smoothi
     float minDB = m_engine ? static_cast<float>(m_engine->minDB) : -120.0f;
     float maxDB = m_engine ? static_cast<float>(m_engine->maxDB) : 0.0f;
 
-    if (m_peakHold.size() != m_data.magnitudes.size()) {
+    if (m_peakHoldDecayRate <= 0.001f) {
+        m_peakHold.clear();
+    } else if (m_peakHold.size() != m_data.magnitudes.size()) {
         m_peakHold.resize(m_data.magnitudes.size(), 0.0f);
         for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
             m_peakHold[i] = normDB(m_data.magnitudes[i], minDB, maxDB);
@@ -248,7 +250,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.fillRect(QRectF(x - barW / 2.0, marginT + plotH - barHeight, barW, barHeight), barGrad);
 
         // Draw Peak Hold Line Segment
-        if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
+        if (m_peakHoldDecayRate > 0.001f && i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
             float peakNormY = m_peakHold[i];
             double peakY = marginT + plotH - static_cast<double>(peakNormY * plotH);
             p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 240) : QColor(30, 30, 30, 240), 1.8));

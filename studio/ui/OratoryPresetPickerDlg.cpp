@@ -208,6 +208,7 @@ void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
 void OratoryPresetPickerDlg::updateUiState() {
     m_refreshBtn->setEnabled(!m_isLoading && !m_isImporting);
     m_searchEdit->setEnabled(!m_isLoading && !m_isImporting);
+    m_listWidget->setEnabled(!m_isLoading && !m_isImporting);
 
     if (m_isLoading) {
         m_overlayWidget->show();
@@ -218,7 +219,9 @@ void OratoryPresetPickerDlg::updateUiState() {
     } else if (m_isImporting) {
         m_overlayWidget->show();
         m_overlayWidget->raise();
-        m_overlayWidget->setStyleSheet("background-color: rgba(240, 240, 240, 0.75);");
+        QColor bg = StyleTheme::windowBg();
+        m_overlayWidget->setStyleSheet(
+            QString("background-color: rgba(%1, %2, %3, 192);").arg(bg.red()).arg(bg.green()).arg(bg.blue()));
         m_overlayTitle->setText("Importing EQ profile...");
         m_overlaySubtitle->setText("");
     } else if (!m_errorMessage.isEmpty()) {

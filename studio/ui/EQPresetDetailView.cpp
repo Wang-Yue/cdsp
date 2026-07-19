@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QScrollArea>
+#include <QSettings>
 #include <QVBoxLayout>
 #include <fstream>
 #include <sstream>
@@ -77,12 +78,13 @@ void EQPresetDetailView::setupUi() {
                                 "6px; font-weight: bold; margin-right: 4px; }"
                                 "QTabBar::tab:selected { background: #007af5; color: white; }");
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
-        if (m_modeStack->currentIndex() == 2 && idx != 2) {
-            onApplyCSV();
-        }
         m_modeStack->setCurrentIndex(idx);
-        if (idx == 2)
+        if (idx == 2) {
             m_csvTextEdit->setText(QString::fromStdString(m_preset.toCSV()));
+            if (m_csvErrorLabel)
+                m_csvErrorLabel->hide();
+        }
+        refreshUi();
     });
     headerLayout->addWidget(m_modeTabBar);
 
@@ -142,20 +144,33 @@ void EQPresetDetailView::setupUi() {
 
     diagPreampBar->addStretch();
 
+    QSettings settings;
+    bool showAnalyzer = settings.value("eq_show_analyzer", true).toBool();
+    bool showLoudness = settings.value("eq_show_loudness_contour", false).toBool();
+
     auto showAnalyzerCheck = new QCheckBox("Analyzer", this);
-    showAnalyzerCheck->setChecked(true);
-    connect(showAnalyzerCheck, &QCheckBox::toggled,
-            [this](bool checked) { m_diagramWidget->setShowAnalyzer(checked); });
+    showAnalyzerCheck->setChecked(showAnalyzer);
+    connect(showAnalyzerCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_diagramWidget->setShowAnalyzer(checked);
+        QSettings s;
+        s.setValue("eq_show_analyzer", checked);
+    });
     diagPreampBar->addWidget(showAnalyzerCheck);
 
     auto showLoudnessCheck = new QCheckBox("Loudness Contour", this);
-    connect(showLoudnessCheck, &QCheckBox::toggled,
-            [this](bool checked) { m_diagramWidget->setShowLoudnessContour(checked); });
+    showLoudnessCheck->setChecked(showLoudness);
+    connect(showLoudnessCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_diagramWidget->setShowLoudnessContour(checked);
+        QSettings s;
+        s.setValue("eq_show_loudness_contour", checked);
+    });
     diagPreampBar->addWidget(showLoudnessCheck);
 
     diagramModeLayout->addLayout(diagPreampBar);
 
     m_diagramWidget = new EQDiagramWidget(diagramModeWidget);
+    m_diagramWidget->setShowAnalyzer(showAnalyzer);
+    m_diagramWidget->setShowLoudnessContour(showLoudness);
     m_diagramWidget->setPipelineStore(m_pipeline);
     if (m_dspController) {
         m_diagramWidget->setAudioSettings(m_dspController->settings());
@@ -191,6 +206,7 @@ void EQPresetDetailView::setupUi() {
 
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
+            updateBandChipsBar();
         }
     };
     m_diagramWidget->onBandQChanged = [this](int idx, double val) {
@@ -205,6 +221,7 @@ void EQPresetDetailView::setupUi() {
             }
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
+            updateBandChipsBar();
         }
     };
     m_diagramWidget->onBandSelected = [this](int idx) {
@@ -798,13 +815,18 @@ void EQPresetDetailView::updateBandChipsBar() {
 
 void EQPresetDetailView::onAddBand() {
     m_preset.addBand(EQBand(EQBandType::Peaking, 1000.0, 0.0, 1.41));
-    m_pipeline->updateEQPreset(m_preset);
+    int newIndex = static_cast<int>(m_preset.bands.size()) - 1;
+    m_diagramWidget->setSelectedBandIndex(newIndex);
+    applyConfig();
     refreshUi();
+    if (newIndex >= 0 && newIndex < m_bandsTable->rowCount()) {
+        m_bandsTable->selectRow(newIndex);
+    }
 }
 
 void EQPresetDetailView::onDeleteBand(int row) {
     m_preset.removeBand(row);
-    m_pipeline->updateEQPreset(m_preset);
+    applyConfig();
     refreshUi();
 }
 
@@ -857,6 +879,7 @@ void EQPresetDetailView::onApplyCSV() {
 }
 
 void EQPresetDetailView::onCopyCSV() {
+    m_csvTextEdit->setText(QString::fromStdString(m_preset.toCSV()));
     QApplication::clipboard()->setText(m_csvTextEdit->toPlainText());
     if (m_csvCopyBtn)
         m_csvCopyBtn->setText("Copied!");

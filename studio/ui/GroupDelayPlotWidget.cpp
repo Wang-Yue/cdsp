@@ -102,9 +102,10 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // Axis Labels
     painter.setPen(StyleTheme::textSecondary());
-    painter.drawText(QRectF(10, 8, 80, 16), Qt::AlignLeft, QString("+%1 ms").arg(scaleMs, 0, 'f', 1));
-    painter.drawText(QRectF(10, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
-    painter.drawText(QRectF(10, h - 22, 80, 16), Qt::AlignLeft, QString("-%1 ms").arg(scaleMs, 0, 'f', 1));
+    painter.setFont(QFont("Monospace", 9));
+    painter.drawText(QRectF(12, 4, 80, 16), Qt::AlignLeft, QString("+%1 ms").arg(scaleMs, 0, 'f', 1));
+    painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
+    painter.drawText(QRectF(12, h - 20, 80, 16), Qt::AlignLeft, QString("-%1 ms").arg(scaleMs, 0, 'f', 1));
 
     // Frequency Grid
     std::vector<double> gridFreqs = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};

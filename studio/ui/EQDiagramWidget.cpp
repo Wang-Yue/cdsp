@@ -122,27 +122,32 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         }
     }
 
-    // Grid Lines
+    // Grid Lines (Solid 0.5px lines with 0.06 opacity matching SwiftUI)
+    QColor gridPenColor(255, 255, 255, 15);
     for (double db = -18.0; db <= 18.0; db += 6.0) {
+        if (db == 0.0)
+            continue; // 0 dB line drawn separately
         double y = dbToY(db, h);
-        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5, Qt::DashLine));
+        painter.setPen(QPen(gridPenColor, 0.5, Qt::SolidLine));
         painter.drawLine(0, y, w, y);
         painter.setPen(StyleTheme::textSecondary());
-        painter.drawText(8, y - 4, QString("%1 dB").arg(static_cast<int>(db)));
+        painter.drawText(28, y - 4, QString("%1 dB").arg(static_cast<int>(db)));
     }
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         double x = freqToX(f, w);
-        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5, Qt::DashLine));
+        painter.setPen(QPen(gridPenColor, 0.5, Qt::SolidLine));
         painter.drawLine(x, 0, x, h);
         painter.setPen(StyleTheme::textSecondary());
         QString label = (f >= 1000.0) ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         painter.drawText(x - 10, h - 8, label);
     }
 
-    // 0 dB Baseline
-    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0));
+    // 0 dB Baseline (Solid 1.0px line with 0.2 opacity matching SwiftUI)
+    painter.setPen(QPen(QColor(255, 255, 255, 51), 1.0, Qt::SolidLine));
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
+    painter.setPen(StyleTheme::textSecondary());
+    painter.drawText(28, zeroY - 4, "0 dB");
 
     // Reference Target & Measured Frequency Response Curves Overlay
     if (m_overlay.active) {
@@ -675,7 +680,7 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
             double hx = freqToX(handleFreq, w);
             double hy = dbToY(eqBandTypeHasGain(b.type) ? b.gain : 0.0, h);
 
-            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 16.0) {
+            if (std::hypot(event->position().x() - hx, event->position().y() - hy) <= 24.0) {
                 targetIdx = static_cast<int>(i);
                 break;
             }

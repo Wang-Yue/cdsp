@@ -335,7 +335,7 @@ void SpectrumDetailView::setupUi() {
 
     rowLayout->addWidget(new QLabel("Peak Decay:", panelGroup));
     m_decayCombo = new QComboBox(panelGroup);
-    m_decayCombo->addItems({"Fast (0.95)", "Medium (0.90)", "Slow (0.80)", "Off"});
+    m_decayCombo->addItems({"Slow (0.95)", "Medium (0.90)", "Fast (0.80)", "Off"});
     connect(m_decayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         static const float decayRates[] = {0.95f, 0.90f, 0.80f, 0.00f};
         m_engine->peakHoldDecayRate = decayRates[idx];
@@ -507,7 +507,7 @@ void SpectrogramDetailView::setupUi() {
 
     rowLayout->addWidget(new QLabel("Color Map:", panelGroup));
     m_paletteCombo = new QComboBox(panelGroup);
-    m_paletteCombo->addItems({"Classic", "Magma", "Inferno", "Viridis", "Plasma"});
+    m_paletteCombo->addItems({"Classic", "Viridis", "Magma", "Plasma", "Inferno", "Jet"});
     m_paletteCombo->setCurrentIndex(static_cast<int>(m_engine->colorPalette));
     connect(m_paletteCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->colorPalette = static_cast<ColorPalette>(idx);
