@@ -133,7 +133,7 @@ static OSStatus playback_callback(void* inRefCon,
     return noErr;
   }
 
-  int frame_count = (int)inNumberFrames;
+  size_t frame_count = (size_t)inNumberFrames;
 
   if (playback->is_interleaved) {
     float* float_ptr = (float*)ioData->mBuffers[0].mData;
@@ -142,16 +142,16 @@ static OSStatus playback_callback(void* inRefCon,
         size_t copied = spsc_audio_ring_buffer_consume_stride(
             playback->playback_rings[ch], float_ptr + ch, frame_count,
             playback->channels);
-        if ((int)copied < frame_count) {
+        if (copied < frame_count) {
           float zero = 0.0f;
 #ifdef ENABLE_ACCELERATE
           vDSP_vfill(&zero, float_ptr + ch + (copied * playback->channels),
-                     playback->channels, frame_count - (int)copied);
+                     playback->channels, frame_count - copied);
 #else
           float* p = float_ptr + ch + (copied * playback->channels);
-          int count = frame_count - (int)copied;
+          size_t count = frame_count - copied;
           int stride = playback->channels;
-          for (int i = 0; i < count; i++) {
+          for (size_t i = 0; i < count; i++) {
             *p = zero;
             p += stride;
           }
@@ -166,27 +166,11 @@ static OSStatus playback_callback(void* inRefCon,
       if ((int)ch < playback->channels) {
         size_t copied = spsc_audio_ring_buffer_consume(
             playback->playback_rings[ch], float_ptr, frame_count);
-        if ((int)copied < frame_count) {
-          float zero = 0.0f;
-#ifdef ENABLE_ACCELERATE
-          vDSP_vfill(&zero, float_ptr + copied, 1, frame_count - (int)copied);
-#else
-          float* p = float_ptr + copied;
-          int count = frame_count - (int)copied;
-          for (int i = 0; i < count; i++) {
-            p[i] = zero;
-          }
-#endif
+        if (copied < frame_count) {
+          memset(float_ptr + copied, 0, (frame_count - copied) * sizeof(float));
         }
       } else {
-        float zero = 0.0f;
-#ifdef ENABLE_ACCELERATE
-        vDSP_vfill(&zero, float_ptr, 1, frame_count);
-#else
-        for (int i = 0; i < frame_count; i++) {
-          float_ptr[i] = zero;
-        }
-#endif
+        memset(float_ptr, 0, frame_count * sizeof(float));
       }
     }
   }

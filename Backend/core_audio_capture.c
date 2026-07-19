@@ -158,22 +158,22 @@ static OSStatus capture_callback(void* inRefCon,
   }
 
   // Determine the number of valid frames produced based on buffer format.
-  int frame_count = (int)inNumberFrames;
-  int actual_frames;
+  size_t frame_count = (size_t)inNumberFrames;
+  size_t actual_frames;
   if (capture->is_interleaved) {
     size_t bytes_per_frame = sizeof(float) * capture->channels;
     actual_frames =
         bytes_per_frame > 0
-            ? (int)(buffer_list->mBuffers[0].mDataByteSize / bytes_per_frame)
+            ? (size_t)(buffer_list->mBuffers[0].mDataByteSize / bytes_per_frame)
             : frame_count;
   } else {
     size_t bytes_per_frame = sizeof(float);
     actual_frames =
-        (int)(buffer_list->mBuffers[0].mDataByteSize / bytes_per_frame);
+        (size_t)(buffer_list->mBuffers[0].mDataByteSize / bytes_per_frame);
   }
 
-  int frames = actual_frames < frame_count ? actual_frames : frame_count;
-  if (frames <= 0) {
+  size_t frames = actual_frames < frame_count ? actual_frames : frame_count;
+  if (frames == 0) {
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_relaxed);
     return noErr;
