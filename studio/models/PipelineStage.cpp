@@ -519,7 +519,9 @@ QJsonObject PipelineStage::toJson() const {
 
     obj["lookaheadLimit"] = lookaheadLimit;
     obj["lookaheadAttack"] = lookaheadAttack;
+    obj["lookaheadAttackUnit"] = QString::fromStdString(timeUnitToString(lookaheadAttackUnit));
     obj["lookaheadRelease"] = lookaheadRelease;
+    obj["lookaheadReleaseUnit"] = QString::fromStdString(timeUnitToString(lookaheadReleaseUnit));
 
     obj["mixerChannelsIn"] = mixerChannelsIn;
     obj["mixerChannelsOut"] = mixerChannelsOut;
@@ -529,7 +531,9 @@ QJsonObject PipelineStage::toJson() const {
     obj["mixerMappings"] = mapArr;
 
     obj["compressorAttack"] = compressorAttack;
+    obj["compressorAttackUnit"] = QString::fromStdString(timeUnitToString(compressorAttackUnit));
     obj["compressorRelease"] = compressorRelease;
+    obj["compressorReleaseUnit"] = QString::fromStdString(timeUnitToString(compressorReleaseUnit));
     obj["compressorThreshold"] = compressorThreshold;
     obj["compressorRatio"] = compressorRatio;
     obj["compressorMakeupGain"] = compressorMakeupGain;
@@ -537,7 +541,9 @@ QJsonObject PipelineStage::toJson() const {
     obj["compressorClipLimit"] = compressorClipLimit;
 
     obj["gateAttack"] = gateAttack;
+    obj["gateAttackUnit"] = QString::fromStdString(timeUnitToString(gateAttackUnit));
     obj["gateRelease"] = gateRelease;
+    obj["gateReleaseUnit"] = QString::fromStdString(timeUnitToString(gateReleaseUnit));
     obj["gateThreshold"] = gateThreshold;
     obj["gateAttenuation"] = gateAttenuation;
 
@@ -693,8 +699,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.lookaheadLimit = json["lookaheadLimit"].toDouble();
     if (json.contains("lookaheadAttack"))
         s.lookaheadAttack = json["lookaheadAttack"].toDouble();
+    if (json.contains("lookaheadAttackUnit"))
+        s.lookaheadAttackUnit = stringToTimeUnit(json["lookaheadAttackUnit"].toString().toStdString());
     if (json.contains("lookaheadRelease"))
         s.lookaheadRelease = json["lookaheadRelease"].toDouble();
+    if (json.contains("lookaheadReleaseUnit"))
+        s.lookaheadReleaseUnit = stringToTimeUnit(json["lookaheadReleaseUnit"].toString().toStdString());
 
     if (json.contains("mixerChannelsIn"))
         s.mixerChannelsIn = json["mixerChannelsIn"].toInt();
@@ -709,8 +719,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
 
     if (json.contains("compressorAttack"))
         s.compressorAttack = json["compressorAttack"].toDouble();
+    if (json.contains("compressorAttackUnit"))
+        s.compressorAttackUnit = stringToTimeUnit(json["compressorAttackUnit"].toString().toStdString());
     if (json.contains("compressorRelease"))
         s.compressorRelease = json["compressorRelease"].toDouble();
+    if (json.contains("compressorReleaseUnit"))
+        s.compressorReleaseUnit = stringToTimeUnit(json["compressorReleaseUnit"].toString().toStdString());
     if (json.contains("compressorThreshold"))
         s.compressorThreshold = json["compressorThreshold"].toDouble();
     if (json.contains("compressorRatio"))
@@ -724,8 +738,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
 
     if (json.contains("gateAttack"))
         s.gateAttack = json["gateAttack"].toDouble();
+    if (json.contains("gateAttackUnit"))
+        s.gateAttackUnit = stringToTimeUnit(json["gateAttackUnit"].toString().toStdString());
     if (json.contains("gateRelease"))
         s.gateRelease = json["gateRelease"].toDouble();
+    if (json.contains("gateReleaseUnit"))
+        s.gateReleaseUnit = stringToTimeUnit(json["gateReleaseUnit"].toString().toStdString());
     if (json.contains("gateThreshold"))
         s.gateThreshold = json["gateThreshold"].toDouble();
     if (json.contains("gateAttenuation"))
@@ -1341,8 +1359,8 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         f.lookaheadParams.limit = stage.lookaheadLimit;
         f.lookaheadParams.attack = stage.lookaheadAttack;
         f.lookaheadParams.release = stage.lookaheadRelease;
-        f.lookaheadParams.attackUnit = DelayUnit::ms;
-        f.lookaheadParams.releaseUnit = DelayUnit::ms;
+        f.lookaheadParams.attackUnit = stage.lookaheadAttackUnit;
+        f.lookaheadParams.releaseUnit = stage.lookaheadReleaseUnit;
         res.filters[prefix + "_lookahead_limiter"] = f;
 
         res.steps.push_back(PipelineStep{PipelineStepType::Filter,
@@ -1387,7 +1405,9 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         p.compressorParams.monitorChannels = monitorList;
         p.compressorParams.processChannels = chList;
         p.compressorParams.attack = stage.compressorAttack;
+        p.compressorParams.attackUnit = stage.compressorAttackUnit;
         p.compressorParams.release = stage.compressorRelease;
+        p.compressorParams.releaseUnit = stage.compressorReleaseUnit;
         p.compressorParams.threshold = stage.compressorThreshold;
         p.compressorParams.factor = stage.compressorRatio;
         p.compressorParams.makeupGain = stage.compressorMakeupGain;
@@ -1408,7 +1428,9 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         p.noiseGateParams.monitorChannels = monitorList;
         p.noiseGateParams.processChannels = chList;
         p.noiseGateParams.attack = stage.gateAttack;
+        p.noiseGateParams.attackUnit = stage.gateAttackUnit;
         p.noiseGateParams.release = stage.gateRelease;
+        p.noiseGateParams.releaseUnit = stage.gateReleaseUnit;
         p.noiseGateParams.threshold = stage.gateThreshold;
         p.noiseGateParams.attenuation = stage.gateAttenuation;
         res.processors[prefix] = p;

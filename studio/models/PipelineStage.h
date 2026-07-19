@@ -113,14 +113,18 @@ public:
 
     double lookaheadLimit = 0.0;
     double lookaheadAttack = 5.0;
+    TimeUnit lookaheadAttackUnit = TimeUnit::ms;
     double lookaheadRelease = 100.0;
+    TimeUnit lookaheadReleaseUnit = TimeUnit::ms;
 
     int mixerChannelsIn = 2;
     int mixerChannelsOut = 2;
     std::vector<MixerMapping> mixerMappings;
 
     double compressorAttack = 5.0;
+    TimeUnit compressorAttackUnit = TimeUnit::ms;
     double compressorRelease = 100.0;
+    TimeUnit compressorReleaseUnit = TimeUnit::ms;
     double compressorThreshold = -20.0;
     double compressorRatio = 2.0;
     double compressorMakeupGain = 0.0;
@@ -128,7 +132,9 @@ public:
     double compressorClipLimit = 0.0;
 
     double gateAttack = 5.0;
+    TimeUnit gateAttackUnit = TimeUnit::ms;
     double gateRelease = 100.0;
+    TimeUnit gateReleaseUnit = TimeUnit::ms;
     double gateThreshold = -60.0;
     double gateAttenuation = -40.0;
 

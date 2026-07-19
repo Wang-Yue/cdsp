@@ -272,12 +272,52 @@ SDMFilter stringToSDMFilter(const std::string& str) {
     return SDMFilter::SDM6;
 }
 
+std::string timeUnitToString(TimeUnit u) {
+    switch (u) {
+    case TimeUnit::ms:
+        return "ms";
+    case TimeUnit::us:
+        return "us";
+    case TimeUnit::s:
+        return "s";
+    case TimeUnit::samples:
+        return "samples";
+    }
+    return "ms";
+}
+
+TimeUnit stringToTimeUnit(const std::string& str) {
+    if (str == "us")
+        return TimeUnit::us;
+    if (str == "s")
+        return TimeUnit::s;
+    if (str == "samples")
+        return TimeUnit::samples;
+    return TimeUnit::ms;
+}
+
+double timeUnitToSamples(TimeUnit u, double val, double sampleRate) {
+    switch (u) {
+    case TimeUnit::ms:
+        return val / 1000.0 * sampleRate;
+    case TimeUnit::us:
+        return val / 1000000.0 * sampleRate;
+    case TimeUnit::s:
+        return val * sampleRate;
+    case TimeUnit::samples:
+        return val;
+    }
+    return val / 1000.0 * sampleRate;
+}
+
 std::string delayUnitToString(DelayUnit unit) {
     switch (unit) {
     case DelayUnit::ms:
         return "ms";
     case DelayUnit::us:
         return "us";
+    case DelayUnit::s:
+        return "s";
     case DelayUnit::samples:
         return "samples";
     case DelayUnit::mm:
@@ -289,6 +329,8 @@ std::string delayUnitToString(DelayUnit unit) {
 DelayUnit stringToDelayUnit(const std::string& str) {
     if (str == "us")
         return DelayUnit::us;
+    if (str == "s")
+        return DelayUnit::s;
     if (str == "samples")
         return DelayUnit::samples;
     if (str == "mm")
@@ -302,6 +344,8 @@ double delayUnitToSamples(DelayUnit unit, double delay, double sampleRate) {
         return delay / 1000.0 * sampleRate;
     case DelayUnit::us:
         return delay / 1000000.0 * sampleRate;
+    case DelayUnit::s:
+        return delay * sampleRate;
     case DelayUnit::samples:
         return delay;
     case DelayUnit::mm:
@@ -1664,8 +1708,13 @@ DelayParameters DelayParameters::fromJson(const QJsonObject& json) {
     DelayParameters p;
     if (json.contains("delay"))
         p.delay = json["delay"].toDouble();
-    if (json.contains("unit"))
-        p.unit = stringToDelayUnit(json["unit"].toString().toStdString());
+    if (json.contains("delay_unit")) {
+        p.delayUnit = stringToDelayUnit(json["delay_unit"].toString().toStdString());
+        p.unit = p.delayUnit;
+    } else if (json.contains("unit")) {
+        p.delayUnit = stringToDelayUnit(json["unit"].toString().toStdString());
+        p.unit = p.delayUnit;
+    }
     if (json.contains("subsample"))
         p.subsample = json["subsample"].toBool();
     return p;
@@ -1674,6 +1723,7 @@ DelayParameters DelayParameters::fromJson(const QJsonObject& json) {
 QJsonObject DelayParameters::toJson() const {
     QJsonObject obj;
     obj["delay"] = delay;
+    obj["delay_unit"] = QString::fromStdString(delayUnitToString(delayUnit));
     if (unit.has_value())
         obj["unit"] = QString::fromStdString(delayUnitToString(unit.value()));
     if (subsample.has_value())
@@ -1863,9 +1913,9 @@ LookaheadLimiterParameters LookaheadLimiterParameters::fromJson(const QJsonObjec
     if (json.contains("release"))
         p.release = json["release"].toDouble();
     if (json.contains("attack_unit"))
-        p.attackUnit = stringToDelayUnit(json["attack_unit"].toString().toStdString());
+        p.attackUnit = stringToTimeUnit(json["attack_unit"].toString().toStdString());
     if (json.contains("release_unit"))
-        p.releaseUnit = stringToDelayUnit(json["release_unit"].toString().toStdString());
+        p.releaseUnit = stringToTimeUnit(json["release_unit"].toString().toStdString());
     return p;
 }
 
@@ -1874,10 +1924,8 @@ QJsonObject LookaheadLimiterParameters::toJson() const {
     obj["limit"] = limit;
     obj["attack"] = attack;
     obj["release"] = release;
-    if (attackUnit.has_value())
-        obj["attack_unit"] = QString::fromStdString(delayUnitToString(attackUnit.value()));
-    if (releaseUnit.has_value())
-        obj["release_unit"] = QString::fromStdString(delayUnitToString(releaseUnit.value()));
+    obj["attack_unit"] = QString::fromStdString(timeUnitToString(attackUnit));
+    obj["release_unit"] = QString::fromStdString(timeUnitToString(releaseUnit));
     return obj;
 }
 
@@ -2120,8 +2168,12 @@ CompressorParameters CompressorParameters::fromJson(const QJsonObject& json) {
     }
     if (json.contains("attack"))
         p.attack = json["attack"].toDouble();
+    if (json.contains("attack_unit"))
+        p.attackUnit = stringToTimeUnit(json["attack_unit"].toString().toStdString());
     if (json.contains("release"))
         p.release = json["release"].toDouble();
+    if (json.contains("release_unit"))
+        p.releaseUnit = stringToTimeUnit(json["release_unit"].toString().toStdString());
     if (json.contains("threshold"))
         p.threshold = json["threshold"].toDouble();
     if (json.contains("factor"))
@@ -2151,7 +2203,9 @@ QJsonObject CompressorParameters::toJson() const {
         obj["process_channels"] = arr;
     }
     obj["attack"] = attack;
+    obj["attack_unit"] = QString::fromStdString(timeUnitToString(attackUnit));
     obj["release"] = release;
+    obj["release_unit"] = QString::fromStdString(timeUnitToString(releaseUnit));
     obj["threshold"] = threshold;
     obj["factor"] = factor;
     if (makeupGain.has_value())
@@ -2179,8 +2233,12 @@ NoiseGateParameters NoiseGateParameters::fromJson(const QJsonObject& json) {
     }
     if (json.contains("attack"))
         p.attack = json["attack"].toDouble();
+    if (json.contains("attack_unit"))
+        p.attackUnit = stringToTimeUnit(json["attack_unit"].toString().toStdString());
     if (json.contains("release"))
         p.release = json["release"].toDouble();
+    if (json.contains("release_unit"))
+        p.releaseUnit = stringToTimeUnit(json["release_unit"].toString().toStdString());
     if (json.contains("threshold"))
         p.threshold = json["threshold"].toDouble();
     if (json.contains("attenuation"))
@@ -2204,7 +2262,9 @@ QJsonObject NoiseGateParameters::toJson() const {
         obj["process_channels"] = arr;
     }
     obj["attack"] = attack;
+    obj["attack_unit"] = QString::fromStdString(timeUnitToString(attackUnit));
     obj["release"] = release;
+    obj["release_unit"] = QString::fromStdString(timeUnitToString(releaseUnit));
     obj["threshold"] = threshold;
     obj["attenuation"] = attenuation;
     return obj;
@@ -2237,8 +2297,7 @@ QJsonObject RACEParameters::toJson() const {
     obj["delay"] = delay;
     if (subsampleDelay.has_value())
         obj["subsample_delay"] = subsampleDelay.value();
-    if (delayUnit.has_value())
-        obj["delay_unit"] = QString::fromStdString(delayUnitToString(delayUnit.value()));
+    obj["delay_unit"] = QString::fromStdString(delayUnitToString(delayUnit));
     obj["attenuation"] = attenuation;
     return obj;
 }

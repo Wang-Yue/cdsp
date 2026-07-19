@@ -1313,7 +1313,7 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto unitCombo = new QComboBox(delayGroup);
         unitCombo->setFixedWidth(200);
-        unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
+        unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Seconds (s)", "Samples", "Millimeters (mm)"});
         unitCombo->setCurrentIndex(static_cast<int>(stage.delayUnit));
         connect(unitCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
             stage.delayUnit = static_cast<DelayUnit>(idx);
@@ -1324,9 +1324,24 @@ void StageDetailView::buildStageOptionsUi() {
         unitHBox->addStretch();
         delayVBox->addLayout(unitHBox);
 
-        double maxVal = (stage.delayUnit == DelayUnit::samples)
-                            ? 96000.0
-                            : ((stage.delayUnit == DelayUnit::us) ? 1000000.0 : 1000.0);
+        double maxVal = 1000.0;
+        switch (stage.delayUnit) {
+        case DelayUnit::samples:
+            maxVal = 96000.0;
+            break;
+        case DelayUnit::us:
+            maxVal = 1000000.0;
+            break;
+        case DelayUnit::s:
+            maxVal = 10.0;
+            break;
+        case DelayUnit::mm:
+            maxVal = 1000.0;
+            break;
+        default:
+            maxVal = 1000.0;
+            break;
+        }
         double stepVal = (stage.delayUnit == DelayUnit::samples) ? (stage.delaySubsample ? 0.01 : 1.0) : 0.1;
 
         auto delaySlider = new QSlider(Qt::Horizontal, delayGroup);
@@ -1334,7 +1349,7 @@ void StageDetailView::buildStageOptionsUi() {
         delaySlider->setRange(0, stepsCount);
         delaySlider->setValue(static_cast<int>(stage.delayValue / stepVal));
 
-        static const char* unitSyms[] = {"ms", "μs", "samples", "mm"};
+        static const char* unitSyms[] = {"ms", "μs", "s", "samples", "mm"};
         auto delayLbl = new QLabel(
             QString("%1 %2").arg(stage.delayValue, 0, 'f', 2).arg(unitSyms[static_cast<int>(stage.delayUnit)]),
             delayGroup);
@@ -1349,7 +1364,7 @@ void StageDetailView::buildStageOptionsUi() {
 
         connect(delaySlider, &QSlider::valueChanged, [this, &stage, delayLbl, stepVal](int val) {
             stage.delayValue = val * stepVal;
-            static const char* uSyms[] = {"ms", "μs", "samples", "mm"};
+            static const char* uSyms[] = {"ms", "μs", "s", "samples", "mm"};
             delayLbl->setText(
                 QString("%1 %2").arg(stage.delayValue, 0, 'f', 2).arg(uSyms[static_cast<int>(stage.delayUnit)]));
             applyConfig();
@@ -1441,10 +1456,15 @@ void StageDetailView::buildStageOptionsUi() {
         auto attSlider = new QSlider(Qt::Horizontal, limGroup);
         attSlider->setRange(1, 10000);
         attSlider->setValue(static_cast<int>(stage.lookaheadAttack * 10.0));
-        auto attLbl = new QLabel(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1), limGroup);
+        auto attLbl = new QLabel(QString("%1 %2")
+                                     .arg(stage.lookaheadAttack, 0, 'f', 1)
+                                     .arg(QString::fromStdString(timeUnitToString(stage.lookaheadAttackUnit))),
+                                 limGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.lookaheadAttack = val / 10.0;
-            attLbl->setText(QString("%1 ms").arg(stage.lookaheadAttack, 0, 'f', 1));
+            attLbl->setText(QString("%1 %2")
+                                .arg(stage.lookaheadAttack, 0, 'f', 1)
+                                .arg(QString::fromStdString(timeUnitToString(stage.lookaheadAttackUnit))));
             applyConfig();
         });
         limVBox->addLayout(createSliderRow("Attack", attSlider, attLbl, 90, 70));
@@ -1454,10 +1474,14 @@ void StageDetailView::buildStageOptionsUi() {
         relSlider->setSingleStep(5);
         relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
-        auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.lookaheadRelease)), limGroup);
+        auto relLbl = new QLabel(QString("%1 %2")
+                                     .arg(static_cast<int>(stage.lookaheadRelease))
+                                     .arg(QString::fromStdString(timeUnitToString(stage.lookaheadReleaseUnit))),
+                                 limGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
             stage.lookaheadRelease = val;
-            relLbl->setText(QString("%1 ms").arg(val));
+            relLbl->setText(
+                QString("%1 %2").arg(val).arg(QString::fromStdString(timeUnitToString(stage.lookaheadReleaseUnit))));
             applyConfig();
         });
         limVBox->addLayout(createSliderRow("Release", relSlider, relLbl, 90, 70));
@@ -1615,10 +1639,15 @@ void StageDetailView::buildStageOptionsUi() {
         auto attSlider = new QSlider(Qt::Horizontal, compGroup);
         attSlider->setRange(1, 1000);
         attSlider->setValue(static_cast<int>(stage.compressorAttack * 10.0));
-        auto attLbl = new QLabel(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1), compGroup);
+        auto attLbl = new QLabel(QString("%1 %2")
+                                     .arg(stage.compressorAttack, 0, 'f', 1)
+                                     .arg(QString::fromStdString(timeUnitToString(stage.compressorAttackUnit))),
+                                 compGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.compressorAttack = val / 10.0;
-            attLbl->setText(QString("%1 ms").arg(stage.compressorAttack, 0, 'f', 1));
+            attLbl->setText(QString("%1 %2")
+                                .arg(stage.compressorAttack, 0, 'f', 1)
+                                .arg(QString::fromStdString(timeUnitToString(stage.compressorAttackUnit))));
             applyConfig();
         });
         compVBox->addLayout(createSliderRow("Attack", attSlider, attLbl, 90, 70));
@@ -1628,10 +1657,14 @@ void StageDetailView::buildStageOptionsUi() {
         relSlider->setSingleStep(5);
         relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.compressorRelease));
-        auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.compressorRelease)), compGroup);
+        auto relLbl = new QLabel(QString("%1 %2")
+                                     .arg(static_cast<int>(stage.compressorRelease))
+                                     .arg(QString::fromStdString(timeUnitToString(stage.compressorReleaseUnit))),
+                                 compGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
             stage.compressorRelease = val;
-            relLbl->setText(QString("%1 ms").arg(val));
+            relLbl->setText(
+                QString("%1 %2").arg(val).arg(QString::fromStdString(timeUnitToString(stage.compressorReleaseUnit))));
             applyConfig();
         });
         compVBox->addLayout(createSliderRow("Release", relSlider, relLbl, 90, 70));
@@ -1773,10 +1806,15 @@ void StageDetailView::buildStageOptionsUi() {
         auto attSlider = new QSlider(Qt::Horizontal, gateGroup);
         attSlider->setRange(1, 1000);
         attSlider->setValue(static_cast<int>(stage.gateAttack * 10.0));
-        auto attLbl = new QLabel(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1), gateGroup);
+        auto attLbl = new QLabel(QString("%1 %2")
+                                     .arg(stage.gateAttack, 0, 'f', 1)
+                                     .arg(QString::fromStdString(timeUnitToString(stage.gateAttackUnit))),
+                                 gateGroup);
         connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
             stage.gateAttack = val / 10.0;
-            attLbl->setText(QString("%1 ms").arg(stage.gateAttack, 0, 'f', 1));
+            attLbl->setText(QString("%1 %2")
+                                .arg(stage.gateAttack, 0, 'f', 1)
+                                .arg(QString::fromStdString(timeUnitToString(stage.gateAttackUnit))));
             applyConfig();
         });
         gateVBox->addLayout(createSliderRow("Attack", attSlider, attLbl, 90, 70));
@@ -1786,10 +1824,14 @@ void StageDetailView::buildStageOptionsUi() {
         relSlider->setSingleStep(5);
         relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.gateRelease));
-        auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.gateRelease)), gateGroup);
+        auto relLbl = new QLabel(QString("%1 %2")
+                                     .arg(static_cast<int>(stage.gateRelease))
+                                     .arg(QString::fromStdString(timeUnitToString(stage.gateReleaseUnit))),
+                                 gateGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
             stage.gateRelease = val;
-            relLbl->setText(QString("%1 ms").arg(val));
+            relLbl->setText(
+                QString("%1 %2").arg(val).arg(QString::fromStdString(timeUnitToString(stage.gateReleaseUnit))));
             applyConfig();
         });
         gateVBox->addLayout(createSliderRow("Release", relSlider, relLbl, 90, 70));
@@ -1869,7 +1911,7 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto unitCombo = new QComboBox(raceGroup);
         unitCombo->setFixedWidth(200);
-        unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Samples", "Millimeters (mm)"});
+        unitCombo->addItems({"Milliseconds (ms)", "Microseconds (μs)", "Seconds (s)", "Samples", "Millimeters (mm)"});
         unitCombo->setCurrentIndex(static_cast<int>(stage.raceDelayUnit));
         connect(unitCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
             stage.raceDelayUnit = static_cast<DelayUnit>(idx);
@@ -1880,32 +1922,49 @@ void StageDetailView::buildStageOptionsUi() {
         unitHBox->addStretch();
         raceVBox->addLayout(unitHBox);
 
-        double minVal =
-            (stage.raceDelayUnit == DelayUnit::samples)
-                ? 1.0
-                : ((stage.raceDelayUnit == DelayUnit::us) ? 5.0
-                                                          : ((stage.raceDelayUnit == DelayUnit::mm) ? 2.0 : 0.01));
-        double maxVal =
-            (stage.raceDelayUnit == DelayUnit::samples)
-                ? 100.0
-                : ((stage.raceDelayUnit == DelayUnit::us) ? 2000.0
-                                                          : ((stage.raceDelayUnit == DelayUnit::mm) ? 700.0 : 2.0));
-        double stepVal = (stage.raceDelayUnit == DelayUnit::samples)
-                             ? (stage.raceSubsampleDelay ? 0.01 : 1.0)
-                             : ((stage.raceDelayUnit == DelayUnit::ms) ? 0.01 : 1.0);
+        double minVal = 0.01;
+        double maxVal = 2.0;
+        double stepVal = 0.01;
+        switch (stage.raceDelayUnit) {
+        case DelayUnit::samples:
+            minVal = 1.0;
+            maxVal = 100.0;
+            stepVal = stage.raceSubsampleDelay ? 0.01 : 1.0;
+            break;
+        case DelayUnit::us:
+            minVal = 5.0;
+            maxVal = 2000.0;
+            stepVal = 1.0;
+            break;
+        case DelayUnit::s:
+            minVal = 0.0001;
+            maxVal = 1.0;
+            stepVal = 0.001;
+            break;
+        case DelayUnit::mm:
+            minVal = 2.0;
+            maxVal = 700.0;
+            stepVal = 1.0;
+            break;
+        case DelayUnit::ms:
+            minVal = 0.01;
+            maxVal = 2.0;
+            stepVal = 0.01;
+            break;
+        }
 
         int stepsCount = static_cast<int>((maxVal - minVal) / stepVal);
         auto delaySlider = new QSlider(Qt::Horizontal, raceGroup);
         delaySlider->setRange(0, stepsCount);
         delaySlider->setValue(static_cast<int>((stage.raceDelay - minVal) / stepVal));
 
-        static const char* unitSymbols[] = {"ms", "μs", "samples", "mm"};
+        static const char* unitSymbols[] = {"ms", "μs", "s", "samples", "mm"};
         auto delayLbl = new QLabel(
             QString("%1 %2").arg(stage.raceDelay, 0, 'f', 2).arg(unitSymbols[static_cast<int>(stage.raceDelayUnit)]),
             raceGroup);
         connect(delaySlider, &QSlider::valueChanged, [this, &stage, delayLbl, minVal, stepVal](int val) {
             stage.raceDelay = minVal + val * stepVal;
-            static const char* uSyms[] = {"ms", "μs", "samples", "mm"};
+            static const char* uSyms[] = {"ms", "μs", "s", "samples", "mm"};
             delayLbl->setText(
                 QString("%1 %2").arg(stage.raceDelay, 0, 'f', 2).arg(uSyms[static_cast<int>(stage.raceDelayUnit)]));
             applyConfig();

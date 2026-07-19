@@ -182,7 +182,12 @@ enum class SDMFilter { Clans4, SDM4, Clans5, SDM5, Clans6, SDM6, Clans7, SDM7, C
 std::string sdmFilterToString(SDMFilter f);
 SDMFilter stringToSDMFilter(const std::string& str);
 
-enum class DelayUnit { ms, us, samples, mm };
+enum class TimeUnit { ms, us, s, samples };
+std::string timeUnitToString(TimeUnit u);
+TimeUnit stringToTimeUnit(const std::string& str);
+double timeUnitToSamples(TimeUnit u, double val, double sampleRate);
+
+enum class DelayUnit { ms, us, s, samples, mm };
 std::string delayUnitToString(DelayUnit unit);
 DelayUnit stringToDelayUnit(const std::string& str);
 double delayUnitToSamples(DelayUnit unit, double delay, double sampleRate);
@@ -642,13 +647,14 @@ struct ConvParameters {
 
 struct DelayParameters {
     double delay = 0.0;
+    DelayUnit delayUnit = DelayUnit::ms;
     std::optional<DelayUnit> unit;
     std::optional<bool> subsample;
     QJsonObject toJson() const;
     static DelayParameters fromJson(const QJsonObject& json);
 
     bool operator==(const DelayParameters& o) const {
-        return delay == o.delay && unit == o.unit && subsample == o.subsample;
+        return delay == o.delay && (delayUnit == o.delayUnit || unit == o.unit) && subsample == o.subsample;
     }
     bool operator!=(const DelayParameters& o) const { return !(*this == o); }
 };
@@ -753,8 +759,8 @@ struct LookaheadLimiterParameters {
     double limit = 0.0;
     double attack = 5.0;
     double release = 100.0;
-    std::optional<DelayUnit> attackUnit;
-    std::optional<DelayUnit> releaseUnit;
+    TimeUnit attackUnit = TimeUnit::ms;
+    TimeUnit releaseUnit = TimeUnit::ms;
     QJsonObject toJson() const;
     static LookaheadLimiterParameters fromJson(const QJsonObject& json);
 
@@ -857,7 +863,9 @@ struct CompressorParameters {
     std::vector<int> monitorChannels;
     std::vector<int> processChannels;
     double attack = 5.0;
+    TimeUnit attackUnit = TimeUnit::ms;
     double release = 100.0;
+    TimeUnit releaseUnit = TimeUnit::ms;
     double threshold = -20.0;
     double factor = 2.0;
     std::optional<double> makeupGain;
@@ -868,7 +876,8 @@ struct CompressorParameters {
 
     bool operator==(const CompressorParameters& o) const {
         return channels == o.channels && monitorChannels == o.monitorChannels && processChannels == o.processChannels &&
-               attack == o.attack && release == o.release && threshold == o.threshold && factor == o.factor &&
+               attack == o.attack && attackUnit == o.attackUnit && release == o.release &&
+               releaseUnit == o.releaseUnit && threshold == o.threshold && factor == o.factor &&
                makeupGain == o.makeupGain && softClip == o.softClip && clipLimit == o.clipLimit;
     }
     bool operator!=(const CompressorParameters& o) const { return !(*this == o); }
@@ -879,7 +888,9 @@ struct NoiseGateParameters {
     std::vector<int> monitorChannels;
     std::vector<int> processChannels;
     double attack = 5.0;
+    TimeUnit attackUnit = TimeUnit::ms;
     double release = 100.0;
+    TimeUnit releaseUnit = TimeUnit::ms;
     double threshold = -60.0;
     double attenuation = -40.0;
     QJsonObject toJson() const;
@@ -887,7 +898,8 @@ struct NoiseGateParameters {
 
     bool operator==(const NoiseGateParameters& o) const {
         return channels == o.channels && monitorChannels == o.monitorChannels && processChannels == o.processChannels &&
-               attack == o.attack && release == o.release && threshold == o.threshold && attenuation == o.attenuation;
+               attack == o.attack && attackUnit == o.attackUnit && release == o.release &&
+               releaseUnit == o.releaseUnit && threshold == o.threshold && attenuation == o.attenuation;
     }
     bool operator!=(const NoiseGateParameters& o) const { return !(*this == o); }
 };
@@ -898,7 +910,7 @@ struct RACEParameters {
     int channelB = 1;
     double delay = 0.25;
     std::optional<bool> subsampleDelay;
-    std::optional<DelayUnit> delayUnit;
+    DelayUnit delayUnit = DelayUnit::ms;
     double attenuation = 6.0;
     QJsonObject toJson() const;
     static RACEParameters fromJson(const QJsonObject& json);
