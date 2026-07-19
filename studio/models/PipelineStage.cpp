@@ -364,6 +364,7 @@ QJsonObject PipelineStage::toJson() const {
     obj["id"] = id.toString();
     obj["name"] = QString::fromStdString(name);
     obj["type"] = QString::fromStdString(stageTypeToString(type));
+    obj["stageType"] = QString::fromStdString(stageTypeToString(type));
     obj["isEnabled"] = isEnabled;
 
     QJsonArray chArr;
@@ -492,8 +493,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.id = QUuid::fromString(json["id"].toString());
     if (json.contains("name"))
         s.name = json["name"].toString().toStdString();
-    if (json.contains("type")) {
-        std::string typeStr = json["type"].toString().toStdString();
+    std::string typeStr;
+    if (json.contains("stageType"))
+        typeStr = json["stageType"].toString().toStdString();
+    else if (json.contains("type"))
+        typeStr = json["type"].toString().toStdString();
+    if (!typeStr.empty()) {
         QString cleanInput = QString::fromStdString(typeStr).remove(" ").toLower();
         for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
                              StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
@@ -557,8 +562,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.loudnessHighBoost = json["loudnessHighBoost"].toDouble();
     if (json.contains("loudnessLowBoost"))
         s.loudnessLowBoost = json["loudnessLowBoost"].toDouble();
-    if (json.contains("loudnessFader"))
-        s.loudnessFader = static_cast<Fader>(json["loudnessFader"].toInt());
+    if (json.contains("loudnessFader")) {
+        if (json["loudnessFader"].isDouble())
+            s.loudnessFader = static_cast<Fader>(json["loudnessFader"].toInt());
+        else
+            s.loudnessFader = stringToFader(json["loudnessFader"].toString().toStdString());
+    }
     if (json.contains("loudnessAttenuateMid"))
         s.loudnessAttenuateMid = json["loudnessAttenuateMid"].toBool();
 
@@ -573,8 +582,12 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.volumeRampTime = json["volumeRampTime"].toDouble();
     if (json.contains("volumeLimit"))
         s.volumeLimit = json["volumeLimit"].toDouble();
-    if (json.contains("volumeFader"))
-        s.volumeFader = static_cast<Fader>(json["volumeFader"].toInt());
+    if (json.contains("volumeFader")) {
+        if (json["volumeFader"].isDouble())
+            s.volumeFader = static_cast<Fader>(json["volumeFader"].toInt());
+        else
+            s.volumeFader = stringToFader(json["volumeFader"].toString().toStdString());
+    }
 
     if (json.contains("delayValue"))
         s.delayValue = json["delayValue"].toDouble();
@@ -719,6 +732,11 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
 
 bool PipelineStage::operator==(const PipelineStage& other) const {
     return id == other.id;
+}
+
+std::vector<PipelineStage> PipelineStage::defaultStages() {
+    return {PipelineStage(StageType::DCProtection, "DC Protection", true), PipelineStage(StageType::EQ, "EQ", false),
+            PipelineStage(StageType::Loudness, "Loudness", false)};
 }
 
 StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampleRate, int channelCount,

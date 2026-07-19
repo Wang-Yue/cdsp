@@ -27,10 +27,14 @@ public:
     std::string lastErrorMessage;
 
     DSPConfiguration buildConfiguration() const;
+    std::shared_ptr<CDSPEngine> engine() const { return m_engine; }
     std::shared_ptr<AudioDeviceManager> devices() const { return m_devices; }
     std::shared_ptr<AudioSettings> settings() const { return m_settings; }
     std::shared_ptr<PipelineStore> pipelineStore() const { return m_pipeline; }
     std::shared_ptr<LevelState> levels() const { return m_levels; }
+    std::shared_ptr<MonitoringController> monitoring() const { return m_monitoring; }
+
+    void setMonitoringController(std::shared_ptr<MonitoringController> monitoring);
 
     void startEngine();
     void stopEngine();

@@ -27,6 +27,7 @@ public:
     CDSPEngine();
     ~CDSPEngine();
 
+    bool isCEngine() const { return true; }
     bool isRustEngine() const { return false; }
 
     // Disable copy
@@ -34,6 +35,7 @@ public:
     CDSPEngine& operator=(const CDSPEngine&) = delete;
 
     bool start(const std::string& configJson, std::string& errorMessage);
+    bool setConfig(const std::string& configJson, std::string& errorMessage);
     void stop();
 
     void setFaderVolume(Fader fader, float db, bool instant = false);

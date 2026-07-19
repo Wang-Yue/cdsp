@@ -193,6 +193,7 @@ public:
 
     QJsonObject toJson() const;
     static PipelineStage fromJson(const QJsonObject& json);
+    static std::vector<PipelineStage> defaultStages();
 
     bool operator==(const PipelineStage& other) const;
 };

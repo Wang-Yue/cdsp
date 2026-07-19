@@ -515,6 +515,87 @@ ProcessorType stringToProcessorType(const std::string& str) {
 
 // JSON Encoders & Decoders
 
+SamplerateCapability SamplerateCapability::fromJson(const QJsonObject& json) {
+    SamplerateCapability cap;
+    if (json.contains("samplerate"))
+        cap.samplerate = json["samplerate"].toInt();
+    if (json.contains("formats")) {
+        for (const auto& f : json["formats"].toArray())
+            cap.formats.push_back(f.toString().toStdString());
+    }
+    return cap;
+}
+
+QJsonObject SamplerateCapability::toJson() const {
+    QJsonObject obj;
+    obj["samplerate"] = samplerate;
+    QJsonArray fmtArr;
+    for (const auto& f : formats)
+        fmtArr.append(QString::fromStdString(f));
+    obj["formats"] = fmtArr;
+    return obj;
+}
+
+ChannelCapability ChannelCapability::fromJson(const QJsonObject& json) {
+    ChannelCapability cap;
+    if (json.contains("channels"))
+        cap.channels = json["channels"].toInt();
+    if (json.contains("samplerates")) {
+        for (const auto& sr : json["samplerates"].toArray())
+            cap.samplerates.push_back(SamplerateCapability::fromJson(sr.toObject()));
+    }
+    return cap;
+}
+
+QJsonObject ChannelCapability::toJson() const {
+    QJsonObject obj;
+    obj["channels"] = channels;
+    QJsonArray srArr;
+    for (const auto& sr : samplerates)
+        srArr.append(sr.toJson());
+    obj["samplerates"] = srArr;
+    return obj;
+}
+
+DeviceCapabilitySet DeviceCapabilitySet::fromJson(const QJsonObject& json) {
+    DeviceCapabilitySet set;
+    if (json.contains("capabilities")) {
+        for (const auto& c : json["capabilities"].toArray())
+            set.capabilities.push_back(ChannelCapability::fromJson(c.toObject()));
+    }
+    return set;
+}
+
+QJsonObject DeviceCapabilitySet::toJson() const {
+    QJsonObject obj;
+    QJsonArray capArr;
+    for (const auto& c : capabilities)
+        capArr.append(c.toJson());
+    obj["capabilities"] = capArr;
+    return obj;
+}
+
+AudioDeviceDescriptor AudioDeviceDescriptor::fromJson(const QJsonObject& json) {
+    AudioDeviceDescriptor desc;
+    if (json.contains("name"))
+        desc.name = json["name"].toString().toStdString();
+    if (json.contains("capability_sets")) {
+        for (const auto& cs : json["capability_sets"].toArray())
+            desc.capability_sets.push_back(DeviceCapabilitySet::fromJson(cs.toObject()));
+    }
+    return desc;
+}
+
+QJsonObject AudioDeviceDescriptor::toJson() const {
+    QJsonObject obj;
+    obj["name"] = QString::fromStdString(name);
+    QJsonArray csArr;
+    for (const auto& cs : capability_sets)
+        csArr.append(cs.toJson());
+    obj["capability_sets"] = csArr;
+    return obj;
+}
+
 GeneratorConfig GeneratorConfig::fromJson(const QJsonObject& json) {
     GeneratorConfig cfg;
     if (json.contains("type"))
@@ -1279,6 +1360,8 @@ DevicesConfig DevicesConfig::fromJson(const QJsonObject& json) {
         cfg.adjustPeriod = json["adjust_interval_s"].toDouble();
     if (json.contains("resampler"))
         cfg.resampler = ResamplerConfig::fromJson(json["resampler"].toObject());
+    if (json.contains("capture_samplerate"))
+        cfg.captureSamplerate = json["capture_samplerate"].toInt();
     if (json.contains("silence_threshold"))
         cfg.silenceThreshold = json["silence_threshold"].toDouble();
     if (json.contains("silence_timeout_s"))
@@ -1952,8 +2035,12 @@ MixerConfig MixerConfig::fromJson(const QJsonObject& json) {
         mc.description = json["description"].toString().toStdString();
     if (json.contains("labels")) {
         QJsonArray arr = json["labels"].toArray();
-        for (const auto& val : arr)
-            mc.labels.push_back(val.toString().toStdString());
+        for (const auto& val : arr) {
+            if (val.isNull())
+                mc.labels.push_back("");
+            else
+                mc.labels.push_back(val.toString().toStdString());
+        }
     }
     return mc;
 }
@@ -2224,6 +2311,12 @@ QJsonObject PipelineStep::toJson() const {
     } else {
         if (name.has_value())
             obj["name"] = QString::fromStdString(name.value());
+        if (!names.empty()) {
+            QJsonArray arr;
+            for (const auto& n : names)
+                arr.append(QString::fromStdString(n));
+            obj["names"] = arr;
+        }
     }
     if (bypassed.has_value())
         obj["bypassed"] = bypassed.value();

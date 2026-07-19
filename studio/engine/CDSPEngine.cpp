@@ -47,6 +47,10 @@ bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage)
     return success;
 }
 
+bool CDSPEngine::setConfig(const std::string& configJson, std::string& errorMessage) {
+    return start(configJson, errorMessage);
+}
+
 void CDSPEngine::stop() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
@@ -182,7 +186,8 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
 
     cdsp_spectrum_t res;
     memset(&res, 0, sizeof(res));
-    bool success = cdsp_get_spectrum(m_engine, isCapture, channel, minFreq, maxFreq, nBins, &res);
+    uint32_t ch = channel >= 0 ? static_cast<uint32_t>(channel) : 0;
+    bool success = cdsp_get_spectrum(m_engine, isCapture, ch, minFreq, maxFreq, nBins, &res);
     if (!success || !res.frequencies || !res.magnitudes || res.count == 0) {
         cdsp_free_spectrum(&res);
         return false;

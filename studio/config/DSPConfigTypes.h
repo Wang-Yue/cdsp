@@ -75,20 +75,28 @@ struct AudioSamplesData {
 struct SamplerateCapability {
     int samplerate = 0;
     std::vector<std::string> formats;
+    QJsonObject toJson() const;
+    static SamplerateCapability fromJson(const QJsonObject& json);
 };
 
 struct ChannelCapability {
     int channels = 0;
     std::vector<SamplerateCapability> samplerates;
+    QJsonObject toJson() const;
+    static ChannelCapability fromJson(const QJsonObject& json);
 };
 
 struct DeviceCapabilitySet {
     std::vector<ChannelCapability> capabilities;
+    QJsonObject toJson() const;
+    static DeviceCapabilitySet fromJson(const QJsonObject& json);
 };
 
 struct AudioDeviceDescriptor {
     std::string name;
     std::vector<DeviceCapabilitySet> capability_sets;
+    QJsonObject toJson() const;
+    static AudioDeviceDescriptor fromJson(const QJsonObject& json);
 };
 
 enum class AudioBackendType { CoreAudio, WASAPI, ASIO, ALSA, PulseAudio, RawFile, WavFile, SignalGenerator };

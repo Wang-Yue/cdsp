@@ -15,13 +15,7 @@ DSPEngineController::DSPEngineController(std::shared_ptr<CDSPEngine> engine,
     connect(&m_applyConfigTimer, &QTimer::timeout, this, &DSPEngineController::applyConfigAsync);
 
     if (m_monitoring) {
-        m_monitoring->onStatusChange = [this](ProcessingState newStatus) {
-            if (newStatus != status) {
-                status = newStatus;
-                emit statusChanged(status);
-            }
-        };
-        m_monitoring->onRestartEngine = [this]() { startEngine(); };
+        setMonitoringController(m_monitoring);
     }
 
     if (m_devices) {
@@ -37,6 +31,19 @@ DSPEngineController::DSPEngineController(std::shared_ptr<CDSPEngine> engine,
             }
             applyConfig();
         });
+    }
+}
+
+void DSPEngineController::setMonitoringController(std::shared_ptr<MonitoringController> monitoring) {
+    m_monitoring = monitoring;
+    if (m_monitoring) {
+        m_monitoring->onStatusChange = [this](ProcessingState newStatus) {
+            if (newStatus != status) {
+                status = newStatus;
+                emit statusChanged(status);
+            }
+        };
+        m_monitoring->onRestartEngine = [this]() { startEngine(); };
     }
 }
 
@@ -85,37 +92,11 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
                     resCfg.oversamplingFactor = m_settings->resamplerOversamplingFactor;
                     resCfg.window = m_settings->resamplerWindow;
                     resCfg.fCutoff = m_settings->resamplerFCutoff;
-                    switch (m_settings->resamplerSincInterpolation) {
-                    case SincInterpolation::Nearest:
-                        resCfg.interpolation = "Nearest";
-                        break;
-                    case SincInterpolation::Linear:
-                        resCfg.interpolation = "Linear";
-                        break;
-                    case SincInterpolation::Quadratic:
-                        resCfg.interpolation = "Quadratic";
-                        break;
-                    case SincInterpolation::Cubic:
-                        resCfg.interpolation = "Cubic";
-                        break;
-                    }
+                    resCfg.interpolation = sincInterpolationToString(m_settings->resamplerSincInterpolation);
                 }
                 break;
             case ResamplerType::AsyncPoly:
-                switch (m_settings->resamplerInterpolation) {
-                case ResamplerInterpolation::Linear:
-                    resCfg.interpolation = "Linear";
-                    break;
-                case ResamplerInterpolation::Cubic:
-                    resCfg.interpolation = "Cubic";
-                    break;
-                case ResamplerInterpolation::Quintic:
-                    resCfg.interpolation = "Quintic";
-                    break;
-                case ResamplerInterpolation::Septic:
-                    resCfg.interpolation = "Septic";
-                    break;
-                }
+                resCfg.interpolation = resamplerInterpolationToString(m_settings->resamplerInterpolation);
                 break;
             case ResamplerType::Synchronous:
             case ResamplerType::Slip:
@@ -128,6 +109,36 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     if (m_devices) {
         config.devices.capture = m_devices->captureConfig.toCaptureDeviceConfig();
         config.devices.playback = m_devices->playbackConfig.toPlaybackDeviceConfig();
+
+        if (m_devices->exclusiveMode) {
+            if (config.devices.playback.backend == AudioBackendType::CoreAudio) {
+                config.devices.playback.coreAudio.exclusive = true;
+            } else if (config.devices.playback.backend == AudioBackendType::WASAPI) {
+                config.devices.playback.wasapi.exclusive = true;
+            }
+        }
+
+        if (m_devices->playbackConfig.backend == AudioBackendType::SignalGenerator) {
+            PlaybackDeviceConfig pb;
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+            pb.backend = AudioBackendType::CoreAudio;
+            pb.coreAudio.channels = m_devices->playbackConfig.channels;
+            pb.coreAudio.device = m_devices->playbackConfig.deviceName();
+            if (m_devices->exclusiveMode)
+                pb.coreAudio.exclusive = true;
+#elif defined(_WIN32) || defined(Q_OS_WIN)
+            pb.backend = AudioBackendType::WASAPI;
+            pb.wasapi.channels = m_devices->playbackConfig.channels;
+            pb.wasapi.device = m_devices->playbackConfig.deviceName();
+            if (m_devices->exclusiveMode)
+                pb.wasapi.exclusive = true;
+#else
+            pb.backend = AudioBackendType::ALSA;
+            pb.alsa.channels = m_devices->playbackConfig.channels;
+            pb.alsa.device = m_devices->playbackConfig.deviceName();
+#endif
+            config.devices.playback = pb;
+        }
     }
 
     if (m_pipeline) {

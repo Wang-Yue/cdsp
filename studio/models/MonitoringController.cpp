@@ -139,10 +139,12 @@ void MonitoringController::poll() {
         levelState.update(clampedVu);
         emit levelsUpdated();
     } else {
+        bool changed = false;
         if (levels)
-            levels->reset(capChannels, pbChannels);
-        levelState.reset(capChannels, pbChannels);
-        emit levelsUpdated();
+            changed = levels->reset(capChannels, pbChannels);
+        bool lsChanged = levelState.reset(capChannels, pbChannels);
+        if (changed || lsChanged)
+            emit levelsUpdated();
     }
 
     // 3. Poll Spectrum
@@ -199,9 +201,12 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
         if (state == ProcessingState::Inactive || state == ProcessingState::Paused) {
             size_t capCh = m_devices ? m_devices->captureConfig.channels : 2;
             size_t pbCh = m_devices ? m_devices->playbackConfig.channels : 2;
+            bool changed = false;
             if (levels)
-                levels->reset(capCh, pbCh);
-            levelState.reset(capCh, pbCh);
+                changed = levels->reset(capCh, pbCh);
+            bool lsChanged = levelState.reset(capCh, pbCh);
+            if (changed || lsChanged)
+                emit levelsUpdated();
             if (m_spectrumEngine)
                 m_spectrumEngine->reset();
             if (m_spectrogramEngine)

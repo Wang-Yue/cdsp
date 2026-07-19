@@ -229,21 +229,21 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.pulseAudio.format = format;
         break;
     case AudioBackendType::WavFile:
-        cap.wavFile.filename = filename;
-        cap.wavFile.extraSamples = extraSamples;
+        cap.wavFile.filename = filename.empty() ? "" : filename;
+        cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(extraSamples) : std::nullopt;
         break;
     case AudioBackendType::RawFile:
-        cap.rawFile.filename = filename;
+        cap.rawFile.filename = filename.empty() ? "" : filename;
         cap.rawFile.channels = channels;
         cap.rawFile.format = fileFormat;
-        cap.rawFile.skipBytes = skipBytes;
-        cap.rawFile.readBytes = readBytes;
-        cap.rawFile.extraSamples = extraSamples;
+        cap.rawFile.skipBytes = skipBytes > 0 ? std::make_optional(skipBytes) : std::nullopt;
+        cap.rawFile.readBytes = readBytes > 0 ? std::make_optional(readBytes) : std::nullopt;
+        cap.rawFile.extraSamples = extraSamples > 0 ? std::make_optional(extraSamples) : std::nullopt;
         break;
     case AudioBackendType::SignalGenerator:
         cap.generator.channels = channels;
         cap.generator.signal.type = generatorType;
-        cap.generator.signal.freq = generatorFreq;
+        cap.generator.signal.freq = (generatorType == "WhiteNoise") ? std::nullopt : std::make_optional(generatorFreq);
         cap.generator.signal.level = generatorLevel;
         break;
     }
@@ -287,11 +287,11 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         break;
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
-        pb.rawFile.filename = filename;
+        pb.rawFile.filename = filename.empty() ? "" : filename;
         pb.rawFile.channels = channels;
         pb.rawFile.format = fileFormat;
-        pb.rawFile.wavHeader = isWav;
-        if (isWav) {
+        pb.rawFile.wavHeader = (backend == AudioBackendType::WavFile || isWav);
+        if (backend == AudioBackendType::WavFile || isWav) {
             pb.rawFile.useRf64 = useRf64;
         }
         break;
@@ -322,12 +322,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["generatorType"] = QString::fromStdString(generatorType);
     obj["generatorFreq"] = generatorFreq;
     obj["generatorLevel"] = generatorLevel;
-    QJsonObject capObj;
-    capObj["name"] = QString::fromStdString(capabilities.name);
-    obj["capabilities"] = capObj;
-    if (!capabilities.name.empty()) {
-        obj["deviceName"] = QString::fromStdString(capabilities.name);
-    }
+    obj["capabilities"] = capabilities.toJson();
     return obj;
 }
 
@@ -375,9 +370,7 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
     if (json.contains("generatorLevel"))
         cfg.generatorLevel = json["generatorLevel"].toDouble();
     if (json.contains("capabilities") && json["capabilities"].isObject()) {
-        QJsonObject cObj = json["capabilities"].toObject();
-        if (cObj.contains("name"))
-            cfg.capabilities.name = cObj["name"].toString().toStdString();
+        cfg.capabilities = AudioDeviceDescriptor::fromJson(json["capabilities"].toObject());
     } else if (json.contains("deviceName")) {
         cfg.capabilities.name = json["deviceName"].toString().toStdString();
     }

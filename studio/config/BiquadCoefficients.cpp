@@ -83,7 +83,7 @@ std::optional<BiquadType> stringToBiquadType(const std::string& str) {
 }
 
 std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParameters& params, int sampleRate) {
-    if (!params.type.has_value())
+    if (!params.type.has_value() || sampleRate <= 0)
         return std::nullopt;
 
     BiquadType type = params.type.value();
@@ -109,7 +109,9 @@ std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParame
 
         if (params.bandwidth.has_value()) {
             double bw = params.bandwidth.value();
-            q = 1.0 / (2.0 * std::sinh(std::log(2.0) / 2.0 * bw * w0 / sinW0));
+            if (std::abs(sinW0) > 1e-9) {
+                q = 1.0 / (2.0 * std::sinh(std::log(2.0) / 2.0 * bw * w0 / sinW0));
+            }
         } else if (params.slope.has_value()) {
             double s = params.slope.value();
             double slopeS = s / 12.0;
@@ -295,6 +297,8 @@ std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParame
 }
 
 double BiquadCoefficients::gainDB(double f, int sampleRate) const {
+    if (sampleRate <= 0)
+        return 0.0;
     double w = 2.0 * M_PI * f / static_cast<double>(sampleRate);
     double cosW = std::cos(w);
     double sinW = std::sin(w);
@@ -309,13 +313,14 @@ double BiquadCoefficients::gainDB(double f, int sampleRate) const {
     double numMagSq = numRe * numRe + numIm * numIm;
     double denMagSq = denRe * denRe + denIm * denIm;
 
-    if (denMagSq <= 0.0)
+    if (denMagSq <= 0.0 || numMagSq <= 0.0)
         return 0.0;
-    double ratio = std::max(1e-12, numMagSq / denMagSq);
-    return 10.0 * std::log10(ratio);
+    return 10.0 * std::log10(numMagSq / denMagSq);
 }
 
 double BiquadCoefficients::phaseRad(double f, int sampleRate) const {
+    if (sampleRate <= 0)
+        return 0.0;
     double w = 2.0 * M_PI * f / static_cast<double>(sampleRate);
     double cosW = std::cos(w);
     double sinW = std::sin(w);
