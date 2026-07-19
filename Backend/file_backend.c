@@ -717,9 +717,11 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                               backend_error_t* err) {
   file_capture_t* capture = (file_capture_t*)ctx;
   if (!capture) return false;
-  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
+#ifdef CDSP_TEST
+  if (capture->realtime && atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
     cdsp_sleep_ms(10);
   }
+#endif
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
@@ -905,8 +907,15 @@ static void file_capture_set_pitch(void* ctx, double multiplier) {
  * @return true if data is available, false on timeout or error.
  */
 static bool file_capture_wait(void* ctx, uint32_t timeout_ms) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+#ifdef CDSP_TEST
+  if (capture && capture->realtime) {
+    cdsp_sleep_ms(timeout_ms);
+  }
+#else
   (void)ctx;
-  cdsp_sleep_ms(timeout_ms);
+  (void)timeout_ms;
+#endif
   return true;
 }
 

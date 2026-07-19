@@ -105,9 +105,6 @@ static bool generator_capture_read(void* ctx, size_t frames,
     return false;
   }
 #endif
-  if (capture->is_paused) {
-    cdsp_sleep_ms(10);
-  }
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
@@ -234,7 +231,7 @@ static void generator_capture_set_pitch(void* ctx, double multiplier) {
  */
 static bool generator_capture_wait(void* ctx, uint32_t timeout_ms) {
   (void)ctx;
-  cdsp_sleep_ms(timeout_ms);
+  (void)timeout_ms;
   return true;
 }
 

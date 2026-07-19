@@ -310,11 +310,11 @@ sequenceDiagram
 ```
 
 1. **Silence Detection**:
-   - The capture loop monitors the peak levels of each chunk.
-   - If the level stays below the threshold for longer than the timeout, the silence counter updates.
+   - The capture loop monitors the peak levels of each chunk across all capture backends (real-time hardware/live streams and non-realtime File/Generator streams).
+   - If the level stays below the threshold for longer than the timeout, the silence counter updates and triggers a state transition to `PROCESSING_STATE_PAUSED`.
 2. **Auto-Pause Transition**:
    - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
-   - It pauses both capture and playback backends (Note: playback backends suspend DAC rendering; capture backends continue reading frames so the capture loop can evaluate peak levels for auto-resume. Non-hardware capture backends like File/Generator yield CPU with a 10ms sleep during `is_paused` to match hardware sample-rate pacing).
+   - It pauses both capture and playback backends (Note: playback backends suspend DAC rendering or file output; capture backends continue reading frames so the capture loop can continuously evaluate peak levels for auto-resume. Real-time hardware/simulated backends yield CPU with a sleep during `is_paused` to match hardware sample-rate pacing, while non-realtime File/Generator backends proceed with 0ms sleep to evaluate levels at maximum disk/CPU throughput without blocking).
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms.
    - The processing thread wakes up on these 0-frame chunks, checks and performs any pending pipeline swaps, and propagates them downstream.

@@ -258,7 +258,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     playback_backend_set_is_paused(loop->playback,
                                    (desired == PROCESSING_STATE_PAUSED));
     capture_backend_set_is_paused(loop->capture,
-                                  (desired == PROCESSING_STATE_PAUSED));
+                                   (desired == PROCESSING_STATE_PAUSED));
   }
 
   // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
