@@ -291,11 +291,13 @@ struct dsp_engine {
   void (*set_fader_mute)(void* ctx, fader_t fader, bool mute);
 };
 
+#include "Public/cdsp_export.h"
+
 /**
  * @brief Create a new DSP engine instance.
  * @return Pointer to the created self-contained engine interface, or NULL on
  * failure.
  */
-dsp_engine_t* dsp_engine_create(void);
+CDSP_API dsp_engine_t* dsp_engine_create(void);
 
 #endif  // CLIB_ENGINE_DSP_ENGINE_H

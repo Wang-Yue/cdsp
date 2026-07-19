@@ -20,13 +20,13 @@ extern "C" {
  * @param out_vu Pointer to write the VU levels to.
  * @return true on success, false on failure.
  */
-bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu);
+CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu);
 
 /**
  * @brief Free the arrays inside the cdsp_vu_levels_t structure.
  * @param vu Pointer to the VU levels structure.
  */
-void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
+CDSP_API void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
 
 /**
  * @brief Get the optional channel labels configured for playback and capture.
@@ -43,18 +43,18 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
  * @param out_capture_count Output count of capture channels.
  * @return true on success, false on failure (or if no labels are configured).
  */
-bool cdsp_get_channel_labels(const dsp_engine_t* engine,
-                             char*** out_playback_labels,
-                             size_t* out_playback_count,
-                             char*** out_capture_labels,
-                             size_t* out_capture_count);
+CDSP_API bool cdsp_get_channel_labels(const dsp_engine_t* engine,
+                              char*** out_playback_labels,
+                              size_t* out_playback_count,
+                              char*** out_capture_labels,
+                              size_t* out_capture_count);
 
 /**
  * @brief Free channel labels arrays and strings.
  * @param labels The array of strings.
  * @param count The number of channels/elements.
  */
-void cdsp_free_channel_labels(char** labels, size_t count);
+CDSP_API void cdsp_free_channel_labels(char** labels, size_t count);
 
 #ifdef __cplusplus
 }
