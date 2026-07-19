@@ -2211,6 +2211,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   remove(out_file);
 
   // Assert that state auto-resumes to RUNNING when loud audio arrives
+  ASSERT_TRUE(resumed);
   ASSERT_EQ(state_after_loud_signal, CDSP_PROCESSING_STATE_RUNNING);
 }
 
