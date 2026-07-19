@@ -31,6 +31,7 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     std::shared_ptr<DSPEngineController> m_dspController;
 
+    QWidget* m_contentWidget;
     QFormLayout* m_typeForm;
     QGroupBox* m_typeGroup;
 

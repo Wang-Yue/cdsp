@@ -185,6 +185,19 @@ void PipelineOverviewWidget::buildAddStageMenu() {
     m_addStageBtn->setMenu(menu);
 }
 
+QIcon PipelineOverviewWidget::createChannelDotIcon(int ch, bool hovered) const {
+    QColor col = channelColor(ch);
+    QPixmap px(8, 8);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(col);
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(0, 0, 8, 8);
+    p.end();
+    return QIcon(px);
+}
+
 void PipelineOverviewWidget::rebuildLegendBar(int maxChannels) {
     if (!m_legendBarLayout)
         return;
@@ -213,19 +226,23 @@ void PipelineOverviewWidget::updateLegendPillStyle(QObject* obj, int ch, bool ho
     if (!btn)
         return;
 
+    btn->setIcon(createChannelDotIcon(ch, hovered));
+    btn->setIconSize(QSize(8, 8));
+
     QColor col = channelColor(ch);
     if (hovered) {
         btn->setStyleSheet(
             QString(
-                "background: rgba(%1, %2, %3, 0.22); color: rgb(%1, %2, %3); border: 1px solid rgba(%1, %2, %3, 0.6); "
-                "border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: bold;")
+                "QPushButton { background: rgba(%1, %2, %3, 0.15); color: rgb(%1, %2, %3); border: 1px solid rgba(%1, "
+                "%2, %3, 0.4); "
+                "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold; font-family: monospace; }")
                 .arg(col.red())
                 .arg(col.green())
                 .arg(col.blue()));
     } else {
         btn->setStyleSheet(QString(
-            "background: rgba(142, 142, 147, 0.08); color: #8e8e93; border: 1px solid rgba(142, 142, 147, 0.15); "
-            "border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: bold;"));
+            "QPushButton { background: rgba(128, 128, 128, 0.08); color: #8e8e93; border: none; "
+            "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold; font-family: monospace; }"));
     }
 }
 
@@ -281,6 +298,30 @@ QString PipelineOverviewWidget::categoryColorHex(StageCategory cat) const {
     return "0, 122, 255";
 }
 
+QString PipelineOverviewWidget::stepTypeColorHex(PipelineStepType type) const {
+    switch (type) {
+    case PipelineStepType::Filter:
+        return "0, 122, 255"; // Blue
+    case PipelineStepType::Mixer:
+        return "175, 82, 222"; // Purple
+    case PipelineStepType::Processor:
+        return "255, 149, 0"; // Orange
+    }
+    return "0, 122, 255";
+}
+
+QString PipelineOverviewWidget::stepTypeTitle(PipelineStepType type) const {
+    switch (type) {
+    case PipelineStepType::Filter:
+        return "Filter Chain";
+    case PipelineStepType::Mixer:
+        return "Matrix / Routing Mixer";
+    case PipelineStepType::Processor:
+        return "Dynamics Processor";
+    }
+    return "Filter Chain";
+}
+
 void PipelineOverviewWidget::paintCanvasWires(QWidget* canvasWidget) {
     if (!canvasWidget)
         return;
@@ -295,7 +336,7 @@ void PipelineOverviewWidget::paintCanvasWires(QWidget* canvasWidget) {
         bool isHighlighted = (!m_hoveredChannel.has_value() || m_hoveredChannel.value() == ch);
         QColor col = channelColor(ch);
         col.setAlpha(isHighlighted ? 115 : 30);
-        QPen pen(col, isHighlighted ? 2.5 : 1.0, Qt::DashLine);
+        QPen pen(col, isHighlighted ? 2.5 : 1.0, Qt::SolidLine);
         painter.setPen(pen);
 
         double y = topY + ch * trackSpacing;
@@ -492,11 +533,25 @@ void PipelineOverviewWidget::rebuildOverview() {
         connVBox->setContentsMargins(0, 0, 0, 0);
         connVBox->setSpacing(2);
 
-        auto arrowLabel = new QLabel(isMismatch ? "❌" : "➔", connWidget);
+        auto arrowHBox = new QHBoxLayout();
+        arrowHBox->setContentsMargins(0, 0, 0, 0);
+        arrowHBox->setSpacing(2);
+        arrowHBox->setAlignment(Qt::AlignCenter);
+
+        auto connLine = new QFrame(connWidget);
+        connLine->setFrameShape(QFrame::HLine);
+        connLine->setFixedHeight(2);
+        connLine->setFixedWidth(24);
+        connLine->setStyleSheet(isMismatch ? "background: rgba(255, 59, 48, 0.8);"
+                                           : "background: rgba(0, 122, 255, 0.6);");
+        arrowHBox->addWidget(connLine);
+
+        auto arrowLabel = new QLabel(isMismatch ? "⚠️" : "›", connWidget);
         arrowLabel->setAlignment(Qt::AlignCenter);
-        arrowLabel->setStyleSheet(isMismatch ? "color: #ff3b30; font-size: 11px;"
-                                             : "color: rgba(0, 122, 255, 0.8); font-size: 11px;");
-        connVBox->addWidget(arrowLabel);
+        arrowLabel->setStyleSheet(isMismatch ? "color: #ff3b30; font-size: 10px; font-weight: bold;"
+                                             : "color: rgba(0, 122, 255, 0.8); font-size: 10px; font-weight: bold;");
+        arrowHBox->addWidget(arrowLabel);
+        connVBox->addLayout(arrowHBox);
 
         QString labelText;
         if (isMismatch) {
@@ -511,9 +566,9 @@ void PipelineOverviewWidget::rebuildOverview() {
         tagLabel->setAlignment(Qt::AlignCenter);
         tagLabel->setStyleSheet(
             isMismatch ? "background: rgba(255, 59, 48, 0.15); color: #ff3b30; font-size: 8px; font-weight: bold; "
-                         "padding: 1px 3px; border-radius: 3px;"
+                         "padding: 1px 4px; border-radius: 3px; font-family: monospace;"
                        : "background: rgba(128, 128, 128, 0.12); color: #8e8e93; font-size: 8px; font-weight: bold; "
-                         "padding: 1px 3px; border-radius: 3px;");
+                         "padding: 1px 4px; border-radius: 3px; font-family: monospace;");
         connVBox->addWidget(tagLabel);
 
         m_canvasLayout->addWidget(connWidget, 0, Qt::AlignVCenter);
@@ -530,7 +585,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                                : (isActive ? QString("rgba(%1, 0.06)").arg(colorHex) : "rgba(142, 142, 147, 0.04)"))
                 .arg(isWarning ? "1.5px" : "1.0px")
                 .arg(isWarning ? "#ff3b30"
-                               : (isActive ? QString("rgb(%1)").arg(colorHex) : "rgba(142, 142, 147, 0.2)")));
+                               : (isActive ? QString("rgba(%1, 0.25)").arg(colorHex) : "rgba(142, 142, 147, 0.15)")));
 
         auto cardLayout = new QVBoxLayout(card);
         cardLayout->setContentsMargins(10, 10, 10, 10);
@@ -552,7 +607,7 @@ void PipelineOverviewWidget::rebuildOverview() {
         auto titleVBox = new QVBoxLayout();
         titleVBox->setSpacing(1);
         auto titleLbl = new QLabel(title, card);
-        titleLbl->setFont(QFont("System", 11, QFont::Bold));
+        titleLbl->setFont(QFont("System", 12, QFont::Bold));
         titleLbl->setStyleSheet(isWarning ? "color: #ff3b30;" : "color: auto;");
         titleVBox->addWidget(titleLbl);
 
@@ -641,12 +696,12 @@ void PipelineOverviewWidget::rebuildOverview() {
             auto headerLayout = qobject_cast<QHBoxLayout*>(stLayout->itemAt(0)->layout());
             if (headerLayout) {
                 auto bypassDotBtn = new QPushButton(stCard);
-                bypassDotBtn->setFixedSize(14, 14);
+                bypassDotBtn->setFixedSize(8, 8);
                 bypassDotBtn->setCursor(Qt::PointingHandCursor);
-                bypassDotBtn->setToolTip(stage.isEnabled ? "Click to disable stage" : "Click to enable stage");
+                bypassDotBtn->setToolTip(active ? "Click to disable stage" : "Click to enable stage");
                 bypassDotBtn->setStyleSheet(
-                    stage.isEnabled ? QString("background: rgb(%1); border-radius: 7px; border: none;").arg(colorHex)
-                                    : "background: rgba(142, 142, 147, 0.4); border-radius: 7px; border: none;");
+                    active ? QString("background: rgb(%1); border-radius: 4px; border: none;").arg(colorHex)
+                           : "background: rgba(142, 142, 147, 0.3); border-radius: 4px; border: none;");
                 connect(bypassDotBtn, &QPushButton::clicked, [this, i]() {
                     if (m_dspController && m_dspController->pipelineStore()) {
                         m_dspController->pipelineStore()->stages[i].isEnabled =
@@ -676,9 +731,11 @@ void PipelineOverviewWidget::rebuildOverview() {
                 auto stepsRes = StageBuilders::buildStage(stage, captureRate, inCh, eqMap, convMap);
 
                 for (const auto& step : stepsRes.steps) {
+                    QString sColorHex = stepTypeColorHex(step.type);
                     auto stepWidget = new QWidget(stCard);
-                    stepWidget->setStyleSheet("QWidget { background: rgba(0, 122, 255, 0.08); border-radius: 6px; "
-                                              "border: 1px solid rgba(0, 122, 255, 0.2); }");
+                    stepWidget->setStyleSheet(QString("QWidget { background: rgba(%1, 0.08); border-radius: 6px; "
+                                                      "border: 1px solid rgba(%1, 0.2); }")
+                                                  .arg(sColorHex));
                     auto stepVBox = new QVBoxLayout(stepWidget);
                     stepVBox->setContentsMargins(6, 4, 6, 4);
                     stepVBox->setSpacing(2);
@@ -695,15 +752,10 @@ void PipelineOverviewWidget::rebuildOverview() {
                         icon = "💻";
 
                     auto iconLbl = new QLabel(icon, stepWidget);
-                    iconLbl->setStyleSheet("font-size: 9px;");
+                    iconLbl->setStyleSheet(QString("font-size: 9px; color: rgb(%1);").arg(sColorHex));
                     stepHeader->addWidget(iconLbl);
 
-                    QString stepTitle = "Filter Chain";
-                    if (step.type == PipelineStepType::Mixer)
-                        stepTitle = "Matrix / Routing Mixer";
-                    else if (step.type == PipelineStepType::Processor)
-                        stepTitle = "Dynamics Processor";
-
+                    QString stepTitle = stepTypeTitle(step.type);
                     auto titleLbl = new QLabel(stepTitle, stepWidget);
                     titleLbl->setFont(QFont("System", 9, QFont::Bold));
                     stepHeader->addWidget(titleLbl, 1);
@@ -774,13 +826,24 @@ void PipelineOverviewWidget::rebuildOverview() {
                     // Unrolled Step filter / mixer names
                     if (!step.names.empty()) {
                         for (const auto& rawN : step.names) {
-                            auto nLbl = new QLabel(QString(" • %1").arg(readableFilterName(rawN, stage)), stepWidget);
+                            auto itemHBox = new QHBoxLayout();
+                            itemHBox->setContentsMargins(12, 0, 0, 0);
+                            itemHBox->setSpacing(4);
+
+                            auto dotLbl = new QLabel("•", stepWidget);
+                            dotLbl->setStyleSheet(QString("color: rgba(%1, 0.8); font-size: 8px;").arg(sColorHex));
+                            itemHBox->addWidget(dotLbl);
+
+                            auto nLbl = new QLabel(readableFilterName(rawN, stage), stepWidget);
                             nLbl->setStyleSheet("color: #8e8e93; font-size: 9px; font-family: monospace;");
-                            stepVBox->addWidget(nLbl);
+                            itemHBox->addWidget(nLbl, 1);
+
+                            stepVBox->addLayout(itemHBox);
                         }
                     } else if (step.name.has_value()) {
                         auto nLbl = new QLabel(readableMixerOrProcessorName(step.name.value(), stage), stepWidget);
-                        nLbl->setStyleSheet("color: #8e8e93; font-size: 9px; font-family: monospace;");
+                        nLbl->setStyleSheet(
+                            "color: #8e8e93; font-size: 9px; font-family: monospace; padding-left: 12px;");
                         stepVBox->addWidget(nLbl);
                     }
 

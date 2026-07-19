@@ -97,6 +97,33 @@ void VSliderWidget::updateValueFromMouse(int y) {
     setValue(newVal);
 }
 
+RotatedLabel::RotatedLabel(const QString& text, QWidget* parent) : QWidget(parent), m_text(text) {
+    setFixedSize(35, 30);
+}
+
+void RotatedLabel::setText(const QString& text) {
+    m_text = text;
+    update();
+}
+
+void RotatedLabel::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setFont(QFont("sans-serif", 9, QFont::Bold));
+    painter.setPen(palette().color(QPalette::Text));
+
+    painter.translate(width() / 2.0, height() / 2.0);
+    painter.rotate(-90);
+
+    QRectF rect(-height() / 2.0, -width() / 2.0, height(), width());
+    painter.drawText(rect, Qt::AlignCenter, m_text);
+}
+
+QSize RotatedLabel::sizeHint() const {
+    return QSize(35, 30);
+}
+
 namespace {
 
 QHBoxLayout* createSliderRow(const QString& labelText, QSlider* slider, QLabel* valueLabel, int labelWidth = 90,
@@ -480,6 +507,7 @@ void StageDetailView::buildStageOptionsUi() {
             auto leftBox = new QVBoxLayout();
             leftBox->addWidget(new QLabel("Left Input", chanGroup));
             auto leftCombo = new QComboBox(chanGroup);
+            leftCombo->setFixedWidth(140);
             if (stage.leftChannel >= incomingChannels) {
                 stage.leftChannel = 0;
             }
@@ -504,6 +532,7 @@ void StageDetailView::buildStageOptionsUi() {
             auto rightBox = new QVBoxLayout();
             rightBox->addWidget(new QLabel("Right Input", chanGroup));
             auto rightCombo = new QComboBox(chanGroup);
+            rightCombo->setFixedWidth(140);
             for (int c = 0; c < incomingChannels; ++c) {
                 rightCombo->addItem(QString("Channel %1").arg(c + 1), c);
             }
@@ -824,6 +853,8 @@ void StageDetailView::buildStageOptionsUi() {
         if (stage.cxCustomEnabled) {
             auto fcSlider = new QSlider(Qt::Horizontal, customGroup);
             fcSlider->setRange(300, 1200);
+            fcSlider->setSingleStep(10);
+            fcSlider->setPageStep(10);
             fcSlider->setValue(static_cast<int>(stage.cxFc));
             auto fcLbl = new QLabel(QString("%1").arg(static_cast<int>(stage.cxFc)), customGroup);
             connect(fcSlider, &QSlider::valueChanged, [this, &stage, fcLbl](int val) {
@@ -955,125 +986,150 @@ void StageDetailView::buildStageOptionsUi() {
     }
 
     case StageType::EQ: {
-        auto eqGroup = new QGroupBox("EQ Preset", m_optionsContainer);
-        auto eqVBox = new QVBoxLayout(eqGroup);
+        if (m_pipeline->eqPresets.empty()) {
+            auto noEqLbl = new QLabel("No EQ presets yet. Create one in the sidebar.", m_optionsContainer);
+            noEqLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+            containerLayout->addWidget(noEqLbl);
+        } else {
+            auto eqGroup = new QGroupBox("EQ Preset", m_optionsContainer);
+            auto eqVBox = new QVBoxLayout(eqGroup);
 
-        auto eqHBox = new QHBoxLayout();
-        eqHBox->addWidget(new QLabel("Preset:", eqGroup));
+            auto eqHBox = new QHBoxLayout();
+            eqHBox->setSpacing(16);
+            auto presetLbl = new QLabel("Preset", eqGroup);
+            presetLbl->setFixedWidth(90);
+            presetLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+            eqHBox->addWidget(presetLbl);
 
-        auto eqCombo = new QComboBox(eqGroup);
-        eqCombo->addItem("None", QString());
-        for (const auto& preset : m_pipeline->eqPresets) {
-            eqCombo->addItem(QString::fromStdString(preset.name), preset.id.toString());
-        }
-        if (stage.eqPresetId.has_value()) {
-            int idx = eqCombo->findData(stage.eqPresetId->toString());
-            if (idx >= 0)
-                eqCombo->setCurrentIndex(idx);
-        }
-        connect(eqCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, eqCombo]() {
-            QString idStr = eqCombo->currentData().toString();
-            if (idStr.isEmpty())
-                stage.eqPresetId = std::nullopt;
-            else
-                stage.eqPresetId = QUuid::fromString(idStr);
-            applyConfig();
-            refreshUi();
-        });
-        eqHBox->addWidget(eqCombo);
-        eqHBox->addStretch();
-        eqVBox->addLayout(eqHBox);
-
-        if (stage.eqPresetId.has_value()) {
-            auto it = std::find_if(m_pipeline->eqPresets.begin(), m_pipeline->eqPresets.end(),
-                                   [&stage](const EQPreset& p) { return p.id == stage.eqPresetId.value(); });
-            if (it != m_pipeline->eqPresets.end()) {
-                auto preampLbl = new QLabel(
-                    QString("Preamp Gain: %1%2 dB").arg(it->preampGain >= 0 ? "+" : "").arg(it->preampGain, 0, 'f', 1),
-                    eqGroup);
-                eqVBox->addWidget(preampLbl);
-
-                auto diagWidget = new EQDiagramWidget(eqGroup);
-                diagWidget->setPreset(*it);
-                diagWidget->setFixedHeight(150);
-                eqVBox->addWidget(diagWidget);
+            auto eqCombo = new QComboBox(eqGroup);
+            eqCombo->setFixedWidth(400);
+            eqCombo->addItem("None", QString());
+            for (const auto& preset : m_pipeline->eqPresets) {
+                eqCombo->addItem(QString::fromStdString(preset.name), preset.id.toString());
             }
+            if (stage.eqPresetId.has_value()) {
+                int idx = eqCombo->findData(stage.eqPresetId->toString());
+                if (idx >= 0)
+                    eqCombo->setCurrentIndex(idx);
+            }
+            connect(eqCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, eqCombo]() {
+                QString idStr = eqCombo->currentData().toString();
+                if (idStr.isEmpty())
+                    stage.eqPresetId = std::nullopt;
+                else
+                    stage.eqPresetId = QUuid::fromString(idStr);
+                applyConfig();
+                refreshUi();
+            });
+            eqHBox->addWidget(eqCombo);
+            eqHBox->addStretch();
+            eqVBox->addLayout(eqHBox);
+
+            if (stage.eqPresetId.has_value()) {
+                auto it = std::find_if(m_pipeline->eqPresets.begin(), m_pipeline->eqPresets.end(),
+                                       [&stage](const EQPreset& p) { return p.id == stage.eqPresetId.value(); });
+                if (it != m_pipeline->eqPresets.end()) {
+                    auto preampLbl = new QLabel(QString("Preamp Gain: %1%2 dB")
+                                                    .arg(it->preampGain >= 0 ? "+" : "")
+                                                    .arg(it->preampGain, 0, 'f', 1),
+                                                eqGroup);
+                    eqVBox->addWidget(preampLbl);
+
+                    auto diagWidget = new EQDiagramWidget(eqGroup);
+                    diagWidget->setPreset(*it);
+                    diagWidget->setFixedHeight(150);
+                    eqVBox->addWidget(diagWidget);
+                }
+            }
+            containerLayout->addWidget(eqGroup);
         }
-        containerLayout->addWidget(eqGroup);
         break;
     }
 
     case StageType::Convolution: {
-        auto convGroup = new QGroupBox("Convolution Preset", m_optionsContainer);
-        auto convVBox = new QVBoxLayout(convGroup);
+        if (m_pipeline->convPresets.empty()) {
+            auto noConvLbl = new QLabel(
+                "No convolution presets yet. Open Room Correction → Generate FIR to create one.", m_optionsContainer);
+            noConvLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+            containerLayout->addWidget(noConvLbl);
+        } else {
+            auto convGroup = new QGroupBox("Convolution Preset", m_optionsContainer);
+            auto convVBox = new QVBoxLayout(convGroup);
 
-        auto convHBox = new QHBoxLayout();
-        convHBox->addWidget(new QLabel("Preset:", convGroup));
+            auto convHBox = new QHBoxLayout();
+            convHBox->setSpacing(16);
+            auto presetLbl = new QLabel("Preset", convGroup);
+            presetLbl->setFixedWidth(90);
+            presetLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+            convHBox->addWidget(presetLbl);
 
-        auto convCombo = new QComboBox(convGroup);
-        convCombo->addItem("None", QString());
-        for (const auto& preset : m_pipeline->convPresets) {
-            convCombo->addItem(QString("%1  %2 · %3 taps")
-                                   .arg(QString::fromStdString(preset.name))
-                                   .arg(QString::fromStdString(preset.kindLabel()))
-                                   .arg(preset.taps),
-                               preset.id.toString());
-        }
-        if (stage.convPresetId.has_value()) {
-            int idx = convCombo->findData(stage.convPresetId->toString());
-            if (idx >= 0)
-                convCombo->setCurrentIndex(idx);
-        }
-        connect(convCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, convCombo]() {
-            QString idStr = convCombo->currentData().toString();
-            if (idStr.isEmpty())
-                stage.convPresetId = std::nullopt;
-            else
-                stage.convPresetId = QUuid::fromString(idStr);
-            applyConfig();
-            refreshUi();
-        });
-        convHBox->addWidget(convCombo);
-        convHBox->addStretch();
-        convVBox->addLayout(convHBox);
+            auto convCombo = new QComboBox(convGroup);
+            convCombo->setFixedWidth(400);
+            convCombo->addItem("None", QString());
+            for (const auto& preset : m_pipeline->convPresets) {
+                convCombo->addItem(QString("%1  %2 · %3 taps")
+                                       .arg(QString::fromStdString(preset.name))
+                                       .arg(QString::fromStdString(preset.kindLabel()))
+                                       .arg(preset.taps),
+                                   preset.id.toString());
+            }
+            if (stage.convPresetId.has_value()) {
+                int idx = convCombo->findData(stage.convPresetId->toString());
+                if (idx >= 0)
+                    convCombo->setCurrentIndex(idx);
+            }
+            connect(convCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, convCombo]() {
+                QString idStr = convCombo->currentData().toString();
+                if (idStr.isEmpty())
+                    stage.convPresetId = std::nullopt;
+                else
+                    stage.convPresetId = QUuid::fromString(idStr);
+                applyConfig();
+                refreshUi();
+            });
+            convHBox->addWidget(convCombo);
+            convHBox->addStretch();
+            convVBox->addLayout(convHBox);
 
-        if (stage.convPresetId.has_value()) {
-            auto it = std::find_if(m_pipeline->convPresets.begin(), m_pipeline->convPresets.end(),
-                                   [&stage](const ConvolutionPreset& p) { return p.id == stage.convPresetId.value(); });
-            if (it != m_pipeline->convPresets.end()) {
-                int sampleRate = (m_dspController && m_dspController->devices())
-                                     ? m_dspController->devices()->captureConfig.sampleRate
-                                     : 48000;
-                auto availableRates = it->availableSampleRates();
-                int effectiveRate = sampleRate;
-                if (!availableRates.empty() &&
-                    std::find(availableRates.begin(), availableRates.end(), sampleRate) == availableRates.end()) {
-                    double targetLog = std::log(static_cast<double>(sampleRate));
-                    effectiveRate =
-                        *std::min_element(availableRates.begin(), availableRates.end(), [targetLog](int a, int b) {
-                            return std::abs(std::log(static_cast<double>(a)) - targetLog) <
-                                   std::abs(std::log(static_cast<double>(b)) - targetLog);
-                        });
-                }
-                auto metaLbl = new QLabel(QString("Kind: %1  |  Taps: %2  |  Rate: %3 Hz  |  Latency: %4 ms")
-                                              .arg(QString::fromStdString(it->kindLabel()))
-                                              .arg(it->taps)
-                                              .arg(effectiveRate)
-                                              .arg(it->latencyMilliseconds(effectiveRate), 0, 'f', 1),
-                                          convGroup);
-                metaLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
-                convVBox->addWidget(metaLbl);
+            if (stage.convPresetId.has_value()) {
+                auto it =
+                    std::find_if(m_pipeline->convPresets.begin(), m_pipeline->convPresets.end(),
+                                 [&stage](const ConvolutionPreset& p) { return p.id == stage.convPresetId.value(); });
+                if (it != m_pipeline->convPresets.end()) {
+                    int sampleRate = (m_dspController && m_dspController->devices())
+                                         ? m_dspController->devices()->captureConfig.sampleRate
+                                         : 48000;
+                    auto availableRates = it->availableSampleRates();
+                    int effectiveRate = sampleRate;
+                    if (!availableRates.empty() &&
+                        std::find(availableRates.begin(), availableRates.end(), sampleRate) == availableRates.end()) {
+                        double targetLog = std::log(static_cast<double>(sampleRate));
+                        effectiveRate =
+                            *std::min_element(availableRates.begin(), availableRates.end(), [targetLog](int a, int b) {
+                                return std::abs(std::log(static_cast<double>(a)) - targetLog) <
+                                       std::abs(std::log(static_cast<double>(b)) - targetLog);
+                            });
+                    }
+                    auto metaLbl = new QLabel(QString("Kind: %1  |  Taps: %2  |  Rate: %3 Hz  |  Latency: %4 ms")
+                                                  .arg(QString::fromStdString(it->kindLabel()))
+                                                  .arg(it->taps)
+                                                  .arg(effectiveRate)
+                                                  .arg(it->latencyMilliseconds(effectiveRate), 0, 'f', 1),
+                                              convGroup);
+                    metaLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+                    convVBox->addWidget(metaLbl);
 
-                std::string irPath = it->irPath(effectiveRate);
-                if (!irPath.empty()) {
-                    auto plot = new ConvolutionIRPlot(convGroup);
-                    plot->setIRPath(irPath);
-                    plot->setFixedHeight(110);
-                    convVBox->addWidget(plot);
+                    std::string irPath = it->irPath(effectiveRate);
+                    if (!irPath.empty()) {
+                        auto plot = new ConvolutionIRPlot(convGroup);
+                        plot->setIRPath(irPath);
+                        plot->setFixedHeight(110);
+                        convVBox->addWidget(plot);
+                    }
                 }
             }
+            containerLayout->addWidget(convGroup);
         }
-        containerLayout->addWidget(convGroup);
         break;
     }
 
@@ -1569,6 +1625,8 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto relSlider = new QSlider(Qt::Horizontal, compGroup);
         relSlider->setRange(5, 1000);
+        relSlider->setSingleStep(5);
+        relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.compressorRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.compressorRelease)), compGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
@@ -1725,6 +1783,8 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto relSlider = new QSlider(Qt::Horizontal, gateGroup);
         relSlider->setRange(5, 1000);
+        relSlider->setSingleStep(5);
+        relSlider->setPageStep(5);
         relSlider->setValue(static_cast<int>(stage.gateRelease));
         auto relLbl = new QLabel(QString("%1 ms").arg(static_cast<int>(stage.gateRelease)), gateGroup);
         connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
@@ -2058,10 +2118,18 @@ void StageDetailView::buildStageOptionsUi() {
 
     case StageType::BiquadCombo: {
         auto comboGroup = new QGroupBox("Biquad Combo / Crossovers", m_optionsContainer);
-        auto formLayout = new QFormLayout(comboGroup);
-        formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        auto comboVBox = new QVBoxLayout(comboGroup);
+        comboVBox->setSpacing(12);
+
+        auto typeHBox = new QHBoxLayout();
+        typeHBox->setSpacing(16);
+        auto typeLbl = new QLabel("Combo Type", comboGroup);
+        typeLbl->setFixedWidth(90);
+        typeLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+        typeHBox->addWidget(typeLbl);
 
         auto typeCombo = new QComboBox(comboGroup);
+        typeCombo->setFixedWidth(220);
         typeCombo->addItem("Butterworth Lowpass", static_cast<int>(BiquadComboType::ButterworthLowpass));
         typeCombo->addItem("Butterworth Highpass", static_cast<int>(BiquadComboType::ButterworthHighpass));
         typeCombo->addItem("Linkwitz-Riley Lowpass", static_cast<int>(BiquadComboType::LinkwitzRileyLowpass));
@@ -2076,42 +2144,38 @@ void StageDetailView::buildStageOptionsUi() {
             applyConfig();
             refreshUi();
         });
-        formLayout->addRow("Combo Type:", typeCombo);
+        typeHBox->addWidget(typeCombo);
+        typeHBox->addStretch();
+        comboVBox->addLayout(typeHBox);
 
         if (stage.comboType != BiquadComboType::FivePointPeq) {
             auto freqSlider = new QSlider(Qt::Horizontal, comboGroup);
-            const double minLog = std::log10(20.0);
-            const double maxLog = std::log10(20000.0);
-            freqSlider->setRange(0, 1000);
-
-            double curFreq = std::clamp(stage.comboFreq, 20.0, 20000.0);
-            int curLogVal = static_cast<int>(std::round((std::log10(curFreq) - minLog) / (maxLog - minLog) * 1000.0));
-            freqSlider->setValue(curLogVal);
+            freqSlider->setRange(20, 20000);
+            freqSlider->setValue(static_cast<int>(stage.comboFreq));
 
             auto freqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)), comboGroup);
-            freqLbl->setFixedWidth(65);
-            freqLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            freqLbl->setFont(QFont("monospace", 11));
-
-            connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl, minLog, maxLog](int val) {
-                double norm = static_cast<double>(val) / 1000.0;
-                double freq = std::pow(10.0, minLog + norm * (maxLog - minLog));
-                stage.comboFreq = std::round(freq);
-                freqLbl->setText(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)));
+            connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl](int val) {
+                stage.comboFreq = val;
+                freqLbl->setText(QString("%1 Hz").arg(val));
                 applyConfig();
             });
 
-            auto freqBox = new QHBoxLayout();
-            freqBox->addWidget(freqSlider);
-            freqBox->addWidget(freqLbl);
-            formLayout->addRow("Frequency:", freqBox);
+            comboVBox->addLayout(createSliderRow("Frequency", freqSlider, freqLbl, 90, 75));
         }
 
         if (stage.comboType == BiquadComboType::ButterworthLowpass ||
             stage.comboType == BiquadComboType::ButterworthHighpass ||
             stage.comboType == BiquadComboType::LinkwitzRileyLowpass ||
             stage.comboType == BiquadComboType::LinkwitzRileyHighpass) {
+            auto orderHBox = new QHBoxLayout();
+            orderHBox->setSpacing(16);
+            auto orderLbl = new QLabel("Filter Order", comboGroup);
+            orderLbl->setFixedWidth(90);
+            orderLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
+            orderHBox->addWidget(orderLbl);
+
             auto orderCombo = new QComboBox(comboGroup);
+            orderCombo->setFixedWidth(200);
             orderCombo->addItem("2nd Order (12 dB/oct)", 2);
             orderCombo->addItem("4th Order (24 dB/oct)", 4);
             orderCombo->addItem("6th Order (36 dB/oct)", 6);
@@ -2123,7 +2187,9 @@ void StageDetailView::buildStageOptionsUi() {
                         stage.comboOrder = orderCombo->itemData(index).toInt();
                         applyConfig();
                     });
-            formLayout->addRow("Filter Order:", orderCombo);
+            orderHBox->addWidget(orderCombo);
+            orderHBox->addStretch();
+            comboVBox->addLayout(orderHBox);
         }
 
         if (stage.comboType == BiquadComboType::Tilt) {
@@ -2132,38 +2198,42 @@ void StageDetailView::buildStageOptionsUi() {
             gainSlider->setValue(static_cast<int>(stage.comboGain * 10.0));
             auto gainLbl = new QLabel(
                 QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1), comboGroup);
-            gainLbl->setFixedWidth(65);
-            gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            gainLbl->setFont(QFont("monospace", 11));
             connect(gainSlider, &QSlider::valueChanged, [this, &stage, gainLbl](int val) {
                 stage.comboGain = val / 10.0;
                 gainLbl->setText(
                     QString("%1%2 dB").arg(stage.comboGain >= 0 ? "+" : "").arg(stage.comboGain, 0, 'f', 1));
                 applyConfig();
             });
-            auto gainBox = new QHBoxLayout();
-            gainBox->addWidget(gainSlider);
-            gainBox->addWidget(gainLbl);
-            formLayout->addRow("Gain:", gainBox);
+            comboVBox->addLayout(createSliderRow("Gain", gainSlider, gainLbl, 90, 75));
         }
 
         if (stage.comboType == BiquadComboType::FivePointPeq) {
             auto peqGroup = new QGroupBox("5-Point Parametric EQ", comboGroup);
             auto peqGrid = new QGridLayout(peqGroup);
-            peqGrid->addWidget(new QLabel("Band", peqGroup), 0, 0);
-            peqGrid->addWidget(new QLabel("Frequency (Hz)", peqGroup), 0, 1);
-            peqGrid->addWidget(new QLabel("Gain (dB)", peqGroup), 0, 2);
-            peqGrid->addWidget(new QLabel("Q", peqGroup), 0, 3);
+            auto hdr1 = new QLabel("Band", peqGroup);
+            hdr1->setStyleSheet("color: #8e8e93; font-size: 11px;");
+            auto hdr2 = new QLabel("Frequency (Hz)", peqGroup);
+            hdr2->setStyleSheet("color: #8e8e93; font-size: 11px;");
+            auto hdr3 = new QLabel("Gain (dB)", peqGroup);
+            hdr3->setStyleSheet("color: #8e8e93; font-size: 11px;");
+            auto hdr4 = new QLabel("Q", peqGroup);
+            hdr4->setStyleSheet("color: #8e8e93; font-size: 11px;");
+            peqGrid->addWidget(hdr1, 0, 0);
+            peqGrid->addWidget(hdr2, 0, 1);
+            peqGrid->addWidget(hdr3, 0, 2);
+            peqGrid->addWidget(hdr4, 0, 3);
 
             auto addRow = [this, peqGroup, peqGrid](int r, const QString& name, double* f, double* g, double* q) {
-                peqGrid->addWidget(new QLabel(name, peqGroup), r, 0);
+                auto nameLbl = new QLabel(name, peqGroup);
+                nameLbl->setStyleSheet("font-size: 11px;");
+                peqGrid->addWidget(nameLbl, r, 0);
 
                 auto fSpin = new QDoubleSpinBox(peqGroup);
                 fSpin->setRange(20.0, 20000.0);
                 fSpin->setSingleStep(10.0);
                 fSpin->setDecimals(1);
                 fSpin->setValue(*f);
-                fSpin->setFixedWidth(90);
+                fSpin->setFixedWidth(80);
                 connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, f](double val) {
                     *f = val;
                     applyConfig();
@@ -2175,7 +2245,7 @@ void StageDetailView::buildStageOptionsUi() {
                 gSpin->setSingleStep(0.5);
                 gSpin->setDecimals(1);
                 gSpin->setValue(*g);
-                gSpin->setFixedWidth(80);
+                gSpin->setFixedWidth(60);
                 connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, g](double val) {
                     *g = val;
                     applyConfig();
@@ -2187,7 +2257,7 @@ void StageDetailView::buildStageOptionsUi() {
                 qSpin->setSingleStep(0.05);
                 qSpin->setDecimals(3);
                 qSpin->setValue(*q);
-                qSpin->setFixedWidth(80);
+                qSpin->setFixedWidth(60);
                 connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, q](double val) {
                     *q = val;
                     applyConfig();
@@ -2201,7 +2271,7 @@ void StageDetailView::buildStageOptionsUi() {
             addRow(4, "PEQ 3", &stage.peqF3, &stage.peqG3, &stage.peqQ3);
             addRow(5, "High Shelf", &stage.peqFhs, &stage.peqGhs, &stage.peqQhs);
 
-            formLayout->addRow(peqGroup);
+            comboVBox->addWidget(peqGroup);
         }
 
         containerLayout->addWidget(comboGroup);
@@ -2215,10 +2285,12 @@ void StageDetailView::buildStageOptionsUi() {
         auto topHBox = new QHBoxLayout();
 
         auto rangeBox = new QVBoxLayout();
-        rangeBox->addWidget(new QLabel("Frequency Range", geqGroup));
+        auto rangeHdr = new QLabel("Frequency Range", geqGroup);
+        rangeHdr->setStyleSheet("color: #8e8e93; font-size: 11px;");
+        rangeBox->addWidget(rangeHdr);
         auto rangeHBox = new QHBoxLayout();
         auto minEdit = new QLineEdit(QString::number(stage.graphicEQFreqMin), geqGroup);
-        minEdit->setFixedWidth(60);
+        minEdit->setFixedWidth(70);
         connect(minEdit, &QLineEdit::editingFinished, [this, &stage, minEdit]() {
             stage.graphicEQFreqMin = minEdit->text().toDouble();
             applyConfig();
@@ -2227,7 +2299,7 @@ void StageDetailView::buildStageOptionsUi() {
         rangeHBox->addWidget(minEdit);
         rangeHBox->addWidget(new QLabel("to", geqGroup));
         auto maxEdit = new QLineEdit(QString::number(stage.graphicEQFreqMax), geqGroup);
-        maxEdit->setFixedWidth(70);
+        maxEdit->setFixedWidth(80);
         connect(maxEdit, &QLineEdit::editingFinished, [this, &stage, maxEdit]() {
             stage.graphicEQFreqMax = maxEdit->text().toDouble();
             applyConfig();
@@ -2239,7 +2311,9 @@ void StageDetailView::buildStageOptionsUi() {
         topHBox->addLayout(rangeBox);
 
         auto bandsBox = new QVBoxLayout();
-        bandsBox->addWidget(new QLabel("Bands", geqGroup));
+        auto bandsHdr = new QLabel("Bands", geqGroup);
+        bandsHdr->setStyleSheet("color: #8e8e93; font-size: 11px;");
+        bandsBox->addWidget(bandsHdr);
         auto spinBands = new QSpinBox(geqGroup);
         spinBands->setRange(2, 64);
         spinBands->setValue(stage.graphicEQBandCount);
@@ -2256,15 +2330,16 @@ void StageDetailView::buildStageOptionsUi() {
 
         topHBox->addStretch();
         geqVBox->addLayout(topHBox);
+        geqVBox->addWidget(createHDivider());
 
-        // Scrollable Slider Bank for 31-band ISO frequencies
+        // Scrollable Slider Bank
         auto scrollBank = new QScrollArea(geqGroup);
         scrollBank->setWidgetResizable(true);
-        scrollBank->setFixedHeight(220);
+        scrollBank->setFixedHeight(240);
 
         auto bankContainer = new QWidget(scrollBank);
         auto bankLayout = new QHBoxLayout(bankContainer);
-        bankLayout->setSpacing(8);
+        bankLayout->setSpacing(14);
         bankLayout->setContentsMargins(4, 4, 4, 4);
 
         int totalBands = stage.graphicEQBandCount;
@@ -2295,27 +2370,19 @@ void StageDetailView::buildStageOptionsUi() {
             }
         };
 
-        static const char* const iso31Labels[31] = {"20",  "25",   "31.5",  "40",   "50",    "63",   "80",    "100",
-                                                    "125", "160",  "200",   "250",  "315",   "400",  "500",   "630",
-                                                    "800", "1k",   "1.25k", "1.6k", "2k",    "2.5k", "3.15k", "4k",
-                                                    "5k",  "6.3k", "8k",    "10k",  "12.5k", "16k",  "20k"};
-
         for (int b = 0; b < totalBands; ++b) {
-            QString fText;
-            if (totalBands == 31 && std::abs(stage.graphicEQFreqMin - 20.0) < 1e-3 &&
-                std::abs(stage.graphicEQFreqMax - 20000.0) < 1e-3) {
-                fText = QString(iso31Labels[b]);
-            } else {
-                double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
-                fText = freqLabelText(freq);
-            }
+            double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
+            QString fText = freqLabelText(freq);
 
             auto bVBox = new QVBoxLayout();
-            bVBox->setSpacing(4);
+            bVBox->setSpacing(8);
+            bVBox->setAlignment(Qt::AlignCenter);
 
             auto gainValLbl = new QLabel(QString("%1").arg(stage.graphicEQGains[b], 0, 'f', 1), bankContainer);
-            gainValLbl->setFont(QFont("monospace", 8));
+            gainValLbl->setFont(QFont("monospace", 9));
+            gainValLbl->setFixedWidth(35);
             gainValLbl->setAlignment(Qt::AlignCenter);
+            gainValLbl->setStyleSheet("color: #8e8e93;");
             bVBox->addWidget(gainValLbl);
 
             auto slider = new VSliderWidget(stage.graphicEQGains[b], -40.0, 40.0, bankContainer);
@@ -2326,10 +2393,8 @@ void StageDetailView::buildStageOptionsUi() {
             });
             bVBox->addWidget(slider, 0, Qt::AlignCenter);
 
-            auto fLbl = new QLabel(fText, bankContainer);
-            fLbl->setFont(QFont("sans-serif", 8, QFont::Bold));
-            fLbl->setAlignment(Qt::AlignCenter);
-            bVBox->addWidget(fLbl);
+            auto fLbl = new RotatedLabel(fText, bankContainer);
+            bVBox->addWidget(fLbl, 0, Qt::AlignCenter);
 
             bankLayout->addLayout(bVBox);
         }
@@ -2337,7 +2402,7 @@ void StageDetailView::buildStageOptionsUi() {
         scrollBank->setWidget(bankContainer);
         geqVBox->addWidget(scrollBank);
 
-        auto resetGainsBtn = new QPushButton("Reset All Bands to 0 dB", geqGroup);
+        auto resetGainsBtn = new QPushButton("Reset All to 0 dB", geqGroup);
         connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
             stage.graphicEQGains.assign(stage.graphicEQBandCount, 0.0);
             applyConfig();

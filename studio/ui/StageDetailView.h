@@ -42,6 +42,20 @@ private:
     void updateValueFromMouse(int y);
 };
 
+class RotatedLabel : public QWidget {
+    Q_OBJECT
+public:
+    explicit RotatedLabel(const QString& text = "", QWidget* parent = nullptr);
+    void setText(const QString& text);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    QSize sizeHint() const override;
+
+private:
+    QString m_text;
+};
+
 class StageDetailView : public QWidget {
     Q_OBJECT
 

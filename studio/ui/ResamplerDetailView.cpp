@@ -29,7 +29,7 @@ void ResamplerDetailView::setupUi() {
     headerBox->addWidget(new QLabel("Sample Rate Converter", this));
     headerBox->addStretch();
 
-    m_enabledCheck = new QCheckBox("Enable Resampler", this);
+    m_enabledCheck = new QCheckBox("Enabled", this);
     connect(m_enabledCheck, &QCheckBox::toggled, [this](bool checked) {
         m_settings->resamplerEnabled = checked;
         applySettings();
@@ -40,20 +40,24 @@ void ResamplerDetailView::setupUi() {
     headerBox->addWidget(m_enabledCheck);
     mainLayout->addLayout(headerBox);
 
-    auto container = this;
-    m_typeGroup = new QGroupBox("Resampler Type & Parameters", container);
+    m_contentWidget = new QWidget(this);
+    auto contentLayout = new QVBoxLayout(m_contentWidget);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(20);
+
+    m_typeGroup = new QGroupBox("Resampler Type", m_contentWidget);
     m_typeForm = new QFormLayout(m_typeGroup);
     m_typeForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_typeCombo = new QComboBox(m_typeGroup);
-    m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly"});
+    m_typeCombo->addItems({"AsyncSinc", "AsyncPoly", "Synchronous"});
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
         updateVisibility();
         applySettings();
     });
     m_typeForm->addRow("Type:", m_typeCombo);
 
-    m_useProfileCheck = new QCheckBox("Use Quality Profile", m_typeGroup);
+    m_useProfileCheck = new QCheckBox("Use Profile", m_typeGroup);
     connect(m_useProfileCheck, &QCheckBox::toggled, [this]() {
         updateVisibility();
         applySettings();
@@ -119,31 +123,32 @@ void ResamplerDetailView::setupUi() {
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
     m_typeForm->addRow("Interp:", m_polyInterpCombo);
 
-    mainLayout->addWidget(m_typeGroup);
+    contentLayout->addWidget(m_typeGroup);
 
     // Sample Rates Info Card
-    auto ratesGroup = new QGroupBox("Sample Rates", container);
+    auto ratesGroup = new QGroupBox("Sample Rates", m_contentWidget);
     auto ratesForm = new QFormLayout(ratesGroup);
 
     m_capRateLabel = new QLabel("44.1 kHz", ratesGroup);
-    ratesForm->addRow("Capture Sample Rate:", m_capRateLabel);
+    ratesForm->addRow("Capture:", m_capRateLabel);
 
     m_pbRateLabel = new QLabel("48.0 kHz", ratesGroup);
-    ratesForm->addRow("Playback Sample Rate:", m_pbRateLabel);
+    ratesForm->addRow("Playback:", m_pbRateLabel);
 
-    m_ratioLabel = new QLabel("Conversion Ratio: 1.0884", ratesGroup);
+    m_ratioLabel = new QLabel("Conversion ratio: 1.0884", ratesGroup);
     m_ratioLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     ratesForm->addRow("", m_ratioLabel);
 
-    mainLayout->addWidget(ratesGroup);
+    contentLayout->addWidget(ratesGroup);
 
     auto footnoteLbl = new QLabel(
         "Resamples audio between capture and playback sample rates. Configure sample rates in the Devices page.",
-        container);
+        m_contentWidget);
     footnoteLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     footnoteLbl->setWordWrap(true);
-    mainLayout->addWidget(footnoteLbl);
+    contentLayout->addWidget(footnoteLbl);
 
+    mainLayout->addWidget(m_contentWidget);
     mainLayout->addStretch();
 }
 
@@ -167,14 +172,15 @@ void ResamplerDetailView::updateVisibility() {
 
     m_typeForm->setRowVisible(m_polyInterpCombo, isAsyncPoly);
 
-    if (m_typeGroup && m_settings) {
-        m_typeGroup->setEnabled(true);
-        if (!m_settings->resamplerEnabled) {
-            auto opacityEffect = new QGraphicsOpacityEffect(m_typeGroup);
+    if (m_contentWidget && m_settings) {
+        bool enabled = m_settings->resamplerEnabled;
+        m_contentWidget->setEnabled(enabled);
+        if (!enabled) {
+            auto opacityEffect = new QGraphicsOpacityEffect(m_contentWidget);
             opacityEffect->setOpacity(0.5);
-            m_typeGroup->setGraphicsEffect(opacityEffect);
+            m_contentWidget->setGraphicsEffect(opacityEffect);
         } else {
-            m_typeGroup->setGraphicsEffect(nullptr);
+            m_contentWidget->setGraphicsEffect(nullptr);
         }
     }
 }
@@ -199,7 +205,7 @@ void ResamplerDetailView::refreshUi() {
 
     m_typeCombo->blockSignals(true);
     m_typeCombo->clear();
-    m_typeCombo->addItems({"Synchronous", "AsyncSinc", "AsyncPoly"});
+    m_typeCombo->addItems({"AsyncSinc", "AsyncPoly", "Synchronous"});
     if (allowSlip) {
         m_typeCombo->addItem("Slip");
     }
@@ -238,7 +244,7 @@ void ResamplerDetailView::refreshUi() {
         m_pbRateLabel->setText(pbRate >= 1000 ? QString("%1 kHz").arg(pbRate / 1000.0, 0, 'f', 1)
                                               : QString("%1 Hz").arg(pbRate));
         double ratio = static_cast<double>(pbRate) / static_cast<double>(capRate);
-        m_ratioLabel->setText(QString("Conversion Ratio: %1").arg(ratio, 0, 'f', 4));
+        m_ratioLabel->setText(QString("Conversion ratio: %1").arg(ratio, 0, 'f', 4));
     }
 
     updateVisibility();

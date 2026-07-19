@@ -75,7 +75,10 @@ private:
     void rebuildLegendBar(int maxChannels);
     void updateLegendPillStyle(QObject* obj, int ch, bool hovered);
 
+    QIcon createChannelDotIcon(int ch, bool hovered) const;
     QString categoryColorHex(StageCategory cat) const;
+    QString stepTypeColorHex(PipelineStepType type) const;
+    QString stepTypeTitle(PipelineStepType type) const;
     QString formatSampleRate(int rate) const;
     QString readableFilterName(const std::string& rawName, const PipelineStage& stage) const;
     QString readableMixerOrProcessorName(const std::string& rawName, const PipelineStage& stage) const;
