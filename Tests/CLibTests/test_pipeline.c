@@ -102,7 +102,7 @@ TEST(PipelineMultithreadedCorrectness) {
   memset(filters, 0, sizeof(filters));
 
   for (int i = 0; i < 4; i++) {
-    sprintf(filters[i].name, "gain_%d", i + 1);
+    snprintf(filters[i].name, sizeof(filters[i].name), "gain_%d", i + 1);
     filters[i].filter.type = FILTER_TYPE_GAIN;
     filters[i].filter.parameters.gain.gain = -3.0 * (i + 1);
     filters[i].filter.parameters.gain.has_gain = true;

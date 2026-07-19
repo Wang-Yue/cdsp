@@ -1212,7 +1212,7 @@ TEST(Pipeline_AllocationFree) {
   memset(filters, 0, sizeof(filters));
 
   for (int i = 0; i < 8; i++) {
-    sprintf(filters[i].name, "bq_%d", i + 1);
+    snprintf(filters[i].name, sizeof(filters[i].name), "bq_%d", i + 1);
     filters[i].filter.type = FILTER_TYPE_BIQUAD;
     filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[i].filter.parameters.biquad.freq = 1000.0 * (i + 1);

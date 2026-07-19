@@ -187,7 +187,7 @@ TEST(Pipeline_Biquads_Benchmark) {
 
   char* pre_names[16];
   for (int i = 0; i < 16; i++) {
-    sprintf(filters[i].name, "pre_bq_%d", i + 1);
+    snprintf(filters[i].name, sizeof(filters[i].name), "pre_bq_%d", i + 1);
     filters[i].filter.type = FILTER_TYPE_BIQUAD;
     filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[i].filter.parameters.biquad.freq = pre_bq_freqs[i];
@@ -198,7 +198,7 @@ TEST(Pipeline_Biquads_Benchmark) {
 
   char* post_names[16];
   for (int i = 0; i < 16; i++) {
-    sprintf(filters[16 + i].name, "post_bq_%d", i + 1);
+    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d", i + 1);
     filters[16 + i].filter.type = FILTER_TYPE_BIQUAD;
     filters[16 + i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[16 + i].filter.parameters.biquad.freq = post_bq_freqs[i];
@@ -328,7 +328,7 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
 
   char* pre_names[18];
   for (int i = 0; i < 16; i++) {
-    sprintf(filters[i].name, "pre_bq_%d", i + 1);
+    snprintf(filters[i].name, sizeof(filters[i].name), "pre_bq_%d", i + 1);
     filters[i].filter.type = FILTER_TYPE_BIQUAD;
     filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[i].filter.parameters.biquad.freq = pre_bq_freqs[i];
@@ -339,7 +339,7 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
 
   char* post_names[18];
   for (int i = 0; i < 16; i++) {
-    sprintf(filters[16 + i].name, "post_bq_%d", i + 1);
+    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d", i + 1);
     filters[16 + i].filter.type = FILTER_TYPE_BIQUAD;
     filters[16 + i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[16 + i].filter.parameters.biquad.freq = post_bq_freqs[i];
