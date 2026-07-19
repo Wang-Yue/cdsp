@@ -22,9 +22,6 @@ OverviewCanvasWidget::OverviewCanvasWidget(PipelineOverviewWidget* owner, QWidge
 
 void OverviewCanvasWidget::paintEvent(QPaintEvent* event) {
     QWidget::paintEvent(event);
-    if (m_owner) {
-        m_owner->paintCanvasWires(this);
-    }
 }
 
 PipelineOverviewWidget::PipelineOverviewWidget(std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
@@ -59,7 +56,7 @@ void PipelineOverviewWidget::setupUi() {
     titleVBox->setSpacing(2);
 
     auto topTitleRow = new QHBoxLayout();
-    m_headerTitle = new QLabel("📐 Signal Chain", this);
+    m_headerTitle = new QLabel("Signal Chain", this);
     m_headerTitle->setFont(QFont("System", 13, QFont::Bold));
     topTitleRow->addWidget(m_headerTitle);
 
@@ -80,10 +77,10 @@ void PipelineOverviewWidget::setupUi() {
     headerBox->addLayout(titleVBox, 1);
 
     // Categorized Add Stage Menu Button
-    m_addStageBtn = new QPushButton("➕ Add Stage…", this);
+    m_addStageBtn = new QPushButton("Add Stage…", this);
     m_addStageBtn->setCursor(Qt::PointingHandCursor);
     m_addStageBtn->setStyleSheet("background: rgba(0, 122, 255, 0.15); color: #007aff; border: none; "
-                                 "border-radius: 12px; padding: 4px 10px; font-size: 11px; font-weight: bold;");
+                                 "border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;");
     headerBox->addWidget(m_addStageBtn, 0, Qt::AlignVCenter);
 
     buildAddStageMenu();
@@ -578,9 +575,10 @@ void PipelineOverviewWidget::rebuildOverview() {
     auto createNodeCard = [this, isRunning](const QString& title, const QString& subtitle, const QString& iconStr,
                                             const QString& colorHex, bool isActive, bool isWarning = false) {
         auto card = new QWidget(m_canvasWidget);
+        card->setObjectName("GraphNodeCard");
         card->setFixedWidth(210);
         card->setStyleSheet(
-            QString("QWidget { background: %1; border: %2 solid %3; border-radius: 10px; }")
+            QString("QWidget#GraphNodeCard { background: %1; border: %2 solid %3; border-radius: 10px; }")
                 .arg(isWarning ? "rgba(255, 59, 48, 0.08)"
                                : (isActive ? QString("rgba(%1, 0.06)").arg(colorHex) : "rgba(142, 142, 147, 0.04)"))
                 .arg(isWarning ? "1.5px" : "1.0px")
@@ -608,11 +606,12 @@ void PipelineOverviewWidget::rebuildOverview() {
         titleVBox->setSpacing(1);
         auto titleLbl = new QLabel(title, card);
         titleLbl->setFont(QFont("System", 12, QFont::Bold));
-        titleLbl->setStyleSheet(isWarning ? "color: #ff3b30;" : "color: auto;");
+        titleLbl->setStyleSheet(isWarning ? "color: #ff3b30;"
+                                          : QString("color: %1;").arg(StyleTheme::textPrimary().name()));
         titleVBox->addWidget(titleLbl);
 
         auto subLbl = new QLabel(subtitle, card);
-        subLbl->setStyleSheet("color: #8e8e93; font-size: 10px;");
+        subLbl->setStyleSheet(QString("color: %1; font-size: 10px;").arg(StyleTheme::textSecondary().name()));
         titleVBox->addWidget(subLbl);
 
         headerRow->addLayout(titleVBox, 1);
@@ -733,9 +732,11 @@ void PipelineOverviewWidget::rebuildOverview() {
                 for (const auto& step : stepsRes.steps) {
                     QString sColorHex = stepTypeColorHex(step.type);
                     auto stepWidget = new QWidget(stCard);
-                    stepWidget->setStyleSheet(QString("QWidget { background: rgba(%1, 0.08); border-radius: 6px; "
-                                                      "border: 1px solid rgba(%1, 0.2); }")
-                                                  .arg(sColorHex));
+                    stepWidget->setObjectName("ElementaryStepWidget");
+                    stepWidget->setStyleSheet(
+                        QString("QWidget#ElementaryStepWidget { background: rgba(%1, 0.08); border-radius: 6px; "
+                                "border: 1px solid rgba(%1, 0.2); }")
+                            .arg(sColorHex));
                     auto stepVBox = new QVBoxLayout(stepWidget);
                     stepVBox->setContentsMargins(6, 4, 6, 4);
                     stepVBox->setSpacing(2);
@@ -862,9 +863,11 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveLeftBtn->setEnabled(i > 0);
             moveLeftBtn->setCursor(i > 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
             moveLeftBtn->setStyleSheet(
-                "QPushButton { background: rgba(142, 142, 147, 0.15); color: #ffffff; border: none; border-radius: "
-                "4px; font-size: 9px; }"
-                "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: #555555; }");
+                QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
+                        "4px; font-size: 9px; }"
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; }")
+                    .arg(StyleTheme::textPrimary().name())
+                    .arg(StyleTheme::textSecondary().name()));
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->moveStage(static_cast<int>(i), static_cast<int>(i - 1));
@@ -880,9 +883,11 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveRightBtn->setEnabled(i + 1 < pipe->stages.size());
             moveRightBtn->setCursor(i + 1 < pipe->stages.size() ? Qt::PointingHandCursor : Qt::ArrowCursor);
             moveRightBtn->setStyleSheet(
-                "QPushButton { background: rgba(142, 142, 147, 0.15); color: #ffffff; border: none; border-radius: "
-                "4px; font-size: 9px; }"
-                "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: #555555; }");
+                QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
+                        "4px; font-size: 9px; }"
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; }")
+                    .arg(StyleTheme::textPrimary().name())
+                    .arg(StyleTheme::textSecondary().name()));
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->moveStage(static_cast<int>(i), static_cast<int>(i + 1));
