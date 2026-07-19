@@ -9,9 +9,10 @@
 #include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.generator"};
+#include <stdatomic.h>
 
 #ifdef CDSP_TEST
-volatile bool g_generator_mock_hang = false;
+_Atomic bool g_generator_mock_hang = false;
 #endif
 
 #ifndef M_PI
@@ -96,8 +97,8 @@ static bool generator_capture_read(void* ctx, size_t frames,
   generator_capture_t* capture = (generator_capture_t*)ctx;
   if (!capture) return false;
 #ifdef CDSP_TEST
-  if (g_generator_mock_hang) {
-    while (g_generator_mock_hang) {
+  if (atomic_load_explicit(&g_generator_mock_hang, memory_order_relaxed)) {
+    while (atomic_load_explicit(&g_generator_mock_hang, memory_order_relaxed)) {
       cdsp_sleep_ms(10);
     }
     audio_chunk_set_valid_frames(chunk, 0);

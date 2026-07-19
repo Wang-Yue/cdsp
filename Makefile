@@ -277,6 +277,12 @@ test: test-rust-build $(UNIT_TEST_BINS)
 
 SAN_BASE_CFLAGS := $(filter-out -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O1 -g -fno-omit-frame-pointer
 
+# NOTE: On macOS (Apple Silicon ARM64), Apple Clang (/usr/bin/clang) has a known dynamic runtime
+# initializer deadlock/crash bug in libclang_rt.asan_osx_dynamic.dylib and libclang_rt.tsan_osx_dynamic.dylib.
+# Do NOT use Xcode Apple Clang for sanitizer runs. Use Homebrew LLVM Clang instead:
+#   CC=/opt/homebrew/opt/llvm/bin/clang make test-asan
+#   CC=/opt/homebrew/opt/llvm/bin/clang make test-tsan
+
 .PHONY: test-asan test-tsan
 test-asan:
 	@echo "\n🩺 Running Unit Tests under AddressSanitizer & UndefinedBehaviorSanitizer...\n"

@@ -1383,7 +1383,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
   remove(out_file);
 }
 
-extern volatile bool g_generator_mock_hang;
+extern _Atomic bool g_generator_mock_hang;
 extern volatile int g_pipeline_swaps_count;
 
 // Real-world scenario simulated:
@@ -1392,7 +1392,7 @@ extern volatile int g_pipeline_swaps_count;
 // running on the main controller thread successfully flags the engine state as
 // STALLED instead of remaining stuck in RUNNING.
 TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
-  g_generator_mock_hang = false;
+  atomic_store_explicit(&g_generator_mock_hang, false, memory_order_relaxed);
 
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/watchdog_hang_out_%d.raw",
@@ -1445,7 +1445,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   ASSERT_TRUE(started);
 
   // Trigger the infinite hang in the capture thread
-  g_generator_mock_hang = true;
+  atomic_store_explicit(&g_generator_mock_hang, true, memory_order_relaxed);
 
   // Poll engine to detect watchdog stall
   bool stalled = false;
@@ -1462,7 +1462,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
   ASSERT_TRUE(stalled);
 
   // Release the mock hang so the thread can exit cleanly
-  g_generator_mock_hang = false;
+  atomic_store_explicit(&g_generator_mock_hang, false, memory_order_relaxed);
   cdsp_sleep_ms(50);
 
   cdsp_stop(engine);
