@@ -2,10 +2,12 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
-#include <QMessageBox>
-#include <QRegularExpression>
+#include <QPointer>
 #include <QVBoxLayout>
+#include <algorithm>
 
 AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline,
                                  std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
@@ -13,127 +15,217 @@ AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline,
     setWindowTitle("AutoEQ Database");
     resize(500, 600);
     setupUi();
-    loadIndex(false);
+    loadDatabase(false);
 }
 
 void AutoEqPickerDlg::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    auto headerTitle = new QLabel("AutoEQ Database", this);
+    // Top Header: HStack(spacing: 16) with padding 16
+    auto headerWidget = new QWidget(this);
+    auto headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->setContentsMargins(16, 16, 16, 16);
+    headerLayout->setSpacing(16);
+
+    auto headerTitle = new QLabel("AutoEQ Database", headerWidget);
     headerTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
-    mainLayout->addWidget(headerTitle);
+    headerTitle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    headerLayout->addWidget(headerTitle);
 
-    auto searchLayout = new QHBoxLayout();
-    m_searchEdit = new QLineEdit(this);
+    m_searchEdit = new QLineEdit(headerWidget);
     m_searchEdit->setPlaceholderText("Search 0 headphones...");
     m_searchEdit->setClearButtonEnabled(true);
-    connect(m_searchEdit, &QLineEdit::returnPressed, this, [this]() {
-        if (m_listWidget->currentItem() == nullptr && m_listWidget->count() > 0) {
-            m_listWidget->setCurrentRow(0);
-        }
-        onImportClicked();
-    });
     connect(m_searchEdit, &QLineEdit::textChanged, this, &AutoEqPickerDlg::onSearchTextChanged);
-    searchLayout->addWidget(m_searchEdit);
+    headerLayout->addWidget(m_searchEdit);
 
-    auto refreshBtn = new QPushButton("🔄 Refresh Database", this);
-    connect(refreshBtn, &QPushButton::clicked, [this]() {
-        m_statusLabel->setText("Refreshing database from GitHub...");
-        loadIndex(true);
+    mainLayout->addWidget(headerWidget);
+
+    // Divider
+    auto divider = new QFrame(this);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setFrameShadow(QFrame::Sunken);
+    divider->setStyleSheet("color: #d1d1d6;");
+    mainLayout->addWidget(divider);
+
+    // List and Overlay Stack
+    auto stackWidget = new QWidget(this);
+    auto gridLayout = new QGridLayout(stackWidget);
+    gridLayout->setContentsMargins(0, 0, 0, 0);
+    gridLayout->setSpacing(0);
+
+    m_listWidget = new QListWidget(stackWidget);
+    m_listWidget->setAlternatingRowColors(false);
+    connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem*) {
+        if (!m_isImporting) {
+            onImportClicked();
+        }
     });
-    searchLayout->addWidget(refreshBtn);
+    connect(m_listWidget, &QListWidget::itemActivated, this, [this](QListWidgetItem*) {
+        if (!m_isImporting) {
+            onImportClicked();
+        }
+    });
+    gridLayout->addWidget(m_listWidget, 0, 0);
 
-    mainLayout->addLayout(searchLayout);
+    // Overlay Widget
+    m_overlayWidget = new QWidget(stackWidget);
+    m_overlayWidget->setAutoFillBackground(true);
+    auto overlayLayout = new QVBoxLayout(m_overlayWidget);
+    overlayLayout->setAlignment(Qt::AlignCenter);
+    overlayLayout->setSpacing(8);
 
-    m_listWidget = new QListWidget(this);
-    m_listWidget->setAlternatingRowColors(true);
-    connect(m_listWidget, &QListWidget::itemActivated, this, &AutoEqPickerDlg::onImportClicked);
-    mainLayout->addWidget(m_listWidget);
+    m_overlayTitle = new QLabel(m_overlayWidget);
+    m_overlayTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_overlayTitle->setAlignment(Qt::AlignCenter);
 
-    m_statusLabel = new QLabel("Loading index from GitHub...", this);
-    m_statusLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
-    mainLayout->addWidget(m_statusLabel);
+    m_overlaySubtitle = new QLabel(m_overlayWidget);
+    m_overlaySubtitle->setFont(QFont("sans-serif", 11));
+    m_overlaySubtitle->setStyleSheet("color: #8e8e93;");
+    m_overlaySubtitle->setWordWrap(true);
+    m_overlaySubtitle->setAlignment(Qt::AlignCenter);
 
-    auto btnLayout = new QHBoxLayout();
-    btnLayout->addStretch();
+    overlayLayout->addWidget(m_overlayTitle);
+    overlayLayout->addWidget(m_overlaySubtitle);
+    gridLayout->addWidget(m_overlayWidget, 0, 0);
 
-    m_importBtn = new QPushButton("Import Selected Preset", this);
-    m_importBtn->setStyleSheet(
-        "background-color: #007af5; color: white; font-weight: bold; padding: 5px 14px; border-radius: 4px;");
-    m_importBtn->setDefault(true);
-    m_importBtn->setAutoDefault(true);
-    m_importBtn->setEnabled(false);
-    connect(m_importBtn, &QPushButton::clicked, this, &AutoEqPickerDlg::onImportClicked);
-    btnLayout->addWidget(m_importBtn);
+    mainLayout->addWidget(stackWidget, 1);
 
-    auto closeBtn = new QPushButton("Cancel", this);
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
-    btnLayout->addWidget(closeBtn);
+    // Bottom Toolbar / Footer
+    auto toolbarWidget = new QWidget(this);
+    auto toolbarLayout = new QHBoxLayout(toolbarWidget);
+    toolbarLayout->setContentsMargins(16, 12, 16, 12);
 
-    mainLayout->addLayout(btnLayout);
+    m_cancelBtn = new QPushButton("Cancel", toolbarWidget);
+    connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
+    toolbarLayout->addWidget(m_cancelBtn);
 
-    connect(m_listWidget, &QListWidget::itemSelectionChanged,
-            [this]() { m_importBtn->setEnabled(!m_listWidget->selectedItems().isEmpty()); });
+    toolbarLayout->addStretch();
+
+    m_refreshBtn = new QPushButton("Refresh", toolbarWidget);
+    m_refreshBtn->setToolTip("Force refresh database from GitHub");
+    connect(m_refreshBtn, &QPushButton::clicked, this, &AutoEqPickerDlg::refreshDatabase);
+    toolbarLayout->addWidget(m_refreshBtn);
+
+    mainLayout->addWidget(toolbarWidget);
+
+    updateUiState();
 }
 
-void AutoEqPickerDlg::loadIndex(bool forceRefresh) {
+void AutoEqPickerDlg::loadDatabase(bool forceRefresh) {
+    m_isLoading = true;
+    m_errorMessage.clear();
+    updateUiState();
+
     QPointer<AutoEqPickerDlg> safeThis(this);
     m_service.fetchIndex(
         [safeThis](bool ok, const std::vector<AutoEqIndexEntry>& entries) {
             if (!safeThis)
                 return;
+            safeThis->m_isLoading = false;
             if (ok) {
                 safeThis->m_entries = entries;
-                safeThis->m_statusLabel->setText(QString("Loaded %1 headphone presets.").arg(entries.size()));
                 safeThis->m_searchEdit->setPlaceholderText(QString("Search %1 headphones...").arg(entries.size()));
                 safeThis->onSearchTextChanged(safeThis->m_searchEdit->text());
             } else {
-                safeThis->m_statusLabel->setText("Failed to load AutoEQ index. Check internet connection.");
+                safeThis->m_errorMessage = "Failed to fetch database: Network or parsing error";
+                safeThis->updateUiState();
             }
         },
         forceRefresh);
 }
 
+void AutoEqPickerDlg::refreshDatabase() {
+    loadDatabase(true);
+}
+
 void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
     m_listWidget->clear();
     QString trimmed = text.trimmed();
-    QStringList tokens = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
 
-    int count = 0;
-    for (size_t i = 0; i < m_entries.size(); ++i) {
-        if (tokens.isEmpty() && count >= 50)
-            break;
-
-        QString name = QString::fromStdString(m_entries[i].name);
-        QString path = QString::fromStdString(m_entries[i].path);
-
-        bool matches = true;
-        for (const auto& token : tokens) {
-            if (!name.contains(token, Qt::CaseInsensitive) && !path.contains(token, Qt::CaseInsensitive)) {
-                matches = false;
-                break;
-            }
+    std::vector<size_t> matchedIndices;
+    if (trimmed.isEmpty()) {
+        size_t limit = std::min<size_t>(m_entries.size(), 50);
+        for (size_t i = 0; i < limit; ++i) {
+            matchedIndices.push_back(i);
         }
-
-        if (matches) {
-            auto item = new QListWidgetItem(m_listWidget);
-            item->setText(QString("%1\n%2").arg(name, path));
-            item->setData(Qt::UserRole, static_cast<int>(i));
-            count++;
+    } else {
+        for (size_t i = 0; i < m_entries.size(); ++i) {
+            QString name = QString::fromStdString(m_entries[i].name);
+            if (name.contains(trimmed, Qt::CaseInsensitive)) {
+                matchedIndices.push_back(i);
+            }
         }
     }
 
-    if (tokens.isEmpty()) {
-        m_statusLabel->setText(
-            QString("Showing %1 headphones (out of %2 total).").arg(m_listWidget->count()).arg(m_entries.size()));
+    for (size_t idx : matchedIndices) {
+        const auto& entry = m_entries[idx];
+        auto item = new QListWidgetItem(m_listWidget);
+        item->setData(Qt::UserRole, static_cast<int>(idx));
+
+        auto container = new QWidget();
+        auto itemLayout = new QVBoxLayout(container);
+        itemLayout->setContentsMargins(8, 4, 8, 4);
+        itemLayout->setSpacing(2);
+
+        auto nameLbl = new QLabel(QString::fromStdString(entry.name), container);
+        nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
+
+        auto pathLbl = new QLabel(QString::fromStdString(entry.path), container);
+        QFont monoFont("monospace", 9);
+        monoFont.setStyleHint(QFont::Monospace);
+        pathLbl->setFont(monoFont);
+        pathLbl->setStyleSheet("color: #8e8e93;");
+
+        itemLayout->addWidget(nameLbl);
+        itemLayout->addWidget(pathLbl);
+
+        item->setSizeHint(container->sizeHint());
+        m_listWidget->addItem(item);
+        m_listWidget->setItemWidget(item, container);
+    }
+
+    updateUiState();
+}
+
+void AutoEqPickerDlg::updateUiState() {
+    m_refreshBtn->setEnabled(!m_isLoading && !m_isImporting);
+    m_searchEdit->setEnabled(!m_isLoading && !m_isImporting);
+
+    if (m_isLoading) {
+        m_overlayWidget->show();
+        m_overlayWidget->raise();
+        m_overlayWidget->setStyleSheet("background-color: transparent;");
+        m_overlayTitle->setText("Loading database...");
+        m_overlaySubtitle->setText("");
+    } else if (m_isImporting) {
+        m_overlayWidget->show();
+        m_overlayWidget->raise();
+        m_overlayWidget->setStyleSheet("background-color: rgba(240, 240, 240, 0.75);");
+        m_overlayTitle->setText("Importing EQ profile...");
+        m_overlaySubtitle->setText("");
+    } else if (!m_errorMessage.isEmpty()) {
+        m_overlayWidget->show();
+        m_overlayWidget->raise();
+        m_overlayWidget->setStyleSheet("background-color: transparent;");
+        m_overlayTitle->setText("Error ⚠️");
+        m_overlaySubtitle->setText(m_errorMessage);
+    } else if (m_listWidget->count() == 0) {
+        m_overlayWidget->show();
+        m_overlayWidget->raise();
+        m_overlayWidget->setStyleSheet("background-color: transparent;");
+        m_overlayTitle->setText("No Results");
+        m_overlaySubtitle->setText("Check the spelling or try a new search.");
     } else {
-        m_statusLabel->setText(QString("Found %1 of %2 matching headphones.").arg(count).arg(m_entries.size()));
+        m_overlayWidget->hide();
     }
 }
 
 void AutoEqPickerDlg::onImportClicked() {
+    if (m_isImporting)
+        return;
+
     auto items = m_listWidget->selectedItems();
     if (items.isEmpty())
         return;
@@ -141,56 +233,24 @@ void AutoEqPickerDlg::onImportClicked() {
     int idx = items[0]->data(Qt::UserRole).toInt();
     const auto& entry = m_entries[idx];
 
-    m_statusLabel->setText("Downloading preset...");
-    m_importBtn->setEnabled(false);
+    m_isImporting = true;
+    m_errorMessage.clear();
+    updateUiState();
 
-    m_service.fetchPreset(entry, [this, entry](bool ok, std::optional<EQPreset> preset) {
-        m_importBtn->setEnabled(true);
+    QPointer<AutoEqPickerDlg> safeThis(this);
+    m_service.fetchPreset(entry, [safeThis, entry](bool ok, std::optional<EQPreset> preset) {
+        if (!safeThis)
+            return;
+
         if (ok && preset.has_value()) {
             auto p = preset.value();
             p.name = entry.name;
-
-            // Update existing or add new EQPreset
-            QUuid presetId;
-            bool foundExisting = false;
-            for (auto& existing : m_pipeline->eqPresets) {
-                if (existing.name == p.name) {
-                    p.id = existing.id;
-                    m_pipeline->updateEQPreset(p);
-                    presetId = p.id;
-                    foundExisting = true;
-                    break;
-                }
-            }
-            if (!foundExisting) {
-                presetId = m_pipeline->addEQPreset(p);
-            }
-
-            // Direct Stage Creation or Overwrite in PipelineStore
-            bool stageUpdated = false;
-            for (auto& stage : m_pipeline->stages) {
-                if (stage.type == StageType::EQ) {
-                    stage.eqPresetId = presetId;
-                    stage.name = p.name;
-                    stageUpdated = true;
-                    break;
-                }
-            }
-            if (!stageUpdated) {
-                PipelineStage newStage(StageType::EQ, p.name);
-                newStage.eqPresetId = presetId;
-                m_pipeline->stages.push_back(newStage);
-            }
-
-            m_pipeline->save();
-            emit m_pipeline->pipelineChanged();
-
-            QMessageBox::information(
-                this, "Success",
-                QString("Imported preset '%1' and active EQ stage updated.").arg(QString::fromStdString(entry.name)));
-            accept();
+            safeThis->m_pipeline->addEQPreset(p);
+            safeThis->accept();
         } else {
-            m_statusLabel->setText("Failed to download or parse preset file.");
+            safeThis->m_isImporting = false;
+            safeThis->m_errorMessage = "Could not parse EQ data. File format might have changed.";
+            safeThis->updateUiState();
         }
     });
 }

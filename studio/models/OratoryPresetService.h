@@ -12,10 +12,37 @@
 #include <vector>
 
 struct OratoryIndexEntry {
+    std::string id;
     std::string name;
     std::string path;
-    std::string author;
+    std::string author = "oratory1990";
     std::string url;
+
+    std::string downloadPath() const {
+        QString p = QString::fromStdString(path);
+        p.replace(" ", "%20");
+        return p.toStdString();
+    }
+
+    QJsonObject toJson() const {
+        QJsonObject obj;
+        obj["id"] = QString::fromStdString(id);
+        obj["name"] = QString::fromStdString(name);
+        obj["path"] = QString::fromStdString(path);
+        obj["author"] = QString::fromStdString(author);
+        obj["url"] = QString::fromStdString(url);
+        return obj;
+    }
+
+    static OratoryIndexEntry fromJson(const QJsonObject& json) {
+        OratoryIndexEntry entry;
+        entry.id = json["id"].toString().toStdString();
+        entry.name = json["name"].toString().toStdString();
+        entry.path = json["path"].toString().toStdString();
+        entry.author = json["author"].toString("oratory1990").toStdString();
+        entry.url = json["url"].toString().toStdString();
+        return entry;
+    }
 };
 
 class OratoryPresetService : public QObject {

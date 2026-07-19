@@ -313,7 +313,11 @@ EQBand EQBand::fromJson(const QJsonObject& json) {
 
 bool EQBand::operator==(const EQBand& other) const {
     return id == other.id && type == other.type && freq == other.freq && gain == other.gain && q == other.q &&
-           isEnabled == other.isEnabled;
+           isEnabled == other.isEnabled && b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && a1 == other.a1 &&
+           a2 == other.a2 && freqNotch == other.freqNotch && freqPole == other.freqPole && qPole == other.qPole &&
+           normalizeAtDc == other.normalizeAtDc && slope == other.slope && bandwidth == other.bandwidth &&
+           useSlope == other.useSlope && useBandwidth == other.useBandwidth && freqAct == other.freqAct &&
+           qAct == other.qAct && freqTarget == other.freqTarget && qTarget == other.qTarget;
 }
 
 EQPreset::EQPreset() : id(QUuid::createUuid()), name("New Preset") {}
@@ -378,13 +382,7 @@ std::string EQPreset::toCSV() const {
                 ss << " Gain " << std::fixed << std::setprecision(1) << band.gain << " dB";
             }
             if (eqBandTypeHasQ(band.type)) {
-                if (band.useSlope) {
-                    ss << " S " << std::fixed << std::setprecision(1) << band.slope;
-                } else if (band.useBandwidth) {
-                    ss << " BW " << std::fixed << std::setprecision(2) << band.bandwidth;
-                } else {
-                    ss << " Q " << std::fixed << std::setprecision(2) << band.q;
-                }
+                ss << " Q " << std::fixed << std::setprecision(2) << band.q;
             }
         }
         ss << "\n";
@@ -407,11 +405,14 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
         size_t last = line.find_last_not_of(" \t\r\n");
         std::string trimmed = line.substr(first, (last - first + 1));
 
-        if (trimmed.empty() || trimmed[0] == '#')
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == ';' || trimmed[0] == '!')
             continue;
 
         std::string lower = trimmed;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+        if (lower.find("equalizer:") == 0)
+            continue;
 
         if (lower.find("preamp") == 0) {
             size_t pos = trimmed.find_first_of(":-= ");
@@ -432,101 +433,133 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
             continue;
         }
 
-        if (lower.find("filter") == 0) {
+        if (lower.find("graphiceq:") == 0) {
+            std::string content = trimmed.substr(10);
+            std::replace(content.begin(), content.end(), ';', ' ');
+            std::replace(content.begin(), content.end(), ',', ' ');
+            std::stringstream gss(content);
+            double freqVal, gainVal;
+            while (gss >> freqVal >> gainVal) {
+                EQBand band(EQBandType::Peaking, freqVal, gainVal, 1.41, true);
+                parsedBands.push_back(band);
+            }
+            continue;
+        }
+
+        bool isFilterLine = (lower.find("filter") == 0);
+        std::string content = trimmed;
+        if (isFilterLine) {
             size_t pos = trimmed.find(':');
-            std::string content = (pos != std::string::npos) ? trimmed.substr(pos + 1) : trimmed.substr(6);
-            std::stringstream lineSS(content);
-            std::vector<std::string> words;
-            std::string word;
-            while (lineSS >> word)
-                words.push_back(word);
+            content = (pos != std::string::npos) ? trimmed.substr(pos + 1) : trimmed.substr(6);
+        }
 
-            if (!words.empty()) {
-                size_t idx = 0;
-                try {
-                    (void)std::stoi(words[0]);
-                    if (words.size() > 1)
-                        idx = 1;
-                } catch (...) {
-                }
+        std::stringstream lineSS(content);
+        std::vector<std::string> words;
+        std::string word;
+        while (lineSS >> word)
+            words.push_back(word);
 
-                if (idx < words.size()) {
-                    bool enabled = true;
-                    std::string stateWord = words[idx];
-                    std::transform(stateWord.begin(), stateWord.end(), stateWord.begin(), ::toupper);
+        if (!words.empty()) {
+            size_t idx = 0;
+            try {
+                (void)std::stoi(words[0]);
+                if (words.size() > 1)
+                    idx = 1;
+            } catch (...) {
+            }
 
-                    if (stateWord == "ON" || stateWord == "OFF") {
-                        enabled = (stateWord == "ON");
-                        idx++;
-                    }
-
-                    if (idx < words.size()) {
-                        EQBandType type = shortNameToEQBandType(words[idx]);
-                        EQBand band(type);
-                        band.isEnabled = enabled;
-
-                        for (size_t i = idx + 1; i + 1 < words.size();) {
-                            std::string k = words[i];
-                            std::transform(k.begin(), k.end(), k.begin(), ::tolower);
-                            std::string v = words[i + 1];
-                            bool matchedKey = true;
-
-                            try {
-                                if (k == "fc") {
-                                    band.freq = std::stod(v);
-                                    band.freqNotch = band.freq;
-                                } else if (k == "gain") {
-                                    band.gain = std::stod(v);
-                                } else if (k == "q") {
-                                    band.q = std::stod(v);
-                                } else if (k == "s" || k == "slope") {
-                                    band.slope = std::stod(v);
-                                    band.useSlope = true;
-                                } else if (k == "bw" || k == "bandwidth") {
-                                    band.bandwidth = std::stod(v);
-                                    band.useBandwidth = true;
-                                } else if (k == "fp") {
-                                    band.freqPole = std::stod(v);
-                                } else if (k == "qp") {
-                                    band.qPole = std::stod(v);
-                                } else if (k == "norm") {
-                                    band.normalizeAtDc = (std::stod(v) != 0.0);
-                                } else if (k == "fa") {
-                                    band.freqAct = std::stod(v);
-                                } else if (k == "qa") {
-                                    band.qAct = std::stod(v);
-                                } else if (k == "ft") {
-                                    band.freqTarget = std::stod(v);
-                                } else if (k == "qt") {
-                                    band.qTarget = std::stod(v);
-                                } else if (k == "b0") {
-                                    band.b0 = std::stod(v);
-                                } else if (k == "b1") {
-                                    band.b1 = std::stod(v);
-                                } else if (k == "b2") {
-                                    band.b2 = std::stod(v);
-                                } else if (k == "a1") {
-                                    band.a1 = std::stod(v);
-                                } else if (k == "a2") {
-                                    band.a2 = std::stod(v);
-                                } else {
-                                    matchedKey = false;
-                                }
-                            } catch (...) {
-                                matchedKey = false;
-                            }
-
-                            if (matchedKey) {
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        parsedBands.push_back(band);
-                    }
+            bool enabled = true;
+            if (idx < words.size()) {
+                std::string stateWord = words[idx];
+                std::transform(stateWord.begin(), stateWord.end(), stateWord.begin(), ::toupper);
+                if (stateWord == "ON" || stateWord == "OFF") {
+                    enabled = (stateWord == "ON");
+                    idx++;
                 }
             }
-        } else if (trimmed.find(',') != std::string::npos) {
+
+            if (idx < words.size()) {
+                std::string typeWord = words[idx];
+                std::string upperType = typeWord;
+                std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+
+                EQBandType type = shortNameToEQBandType(typeWord);
+                bool validFilter = isFilterLine || upperType == "PK" || upperType == "LS" || upperType == "HS" ||
+                                   upperType == "LP" || upperType == "HP" || upperType == "NO" || upperType == "BP" ||
+                                   upperType == "AP" || upperType == "LSC" || upperType == "HSC" ||
+                                   upperType == "LPC" || upperType == "HPC" || upperType == "PEAKING" ||
+                                   upperType == "LOWSHELF" || upperType == "HIGHSHELF" || upperType == "LOWPASS" ||
+                                   upperType == "HIGHPASS" || upperType == "NOTCH" || upperType == "BANDPASS" ||
+                                   upperType == "ALLPASS";
+
+                if (validFilter) {
+                    EQBand band(type);
+                    band.isEnabled = enabled;
+
+                    for (size_t i = idx + 1; i + 1 < words.size();) {
+                        std::string k = words[i];
+                        std::transform(k.begin(), k.end(), k.begin(), ::tolower);
+                        std::string v = words[i + 1];
+                        bool matchedKey = true;
+
+                        try {
+                            if (k == "fc") {
+                                band.freq = std::stod(v);
+                                band.freqNotch = band.freq;
+                            } else if (k == "gain") {
+                                band.gain = std::stod(v);
+                            } else if (k == "q") {
+                                band.q = std::stod(v);
+                            } else if (k == "s" || k == "slope") {
+                                band.slope = std::stod(v);
+                                band.useSlope = true;
+                            } else if (k == "bw" || k == "bandwidth") {
+                                band.bandwidth = std::stod(v);
+                                band.useBandwidth = true;
+                            } else if (k == "fp") {
+                                band.freqPole = std::stod(v);
+                            } else if (k == "qp") {
+                                band.qPole = std::stod(v);
+                            } else if (k == "norm") {
+                                band.normalizeAtDc = (std::stod(v) != 0.0);
+                            } else if (k == "fa") {
+                                band.freqAct = std::stod(v);
+                            } else if (k == "qa") {
+                                band.qAct = std::stod(v);
+                            } else if (k == "ft") {
+                                band.freqTarget = std::stod(v);
+                            } else if (k == "qt") {
+                                band.qTarget = std::stod(v);
+                            } else if (k == "b0") {
+                                band.b0 = std::stod(v);
+                            } else if (k == "b1") {
+                                band.b1 = std::stod(v);
+                            } else if (k == "b2") {
+                                band.b2 = std::stod(v);
+                            } else if (k == "a1") {
+                                band.a1 = std::stod(v);
+                            } else if (k == "a2") {
+                                band.a2 = std::stod(v);
+                            } else {
+                                matchedKey = false;
+                            }
+                        } catch (...) {
+                            matchedKey = false;
+                        }
+
+                        if (matchedKey) {
+                            i += 2;
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    parsedBands.push_back(band);
+                    continue;
+                }
+            }
+        }
+
+        if (trimmed.find(',') != std::string::npos) {
             std::stringstream csvSS(trimmed);
             std::string item;
             std::vector<std::string> parts;

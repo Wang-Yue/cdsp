@@ -27,32 +27,42 @@ bool OratoryPresetService::loadFromDiskCache(std::vector<OratoryIndexEntry>& ent
     file.close();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject())
-        return false;
-
-    QJsonObject root = doc.object();
-    QJsonArray tree = root["tree"].toArray();
     entries.clear();
 
-    for (const auto& item : tree) {
-        QJsonObject obj = item.toObject();
-        QString path = obj["path"].toString();
-
-        if (path.endsWith(" ParametricEQ.txt")) {
-            QString fileName = path.section('/', -1);
-            QString headphoneName = fileName;
-            headphoneName.replace(" ParametricEQ.txt", "");
-
-            OratoryIndexEntry entry;
-            entry.name = headphoneName.toStdString();
-            entry.path = path.toStdString();
-            entry.author = "oratory1990";
-            entry.url = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
-                        path.toUtf8().toPercentEncoding().toStdString();
-            entries.push_back(entry);
+    if (doc.isArray()) {
+        QJsonArray arr = doc.array();
+        for (const auto& item : arr) {
+            entries.push_back(OratoryIndexEntry::fromJson(item.toObject()));
         }
+        return !entries.empty();
     }
-    return !entries.empty();
+
+    if (doc.isObject()) {
+        QJsonObject root = doc.object();
+        QJsonArray tree = root["tree"].toArray();
+
+        for (const auto& item : tree) {
+            QJsonObject obj = item.toObject();
+            QString path = obj["path"].toString();
+
+            if (path.endsWith(" ParametricEQ.txt")) {
+                QString fileName = path.section('/', -1);
+                QString headphoneName = fileName;
+                headphoneName.replace(" ParametricEQ.txt", "");
+
+                OratoryIndexEntry entry;
+                entry.id = obj["sha"].toString().toStdString();
+                entry.name = headphoneName.toStdString();
+                entry.path = path.toStdString();
+                entry.author = "oratory1990";
+                entry.url = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
+                            entry.downloadPath();
+                entries.push_back(entry);
+            }
+        }
+        return !entries.empty();
+    }
+    return false;
 }
 
 void OratoryPresetService::saveToDiskCache(const QByteArray& jsonBytes) {
@@ -124,11 +134,12 @@ void OratoryPresetService::fetchIndex(
                 headphoneName.replace(" ParametricEQ.txt", "");
 
                 OratoryIndexEntry entry;
+                entry.id = obj["sha"].toString().toStdString();
                 entry.name = headphoneName.toStdString();
                 entry.path = path.toStdString();
                 entry.author = "oratory1990";
                 entry.url = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
-                            path.toUtf8().toPercentEncoding().toStdString();
+                            entry.downloadPath();
                 entries.push_back(entry);
             }
         }
@@ -140,15 +151,8 @@ void OratoryPresetService::fetchIndex(
 
 void OratoryPresetService::fetchPreset(const OratoryIndexEntry& entry,
                                        std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
-    QString pathStr = QString::fromStdString(entry.path);
-    QString encodedPath;
-    for (const QString& seg : pathStr.split('/')) {
-        if (!encodedPath.isEmpty())
-            encodedPath += '/';
-        encodedPath += QString::fromUtf8(QUrl::toPercentEncoding(seg.toUtf8()));
-    }
-    QString rawUrlStr =
-        "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" + encodedPath;
+    QString rawUrlStr = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/oratory1990/" +
+                        QString::fromStdString(entry.downloadPath());
 
     QUrl url(rawUrlStr);
     QNetworkRequest request(url);

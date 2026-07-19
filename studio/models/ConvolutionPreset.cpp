@@ -40,7 +40,7 @@ std::vector<int> ConvolutionPreset::availableSampleRates() const {
 }
 
 double ConvolutionPreset::latencyMilliseconds(int sampleRate) const {
-    if (sampleRate <= 0)
+    if (sampleRate <= 0 || kindLabelStr != "Linear-phase")
         return 0.0;
     return (static_cast<double>(taps) / 2.0 / static_cast<double>(sampleRate)) * 1000.0;
 }
@@ -78,10 +78,17 @@ ConvolutionPreset ConvolutionPreset::fromJson(const QJsonObject& json) {
             int rate = it.key().toInt();
             preset.irPaths[rate] = it.value().toString().toStdString();
         }
+    } else if (json.contains("irPath") && json.contains("sampleRate")) {
+        std::string oldPath = json["irPath"].toString().toStdString();
+        int oldRate = json["sampleRate"].toInt();
+        if (!oldPath.empty() && oldRate > 0) {
+            preset.irPaths[oldRate] = oldPath;
+        }
     }
     return preset;
 }
 
 bool ConvolutionPreset::operator==(const ConvolutionPreset& other) const {
-    return id == other.id && name == other.name && taps == other.taps && irPaths == other.irPaths;
+    return id == other.id && name == other.name && taps == other.taps && kindLabelStr == other.kindLabelStr &&
+           irPaths == other.irPaths;
 }

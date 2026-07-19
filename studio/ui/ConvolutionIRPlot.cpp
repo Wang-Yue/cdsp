@@ -8,7 +8,7 @@
 #include <cmath>
 
 ConvolutionIRPlot::ConvolutionIRPlot(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(120);
+    setMinimumHeight(100);
 }
 
 void ConvolutionIRPlot::setIRPath(const std::string& path, const std::string& title) {
@@ -47,29 +47,34 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     int w = width();
     int h = height();
 
+    // Clip rounded rect background
+    QPainterPath bgPath;
+    bgPath.addRoundedRect(rect(), 6, 6);
+    p.setClipPath(bgPath);
     p.fillRect(rect(), StyleTheme::cardBg());
 
+    int plotTop = 4;
     if (!m_title.empty()) {
-        p.setFont(QFont("sans-serif", 9, QFont::Bold));
+        p.setFont(QFont("sans-serif", 10, QFont::Bold));
         p.setPen(StyleTheme::textSecondary());
-        p.drawText(8, 16, QString::fromStdString(m_title));
+        p.drawText(8, 18, QString::fromStdString(m_title));
+        plotTop = 24;
     }
 
     if (!m_errorMsg.empty()) {
-        p.setFont(QFont("sans-serif", 9));
-        p.setPen(QColor("#ff453a"));
-        p.drawText(16, h / 2, QString::fromStdString(m_errorMsg));
+        p.setFont(QFont("sans-serif", 11));
+        p.setPen(StyleTheme::textSecondary());
+        p.drawText(8, plotTop + 16, QString::fromStdString(m_errorMsg));
         return;
     }
 
     if (m_samples.empty())
         return;
 
-    int plotTop = m_title.empty() ? 4 : 22;
     int plotH = h - plotTop - 4;
-
-    // Zero axis line (0.18 opacity = 46 alpha)
     int midY = plotTop + plotH / 2;
+
+    // Zero baseline (0.18 opacity = 46 alpha)
     QColor baselineCol = StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46);
     p.setPen(QPen(baselineCol, 1, Qt::SolidLine));
     p.drawLine(0, midY, w, midY);
@@ -80,7 +85,7 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     }
 
     size_t count = m_samples.size();
-    QPainterPath path;
+    QPainterPath waveformPath;
 
     for (size_t i = 0; i < count; ++i) {
         double norm = m_samples[i] / maxVal;
@@ -88,11 +93,11 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
         double y = midY - norm * (plotH / 2.0);
 
         if (i == 0)
-            path.moveTo(x, y);
+            waveformPath.moveTo(x, y);
         else
-            path.lineTo(x, y);
+            waveformPath.lineTo(x, y);
     }
 
-    p.setPen(QPen(QColor("#007aff"), 1.0));
-    p.drawPath(path);
+    p.setPen(QPen(StyleTheme::accent(), 1.0));
+    p.drawPath(waveformPath);
 }

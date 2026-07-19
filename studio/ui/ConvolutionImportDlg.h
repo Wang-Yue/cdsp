@@ -2,17 +2,14 @@
 #define CONVOLUTION_IMPORT_DLG_H
 
 #include "models/PipelineStore.h"
-#include "ui/ConvolutionIRPlot.h"
 
-#include <QCheckBox>
-#include <QComboBox>
 #include <QDialog>
-#include <QDoubleSpinBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QTableWidget>
+#include <QVBoxLayout>
 #include <memory>
+#include <vector>
 
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT
@@ -23,7 +20,7 @@ public:
 private slots:
     void onAddFilesClicked();
     void onImportClicked();
-    void updateTable();
+    void updateItemsList();
 
 private:
     std::shared_ptr<PipelineStore> m_pipeline;
@@ -39,15 +36,17 @@ private:
 
     QLineEdit* m_nameEdit;
     QLineEdit* m_kindEdit;
-    QCheckBox* m_normalizeCheck;
-    QDoubleSpinBox* m_delayCompSpin;
-    QTableWidget* m_fileTable;
-    ConvolutionIRPlot* m_irPlotPreview;
+    QVBoxLayout* m_itemListLayout;
+    QWidget* m_emptyStateWidget;
     QLabel* m_warningLabel;
-    QLabel* m_infoLabel;
+    QWidget* m_errorWidget;
+    QLabel* m_errorLabel;
     QPushButton* m_importBtn;
 
+    bool m_isImporting = false;
+
     void setupUi();
+    bool hasDuplicateRates() const;
 };
 
 #endif // CONVOLUTION_IMPORT_DLG_H

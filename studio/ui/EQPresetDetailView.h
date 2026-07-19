@@ -49,6 +49,8 @@ private:
     QLineEdit* m_nameEdit;
     QSlider* m_preampSlider;
     QDoubleSpinBox* m_preampSpin;
+    QSlider* m_formPreampSlider = nullptr;
+    QDoubleSpinBox* m_formPreampSpin = nullptr;
     QTabBar* m_modeTabBar;
 
     QStackedWidget* m_modeStack;
@@ -64,6 +66,8 @@ private:
     // Mode 2: Raw CSV Text Editor
     QTextEdit* m_csvTextEdit;
     QLabel* m_csvStatusLabel;
+    QLabel* m_csvErrorLabel = nullptr;
+    QPushButton* m_csvCopyBtn = nullptr;
 
     bool m_isRefreshing = false;
 

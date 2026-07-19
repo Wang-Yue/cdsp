@@ -12,8 +12,31 @@
 #include <vector>
 
 struct AutoEqIndexEntry {
+    std::string id;
     std::string name;
     std::string path;
+
+    std::string downloadPath() const {
+        QString p = QString::fromStdString(path);
+        p.replace(" ", "%20");
+        return p.toStdString();
+    }
+
+    QJsonObject toJson() const {
+        QJsonObject obj;
+        obj["id"] = QString::fromStdString(id);
+        obj["name"] = QString::fromStdString(name);
+        obj["path"] = QString::fromStdString(path);
+        return obj;
+    }
+
+    static AutoEqIndexEntry fromJson(const QJsonObject& json) {
+        AutoEqIndexEntry entry;
+        entry.id = json["id"].toString().toStdString();
+        entry.name = json["name"].toString().toStdString();
+        entry.path = json["path"].toString().toStdString();
+        return entry;
+    }
 };
 
 class AutoEqService : public QObject {

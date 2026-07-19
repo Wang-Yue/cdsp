@@ -4,12 +4,15 @@
 
 #include <QDesktopServices>
 #include <QFileInfo>
-#include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QProcess>
 #include <QScrollArea>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <cmath>
 
 ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset preset,
                                                          std::shared_ptr<PipelineStore> pipeline,
@@ -20,19 +23,24 @@ ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset prese
 }
 
 void ConvolutionPresetDetailView::setupUi() {
-    auto scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-
-    auto container = new QWidget(scroll);
-    auto mainLayout = new QVBoxLayout(container);
-    mainLayout->setContentsMargins(20, 20, 20, 20);
-    mainLayout->setSpacing(16);
+    auto outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
 
     // Header Toolbar
-    auto headerLayout = new QHBoxLayout();
-    m_nameEdit = new QLineEdit(container);
+    auto headerWidget = new QWidget(this);
+    auto headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->setContentsMargins(16, 16, 16, 16);
+    headerLayout->setSpacing(8);
+
+    auto iconLbl = new QLabel("🔍〰", headerWidget);
+    iconLbl->setFont(QFont("sans-serif", 16));
+    iconLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::accent().name()));
+    headerLayout->addWidget(iconLbl);
+
+    m_nameEdit = new QLineEdit(headerWidget);
     m_nameEdit->setFont(QFont("sans-serif", 14, QFont::Bold));
+    m_nameEdit->setMaximumWidth(300);
     connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
         m_preset.name = m_nameEdit->text().toStdString();
         m_pipeline->updateConvPreset(m_preset);
@@ -41,42 +49,87 @@ void ConvolutionPresetDetailView::setupUi() {
 
     headerLayout->addStretch();
 
-    auto delBtn = new QPushButton("Delete Preset", container);
+    auto delBtn = new QPushButton("🗑 Delete", headerWidget);
+    delBtn->setStyleSheet("QPushButton { color: #ff3b30; font-weight: bold; }");
     connect(delBtn, &QPushButton::clicked, this, &ConvolutionPresetDetailView::onDeleteClicked);
     headerLayout->addWidget(delBtn);
 
-    mainLayout->addLayout(headerLayout);
+    outerLayout->addWidget(headerWidget);
+
+    auto headerDivider = new QFrame(this);
+    headerDivider->setFrameShape(QFrame::HLine);
+    headerDivider->setFrameShadow(QFrame::Sunken);
+    outerLayout->addWidget(headerDivider);
+
+    // Scroll View
+    auto scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+
+    auto container = new QWidget(scroll);
+    container->setStyleSheet(QString("background-color: %1;").arg(StyleTheme::cardBg().name()));
+    auto mainLayout = new QVBoxLayout(container);
+    mainLayout->setContentsMargins(16, 16, 16, 16);
+    mainLayout->setSpacing(16);
 
     // Details Group
-    auto detailsGroup = new QGroupBox("Preset Details", container);
-    auto form = new QFormLayout(detailsGroup);
+    auto detailsGroup = new QGroupBox("Details", container);
+    auto detailsLayout = new QVBoxLayout(detailsGroup);
+    detailsLayout->setContentsMargins(12, 16, 12, 12);
+    detailsLayout->setSpacing(6);
 
-    m_kindLabel = new QLabel(detailsGroup);
-    form->addRow("Filter Kind:", m_kindLabel);
-    m_tapsLabel = new QLabel(detailsGroup);
-    form->addRow("Tap Count:", m_tapsLabel);
-    m_ratesLabel = new QLabel(detailsGroup);
-    form->addRow("Available Rates:", m_ratesLabel);
-    m_latencyLabel = new QLabel(detailsGroup);
-    form->addRow("Latency:", m_latencyLabel);
+    auto addRow = [container, detailsLayout](const QString& key, QLabel*& valueLbl) {
+        auto row = new QHBoxLayout();
+        auto keyLbl = new QLabel(key, container);
+        keyLbl->setFixedWidth(130);
+        keyLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
+        row->addWidget(keyLbl);
+
+        valueLbl = new QLabel(container);
+        valueLbl->setFont(QFont("monospace", 13));
+        row->addWidget(valueLbl);
+        row->addStretch();
+        detailsLayout->addLayout(row);
+        return keyLbl;
+    };
+
+    addRow("Kind", m_kindLabel);
+    addRow("Taps", m_tapsLabel);
+    addRow("Rates", m_ratesLabel);
+    m_latencyKeyLabel = addRow("Latency @ 48k", m_latencyValueLabel);
 
     mainLayout->addWidget(detailsGroup);
 
     // Impulse Response Group
-    auto irGroup = new QGroupBox("Impulse Response Plot", container);
+    auto irGroup = new QGroupBox("Impulse Response", container);
     auto irLayout = new QVBoxLayout(irGroup);
+    irLayout->setContentsMargins(12, 16, 12, 12);
+    irLayout->setSpacing(8);
 
     auto rateBox = new QHBoxLayout();
-    rateBox->addWidget(new QLabel("Preview Rate:", irGroup));
+    auto prevLbl = new QLabel("Preview rate", irGroup);
+    prevLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::textSecondary().name()));
+    rateBox->addWidget(prevLbl);
+
     m_ratePreviewCombo = new QComboBox(irGroup);
+    m_ratePreviewCombo->setMaximumWidth(160);
     connect(m_ratePreviewCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
+        if (m_ratePreviewCombo->currentIndex() < 0)
+            return;
         m_previewRate = m_ratePreviewCombo->currentData().toInt();
         std::string p = m_preset.irPath(m_previewRate);
         if (!p.empty()) {
             m_irPlot->setIRPath(p);
+            m_irPlot->setVisible(true);
+            m_noIrLabel->setVisible(false);
+        } else {
+            m_irPlot->setVisible(false);
+            m_noIrLabel->setText(QString("No IR available for %1 Hz.").arg(m_previewRate));
+            m_noIrLabel->setVisible(true);
         }
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
+        m_latencyKeyLabel->setText(QString("Latency @ %1k").arg(m_previewRate / 1000));
+        m_latencyValueLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     });
     rateBox->addWidget(m_ratePreviewCombo);
     rateBox->addStretch();
@@ -84,26 +137,34 @@ void ConvolutionPresetDetailView::setupUi() {
     irLayout->addLayout(rateBox);
 
     m_irPlot = new ConvolutionIRPlot(irGroup);
+    m_irPlot->setFixedHeight(180);
     irLayout->addWidget(m_irPlot);
+
+    m_noIrLabel = new QLabel(irGroup);
+    m_noIrLabel->setStyleSheet(
+        QString("color: %1; font-size: 13px; padding: 8px;").arg(StyleTheme::textSecondary().name()));
+    m_noIrLabel->setVisible(false);
+    irLayout->addWidget(m_noIrLabel);
 
     mainLayout->addWidget(irGroup);
 
     // Files Group
-    auto filesGroup = new QGroupBox("On-Disk Files", container);
+    auto filesGroup = new QGroupBox("Files", container);
     auto filesLayout = new QVBoxLayout(filesGroup);
+    filesLayout->setContentsMargins(12, 16, 12, 12);
+    filesLayout->setSpacing(6);
 
     m_filesContainer = new QWidget(filesGroup);
     m_filesContainer->setLayout(new QVBoxLayout());
+    m_filesContainer->layout()->setContentsMargins(0, 0, 0, 0);
+    m_filesContainer->layout()->setSpacing(6);
     filesLayout->addWidget(m_filesContainer);
 
     mainLayout->addWidget(filesGroup);
     mainLayout->addStretch();
 
     scroll->setWidget(container);
-
-    auto layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(scroll);
+    outerLayout->addWidget(scroll);
 }
 
 void ConvolutionPresetDetailView::refreshUi() {
@@ -115,13 +176,15 @@ void ConvolutionPresetDetailView::refreshUi() {
     QStringList rateStrs;
     for (int r : rates)
         rateStrs.append(QString("%1k").arg(r / 1000));
-    m_ratesLabel->setText(rateStrs.join(" / "));
+    m_ratesLabel->setText(rates.empty() ? "—" : rateStrs.join(" / "));
 
     m_ratePreviewCombo->clear();
     m_ratePreviewCombo->setVisible(rates.size() > 1);
+
     for (int r : rates) {
         m_ratePreviewCombo->addItem(QString("%1 Hz").arg(r), r);
     }
+
     if (!rates.empty()) {
         int liveRate = m_devices ? m_devices->captureConfig.sampleRate : 48000;
         if (std::find(rates.begin(), rates.end(), liveRate) != rates.end()) {
@@ -138,10 +201,18 @@ void ConvolutionPresetDetailView::refreshUi() {
             m_ratePreviewCombo->setCurrentIndex(comboIdx);
 
         std::string p = m_preset.irPath(m_previewRate);
-        if (!p.empty())
+        if (!p.empty()) {
             m_irPlot->setIRPath(p);
+            m_irPlot->setVisible(true);
+            m_noIrLabel->setVisible(false);
+        } else {
+            m_irPlot->setVisible(false);
+            m_noIrLabel->setText(QString("No IR available for %1 Hz.").arg(m_previewRate));
+            m_noIrLabel->setVisible(true);
+        }
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
+        m_latencyKeyLabel->setText(QString("Latency @ %1k").arg(m_previewRate / 1000));
+        m_latencyValueLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     }
 
     // Populate files list
@@ -167,18 +238,30 @@ void ConvolutionPresetDetailView::refreshUi() {
         if (!pathStr.empty()) {
             QString p = QString::fromStdString(pathStr);
             auto fileRow = new QHBoxLayout();
+            fileRow->setContentsMargins(0, 0, 0, 0);
+            fileRow->setSpacing(8);
 
-            auto rateLbl = new QLabel(QString("%1 Hz:").arg(r), m_filesContainer);
-            rateLbl->setFixedWidth(110);
+            auto rateLbl = new QLabel(QString("%1 Hz").arg(r), m_filesContainer);
+            rateLbl->setFixedWidth(80);
+            rateLbl->setFont(QFont("monospace", 11));
+            rateLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
             fileRow->addWidget(rateLbl);
 
             auto pathLbl = new QLabel(p, m_filesContainer);
-            pathLbl->setFont(QFont("monospace", 10));
+            pathLbl->setFont(QFont("monospace", 11));
+            pathLbl->setToolTip(p);
             fileRow->addWidget(pathLbl, 1);
 
-            auto openBtn = new QPushButton("Reveal", m_filesContainer);
-            connect(openBtn, &QPushButton::clicked,
-                    [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
+            auto openBtn = new QPushButton("📁", m_filesContainer);
+            openBtn->setFlat(true);
+            openBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+            connect(openBtn, &QPushButton::clicked, [p]() {
+#ifdef Q_OS_MAC
+                QProcess::execute("/usr/bin/open", QStringList() << "-R" << p);
+#else
+                QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath()));
+#endif
+            });
             fileRow->addWidget(openBtn);
 
             filesLayout->addLayout(fileRow);

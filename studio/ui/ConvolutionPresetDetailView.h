@@ -34,10 +34,12 @@ private:
     QLabel* m_kindLabel;
     QLabel* m_tapsLabel;
     QLabel* m_ratesLabel;
-    QLabel* m_latencyLabel;
+    QLabel* m_latencyKeyLabel;
+    QLabel* m_latencyValueLabel;
 
     QComboBox* m_ratePreviewCombo;
     ConvolutionIRPlot* m_irPlot;
+    QLabel* m_noIrLabel;
     QWidget* m_filesContainer;
 
     void setupUi();

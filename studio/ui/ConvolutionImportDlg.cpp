@@ -3,15 +3,24 @@
 #include "models/ConvCoefficientLoader.h"
 #include "ui/StyleTheme.h"
 
+#include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QMessageBox>
+#include <QRegularExpression>
+#include <QScrollArea>
 #include <QSpinBox>
+#include <QStandardPaths>
+#include <QUuid>
 #include <QVBoxLayout>
 #include <set>
+#include <stdexcept>
 
 ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {
@@ -21,94 +30,303 @@ ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeli
 }
 
 void ConvolutionImportDlg::setupUi() {
-    auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(14);
+    auto outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
 
-    auto headerBox = new QVBoxLayout();
-    auto titleLbl = new QLabel("Import Impulse Responses", this);
+    // Header Block
+    auto headerWidget = new QWidget(this);
+    auto headerBox = new QVBoxLayout(headerWidget);
+    headerBox->setContentsMargins(16, 16, 16, 16);
+    headerBox->setSpacing(4);
+
+    auto titleLbl = new QLabel("Import Impulse Responses", headerWidget);
     titleLbl->setFont(QFont("sans-serif", 13, QFont::Bold));
     headerBox->addWidget(titleLbl);
 
-    auto subtitleLbl = new QLabel("Import files as a unified multi-rate Convolution Preset.", this);
-    subtitleLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    auto subtitleLbl = new QLabel("Import files as a unified multi-rate Convolution Preset.", headerWidget);
+    subtitleLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::textSecondary().name()));
     headerBox->addWidget(subtitleLbl);
-    mainLayout->addLayout(headerBox);
+    outerLayout->addWidget(headerWidget);
 
-    auto form = new QFormLayout();
+    auto topDivider = new QFrame(this);
+    topDivider->setFrameShape(QFrame::HLine);
+    topDivider->setFrameShadow(QFrame::Sunken);
+    outerLayout->addWidget(topDivider);
 
-    m_nameEdit = new QLineEdit(this);
+    // Scrollable Central Area
+    auto scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+
+    auto contentWidget = new QWidget(scrollArea);
+    auto contentLayout = new QVBoxLayout(contentWidget);
+    contentLayout->setContentsMargins(16, 16, 16, 16);
+    contentLayout->setSpacing(20);
+
+    // GroupBox "Preset Details"
+    auto detailsGroup = new QGroupBox("Preset Details", contentWidget);
+    auto form = new QFormLayout(detailsGroup);
+    form->setContentsMargins(12, 16, 12, 12);
+    form->setSpacing(12);
+
+    m_nameEdit = new QLineEdit(detailsGroup);
     m_nameEdit->setPlaceholderText("e.g., My Custom IR");
-    form->addRow("Preset Name:", m_nameEdit);
+    connect(m_nameEdit, &QLineEdit::textChanged, this, &ConvolutionImportDlg::updateItemsList);
+    form->addRow("Preset Name", m_nameEdit);
 
-    m_kindEdit = new QLineEdit(this);
+    m_kindEdit = new QLineEdit(detailsGroup);
     m_kindEdit->setText("Imported");
     m_kindEdit->setPlaceholderText("e.g., Imported, Min-phase");
-    form->addRow("Kind Label:", m_kindEdit);
+    form->addRow("Kind Label", m_kindEdit);
 
-    m_normalizeCheck = new QCheckBox("Normalize IR Peak (0 dBFS)", this);
-    m_normalizeCheck->setChecked(true);
-    form->addRow("Normalization:", m_normalizeCheck);
+    contentLayout->addWidget(detailsGroup);
 
-    m_delayCompSpin = new QDoubleSpinBox(this);
-    m_delayCompSpin->setRange(0.0, 1000.0);
-    m_delayCompSpin->setSuffix(" ms");
-    form->addRow("Delay Compensation:", m_delayCompSpin);
-
-    mainLayout->addLayout(form);
+    // Impulse Response Files Section
+    auto fileSectionLayout = new QVBoxLayout();
+    fileSectionLayout->setSpacing(8);
 
     auto tableHeader = new QHBoxLayout();
-    tableHeader->addWidget(new QLabel("Impulse Response Files", this));
+    auto filesLbl = new QLabel("Impulse Response Files", contentWidget);
+    filesLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
+    tableHeader->addWidget(filesLbl);
     tableHeader->addStretch();
 
-    auto addBtn = new QPushButton("Add File(s)...", this);
+    auto addBtn = new QPushButton("+ Add File(s)…", contentWidget);
     connect(addBtn, &QPushButton::clicked, this, &ConvolutionImportDlg::onAddFilesClicked);
     tableHeader->addWidget(addBtn);
-    mainLayout->addLayout(tableHeader);
+    fileSectionLayout->addLayout(tableHeader);
 
-    m_fileTable = new QTableWidget(0, 5, this);
-    m_fileTable->setHorizontalHeaderLabels({"File", "Sample Rate", "Format", "Channel", ""});
-    m_fileTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_fileTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_fileTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_fileTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_fileTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-    mainLayout->addWidget(m_fileTable);
+    // Empty state container
+    m_emptyStateWidget = new QWidget(contentWidget);
+    m_emptyStateWidget->setStyleSheet(
+        QString("QWidget { border: 1px dashed %1; border-radius: 8px; background: transparent; }"
+                "QLabel { border: none; }")
+            .arg(StyleTheme::border().name()));
+    auto emptyLayout = new QVBoxLayout(m_emptyStateWidget);
+    emptyLayout->setContentsMargins(20, 40, 20, 40);
+    emptyLayout->setSpacing(12);
 
-    m_irPlotPreview = new ConvolutionIRPlot(this);
-    m_irPlotPreview->setFixedHeight(100);
-    mainLayout->addWidget(m_irPlotPreview);
+    auto emptyIcon = new QLabel("⇣", m_emptyStateWidget);
+    emptyIcon->setAlignment(Qt::AlignCenter);
+    emptyIcon->setFont(QFont("sans-serif", 24));
+    emptyIcon->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
+    emptyLayout->addWidget(emptyIcon);
 
+    auto emptyText = new QLabel("No files selected. Click 'Add File(s)' to begin.", m_emptyStateWidget);
+    emptyText->setAlignment(Qt::AlignCenter);
+    emptyText->setStyleSheet(QString("color: %1; font-size: 13px;").arg(StyleTheme::textSecondary().name()));
+    emptyLayout->addWidget(emptyText);
+
+    fileSectionLayout->addWidget(m_emptyStateWidget);
+
+    // Item Cards layout
+    m_itemListLayout = new QVBoxLayout();
+    m_itemListLayout->setSpacing(12);
+    fileSectionLayout->addLayout(m_itemListLayout);
+
+    // Warning label for duplicate rates
     m_warningLabel = new QLabel(this);
-    m_warningLabel->setStyleSheet("color: #ff9500; font-size: 11px;");
+    m_warningLabel->setText(
+        "⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
+    m_warningLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::accentOrange().name()));
     m_warningLabel->setVisible(false);
-    mainLayout->addWidget(m_warningLabel);
+    m_warningLabel->setWordWrap(true);
+    fileSectionLayout->addWidget(m_warningLabel);
 
-    m_infoLabel = new QLabel(
-        "Add IR files to build a multi-rate convolution preset with peak normalization and latency compensation.",
-        this);
-    m_infoLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
-    mainLayout->addWidget(m_infoLabel);
+    contentLayout->addLayout(fileSectionLayout);
 
-    auto btnLayout = new QHBoxLayout();
+    // Error banner container
+    m_errorWidget = new QWidget(contentWidget);
+    m_errorWidget->setStyleSheet(QString("QWidget { background-color: rgba(255, 59, 48, 0.1); border-radius: 8px; }"
+                                         "QLabel { background: transparent; color: %1; font-size: 13px; }")
+                                     .arg(StyleTheme::accentRed().name()));
+    auto errorLayout = new QHBoxLayout(m_errorWidget);
+    errorLayout->setContentsMargins(12, 12, 12, 12);
+
+    auto errIcon = new QLabel("🛑", m_errorWidget);
+    errorLayout->addWidget(errIcon);
+
+    m_errorLabel = new QLabel(m_errorWidget);
+    m_errorLabel->setWordWrap(true);
+    errorLayout->addWidget(m_errorLabel, 1);
+
+    m_errorWidget->setVisible(false);
+    contentLayout->addWidget(m_errorWidget);
+
+    contentLayout->addStretch();
+    scrollArea->setWidget(contentWidget);
+    outerLayout->addWidget(scrollArea);
+
+    auto bottomDivider = new QFrame(this);
+    bottomDivider->setFrameShape(QFrame::HLine);
+    bottomDivider->setFrameShadow(QFrame::Sunken);
+    outerLayout->addWidget(bottomDivider);
+
+    // Footer Buttons
+    auto footerWidget = new QWidget(this);
+    auto btnLayout = new QHBoxLayout(footerWidget);
+    btnLayout->setContentsMargins(16, 12, 16, 12);
+    btnLayout->setSpacing(12);
     btnLayout->addStretch();
 
-    auto cancelBtn = new QPushButton("Cancel", this);
+    auto cancelBtn = new QPushButton("Cancel", footerWidget);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     btnLayout->addWidget(cancelBtn);
 
-    m_importBtn = new QPushButton("Import", this);
+    m_importBtn = new QPushButton("Import", footerWidget);
     m_importBtn->setDefault(true);
     connect(m_importBtn, &QPushButton::clicked, this, &ConvolutionImportDlg::onImportClicked);
     btnLayout->addWidget(m_importBtn);
 
-    mainLayout->addLayout(btnLayout);
-    updateTable();
+    outerLayout->addWidget(footerWidget);
+
+    updateItemsList();
+}
+
+bool ConvolutionImportDlg::hasDuplicateRates() const {
+    std::set<int> rates;
+    for (const auto& item : m_items) {
+        if (rates.count(item.sampleRate))
+            return true;
+        rates.insert(item.sampleRate);
+    }
+    return false;
+}
+
+void ConvolutionImportDlg::updateItemsList() {
+    QLayoutItem* child;
+    while ((child = m_itemListLayout->takeAt(0)) != nullptr) {
+        if (child->widget()) {
+            delete child->widget();
+        }
+        delete child;
+    }
+
+    if (m_items.empty()) {
+        m_emptyStateWidget->setVisible(true);
+    } else {
+        m_emptyStateWidget->setVisible(false);
+
+        static const std::vector<int> standardRates = {32000,  44100,  48000,  88200,  96000, 176400,
+                                                       192000, 352800, 384000, 705600, 768000};
+        static const QStringList formats = {"WAV", "FLOAT64", "FLOAT32", "S16_LE", "S32_LE", "TEXT"};
+
+        for (size_t i = 0; i < m_items.size(); ++i) {
+            auto card = new QWidget(this);
+            card->setStyleSheet(QString("QWidget { background-color: %1; border: 1px solid %2; border-radius: 8px; }"
+                                        "QLabel, QComboBox, QSpinBox, QPushButton { border-radius: 4px; }")
+                                    .arg(StyleTheme::cardBg().name())
+                                    .arg(StyleTheme::border().name()));
+
+            auto cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(12, 12, 12, 12);
+            cardLayout->setSpacing(8);
+
+            // Card Header
+            auto topRow = new QHBoxLayout();
+            QFileInfo fi(m_items[i].filePath);
+
+            auto iconLbl = new QLabel(m_items[i].format == "WAV" ? "〰" : "📄", card);
+            iconLbl->setStyleSheet(
+                QString("color: %1; font-size: 14px; border: none;").arg(StyleTheme::accent().name()));
+            topRow->addWidget(iconLbl);
+
+            auto nameLbl = new QLabel(fi.fileName(), card);
+            nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
+            nameLbl->setStyleSheet("border: none;");
+            topRow->addWidget(nameLbl, 1);
+
+            auto delBtn = new QPushButton("🗑", card);
+            delBtn->setFlat(true);
+            delBtn->setStyleSheet("color: #ff3b30; font-size: 14px; border: none; background: transparent;");
+            connect(delBtn, &QPushButton::clicked, [this, i]() {
+                m_items.erase(m_items.begin() + i);
+                updateItemsList();
+            });
+            topRow->addWidget(delBtn);
+
+            cardLayout->addLayout(topRow);
+
+            // Details Grid
+            auto grid = new QGridLayout();
+            grid->setContentsMargins(0, 0, 0, 0);
+            grid->setSpacing(8);
+
+            // Sample Rate
+            auto rateLbl = new QLabel("Sample Rate", card);
+            rateLbl->setStyleSheet(
+                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
+            grid->addWidget(rateLbl, 0, 0);
+
+            auto rateCombo = new QComboBox(card);
+            for (int r : standardRates) {
+                rateCombo->addItem(QString("%1 Hz").arg(r), r);
+            }
+            int rateIdx = rateCombo->findData(m_items[i].sampleRate);
+            if (rateIdx >= 0)
+                rateCombo->setCurrentIndex(rateIdx);
+            rateCombo->setFixedWidth(140);
+            connect(rateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, rateCombo]() {
+                m_items[i].sampleRate = rateCombo->currentData().toInt();
+                m_warningLabel->setVisible(hasDuplicateRates());
+                bool disabled =
+                    m_items.empty() || m_nameEdit->text().trimmed().isEmpty() || hasDuplicateRates() || m_isImporting;
+                m_importBtn->setEnabled(!disabled);
+            });
+            grid->addWidget(rateCombo, 0, 1);
+
+            // Format
+            auto fmtLbl = new QLabel("Format", card);
+            fmtLbl->setStyleSheet(
+                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
+            grid->addWidget(fmtLbl, 1, 0);
+
+            auto fmtCombo = new QComboBox(card);
+            fmtCombo->addItems(formats);
+            fmtCombo->setCurrentText(m_items[i].format);
+            fmtCombo->setFixedWidth(140);
+            connect(fmtCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, fmtCombo]() {
+                m_items[i].format = fmtCombo->currentText();
+                updateItemsList();
+            });
+            grid->addWidget(fmtCombo, 1, 1);
+
+            // WAV Channel (if WAV)
+            if (m_items[i].format == "WAV") {
+                auto chLbl = new QLabel("WAV Channel", card);
+                chLbl->setStyleSheet(
+                    QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
+                grid->addWidget(chLbl, 2, 0);
+
+                auto chSpin = new QSpinBox(card);
+                chSpin->setRange(0, 15);
+                chSpin->setPrefix("Channel ");
+                chSpin->setValue(m_items[i].channel);
+                chSpin->setFixedWidth(140);
+                connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+                        [this, i](int val) { m_items[i].channel = val; });
+                grid->addWidget(chSpin, 2, 1);
+            }
+
+            cardLayout->addLayout(grid);
+            m_itemListLayout->addWidget(card);
+        }
+    }
+
+    m_warningLabel->setVisible(hasDuplicateRates());
+
+    bool disabled = m_items.empty() || m_nameEdit->text().trimmed().isEmpty() || hasDuplicateRates() || m_isImporting;
+    m_importBtn->setEnabled(!disabled);
 }
 
 void ConvolutionImportDlg::onAddFilesClicked() {
-    QStringList files =
-        QFileDialog::getOpenFileNames(this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt)");
+    QStringList files = QFileDialog::getOpenFileNames(
+        this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt *.data);;All Files (*)");
+
+    static const std::vector<int> allRates = {768000, 705600, 384000, 352800, 192000, 176400, 96000, 88200,
+                                              48000,  44100,  32000,  22050,  16000,  11025,  8000};
+
     for (const auto& file : files) {
         ImportItem item;
         item.filePath = file;
@@ -122,9 +340,9 @@ void ConvolutionImportDlg::onAddFilesClicked() {
             QString lower = file.toLower();
             if (lower.endsWith(".txt"))
                 item.format = "TEXT";
-            else if (lower.endsWith(".f32") || lower.contains("float32"))
+            else if (lower.endsWith(".f32") || lower.contains("float32") || lower.contains("f32"))
                 item.format = "FLOAT32";
-            else if (lower.endsWith(".f64") || lower.contains("float64"))
+            else if (lower.endsWith(".f64") || lower.contains("float64") || lower.contains("f64"))
                 item.format = "FLOAT64";
             else if (lower.contains("s16"))
                 item.format = "S16_LE";
@@ -133,9 +351,7 @@ void ConvolutionImportDlg::onAddFilesClicked() {
             else
                 item.format = "FLOAT64";
 
-            static const std::vector<int> stdRates = {768000, 705600, 384000, 352800, 192000, 176400,
-                                                      96000,  88200,  48000,  44100,  32000};
-            for (int r : stdRates) {
+            for (int r : allRates) {
                 if (lower.contains(QString::number(r)) || lower.contains(QString("%1k").arg(r / 1000))) {
                     item.sampleRate = r;
                     break;
@@ -150,146 +366,62 @@ void ConvolutionImportDlg::onAddFilesClicked() {
             m_nameEdit->setText(base);
         }
     }
-    updateTable();
+    updateItemsList();
 }
-
-void ConvolutionImportDlg::updateTable() {
-    m_fileTable->setRowCount(0);
-    std::set<int> rates;
-    bool duplicate = false;
-
-    for (size_t i = 0; i < m_items.size(); ++i) {
-        int row = m_fileTable->rowCount();
-        m_fileTable->insertRow(row);
-        auto& item = m_items[i];
-
-        QFileInfo fi(item.filePath);
-        m_fileTable->setItem(row, 0, new QTableWidgetItem(fi.fileName()));
-
-        auto rateCombo = new QComboBox(this);
-        for (int r : {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000}) {
-            rateCombo->addItem(QString("%1 Hz").arg(r), r);
-        }
-        rateCombo->setCurrentText(QString("%1 Hz").arg(item.sampleRate));
-        connect(rateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, rateCombo]() {
-            m_items[i].sampleRate = rateCombo->currentData().toInt();
-            updateTable();
-        });
-        m_fileTable->setCellWidget(row, 1, rateCombo);
-
-        if (rates.count(item.sampleRate))
-            duplicate = true;
-        rates.insert(item.sampleRate);
-
-        auto fmtCombo = new QComboBox(this);
-        fmtCombo->addItems({"WAV", "FLOAT64", "FLOAT32", "S16_LE", "S32_LE", "TEXT"});
-        fmtCombo->setCurrentText(item.format);
-        connect(fmtCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, i, fmtCombo]() {
-            m_items[i].format = fmtCombo->currentText();
-            updateTable();
-        });
-        m_fileTable->setCellWidget(row, 2, fmtCombo);
-
-        auto chSpin = new QSpinBox(this);
-        chSpin->setRange(0, 15);
-        chSpin->setValue(item.channel);
-        chSpin->setEnabled(item.format == "WAV");
-        connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this, i](int val) { m_items[i].channel = val; });
-        m_fileTable->setCellWidget(row, 3, chSpin);
-
-        auto delBtn = new QPushButton("X", this);
-        delBtn->setFixedWidth(30);
-        connect(delBtn, &QPushButton::clicked, [this, i]() {
-            m_items.erase(m_items.begin() + i);
-            updateTable();
-        });
-        m_fileTable->setCellWidget(row, 4, delBtn);
-    }
-
-    if (!m_items.empty()) {
-        m_irPlotPreview->setIRPath(m_items[0].filePath.toStdString(), m_items[0].filePath.toStdString());
-        m_irPlotPreview->setVisible(true);
-    } else {
-        m_irPlotPreview->setVisible(false);
-    }
-
-    if (duplicate) {
-        m_warningLabel->setText(
-            "⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
-        m_warningLabel->setVisible(true);
-    } else {
-        m_warningLabel->setVisible(false);
-    }
-
-    m_importBtn->setEnabled(!m_items.empty() && !duplicate && !m_nameEdit->text().trimmed().isEmpty());
-}
-
-#include <QDir>
-#include <QStandardPaths>
-#include <QUuid>
 
 void ConvolutionImportDlg::onImportClicked() {
     if (m_items.empty())
         return;
 
-    QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir irDir(appDataDir + "/IRs");
-    if (!irDir.exists())
-        irDir.mkpath(".");
+    m_isImporting = true;
+    m_importBtn->setEnabled(false);
+    m_errorWidget->setVisible(false);
 
-    QUuid presetId = QUuid::createUuid();
-    std::map<int, std::string> paths;
-    int firstCoeffCount = 0;
-    bool doNormalize = m_normalizeCheck->isChecked();
-    double delayMs = m_delayCompSpin->value();
+    try {
+        QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QDir irDir(appDataDir + "/IRs");
+        if (!irDir.exists())
+            irDir.mkpath(".");
 
-    for (const auto& item : m_items) {
-        auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(), item.format.toStdString(),
-                                                              item.channel, item.sampleRate);
+        QUuid presetId = QUuid::createUuid();
+        std::map<int, std::string> paths;
+        int firstCoeffCount = 0;
 
-        if (doNormalize && !coeffs.empty()) {
-            double maxVal = 0.0;
-            for (double c : coeffs) {
-                double absVal = std::abs(c);
-                if (absVal > maxVal)
-                    maxVal = absVal;
+        for (const auto& item : m_items) {
+            auto coeffs = ConvCoefficientLoader::loadCoefficients(
+                item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
+
+            if (coeffs.empty()) {
+                throw std::runtime_error(QString("File '%1' contains zero coefficients.")
+                                             .arg(QFileInfo(item.filePath).fileName())
+                                             .toStdString());
             }
-            double targetDb = 0.0;
-            double scale = maxVal > 0.0 ? std::pow(10.0, targetDb / 20.0) / maxVal : 1.0;
-            for (double& c : coeffs)
-                c *= scale;
-        }
 
-        if (delayMs > 0.0) {
-            int padSamples = qRound((delayMs / 1000.0) * item.sampleRate);
-            if (padSamples > 0) {
-                coeffs.insert(coeffs.begin(), padSamples, 0.0);
+            if (firstCoeffCount == 0) {
+                firstCoeffCount = static_cast<int>(coeffs.size());
             }
+
+            QString destFileName =
+                QString("Imported-%1-%2.f64").arg(presetId.toString(QUuid::WithoutBraces).left(8)).arg(item.sampleRate);
+            QString destPath = irDir.filePath(destFileName);
+
+            ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString());
+            paths[item.sampleRate] = destPath.toStdString();
         }
 
-        if (firstCoeffCount == 0) {
-            firstCoeffCount = static_cast<int>(coeffs.size());
-        }
+        std::string name = m_nameEdit->text().trimmed().toStdString();
+        std::string kind = m_kindEdit->text().trimmed().toStdString();
+        if (kind.empty())
+            kind = "Imported";
 
-        QString destFileName =
-            QString("Imported-%1-%2.f64").arg(presetId.toString(QUuid::WithoutBraces).left(8)).arg(item.sampleRate);
-        QString destPath = irDir.filePath(destFileName);
+        ConvolutionPreset preset(name, paths, firstCoeffCount, kind);
+        m_pipeline->addConvPreset(preset);
 
-        ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString());
-        paths[item.sampleRate] = destPath.toStdString();
+        accept();
+    } catch (const std::exception& ex) {
+        m_errorLabel->setText(ex.what());
+        m_errorWidget->setVisible(true);
+        m_isImporting = false;
+        m_importBtn->setEnabled(true);
     }
-
-    std::string name = m_nameEdit->text().toStdString();
-    std::string kind = m_kindEdit->text().toStdString();
-    if (kind.empty())
-        kind = "Imported";
-
-    ConvolutionPreset preset(name, paths, firstCoeffCount, kind);
-    m_pipeline->addConvPreset(preset);
-
-    QMessageBox::information(this, "Success",
-                             QString("Imported convolution preset '%1' with %2 rate file(s).")
-                                 .arg(QString::fromStdString(name))
-                                 .arg(paths.size()));
-    accept();
 }

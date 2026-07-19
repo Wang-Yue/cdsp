@@ -28,29 +28,39 @@ bool AutoEqService::loadFromDiskCache(std::vector<AutoEqIndexEntry>& entries) {
     file.close();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject())
-        return false;
-
-    QJsonObject root = doc.object();
-    QJsonArray tree = root["tree"].toArray();
     entries.clear();
 
-    for (const auto& item : tree) {
-        QJsonObject obj = item.toObject();
-        QString path = obj["path"].toString();
-
-        if (path.startsWith("results/") && path.endsWith(" ParametricEQ.txt")) {
-            QString fileName = path.section('/', -1);
-            QString headphoneName = fileName;
-            headphoneName.replace(" ParametricEQ.txt", "");
-
-            AutoEqIndexEntry entry;
-            entry.name = headphoneName.toStdString();
-            entry.path = path.toStdString();
-            entries.push_back(entry);
+    if (doc.isArray()) {
+        QJsonArray arr = doc.array();
+        for (const auto& item : arr) {
+            entries.push_back(AutoEqIndexEntry::fromJson(item.toObject()));
         }
+        return !entries.empty();
     }
-    return !entries.empty();
+
+    if (doc.isObject()) {
+        QJsonObject root = doc.object();
+        QJsonArray tree = root["tree"].toArray();
+
+        for (const auto& item : tree) {
+            QJsonObject obj = item.toObject();
+            QString path = obj["path"].toString();
+
+            if (path.startsWith("results/") && path.endsWith(" ParametricEQ.txt")) {
+                QString fileName = path.section('/', -1);
+                QString headphoneName = fileName;
+                headphoneName.replace(" ParametricEQ.txt", "");
+
+                AutoEqIndexEntry entry;
+                entry.id = obj["sha"].toString().toStdString();
+                entry.name = headphoneName.toStdString();
+                entry.path = path.toStdString();
+                entries.push_back(entry);
+            }
+        }
+        return !entries.empty();
+    }
+    return false;
 }
 
 void AutoEqService::saveToDiskCache(const QByteArray& jsonBytes) {
@@ -122,6 +132,7 @@ void AutoEqService::fetchIndex(std::function<void(bool success, const std::vecto
                 headphoneName.replace(" ParametricEQ.txt", "");
 
                 AutoEqIndexEntry entry;
+                entry.id = obj["sha"].toString().toStdString();
                 entry.name = headphoneName.toStdString();
                 entry.path = path.toStdString();
                 entries.push_back(entry);
@@ -135,8 +146,8 @@ void AutoEqService::fetchIndex(std::function<void(bool success, const std::vecto
 
 void AutoEqService::fetchPreset(const AutoEqIndexEntry& entry,
                                 std::function<void(bool success, std::optional<EQPreset> preset)> callback) {
-    QString downloadPath = QString::fromStdString(entry.path).replace(" ", "%20");
-    QString rawUrlStr = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/" + downloadPath;
+    QString rawUrlStr =
+        "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/" + QString::fromStdString(entry.downloadPath());
 
     QUrl url(rawUrlStr);
     QNetworkRequest request(url);

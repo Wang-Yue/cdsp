@@ -1,5 +1,10 @@
 #include "models/ConvCoefficientLoader.h"
 
+#include <QAudioBuffer>
+#include <QAudioDecoder>
+#include <QAudioFormat>
+#include <QEventLoop>
+#include <QUrl>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -38,7 +43,7 @@ std::optional<WavHeaderInfo> ConvCoefficientLoader::parseWavHeader(const std::st
             file.read(reinterpret_cast<char*>(&audioFormat), 2);
             file.read(reinterpret_cast<char*>(&numChannels), 2);
             file.read(reinterpret_cast<char*>(&sampleRate), 4);
-            file.seekg(6, std::ios::cur); // Skip byteRate and blockAlign
+            file.seekg(6, std::ios::cur);
             file.read(reinterpret_cast<char*>(&bitsPerSample), 2);
 
             info.sampleRate = static_cast<int>(sampleRate);
@@ -61,122 +66,223 @@ std::optional<WavHeaderInfo> ConvCoefficientLoader::parseWavHeader(const std::st
     return std::nullopt;
 }
 
-std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& path, const std::string& fmt,
-                                                            int targetChannel, int userSampleRate) {
+std::vector<double> ConvCoefficientLoader::loadWAV(const std::string& path, int targetChannel) {
     std::vector<double> coeffs;
-
     auto wavInfo = parseWavHeader(path);
-    if (wavInfo.has_value()) {
-        const auto& w = wavInfo.value();
-        if (targetChannel < 0 || targetChannel >= w.channels)
+    if (!wavInfo.has_value())
+        return coeffs;
+
+    const auto& w = wavInfo.value();
+    if (targetChannel < 0 || targetChannel >= w.channels)
+        return coeffs;
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return coeffs;
+
+    file.seekg(w.dataOffset);
+    if (w.bitsPerSample < 8)
+        return coeffs;
+
+    int chs = std::max(1, w.channels);
+    int selCh = std::min(chs - 1, std::max(0, targetChannel));
+    size_t totalSamples = w.dataSize / (w.bitsPerSample / 8);
+    size_t frameCount = totalSamples / chs;
+
+    coeffs.reserve(frameCount);
+
+    if (w.isFloat && w.bitsPerSample == 32) {
+        std::vector<float> frameBuffer(chs);
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (!file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(float)))
+                break;
+            coeffs.push_back(static_cast<double>(frameBuffer[selCh]));
+        }
+    } else if (w.isFloat && w.bitsPerSample == 64) {
+        std::vector<double> frameBuffer(chs);
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (!file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(double)))
+                break;
+            coeffs.push_back(frameBuffer[selCh]);
+        }
+    } else if (!w.isFloat && w.bitsPerSample == 16) {
+        std::vector<int16_t> frameBuffer(chs);
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (!file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(int16_t)))
+                break;
+            coeffs.push_back(static_cast<double>(frameBuffer[selCh]) / 32767.0);
+        }
+    } else if (!w.isFloat && w.bitsPerSample == 24) {
+        std::vector<uint8_t> frameBuffer(chs * 3);
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (!file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * 3))
+                break;
+            size_t idx = selCh * 3;
+            int32_t val = (frameBuffer[idx + 2] << 16) | (frameBuffer[idx + 1] << 8) | frameBuffer[idx];
+            if (val & 0x800000)
+                val |= 0xFF000000;
+            coeffs.push_back(static_cast<double>(val) / 8388607.0);
+        }
+    } else if (!w.isFloat && w.bitsPerSample == 32) {
+        std::vector<int32_t> frameBuffer(chs);
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (!file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(int32_t)))
+                break;
+            coeffs.push_back(static_cast<double>(frameBuffer[selCh]) / 2147483647.0);
+        }
+    }
+    return coeffs;
+}
+
+std::vector<double> ConvCoefficientLoader::loadRaw(const std::string& path, const std::string& fmt, int skipBytesLines,
+                                                   int readBytesLines) {
+    std::vector<double> coeffs;
+    if (fmt == "TEXT") {
+        std::ifstream textFile(path);
+        if (!textFile.is_open())
             return coeffs;
-
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            return coeffs;
-
-        file.seekg(w.dataOffset);
-
-        if (w.bitsPerSample < 8)
-            return coeffs;
-        int chs = std::max(1, w.channels);
-        int selCh = std::min(chs - 1, std::max(0, targetChannel));
-        size_t totalSamples = w.dataSize / (w.bitsPerSample / 8);
-        size_t frameCount = totalSamples / chs;
-
-        coeffs.reserve(frameCount);
-
-        if (w.isFloat && w.bitsPerSample == 32) {
-            std::vector<float> frameBuffer(chs);
-            for (size_t i = 0; i < frameCount; ++i) {
-                file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(float));
-                coeffs.push_back(frameBuffer[selCh]);
+        std::string line;
+        int currentLine = 0;
+        int readCount = 0;
+        while (std::getline(textFile, line)) {
+            if (skipBytesLines > 0 && currentLine < skipBytesLines) {
+                currentLine++;
+                continue;
             }
-        } else if (w.isFloat && w.bitsPerSample == 64) {
-            std::vector<double> frameBuffer(chs);
-            for (size_t i = 0; i < frameCount; ++i) {
-                file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(double));
-                coeffs.push_back(frameBuffer[selCh]);
+            if (readBytesLines > 0 && readCount >= readBytesLines)
+                break;
+
+            size_t p1 = line.find_first_not_of(" \t\r\n");
+            if (p1 != std::string::npos) {
+                try {
+                    coeffs.push_back(std::stod(line.substr(p1)));
+                    readCount++;
+                } catch (...) {
+                }
             }
-        } else if (!w.isFloat && w.bitsPerSample == 16) {
-            std::vector<int16_t> frameBuffer(chs);
-            for (size_t i = 0; i < frameCount; ++i) {
-                file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(int16_t));
-                coeffs.push_back(static_cast<double>(frameBuffer[selCh]) / 32768.0);
-            }
-        } else if (!w.isFloat && w.bitsPerSample == 24) {
-            std::vector<uint8_t> frameBuffer(chs * 3);
-            for (size_t i = 0; i < frameCount; ++i) {
-                file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * 3);
-                size_t idx = selCh * 3;
-                int32_t val = (frameBuffer[idx + 2] << 16) | (frameBuffer[idx + 1] << 8) | frameBuffer[idx];
-                if (val & 0x800000)
-                    val |= 0xFF000000; // Sign extend
-                coeffs.push_back(static_cast<double>(val) / 8388608.0);
-            }
-        } else if (!w.isFloat && w.bitsPerSample == 32) {
-            std::vector<int32_t> frameBuffer(chs);
-            for (size_t i = 0; i < frameCount; ++i) {
-                file.read(reinterpret_cast<char*>(frameBuffer.data()), chs * sizeof(int32_t));
-                coeffs.push_back(static_cast<double>(frameBuffer[selCh]) / 2147483648.0);
-            }
+            currentLine++;
         }
         return coeffs;
     }
 
-    // Try reading as raw binary float64/float32 or text lines
     std::ifstream rawFile(path, std::ios::binary);
     if (!rawFile.is_open())
         return coeffs;
 
-    rawFile.seekg(0, std::ios::end);
-    size_t fileSize = rawFile.tellg();
-    rawFile.seekg(0, std::ios::beg);
+    if (skipBytesLines > 0) {
+        rawFile.seekg(skipBytesLines, std::ios::beg);
+    }
 
-    if (fmt == "FLOAT64" || (fmt == "AUTO" && fileSize % sizeof(double) == 0)) {
-        size_t count = fileSize / sizeof(double);
+    size_t startPos = rawFile.tellg();
+    rawFile.seekg(0, std::ios::end);
+    size_t totalBytes = static_cast<size_t>(rawFile.tellg()) - startPos;
+    rawFile.seekg(startPos, std::ios::beg);
+
+    size_t bytesToRead = totalBytes;
+    if (readBytesLines > 0 && static_cast<size_t>(readBytesLines) < bytesToRead) {
+        bytesToRead = static_cast<size_t>(readBytesLines);
+    }
+
+    if (fmt == "FLOAT64" || fmt == "F64_LE") {
+        size_t count = bytesToRead / sizeof(double);
         coeffs.resize(count);
-        rawFile.read(reinterpret_cast<char*>(coeffs.data()), fileSize);
-        return coeffs;
-    } else if (fmt == "FLOAT32" || (fmt == "AUTO" && fileSize % sizeof(float) == 0)) {
-        size_t count = fileSize / sizeof(float);
+        rawFile.read(reinterpret_cast<char*>(coeffs.data()), count * sizeof(double));
+    } else if (fmt == "FLOAT32" || fmt == "F32_LE") {
+        size_t count = bytesToRead / sizeof(float);
         std::vector<float> fBuf(count);
-        rawFile.read(reinterpret_cast<char*>(fBuf.data()), fileSize);
+        rawFile.read(reinterpret_cast<char*>(fBuf.data()), count * sizeof(float));
         coeffs.reserve(count);
         for (float val : fBuf)
             coeffs.push_back(static_cast<double>(val));
-        return coeffs;
     } else if (fmt == "S32_LE") {
-        size_t count = fileSize / sizeof(int32_t);
+        size_t count = bytesToRead / sizeof(int32_t);
         std::vector<int32_t> iBuf(count);
-        rawFile.read(reinterpret_cast<char*>(iBuf.data()), fileSize);
+        rawFile.read(reinterpret_cast<char*>(iBuf.data()), count * sizeof(int32_t));
         coeffs.reserve(count);
         for (int32_t val : iBuf)
-            coeffs.push_back(static_cast<double>(val) / 2147483648.0);
-        return coeffs;
+            coeffs.push_back(static_cast<double>(val) / 2147483647.0);
     } else if (fmt == "S16_LE") {
-        size_t count = fileSize / sizeof(int16_t);
+        size_t count = bytesToRead / sizeof(int16_t);
         std::vector<int16_t> iBuf(count);
-        rawFile.read(reinterpret_cast<char*>(iBuf.data()), fileSize);
+        rawFile.read(reinterpret_cast<char*>(iBuf.data()), count * sizeof(int16_t));
         coeffs.reserve(count);
         for (int16_t val : iBuf)
-            coeffs.push_back(static_cast<double>(val) / 32768.0);
-        return coeffs;
-    }
-
-    // Fallback to text reading
-    rawFile.close();
-    std::ifstream textFile(path);
-    std::string line;
-    while (std::getline(textFile, line)) {
-        std::stringstream ss(line);
-        double val;
-        if (ss >> val) {
-            coeffs.push_back(val);
-        }
+            coeffs.push_back(static_cast<double>(val) / 32767.0);
     }
 
     return coeffs;
+}
+
+std::vector<double> ConvCoefficientLoader::loadFLAC(const std::string& path, int channel) {
+    std::vector<double> coeffs;
+    QEventLoop loop;
+    QAudioDecoder decoder;
+    decoder.setSource(QUrl::fromLocalFile(QString::fromStdString(path)));
+
+    QObject::connect(&decoder, &QAudioDecoder::bufferReady, [&]() {
+        QAudioBuffer buffer = decoder.read();
+        int channelCount = buffer.format().channelCount();
+        int selCh = std::min(channelCount - 1, std::max(0, channel));
+        int sampleCount = buffer.sampleCount();
+
+        if (buffer.format().sampleFormat() == QAudioFormat::Float) {
+            const float* data = buffer.constData<float>();
+            for (int i = 0; i < sampleCount; ++i) {
+                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]));
+            }
+        } else if (buffer.format().sampleFormat() == QAudioFormat::Int16) {
+            const int16_t* data = buffer.constData<int16_t>();
+            for (int i = 0; i < sampleCount; ++i) {
+                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]) / 32767.0);
+            }
+        } else if (buffer.format().sampleFormat() == QAudioFormat::Int32) {
+            const int32_t* data = buffer.constData<int32_t>();
+            for (int i = 0; i < sampleCount; ++i) {
+                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]) / 2147483647.0);
+            }
+        }
+    });
+
+    QObject::connect(&decoder, &QAudioDecoder::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&decoder, QOverload<QAudioDecoder::Error>::of(&QAudioDecoder::error),
+                     [&](QAudioDecoder::Error) { loop.quit(); });
+
+    decoder.start();
+    loop.exec();
+    return coeffs;
+}
+
+void ConvCoefficientLoader::normalizeGain(std::vector<double>& coeffs, double targetDb) {
+    if (coeffs.empty())
+        return;
+    double maxVal = 0.0;
+    for (double c : coeffs) {
+        double absVal = std::abs(c);
+        if (absVal > maxVal)
+            maxVal = absVal;
+    }
+    if (maxVal > 0.0) {
+        double scale = std::pow(10.0, targetDb / 20.0) / maxVal;
+        for (double& c : coeffs) {
+            c *= scale;
+        }
+    }
+}
+
+std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& path, const std::string& fmt,
+                                                            int targetChannel, int userSampleRate, int skipBytesLines,
+                                                            int readBytesLines) {
+    std::string upperFmt = fmt;
+    std::transform(upperFmt.begin(), upperFmt.end(), upperFmt.begin(), ::toupper);
+
+    if (upperFmt == "WAV" || parseWavHeader(path).has_value()) {
+        return loadWAV(path, targetChannel);
+    }
+    if (upperFmt == "FLAC" || (path.length() >= 5 && path.substr(path.length() - 5) == ".flac") ||
+        (path.length() >= 5 && path.substr(path.length() - 5) == ".FLAC")) {
+        return loadFLAC(path, targetChannel);
+    }
+    return loadRaw(path, upperFmt == "AUTO" ? "FLOAT64" : upperFmt, skipBytesLines, readBytesLines);
 }
 
 bool ConvCoefficientLoader::saveRawFloat64(const std::vector<double>& coeffs, const std::string& outputPath) {

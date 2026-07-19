@@ -16,7 +16,6 @@ class AutoEqPickerDlg : public QDialog {
     Q_OBJECT
 
 public:
-public:
     AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr)
         : AutoEqPickerDlg(pipeline, nullptr, parent) {}
     AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline, std::shared_ptr<DSPEngineController> dspController,
@@ -25,6 +24,7 @@ public:
 private slots:
     void onSearchTextChanged(const QString& text);
     void onImportClicked();
+    void refreshDatabase();
 
 private:
     std::shared_ptr<PipelineStore> m_pipeline;
@@ -32,13 +32,22 @@ private:
     AutoEqService m_service;
     std::vector<AutoEqIndexEntry> m_entries;
 
+    bool m_isLoading = true;
+    bool m_isImporting = false;
+    QString m_errorMessage;
+
     QLineEdit* m_searchEdit;
     QListWidget* m_listWidget;
-    QPushButton* m_importBtn;
-    QLabel* m_statusLabel;
+    QPushButton* m_refreshBtn;
+    QPushButton* m_cancelBtn;
+
+    QWidget* m_overlayWidget;
+    QLabel* m_overlayTitle;
+    QLabel* m_overlaySubtitle;
 
     void setupUi();
-    void loadIndex(bool forceRefresh = false);
+    void loadDatabase(bool forceRefresh = false);
+    void updateUiState();
 };
 
 #endif // AUTO_EQ_PICKER_DLG_H
