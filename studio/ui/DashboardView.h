@@ -50,6 +50,7 @@ private:
     QGroupBox* m_spectrumGroup = nullptr;
     QGroupBox* m_spectrogramGroup = nullptr;
     QGroupBox* m_vectorScopeGroup = nullptr;
+    QGroupBox* m_faderGroup = nullptr;
 
     LevelMeterView* m_captureMeters = nullptr;
     LevelMeterView* m_playbackMeters = nullptr;

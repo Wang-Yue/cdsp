@@ -1,15 +1,21 @@
 #include "ui/AnalogVUMeterView.h"
 
+#include "ui/StyleTheme.h"
+
 #include <QEvent>
+#include <QFont>
 #include <QLinearGradient>
+#include <QPainterPath>
 #include <QRadialGradient>
 #include <algorithm>
 #include <cmath>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(180);
-    connect(&m_animTimer, &QTimer::timeout, this, &AnalogVUMeterView::onAnimTick);
-    m_animTimer.start(16); // ~60 FPS continuous ballistic animation
+    setMinimumHeight(160);
 }
 
 void AnalogVUMeterView::showEvent(QShowEvent* event) {
@@ -31,7 +37,7 @@ void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
 
 float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
     double level = static_cast<double>(dbFS);
-    double refLevel = -18.0 + m_gainCalibrationDb; // 0 VU = -18.0 dBFS + Calibration Offset
+    double refLevel = -18.0; // 0 VU = -18 dBFS (matches SwiftUI refLevel)
     double vu = level - refLevel;
 
     double ratio = std::pow(10.0, vu / 20.0);
@@ -40,8 +46,7 @@ float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
     double norm = (ratio - minR) / (maxR - minR);
     double clippedNorm = std::min(std::max(norm, -0.076), 1.1);
 
-    // Relative to top vertical (0 deg), needle ranges from -35.0 deg to +35.0 deg.
-    double startAngle = -35.0;
+    double startAngle = -35.0; // Relative to North (12 o'clock)
     double totalSpan = 70.0;
     return static_cast<float>(startAngle + clippedNorm * totalSpan);
 }
@@ -49,45 +54,7 @@ float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
 void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
     m_leftDB = leftDB;
     m_rightDB = rightDB;
-
-    if (leftDB >= -0.1f)
-        m_peakClipLHold = 1.0f;
-    if (rightDB >= -0.1f)
-        m_peakClipRHold = 1.0f;
-
-    m_targetAngleL = computeAngleForLevel(leftDB);
-    m_targetAngleR = computeAngleForLevel(rightDB);
-}
-
-void AnalogVUMeterView::onAnimTick() {
-    // Ballistic needle inertia/damping physics: y_next = y + (target - y) * 0.2 + momentum
-    constexpr float alpha = 0.20f;
-    float springForceL = (m_targetAngleL - m_currentAngleL) * alpha;
-    m_velocityL = m_velocityL * 0.72f + springForceL;
-    float nextL = m_currentAngleL + m_velocityL;
-
-    float springForceR = (m_targetAngleR - m_currentAngleR) * alpha;
-    m_velocityR = m_velocityR * 0.72f + springForceR;
-    float nextR = m_currentAngleR + m_velocityR;
-
-    bool needUpdate = false;
-    if (std::abs(nextL - m_currentAngleL) > 0.001f || std::abs(nextR - m_currentAngleR) > 0.001f) {
-        m_currentAngleL = nextL;
-        m_currentAngleR = nextR;
-        needUpdate = true;
-    }
-    if (m_peakClipLHold > 0.0f) {
-        m_peakClipLHold = std::max(0.0f, m_peakClipLHold - 0.02f);
-        needUpdate = true;
-    }
-    if (m_peakClipRHold > 0.0f) {
-        m_peakClipRHold = std::max(0.0f, m_peakClipRHold - 0.02f);
-        needUpdate = true;
-    }
-
-    if (needUpdate) {
-        update();
-    }
+    update();
 }
 
 void AnalogVUMeterView::changeEvent(QEvent* event) {
@@ -107,275 +74,224 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
 
     size_t chCount = 2;
     if (m_levelState && !m_levelState->playbackRms.empty()) {
-        chCount = std::max((size_t)1, m_levelState->playbackRms.size());
+        chCount = std::max(static_cast<size_t>(1), m_levelState->playbackRms.size());
     }
 
-    int spacing = 8;
-    int meterWidth = (w - (static_cast<int>(chCount) + 1) * spacing) / static_cast<int>(chCount);
-    meterWidth = std::max(20, meterWidth);
+    int spacing = 16;
+    int meterWidth = (w - static_cast<int>(chCount + 1) * spacing) / static_cast<int>(chCount);
+    meterWidth = std::max(40, meterWidth);
 
     for (size_t i = 0; i < chCount; ++i) {
-        float levelDb = -60.0f;
-        bool clipped = false;
-
+        float levelDb = -100.0f;
         if (m_levelState && i < m_levelState->playbackRms.size()) {
             levelDb = m_levelState->playbackRms[i];
-            if (i < m_levelState->playbackPeak.size() && m_levelState->playbackPeak[i] >= -0.1f) {
-                if (i == 0)
-                    m_peakClipLHold = 1.0f;
-                else if (i == 1)
-                    m_peakClipRHold = 1.0f;
-            }
-            clipped = (i == 0) ? (m_peakClipLHold > 0.0f) : (m_peakClipRHold > 0.0f);
         } else {
             levelDb = (i == 0) ? m_leftDB : m_rightDB;
-            clipped = (i == 0) ? (m_peakClipLHold > 0.0f) : (m_peakClipRHold > 0.0f);
-        }
-
-        QString label;
-        if (chCount == 2) {
-            label = (i == 0) ? "LEFT" : "RIGHT";
-        } else {
-            label = QString("CH %1").arg(i + 1);
         }
 
         float angle = computeAngleForLevel(levelDb);
         int xPos = spacing + static_cast<int>(i) * (meterWidth + spacing);
-        drawSingleVU(p, QRect(xPos, 8, meterWidth, h - 16), angle, label, levelDb, clipped);
+        QRect totalRect(xPos, 4, meterWidth, h - 8);
+
+        float scale = totalRect.height() / 160.0f;
+        drawSingleVU(p, totalRect, angle, QString::number(i + 1), scale);
     }
 }
 
-void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& rect, float angleDeg, const QString& label,
-                                     float levelDb, bool isClipped) {
-    if (rect.width() < 20 || rect.height() < 20)
+void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float angleDeg, const QString& label,
+                                     float scale) {
+    if (totalRect.width() < 20 || totalRect.height() < 20)
         return;
 
     p.save();
-    p.setClipRect(rect);
 
-    QColor bgTop, bgBot, textColor, arcPenColor, redPenColor, needlePenColor, bulbAmberColor, bulbHotSpotColor;
+    int labelHeight = static_cast<int>(18 * scale);
+    QRect dialRect = totalRect.adjusted(0, 0, 0, -labelHeight);
+
+    QColor bulbAmberColor, bulbHotSpotColor, needleColor, arcColor, percentageMarksColor, redZoneColor;
+    bool isDark = StyleTheme::isDark();
+
     if (m_settings.theme == VUTheme::VintageAmber) {
-        bgTop = QColor("#f4ecd8");
-        bgBot = QColor("#dfd3b6");
-        textColor = QColor("#3d2f21");
-        arcPenColor = QColor(61, 47, 33, 150);
-        redPenColor = QColor(204, 41, 41, 204);
-        needlePenColor = QColor(17, 17, 17, 230);
-        bulbAmberColor = QColor(255, 209, 102);
-        bulbHotSpotColor = QColor(255, 250, 224);
+        bulbAmberColor = QColor(255, 209, 102);   // Color(red: 1.0, green: 0.82, blue: 0.40)
+        bulbHotSpotColor = QColor(255, 250, 224); // Color(red: 1.0, green: 0.98, blue: 0.88)
+        needleColor = isDark ? QColor(255, 255, 255, 230) : QColor(0, 0, 0, 230);          // .primary.opacity(0.9)
+        arcColor = isDark ? QColor(255, 255, 255, 153) : QColor(0, 0, 0, 153);             // .primary.opacity(0.6)
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 102) : QColor(0, 0, 0, 102); // .primary.opacity(0.4)
+        redZoneColor = QColor(255, 0, 0, 204);                                             // .red.opacity(0.8)
     } else if (m_settings.theme == VUTheme::DarkStealth) {
-        bgTop = QColor("#1c1c1e");
-        bgBot = QColor("#0c0c0e");
-        textColor = QColor("#e5e5ea");
-        arcPenColor = QColor(255, 255, 255, 76);
-        redPenColor = QColor(255, 255, 255, 128);
-        needlePenColor = QColor("#ffffff");
-        bulbAmberColor = QColor(0, 0, 0, 100);
-        bulbHotSpotColor = QColor(255, 255, 255, 38);
-    } else { // Warm Tube
-        bgTop = QColor("#2c1b12");
-        bgBot = QColor("#1a0e08");
-        textColor = QColor("#ff9f0a");
-        arcPenColor = QColor(255, 159, 10, 128);
-        redPenColor = QColor(217, 51, 26, 204);
-        needlePenColor = QColor(38, 38, 38);
-        bulbAmberColor = QColor(242, 115, 26);
-        bulbHotSpotColor = QColor(255, 204, 77);
+        bulbAmberColor = QColor(0, 0, 0, 102);                                           // Color.black.opacity(0.4)
+        bulbHotSpotColor = QColor(255, 255, 255, 38);                                    // Color.white.opacity(0.15)
+        needleColor = QColor(255, 255, 255);                                             // .white
+        arcColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);             // .primary.opacity(0.3)
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51); // .primary.opacity(0.2)
+        redZoneColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);       // .primary.opacity(0.5)
+    } else {                                                                             // Warm Tube
+        bulbAmberColor = QColor(242, 115, 26);   // Color(red: 0.95, green: 0.45, blue: 0.1)
+        bulbHotSpotColor = QColor(255, 204, 77); // Color(red: 1.0, green: 0.8, blue: 0.3)
+        needleColor = QColor(38, 38, 38);        // Color(red: 0.15, green: 0.15, blue: 0.15)
+        arcColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);           // .primary.opacity(0.5)
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76); // .primary.opacity(0.3)
+        redZoneColor = QColor(217, 51, 26, 204); // Color(red: 0.85, green: 0.2, blue: 0.1).opacity(0.8)
     }
 
-    // Dial face background
-    QRadialGradient faceGrad(rect.center(), std::max(1.0, rect.width() / 2.0));
-    faceGrad.setColorAt(0.0, bgTop);
-    faceGrad.setColorAt(1.0, bgBot);
-    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
-        p.fillRect(rect, faceGrad);
-    }
+    double w = dialRect.width();
+    double h = dialRect.height();
 
-    double effectiveRadiusScale = m_settings.radiusScale;
-    double effectivePivotY = m_settings.pivotY;
-    double effectiveNeedleExt = m_settings.needleExtension;
+    QPointF center(dialRect.left() + w / 2.0, dialRect.top() + h * m_settings.pivotY);
+    double radius = h * m_settings.radiusScale;
+    double baseH = dialRect.top() + h;
 
-    QPointF pivot(rect.center().x(), rect.top() + rect.height() * effectivePivotY);
-    double radius = rect.height() * effectiveRadiusScale;
+    p.save();
+    p.setClipRect(dialRect);
 
-    double baseH = rect.top() + rect.height();
-    double scale = rect.height() / 160.0;
-
-    // Focused Bulb Hot Spot Glow Shading
-    if (m_settings.hotSpotAlpha > 0) {
-        QRadialGradient bulbGrad(QPointF(rect.center().x(), baseH + 5 * scale), rect.height() * 0.4);
-        QColor hsColor = bulbHotSpotColor;
-        hsColor.setAlphaF(m_settings.hotSpotAlpha);
-        bulbGrad.setColorAt(0.0, hsColor);
-        hsColor.setAlphaF(0.0);
-        bulbGrad.setColorAt(1.0, hsColor);
-        p.fillRect(rect, bulbGrad);
-    }
-
-    // Ambient Glow
+    // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
-        QRadialGradient glowGrad(QPointF(rect.center().x(), baseH + 10 * scale), rect.height() * 1.6);
+        QRadialGradient amberGlow(QPointF(dialRect.left() + w / 2.0, baseH + 10 * scale), h * 1.6);
         QColor ambColor = bulbAmberColor;
         ambColor.setAlphaF(m_settings.ambientGlow);
-        glowGrad.setColorAt(0.0, ambColor);
+        amberGlow.setColorAt(0.0, ambColor);
         ambColor.setAlphaF(0.0);
-        glowGrad.setColorAt(0.8, ambColor);
-        glowGrad.setColorAt(1.0, ambColor);
-        p.fillRect(rect, glowGrad);
+        amberGlow.setColorAt(0.8, ambColor);
+        amberGlow.setColorAt(1.0, ambColor);
+        p.fillRect(dialRect, amberGlow);
     }
 
-    // Main Scale Arc (-35 deg to +35 deg from North, mapped to 55 deg .. 125 deg CCW in Qt)
-    p.setPen(QPen(arcPenColor, 1.8));
-    p.drawArc(QRectF(pivot.x() - radius, pivot.y() - radius, radius * 2, radius * 2), 55 * 16, 70 * 16);
+    // 2. HOT SPOT
+    if (m_settings.hotSpotAlpha > 0) {
+        QRadialGradient hotSpot(QPointF(dialRect.left() + w / 2.0, baseH + 5 * scale), h * 0.4);
+        QColor hsColor = bulbHotSpotColor;
+        hsColor.setAlphaF(m_settings.hotSpotAlpha);
+        hotSpot.setColorAt(0.0, hsColor);
+        hsColor.setAlphaF(0.0);
+        hotSpot.setColorAt(1.0, hsColor);
+        p.fillRect(dialRect, hotSpot);
+    }
 
-    // Red zone (> 0 VU / -18 dBFS)
-    float zeroVUAngle = computeAngleForLevel(-18.0f + m_gainCalibrationDb); // ~ +13.02 deg right of North
-    double zeroVU_CCW = 90.0 - zeroVUAngle;
-    double redSpan_CCW = zeroVU_CCW - 55.0; // from 0 VU to +3 VU (55 deg CCW)
-    p.setPen(QPen(redPenColor, 4));
-    p.drawArc(QRectF(pivot.x() - radius - 2, pivot.y() - radius - 2, (radius + 2) * 2, (radius + 2) * 2), 55 * 16,
-              static_cast<int>(redSpan_CCW * 16));
+    // 3. Main Scale Arc
+    p.setPen(QPen(arcColor, 1.8 * scale));
+    p.drawArc(QRectF(center.x() - radius, center.y() - radius, radius * 2, radius * 2), 55 * 16, 70 * 16);
 
-    // Numeric Arc Markings & Ticks (-20 to +3 VU)
-    p.setFont(QFont("sans-serif", 8, QFont::Bold));
+    // 4. Marks Drawing (-20 to +3 VU)
     struct VUMark {
         double vu;
         const char* text;
     };
-    static const VUMark marks[] = {{-20, "20"}, {-10, "10"}, {-7, "7"}, {-5, "5"}, {-3, "3"}, {-2, "2"},
-                                   {-1, "1"},   {0, "0"},    {1, "1"},  {2, "2"},  {3, "3"}};
+    static const VUMark vuMarks[] = {{-20, "20"}, {-10, "10"}, {-7, "7"}, {-5, "5"}, {-3, "3"}, {-2, "2"},
+                                     {-1, "1"},   {0, "0"},    {1, "1"},  {2, "2"},  {3, "3"}};
 
-    for (const auto& m : marks) {
-        float angle = computeAngleForLevel(-18.0f + m_gainCalibrationDb + m.vu);
-        double rad = (angle - 90.0) * M_PI / 180.0;
+    QFont vintageFont("Serif", static_cast<int>(std::max(7.0, 10.0 * scale)), QFont::Normal);
+    vintageFont.setStyleHint(QFont::Serif);
 
-        double xInner = pivot.x() + radius * std::cos(rad);
-        double yInner = pivot.y() + radius * std::sin(rad);
-        double xOuter = pivot.x() + (radius + 7) * std::cos(rad);
-        double yOuter = pivot.y() + (radius + 7) * std::sin(rad);
+    for (const auto& m : vuMarks) {
+        float angDeg = computeAngleForLevel(-18.0f + m.vu);
+        double rad = (angDeg - 90.0) * M_PI / 180.0;
 
-        p.setPen(QPen(m.vu >= 0 ? redPenColor : arcPenColor, 1.8));
-        p.drawLine(QPointF(xInner, yInner), QPointF(xOuter, yOuter));
+        double cosA = std::cos(rad);
+        double sinA = std::sin(rad);
 
-        double xTxt = pivot.x() + (radius + 18) * std::cos(rad);
-        double yTxt = pivot.y() + (radius + 18) * std::sin(rad);
-        p.setPen(m.vu >= 0 ? redPenColor : textColor);
-        p.drawText(QRectF(xTxt - 12, yTxt - 6, 24, 12), Qt::AlignCenter, m.text);
+        QPointF s(center.x() + cosA * radius, center.y() + sinA * radius);
+        double eR = radius + 7 * scale;
+        QPointF e(center.x() + cosA * eR, center.y() + sinA * eR);
+
+        QColor color = m.vu >= 0 ? redZoneColor : arcColor;
+        QColor tickColor = color;
+        tickColor.setAlphaF(color.alphaF() * 0.7);
+
+        p.setPen(QPen(tickColor, 1.8 * scale));
+        p.drawLine(s, e);
+
+        double lR = radius + 18 * scale;
+        QPointF lp(center.x() + cosA * lR, center.y() + sinA * lR);
+
+        p.save();
+        p.translate(lp);
+        p.rotate(angDeg);
+        p.setFont(vintageFont);
+        QColor textColor = color;
+        textColor.setAlphaF(color.alphaF() * 0.6);
+        p.setPen(textColor);
+        p.drawText(QRectF(-15 * scale, -8 * scale, 30 * scale, 16 * scale), Qt::AlignCenter, m.text);
+        p.restore();
     }
 
-    // Percentage Markings below main arc: [0, 20, 40, 60, 80, 100]
-    p.setPen(QPen(QColor(textColor.red(), textColor.green(), textColor.blue(), 100), 1.0));
+    // Percentage Markings (BELOW main arc: 0 to 100)
     for (int pct : {0, 20, 40, 60, 80, 100}) {
         double ratio = pct / 100.0;
         double norm = (ratio - 0.1) / (1.412 - 0.1);
-        double angle = -35.0 + norm * 70.0;
-        double rad = (angle - 90.0) * M_PI / 180.0;
+        double angDeg = -35.0 + norm * 70.0;
+        double rad = (angDeg - 90.0) * M_PI / 180.0;
 
-        double xOuter = pivot.x() + radius * std::cos(rad);
-        double yOuter = pivot.y() + radius * std::sin(rad);
-        double xInner = pivot.x() + (radius - 7) * std::cos(rad);
-        double yInner = pivot.y() + (radius - 7) * std::sin(rad);
+        double cosA = std::cos(rad);
+        double sinA = std::sin(rad);
 
-        p.drawLine(QPointF(xInner, yInner), QPointF(xOuter, yOuter));
+        QPointF s(center.x() + cosA * radius, center.y() + sinA * radius);
+        double eR = radius - 7 * scale;
+        QPointF e(center.x() + cosA * eR, center.y() + sinA * eR);
 
-        double xTxt = pivot.x() + (radius - 18) * std::cos(rad);
-        double yTxt = pivot.y() + (radius - 18) * std::sin(rad);
-        p.drawText(QRectF(xTxt - 12, yTxt - 6, 24, 12), Qt::AlignCenter, QString::number(pct));
+        QColor pTickColor = percentageMarksColor;
+        pTickColor.setAlphaF(percentageMarksColor.alphaF() * 0.4);
+        p.setPen(QPen(pTickColor, 1.0 * scale));
+        p.drawLine(s, e);
+
+        double lR = radius - 18 * scale;
+        QPointF lp(center.x() + cosA * lR, center.y() + sinA * lR);
+
+        p.save();
+        p.translate(lp);
+        p.rotate(angDeg);
+        p.setFont(vintageFont);
+        p.setPen(pTickColor);
+        p.drawText(QRectF(-15 * scale, -8 * scale, 30 * scale, 16 * scale), Qt::AlignCenter, QString::number(pct));
+        p.restore();
     }
 
-    // Dynamic Needle
-    p.save();
-    p.translate(pivot);
-    p.rotate(angleDeg);
+    // 5. Red Zone Arc
+    float redS = computeAngleForLevel(-18.0f); // 0 VU
+    double zeroVU_CCW = 90.0 - redS;
+    double redSpan_CCW = zeroVU_CCW - 55.0; // from 0 VU to +3 VU
+    p.setPen(QPen(redZoneColor, 4 * scale));
+    p.drawArc(QRectF(center.x() - radius - 2 * scale, center.y() - radius - 2 * scale, (radius + 2 * scale) * 2,
+                     (radius + 2 * scale) * 2),
+              55 * 16, static_cast<int>(redSpan_CCW * 16));
 
-    // Dynamic Needle Drop Shadow
-    QColor needleShadowColor;
-    if (m_settings.theme == VUTheme::VintageAmber) {
-        needleShadowColor = QColor(61, 47, 33, 75);
-    } else if (m_settings.theme == VUTheme::DarkStealth) {
-        needleShadowColor = QColor(0, 0, 0, 140);
-    } else { // Warm Tube
-        needleShadowColor = QColor(20, 10, 5, 120);
-    }
+    // 6. Perfected Needle
+    double nAngRad = (angleDeg - 90.0) * M_PI / 180.0;
+    double nR = radius + m_settings.needleExtension * scale;
+    QPointF ne(center.x() + std::cos(nAngRad) * nR, center.y() + std::sin(nAngRad) * nR);
 
-    double nLen = radius + effectiveNeedleExt * scale;
-    p.setPen(QPen(needleShadowColor, 1.6));
-    p.drawLine(QPointF(1.5, 1.5), QPointF(1.5, -nLen + 1.5));
+    p.setPen(QPen(needleColor, 1.2 * scale));
+    p.drawLine(center, ne);
 
-    p.setPen(QPen(needlePenColor, 1.2));
-    p.drawLine(0, 0, 0, -nLen);
+    // 7. Glass Surface Reflection
+    QLinearGradient glassGrad(dialRect.topLeft(), dialRect.bottomRight());
+    glassGrad.setColorAt(0.0, QColor(255, 255, 255, 64)); // white 0.25 opacity
+    glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));  // clear
+    glassGrad.setColorAt(1.0, QColor(0, 0, 0, 13));       // black 0.05 opacity
+    p.fillRect(dialRect, glassGrad);
 
-    // Pivot cap
-    p.setBrush(QColor("#2b2b2b"));
-    p.setPen(Qt::NoPen);
-    p.drawEllipse(QPointF(0, 0), 6, 6);
-
-    p.restore();
-
-    // 1. Active Signal Indicator LED Lamp (Top Left)
-    QPointF signalLedPos(rect.left() + 20, rect.top() + 20);
-    p.setPen(QPen(QColor("#111111"), 1));
-    bool isSignalActive = (levelDb > -50.0f);
-    if (isSignalActive) {
-        QRadialGradient sigGlow(signalLedPos, 10);
-        sigGlow.setColorAt(0.0, QColor(52, 199, 89, 240));
-        sigGlow.setColorAt(0.7, QColor(52, 199, 89, 180));
-        sigGlow.setColorAt(1.0, QColor(52, 199, 89, 0));
-        p.fillRect(QRectF(signalLedPos.x() - 10, signalLedPos.y() - 10, 20, 20), sigGlow);
-        p.setBrush(QColor(52, 199, 89));
-    } else {
-        p.setBrush(QColor("#113a18"));
-    }
-    p.drawEllipse(signalLedPos, 4, 4);
-
-    // 2. Peak Clip Indicator Lamp LED (Top Right)
-    QPointF clipLedPos(rect.right() - 20, rect.top() + 20);
-    p.setPen(QPen(QColor("#111111"), 1));
-    if (isClipped) {
-        QRadialGradient clipGlow(clipLedPos, 12);
-        clipGlow.setColorAt(0.0, QColor("#ff3b30"));
-        clipGlow.setColorAt(0.5, QColor(255, 59, 48, 200));
-        clipGlow.setColorAt(1.0, QColor(255, 59, 48, 0));
-        p.fillRect(QRectF(clipLedPos.x() - 12, clipLedPos.y() - 12, 24, 24), clipGlow);
-        p.setBrush(QColor("#ff3b30"));
-    } else {
-        p.setBrush(QColor("#4a1111"));
-    }
-    p.drawEllipse(clipLedPos, 5, 5);
-
-    // Calibration Knob readout badge if offset is non-zero
-    if (std::abs(m_gainCalibrationDb) > 0.01f) {
-        p.setFont(QFont("sans-serif", 7, QFont::Bold));
-        p.setPen(QColor("#8e8e93"));
-        QString calText =
-            QString("CAL %1%2dB").arg(m_gainCalibrationDb >= 0 ? "+" : "").arg(m_gainCalibrationDb, 0, 'f', 1);
-        p.drawText(QRectF(rect.left() + 28, rect.top() + 14, 50, 12), Qt::AlignLeft | Qt::AlignVCenter, calText);
-    }
-
-    // Additive Light Wash
+    // 8. ADDITIVE LIGHT WASH
     if (m_settings.lightWash > 0) {
         QColor lwColor = bulbAmberColor;
         lwColor.setAlphaF(m_settings.lightWash);
-        p.fillRect(rect, lwColor);
+        p.fillRect(dialRect, lwColor);
     }
 
-    // Glass Surface Glare Reflection Overlay
-    QLinearGradient glassGrad(rect.topLeft(), rect.bottomRight());
-    glassGrad.setColorAt(0.0, QColor(255, 255, 255, 60));
-    glassGrad.setColorAt(0.4, QColor(255, 255, 255, 10));
-    glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));
-    glassGrad.setColorAt(1.0, QColor(255, 255, 255, 0));
-    p.fillRect(rect, glassGrad);
+    p.restore(); // Restore clip region
 
-    // Border
-    p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(QColor(textColor.red(), textColor.green(), textColor.blue(), 50), 1.2));
-    p.drawRoundedRect(rect, 6, 6);
+    // Dial Box Outer Border Stroke & Corner Radius
+    QPainterPath boxPath;
+    boxPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
+    p.setPen(QPen(isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51), 1.2 * scale));
+    p.drawPath(boxPath);
 
-    // Label
-    p.setFont(QFont("sans-serif", 10, QFont::Bold));
-    p.setPen(textColor);
-    p.drawText(rect.center().x() - 25, rect.bottom() - 15, 50, 14, Qt::AlignCenter, label);
+    // Channel Label (Positioned below the dial box)
+    QRect labelRect(totalRect.left(), dialRect.bottom() + static_cast<int>(4 * scale), totalRect.width(), labelHeight);
+    QFont labelFont("sans-serif", static_cast<int>(std::max(8.0, 11.0 * scale)), QFont::Black);
+    p.setFont(labelFont);
+    QColor lblColor = StyleTheme::textSecondary();
+    lblColor.setAlphaF(lblColor.alphaF() * 0.8);
+    p.setPen(lblColor);
+    p.drawText(labelRect, Qt::AlignCenter, label);
 
     p.restore();
 }

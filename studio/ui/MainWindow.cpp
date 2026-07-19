@@ -108,13 +108,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_settings = std::make_shared<AudioSettings>();
     m_devices = std::make_shared<AudioDeviceManager>(m_engine, m_settings);
     m_pipeline = std::make_shared<PipelineStore>();
-    m_dspController = std::make_shared<DSPEngineController>(m_engine, m_devices, m_settings, m_pipeline);
-
     m_spectrumEngine = std::make_shared<SpectrumEngine>();
     m_spectrogramEngine = std::make_shared<SpectrogramEngine>();
     m_vectorScopeEngine = std::make_shared<VectorScopeEngine>();
-    m_monitoring = std::make_shared<MonitoringController>(m_engine, m_dspController, m_spectrumEngine,
-                                                          m_spectrogramEngine, m_vectorScopeEngine);
+    auto levelStatePtr = std::make_shared<LevelState>();
+
+    m_monitoring = std::make_shared<MonitoringController>(
+        m_engine, levelStatePtr, m_spectrumEngine, m_spectrogramEngine, m_vectorScopeEngine, m_devices, m_settings);
+
+    m_dspController =
+        std::make_shared<DSPEngineController>(m_engine, m_devices, m_settings, m_pipeline, m_monitoring, levelStatePtr);
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
     connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this, [this]() {
@@ -125,7 +128,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     resize(1100, 780);
     setMinimumSize(960, 680);
-    setWindowTitle("CamillaDSP Monitor - Qt Edition");
+    setWindowTitle("DSP Monitor");
 
     setupUi();
     setupMenuBar();
@@ -646,15 +649,17 @@ void MainWindow::toggleMute() {
 void MainWindow::updateMuteDisplay() {
     bool muted = m_settings->getMuted(Fader::Main);
     if (muted) {
-        m_toolbarMuteBtn->setText("🔇 Muted");
+        m_toolbarMuteBtn->setText("🔇");
         m_toolbarMuteBtn->setStyleSheet(
-            "background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px;");
+            "QPushButton { background: transparent; color: #ff3b30; font-size: 14px; padding: 2px 4px; border: none; } "
+            "QPushButton:hover { background-color: rgba(255, 59, 48, 0.1); border-radius: 4px; }");
         m_statusMuteLabel->setText("MUTED");
         m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
     } else {
-        m_toolbarMuteBtn->setText("🔊 Mute");
+        m_toolbarMuteBtn->setText("🔊");
         m_toolbarMuteBtn->setStyleSheet(
-            "background-color: #3a3a3c; color: white; font-weight: normal; padding: 4px 8px; border-radius: 4px;");
+            "QPushButton { background: transparent; color: inherit; font-size: 14px; padding: 2px 4px; border: none; } "
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; }");
         m_statusMuteLabel->setText("Unmuted");
         m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
     }
@@ -673,10 +678,11 @@ void MainWindow::updateVolumeDisplay() {
 
     m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
     if (gain > 0.0f) {
-        m_gainValueLabel->setStyleSheet("font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 65px;");
+        m_gainValueLabel->setStyleSheet(
+            "font-family: monospace; font-size: 10pt; color: #ff3b30; padding-right: 10px;");
     } else {
         m_gainValueLabel->setStyleSheet(
-            QString("font-family: monospace; font-weight: bold; color: %1; min-width: 65px;")
+            QString("font-family: monospace; font-size: 10pt; color: %1; padding-right: 10px;")
                 .arg(StyleTheme::textPrimary().name()));
     }
 }
@@ -730,35 +736,37 @@ void MainWindow::updateStatusBar() {
 void MainWindow::onEngineStatusChanged(ProcessingState state) {
     switch (state) {
     case ProcessingState::Running:
-        m_startStopBtn->setText("Stop Engine");
+    case ProcessingState::Paused:
+    case ProcessingState::Stalled:
+        m_startStopBtn->setText("🛑 Stop");
+        m_startStopBtn->setToolTip("Stop Engine");
         m_startStopBtn->setStyleSheet(
-            "background-color: #ff3b30; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
-            m_engineRunTimer.start();
+            "QPushButton { background-color: transparent; color: #ff3b30; font-weight: bold; padding: 4px 8px; border: "
+            "none; } "
+            "QPushButton:hover { background-color: rgba(255, 59, 48, 0.1); border-radius: 4px; }");
+        if (state == ProcessingState::Running) {
+            if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
+                m_engineRunTimer.start();
+            }
+            m_runtimeUpdateTimer.start();
+        } else {
+            m_runtimeUpdateTimer.stop();
         }
-        m_runtimeUpdateTimer.start();
         break;
     case ProcessingState::Starting:
-        m_startStopBtn->setText("Starting...");
-        m_startStopBtn->setStyleSheet(
-            "background-color: #ffcc00; color: black; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Paused:
-        m_startStopBtn->setText("Paused (Click to Resume)");
-        m_startStopBtn->setStyleSheet(
-            "background-color: #007aff; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        break;
-    case ProcessingState::Stalled:
-        m_startStopBtn->setText("Stalled (Click to Restart)");
-        m_startStopBtn->setStyleSheet(
-            "background-color: #ff9500; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
-        m_runtimeUpdateTimer.stop();
+        m_startStopBtn->setText("⏳ Starting...");
+        m_startStopBtn->setToolTip("Starting Engine...");
+        m_startStopBtn->setStyleSheet("QPushButton { background-color: transparent; color: #ffcc00; font-weight: bold; "
+                                      "padding: 4px 8px; border: none; }");
         break;
     case ProcessingState::Inactive:
     default:
-        m_startStopBtn->setText("Start Engine");
+        m_startStopBtn->setText("▶️ Start");
+        m_startStopBtn->setToolTip("Start Engine");
         m_startStopBtn->setStyleSheet(
-            "background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+            "QPushButton { background-color: transparent; color: #34c759; font-weight: bold; padding: 4px 8px; border: "
+            "none; } "
+            "QPushButton:hover { background-color: rgba(52, 199, 89, 0.1); border-radius: 4px; }");
         m_runtimeUpdateTimer.stop();
         if (m_statusRuntimeLabel) {
             m_statusRuntimeLabel->setText("Run Time: 00:00:00");
@@ -776,11 +784,15 @@ void MainWindow::setupToolbar() {
     auto toolBar = addToolBar("Main Controls");
     toolBar->setMovable(false);
 
-    m_startStopBtn = new QPushButton("Start Engine", this);
+    m_startStopBtn = new QPushButton("▶️ Start", this);
+    m_startStopBtn->setToolTip("Start Engine");
     m_startStopBtn->setStyleSheet(
-        "background-color: #34c759; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;");
+        "QPushButton { background-color: transparent; color: #34c759; font-weight: bold; padding: 4px 8px; border: "
+        "none; } "
+        "QPushButton:hover { background-color: rgba(52, 199, 89, 0.1); border-radius: 4px; }");
     connect(m_startStopBtn, &QPushButton::clicked, [this]() {
-        if (m_dspController->status == ProcessingState::Running) {
+        if (m_dspController->status == ProcessingState::Running || m_dspController->status == ProcessingState::Paused ||
+            m_dspController->status == ProcessingState::Stalled) {
             m_dspController->stopEngine();
         } else {
             m_dspController->startEngine();
@@ -788,20 +800,17 @@ void MainWindow::setupToolbar() {
     });
     toolBar->addWidget(m_startStopBtn);
 
-    toolBar->addSeparator();
-
     m_sampleRateBadge = new QLabel("48000 Hz", this);
-    m_sampleRateBadge->setFont(QFont("monospace", 12, QFont::Bold));
-    m_sampleRateBadge->setStyleSheet("color: #8e8e93; padding: 0 12px;");
+    m_sampleRateBadge->setFont(QFont("monospace", 11));
+    m_sampleRateBadge->setStyleSheet("color: #8e8e93; padding-right: 8px; padding-left: 8px;");
     toolBar->addWidget(m_sampleRateBadge);
 
-    toolBar->addSeparator();
-
-    auto volLabel = new QLabel(" Volume:", this);
-    toolBar->addWidget(volLabel);
-
-    m_toolbarMuteBtn = new QPushButton("🔊 Mute", this);
-    m_toolbarMuteBtn->setStyleSheet("background-color: #3a3a3c; color: white; padding: 4px 8px; border-radius: 4px;");
+    m_toolbarMuteBtn = new QPushButton("🔊", this);
+    m_toolbarMuteBtn->setToolTip("Toggle Mute");
+    m_toolbarMuteBtn->setFlat(true);
+    m_toolbarMuteBtn->setStyleSheet(
+        "QPushButton { background: transparent; font-size: 14px; padding: 2px 4px; border: none; } "
+        "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; }");
     connect(m_toolbarMuteBtn, &QPushButton::clicked, this, &MainWindow::toggleMute);
     toolBar->addWidget(m_toolbarMuteBtn);
 
@@ -820,16 +829,12 @@ void MainWindow::setupToolbar() {
     toolBar->addWidget(m_headerVolumeSlider);
 
     m_gainValueLabel = new QLabel("  0.0 dB", this);
-    m_gainValueLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_gainValueLabel->setFont(QFont("monospace", 10));
+    m_gainValueLabel->setFixedWidth(50);
+    m_gainValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_gainValueLabel->setStyleSheet("padding-right: 10px;");
     updateVolumeDisplay();
     toolBar->addWidget(m_gainValueLabel);
-
-    toolBar->addSeparator();
-
-    auto miniPlayerBtn = new QPushButton("Floating MiniPlayer", this);
-    miniPlayerBtn->setStyleSheet("padding: 4px 10px;");
-    connect(miniPlayerBtn, &QPushButton::clicked, this, &MainWindow::toggleMiniPlayer);
-    toolBar->addWidget(miniPlayerBtn);
 }
 
 void MainWindow::toggleMiniPlayer() {
@@ -924,8 +929,6 @@ void MainWindow::refreshSidebarItems() {
 
     auto logsItem = new QTreeWidgetItem(monGroup, {"💻  Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
-    auto settingsItem = new QTreeWidgetItem(monGroup, {"⚙️  General Settings"});
-    settingsItem->setData(0, Qt::UserRole, "general_settings");
 
     // 3. Pipeline Section
     auto pipeGroup = new QTreeWidgetItem(m_sidebarTree, {"Pipeline"});
@@ -1012,7 +1015,7 @@ void MainWindow::refreshSidebarItems() {
     auto impConvItem = new QTreeWidgetItem(convGroup, {"📥  Import IR File(s)..."});
     impConvItem->setData(0, Qt::UserRole, "import_conv");
 
-    auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️  Room Correction Studio"});
+    auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️  Room Correction"});
     roomItem->setData(0, Qt::UserRole, "room_correction");
 
     // 5. EQ Presets Section
@@ -1022,12 +1025,12 @@ void MainWindow::refreshSidebarItems() {
         auto eItem = new QTreeWidgetItem(eqGroup, {QString("🎚️  %1").arg(QString::fromStdString(eq.name))});
         eItem->setData(0, Qt::UserRole, QString("eq_%1").arg(eq.id.toString()));
     }
-    auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕  Add Preset"});
+    auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕  Add"});
     addEqItem->setData(0, Qt::UserRole, "add_eq");
-    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🎧  AutoEQ Explorer"});
-    autoEqItem->setData(0, Qt::UserRole, "auto_eq");
-    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧  Oratory1990 Explorer"});
+    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧  Oratory"});
     oratoryItem->setData(0, Qt::UserRole, "oratory_eq");
+    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🎧  AutoEQ"});
+    autoEqItem->setData(0, Qt::UserRole, "auto_eq");
 
     m_sidebarTree->blockSignals(false);
 }

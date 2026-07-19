@@ -4,9 +4,10 @@
 #include "engine/CDSPEngine.h"
 #include "models/AudioDeviceManager.h"
 #include "models/AudioSettings.h"
+#include "models/LevelState.h"
+#include "models/MonitoringController.h"
 #include "models/PipelineStore.h"
 
-#include <QDateTime>
 #include <QObject>
 #include <QTimer>
 #include <memory>
@@ -18,7 +19,8 @@ class DSPEngineController : public QObject {
 public:
     DSPEngineController(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioDeviceManager> devices,
                         std::shared_ptr<AudioSettings> settings, std::shared_ptr<PipelineStore> pipeline,
-                        QObject* parent = nullptr);
+                        std::shared_ptr<MonitoringController> monitoring = nullptr,
+                        std::shared_ptr<LevelState> levels = nullptr, QObject* parent = nullptr);
 
     ProcessingState status = ProcessingState::Inactive;
     ProcessingStopReason lastStopReason;
@@ -28,6 +30,7 @@ public:
     std::shared_ptr<AudioDeviceManager> devices() const { return m_devices; }
     std::shared_ptr<AudioSettings> settings() const { return m_settings; }
     std::shared_ptr<PipelineStore> pipelineStore() const { return m_pipeline; }
+    std::shared_ptr<LevelState> levels() const { return m_levels; }
 
     void startEngine();
     void stopEngine();
@@ -37,28 +40,24 @@ public:
     void setFaderMute(Fader fader, bool mute);
     void toggleFaderMute(Fader fader);
 
-    void updateStatus(const StateUpdate& update);
-
 signals:
     void statusChanged(ProcessingState state);
     void statusUpdated(ProcessingState state, const ProcessingStopReason& stopReason);
     void configApplied();
 
 private:
+    void runApplyConfigTask();
+    void applyConfigAsync();
+    void syncFaders();
+
     std::shared_ptr<CDSPEngine> m_engine;
     std::shared_ptr<AudioDeviceManager> m_devices;
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<PipelineStore> m_pipeline;
+    std::shared_ptr<MonitoringController> m_monitoring;
+    std::shared_ptr<LevelState> m_levels;
 
-    QTimer m_reconnectTimer;
-    int m_retryCount = 0;
-    const int m_maxRetries = 5;
-    bool m_userStopped = true;
-    bool m_reconnectFailed = false;
-    QDateTime m_lastStartTime;
-
-    void scheduleAutoRestart(int delayMs);
-    void syncFaders();
+    QTimer m_applyConfigTimer;
 };
 
 #endif // DSP_ENGINE_CONTROLLER_H

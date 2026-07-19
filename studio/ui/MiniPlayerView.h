@@ -67,9 +67,12 @@ private:
     VectorScopeView* m_vectorScopeView = nullptr;
     AnalogVUMeterView* m_analogVUView = nullptr;
 
+    std::vector<QPushButton*> m_modeBtns;
+
     Fader currentFader() const;
     void setupUi();
     void buildMiniPipelineUi();
+    void updateModeButtonStyles(int activeIndex);
 };
 
 #endif // MINI_PLAYER_VIEW_H

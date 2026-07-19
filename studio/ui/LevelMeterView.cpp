@@ -36,23 +36,18 @@ static float normDB(float db) {
 static QColor appThemeColor(float value) {
     float v = std::clamp(value, 0.0f, 1.0f);
     if (v < 0.35f) {
-        return QColor("#34c759"); // Green
+        return QColor(0, 255, 0); // green
     } else if (v < 0.55f) {
         float t = (v - 0.35f) / 0.2f;
-        int r = static_cast<int>(52 + t * (255 - 52));
-        int g = static_cast<int>(199 + t * (204 - 199));
-        int b = static_cast<int>(89 * (1.0f - t));
-        return QColor(r, g, b);
+        return QColor(static_cast<int>(255 * t), 255, 0);
     } else if (v < 0.75f) {
         float t = (v - 0.55f) / 0.2f;
-        int g = static_cast<int>(204 - t * (204 - 149));
-        return QColor(255, g, 0);
+        return QColor(255, static_cast<int>(255 * (1.0f - t * 0.5f)), 0);
     } else if (v < 0.95f) {
         float t = (v - 0.75f) / 0.2f;
-        int g = static_cast<int>(149 - t * (149 - 59));
-        return QColor(255, g, 48);
+        return QColor(255, static_cast<int>(128 * (1.0f - t)), 0);
     } else {
-        return QColor("#ff3b30"); // Red
+        return QColor(255, 0, 0); // red
     }
 }
 
@@ -60,23 +55,6 @@ void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<
     m_rms = rms;
     m_peak = peak;
     m_title = title;
-
-    if (m_peakHold.size() != m_peak.size()) {
-        m_peakHold.resize(m_peak.size(), 0.0f);
-        for (size_t i = 0; i < m_peak.size(); ++i) {
-            m_peakHold[i] = normDB(m_peak[i]);
-        }
-    } else {
-        for (size_t i = 0; i < m_peak.size(); ++i) {
-            float normP = normDB(m_peak[i]);
-            if (normP >= m_peakHold[i]) {
-                m_peakHold[i] = normP;
-            } else {
-                m_peakHold[i] = std::max(0.0f, m_peakHold[i] * 0.95f);
-            }
-        }
-    }
-
     update();
 }
 
@@ -154,13 +132,14 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int peakW = static_cast<int>(peakFrac * barW);
 
         // Level Linear Gradient
+        // Level Linear Gradient (Audio Level: green -> yellow -> orange -> red with 0.9 opacity)
         QLinearGradient grad(xStart, y, xStart + barW, y);
-        grad.setColorAt(0.0, QColor(52, 199, 89, 230));
-        grad.setColorAt(0.35, QColor(52, 199, 89, 230));
-        grad.setColorAt(0.55, QColor(255, 204, 0, 230));
-        grad.setColorAt(0.75, QColor(255, 149, 0, 230));
-        grad.setColorAt(0.95, QColor(255, 59, 48, 230));
-        grad.setColorAt(1.0, QColor(255, 59, 48, 230));
+        grad.setColorAt(0.00, QColor(0, 255, 0, 230));
+        grad.setColorAt(0.35, QColor(0, 255, 0, 230));
+        grad.setColorAt(0.55, QColor(255, 255, 0, 230));
+        grad.setColorAt(0.75, QColor(255, 128, 0, 230));
+        grad.setColorAt(0.95, QColor(255, 0, 0, 230));
+        grad.setColorAt(1.00, QColor(255, 0, 0, 230));
 
         // 5. RMS Bar (Top Half, Corner Radius = 2px)
         if (rmsW > 0) {
@@ -174,13 +153,6 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
             QPainterPath peakPath;
             peakPath.addRoundedRect(QRectF(xStart, y + halfH + 0.5, peakW, halfH - 1), 2, 2);
             p.fillPath(peakPath, grad);
-        }
-
-        // 6b. Peak Hold Line Indicators
-        if (i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
-            int peakHoldX = xStart + static_cast<int>(m_peakHold[i] * barW);
-            p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 220) : QColor(30, 30, 30, 220), 1.5));
-            p.drawLine(peakHoldX, y, peakHoldX, y + barHeight);
         }
 
         // 7. Stacked Monospace Numeric Readouts (%5.1f format)

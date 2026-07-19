@@ -13,11 +13,23 @@ void VUSettings::load() {
     hotSpotAlpha = settings.value("vu_hot_spot_alpha", 0.5).toDouble();
     lightWash = settings.value("vu_light_wash", 0.2).toDouble();
 
-    int t = settings.value("vu_theme", static_cast<int>(VUTheme::VintageAmber)).toInt();
-    if (t >= 0 && t <= 2) {
-        theme = static_cast<VUTheme>(t);
+    QVariant tVar = settings.value("vu_theme");
+    if (tVar.typeId() == QMetaType::QString) {
+        QString tStr = tVar.toString();
+        if (tStr == "Dark Stealth") {
+            theme = VUTheme::DarkStealth;
+        } else if (tStr == "Warm Tube") {
+            theme = VUTheme::WarmTube;
+        } else {
+            theme = VUTheme::VintageAmber;
+        }
     } else {
-        theme = VUTheme::VintageAmber;
+        int t = tVar.toInt();
+        if (t >= 0 && t <= 2) {
+            theme = static_cast<VUTheme>(t);
+        } else {
+            theme = VUTheme::VintageAmber;
+        }
     }
 }
 
@@ -29,7 +41,21 @@ void VUSettings::save() const {
     settings.setValue("vu_ambient_glow", ambientGlow);
     settings.setValue("vu_hot_spot_alpha", hotSpotAlpha);
     settings.setValue("vu_light_wash", lightWash);
-    settings.setValue("vu_theme", static_cast<int>(theme));
+
+    QString themeName;
+    switch (theme) {
+    case VUTheme::DarkStealth:
+        themeName = "Dark Stealth";
+        break;
+    case VUTheme::WarmTube:
+        themeName = "Warm Tube";
+        break;
+    case VUTheme::VintageAmber:
+    default:
+        themeName = "Vintage Amber";
+        break;
+    }
+    settings.setValue("vu_theme", themeName);
 }
 
 void VUSettings::reset() {

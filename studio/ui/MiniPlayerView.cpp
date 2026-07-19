@@ -3,11 +3,13 @@
 #include "ui/StyleTheme.h"
 
 #include <QGraphicsOpacityEffect>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPropertyAnimation>
+#include <QScreen>
 #include <QScrollArea>
 #include <QSettings>
 #include <QStyleOption>
@@ -31,6 +33,16 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
                                                                            1000L);
                 reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
                     nsWindow, sel_registerName("setMovableByWindowBackground:"), true);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
+                    nsWindow, sel_registerName("setHidesOnDeactivate:"), false);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
+                    nsWindow, sel_registerName("setBecomesKeyOnlyIfNeeded:"), true);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
+                    nsWindow, sel_registerName("setTitlebarAppearsTransparent:"), true);
+                reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow,
+                                                                           sel_registerName("setTitleVisibility:"), 1L);
+                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(nsWindow, sel_registerName("setHasShadow:"),
+                                                                           true);
             }
         }
     }
@@ -70,10 +82,18 @@ void MiniPlayerView::showEvent(QShowEvent* event) {
     QSettings settings;
     if (settings.contains("MiniPlayer/geometry")) {
         restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
+    } else {
+        if (auto screen = QGuiApplication::primaryScreen()) {
+            QRect screenFrame = screen->availableGeometry();
+            int x = screenFrame.right() - 330;
+            int y = screenFrame.bottom() - 100;
+            move(x, y);
+        }
     }
     int savedMode = settings.value("MiniPlayer/mode", 1).toInt();
     if (m_viewStack && savedMode >= 0 && savedMode < m_viewStack->count()) {
         m_viewStack->setCurrentIndex(savedMode);
+        updateModeButtonStyles(savedMode);
     }
 }
 
@@ -112,7 +132,7 @@ void MiniPlayerView::enterEvent(QEnterEvent* event) {
     QWidget::enterEvent(event);
     if (m_headerOpacityEffect) {
         auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
-        anim->setDuration(150);
+        anim->setDuration(200);
         anim->setEndValue(1.0);
         anim->start(QAbstractAnimation::DeleteWhenStopped);
     }
@@ -122,7 +142,7 @@ void MiniPlayerView::leaveEvent(QEvent* event) {
     QWidget::leaveEvent(event);
     if (m_headerOpacityEffect) {
         auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
-        anim->setDuration(150);
+        anim->setDuration(200);
         anim->setEndValue(0.3);
         anim->start(QAbstractAnimation::DeleteWhenStopped);
     }
@@ -138,26 +158,30 @@ void MiniPlayerView::onFaderChanged(int index) {
     m_volSlider->blockSignals(true);
     m_volSlider->setValue(static_cast<int>(vol * 2.0f));
     m_volSlider->blockSignals(false);
-    m_volValueLabel->setText(QString(vol > 0.0f ? "+%1 dB" : "%1 dB").arg(vol, 0, 'f', 1));
-    m_volValueLabel->setStyleSheet(vol > 0.0f ? "color: #ff3b30; font-weight: bold;"
-                                              : "color: #8e8e93; font-weight: bold;");
+    m_volValueLabel->setText(QString::asprintf("%+.0f", vol));
+    m_volValueLabel->setStyleSheet(
+        vol > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
+                   : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
     m_muteBtn->setText(muted ? "🔇" : "🔊");
+    m_muteBtn->setStyleSheet(muted ? "QPushButton { background: transparent; color: #ff3b30; border: none; font-size: "
+                                     "10px; padding: 0px; margin: 0px; }"
+                                   : "QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                     "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                     "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
 }
 
 void MiniPlayerView::updateEngineStatus(ProcessingState state) {
+    if (!m_playStopBtn)
+        return;
     if (state == ProcessingState::Running) {
         m_playStopBtn->setText("⏹");
-        m_playStopBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.16); color: #ff3b30; "
-                                     "font-weight: bold; border-radius: "
-                                     "4px; border: none; font-size: 11px; padding: 0px; margin: 0px; text-align: "
-                                     "center; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }");
     } else {
         m_playStopBtn->setText("▶");
-        m_playStopBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.16); color: #34c759; "
-                                     "font-weight: bold; border-radius: "
-                                     "4px; border: none; font-size: 11px; padding: 0px; margin: 0px; text-align: "
-                                     "center; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }");
     }
+    m_playStopBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                 "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                 "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
+    buildMiniPipelineUi();
 }
 
 void MiniPlayerView::buildMiniPipelineUi() {
@@ -174,91 +198,148 @@ void MiniPlayerView::buildMiniPipelineUi() {
         delete item;
     }
 
-    if (!m_dsp || !m_dsp->pipelineStore())
+    if (!m_dsp)
         return;
 
-    // Resampler chip button
+    bool isRunning = (m_dsp->status == ProcessingState::Running);
+
+    auto makePillStyle = [](bool active, const QString& activeBgOverride = "") {
+        if (active) {
+            QString bg = activeBgOverride.isEmpty() ? "#007aff" : activeBgOverride;
+            return QString("background-color: %1; color: #ffffff; font-size: 9px; border-radius: 9px; padding: 2px "
+                           "7px; font-weight: bold; border: none;")
+                .arg(bg);
+        } else {
+            return QString("background-color: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.6); font-size: "
+                           "9px; border-radius: 9px; padding: 2px 7px; border: none;");
+        }
+    };
+
+    auto addChevron = [layout, card = m_pipelineMiniCard]() {
+        auto label = new QLabel("›", card);
+        label->setStyleSheet("color: rgba(255, 255, 255, 0.3); font-size: 11px; font-weight: bold; border: none; "
+                             "background: transparent;");
+        layout->addWidget(label);
+    };
+
+    // 1. Input Chip
+    QString inDev = "Input";
+    if (m_dsp->devices()) {
+        auto optName = m_dsp->devices()->captureConfig.deviceName();
+        if (optName.has_value() && !optName->empty()) {
+            inDev = QString::fromStdString(*optName);
+        }
+    }
+    auto inChip = new QLabel(QString("🎤 %1").arg(inDev), m_pipelineMiniCard);
+    inChip->setStyleSheet(makePillStyle(isRunning, "#007aff"));
+    layout->addWidget(inChip);
+
+    addChevron();
+
+    // 2. Resampler Chip
     bool resampEnabled = m_settings ? m_settings->resamplerEnabled : false;
     auto resampChip = new QPushButton("🔄 Resampler", m_pipelineMiniCard);
     resampChip->setCheckable(true);
     resampChip->setChecked(resampEnabled);
-    auto updateResampStyle = [resampChip](bool chk) {
-        if (chk)
-            resampChip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; "
-                                      "padding: 2px 6px; font-weight: bold;");
-        else
-            resampChip->setStyleSheet(
-                "background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; padding: 2px 6px;");
-    };
-    updateResampStyle(resampEnabled);
-    connect(resampChip, &QPushButton::clicked, [this, resampChip, updateResampStyle]() {
+    resampChip->setStyleSheet(makePillStyle(resampEnabled));
+    connect(resampChip, &QPushButton::clicked, [this, resampChip, makePillStyle]() {
         if (m_settings) {
             bool enabled = !m_settings->resamplerEnabled;
             m_settings->resamplerEnabled = enabled;
             m_settings->savePreferences();
             resampChip->setChecked(enabled);
-            updateResampStyle(enabled);
+            resampChip->setStyleSheet(makePillStyle(enabled));
             m_dsp->applyConfig();
         }
     });
     layout->addWidget(resampChip);
 
-    // Stage chips
-    for (const auto& stage : m_dsp->pipelineStore()->stages) {
-        std::string icon = stageTypeToIcon(stage.type);
-        QString stageTitle = QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(stage.name));
-        auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
-        chip->setCheckable(true);
-        chip->setChecked(stage.isEnabled);
+    // 3. Stage Chips
+    if (m_dsp->pipelineStore()) {
+        for (const auto& stage : m_dsp->pipelineStore()->stages) {
+            addChevron();
+            std::string icon = stageTypeToIcon(stage.type);
+            QString stageTitle =
+                QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(stage.name));
+            auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
+            chip->setCheckable(true);
+            chip->setChecked(stage.isEnabled);
+            chip->setStyleSheet(makePillStyle(stage.isEnabled));
 
-        auto updateStyle = [chip](bool chk) {
-            if (chk)
-                chip->setStyleSheet("background-color: #007aff; color: white; font-size: 10px; border-radius: 4px; "
-                                    "padding: 2px 6px; font-weight: bold;");
-            else
-                chip->setStyleSheet("background-color: #3a3a3c; color: #8e8e93; font-size: 10px; border-radius: 4px; "
-                                    "padding: 2px 6px;");
-        };
-        updateStyle(stage.isEnabled);
-
-        QUuid id = stage.id;
-        connect(chip, &QPushButton::clicked, [this, id, chip, updateStyle]() {
-            auto& stages = m_dsp->pipelineStore()->stages;
-            for (auto& st : stages) {
-                if (st.id == id) {
-                    st.isEnabled = !st.isEnabled;
-                    chip->setChecked(st.isEnabled);
-                    updateStyle(st.isEnabled);
-                    m_dsp->pipelineStore()->save();
-                    emit m_dsp->pipelineStore()->pipelineChanged();
-                    break;
+            QUuid id = stage.id;
+            connect(chip, &QPushButton::clicked, [this, id, chip, makePillStyle]() {
+                if (m_dsp && m_dsp->pipelineStore()) {
+                    auto& stages = m_dsp->pipelineStore()->stages;
+                    for (auto& st : stages) {
+                        if (st.id == id) {
+                            st.isEnabled = !st.isEnabled;
+                            chip->setChecked(st.isEnabled);
+                            chip->setStyleSheet(makePillStyle(st.isEnabled));
+                            m_dsp->pipelineStore()->save();
+                            emit m_dsp->pipelineStore()->pipelineChanged();
+                            break;
+                        }
+                    }
                 }
-            }
-        });
-        layout->addWidget(chip);
+            });
+            layout->addWidget(chip);
+        }
     }
+
+    addChevron();
+
+    // 4. Output Chip
+    QString outDev = "Output";
+    if (m_dsp->devices()) {
+        auto optName = m_dsp->devices()->playbackConfig.deviceName();
+        if (optName.has_value() && !optName->empty()) {
+            outDev = QString::fromStdString(*optName);
+        }
+    }
+    auto outChip = new QLabel(QString("🔊 %1").arg(outDev), m_pipelineMiniCard);
+    outChip->setStyleSheet(makePillStyle(isRunning, "#34c759"));
+    layout->addWidget(outChip);
+
     layout->addStretch();
+}
+
+void MiniPlayerView::updateModeButtonStyles(int activeIndex) {
+    for (int i = 0; i < static_cast<int>(m_modeBtns.size()); ++i) {
+        if (i == activeIndex) {
+            m_modeBtns[i]->setStyleSheet(
+                "QPushButton { background: transparent; color: #ffffff; border: none; font-size: 10px; font-weight: "
+                "bold; padding: 0px; margin: 0px; text-align: center; }");
+        } else {
+            m_modeBtns[i]->setStyleSheet(
+                "QPushButton { background: transparent; color: rgba(255, 255, 255, 0.4); border: none; font-size: "
+                "10px; padding: 0px; margin: 0px; text-align: center; } "
+                "QPushButton:hover { color: rgba(255, 255, 255, 0.8); }");
+        }
+    }
+    QSettings settings;
+    settings.setValue("MiniPlayer/mode", activeIndex);
 }
 
 void MiniPlayerView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(6, 6, 6, 6);
-    mainLayout->setSpacing(4);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
     auto topBarWidget = new QWidget(this);
     auto topBar = new QHBoxLayout(topBarWidget);
-    topBar->setContentsMargins(0, 0, 0, 0);
-    topBar->setSpacing(4);
+    topBar->setContentsMargins(8, 4, 8, 4);
+    topBar->setSpacing(6);
 
     m_headerOpacityEffect = new QGraphicsOpacityEffect(topBarWidget);
     topBarWidget->setGraphicsEffect(m_headerOpacityEffect);
     m_headerOpacityEffect->setOpacity(0.3);
 
+    // Play / Stop button
     m_playStopBtn = new QPushButton("▶", topBarWidget);
-    m_playStopBtn->setFixedSize(22, 22);
-    m_playStopBtn->setStyleSheet(
-        "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #34c759; font-weight: bold; border-radius: "
-        "4px; border: none; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
+    m_playStopBtn->setFixedSize(18, 18);
+    m_playStopBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                 "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                 "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
     connect(m_playStopBtn, &QPushButton::clicked, [this]() {
         if (m_dsp->status == ProcessingState::Running)
             m_dsp->stopEngine();
@@ -267,38 +348,57 @@ void MiniPlayerView::setupUi() {
     });
     topBar->addWidget(m_playStopBtn);
 
-    m_muteBtn = new QPushButton("🔊", topBarWidget);
-    m_muteBtn->setFixedSize(22, 22);
-    m_muteBtn->setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); color: white; border-radius: "
-                             "4px; border: none; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
+    // Volume Control Row container
+    auto volWidget = new QWidget(topBarWidget);
+    auto volLayout = new QHBoxLayout(volWidget);
+    volLayout->setContentsMargins(8, 2, 8, 2);
+    volLayout->setSpacing(6);
+
+    m_muteBtn = new QPushButton("🔊", volWidget);
+    m_muteBtn->setFixedSize(18, 18);
+    m_muteBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: none; "
+                             "font-size: 10px; padding: 0px; margin: 0px; } "
+                             "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
     connect(m_muteBtn, &QPushButton::clicked, [this]() {
         Fader f = currentFader();
         bool muted = m_settings->getMuted(f);
         m_dsp->setFaderMute(f, !muted);
         m_muteBtn->setText(!muted ? "🔇" : "🔊");
     });
-    topBar->addWidget(m_muteBtn);
+    volLayout->addWidget(m_muteBtn);
 
-    m_volSlider = new QSlider(Qt::Horizontal, topBarWidget);
-    m_volSlider->setRange(-120, 40);
-    m_volSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
+    m_volSlider = new QSlider(Qt::Horizontal, volWidget);
+    m_volSlider->setRange(-120, 40); // -60 dB to +20 dB
+    float currentVol = m_settings ? m_settings->getVolume(Fader::Main) : 0.0f;
+    m_volSlider->setValue(static_cast<int>(currentVol * 2.0f));
+    m_volSlider->setStyleSheet(
+        "QSlider::groove:horizontal { height: 3px; background: rgba(255, 255, 255, 0.2); border-radius: 1.5px; } "
+        "QSlider::sub-page:horizontal { background: #007aff; border-radius: 1.5px; } "
+        "QSlider::handle:horizontal { background: #ffffff; width: 10px; height: 10px; margin: -3.5px 0; border-radius: "
+        "5px; }");
 
-    m_volValueLabel = new QLabel(" 0.0 dB", topBarWidget);
+    m_volValueLabel = new QLabel(QString::asprintf("%+.0f", currentVol), volWidget);
     m_volValueLabel->setFont(QFont("monospace", 9, QFont::Bold));
-    m_volValueLabel->setFixedWidth(50);
+    m_volValueLabel->setFixedWidth(25);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_volValueLabel->setStyleSheet(
+        currentVol > 0.0f
+            ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
+            : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
 
     connect(m_volSlider, &QSlider::valueChanged, [this](int val) {
         Fader f = currentFader();
         float db = val / 2.0f;
         m_dsp->setFaderVolume(f, db);
-        m_volValueLabel->setText(QString(db > 0.0f ? "+%1 dB" : "%1 dB").arg(db, 0, 'f', 1));
-        m_volValueLabel->setStyleSheet(db > 0.0f ? "color: #ff3b30; font-weight: bold;"
-                                                 : "color: #8e8e93; font-weight: bold;");
+        m_volValueLabel->setText(QString::asprintf("%+.0f", db));
+        m_volValueLabel->setStyleSheet(
+            db > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px; font-weight: bold;"
+                      : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px; font-weight: bold;");
     });
 
-    topBar->addWidget(m_volSlider);
-    topBar->addWidget(m_volValueLabel);
+    volLayout->addWidget(m_volSlider);
+    volLayout->addWidget(m_volValueLabel);
+    topBar->addWidget(volWidget);
 
     // 6 Mode Icon Buttons matching SwiftUI icons
     auto pipeBtn = new QPushButton("☍", topBarWidget);
@@ -308,90 +408,63 @@ void MiniPlayerView::setupUi() {
     auto sgBtn = new QPushButton("▦", topBarWidget);
     auto vecBtn = new QPushButton("⚡", topBarWidget);
 
-    std::vector<QPushButton*> modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
-    auto setModeStyle = [this, modeBtns](int activeIndex) {
-        for (int i = 0; i < static_cast<int>(modeBtns.size()); ++i) {
-            if (i == activeIndex) {
-                modeBtns[i]->setStyleSheet(
-                    "QPushButton { background-color: #007aff; color: white; border-radius: 4px; border: none; "
-                    "font-size: "
-                    "11px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; } QPushButton:hover { "
-                    "background-color: #0062cc; }");
-            } else {
-                modeBtns[i]->setStyleSheet(
-                    "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #ffffff; border-radius: 4px; "
-                    "border: none; font-size: 11px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; "
-                    "} "
-                    "QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }");
-            }
-        }
-        QSettings settings;
-        settings.setValue("MiniPlayer/mode", activeIndex);
-    };
+    m_modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
 
     pipeBtn->setToolTip("Pipeline Overview");
-    pipeBtn->setFixedSize(24, 22);
-    connect(pipeBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    pipeBtn->setFixedSize(18, 18);
+    connect(pipeBtn, &QPushButton::clicked, [this]() {
         buildMiniPipelineUi();
         m_viewStack->setCurrentIndex(0);
-        setModeStyle(0);
+        updateModeButtonStyles(0);
     });
     topBar->addWidget(pipeBtn);
 
     specBtn->setToolTip("Spectrum Analyzer");
-    specBtn->setFixedSize(24, 22);
-    connect(specBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    specBtn->setFixedSize(18, 18);
+    connect(specBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(1);
-        setModeStyle(1);
+        updateModeButtonStyles(1);
     });
     topBar->addWidget(specBtn);
 
     mtrBtn->setToolTip("Level Meters");
-    mtrBtn->setFixedSize(24, 22);
-    connect(mtrBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    mtrBtn->setFixedSize(18, 18);
+    connect(mtrBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(2);
-        setModeStyle(2);
+        updateModeButtonStyles(2);
     });
     topBar->addWidget(mtrBtn);
 
     vuBtn->setToolTip("Analog VU Meter");
-    vuBtn->setFixedSize(24, 22);
-    connect(vuBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    vuBtn->setFixedSize(18, 18);
+    connect(vuBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(3);
-        setModeStyle(3);
+        updateModeButtonStyles(3);
     });
     topBar->addWidget(vuBtn);
 
     sgBtn->setToolTip("Spectroscope Waterfall");
-    sgBtn->setFixedSize(24, 22);
-    connect(sgBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    sgBtn->setFixedSize(18, 18);
+    connect(sgBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(4);
-        setModeStyle(4);
+        updateModeButtonStyles(4);
     });
     topBar->addWidget(sgBtn);
 
     vecBtn->setToolTip("Vector Scope");
-    vecBtn->setFixedSize(24, 22);
-    connect(vecBtn, &QPushButton::clicked, [this, setModeStyle]() {
+    vecBtn->setFixedSize(18, 18);
+    connect(vecBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(5);
-        setModeStyle(5);
+        updateModeButtonStyles(5);
     });
     topBar->addWidget(vecBtn);
 
-    setModeStyle(1); // Default to Spectrum (mode 1) matching SwiftUI default
-
-    auto closeBtn = new QPushButton("✕", topBarWidget);
-    closeBtn->setFixedSize(18, 18);
-    closeBtn->setStyleSheet(
-        "QPushButton { background-color: rgba(255, 255, 255, 0.12); color: #8e8e93; border-radius: 9px; border: none; "
-        "font-size: 10px; font-weight: bold; padding: 0px; margin: 0px; text-align: center; } QPushButton:hover { "
-        "background-color: #ff3b30; color: white; }");
-    connect(closeBtn, &QPushButton::clicked, this, &MiniPlayerView::closeAndRestoreMain);
-    topBar->addWidget(closeBtn);
+    updateModeButtonStyles(1); // Default to Spectrum (mode 1) matching SwiftUI default
 
     mainLayout->addWidget(topBarWidget);
 
     m_viewStack = new QStackedWidget(this);
+    m_viewStack->setContentsMargins(8, 0, 8, 8);
     m_viewStack->setStyleSheet("QStackedWidget { background: transparent; }");
 
     // Mode 0: Mini Pipeline Chips in a QScrollArea
@@ -404,7 +477,7 @@ void MiniPlayerView::setupUi() {
     m_pipelineMiniCard = new QWidget(pipeScroll);
     m_pipelineMiniCard->setStyleSheet("QWidget { background: transparent; }");
     auto pipeLayout = new QHBoxLayout(m_pipelineMiniCard);
-    pipeLayout->setContentsMargins(4, 4, 4, 4);
+    pipeLayout->setContentsMargins(0, 0, 0, 0);
     pipeLayout->setSpacing(4);
     buildMiniPipelineUi();
     pipeScroll->setWidget(m_pipelineMiniCard);
