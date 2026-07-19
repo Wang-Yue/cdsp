@@ -361,7 +361,7 @@ CrossfeedParamsResult PipelineStage::activeCrossfeedParams() const {
 
 QJsonObject PipelineStage::toJson() const {
     QJsonObject obj;
-    obj["id"] = id.toString();
+    obj["id"] = id.toString(QUuid::WithoutBraces);
     obj["name"] = QString::fromStdString(name);
     obj["type"] = QString::fromStdString(stageTypeToString(type));
     obj["stageType"] = QString::fromStdString(stageTypeToString(type));
@@ -387,9 +387,9 @@ QJsonObject PipelineStage::toJson() const {
     obj["cxDb"] = cxDb;
 
     if (eqPresetId.has_value())
-        obj["eqPresetID"] = eqPresetId.value().toString();
+        obj["eqPresetID"] = eqPresetId.value().toString(QUuid::WithoutBraces);
     if (convPresetId.has_value())
-        obj["convPresetID"] = convPresetId.value().toString();
+        obj["convPresetID"] = convPresetId.value().toString(QUuid::WithoutBraces);
 
     obj["emphasisMode"] = QString::fromStdString(emphasisModeToString(emphasisMode));
     obj["loudnessReference"] = loudnessReference;
@@ -499,7 +499,7 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     else if (json.contains("type"))
         typeStr = json["type"].toString().toStdString();
     if (!typeStr.empty()) {
-        QString cleanInput = QString::fromStdString(typeStr).remove(" ").toLower();
+        QString cleanInput = QString::fromStdString(typeStr).remove(" ").remove("/").remove("-").remove("_").toLower();
         for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
                              StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
                              StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
@@ -508,7 +508,8 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
                              StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
                              StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
                              StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
-            QString targetStr = QString::fromStdString(stageTypeToString(st)).remove(" ").toLower();
+            QString targetStr =
+                QString::fromStdString(stageTypeToString(st)).remove(" ").remove("/").remove("-").remove("_").toLower();
             if (stageTypeToString(st) == typeStr || targetStr == cleanInput) {
                 s.type = st;
                 break;
@@ -726,6 +727,9 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         for (const auto& g : json["graphicEQGains"].toArray())
             s.graphicEQGains.push_back(g.toDouble());
     }
+    if (s.graphicEQGains.size() != static_cast<size_t>(s.graphicEQBandCount)) {
+        s.graphicEQGains.resize(s.graphicEQBandCount, 0.0);
+    }
 
     return s;
 }
@@ -896,7 +900,7 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
     }
 
     case StageType::Crossfeed: {
-        if ((stage.crossfeedLevel == CrossfeedLevel::Off && !stage.cxCustomEnabled) || channelCount < 2)
+        if (stage.crossfeedLevel == CrossfeedLevel::Off || channelCount < 2)
             break;
         auto cx = stage.activeCrossfeedParams();
 

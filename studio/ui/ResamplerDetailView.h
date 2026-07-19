@@ -38,11 +38,12 @@ private:
     QComboBox* m_typeCombo;
     QCheckBox* m_useProfileCheck;
     QComboBox* m_profileCombo;
-    QDoubleSpinBox* m_attenuationSpin;
     QSpinBox* m_sincLenSpin;
     QSpinBox* m_oversamplingSpin;
     QComboBox* m_windowCombo;
-    QDoubleSpinBox* m_fCutoffSpin;
+    QWidget* m_fCutoffRowWidget;
+    QSlider* m_fCutoffSlider;
+    QLabel* m_fCutoffLabel;
     QComboBox* m_sincInterpCombo;
     QComboBox* m_polyInterpCombo;
 

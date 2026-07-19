@@ -14,6 +14,9 @@ ResamplerDetailView::ResamplerDetailView(std::shared_ptr<AudioSettings> settings
                                          std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
     : QWidget(parent), m_settings(settings), m_devices(devices), m_dspController(dspController) {
     setupUi();
+    if (m_devices) {
+        connect(m_devices.get(), &AudioDeviceManager::configChanged, this, &ResamplerDetailView::refreshUi);
+    }
     refreshUi();
 }
 
@@ -60,14 +63,7 @@ void ResamplerDetailView::setupUi() {
     m_profileCombo = new QComboBox(m_typeGroup);
     m_profileCombo->addItems({"VeryFast", "Fast", "Balanced", "Accurate"});
     connect(m_profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Quality Profile:", m_profileCombo);
-
-    m_attenuationSpin = new QDoubleSpinBox(m_typeGroup);
-    m_attenuationSpin->setRange(0.0, 60.0);
-    m_attenuationSpin->setSingleStep(0.5);
-    m_attenuationSpin->setSuffix(" dB");
-    connect(m_attenuationSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Attenuation:", m_attenuationSpin);
+    m_typeForm->addRow("Profile:", m_profileCombo);
 
     m_sincLenSpin = new QSpinBox(m_typeGroup);
     m_sincLenSpin->setRange(16, 4096);
@@ -77,29 +73,51 @@ void ResamplerDetailView::setupUi() {
     m_oversamplingSpin = new QSpinBox(m_typeGroup);
     m_oversamplingSpin->setRange(16, 2048);
     connect(m_oversamplingSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Oversampling Factor:", m_oversamplingSpin);
+    m_typeForm->addRow("Oversampling:", m_oversamplingSpin);
 
     m_windowCombo = new QComboBox(m_typeGroup);
-    m_windowCombo->addItems({"Blackman", "Blackman2", "BlackmanHarris", "BlackmanHarris2", "Hann", "Hann2"});
+    m_windowCombo->addItem("Blackman", "Blackman");
+    m_windowCombo->addItem("Blackman 2", "Blackman2");
+    m_windowCombo->addItem("Blackman-Harris", "BlackmanHarris");
+    m_windowCombo->addItem("Blackman-Harris 2", "BlackmanHarris2");
+    m_windowCombo->addItem("Hann", "Hann");
+    m_windowCombo->addItem("Hann 2", "Hann2");
     connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Window Function:", m_windowCombo);
+    m_typeForm->addRow("Window:", m_windowCombo);
 
-    m_fCutoffSpin = new QDoubleSpinBox(m_typeGroup);
-    m_fCutoffSpin->setRange(0.5, 0.99);
-    m_fCutoffSpin->setSingleStep(0.01);
-    m_fCutoffSpin->setSuffix(" × Fs/2");
-    connect(m_fCutoffSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Cutoff Frequency Ratio:", m_fCutoffSpin);
+    m_fCutoffRowWidget = new QWidget(m_typeGroup);
+    auto cutoffLayout = new QHBoxLayout(m_fCutoffRowWidget);
+    cutoffLayout->setContentsMargins(0, 0, 0, 0);
+    cutoffLayout->setSpacing(12);
+
+    m_fCutoffSlider = new QSlider(Qt::Horizontal, m_fCutoffRowWidget);
+    m_fCutoffSlider->setRange(50, 99);
+    m_fCutoffSlider->setFixedWidth(200);
+
+    m_fCutoffLabel = new QLabel("0.95 × Fs/2", m_fCutoffRowWidget);
+    m_fCutoffLabel->setFont(QFont("monospace", 11));
+
+    connect(m_fCutoffSlider, &QSlider::valueChanged, [this](int val) {
+        double fRatio = val / 100.0;
+        m_fCutoffLabel->setText(QString("%1 × Fs/2").arg(fRatio, 0, 'f', 2));
+        applySettings();
+    });
+
+    cutoffLayout->addWidget(m_fCutoffSlider);
+    cutoffLayout->addWidget(m_fCutoffLabel);
+    cutoffLayout->addStretch();
+
+    m_typeForm->addRow("Cutoff Freq:", m_fCutoffRowWidget);
 
     m_sincInterpCombo = new QComboBox(m_typeGroup);
     m_sincInterpCombo->addItems({"Nearest", "Linear", "Quadratic", "Cubic"});
     connect(m_sincInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Sinc Interpolation:", m_sincInterpCombo);
+    m_typeForm->addRow("Interpolation:", m_sincInterpCombo);
 
     m_polyInterpCombo = new QComboBox(m_typeGroup);
     m_polyInterpCombo->addItems({"Linear", "Cubic", "Quintic", "Septic"});
     connect(m_polyInterpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { applySettings(); });
-    m_typeForm->addRow("Poly Interpolation:", m_polyInterpCombo);
+    m_typeForm->addRow("Interp:", m_polyInterpCombo);
 
     mainLayout->addWidget(m_typeGroup);
 
@@ -140,12 +158,11 @@ void ResamplerDetailView::updateVisibility() {
 
     m_typeForm->setRowVisible(m_useProfileCheck, isAsyncSinc);
     m_typeForm->setRowVisible(m_profileCombo, isAsyncSinc && useProfile);
-    m_typeForm->setRowVisible(m_attenuationSpin, isAsyncSinc || isAsyncPoly);
 
     m_typeForm->setRowVisible(m_sincLenSpin, isAsyncSinc && !useProfile);
     m_typeForm->setRowVisible(m_oversamplingSpin, isAsyncSinc && !useProfile);
     m_typeForm->setRowVisible(m_windowCombo, isAsyncSinc && !useProfile);
-    m_typeForm->setRowVisible(m_fCutoffSpin, isAsyncSinc && !useProfile);
+    m_typeForm->setRowVisible(m_fCutoffRowWidget, isAsyncSinc && !useProfile);
     m_typeForm->setRowVisible(m_sincInterpCombo, isAsyncSinc && !useProfile);
 
     m_typeForm->setRowVisible(m_polyInterpCombo, isAsyncPoly);
@@ -192,11 +209,22 @@ void ResamplerDetailView::refreshUi() {
     updateVisibility();
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
-    m_attenuationSpin->setValue(m_settings->resamplerAttenuation);
     m_sincLenSpin->setValue(m_settings->resamplerSincLen);
     m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
-    m_windowCombo->setCurrentText(QString::fromStdString(m_settings->resamplerWindow));
-    m_fCutoffSpin->setValue(m_settings->resamplerFCutoff);
+
+    int winIdx = m_windowCombo->findData(QString::fromStdString(m_settings->resamplerWindow));
+    if (winIdx >= 0) {
+        m_windowCombo->setCurrentIndex(winIdx);
+    } else {
+        m_windowCombo->setCurrentIndex(0);
+    }
+
+    int cutoffVal = static_cast<int>(std::round(m_settings->resamplerFCutoff * 100.0));
+    m_fCutoffSlider->blockSignals(true);
+    m_fCutoffSlider->setValue(cutoffVal);
+    m_fCutoffSlider->blockSignals(false);
+    m_fCutoffLabel->setText(QString("%1 × Fs/2").arg(m_settings->resamplerFCutoff, 0, 'f', 2));
+
     m_sincInterpCombo->setCurrentText(
         QString::fromStdString(sincInterpolationToString(m_settings->resamplerSincInterpolation)));
     m_polyInterpCombo->setCurrentText(
@@ -222,11 +250,10 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerType = stringToResamplerType(m_typeCombo->currentText().toStdString());
     m_settings->resamplerUseProfile = m_useProfileCheck->isChecked();
     m_settings->resamplerProfile = stringToResamplerProfile(m_profileCombo->currentText().toStdString());
-    m_settings->resamplerAttenuation = m_attenuationSpin->value();
     m_settings->resamplerSincLen = m_sincLenSpin->value();
     m_settings->resamplerOversamplingFactor = m_oversamplingSpin->value();
-    m_settings->resamplerWindow = m_windowCombo->currentText().toStdString();
-    m_settings->resamplerFCutoff = m_fCutoffSpin->value();
+    m_settings->resamplerWindow = m_windowCombo->currentData().toString().toStdString();
+    m_settings->resamplerFCutoff = m_fCutoffSlider->value() / 100.0;
     m_settings->resamplerSincInterpolation = stringToSincInterpolation(m_sincInterpCombo->currentText().toStdString());
     m_settings->resamplerInterpolation = stringToResamplerInterpolation(m_polyInterpCombo->currentText().toStdString());
     m_settings->savePreferences();

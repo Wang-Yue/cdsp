@@ -163,16 +163,19 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         checkBtn->setStyleSheet(
             "QPushButton { color: #007aff; font-size: 13px; font-weight: bold; border: none; padding: 0px; }");
         checkBtn->setToolTip("Disconnect Source");
-        connect(checkBtn, &QPushButton::clicked, [this, &stage, dest, src, table]() {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+        connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                       [dest](const MixerMapping& m) { return m.dest == dest; });
-            if (mapIt != stage.mixerMappings.end()) {
+            if (mapIt != st->mixerMappings.end()) {
                 mapIt->sources.erase(std::remove_if(mapIt->sources.begin(), mapIt->sources.end(),
                                                     [src](const MixerSource& s) { return s.channel == src; }),
                                      mapIt->sources.end());
             }
             applyConfig();
-            table->setCellWidget(dest, src, createMatrixCellWidget(stage, dest, src, table));
+            table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
         });
         vBox->addWidget(checkBtn, 0, Qt::AlignCenter);
 
@@ -184,13 +187,16 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         gainEdit->setText(QString::number(srcPtr->gainValue(), 'f', 1));
         gainEdit->setStyleSheet("QLineEdit { background: palette(base); color: palette(text); border: 1px solid "
                                 "rgba(142, 142, 147, 0.3); border-radius: 4px; padding: 1px; }");
-        connect(gainEdit, &QLineEdit::editingFinished, [this, &stage, dest, src, gainEdit]() {
+        connect(gainEdit, &QLineEdit::editingFinished, [this, dest, src, gainEdit]() {
             bool ok = false;
             double val = gainEdit->text().toDouble(&ok);
             if (ok) {
-                auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                auto st = currentStage();
+                if (!st)
+                    return;
+                auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                           [dest](const MixerMapping& m) { return m.dest == dest; });
-                if (mapIt != stage.mixerMappings.end()) {
+                if (mapIt != st->mixerMappings.end()) {
                     for (auto& s : mapIt->sources) {
                         if (s.channel == src) {
                             s.gain = val;
@@ -212,14 +218,17 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         auto invBtn = new QPushButton("Ø", cellWidget);
         invBtn->setFixedSize(22, 18);
         invBtn->setToolTip("Invert Phase");
-        invBtn->setStyleSheet(inv ? "QPushButton { background: #ff9500; color: white; border-radius: 3px; font-weight: "
-                                    "bold; font-size: 10px; padding: 0; }"
+        invBtn->setStyleSheet(inv ? "QPushButton { background: transparent; color: #ff9500; border-radius: 3px; "
+                                    "font-weight: bold; font-size: 10px; padding: 0; border: none; }"
                                   : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; "
-                                    "font-weight: bold; font-size: 10px; padding: 0; }");
-        connect(invBtn, &QPushButton::clicked, [this, &stage, dest, src, table]() {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                                    "font-weight: bold; font-size: 10px; padding: 0; border: none; }");
+        connect(invBtn, &QPushButton::clicked, [this, dest, src, table]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                       [dest](const MixerMapping& m) { return m.dest == dest; });
-            if (mapIt != stage.mixerMappings.end()) {
+            if (mapIt != st->mixerMappings.end()) {
                 for (auto& s : mapIt->sources) {
                     if (s.channel == src) {
                         s.inverted = !s.inverted.value_or(false);
@@ -227,7 +236,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
                     }
                 }
                 applyConfig();
-                table->setCellWidget(dest, src, createMatrixCellWidget(stage, dest, src, table));
+                table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
             }
         });
         btnHBox->addWidget(invBtn);
@@ -237,13 +246,17 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         muteBtn->setFixedSize(22, 18);
         muteBtn->setToolTip("Mute Source");
         muteBtn->setStyleSheet(
-            muted ? "QPushButton { background: #ff3b30; color: white; border-radius: 3px; font-size: 9px; padding: 0; }"
+            muted ? "QPushButton { background: transparent; color: #ff3b30; border-radius: 3px; font-size: 9px; "
+                    "padding: 0; border: none; }"
                   : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; font-size: 9px; "
-                    "padding: 0; }");
-        connect(muteBtn, &QPushButton::clicked, [this, &stage, dest, src, table]() {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                    "padding: 0; border: none; }");
+        connect(muteBtn, &QPushButton::clicked, [this, dest, src, table]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                       [dest](const MixerMapping& m) { return m.dest == dest; });
-            if (mapIt != stage.mixerMappings.end()) {
+            if (mapIt != st->mixerMappings.end()) {
                 for (auto& s : mapIt->sources) {
                     if (s.channel == src) {
                         s.mute = !s.mute.value_or(false);
@@ -251,7 +264,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
                     }
                 }
                 applyConfig();
-                table->setCellWidget(dest, src, createMatrixCellWidget(stage, dest, src, table));
+                table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
             }
         });
         btnHBox->addWidget(muteBtn);
@@ -261,14 +274,17 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         scaleBtn->setFixedSize(24, 18);
         scaleBtn->setToolTip("Toggle Gain Scale (dB / Linear)");
         scaleBtn->setStyleSheet(sc == GainScale::linear
-                                    ? "QPushButton { background: #007aff; color: white; border-radius: 3px; font-size: "
-                                      "8px; font-weight: bold; padding: 0; }"
+                                    ? "QPushButton { background: transparent; color: #007aff; border-radius: 3px; "
+                                      "font-size: 8px; font-weight: bold; padding: 0; border: none; }"
                                     : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; "
-                                      "font-size: 8px; font-weight: bold; padding: 0; }");
-        connect(scaleBtn, &QPushButton::clicked, [this, &stage, dest, src, table]() {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+                                      "font-size: 8px; font-weight: bold; padding: 0; border: none; }");
+        connect(scaleBtn, &QPushButton::clicked, [this, dest, src, table]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                       [dest](const MixerMapping& m) { return m.dest == dest; });
-            if (mapIt != stage.mixerMappings.end()) {
+            if (mapIt != st->mixerMappings.end()) {
                 for (auto& s : mapIt->sources) {
                     if (s.channel == src) {
                         s.scale =
@@ -277,7 +293,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
                     }
                 }
                 applyConfig();
-                table->setCellWidget(dest, src, createMatrixCellWidget(stage, dest, src, table));
+                table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
             }
         });
         btnHBox->addWidget(scaleBtn);
@@ -293,19 +309,22 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         checkBtn->setFlat(true);
         checkBtn->setStyleSheet("QPushButton { color: #8e8e93; font-size: 13px; border: none; }");
         checkBtn->setToolTip("Connect Source");
-        connect(checkBtn, &QPushButton::clicked, [this, &stage, dest, src, table]() {
-            auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
+        connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
+            auto st = currentStage();
+            if (!st)
+                return;
+            auto mapIt = std::find_if(st->mixerMappings.begin(), st->mixerMappings.end(),
                                       [dest](const MixerMapping& m) { return m.dest == dest; });
-            if (mapIt == stage.mixerMappings.end()) {
-                stage.mixerMappings.push_back(MixerMapping{dest, {}, std::nullopt});
-                mapIt = std::prev(stage.mixerMappings.end());
+            if (mapIt == st->mixerMappings.end()) {
+                st->mixerMappings.push_back(MixerMapping{dest, {}, std::nullopt});
+                mapIt = std::prev(st->mixerMappings.end());
             }
             if (std::find_if(mapIt->sources.begin(), mapIt->sources.end(),
                              [src](const MixerSource& s) { return s.channel == src; }) == mapIt->sources.end()) {
                 mapIt->sources.push_back(MixerSource{src, 0.0, false});
             }
             applyConfig();
-            table->setCellWidget(dest, src, createMatrixCellWidget(stage, dest, src, table));
+            table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
         });
         vBox->addWidget(checkBtn, 0, Qt::AlignCenter);
     }
@@ -693,6 +712,15 @@ void StageDetailView::buildStageOptionsUi() {
         auto presetVBox = new QVBoxLayout(presetGroup);
         presetVBox->setSpacing(10);
 
+        presetGroup->setEnabled(!stage.cxCustomEnabled);
+        if (stage.cxCustomEnabled) {
+            auto opacityEffect = new QGraphicsOpacityEffect(presetGroup);
+            opacityEffect->setOpacity(0.5);
+            presetGroup->setGraphicsEffect(opacityEffect);
+        } else {
+            presetGroup->setGraphicsEffect(nullptr);
+        }
+
         auto levelHBox = new QHBoxLayout();
         levelHBox->setSpacing(16);
         auto levelLbl = new QLabel("Level", presetGroup);
@@ -704,7 +732,6 @@ void StageDetailView::buildStageOptionsUi() {
         levelCombo->setFixedWidth(150);
         levelCombo->addItems({"L1", "L2", "L3", "L4", "L5"});
         levelCombo->setCurrentIndex(static_cast<int>(stage.crossfeedLevel) - 1);
-        levelCombo->setEnabled(!stage.cxCustomEnabled);
         connect(levelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
             stage.crossfeedLevel = static_cast<CrossfeedLevel>(idx + 1);
             applyConfig();
@@ -714,25 +741,38 @@ void StageDetailView::buildStageOptionsUi() {
         levelHBox->addStretch();
         presetVBox->addLayout(levelHBox);
 
-        auto cxParams = stage.activeCrossfeedParams();
-        auto detailLbl =
-            new QLabel(QString("Fc = %1 Hz, Level = %2 dB — %3")
-                           .arg(stage.cxCustomEnabled ? stage.cxFc
-                                                      : (stage.crossfeedLevel == CrossfeedLevel::L1 ||
-                                                                 stage.crossfeedLevel == CrossfeedLevel::L2
-                                                             ? 650
-                                                             : 700))
-                           .arg(stage.cxCustomEnabled
-                                    ? stage.cxDb
-                                    : (stage.crossfeedLevel == CrossfeedLevel::L1
-                                           ? 13.5
-                                           : (stage.crossfeedLevel == CrossfeedLevel::L2
-                                                  ? 9.5
-                                                  : (stage.crossfeedLevel == CrossfeedLevel::L3
-                                                         ? 6.0
-                                                         : (stage.crossfeedLevel == CrossfeedLevel::L4 ? 4.5 : 3.0)))))
-                           .arg(QString::fromStdString(crossfeedLevelDescription(stage.crossfeedLevel))),
-                       presetGroup);
+        double presetFc = 700.0;
+        double presetDb = 6.0;
+        switch (stage.crossfeedLevel) {
+        case CrossfeedLevel::L1:
+            presetFc = 650.0;
+            presetDb = 13.5;
+            break;
+        case CrossfeedLevel::L2:
+            presetFc = 650.0;
+            presetDb = 9.5;
+            break;
+        case CrossfeedLevel::L3:
+            presetFc = 700.0;
+            presetDb = 6.0;
+            break;
+        case CrossfeedLevel::L4:
+            presetFc = 700.0;
+            presetDb = 4.5;
+            break;
+        case CrossfeedLevel::L5:
+            presetFc = 700.0;
+            presetDb = 3.0;
+            break;
+        case CrossfeedLevel::Off:
+            break;
+        }
+
+        auto detailLbl = new QLabel(QString("Fc = %1 Hz, Level = %2 dB — %3")
+                                        .arg(presetFc, 0, 'f', 0)
+                                        .arg(presetDb, 0, 'f', 1)
+                                        .arg(QString::fromStdString(crossfeedLevelDescription(stage.crossfeedLevel))),
+                                    presetGroup);
         detailLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         presetVBox->addWidget(detailLbl);
 
@@ -785,10 +825,10 @@ void StageDetailView::buildStageOptionsUi() {
             auto fcSlider = new QSlider(Qt::Horizontal, customGroup);
             fcSlider->setRange(300, 1200);
             fcSlider->setValue(static_cast<int>(stage.cxFc));
-            auto fcLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.cxFc)), customGroup);
+            auto fcLbl = new QLabel(QString("%1").arg(static_cast<int>(stage.cxFc)), customGroup);
             connect(fcSlider, &QSlider::valueChanged, [this, &stage, fcLbl](int val) {
                 stage.cxFc = val;
-                fcLbl->setText(QString("%1 Hz").arg(val));
+                fcLbl->setText(QString("%1").arg(val));
                 applyConfig();
             });
             customVBox->addLayout(createSliderRow("Fc (Hz)", fcSlider, fcLbl, 90, 70));
@@ -796,16 +836,16 @@ void StageDetailView::buildStageOptionsUi() {
             auto dbSlider = new QSlider(Qt::Horizontal, customGroup);
             dbSlider->setRange(10, 200);
             dbSlider->setValue(static_cast<int>(stage.cxDb * 10.0));
-            auto dbLbl = new QLabel(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1), customGroup);
+            auto dbLbl = new QLabel(QString("%1").arg(stage.cxDb, 0, 'f', 1), customGroup);
             connect(dbSlider, &QSlider::valueChanged, [this, &stage, dbLbl](int val) {
                 stage.cxDb = val / 10.0;
-                dbLbl->setText(QString("%1 dB").arg(stage.cxDb, 0, 'f', 1));
+                dbLbl->setText(QString("%1").arg(stage.cxDb, 0, 'f', 1));
                 applyConfig();
             });
             customVBox->addLayout(createSliderRow("Level (dB)", dbSlider, dbLbl, 90, 70));
         }
         containerLayout->addWidget(customGroup);
-
+        auto cxParams = stage.activeCrossfeedParams();
         auto derivedGroup = new QGroupBox("Computed Filter Parameters", m_optionsContainer);
         auto derivedGrid = new QGridLayout(derivedGroup);
         derivedGrid->addWidget(new QLabel("Lowshelf", derivedGroup), 0, 0);
@@ -1051,7 +1091,7 @@ void StageDetailView::buildStageOptionsUi() {
             refLbl->setText(QString("%1 dB").arg(val));
             applyConfig();
         });
-        loudVBox->addLayout(createSliderRow("Reference Level", refSlider, refLbl, 110, 60));
+        loudVBox->addLayout(createSliderRow("Reference Level", refSlider, refLbl, 90, 70));
 
         auto lowSlider = new QSlider(Qt::Horizontal, loudGroup);
         lowSlider->setRange(0, 40);
@@ -1062,7 +1102,7 @@ void StageDetailView::buildStageOptionsUi() {
             lowLbl->setText(QString("%1 dB").arg(stage.loudnessLowBoost, 0, 'f', 1));
             applyConfig();
         });
-        loudVBox->addLayout(createSliderRow("Low Boost", lowSlider, lowLbl, 110, 60));
+        loudVBox->addLayout(createSliderRow("Low Boost", lowSlider, lowLbl, 90, 70));
 
         auto highSlider = new QSlider(Qt::Horizontal, loudGroup);
         highSlider->setRange(0, 40);
@@ -1073,12 +1113,12 @@ void StageDetailView::buildStageOptionsUi() {
             highLbl->setText(QString("%1 dB").arg(stage.loudnessHighBoost, 0, 'f', 1));
             applyConfig();
         });
-        loudVBox->addLayout(createSliderRow("High Boost", highSlider, highLbl, 110, 60));
+        loudVBox->addLayout(createSliderRow("High Boost", highSlider, highLbl, 90, 70));
 
         auto faderHBox = new QHBoxLayout();
         faderHBox->setSpacing(16);
         auto faderLbl = new QLabel("Fader", loudGroup);
-        faderLbl->setFixedWidth(110);
+        faderLbl->setFixedWidth(90);
         faderLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         faderHBox->addWidget(faderLbl);
 
@@ -1266,6 +1306,7 @@ void StageDetailView::buildStageOptionsUi() {
         connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) {
             stage.delaySubsample = chk;
             applyConfig();
+            refreshUi();
         });
         delayVBox->addWidget(subChk);
 
@@ -1827,6 +1868,7 @@ void StageDetailView::buildStageOptionsUi() {
         connect(subChk, &QCheckBox::toggled, [this, &stage](bool chk) {
             stage.raceSubsampleDelay = chk;
             applyConfig();
+            refreshUi();
         });
         raceVBox->addWidget(subChk);
 
@@ -1866,8 +1908,50 @@ void StageDetailView::buildStageOptionsUi() {
                                                       DitherType::ShibataLow48,
                                                       DitherType::Shibata96,
                                                       DitherType::ShibataLow96};
+        auto ditherLabel = [](DitherType t) -> QString {
+            switch (t) {
+            case DitherType::None:
+                return "None";
+            case DitherType::Flat:
+                return "Flat";
+            case DitherType::Highpass:
+                return "Highpass";
+            case DitherType::Fweighted441:
+                return "F-weighted 44.1k";
+            case DitherType::FweightedLong441:
+                return "F-weighted Long 44.1k";
+            case DitherType::FweightedShort441:
+                return "F-weighted Short 44.1k";
+            case DitherType::Gesemann441:
+                return "Gesemann 44.1k";
+            case DitherType::Gesemann48:
+                return "Gesemann 48k";
+            case DitherType::Lipshitz441:
+                return "Lipshitz 44.1k";
+            case DitherType::LipshitzLong441:
+                return "Lipshitz Long 44.1k";
+            case DitherType::Shibata441:
+                return "Shibata 44.1k";
+            case DitherType::ShibataHigh441:
+                return "Shibata High 44.1k";
+            case DitherType::ShibataLow441:
+                return "Shibata Low 44.1k";
+            case DitherType::Shibata48:
+                return "Shibata 48k";
+            case DitherType::ShibataHigh48:
+                return "Shibata High 48k";
+            case DitherType::ShibataLow48:
+                return "Shibata Low 48k";
+            case DitherType::Shibata96:
+                return "Shibata 96k";
+            case DitherType::ShibataLow96:
+                return "Shibata Low 96k";
+            default:
+                return QString::fromStdString(ditherTypeToString(t));
+            }
+        };
         for (auto t : types) {
-            typeCombo->addItem(QString::fromStdString(ditherTypeToString(t)), static_cast<int>(t));
+            typeCombo->addItem(ditherLabel(t), static_cast<int>(t));
         }
         int curIdx = 0;
         for (size_t i = 0; i < types.size(); ++i) {
@@ -1978,11 +2062,17 @@ void StageDetailView::buildStageOptionsUi() {
         formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
         auto typeCombo = new QComboBox(comboGroup);
-        typeCombo->addItems({"Butterworth Lowpass", "Butterworth Highpass", "Linkwitz-Riley Lowpass",
-                             "Linkwitz-Riley Highpass", "Tilt", "Five-Point PEQ"});
-        typeCombo->setCurrentIndex(static_cast<int>(stage.comboType));
-        connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage](int idx) {
-            stage.comboType = static_cast<BiquadComboType>(idx);
+        typeCombo->addItem("Butterworth Lowpass", static_cast<int>(BiquadComboType::ButterworthLowpass));
+        typeCombo->addItem("Butterworth Highpass", static_cast<int>(BiquadComboType::ButterworthHighpass));
+        typeCombo->addItem("Linkwitz-Riley Lowpass", static_cast<int>(BiquadComboType::LinkwitzRileyLowpass));
+        typeCombo->addItem("Linkwitz-Riley Highpass", static_cast<int>(BiquadComboType::LinkwitzRileyHighpass));
+        typeCombo->addItem("Tilt", static_cast<int>(BiquadComboType::Tilt));
+        typeCombo->addItem("Five-Point PEQ", static_cast<int>(BiquadComboType::FivePointPeq));
+
+        int curTypeIdx = typeCombo->findData(static_cast<int>(stage.comboType));
+        typeCombo->setCurrentIndex(curTypeIdx >= 0 ? curTypeIdx : 0);
+        connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, &stage, typeCombo](int idx) {
+            stage.comboType = static_cast<BiquadComboType>(typeCombo->itemData(idx).toInt());
             applyConfig();
             refreshUi();
         });
@@ -1990,17 +2080,27 @@ void StageDetailView::buildStageOptionsUi() {
 
         if (stage.comboType != BiquadComboType::FivePointPeq) {
             auto freqSlider = new QSlider(Qt::Horizontal, comboGroup);
-            freqSlider->setRange(20, 20000);
-            freqSlider->setValue(static_cast<int>(stage.comboFreq));
+            const double minLog = std::log10(20.0);
+            const double maxLog = std::log10(20000.0);
+            freqSlider->setRange(0, 1000);
+
+            double curFreq = std::clamp(stage.comboFreq, 20.0, 20000.0);
+            int curLogVal = static_cast<int>(std::round((std::log10(curFreq) - minLog) / (maxLog - minLog) * 1000.0));
+            freqSlider->setValue(curLogVal);
+
             auto freqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)), comboGroup);
             freqLbl->setFixedWidth(65);
             freqLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
             freqLbl->setFont(QFont("monospace", 11));
-            connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl](int val) {
-                stage.comboFreq = val;
-                freqLbl->setText(QString("%1 Hz").arg(val));
+
+            connect(freqSlider, &QSlider::valueChanged, [this, &stage, freqLbl, minLog, maxLog](int val) {
+                double norm = static_cast<double>(val) / 1000.0;
+                double freq = std::pow(10.0, minLog + norm * (maxLog - minLog));
+                stage.comboFreq = std::round(freq);
+                freqLbl->setText(QString("%1 Hz").arg(static_cast<int>(stage.comboFreq)));
                 applyConfig();
             });
+
             auto freqBox = new QHBoxLayout();
             freqBox->addWidget(freqSlider);
             freqBox->addWidget(freqLbl);
