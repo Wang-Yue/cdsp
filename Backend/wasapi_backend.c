@@ -915,6 +915,19 @@ static bool wasapi_capture_wait(void* ctx, uint32_t timeout_ms) {
 }
 
 /**
+ * @brief Stops the WASAPI capture stream.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ */
+static void wasapi_capture_stop(void* ctx) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
+  if (!capture) return;
+  if (capture->client) {
+    IAudioClient_Stop(capture->client);
+  }
+}
+
+/**
  * @brief Destroys the WASAPI capture instance and frees resources.
  *
  * @param ctx Pointer to the wasapi_capture_t instance to destroy.

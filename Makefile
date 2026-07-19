@@ -18,22 +18,44 @@ AR ?= ar
 CFLAGS ?= -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
 UNAME_S := $(shell uname -s)
 
-ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
+ifeq ($(IS_WINDOWS),1)
+    IS_DARWIN := 0
+    IS_LINUX := 0
+else ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
     IS_WINDOWS := 1
+    IS_DARWIN := 0
+    IS_LINUX := 0
 else ifeq ($(UNAME_S),Darwin)
     IS_DARWIN := 1
+    IS_WINDOWS := 0
+    IS_LINUX := 0
 else
     IS_LINUX := 1
+    IS_WINDOWS := 0
+    IS_DARWIN := 0
 endif
 
 ifeq ($(IS_WINDOWS),1)
-    CC := gcc
-    AR := gcc-ar
+    ifneq ($(CROSS_COMPILE),)
+        CC := $(CROSS_COMPILE)gcc
+        AR := $(CROSS_COMPILE)gcc-ar
+    else ifneq ($(shell command -v x86_64-w64-mingw32-gcc 2>/dev/null),)
+        ifneq ($(filter-out Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)),)
+            CC := x86_64-w64-mingw32-gcc
+            AR := x86_64-w64-mingw32-ar
+        else
+            CC := gcc
+            AR := gcc-ar
+        endif
+    else
+        CC := gcc
+        AR := gcc-ar
+    endif
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 0
     ENABLE_PIPEWIRE ?= 0
-    ENABLE_FFTW ?= 0
+    ENABLE_FFTW ?= 1
     ENABLE_BLAS ?= 0
     ENABLE_WASAPI ?= 1
     ENABLE_ASIO ?= 1
@@ -184,11 +206,14 @@ CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all build lib test run-test-runner bench cli clean format
+.PHONY: all build lib test run-test-runner bench cli clean format windows
 
 all: cli
 
 build: all
+
+windows:
+	+$(MAKE) IS_WINDOWS=1 clean cli
 
 lib: $(LIB_TARGET)
 
