@@ -1203,7 +1203,11 @@ void MainWindow::handleNavigationTag(const QString& tag) {
         auto layout = new QVBoxLayout(container);
         layout->setContentsMargins(16, 16, 16, 16);
         auto cap = new LevelMeterView(container);
+        cap->setLevelState(&m_monitoring->levelState);
+        cap->setIsCapture(true);
         auto pb = new LevelMeterView(container);
+        pb->setLevelState(&m_monitoring->levelState);
+        pb->setIsCapture(false);
         layout->addWidget(cap);
         layout->addWidget(pb);
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, container, [this, cap, pb]() {

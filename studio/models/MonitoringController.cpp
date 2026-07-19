@@ -118,8 +118,9 @@ void MonitoringController::poll() {
     size_t pbChannels = m_devices ? m_devices->playbackConfig.channels : 2;
 
     // 2. Poll VU Levels
-    if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused && levels &&
-        levels->visibilityCount > 0) {
+    int vuVisibilityCount = (levels ? levels->visibilityCount : 0) + levelState.visibilityCount;
+    if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
+        vuVisibilityCount > 0) {
         VuLevels vu = m_engine->getVuLevels();
         VuLevels clampedVu;
         clampedVu.capture_peak.reserve(vu.capture_peak.size());

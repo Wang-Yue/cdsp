@@ -18,7 +18,15 @@ class LevelMeterView : public QWidget {
 public:
     explicit LevelMeterView(QWidget* parent = nullptr);
 
-    void setLevelState(LevelState* levelState) { m_levelState = levelState; }
+    void setLevelState(LevelState* levelState) {
+        if (m_levelState == levelState)
+            return;
+        if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
+            m_levelState->visibilityCount--;
+        m_levelState = levelState;
+        if (isVisible() && m_levelState)
+            m_levelState->visibilityCount++;
+    }
     void setIsCapture(bool isCapture) { m_isCapture = isCapture; }
     bool isCapture() const { return m_isCapture; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");

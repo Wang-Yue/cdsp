@@ -14,7 +14,15 @@ class AnalogVUMeterView : public QWidget {
 public:
     explicit AnalogVUMeterView(QWidget* parent = nullptr);
 
-    void setLevelState(LevelState* levelState) { m_levelState = levelState; }
+    void setLevelState(LevelState* levelState) {
+        if (m_levelState == levelState)
+            return;
+        if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
+            m_levelState->visibilityCount--;
+        m_levelState = levelState;
+        if (isVisible() && m_levelState)
+            m_levelState->visibilityCount++;
+    }
     void setLevelDB(float leftDB, float rightDB);
     void setVUSettings(const VUSettings& settings);
     VUSettings vuSettings() const { return m_settings; }
