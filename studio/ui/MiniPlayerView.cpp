@@ -22,6 +22,19 @@
 #include <objc/message.h>
 #include <objc/runtime.h>
 
+template <typename Target, typename... Args>
+static void safeSendObjcMsg(Target target, const char* selName, Args... args) {
+    if (!target)
+        return;
+    SEL sel = sel_registerName(selName);
+    SEL respondsSel = sel_registerName("respondsToSelector:");
+    auto respondsFunc = reinterpret_cast<bool (*)(Target, SEL, SEL)>(objc_msgSend);
+    if (respondsFunc(target, respondsSel, sel)) {
+        auto sendFunc = reinterpret_cast<void (*)(Target, SEL, Args...)>(objc_msgSend);
+        sendFunc(target, sel, args...);
+    }
+}
+
 static void setMacFloatingPanelProperties(QWidget* widget) {
     if (auto window = widget->windowHandle()) {
         void* view = reinterpret_cast<void*>(window->winId());
@@ -29,24 +42,15 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
             void* nsWindow = reinterpret_cast<void* (*)(void*, SEL)>(objc_msgSend)(view, sel_registerName("window"));
             if (nsWindow) {
                 unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 6);
-                reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(
-                    nsWindow, sel_registerName("setCollectionBehavior:"), behavior);
-                reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow, sel_registerName("setLevel:"),
-                                                                           1000L);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
-                    nsWindow, sel_registerName("setMovableByWindowBackground:"), true);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
-                    nsWindow, sel_registerName("setHidesOnDeactivate:"), false);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
-                    nsWindow, sel_registerName("setBecomesKeyOnlyIfNeeded:"), true);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(
-                    nsWindow, sel_registerName("setTitlebarAppearsTransparent:"), true);
-                reinterpret_cast<void (*)(void*, SEL, long)>(objc_msgSend)(nsWindow,
-                                                                           sel_registerName("setTitleVisibility:"), 1L);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(nsWindow, sel_registerName("setHasShadow:"),
-                                                                           true);
-                reinterpret_cast<void (*)(void*, SEL, bool)>(objc_msgSend)(nsWindow,
-                                                                           sel_registerName("setFloatingPanel:"), true);
+                safeSendObjcMsg(nsWindow, "setCollectionBehavior:", behavior);
+                safeSendObjcMsg(nsWindow, "setLevel:", 1000L);
+                safeSendObjcMsg(nsWindow, "setMovableByWindowBackground:", true);
+                safeSendObjcMsg(nsWindow, "setHidesOnDeactivate:", false);
+                safeSendObjcMsg(nsWindow, "setBecomesKeyOnlyIfNeeded:", true);
+                safeSendObjcMsg(nsWindow, "setTitlebarAppearsTransparent:", true);
+                safeSendObjcMsg(nsWindow, "setTitleVisibility:", 1L);
+                safeSendObjcMsg(nsWindow, "setHasShadow:", true);
+                safeSendObjcMsg(nsWindow, "setFloatingPanel:", true);
             }
         }
     }
