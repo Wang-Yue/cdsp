@@ -232,14 +232,10 @@ static BiquadParameters optimizeBand(const BiquadParameters& band, const std::ve
                                      const std::vector<double>& frequencies, int sampleRate,
                                      const PEQAutoFitOptions& options) {
     BiquadParameters curr = band;
-    double f0 = curr.freq.value_or(1000.0);
-    bool isModal = options.modalMode && (f0 <= options.schroederHz);
-    double maxG = isModal ? 0.0 : options.maxGainDB;
-    double minQ = isModal ? std::max(options.minQ, options.modalMinQ) : options.minQ;
 
     for (int iter = 0; iter < 2; ++iter) {
         // Optimize Gain
-        curr.gain = goldenSectionSearch(-options.maxGainDB, maxG, 0.02, false, [&](double g) {
+        curr.gain = goldenSectionSearch(-options.maxGainDB, options.maxGainDB, 0.02, false, [&](double g) {
             BiquadParameters b = curr;
             b.gain = g;
             return cost(b, rwb, frequencies, sampleRate);
@@ -247,7 +243,7 @@ static BiquadParameters optimizeBand(const BiquadParameters& band, const std::ve
 
         if (curr.type != BiquadType::Lowshelf && curr.type != BiquadType::Highshelf) {
             // Optimize Q
-            curr.q = goldenSectionSearch(minQ, options.maxQ, 0.005, true, [&](double q) {
+            curr.q = goldenSectionSearch(options.minQ, options.maxQ, 0.005, true, [&](double q) {
                 BiquadParameters b = curr;
                 b.q = q;
                 return cost(b, rwb, frequencies, sampleRate);

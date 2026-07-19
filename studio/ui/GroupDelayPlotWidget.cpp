@@ -2,6 +2,8 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
@@ -9,6 +11,13 @@
 
 GroupDelayPlotWidget::GroupDelayPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
+
+    m_exportBtn = new QPushButton("Export Image…", this);
+    m_exportBtn->setFixedSize(110, 26);
+    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
+                               "#555; border-radius: 4px; font-size: 11px; }"
+                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
+    connect(m_exportBtn, &QPushButton::clicked, this, &GroupDelayPlotWidget::onExport);
 }
 
 void GroupDelayPlotWidget::setSession(MeasurementSession* session) {
@@ -20,6 +29,26 @@ void GroupDelayPlotWidget::setSession(MeasurementSession* session) {
         connect(m_session, &MeasurementSession::sessionUpdated, this, QOverload<>::of(&QWidget::update));
     }
     update();
+}
+
+void GroupDelayPlotWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (m_exportBtn) {
+        m_exportBtn->move(width() - 122, 10);
+    }
+}
+
+void GroupDelayPlotWidget::onExport() {
+    QString fileName = QFileDialog::getSaveFileName(this, "Export Group Delay Plot Image", "group_delay.png",
+                                                    "PNG Images (*.png);;JPEG Images (*.jpg)");
+    if (!fileName.isEmpty()) {
+        QPixmap pixmap = grab();
+        if (pixmap.save(fileName)) {
+            QMessageBox::information(this, "Export Successful", "Group delay image saved to: " + fileName);
+        } else {
+            QMessageBox::warning(this, "Export Failed", "Could not save image to specified path.");
+        }
+    }
 }
 
 double GroupDelayPlotWidget::freqToX(double f, double width) const {
@@ -111,4 +140,13 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     painter.setPen(QPen(QColor(0, 180, 255), 1.4));
     painter.drawPath(gdPath);
+
+    // Legend
+    painter.fillRect(QRect(w - 280, 10, 140, 26),
+                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
+    painter.setPen(QPen(QColor(0, 180, 255), 2));
+    painter.drawLine(w - 272, 23, w - 247, 23);
+    painter.setPen(StyleTheme::textPrimary());
+    painter.setFont(QFont("sans-serif", 9));
+    painter.drawText(w - 239, 27, "Group Delay (ms)");
 }

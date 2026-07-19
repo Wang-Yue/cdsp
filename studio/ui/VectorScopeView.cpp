@@ -23,9 +23,11 @@ void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
     if (m_engine) {
         connect(m_engine.get(), &VectorScopeEngine::updated, this, [this]() {
             if (m_engine)
-                setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale);
+                setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                           m_engine->channelR, m_engine->traceDecayRate);
         });
-        setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale);
+        setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
+                   m_engine->channelR, m_engine->traceDecayRate);
     }
 }
 
@@ -41,10 +43,14 @@ void VectorScopeView::hideEvent(QHideEvent* event) {
         m_engine->visibilityCount--;
 }
 
-void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles, bool autoScale) {
+void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles, bool autoScale, int channelL,
+                                 int channelR, float traceDecayRate) {
     m_samples = samples;
     m_showParticles = showParticles;
     m_autoScale = autoScale;
+    m_channelL = channelL;
+    m_channelR = channelR;
+    m_traceDecayRate = traceDecayRate;
     update();
 }
 
@@ -78,7 +84,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         QPainter bufPainter(&m_persistenceBuffer);
         bufPainter.setRenderHint(QPainter::Antialiasing);
         QColor fadeColor = inMiniPlayer ? QColor(18, 18, 22) : StyleTheme::cardBg();
-        fadeColor.setAlpha(45); // Alpha buffer decay rate (~82% retention)
+        int fadeAlpha = static_cast<int>(std::max(1.0f, std::min(255.0f, 255.0f * (1.0f - m_traceDecayRate))));
+        fadeColor.setAlpha(fadeAlpha); // Dynamic alpha buffer decay rate based on traceDecayRate
         bufPainter.fillRect(m_persistenceBuffer.rect(), fadeColor);
 
         // Reticle axes (+M, -M, +S, -S) & Diagonal Corner-to-Corner X grid lines
@@ -101,8 +108,12 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         bufPainter.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
         bufPainter.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
 
-        const auto& left = m_samples.left();
-        const auto& right = m_samples.right();
+        const auto& left = (m_channelL >= 0 && static_cast<size_t>(m_channelL) < m_samples.channels.size())
+                               ? m_samples.channels[m_channelL]
+                               : m_samples.left();
+        const auto& right = (m_channelR >= 0 && static_cast<size_t>(m_channelR) < m_samples.channels.size())
+                                ? m_samples.channels[m_channelR]
+                                : m_samples.right();
         size_t count = std::min(left.size(), right.size());
 
         if (count > 0) {

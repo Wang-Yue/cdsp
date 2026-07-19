@@ -25,6 +25,7 @@ public:
     ImpulseResponse centeredOnPeak() const;
     ImpulseResponse windowed(size_t leftSamples, size_t rightSamples, double taperFraction = 0.1) const;
     std::vector<double> schroederDecay() const;
+    double rt60(double startDB = -5.0, double endDB = -25.0) const;
     RT60Result estimateRT60() const;
 };
 

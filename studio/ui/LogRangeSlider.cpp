@@ -30,20 +30,31 @@ double LogRangeSlider::posToFreq(int x) const {
         return m_minBound;
 
     double frac = std::max(0.0, std::min(1.0, static_cast<double>(x - margin) / w));
-    double logMin = std::log10(m_minBound);
-    double logMax = std::log10(m_maxBound);
-    double logFreq = logMin + frac * (logMax - logMin);
-    return std::round(std::pow(10.0, logFreq));
+    if (m_isLogarithmic) {
+        double logMin = std::log10(m_minBound);
+        double logMax = std::log10(m_maxBound);
+        double logFreq = logMin + frac * (logMax - logMin);
+        return std::round(std::pow(10.0, logFreq));
+    } else {
+        double val = m_minBound + frac * (m_maxBound - m_minBound);
+        return std::round(val * 10.0) / 10.0;
+    }
 }
 
 int LogRangeSlider::freqToPos(double freq) const {
     int margin = 10;
     int w = width() - 2 * margin;
-    double logMin = std::log10(m_minBound);
-    double logMax = std::log10(m_maxBound);
-    double logFreq = std::log10(std::max(m_minBound, std::min(m_maxBound, freq)));
-    double frac = (logFreq - logMin) / (logMax - logMin);
-    return margin + static_cast<int>(frac * w);
+    if (m_isLogarithmic) {
+        double logMin = std::log10(m_minBound);
+        double logMax = std::log10(m_maxBound);
+        double logFreq = std::log10(std::max(m_minBound, std::min(m_maxBound, freq)));
+        double frac = (logFreq - logMin) / (logMax - logMin);
+        return margin + static_cast<int>(frac * w);
+    } else {
+        double clamped = std::max(m_minBound, std::min(m_maxBound, freq));
+        double frac = (clamped - m_minBound) / (m_maxBound - m_minBound);
+        return margin + static_cast<int>(frac * w);
+    }
 }
 
 void LogRangeSlider::paintEvent(QPaintEvent* event) {

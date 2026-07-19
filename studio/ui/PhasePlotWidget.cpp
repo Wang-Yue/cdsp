@@ -2,7 +2,9 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFileDialog>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
@@ -23,6 +25,13 @@ PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
         m_unwrapBtn->setText(checked ? "Wrap Phase" : "Unwrap Phase");
         update();
     });
+
+    m_exportBtn = new QPushButton("Export Image…", this);
+    m_exportBtn->setFixedSize(110, 26);
+    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
+                               "#555; border-radius: 4px; font-size: 11px; }"
+                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
+    connect(m_exportBtn, &QPushButton::clicked, this, &PhasePlotWidget::onExport);
 }
 
 void PhasePlotWidget::setSession(MeasurementSession* session) {
@@ -97,6 +106,22 @@ void PhasePlotWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     if (m_unwrapBtn) {
         m_unwrapBtn->move(12, height() - 34);
+    }
+    if (m_exportBtn) {
+        m_exportBtn->move(width() - 325, 10);
+    }
+}
+
+void PhasePlotWidget::onExport() {
+    QString fileName = QFileDialog::getSaveFileName(this, "Export Phase Plot Image", "phase_plot.png",
+                                                    "PNG Images (*.png);;JPEG Images (*.jpg)");
+    if (!fileName.isEmpty()) {
+        QPixmap pixmap = grab();
+        if (pixmap.save(fileName)) {
+            QMessageBox::information(this, "Export Successful", "Phase plot image saved to: " + fileName);
+        } else {
+            QMessageBox::warning(this, "Export Failed", "Could not save image to specified path.");
+        }
     }
 }
 

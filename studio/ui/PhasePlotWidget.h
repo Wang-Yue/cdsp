@@ -23,11 +23,13 @@ private:
     MeasurementSession* m_session = nullptr;
     bool m_unwrapPhase = false;
     QPushButton* m_unwrapBtn = nullptr;
+    QPushButton* m_exportBtn = nullptr;
 
     double freqToX(double f, double width) const;
     void phaseBounds(const FrequencyResponse& fr, const std::vector<double>& unwrapped, double& minDeg,
                      double& maxDeg) const;
     double wrapToPi(double radians) const;
+    void onExport();
 };
 
 #endif // PHASE_PLOT_WIDGET_H

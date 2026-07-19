@@ -3,6 +3,7 @@
 
 #include "room_correction/MeasurementSession.h"
 
+#include <QPushButton>
 #include <QWidget>
 
 class ImpulseResponsePlotWidget : public QWidget {
@@ -15,9 +16,13 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     MeasurementSession* m_session = nullptr;
+    QPushButton* m_exportBtn = nullptr;
+
+    void onExport();
 };
 
 #endif // IMPULSE_RESPONSE_PLOT_WIDGET_H

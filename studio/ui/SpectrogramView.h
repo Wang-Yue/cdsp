@@ -16,7 +16,7 @@ public:
 
     void setEngine(std::shared_ptr<SpectrogramEngine> engine);
     void setHistory(const std::deque<SpectrumData>& history, bool show3D = false,
-                    ColorPalette palette = ColorPalette::Default);
+                    ColorPalette palette = ColorPalette::Classic);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -27,9 +27,9 @@ private:
     std::shared_ptr<SpectrogramEngine> m_engine;
     std::deque<SpectrumData> m_history;
     bool m_show3D = false;
-    ColorPalette m_palette = ColorPalette::Default;
+    ColorPalette m_palette = ColorPalette::Classic;
 
-    static QColor colorForDB(float db, ColorPalette palette = ColorPalette::Default);
+    static QColor colorForDB(float db, ColorPalette palette = ColorPalette::Classic);
 };
 
 #endif // SPECTROGRAM_VIEW_H

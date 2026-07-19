@@ -13,14 +13,16 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
-#include <QDoubleSpinBox>
+#include <QHBoxLayout>
 #include <QLabel>
-#include <QListWidget>
 #include <QPushButton>
-#include <QSpinBox>
+#include <QScrollArea>
+#include <QSlider>
 #include <QStackedWidget>
 #include <QTabBar>
-#include <QTabWidget>
+#include <QToolButton>
+#include <QVBoxLayout>
+#include <QWidget>
 #include <memory>
 
 class RoomCorrectionDlg : public QDialog {
@@ -31,65 +33,89 @@ public:
 
 private slots:
     void refreshSessionUi();
-    void onGenerateMock();
+    void onGenerateMock(bool append);
     void onRecordHardwareMeasurement(bool append);
     void onImportFRD();
-    void onExportFRD();
+    void onExportFRD(bool includeCalibration);
     void onLoadCalibration();
     void onClearCalibration();
-    void onLoadTargetCurve();
     void onRunFit();
     void onApplyEQToPipeline();
     void onGenerateFIR();
     void onComputeSubwoofer();
+    void toggleSidebar();
 
 private:
     std::shared_ptr<PipelineStore> m_pipeline;
     MeasurementSession m_session;
 
-    QTabWidget* m_tabWidget;
+    // Header Toolbar
+    QPushButton* m_measureMenuBtn;
+    QTabBar* m_paneTabBar;
+    QToolButton* m_sidebarToggleBtn;
 
-    // Measurement & Multi-Plot Widgets
-    QListWidget* m_positionsList;
-    QTabBar* m_plotTabBar;
+    // Center Plot Area & Positions Bar
     QStackedWidget* m_plotStackedWidget;
-
     EQDiagramWidget* m_frDiagramWidget;
     PhasePlotWidget* m_phasePlotWidget;
     ImpulseResponsePlotWidget* m_impulsePlotWidget;
     GroupDelayPlotWidget* m_groupDelayPlotWidget;
     WaterfallPlotWidget* m_waterfallWidget;
 
-    // Calibration & Target Curve
-    QLabel* m_calStatusLabel;
+    QWidget* m_positionsContainer;
+    QHBoxLayout* m_positionsChipsLayout;
+    QPushButton* m_subwooferAssistBtn;
 
-    // Analysis / Controls
-    QComboBox* m_fdwCombo;
-    QComboBox* m_smoothingCombo;
+    // Collapsible Sidebar & Sections
+    QWidget* m_sidebarWidget;
+    bool m_sidebarVisible = true;
 
-    // Fit Tab Widgets
-    QSpinBox* m_bandCountSpin;
-    QDoubleSpinBox* m_maxGainSpin;
-    QCheckBox* m_modalCheck;
-    QDoubleSpinBox* m_schroederSpin;
+    // Audio Setup
+    QComboBox* m_micDeviceCombo;
+    QComboBox* m_micChannelCombo;
+    QComboBox* m_outputDeviceCombo;
+    QComboBox* m_outputChannelCombo;
+    QLabel* m_calPathLabel;
+    QPushButton* m_loadCalBtn;
+    QToolButton* m_clearCalBtn;
+    QPushButton* m_exportFrdBtn;
+    QPushButton* m_exportCalFrdBtn;
+
+    // Target & Analysis
     QComboBox* m_targetPresetCombo;
+    QComboBox* m_smoothingCombo;
+    QComboBox* m_fdwCombo;
 
-    // Subwoofer Tab Widgets
-    QLabel* m_subResultLabel;
+    // Modal Region
+    QCheckBox* m_modalModeCheck;
+    QComboBox* m_schroederCombo;
+    QComboBox* m_modalMinQCombo;
 
-    // FIR Tab Widgets
+    // PEQ Design
+    QComboBox* m_bandCountCombo;
+    QPushButton* m_generatePeqBtn;
+    QPushButton* m_addToEqPresetsBtn;
+
+    // FIR Convolution Design
     QComboBox* m_firKindCombo;
-    QSpinBox* m_firTapSpin;
-    QSlider* m_firPhaseBlendSlider;
-    QLabel* m_firPhaseBlendLabel;
+    QComboBox* m_firTapCombo;
+    QWidget* m_phaseBlendContainer;
+    QSlider* m_phaseBlendSlider;
+    QLabel* m_phaseBlendValueLabel;
+    QPushButton* m_addToFirPresetsBtn;
 
+    // Status bar
     QLabel* m_statusLabel;
 
     void setupUi();
-    void setupMeasurementTab(QWidget* tab);
-    void setupFitTab(QWidget* tab);
-    void setupSubwooferTab(QWidget* tab);
-    void setupFIRTab(QWidget* tab);
+    QWidget* createHeaderToolbar();
+    QWidget* createMainArea();
+    QWidget* createSidebar();
+    QWidget* createSidebarSection(const QString& title, QWidget* content);
+
+    void populateAudioDevices();
+    void updateMicChannels();
+    void updateOutputChannels();
 };
 
 #endif // ROOM_CORRECTION_DLG_H

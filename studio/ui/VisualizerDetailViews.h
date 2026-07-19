@@ -69,8 +69,13 @@ private:
     QComboBox* m_sourceCombo;
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
+    QComboBox* m_windowCombo;
+    QComboBox* m_smoothingCombo;
+    QComboBox* m_decayCombo;
     LogRangeSlider* m_rangeSlider;
     QLabel* m_rangeLbl;
+    LogRangeSlider* m_dbRangeSlider;
+    QLabel* m_dbRangeLbl;
 
     void setupUi();
 };
@@ -91,6 +96,7 @@ private:
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
     QComboBox* m_modeCombo;
+    QComboBox* m_paletteCombo;
 
     void setupUi();
 };
@@ -99,15 +105,20 @@ class VectorScopeDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    explicit VectorScopeDetailView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent = nullptr);
+    explicit VectorScopeDetailView(std::shared_ptr<VectorScopeEngine> engine,
+                                   std::shared_ptr<AudioDeviceManager> devices = nullptr, QWidget* parent = nullptr);
 
 private:
     std::shared_ptr<VectorScopeEngine> m_engine;
+    std::shared_ptr<AudioDeviceManager> m_devices;
     VectorScopeView* m_vectorView;
 
     QComboBox* m_sourceCombo;
+    QComboBox* m_channelLCombo;
+    QComboBox* m_channelRCombo;
     QSpinBox* m_framesSpin;
     QComboBox* m_modeCombo;
+    QComboBox* m_decayCombo;
     QCheckBox* m_autoScaleCheck;
 
     void setupUi();

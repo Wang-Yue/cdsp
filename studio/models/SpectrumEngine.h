@@ -7,6 +7,9 @@
 #include <optional>
 #include <vector>
 
+enum class FFTWindowFunction { Hann, Hamming, Blackman, FlatTop, Rectangular };
+enum class OctaveSmoothing { None, OneThird, OneSixth, OneTwelfth, OneTwentyFourth };
+
 class SpectrumEngine : public QObject {
     Q_OBJECT
 
@@ -19,6 +22,11 @@ public:
     size_t nBins = 30;
     double minFreq = 25.0;
     double maxFreq = 20000.0;
+    double minDB = -120.0;
+    double maxDB = 0.0;
+    FFTWindowFunction windowFunction = FFTWindowFunction::Hann;
+    OctaveSmoothing smoothing = OctaveSmoothing::None;
+    float peakHoldDecayRate = 0.95f;
 
     SpectrumData data;
 
@@ -38,6 +46,11 @@ public:
         nBins = 30;
         minFreq = 25.0;
         maxFreq = 20000.0;
+        minDB = -120.0;
+        maxDB = 0.0;
+        windowFunction = FFTWindowFunction::Hann;
+        smoothing = OctaveSmoothing::None;
+        peakHoldDecayRate = 0.95f;
         data = SpectrumData();
         emit updated();
     }

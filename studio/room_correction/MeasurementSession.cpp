@@ -376,9 +376,83 @@ void MeasurementSession::setPositionKind(const QUuid& id, MeasurementChannelKind
     emit sessionUpdated();
 }
 
+std::optional<EQBand> MeasurementSession::eqBandFromBiquadParameters(const BiquadParameters& p) {
+    if (!p.type.has_value())
+        return std::nullopt;
+    std::string typeStr = biquadTypeToString(p.type.value());
+    EQBandType mappedType = stringToEQBandType(typeStr);
+
+    EQBand band(mappedType);
+    switch (mappedType) {
+    case EQBandType::Free:
+        band.b0 = p.b0.value_or(1.0);
+        band.b1 = p.b1.value_or(0.0);
+        band.b2 = p.b2.value_or(0.0);
+        band.a1 = p.a1.value_or(0.0);
+        band.a2 = p.a2.value_or(0.0);
+        break;
+    case EQBandType::GeneralNotch:
+        band.freqNotch = p.freqNotch.value_or(1000.0);
+        band.freqPole = p.freqPole.value_or(1000.0);
+        band.normalizeAtDc = p.normalizeAtDc.value_or(true);
+        break;
+    case EQBandType::LinkwitzTransform:
+        band.freqAct = p.freqAct.value_or(50.0);
+        band.qAct = p.qAct.value_or(0.707);
+        band.freqTarget = p.freqTarget.value_or(20.0);
+        band.qTarget = p.qTarget.value_or(0.707);
+        break;
+    default:
+        if (!p.freq.has_value())
+            return std::nullopt;
+        band.freq = p.freq.value();
+        band.gain = p.gain.value_or(0.0);
+        band.q = p.q.value_or(0.707);
+        break;
+    }
+    return band;
+}
+
+BiquadParameters MeasurementSession::biquadParametersFromEQBand(const EQBand& band) {
+    std::string typeStr = eqBandTypeToString(band.type);
+    BiquadType mappedType = stringToBiquadType(typeStr).value_or(BiquadType::Peaking);
+
+    BiquadParameters params;
+    params.type = mappedType;
+    switch (band.type) {
+    case EQBandType::Free:
+        params.b0 = band.b0;
+        params.b1 = band.b1;
+        params.b2 = band.b2;
+        params.a1 = band.a1;
+        params.a2 = band.a2;
+        break;
+    case EQBandType::GeneralNotch:
+        params.freqNotch = band.freqNotch;
+        params.freqPole = band.freqPole;
+        params.normalizeAtDc = band.normalizeAtDc;
+        break;
+    case EQBandType::LinkwitzTransform:
+        params.freqAct = band.freqAct;
+        params.qAct = band.qAct;
+        params.freqTarget = band.freqTarget;
+        params.qTarget = band.qTarget;
+        break;
+    default:
+        params.freq = band.freq;
+        params.gain = band.gain;
+        params.q = band.q;
+        break;
+    }
+    return params;
+}
+
 void MeasurementSession::runFit() {
-    if (measuredMagDB.empty())
+    if (measuredMagDB.empty()) {
+        status = "Run a measurement before fitting.";
+        emit sessionUpdated();
         return;
+    }
 
     PEQAutoFitOptions opts;
     opts.bandCount = bandCount;
@@ -391,12 +465,14 @@ void MeasurementSession::runFit() {
 
     std::vector<EQBand> eqBands;
     for (const auto& bp : biquadParams) {
-        EQBand band(EQBandType::Peaking, bp.freq.value_or(1000.0), bp.gain.value_or(0.0), bp.q.value_or(0.707));
-        eqBands.push_back(band);
+        auto b = eqBandFromBiquadParameters(bp);
+        if (b.has_value()) {
+            eqBands.push_back(b.value());
+        }
     }
 
     correctionPreset = EQPreset("Room Correction", -6.0, eqBands);
-    status = "Fit produced " + std::to_string(eqBands.size()) + " bands.";
+    status = "Fit produced " + std::to_string(eqBands.size()) + " band" + (eqBands.size() == 1 ? "." : "s.");
     emit sessionUpdated();
 }
 
@@ -435,16 +511,19 @@ std::vector<double> MeasurementSession::levelNormalize(const std::vector<double>
 }
 
 std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vector<std::string>& existingNames) {
-    if (firKind != FIRKind::MeasurementDriven &&
-        (!correctionPreset.has_value() || correctionPreset.value().bands.empty())) {
-        status = "Run PEQ fit before generating FIR.";
-        emit sessionUpdated();
-        return std::nullopt;
-    }
-    if (firKind == FIRKind::MeasurementDriven && !measuredFR.has_value()) {
-        status = "Run a measurement before exporting measurement-driven FIR.";
-        emit sessionUpdated();
-        return std::nullopt;
+    bool derivedFromEQ = (firKind != FIRKind::MeasurementDriven);
+    if (derivedFromEQ) {
+        if (!correctionPreset.has_value() || correctionPreset.value().bands.empty()) {
+            status = "Run Generate PEQ before exporting a " + firKindToString(firKind) + " FIR.";
+            emit sessionUpdated();
+            return std::nullopt;
+        }
+    } else {
+        if (!measuredFR.has_value()) {
+            status = "Run a measurement before exporting a measurement-driven FIR.";
+            emit sessionUpdated();
+            return std::nullopt;
+        }
     }
 
     std::string kindLabel, fileLabel;
@@ -463,17 +542,12 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
         break;
     }
 
-    std::vector<BiquadParameters> bands;
+    std::vector<BiquadParameters> fittedBands;
     if (correctionPreset.has_value()) {
         for (const auto& b : correctionPreset.value().bands) {
             if (!b.isEnabled)
                 continue;
-            BiquadParameters p;
-            p.type = stringToBiquadType(eqBandTypeToString(b.type));
-            p.freq = b.freq;
-            p.gain = b.gain;
-            p.q = b.q;
-            bands.push_back(p);
+            fittedBands.push_back(biquadParametersFromEQBand(b));
         }
     }
 
@@ -494,13 +568,13 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
             opts.fftSize = firTapCount;
             opts.outputLength = firTapCount;
             opts.preampDB = 0.0;
-            irSamples = FIRDesign::minimumPhase(bands, rate, opts);
+            irSamples = FIRDesign::minimumPhase(fittedBands, rate, opts);
         } else if (firKind == FIRKind::LinearPhase) {
             FIRDesignOptions opts;
             opts.fftSize = firTapCount;
             opts.outputLength = firTapCount;
             opts.preampDB = 0.0;
-            irSamples = FIRDesign::linearPhase(bands, rate, opts);
+            irSamples = FIRDesign::linearPhase(fittedBands, rate, opts);
         } else if (firKind == FIRKind::MeasurementDriven) {
             FIRDesignMeasurementOptions opts;
             opts.fftSize = firTapCount;

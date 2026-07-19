@@ -4,8 +4,6 @@
 #include "models/AudioSettings.h"
 #include "models/MonitoringController.h"
 
-#include <QCheckBox>
-#include <QComboBox>
 #include <QLabel>
 #include <QSlider>
 #include <QWidget>
@@ -24,11 +22,6 @@ private slots:
 private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
-
-    QComboBox* m_themeCombo;
-    QComboBox* m_logLevelCombo;
-    QCheckBox* m_autoStartCheck;
-    QCheckBox* m_showSignalGraphCheck;
 
     QSlider* m_pollingRateSlider;
     QLabel* m_pollingRateLabel;

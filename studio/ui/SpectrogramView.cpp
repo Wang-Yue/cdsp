@@ -105,7 +105,7 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
         color = interpColors(norm, jetStops);
         break;
     }
-    case ColorPalette::Default:
+    case ColorPalette::Classic:
     default: {
         if (norm < 0.35f) {
             return QColor(52, 199, 89, static_cast<int>(255 * norm / 0.35f));

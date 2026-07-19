@@ -536,19 +536,19 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         QRectF bRect(pos.x() - b.width / 2.0, pos.y() - b.height / 2.0, b.width, b.height);
 
         if (b.isChannelPort) {
-            painter.setBrush(isDarkTheme ? QColor(0, 122, 255, 40) : QColor(0, 122, 255, 30));
-            painter.setPen(QPen(QColor(0, 122, 255, 120), 1));
+            painter.setBrush(isDarkTheme ? QColor(0, 122, 255, 35) : QColor(0, 122, 255, 30));
+            painter.setPen(QPen(QColor(0, 122, 255, 80), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
-            painter.setFont(QFont("monospace", 10, QFont::Bold));
+            painter.setFont(QFont("monospace", 11, QFont::Bold));
             painter.setPen(QColor("#007aff"));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         } else if (!b.label.isEmpty()) {
             painter.setBrush(StyleTheme::cardBg());
-            painter.setPen(QPen(StyleTheme::border(), 1));
+            painter.setPen(QPen(isDarkTheme ? QColor(255, 255, 255, 65) : QColor(0, 0, 0, 65), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
-            painter.setFont(QFont("monospace", 9, QFont::DemiBold));
+            painter.setFont(QFont("monospace", 10, QFont::DemiBold));
             painter.setPen(StyleTheme::textPrimary());
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         }

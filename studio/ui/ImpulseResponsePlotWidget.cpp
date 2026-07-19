@@ -2,6 +2,8 @@
 
 #include "ui/StyleTheme.h"
 
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
@@ -9,6 +11,13 @@
 
 ImpulseResponsePlotWidget::ImpulseResponsePlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);
+
+    m_exportBtn = new QPushButton("Export Image…", this);
+    m_exportBtn->setFixedSize(110, 26);
+    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
+                               "#555; border-radius: 4px; font-size: 11px; }"
+                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
+    connect(m_exportBtn, &QPushButton::clicked, this, &ImpulseResponsePlotWidget::onExport);
 }
 
 void ImpulseResponsePlotWidget::setSession(MeasurementSession* session) {
@@ -20,6 +29,26 @@ void ImpulseResponsePlotWidget::setSession(MeasurementSession* session) {
         connect(m_session, &MeasurementSession::sessionUpdated, this, QOverload<>::of(&QWidget::update));
     }
     update();
+}
+
+void ImpulseResponsePlotWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (m_exportBtn) {
+        m_exportBtn->move(width() - 122, 10);
+    }
+}
+
+void ImpulseResponsePlotWidget::onExport() {
+    QString fileName = QFileDialog::getSaveFileName(this, "Export Impulse Response Plot Image", "impulse_response.png",
+                                                    "PNG Images (*.png);;JPEG Images (*.jpg)");
+    if (!fileName.isEmpty()) {
+        QPixmap pixmap = grab();
+        if (pixmap.save(fileName)) {
+            QMessageBox::information(this, "Export Successful", "Impulse response image saved to: " + fileName);
+        } else {
+            QMessageBox::warning(this, "Export Failed", "Could not save image to specified path.");
+        }
+    }
 }
 
 void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
@@ -92,4 +121,12 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
             painter.drawText(QRectF(x - 30, h - 22, 60, 15), Qt::AlignCenter, label);
         }
     }
+
+    // Legend
+    painter.fillRect(QRect(12, 10, 150, 26), StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
+    painter.setPen(QPen(QColor(0, 160, 255), 2));
+    painter.drawLine(20, 23, 45, 23);
+    painter.setPen(StyleTheme::textPrimary());
+    painter.setFont(QFont("sans-serif", 9));
+    painter.drawText(53, 27, "Impulse Response");
 }

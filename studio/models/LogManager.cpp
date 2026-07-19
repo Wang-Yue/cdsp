@@ -2,24 +2,30 @@
 
 #include "engine/CDSPEngine.h"
 
+#include <QSettings>
+
 QString logLevelToString(LogLevel level) {
     switch (level) {
+    case LogLevel::Off:
+        return "Off";
     case LogLevel::Error:
-        return "ERROR";
+        return "Error";
     case LogLevel::Warn:
-        return "WARN";
+        return "Warn";
     case LogLevel::Info:
-        return "INFO";
+        return "Info";
     case LogLevel::Debug:
-        return "DEBUG";
+        return "Debug";
     case LogLevel::Trace:
-        return "TRACE";
+        return "Trace";
     }
-    return "INFO";
+    return "Info";
 }
 
 LogLevel stringToLogLevel(const QString& str) {
     QString u = str.toUpper();
+    if (u == "OFF")
+        return LogLevel::Off;
     if (u == "ERROR")
         return LogLevel::Error;
     if (u == "WARN")
@@ -30,8 +36,6 @@ LogLevel stringToLogLevel(const QString& str) {
         return LogLevel::Trace;
     return LogLevel::Info;
 }
-
-#include <QSettings>
 
 LogManager::LogManager(QObject* parent) : QObject(parent) {
     qRegisterMetaType<LogEntry>("LogEntry");
@@ -56,7 +60,7 @@ void LogManager::setEngine(CDSPEngine* engine) {
 void LogManager::setLogLevel(LogLevel level) {
     m_logLevel = level;
     QSettings settings;
-    settings.setValue("selectedLogLevel", logLevelToString(m_logLevel).toLower());
+    settings.setValue("selectedLogLevel", logLevelToString(m_logLevel));
     if (m_engine) {
         m_engine->setLogLevel(logLevelToString(m_logLevel).toLower().toStdString());
     }
@@ -74,17 +78,13 @@ void LogManager::appendLog(LogLevel level, const QString& message) {
     emit logAppended(entry);
 }
 
-std::vector<LogEntry> LogManager::logs(LogLevel minLevel, const QString& searchFilter) const {
+void LogManager::appendLog(const QString& message) {
+    appendLog(LogLevel::Info, message);
+}
+
+std::vector<LogEntry> LogManager::logs() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<LogEntry> res;
-    for (const auto& e : m_entries) {
-        if (static_cast<int>(e.level) <= static_cast<int>(minLevel)) {
-            if (searchFilter.isEmpty() || e.message.contains(searchFilter, Qt::CaseInsensitive)) {
-                res.push_back(e);
-            }
-        }
-    }
-    return res;
+    return m_entries;
 }
 
 void LogManager::clear() {

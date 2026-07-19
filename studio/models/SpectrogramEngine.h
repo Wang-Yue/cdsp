@@ -8,7 +8,7 @@
 #include <optional>
 #include <vector>
 
-enum class ColorPalette { Default, Viridis, Magma, Plasma, Inferno, Jet };
+enum class ColorPalette { Classic, Default = Classic, Viridis, Magma, Plasma, Inferno, Jet };
 
 class SpectrogramEngine : public QObject {
     Q_OBJECT
@@ -23,10 +23,11 @@ public:
     double minFreq = 20.0;
     double maxFreq = 20000.0;
     bool show3D = false;
-    ColorPalette colorPalette = ColorPalette::Default;
+    ColorPalette colorPalette = ColorPalette::Classic;
 
     std::deque<SpectrumData> history;
     size_t maxHistory = 300;
+    double timeWindow = 10.0;
 
     void pushSpectrum(const SpectrumData& newData) {
         history.push_back(newData);
@@ -48,6 +49,7 @@ public:
         minFreq = 20.0;
         maxFreq = 20000.0;
         show3D = false;
+        colorPalette = ColorPalette::Classic;
         history.clear();
         emit updated();
     }

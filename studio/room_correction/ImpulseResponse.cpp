@@ -96,6 +96,32 @@ std::vector<double> ImpulseResponse::schroederDecay() const {
     return decayDB;
 }
 
+double ImpulseResponse::rt60(double startDB, double endDB) const {
+    auto decay = schroederDecay();
+    if (decay.size() <= 1)
+        return 0.0;
+
+    int idxStart = -1;
+    int idxEnd = -1;
+
+    for (size_t i = 0; i < decay.size(); ++i) {
+        if (idxStart < 0 && decay[i] <= startDB)
+            idxStart = static_cast<int>(i);
+        if (idxEnd < 0 && decay[i] <= endDB)
+            idxEnd = static_cast<int>(i);
+    }
+
+    if (idxStart < 0 || idxEnd < 0 || idxEnd <= idxStart)
+        return 0.0;
+
+    double dt = static_cast<double>(idxEnd - idxStart) / static_cast<double>(sampleRate);
+    double dDb = decay[idxStart] - decay[idxEnd];
+    if (dDb <= 0.0)
+        return 0.0;
+
+    return dt * (60.0 / dDb);
+}
+
 RT60Result ImpulseResponse::estimateRT60() const {
     RT60Result res;
     auto decay = schroederDecay();

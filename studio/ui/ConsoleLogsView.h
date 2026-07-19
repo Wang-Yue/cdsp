@@ -5,8 +5,6 @@
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QWidget>
@@ -20,17 +18,14 @@ public:
 private slots:
     void refreshLogs();
     void onLogAppended(const LogEntry& entry);
-    void copySelectedLogs();
     void copyAllLogs();
 
 private:
     QTableWidget* m_table;
-    QLineEdit* m_searchEdit;
     QComboBox* m_levelFilterCombo;
     QCheckBox* m_autoScrollCheck;
     QPushButton* m_copyBtn;
     QPushButton* m_clearBtn;
-    QLabel* m_logCountLabel;
 
     void setupUi();
 };

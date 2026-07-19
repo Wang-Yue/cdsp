@@ -3,16 +3,25 @@
 #include "room_correction/CalibrationCurve.h"
 #include "ui/StyleTheme.h"
 
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QFormLayout>
-#include <QHBoxLayout>
+#include <QFrame>
+#include <QGroupBox>
+#include <QHeaderView>
+#include <QMenu>
 #include <QMessageBox>
-#include <QVBoxLayout>
+#include <QStandardPaths>
+
+#ifdef QT_MULTIMEDIA_LIB
+#include <QAudioDevice>
+#include <QMediaDevices>
+#endif
 
 RoomCorrectionDlg::RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {
-    setWindowTitle("Room Correction Studio & Multi-Plot Analyzer");
-    resize(1100, 760);
+    setWindowTitle("Room Correction Studio");
+    resize(1150, 760);
     setupUi();
 
     connect(&m_session, &MeasurementSession::sessionUpdated, this, &RoomCorrectionDlg::refreshSessionUi);
@@ -21,122 +30,323 @@ RoomCorrectionDlg::RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QW
 
 void RoomCorrectionDlg::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    m_tabWidget = new QTabWidget(this);
+    // Top Header Toolbar
+    mainLayout->addWidget(createHeaderToolbar());
 
-    auto measTab = new QWidget(this);
-    setupMeasurementTab(measTab);
-    m_tabWidget->addTab(measTab, "Measurements & Analysis");
-    auto fitTab = new QWidget(this);
-    setupFitTab(fitTab);
-    m_tabWidget->addTab(fitTab, "PEQ Auto-Fit");
-    auto subTab = new QWidget(this);
-    setupSubwooferTab(subTab);
-    m_tabWidget->addTab(subTab, "Subwoofer Crossover Assist");
-    auto firTab = new QWidget(this);
-    setupFIRTab(firTab);
-    m_tabWidget->addTab(firTab, "FIR Export");
+    // Horizontal Line Divider
+    auto topDivider = new QFrame(this);
+    topDivider->setFrameShape(QFrame::HLine);
+    topDivider->setFrameShadow(QFrame::Sunken);
+    mainLayout->addWidget(topDivider);
 
-    mainLayout->addWidget(m_tabWidget);
+    // Main Content Area (Plots + Positions Bar + Sidebar)
+    mainLayout->addWidget(createMainArea(), 1);
 
-    auto bottomLayout = new QHBoxLayout();
-    m_statusLabel = new QLabel("Ready.", this);
-    bottomLayout->addWidget(m_statusLabel);
-    bottomLayout->addStretch();
+    // Bottom Divider
+    auto bottomDivider = new QFrame(this);
+    bottomDivider->setFrameShape(QFrame::HLine);
+    bottomDivider->setFrameShadow(QFrame::Sunken);
+    mainLayout->addWidget(bottomDivider);
 
-    auto closeBtn = new QPushButton("Close Studio", this);
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
-    bottomLayout->addWidget(closeBtn);
+    // Bottom Status Bar
+    auto statusBar = new QWidget(this);
+    auto statusLayout = new QHBoxLayout(statusBar);
+    statusLayout->setContentsMargins(12, 6, 12, 6);
+    statusLayout->setSpacing(8);
 
-    mainLayout->addLayout(bottomLayout);
+    auto infoIcon = new QLabel("ℹ", statusBar);
+    infoIcon->setStyleSheet("color: #888; font-size: 12px;");
+    statusLayout->addWidget(infoIcon);
+
+    m_statusLabel = new QLabel("Ready.", statusBar);
+    m_statusLabel->setStyleSheet("color: #aaa; font-size: 11px;");
+    statusLayout->addWidget(m_statusLabel, 1);
+
+    mainLayout->addWidget(statusBar);
+
+    populateAudioDevices();
 }
 
-void RoomCorrectionDlg::setupMeasurementTab(QWidget* tab) {
-    auto mainMeasLayout = new QVBoxLayout(tab);
+QWidget* RoomCorrectionDlg::createHeaderToolbar() {
+    auto toolbar = new QWidget(this);
+    auto layout = new QHBoxLayout(toolbar);
+    layout->setContentsMargins(12, 8, 12, 8);
+    layout->setSpacing(12);
 
-    // Multi-Plot Tab Bar at the top of the measurement view
-    m_plotTabBar = new QTabBar(tab);
-    m_plotTabBar->setExpanding(false);
-    m_plotTabBar->addTab("Magnitude (dB / Freq)");
-    m_plotTabBar->addTab("Phase Plot");
-    m_plotTabBar->addTab("Impulse Response");
-    m_plotTabBar->addTab("Group Delay");
-    m_plotTabBar->addTab("3D Waterfall (CSD)");
+    // Close button
+    auto closeBtn = new QToolButton(toolbar);
+    closeBtn->setText("✕");
+    closeBtn->setToolTip("Close");
+    closeBtn->setStyleSheet(
+        "QToolButton { border: none; font-size: 16px; color: #888; } QToolButton:hover { color: #fff; }");
+    connect(closeBtn, &QToolButton::clicked, this, &QDialog::accept);
+    layout->addWidget(closeBtn);
 
-    mainMeasLayout->addWidget(m_plotTabBar);
+    // Measure Dropdown Menu Button
+    m_measureMenuBtn = new QPushButton("Measure ▾", toolbar);
+    auto measureMenu = new QMenu(m_measureMenuBtn);
 
-    auto contentLayout = new QHBoxLayout();
+    auto realSection = measureMenu->addSection("Real measurement");
+    (void)realSection;
+    auto newCapAction = measureMenu->addAction("🎤 New Capture");
+    connect(newCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(false); });
 
-    // Left controls & positions list
-    auto leftBox = new QVBoxLayout();
-    leftBox->setSpacing(8);
+    auto addCapAction = measureMenu->addAction("➕ Add Capture as Position");
+    connect(addCapAction, &QAction::triggered, [this]() { onRecordHardwareMeasurement(true); });
 
-    auto mockBtn = new QPushButton("Generate Mock Measurement", tab);
-    connect(mockBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onGenerateMock);
-    leftBox->addWidget(mockBtn);
+    measureMenu->addSection("Mock");
+    auto newMockAction = measureMenu->addAction("🎲 New Mock Measurement");
+    connect(newMockAction, &QAction::triggered, [this]() { onGenerateMock(false); });
 
-    auto impBtn = new QPushButton("Import REW FRD File", tab);
-    connect(impBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onImportFRD);
-    leftBox->addWidget(impBtn);
+    auto addMockAction = measureMenu->addAction("➕ Add Mock Position");
+    connect(addMockAction, &QAction::triggered, [this]() { onGenerateMock(true); });
 
-    auto expBtn = new QPushButton("Export FRD File", tab);
-    connect(expBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onExportFRD);
-    leftBox->addWidget(expBtn);
+    measureMenu->addSection("Import");
+    auto importAction = measureMenu->addAction("📥 Import FRD as Position…");
+    connect(importAction, &QAction::triggered, this, &RoomCorrectionDlg::onImportFRD);
 
-    // Mic Calibration file controls
-    leftBox->addWidget(new QLabel("Microphone Calibration:", tab));
-    m_calStatusLabel = new QLabel("None loaded", tab);
-    m_calStatusLabel->setWordWrap(true);
-    m_calStatusLabel->setStyleSheet("color: #aaa; font-size: 11px;");
-    leftBox->addWidget(m_calStatusLabel);
+    m_measureMenuBtn->setMenu(measureMenu);
+    layout->addWidget(m_measureMenuBtn);
 
-    auto calBtnLayout = new QHBoxLayout();
-    auto loadCalBtn = new QPushButton("Load Cal…", tab);
-    connect(loadCalBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onLoadCalibration);
-    calBtnLayout->addWidget(loadCalBtn);
+    layout->addStretch(1);
 
-    auto clearCalBtn = new QPushButton("Clear Cal", tab);
-    connect(clearCalBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onClearCalibration);
-    calBtnLayout->addWidget(clearCalBtn);
-    leftBox->addLayout(calBtnLayout);
+    // Pane Picker Segmented TabBar
+    m_paneTabBar = new QTabBar(toolbar);
+    m_paneTabBar->setExpanding(false);
+    m_paneTabBar->addTab("Magnitude");
+    m_paneTabBar->addTab("Phase");
+    m_paneTabBar->addTab("Impulse");
+    m_paneTabBar->addTab("Group Delay");
+    m_paneTabBar->addTab("Waterfall (CSD)");
+    connect(m_paneTabBar, &QTabBar::currentChanged, [this](int idx) { m_plotStackedWidget->setCurrentIndex(idx); });
+    layout->addWidget(m_paneTabBar);
 
-    // Hardware Measurement Sweep Capture Buttons
-    auto sweepLayout = new QVBoxLayout();
+    layout->addStretch(1);
 
-    auto hwSweepLayout = new QHBoxLayout();
-    auto newRealBtn = new QPushButton("🎤 Real Mic Measurement", tab);
-    connect(newRealBtn, &QPushButton::clicked, [this]() { onRecordHardwareMeasurement(false); });
-    auto addRealBtn = new QPushButton("➕ Add Real Pos", tab);
-    connect(addRealBtn, &QPushButton::clicked, [this]() { onRecordHardwareMeasurement(true); });
-    hwSweepLayout->addWidget(newRealBtn);
-    hwSweepLayout->addWidget(addRealBtn);
-    sweepLayout->addLayout(hwSweepLayout);
+    // Sidebar Toggle Button
+    m_sidebarToggleBtn = new QToolButton(toolbar);
+    m_sidebarToggleBtn->setText("▤");
+    m_sidebarToggleBtn->setToolTip("Toggle Sidebar");
+    m_sidebarToggleBtn->setStyleSheet(
+        "QToolButton { border: none; font-size: 16px; color: #aaa; } QToolButton:hover { color: #fff; }");
+    connect(m_sidebarToggleBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::toggleSidebar);
+    layout->addWidget(m_sidebarToggleBtn);
 
-    auto mockSweepLayout = new QHBoxLayout();
-    auto newMockBtn = new QPushButton("🎲 Mock Test", tab);
-    connect(newMockBtn, &QPushButton::clicked, [this]() {
-        m_session.generateMockMeasurement(false);
+    return toolbar;
+}
+
+QWidget* RoomCorrectionDlg::createMainArea() {
+    auto mainWidget = new QWidget(this);
+    auto mainLayout = new QHBoxLayout(mainWidget);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
+
+    // Left Panel (Plot Stacked Widget + Divider + Positions Bar)
+    auto leftWidget = new QWidget(mainWidget);
+    auto leftLayout = new QVBoxLayout(leftWidget);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(0);
+
+    m_plotStackedWidget = new QStackedWidget(leftWidget);
+
+    m_frDiagramWidget = new EQDiagramWidget(leftWidget);
+    m_plotStackedWidget->addWidget(m_frDiagramWidget);
+
+    m_phasePlotWidget = new PhasePlotWidget(leftWidget);
+    m_phasePlotWidget->setSession(&m_session);
+    m_plotStackedWidget->addWidget(m_phasePlotWidget);
+
+    m_impulsePlotWidget = new ImpulseResponsePlotWidget(leftWidget);
+    m_impulsePlotWidget->setSession(&m_session);
+    m_plotStackedWidget->addWidget(m_impulsePlotWidget);
+
+    m_groupDelayPlotWidget = new GroupDelayPlotWidget(leftWidget);
+    m_groupDelayPlotWidget->setSession(&m_session);
+    m_plotStackedWidget->addWidget(m_groupDelayPlotWidget);
+
+    m_waterfallWidget = new WaterfallPlotWidget(leftWidget);
+    m_plotStackedWidget->addWidget(m_waterfallWidget);
+
+    leftLayout->addWidget(m_plotStackedWidget, 1);
+
+    auto posDivider = new QFrame(leftWidget);
+    posDivider->setFrameShape(QFrame::HLine);
+    posDivider->setFrameShadow(QFrame::Sunken);
+    leftLayout->addWidget(posDivider);
+
+    // Positions Bar
+    m_positionsContainer = new QWidget(leftWidget);
+    auto posBarLayout = new QHBoxLayout(m_positionsContainer);
+    posBarLayout->setContentsMargins(12, 6, 12, 6);
+    posBarLayout->setSpacing(10);
+
+    auto posLabel = new QLabel("Positions", m_positionsContainer);
+    posLabel->setStyleSheet("font-weight: bold; font-size: 11px; color: #888;");
+    posBarLayout->addWidget(posLabel);
+
+    auto scrollArea = new QScrollArea(m_positionsContainer);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setFixedHeight(42);
+
+    auto chipsWidget = new QWidget(scrollArea);
+    m_positionsChipsLayout = new QHBoxLayout(chipsWidget);
+    m_positionsChipsLayout->setContentsMargins(0, 0, 0, 0);
+    m_positionsChipsLayout->setSpacing(8);
+    m_positionsChipsLayout->addStretch(1);
+    chipsWidget->setLayout(m_positionsChipsLayout);
+
+    scrollArea->setWidget(chipsWidget);
+    posBarLayout->addWidget(scrollArea, 1);
+
+    m_subwooferAssistBtn = new QPushButton("Subwoofer Assist", m_positionsContainer);
+    m_subwooferAssistBtn->setStyleSheet("QPushButton { font-size: 11px; padding: 4px 8px; }");
+    connect(m_subwooferAssistBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onComputeSubwoofer);
+    m_subwooferAssistBtn->setVisible(false);
+    posBarLayout->addWidget(m_subwooferAssistBtn);
+
+    leftLayout->addWidget(m_positionsContainer);
+
+    mainLayout->addWidget(leftWidget, 1);
+
+    // Vertical Divider before Sidebar
+    auto sideDivider = new QFrame(mainWidget);
+    sideDivider->setFrameShape(QFrame::VLine);
+    sideDivider->setFrameShadow(QFrame::Sunken);
+    mainLayout->addWidget(sideDivider);
+
+    // Right Sidebar
+    m_sidebarWidget = createSidebar();
+    m_sidebarWidget->setFixedWidth(290);
+    mainLayout->addWidget(m_sidebarWidget);
+
+    return mainWidget;
+}
+
+QWidget* RoomCorrectionDlg::createSidebar() {
+    auto scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    auto content = new QWidget(scroll);
+    auto layout = new QVBoxLayout(content);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(14);
+
+    // 1. Audio Setup Section
+    auto audioBox = new QWidget(content);
+    auto audioLayout = new QVBoxLayout(audioBox);
+    audioLayout->setContentsMargins(0, 0, 0, 0);
+    audioLayout->setSpacing(6);
+
+    audioLayout->addWidget(new QLabel("Microphone Input", audioBox));
+    m_micDeviceCombo = new QComboBox(audioBox);
+    m_micDeviceCombo->addItem("System Default", "");
+    connect(m_micDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_session.selectedMicName = m_micDeviceCombo->itemData(idx).toString().toStdString();
+        updateMicChannels();
+    });
+    audioLayout->addWidget(m_micDeviceCombo);
+
+    m_micChannelCombo = new QComboBox(audioBox);
+    m_micChannelCombo->addItem("Channel 1", 0);
+    connect(m_micChannelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int idx) { m_session.selectedInputChannel = m_micChannelCombo->itemData(idx).toInt(); });
+    audioLayout->addWidget(m_micChannelCombo);
+
+    audioLayout->addWidget(new QLabel("Speaker Output", audioBox));
+    m_outputDeviceCombo = new QComboBox(audioBox);
+    m_outputDeviceCombo->addItem("System Default", "");
+    connect(m_outputDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_session.selectedOutputName = m_outputDeviceCombo->itemData(idx).toString().toStdString();
+        updateOutputChannels();
+    });
+    audioLayout->addWidget(m_outputDeviceCombo);
+
+    m_outputChannelCombo = new QComboBox(audioBox);
+    m_outputChannelCombo->addItem("All channels", -1);
+    connect(m_outputChannelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int idx) { m_session.selectedOutputChannel = m_outputChannelCombo->itemData(idx).toInt(); });
+    audioLayout->addWidget(m_outputChannelCombo);
+
+    audioLayout->addWidget(new QLabel("Calibration File", audioBox));
+    auto calRow = new QHBoxLayout();
+    m_calPathLabel = new QLabel("None loaded", audioBox);
+    m_calPathLabel->setStyleSheet("color: #888; font-size: 11px;");
+    calRow->addWidget(m_calPathLabel, 1);
+
+    m_loadCalBtn = new QPushButton("Load…", audioBox);
+    connect(m_loadCalBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onLoadCalibration);
+    calRow->addWidget(m_loadCalBtn);
+
+    m_clearCalBtn = new QToolButton(audioBox);
+    m_clearCalBtn->setText("✕");
+    m_clearCalBtn->setVisible(false);
+    connect(m_clearCalBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::onClearCalibration);
+    calRow->addWidget(m_clearCalBtn);
+    audioLayout->addLayout(calRow);
+
+    audioLayout->addWidget(new QLabel("Export Data", audioBox));
+    auto expRow = new QHBoxLayout();
+    m_exportFrdBtn = new QPushButton("Export FRD", audioBox);
+    connect(m_exportFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(false); });
+    expRow->addWidget(m_exportFrdBtn);
+
+    m_exportCalFrdBtn = new QPushButton("Calibrated", audioBox);
+    connect(m_exportCalFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(true); });
+    m_exportCalFrdBtn->setEnabled(false);
+    expRow->addWidget(m_exportCalFrdBtn);
+    audioLayout->addLayout(expRow);
+
+    layout->addWidget(createSidebarSection("Audio Setup", audioBox));
+
+    // 2. Target & Analysis Section
+    auto targetBox = new QWidget(content);
+    auto targetForm = new QFormLayout(targetBox);
+    targetForm->setContentsMargins(0, 0, 0, 0);
+
+    m_targetPresetCombo = new QComboBox(targetBox);
+    m_targetPresetCombo->addItems({"Flat (0 dB)", "Brüel & Kjær", "Harman"});
+    connect(m_targetPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_session.customTarget = std::nullopt;
+        m_session.targetPreset = static_cast<TargetPreset>(idx);
+        m_session.recomputeAverage();
+    });
+    targetForm->addRow("Target Curve:", m_targetPresetCombo);
+
+    m_smoothingCombo = new QComboBox(targetBox);
+    m_smoothingCombo->addItems({"Off", "1/3 oct", "1/6 oct", "1/12 oct", "1/24 oct"});
+    m_smoothingCombo->setCurrentIndex(2); // 1/6 oct
+    connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        switch (idx) {
+        case 0:
+            m_session.displaySmoothing = DisplaySmoothing::Off;
+            break;
+        case 1:
+            m_session.displaySmoothing = DisplaySmoothing::Oct1over3;
+            break;
+        case 2:
+            m_session.displaySmoothing = DisplaySmoothing::Oct1over6;
+            break;
+        case 3:
+            m_session.displaySmoothing = DisplaySmoothing::Oct1over12;
+            break;
+        case 4:
+            m_session.displaySmoothing = DisplaySmoothing::Oct1over24;
+            break;
+        }
         refreshSessionUi();
     });
-    auto addMockBtn = new QPushButton("➕ Add Mock Pos", tab);
-    connect(addMockBtn, &QPushButton::clicked, [this]() {
-        m_session.generateMockMeasurement(true);
-        refreshSessionUi();
-    });
-    mockSweepLayout->addWidget(newMockBtn);
-    mockSweepLayout->addWidget(addMockBtn);
-    sweepLayout->addLayout(mockSweepLayout);
+    targetForm->addRow("Display Smoothing:", m_smoothingCombo);
 
-    leftBox->addLayout(sweepLayout);
-
-    // Analysis Settings (FDW & Smoothing)
-    leftBox->addWidget(new QLabel("Analysis & Display Settings:", tab));
-    auto fdwForm = new QFormLayout();
-
-    m_fdwCombo = new QComboBox(tab);
-    m_fdwCombo->addItems({"Off", "1 Cycle", "5 Cycles", "10 Cycles", "15 Cycles"});
+    m_fdwCombo = new QComboBox(targetBox);
+    m_fdwCombo->addItems({"Off", "1 cycle", "5 cycles", "10 cycles", "15 cycles"});
     connect(m_fdwCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         switch (idx) {
         case 0:
@@ -157,183 +367,231 @@ void RoomCorrectionDlg::setupMeasurementTab(QWidget* tab) {
         }
         m_session.recomputeAverage();
     });
-    fdwForm->addRow("FDW Window:", m_fdwCombo);
+    targetForm->addRow("FDW (Cycles):", m_fdwCombo);
 
-    m_smoothingCombo = new QComboBox(tab);
-    m_smoothingCombo->addItems({"No Smoothing", "1/1 Octave", "1/3 Octave", "1/6 Octave", "1/12 Octave", "1/24 Octave",
-                                "1/48 Octave", "Var (ERB)"});
-    m_smoothingCombo->setCurrentIndex(3); // Default 1/6 oct
-    connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_session.displaySmoothing = static_cast<DisplaySmoothing>(idx);
-        refreshSessionUi();
+    layout->addWidget(createSidebarSection("Target & Analysis", targetBox));
+
+    // 3. Modal Region Section
+    auto modalBox = new QWidget(content);
+    auto modalLayout = new QVBoxLayout(modalBox);
+    modalLayout->setContentsMargins(0, 0, 0, 0);
+    modalLayout->setSpacing(6);
+
+    m_modalModeCheck = new QCheckBox("Apply Constraints", modalBox);
+    connect(m_modalModeCheck, &QCheckBox::toggled, [this](bool checked) {
+        m_session.modalMode = checked;
+        m_schroederCombo->setEnabled(checked);
+        m_modalMinQCombo->setEnabled(checked);
     });
-    fdwForm->addRow("Smoothing:", m_smoothingCombo);
+    modalLayout->addWidget(m_modalModeCheck);
 
-    leftBox->addLayout(fdwForm);
+    auto modalForm = new QFormLayout();
+    m_schroederCombo = new QComboBox(modalBox);
+    m_schroederCombo->addItems({"100 Hz", "150 Hz", "200 Hz", "250 Hz", "300 Hz", "400 Hz"});
+    m_schroederCombo->setCurrentIndex(2); // 200 Hz
+    connect(m_schroederCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        const double freqs[] = {100.0, 150.0, 200.0, 250.0, 300.0, 400.0};
+        m_session.schroederHz = freqs[idx];
+    });
+    modalForm->addRow("Schroeder Freq:", m_schroederCombo);
 
-    leftBox->addWidget(new QLabel("Captured Positions:", tab));
-    m_positionsList = new QListWidget(tab);
-    leftBox->addWidget(m_positionsList);
+    m_modalMinQCombo = new QComboBox(modalBox);
+    m_modalMinQCombo->addItems({"1.5", "2.0", "2.5", "3.0", "4.0"});
+    m_modalMinQCombo->setCurrentIndex(1); // 2.0
+    connect(m_modalMinQCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        const double qs[] = {1.5, 2.0, 2.5, 3.0, 4.0};
+        m_session.modalMinQ = qs[idx];
+    });
+    modalForm->addRow("Minimum Q Limit:", m_modalMinQCombo);
 
-    contentLayout->addLayout(leftBox, 1);
+    m_schroederCombo->setEnabled(false);
+    m_modalMinQCombo->setEnabled(false);
 
-    // Right Multi-Plot Stacked Widget
-    m_plotStackedWidget = new QStackedWidget(tab);
+    modalLayout->addLayout(modalForm);
+    layout->addWidget(createSidebarSection("Modal Region", modalBox));
 
-    m_frDiagramWidget = new EQDiagramWidget(tab);
-    m_plotStackedWidget->addWidget(m_frDiagramWidget);
+    // 4. PEQ Design Section
+    auto peqBox = new QWidget(content);
+    auto peqLayout = new QVBoxLayout(peqBox);
+    peqLayout->setContentsMargins(0, 0, 0, 0);
+    peqLayout->setSpacing(6);
 
-    m_phasePlotWidget = new PhasePlotWidget(tab);
-    m_phasePlotWidget->setSession(&m_session);
-    m_plotStackedWidget->addWidget(m_phasePlotWidget);
+    auto peqForm = new QFormLayout();
+    m_bandCountCombo = new QComboBox(peqBox);
+    m_bandCountCombo->addItems({"3 bands", "5 bands", "8 bands", "10 bands", "12 bands", "16 bands", "20 bands"});
+    m_bandCountCombo->setCurrentIndex(2); // 8 bands
+    connect(m_bandCountCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        const int counts[] = {3, 5, 8, 10, 12, 16, 20};
+        m_session.bandCount = counts[idx];
+    });
+    peqForm->addRow("Bands Limit:", m_bandCountCombo);
+    peqLayout->addLayout(peqForm);
 
-    m_impulsePlotWidget = new ImpulseResponsePlotWidget(tab);
-    m_impulsePlotWidget->setSession(&m_session);
-    m_plotStackedWidget->addWidget(m_impulsePlotWidget);
+    m_generatePeqBtn = new QPushButton("✨ Generate PEQ", peqBox);
+    m_generatePeqBtn->setStyleSheet(
+        "QPushButton { background-color: #007acc; color: white; font-weight: bold; padding: 6px; }");
+    connect(m_generatePeqBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onRunFit);
+    peqLayout->addWidget(m_generatePeqBtn);
 
-    m_groupDelayPlotWidget = new GroupDelayPlotWidget(tab);
-    m_groupDelayPlotWidget->setSession(&m_session);
-    m_plotStackedWidget->addWidget(m_groupDelayPlotWidget);
+    m_addToEqPresetsBtn = new QPushButton("➕ Add to EQ Presets", peqBox);
+    connect(m_addToEqPresetsBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onApplyEQToPipeline);
+    peqLayout->addWidget(m_addToEqPresetsBtn);
 
-    m_waterfallWidget = new WaterfallPlotWidget(tab);
-    m_plotStackedWidget->addWidget(m_waterfallWidget);
+    layout->addWidget(createSidebarSection("Parametric EQ (PEQ)", peqBox));
 
-    connect(m_plotTabBar, &QTabBar::currentChanged, m_plotStackedWidget, &QStackedWidget::setCurrentIndex);
+    // 5. FIR Convolution Design Section
+    auto firBox = new QWidget(content);
+    auto firLayout = new QVBoxLayout(firBox);
+    firLayout->setContentsMargins(0, 0, 0, 0);
+    firLayout->setSpacing(6);
 
-    contentLayout->addWidget(m_plotStackedWidget, 3);
-    mainMeasLayout->addLayout(contentLayout);
-}
-
-void RoomCorrectionDlg::setupFitTab(QWidget* tab) {
-    auto layout = new QVBoxLayout(tab);
-    auto form = new QFormLayout();
-
-    m_bandCountSpin = new QSpinBox(tab);
-    m_bandCountSpin->setRange(1, 20);
-    m_bandCountSpin->setValue(8);
-    form->addRow("Band Count:", m_bandCountSpin);
-
-    m_maxGainSpin = new QDoubleSpinBox(tab);
-    m_maxGainSpin->setRange(1.0, 24.0);
-    m_maxGainSpin->setValue(12.0);
-    form->addRow("Max Gain Cap (dB):", m_maxGainSpin);
-
-    m_modalCheck = new QCheckBox("Modal Region Optimization (Cuts Only below Schroeder)", tab);
-    form->addRow("", m_modalCheck);
-
-    m_schroederSpin = new QDoubleSpinBox(tab);
-    m_schroederSpin->setRange(50.0, 500.0);
-    m_schroederSpin->setValue(200.0);
-    form->addRow("Schroeder Frequency (Hz):", m_schroederSpin);
-
-    m_targetPresetCombo = new QComboBox(tab);
-    m_targetPresetCombo->addItems({"Flat (0 dB)", "Brüel & Kjær House Curve", "Harman In-Room Target"});
-    form->addRow("Target House Curve:", m_targetPresetCombo);
-
-    auto targetFileBtn = new QPushButton("Load Custom Target Curve File…", tab);
-    connect(targetFileBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onLoadTargetCurve);
-    form->addRow("", targetFileBtn);
-
-    layout->addLayout(form);
-
-    auto fitBtn = new QPushButton("Run PEQ Auto-Fit Optimization", tab);
-    connect(fitBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onRunFit);
-    layout->addWidget(fitBtn);
-
-    auto applyBtn = new QPushButton("Apply Fitted EQ to Active Pipeline", tab);
-    connect(applyBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onApplyEQToPipeline);
-    layout->addWidget(applyBtn);
-
-    layout->addStretch();
-}
-
-void RoomCorrectionDlg::setupSubwooferTab(QWidget* tab) {
-    auto layout = new QVBoxLayout(tab);
-
-    auto computeBtn = new QPushButton("Compute Time-of-Flight & Crossover", tab);
-    connect(computeBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onComputeSubwoofer);
-    layout->addWidget(computeBtn);
-
-    m_subResultLabel = new QLabel("Load one Mains position and one Subwoofer position to run assistant.", tab);
-    m_subResultLabel->setWordWrap(true);
-    m_subResultLabel->setFont(QFont("sans-serif", 13));
-    layout->addWidget(m_subResultLabel);
-
-    layout->addStretch();
-}
-
-void RoomCorrectionDlg::setupFIRTab(QWidget* tab) {
-    auto layout = new QVBoxLayout(tab);
-    auto form = new QFormLayout();
-
-    m_firKindCombo = new QComboBox(tab);
+    auto firForm = new QFormLayout();
+    m_firKindCombo = new QComboBox(firBox);
     m_firKindCombo->addItems({"Min-phase", "Linear-phase", "From measurement"});
-    form->addRow("FIR Filter Kind:", m_firKindCombo);
+    connect(m_firKindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_session.firKind = static_cast<FIRKind>(idx);
+        m_phaseBlendContainer->setVisible(idx == 2);
+    });
+    firForm->addRow("Filter Type:", m_firKindCombo);
 
-    m_firTapSpin = new QSpinBox(tab);
-    m_firTapSpin->setRange(1024, 65536);
-    m_firTapSpin->setValue(8192);
-    m_firTapSpin->setSingleStep(1024);
-    form->addRow("FIR Tap Count (FFT Size):", m_firTapSpin);
+    m_firTapCombo = new QComboBox(firBox);
+    m_firTapCombo->addItems({"2048", "4096", "8192", "16384", "32768"});
+    m_firTapCombo->setCurrentIndex(2); // 8192
+    connect(m_firTapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        const int taps[] = {2048, 4096, 8192, 16384, 32768};
+        m_session.firTapCount = taps[idx];
+    });
+    firForm->addRow("Tap Count Length:", m_firTapCombo);
+    firLayout->addLayout(firForm);
 
-    auto blendLayout = new QHBoxLayout();
-    m_firPhaseBlendSlider = new QSlider(Qt::Horizontal, tab);
-    m_firPhaseBlendSlider->setRange(0, 100);
-    m_firPhaseBlendSlider->setValue(100);
-    blendLayout->addWidget(m_firPhaseBlendSlider);
+    m_phaseBlendContainer = new QWidget(firBox);
+    auto blendLayout = new QVBoxLayout(m_phaseBlendContainer);
+    blendLayout->setContentsMargins(0, 0, 0, 0);
+    blendLayout->setSpacing(2);
 
-    m_firPhaseBlendLabel = new QLabel("Linear-phase (100%)", tab);
-    m_firPhaseBlendLabel->setFixedWidth(120);
-    blendLayout->addWidget(m_firPhaseBlendLabel);
+    auto blendHeader = new QHBoxLayout();
+    blendHeader->addWidget(new QLabel("Phase Blend", m_phaseBlendContainer));
+    m_phaseBlendValueLabel = new QLabel("Linear-phase", m_phaseBlendContainer);
+    m_phaseBlendValueLabel->setStyleSheet("font-weight: bold; font-size: 11px;");
+    blendHeader->addWidget(m_phaseBlendValueLabel, 0, Qt::AlignRight);
+    blendLayout->addLayout(blendHeader);
 
-    connect(m_firPhaseBlendSlider, &QSlider::valueChanged, [this](int val) {
+    m_phaseBlendSlider = new QSlider(Qt::Horizontal, m_phaseBlendContainer);
+    m_phaseBlendSlider->setRange(0, 100);
+    m_phaseBlendSlider->setValue(100);
+    connect(m_phaseBlendSlider, &QSlider::valueChanged, [this](int val) {
         double blend = val / 100.0;
         m_session.firPhaseBlend = blend;
-        if (val == 0)
-            m_firPhaseBlendLabel->setText("Min-phase (0%)");
-        else if (val == 100)
-            m_firPhaseBlendLabel->setText("Linear-phase (100%)");
+        if (val <= 1)
+            m_phaseBlendValueLabel->setText("Min-phase");
+        else if (val >= 99)
+            m_phaseBlendValueLabel->setText("Linear-phase");
         else
-            m_firPhaseBlendLabel->setText(QString("%1% Blend").arg(val));
+            m_phaseBlendValueLabel->setText(QString("%1%").arg(val));
     });
-    form->addRow("Phase Blend (Measurement):", blendLayout);
+    blendLayout->addWidget(m_phaseBlendSlider);
 
-    layout->addLayout(form);
+    m_phaseBlendContainer->setVisible(false);
+    firLayout->addWidget(m_phaseBlendContainer);
 
-    auto genBtn = new QPushButton("Generate Multi-Rate FIR Preset", tab);
-    connect(genBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onGenerateFIR);
-    layout->addWidget(genBtn);
+    m_addToFirPresetsBtn = new QPushButton("➕ Add to FIR Presets", firBox);
+    connect(m_addToFirPresetsBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onGenerateFIR);
+    firLayout->addWidget(m_addToFirPresetsBtn);
 
-    layout->addStretch();
+    layout->addWidget(createSidebarSection("FIR Convolution", firBox));
+
+    layout->addStretch(1);
+    scroll->setWidget(content);
+    return scroll;
+}
+
+QWidget* RoomCorrectionDlg::createSidebarSection(const QString& title, QWidget* content) {
+    auto group = new QGroupBox(title, this);
+    group->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; margin-top: 6px; } QGroupBox::title { "
+                         "subcontrol-origin: margin; left: 0px; }");
+    auto layout = new QVBoxLayout(group);
+    layout->setContentsMargins(0, 12, 0, 4);
+    layout->addWidget(content);
+    return group;
+}
+
+void RoomCorrectionDlg::toggleSidebar() {
+    m_sidebarVisible = !m_sidebarVisible;
+    m_sidebarWidget->setVisible(m_sidebarVisible);
+}
+
+void RoomCorrectionDlg::populateAudioDevices() {
+#ifdef QT_MULTIMEDIA_LIB
+    m_micDeviceCombo->clear();
+    m_micDeviceCombo->addItem("System Default", "");
+    for (const auto& dev : QMediaDevices::audioInputs()) {
+        m_micDeviceCombo->addItem(dev.description(), dev.description());
+    }
+
+    m_outputDeviceCombo->clear();
+    m_outputDeviceCombo->addItem("System Default", "");
+    for (const auto& dev : QMediaDevices::audioOutputs()) {
+        m_outputDeviceCombo->addItem(dev.description(), dev.description());
+    }
+#endif
+    updateMicChannels();
+    updateOutputChannels();
+}
+
+void RoomCorrectionDlg::updateMicChannels() {
+    m_micChannelCombo->clear();
+    m_micChannelCombo->addItem("Channel 1", 0);
+    m_micChannelCombo->addItem("Channel 2", 1);
+}
+
+void RoomCorrectionDlg::updateOutputChannels() {
+    m_outputChannelCombo->clear();
+    m_outputChannelCombo->addItem("All channels", -1);
+    m_outputChannelCombo->addItem("Channel 1 (Left)", 0);
+    m_outputChannelCombo->addItem("Channel 2 (Right)", 1);
+    m_outputChannelCombo->addItem("Channel 4 (LFE)", 3);
 }
 
 void RoomCorrectionDlg::refreshSessionUi() {
     m_statusLabel->setText(QString::fromStdString(m_session.status));
 
-    // Update position chips list with row widgets
-    m_positionsList->clear();
-    for (const auto& p : m_session.positions) {
-        auto item = new QListWidgetItem(m_positionsList);
-        auto rowWidget = new MeasurementPositionRowWidget(p, &m_session, this);
-        item->setSizeHint(rowWidget->sizeHint());
-        m_positionsList->setItemWidget(item, rowWidget);
-        connect(rowWidget, &MeasurementPositionRowWidget::positionChanged, this, &RoomCorrectionDlg::refreshSessionUi);
+    // Clear chips layout
+    QLayoutItem* item;
+    while ((item = m_positionsChipsLayout->takeAt(0)) != nullptr) {
+        if (item->widget())
+            item->widget()->deleteLater();
+        delete item;
     }
 
-    // Update calibration label
+    for (const auto& p : m_session.positions) {
+        auto chip = new MeasurementPositionRowWidget(p, &m_session, m_positionsContainer);
+        connect(chip, &MeasurementPositionRowWidget::positionChanged, this, &RoomCorrectionDlg::refreshSessionUi);
+        m_positionsChipsLayout->addWidget(chip);
+    }
+    m_positionsChipsLayout->addStretch(1);
+
+    // Subwoofer Assist button visibility
+    m_subwooferAssistBtn->setVisible(m_session.subwooferAssistAvailable());
+
+    // Calibration state
     if (m_session.calibrationPath.empty()) {
-        m_calStatusLabel->setText("None loaded");
+        m_calPathLabel->setText("None loaded");
+        m_clearCalBtn->setVisible(false);
+        m_exportCalFrdBtn->setEnabled(false);
     } else {
         QFileInfo fi(QString::fromStdString(m_session.calibrationPath));
-        m_calStatusLabel->setText("Loaded: " + fi.fileName());
+        m_calPathLabel->setText(fi.fileName());
+        m_clearCalBtn->setVisible(true);
+        m_exportCalFrdBtn->setEnabled(m_session.measuredFR.has_value());
     }
 
-    // Refresh plot widgets
+    m_exportFrdBtn->setEnabled(m_session.measuredFR.has_value());
+
+    // Refresh Plots
     if (m_session.correctionPreset.has_value()) {
         m_frDiagramWidget->setPreset(m_session.correctionPreset.value());
     }
 
-    // Forward Measurement Reference Overlays to Diagram Widget
     EQReferenceOverlayData overlay;
     overlay.frequencies = m_session.grid;
     overlay.measuredMagDB = m_session.displayedMagDB();
@@ -351,21 +609,36 @@ void RoomCorrectionDlg::refreshSessionUi() {
     m_groupDelayPlotWidget->update();
 }
 
-void RoomCorrectionDlg::onGenerateMock() {
-    m_session.generateMockMeasurement(false);
+void RoomCorrectionDlg::onGenerateMock(bool append) {
+    m_session.generateMockMeasurement(append);
+    refreshSessionUi();
+}
+
+void RoomCorrectionDlg::onRecordHardwareMeasurement(bool append) {
+    m_session.recordPosition(append, m_session.selectedMicName, m_session.selectedOutputName,
+                             m_session.selectedInputChannel, m_session.selectedOutputChannel,
+                             [this](bool success, const std::string& msg) {
+                                 (void)success;
+                                 m_statusLabel->setText(QString::fromStdString(msg));
+                                 refreshSessionUi();
+                             });
 }
 
 void RoomCorrectionDlg::onImportFRD() {
-    QString path = QFileDialog::getOpenFileName(this, "Import REW FRD", "", "FRD Files (*.frd *.txt)");
+    QString path = QFileDialog::getOpenFileName(this, "Import FRD as Position", "", "FRD Files (*.frd *.txt)");
     if (!path.isEmpty()) {
         m_session.importPositionFRD(path.toStdString());
+        refreshSessionUi();
     }
 }
 
-void RoomCorrectionDlg::onExportFRD() {
-    QString path = QFileDialog::getSaveFileName(this, "Export REW FRD", "", "FRD Files (*.frd *.txt)");
+void RoomCorrectionDlg::onExportFRD(bool includeCalibration) {
+    QString suffix = includeCalibration ? "-calibrated" : "";
+    QString defaultName = QString("Measurement-%1Hz%2.frd").arg(m_session.sampleRate).arg(suffix);
+    QString path = QFileDialog::getSaveFileName(this, "Export REW FRD", defaultName, "FRD Files (*.frd *.txt)");
     if (!path.isEmpty()) {
-        m_session.exportFRD(path.toStdString(), true);
+        m_session.exportFRD(path.toStdString(), includeCalibration);
+        refreshSessionUi();
     }
 }
 
@@ -374,55 +647,18 @@ void RoomCorrectionDlg::onLoadCalibration() {
                                                 "Calibration Files (*.frd *.txt *.cal)");
     if (!path.isEmpty()) {
         m_session.loadCalibration(path.toStdString());
+        refreshSessionUi();
     }
 }
 
 void RoomCorrectionDlg::onClearCalibration() {
     m_session.clearCalibration();
-}
-
-void RoomCorrectionDlg::onLoadTargetCurve() {
-    QString path =
-        QFileDialog::getOpenFileName(this, "Load Target Curve File", "", "Target Curve Files (*.frd *.txt *.csv)");
-    if (!path.isEmpty()) {
-        auto cal = CalibrationCurve::load(path.toStdString());
-        if (cal.has_value()) {
-            TargetCurve tc;
-            std::vector<TargetBreakpoint> bps;
-            for (size_t i = 0; i < cal->frequencies.size(); ++i) {
-                bps.push_back({cal->frequencies[i], cal->magnitudesDB[i]});
-            }
-            tc.setBreakpoints(bps);
-            m_session.customTarget = tc;
-            m_session.recomputeAverage();
-            QMessageBox::information(this, "Target Loaded", "Loaded custom target curve successfully!");
-        } else {
-            QMessageBox::warning(this, "Target Load Failed", "Could not parse target curve file.");
-        }
-    }
+    refreshSessionUi();
 }
 
 void RoomCorrectionDlg::onRunFit() {
-    m_session.bandCount = m_bandCountSpin->value();
-    m_session.maxGainDB = m_maxGainSpin->value();
-    m_session.modalMode = m_modalCheck->isChecked();
-    m_session.schroederHz = m_schroederSpin->value();
-
-    m_session.customTarget = std::nullopt;
-
-    switch (m_targetPresetCombo->currentIndex()) {
-    case 0:
-        m_session.targetPreset = TargetPreset::Flat;
-        break;
-    case 1:
-        m_session.targetPreset = TargetPreset::BruelKjaer;
-        break;
-    case 2:
-        m_session.targetPreset = TargetPreset::Harman;
-        break;
-    }
-
     m_session.runFit();
+    refreshSessionUi();
 }
 
 void RoomCorrectionDlg::onApplyEQToPipeline() {
@@ -430,25 +666,12 @@ void RoomCorrectionDlg::onApplyEQToPipeline() {
         const auto& preset = m_session.correctionPreset.value();
         m_pipeline->addEQPreset(preset);
         m_session.status = "Applied as EQ Preset “" + preset.name + ".” Open it from the sidebar to edit.";
-        emit m_session.sessionUpdated();
+        refreshSessionUi();
         QMessageBox::information(this, "Applied", "Fitted PEQ preset applied to pipeline!");
     }
 }
 
 void RoomCorrectionDlg::onGenerateFIR() {
-    m_session.firTapCount = m_firTapSpin->value();
-    switch (m_firKindCombo->currentIndex()) {
-    case 0:
-        m_session.firKind = FIRKind::MinimumPhase;
-        break;
-    case 1:
-        m_session.firKind = FIRKind::LinearPhase;
-        break;
-    case 2:
-        m_session.firKind = FIRKind::MeasurementDriven;
-        break;
-    }
-
     std::vector<std::string> names;
     for (const auto& p : m_pipeline->convPresets)
         names.push_back(p.name);
@@ -456,6 +679,7 @@ void RoomCorrectionDlg::onGenerateFIR() {
     auto preset = m_session.generateFIR(names);
     if (preset.has_value()) {
         m_pipeline->addConvPreset(preset.value());
+        refreshSessionUi();
         QMessageBox::information(this, "Success", "FIR Preset generated and added to Convolution presets!");
     }
 }
@@ -463,22 +687,21 @@ void RoomCorrectionDlg::onGenerateFIR() {
 void RoomCorrectionDlg::onComputeSubwoofer() {
     auto rec = m_session.computeSubwooferRecommendation();
     if (rec.has_value()) {
-        m_subResultLabel->setText(QString("Subwoofer Recommendation:\n• Sub Delay Offset: %1 ms (%2 samples)\n• "
-                                          "Recommended Crossover: %3 Hz\n• Confidence: %4%\n\nRationale:\n%5")
-                                      .arg(rec->subDelayMs, 0, 'f', 2)
-                                      .arg(rec->delaySamples)
-                                      .arg(rec->crossoverHz, 0, 'f', 0)
-                                      .arg(rec->confidence * 100.0, 0, 'f', 0)
-                                      .arg(QString::fromStdString(rec->summary)));
+        QString text = QString("Subwoofer Recommendation:\n\n"
+                               "• Sub Delay Offset: %1 ms (%2 samples)\n"
+                               "• Recommended Crossover: %3 Hz\n"
+                               "• Confidence: %4%\n\n"
+                               "Rationale:\n%5")
+                           .arg(rec->subDelayMs, 0, 'f', 2)
+                           .arg(rec->delaySamples)
+                           .arg(rec->crossoverHz, 0, 'f', 0)
+                           .arg(rec->confidence * 100.0, 0, 'f', 0)
+                           .arg(QString::fromStdString(rec->summary));
+
+        QMessageBox::information(this, "Subwoofer Crossover Assist", text);
     } else {
-        m_subResultLabel->setText(
+        QMessageBox::warning(
+            this, "Subwoofer Assist",
             "Could not compute recommendation. Ensure one Mains and one Subwoofer position are loaded.");
     }
-}
-
-void RoomCorrectionDlg::onRecordHardwareMeasurement(bool append) {
-    m_session.recordPosition(append, "", "", 0, -1, [this](bool success, const std::string& msg) {
-        m_statusLabel->setText(QString::fromStdString(msg));
-        refreshSessionUi();
-    });
 }

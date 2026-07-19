@@ -19,6 +19,54 @@ SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* pare
     setEngine(engine);
 }
 
+static std::vector<float> applyOctaveSmoothing(const std::vector<float>& freqs, const std::vector<float>& mags,
+                                               OctaveSmoothing smoothing) {
+    if (smoothing == OctaveSmoothing::None || freqs.size() != mags.size() || freqs.empty()) {
+        return mags;
+    }
+    double octaveFraction = 1.0;
+    switch (smoothing) {
+    case OctaveSmoothing::OneThird:
+        octaveFraction = 3.0;
+        break;
+    case OctaveSmoothing::OneSixth:
+        octaveFraction = 6.0;
+        break;
+    case OctaveSmoothing::OneTwelfth:
+        octaveFraction = 12.0;
+        break;
+    case OctaveSmoothing::OneTwentyFourth:
+        octaveFraction = 24.0;
+        break;
+    default:
+        return mags;
+    }
+    double factor = std::pow(2.0, 1.0 / (2.0 * octaveFraction));
+    size_t count = freqs.size();
+    std::vector<float> smoothed(count);
+
+    for (size_t i = 0; i < count; ++i) {
+        double centerF = freqs[i];
+        double minF = centerF / factor;
+        double maxF = centerF * factor;
+
+        double sumWeight = 0.0;
+        double sumVal = 0.0;
+
+        for (size_t j = 0; j < count; ++j) {
+            double f = freqs[j];
+            if (f >= minF && f <= maxF) {
+                double w = 1.0 - std::abs(std::log2(f / centerF)) * octaveFraction;
+                w = std::max(0.001, w);
+                sumVal += mags[j] * w;
+                sumWeight += w;
+            }
+        }
+        smoothed[i] = (sumWeight > 0.0) ? static_cast<float>(sumVal / sumWeight) : mags[i];
+    }
+    return smoothed;
+}
+
 void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
     if (m_engine) {
         disconnect(m_engine.get(), &SpectrumEngine::updated, this, nullptr);
@@ -27,9 +75,9 @@ void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
     if (m_engine) {
         connect(m_engine.get(), &SpectrumEngine::updated, this, [this]() {
             if (m_engine)
-                setSpectrum(m_engine->data);
+                setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
         });
-        setSpectrum(m_engine->data);
+        setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
     }
 }
 
@@ -45,29 +93,40 @@ void SpectrumView::hideEvent(QHideEvent* event) {
         m_engine->visibilityCount--;
 }
 
-static float normDB60(float db) {
-    if (db < -60.0f)
+static float normDB(float db, float minDB = -120.0f, float maxDB = 0.0f) {
+    if (minDB >= maxDB)
+        minDB = maxDB - 1.0f;
+    if (db < minDB)
         return 0.0f;
-    if (db > 0.0f)
+    if (db > maxDB)
         return 1.0f;
-    return (db + 60.0f) / 60.0f;
+    return (db - minDB) / (maxDB - minDB);
 }
 
-void SpectrumView::setSpectrum(const SpectrumData& data) {
+void SpectrumView::setSpectrum(const SpectrumData& data, OctaveSmoothing smoothing, float peakHoldDecayRate) {
     m_data = data;
+    m_smoothing = smoothing;
+    m_peakHoldDecayRate = peakHoldDecayRate;
+
+    if (m_smoothing != OctaveSmoothing::None) {
+        m_data.magnitudes = applyOctaveSmoothing(m_data.frequencies, m_data.magnitudes, m_smoothing);
+    }
+
+    float minDB = m_engine ? static_cast<float>(m_engine->minDB) : -120.0f;
+    float maxDB = m_engine ? static_cast<float>(m_engine->maxDB) : 0.0f;
 
     if (m_peakHold.size() != m_data.magnitudes.size()) {
         m_peakHold.resize(m_data.magnitudes.size(), 0.0f);
         for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
-            m_peakHold[i] = normDB60(m_data.magnitudes[i]);
+            m_peakHold[i] = normDB(m_data.magnitudes[i], minDB, maxDB);
         }
     } else {
         for (size_t i = 0; i < m_data.magnitudes.size(); ++i) {
-            float normVal = normDB60(m_data.magnitudes[i]);
+            float normVal = normDB(m_data.magnitudes[i], minDB, maxDB);
             if (normVal >= m_peakHold[i]) {
                 m_peakHold[i] = normVal;
             } else {
-                m_peakHold[i] = std::max(0.0f, m_peakHold[i] * 0.95f);
+                m_peakHold[i] = std::max(0.0f, m_peakHold[i] * m_peakHoldDecayRate);
             }
         }
     }
@@ -102,15 +161,19 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     if (plotW < 20 || plotH < 20)
         return;
 
-    // 1. dB Grid lines & labels [-60, -48, -36, -24, -12, 0] dB
+    float minDB = m_engine ? static_cast<float>(m_engine->minDB) : -120.0f;
+    float maxDB = m_engine ? static_cast<float>(m_engine->maxDB) : 0.0f;
+
+    // 1. dB Grid lines & labels
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     monoFont.setPointSize(8);
     p.setFont(monoFont);
 
     QColor gridPenCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
 
-    for (double db : {0, -12, -24, -36, -48, -60}) {
-        double normY = normDB60(static_cast<float>(db));
+    double dbStep = (maxDB - minDB) > 60.0f ? 20.0 : 12.0;
+    for (double db = maxDB; db >= minDB; db -= dbStep) {
+        double normY = normDB(static_cast<float>(db), minDB, maxDB);
         double y = marginT + plotH * (1.0 - normY);
 
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
@@ -179,7 +242,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         double barW = std::max(2.0, (xNext - xPrev) / 2.0 - spacing);
 
         float db = m_data.magnitudes[i];
-        float normY = normDB60(db);
+        float normY = normDB(db, minDB, maxDB);
         double barHeight = std::max(2.0, static_cast<double>(normY * plotH));
 
         p.fillRect(QRectF(x - barW / 2.0, marginT + plotH - barHeight, barW, barHeight), barGrad);

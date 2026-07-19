@@ -1150,7 +1150,7 @@ void MainWindow::handleNavigationTag(const QString& tag) {
     } else if (tag == "spectroscope") {
         w = new SpectrogramDetailView(m_spectrogramEngine, m_devices, this);
     } else if (tag == "vectorscope") {
-        w = new VectorScopeDetailView(m_vectorScopeEngine, this);
+        w = new VectorScopeDetailView(m_vectorScopeEngine, m_devices, this);
     } else if (tag == "analogVU") {
         w = new AnalogVUDetailView(m_monitoring, this);
     } else if (tag == "resampler") {

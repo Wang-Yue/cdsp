@@ -83,13 +83,14 @@ std::vector<double> FrequencyResponse::groupDelay() const {
 }
 
 FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetFftSize) {
-    int nFft = targetFftSize;
-    if (ir.samples.size() > static_cast<size_t>(nFft)) {
-        size_t p = 1;
-        while (p < ir.samples.size())
-            p <<= 1;
-        nFft = static_cast<int>(p);
-    }
+    auto nextPowerOfTwo = [](int val) -> int {
+        int p = 8;
+        while (p < val)
+            p *= 2;
+        return p;
+    };
+    int req = (targetFftSize > 0) ? targetFftSize : static_cast<int>(ir.samples.size());
+    int nFft = nextPowerOfTwo(std::max(8, req));
 
     std::vector<double> padded = ir.samples;
     padded.resize(nFft, 0.0);

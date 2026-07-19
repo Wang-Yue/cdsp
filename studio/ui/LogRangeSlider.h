@@ -13,9 +13,14 @@ public:
 
     double minFreq() const { return m_minFreq; }
     double maxFreq() const { return m_maxFreq; }
+    bool isLogarithmic() const { return m_isLogarithmic; }
 
     void setRange(double minFreq, double maxFreq);
     void setMinMaxBounds(double minBound, double maxBound);
+    void setLogarithmic(bool isLog) {
+        m_isLogarithmic = isLog;
+        update();
+    }
 
 signals:
     void rangeChanged(double minFreq, double maxFreq);
@@ -32,6 +37,7 @@ private:
     double m_maxBound = 20000.0;
     double m_minFreq = 20.0;
     double m_maxFreq = 20000.0;
+    bool m_isLogarithmic = true;
     int m_activeHandle = 0; // 0: none, 1: min, 2: max
 
     double posToFreq(int x) const;

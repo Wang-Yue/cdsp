@@ -16,7 +16,8 @@ public:
     explicit SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* parent = nullptr);
 
     void setEngine(std::shared_ptr<SpectrumEngine> engine);
-    void setSpectrum(const SpectrumData& data);
+    void setSpectrum(const SpectrumData& data, OctaveSmoothing smoothing = OctaveSmoothing::None,
+                     float peakHoldDecayRate = 0.95f);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -28,6 +29,8 @@ private:
     std::shared_ptr<SpectrumEngine> m_engine;
     SpectrumData m_data;
     std::vector<float> m_peakHold;
+    OctaveSmoothing m_smoothing = OctaveSmoothing::None;
+    float m_peakHoldDecayRate = 0.95f;
 
     QPoint m_hoverPos;
     bool m_isHovered = false;

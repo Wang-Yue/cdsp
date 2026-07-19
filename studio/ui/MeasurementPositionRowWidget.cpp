@@ -8,22 +8,29 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
     : QWidget(parent), m_id(position.id), m_session(session) {
 
     auto layout = new QHBoxLayout(this);
-    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setContentsMargins(6, 3, 6, 3);
     layout->setSpacing(6);
 
-    // Checkbox to toggle inclusion in averaging
+    // Styling as a compact chip matching SwiftUI positionChip
+    setStyleSheet("MeasurementPositionRowWidget { "
+                  "  background-color: rgba(255, 255, 255, 0.06); "
+                  "  border-radius: 6px; "
+                  "  border: 1px solid rgba(255, 255, 255, 0.1); "
+                  "} "
+                  "QLineEdit { background: transparent; border: none; font-family: monospace; font-size: 11px; } "
+                  "QComboBox { font-size: 10px; font-family: monospace; padding: 2px 4px; }");
+
     m_enableCheck = new QCheckBox(this);
     m_enableCheck->setChecked(position.isEnabled);
     m_enableCheck->setToolTip("Include/Exclude position in averaging");
     layout->addWidget(m_enableCheck);
 
-    // Editable name field
     m_nameEdit = new QLineEdit(QString::fromStdString(position.name), this);
     m_nameEdit->setPlaceholderText("Position Name");
-    m_nameEdit->setMinimumWidth(100);
+    m_nameEdit->setMinimumWidth(80);
+    m_nameEdit->setMaximumWidth(140);
     layout->addWidget(m_nameEdit);
 
-    // Channel Kind Combo
     m_kindCombo = new QComboBox(this);
     m_kindCombo->addItem("Full Range", static_cast<int>(MeasurementChannelKind::Full));
     m_kindCombo->addItem("Mains Only", static_cast<int>(MeasurementChannelKind::Mains));
@@ -31,15 +38,13 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
     m_kindCombo->setCurrentIndex(static_cast<int>(position.kind));
     layout->addWidget(m_kindCombo);
 
-    // Delete Button
     m_deleteBtn = new QToolButton(this);
     m_deleteBtn->setText("✕");
     m_deleteBtn->setToolTip("Delete this position");
-    m_deleteBtn->setStyleSheet(
-        "QToolButton { color: #ff5555; border: none; font-weight: bold; } QToolButton:hover { color: #ff0000; }");
+    m_deleteBtn->setStyleSheet("QToolButton { color: #888; border: none; font-weight: bold; font-size: 11px; } "
+                               "QToolButton:hover { color: #ff5555; }");
     layout->addWidget(m_deleteBtn);
 
-    // Signal connections
     connect(m_enableCheck, &QCheckBox::toggled, [this](bool) {
         if (m_session) {
             m_session->togglePosition(m_id);

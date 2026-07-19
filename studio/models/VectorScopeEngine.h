@@ -17,6 +17,9 @@ public:
     size_t nFrames = 512;
     bool showParticles = true;
     bool autoScale = true;
+    int channelL = 0;
+    int channelR = 1;
+    float traceDecayRate = 0.85f;
 
     AudioSamplesData samples;
 
@@ -35,6 +38,9 @@ public:
         nFrames = 512;
         showParticles = true;
         autoScale = true;
+        channelL = 0;
+        channelR = 1;
+        traceDecayRate = 0.85f;
         samples = AudioSamplesData();
         emit updated();
     }

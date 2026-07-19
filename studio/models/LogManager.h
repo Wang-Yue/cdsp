@@ -7,14 +7,14 @@
 #include <mutex>
 #include <vector>
 
-enum class LogLevel { Error, Warn, Info, Debug, Trace };
+enum class LogLevel { Off, Error, Warn, Info, Debug, Trace };
 
 QString logLevelToString(LogLevel level);
 LogLevel stringToLogLevel(const QString& str);
 
 struct LogEntry {
     QDateTime timestamp;
-    LogLevel level;
+    LogLevel level = LogLevel::Info;
     QString message;
 };
 
@@ -32,7 +32,8 @@ public:
     LogLevel logLevel() const { return m_logLevel; }
 
     void appendLog(LogLevel level, const QString& message);
-    std::vector<LogEntry> logs(LogLevel minLevel = LogLevel::Trace, const QString& searchFilter = "") const;
+    void appendLog(const QString& message);
+    std::vector<LogEntry> logs() const;
     void clear();
 
 signals:
