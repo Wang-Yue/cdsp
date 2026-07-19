@@ -67,6 +67,8 @@ private:
     void setupUi();
     void buildStageOptionsUi();
     PipelineStage* currentStage() const;
+
+    QWidget* createMatrixCellWidget(PipelineStage& stage, int dest, int src, QTableWidget* table);
 };
 
 #endif // STAGE_DETAIL_VIEW_H
