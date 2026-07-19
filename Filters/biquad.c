@@ -330,7 +330,8 @@ static bool biquad_config_check_stability(const biquad_config_t* params,
  *
  * @param filter The filter instance to free.
  */
-static void biquad_filter_free(biquad_filter_t* filter) {
+static void biquad_filter_free(void* instance) {
+  biquad_filter_t* filter = (biquad_filter_t*)instance;
   if (!filter) return;
 #ifdef ENABLE_ACCELERATE
   if (filter->setup) {
@@ -513,8 +514,9 @@ static void* biquad_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void biquad_filter_process(biquad_filter_t* filter,
+static void biquad_filter_process(void* instance,
                                   mutable_waveform_t waveform, size_t count) {
+  biquad_filter_t* filter = (biquad_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
 #ifdef ENABLE_ACCELERATE
   if (!filter->setup) return;
@@ -603,8 +605,10 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
  * @param dest The destination biquad filter instance.
  * @param src The source biquad filter instance.
  */
-static void biquad_filter_transfer_state(biquad_filter_t* dest,
-                                         const biquad_filter_t* src) {
+static void biquad_filter_transfer_state(void* dest_ptr,
+                                         const void* src_ptr) {
+  biquad_filter_t* dest = (biquad_filter_t*)dest_ptr;
+  const biquad_filter_t* src = (const biquad_filter_t*)src_ptr;
   if (!dest || !src) return;
 #ifdef ENABLE_ACCELERATE
   if (dest->setup && src->setup) {
@@ -623,8 +627,6 @@ const char* biquad_filter_get_name(const biquad_filter_t* filter) {
 const filter_vtable_t g_biquad_vtable = {
     .validate = biquad_config_validate,
     .create = biquad_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))biquad_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))biquad_filter_transfer_state,
-    .free = (void (*)(void*))biquad_filter_free};
+    .process = biquad_filter_process,
+    .transfer_state = biquad_filter_transfer_state,
+    .free = biquad_filter_free};

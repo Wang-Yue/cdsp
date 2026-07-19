@@ -49,8 +49,8 @@ typedef struct noise_gate_processor noise_gate_processor_t;
  * @param processor Pointer to the noise gate processor.
  * @return The unique name of the processor instance.
  */
-static const char* noise_gate_processor_get_name(
-    const noise_gate_processor_t* processor) {
+static const char* noise_gate_processor_get_name(const void* impl) {
+  const noise_gate_processor_t* processor = (const noise_gate_processor_t*)impl;
   return processor ? processor->name : "";
 }
 
@@ -112,7 +112,8 @@ static int noise_gate_config_validate(const processor_config_t* config,
  *
  * @param processor Pointer to noise gate processor to free.
  */
-static void noise_gate_processor_free(noise_gate_processor_t* processor) {
+static void noise_gate_processor_free(void* impl) {
+  noise_gate_processor_t* processor = (noise_gate_processor_t*)impl;
   if (!processor) return;
   free(processor->monitor_channels);
   free(processor->process_channels);
@@ -234,8 +235,9 @@ static void* noise_gate_processor_create(const char* name,
  * @param processor Pointer to noise gate processor.
  * @param chunk Audio chunk to process in place.
  */
-static void noise_gate_processor_process(noise_gate_processor_t* processor,
+static void noise_gate_processor_process(void* impl,
                                          audio_chunk_t* chunk) {
+  noise_gate_processor_t* processor = (noise_gate_processor_t*)impl;
   if (!processor || !chunk || !processor->scratch) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
   if (count > processor->scratch_capacity) count = processor->scratch_capacity;
@@ -314,7 +316,9 @@ static void noise_gate_processor_process(noise_gate_processor_t* processor,
  * @param src The source noise gate processor instance.
  */
 static void noise_gate_processor_transfer_state(
-    noise_gate_processor_t* dest, const noise_gate_processor_t* src) {
+    void* dest_ptr, const void* src_ptr) {
+  noise_gate_processor_t* dest = (noise_gate_processor_t*)dest_ptr;
+  const noise_gate_processor_t* src = (const noise_gate_processor_t*)src_ptr;
   if (!dest || !src) return;
   dest->prev_loudness = src->prev_loudness;
 }
@@ -322,8 +326,7 @@ static void noise_gate_processor_transfer_state(
 const processor_vtable_t g_noise_gate_vtable = {
     .validate = noise_gate_config_validate,
     .create = noise_gate_processor_create,
-    .process = (void (*)(void*, audio_chunk_t*))noise_gate_processor_process,
-    .get_name = (const char* (*)(const void*))noise_gate_processor_get_name,
-    .transfer_state =
-        (void (*)(void*, const void*))noise_gate_processor_transfer_state,
-    .free = (void (*)(void*))noise_gate_processor_free};
+    .process = noise_gate_processor_process,
+    .get_name = noise_gate_processor_get_name,
+    .transfer_state = noise_gate_processor_transfer_state,
+    .free = noise_gate_processor_free};

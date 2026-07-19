@@ -427,7 +427,8 @@ static double sample_dither(dither_filter_t* filter) {
  *
  * @param filter The dither filter instance to free.
  */
-static void dither_filter_free(dither_filter_t* filter) {
+static void dither_filter_free(void* instance) {
+  dither_filter_t* filter = (dither_filter_t*)instance;
   if (!filter) return;
   if (filter->shaper) noise_shaper_free(filter->shaper);
   free(filter);
@@ -544,8 +545,9 @@ static void* dither_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void dither_filter_process(dither_filter_t* filter,
+static void dither_filter_process(void* instance,
                                   mutable_waveform_t waveform, size_t count) {
+  dither_filter_t* filter = (dither_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   double scalefact = filter->scalefact;
   for (size_t i = 0; i < count; i++) {
@@ -587,8 +589,10 @@ static void noise_shaper_transfer_state(noise_shaper_t* dest,
   }
 }
 
-static void dither_filter_transfer_state(dither_filter_t* dest,
-                                         const dither_filter_t* src) {
+static void dither_filter_transfer_state(void* dest_ptr,
+                                         const void* src_ptr) {
+  dither_filter_t* dest = (dither_filter_t*)dest_ptr;
+  const dither_filter_t* src = (const dither_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
   dest->previous_sample = src->previous_sample;
   dest->rng_state = src->rng_state;
@@ -600,8 +604,6 @@ static void dither_filter_transfer_state(dither_filter_t* dest,
 const filter_vtable_t g_dither_vtable = {
     .validate = dither_config_validate,
     .create = dither_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))dither_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))dither_filter_transfer_state,
-    .free = (void (*)(void*))dither_filter_free};
+    .process = dither_filter_process,
+    .transfer_state = dither_filter_transfer_state,
+    .free = dither_filter_free};

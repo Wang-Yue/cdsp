@@ -162,7 +162,8 @@ static inline size_t gcd_size(size_t a, size_t b) {
   return x;
 }
 
-static void synchronous_resampler_free(synchronous_resampler_t* resampler) {
+static void synchronous_resampler_free(void* impl) {
+  synchronous_resampler_t* resampler = (synchronous_resampler_t*)impl;
   if (!resampler) return;
   if (resampler->input_fft) real_fft_free(resampler->input_fft);
   if (resampler->output_fft) real_fft_free(resampler->output_fft);
@@ -183,40 +184,40 @@ static void synchronous_resampler_free(synchronous_resampler_t* resampler) {
 /// `SynchronousResampler` runs at a fixed rational ratio fixed at
 /// construction. The rate-adjust controller's relative multiplier
 /// has nowhere to go here — we accept it without effect.
-static void synchronous_resampler_set_relative_ratio(
-    synchronous_resampler_t* resampler, double multiplier) {
-  (void)resampler;
+static void synchronous_resampler_set_relative_ratio(void* impl,
+                                                       double multiplier) {
+  (void)impl;
   (void)multiplier;
   // Fixed-ratio
 }
 
-static double synchronous_resampler_get_ratio(
-    const synchronous_resampler_t* resampler) {
+static double synchronous_resampler_get_ratio(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->ratio : 1.0;
 }
 
-static size_t synchronous_resampler_get_max_output_frames(
-    const synchronous_resampler_t* resampler) {
+static size_t synchronous_resampler_get_max_output_frames(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->output_chunk_size : 0;
 }
 
-static size_t synchronous_resampler_get_chunk_size(
-    const synchronous_resampler_t* resampler) {
+static size_t synchronous_resampler_get_chunk_size(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->chunk_size : 0;
 }
 
-static size_t synchronous_resampler_get_input_frames_next(
-    const synchronous_resampler_t* resampler) {
+static size_t synchronous_resampler_get_input_frames_next(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->chunk_size : 0;
 }
 
-static size_t synchronous_resampler_get_output_frames_next(
-    const synchronous_resampler_t* resampler) {
+static size_t synchronous_resampler_get_output_frames_next(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->output_chunk_size : 0;
 }
 
-static size_t synchronous_resampler_get_channels(
-    const synchronous_resampler_t* resampler) {
+static size_t synchronous_resampler_get_channels(const void* impl) {
+  const synchronous_resampler_t* resampler = (const synchronous_resampler_t*)impl;
   return resampler ? resampler->channels : 0;
 }
 
@@ -224,8 +225,8 @@ static size_t synchronous_resampler_get_channels(
 /// spectral remap. All scratch buffers are class-owned; this
 /// function performs no heap allocation.
 static resampler_error_t synchronous_resampler_process(
-    synchronous_resampler_t* resampler, const audio_chunk_t* input,
-    audio_chunk_t* output) {
+    void* impl, const audio_chunk_t* input, audio_chunk_t* output) {
+  synchronous_resampler_t* resampler = (synchronous_resampler_t*)impl;
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
   if (valid_frames > resampler->chunk_size) {
@@ -536,19 +537,12 @@ static void* synchronous_resampler_create(const resampler_config_t* config,
 const resampler_vtable_t g_synchronous_resampler_vtable = {
     .validate = synchronous_resampler_config_validate,
     .create = synchronous_resampler_create,
-    .process =
-        (resampler_error_t (*)(void*, const audio_chunk_t*,
-                               audio_chunk_t*))synchronous_resampler_process,
-    .set_relative_ratio =
-        (void (*)(void*, double))synchronous_resampler_set_relative_ratio,
-    .get_ratio = (double (*)(const void*))synchronous_resampler_get_ratio,
-    .get_max_output_frames =
-        (size_t (*)(const void*))synchronous_resampler_get_max_output_frames,
-    .get_chunk_size =
-        (size_t (*)(const void*))synchronous_resampler_get_chunk_size,
-    .get_input_frames_next =
-        (size_t (*)(const void*))synchronous_resampler_get_input_frames_next,
-    .get_output_frames_next =
-        (size_t (*)(const void*))synchronous_resampler_get_output_frames_next,
-    .get_channels = (size_t (*)(const void*))synchronous_resampler_get_channels,
-    .free = (void (*)(void*))synchronous_resampler_free};
+    .process = synchronous_resampler_process,
+    .set_relative_ratio = synchronous_resampler_set_relative_ratio,
+    .get_ratio = synchronous_resampler_get_ratio,
+    .get_max_output_frames = synchronous_resampler_get_max_output_frames,
+    .get_chunk_size = synchronous_resampler_get_chunk_size,
+    .get_input_frames_next = synchronous_resampler_get_input_frames_next,
+    .get_output_frames_next = synchronous_resampler_get_output_frames_next,
+    .get_channels = synchronous_resampler_get_channels,
+    .free = synchronous_resampler_free};

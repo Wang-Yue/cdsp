@@ -377,7 +377,8 @@ static double* load_raw_file(const char* path, const char* format_str,
  *
  * @param filter The convolution filter instance to free.
  */
-static void convolution_filter_free(convolution_filter_t* filter) {
+static void convolution_filter_free(void* instance) {
+  convolution_filter_t* filter = (convolution_filter_t*)instance;
   if (!filter) return;
   size_t num_seg = filter->num_segments;
   for (size_t s = 0; s < num_seg; s++) {
@@ -756,9 +757,10 @@ static void process_chunk(convolution_filter_t* filter,
 /// Process one block in-place. The hot path is allocation-free in
 /// steady state; everything below is pointer arithmetic over the
 /// preallocated storage from `init`.
-static void convolution_filter_process(convolution_filter_t* filter,
+static void convolution_filter_process(void* instance,
                                        mutable_waveform_t waveform,
                                        size_t count) {
+  convolution_filter_t* filter = (convolution_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   size_t cs = filter->chunk_size;
   size_t processed = 0;
@@ -776,8 +778,10 @@ static void convolution_filter_process(convolution_filter_t* filter,
   }
 }
 
-static void convolution_filter_transfer_state(convolution_filter_t* dest,
-                                              const convolution_filter_t* src) {
+static void convolution_filter_transfer_state(void* dest_ptr,
+                                              const void* src_ptr) {
+  convolution_filter_t* dest = (convolution_filter_t*)dest_ptr;
+  const convolution_filter_t* src = (const convolution_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   if (dest->chunk_size == src->chunk_size &&
@@ -801,8 +805,6 @@ static void convolution_filter_transfer_state(convolution_filter_t* dest,
 const filter_vtable_t g_convolution_vtable = {
     .validate = convolution_config_validate,
     .create = convolution_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))convolution_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))convolution_filter_transfer_state,
-    .free = (void (*)(void*))convolution_filter_free};
+    .process = convolution_filter_process,
+    .transfer_state = convolution_filter_transfer_state,
+    .free = convolution_filter_free};

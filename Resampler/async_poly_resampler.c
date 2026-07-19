@@ -129,7 +129,8 @@ static void async_poly_resampler_update_lengths(
       resampler->last_index, resampler->interpolator_len, resampler->fixed);
 }
 
-static void async_poly_resampler_free(async_poly_resampler_t* resampler) {
+static void async_poly_resampler_free(void* impl) {
+  async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
   if (!resampler) return;
   if (resampler->input_buffer) audio_buffers_free(resampler->input_buffer);
   free(resampler->start_idx_scratch);
@@ -137,8 +138,9 @@ static void async_poly_resampler_free(async_poly_resampler_t* resampler) {
   free(resampler);
 }
 
-static void async_poly_resampler_set_relative_ratio(
-    async_poly_resampler_t* resampler, double multiplier) {
+static void async_poly_resampler_set_relative_ratio(void* impl,
+                                                       double multiplier) {
+  async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
   if (!resampler) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
@@ -148,23 +150,23 @@ static void async_poly_resampler_set_relative_ratio(
   async_poly_resampler_update_lengths(resampler);
 }
 
-static double async_poly_resampler_get_ratio(
-    const async_poly_resampler_t* resampler) {
+static double async_poly_resampler_get_ratio(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
-static size_t async_poly_resampler_get_max_output_frames(
-    const async_poly_resampler_t* resampler) {
+static size_t async_poly_resampler_get_max_output_frames(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->max_output_frames : 0;
 }
 
-static size_t async_poly_resampler_get_chunk_size(
-    const async_poly_resampler_t* resampler) {
+static size_t async_poly_resampler_get_chunk_size(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->chunk_size : 0;
 }
 
-static size_t async_poly_resampler_get_channels(
-    const async_poly_resampler_t* resampler) {
+static size_t async_poly_resampler_get_channels(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->channels : 0;
 }
 
@@ -341,8 +343,8 @@ static void run_septic(async_poly_resampler_t* resampler, size_t output_frames,
 }
 
 static resampler_error_t async_poly_resampler_process(
-    async_poly_resampler_t* resampler, const audio_chunk_t* input,
-    audio_chunk_t* output) {
+    void* impl, const audio_chunk_t* input, audio_chunk_t* output) {
+  async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
   if (valid_frames > resampler->max_input_frames ||
@@ -440,13 +442,13 @@ static resampler_error_t async_poly_resampler_process(
   return RESAMPLER_OK;
 }
 
-static size_t async_poly_resampler_get_input_frames_next(
-    const async_poly_resampler_t* resampler) {
+static size_t async_poly_resampler_get_input_frames_next(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->needed_input_size : 0;
 }
 
-static size_t async_poly_resampler_get_output_frames_next(
-    const async_poly_resampler_t* resampler) {
+static size_t async_poly_resampler_get_output_frames_next(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
   return resampler ? resampler->needed_output_size : 0;
 }
 
@@ -626,22 +628,15 @@ static void* async_poly_resampler_create(const resampler_config_t* config,
 const resampler_vtable_t g_async_poly_resampler_vtable = {
     .validate = async_poly_resampler_config_validate,
     .create = async_poly_resampler_create,
-    .process =
-        (resampler_error_t (*)(void*, const audio_chunk_t*,
-                               audio_chunk_t*))async_poly_resampler_process,
-    .set_relative_ratio =
-        (void (*)(void*, double))async_poly_resampler_set_relative_ratio,
-    .get_ratio = (double (*)(const void*))async_poly_resampler_get_ratio,
-    .get_max_output_frames =
-        (size_t (*)(const void*))async_poly_resampler_get_max_output_frames,
-    .get_chunk_size =
-        (size_t (*)(const void*))async_poly_resampler_get_chunk_size,
-    .get_input_frames_next =
-        (size_t (*)(const void*))async_poly_resampler_get_input_frames_next,
-    .get_output_frames_next =
-        (size_t (*)(const void*))async_poly_resampler_get_output_frames_next,
-    .get_channels = (size_t (*)(const void*))async_poly_resampler_get_channels,
-    .free = (void (*)(void*))async_poly_resampler_free};
+    .process = async_poly_resampler_process,
+    .set_relative_ratio = async_poly_resampler_set_relative_ratio,
+    .get_ratio = async_poly_resampler_get_ratio,
+    .get_max_output_frames = async_poly_resampler_get_max_output_frames,
+    .get_chunk_size = async_poly_resampler_get_chunk_size,
+    .get_input_frames_next = async_poly_resampler_get_input_frames_next,
+    .get_output_frames_next = async_poly_resampler_get_output_frames_next,
+    .get_channels = async_poly_resampler_get_channels,
+    .free = async_poly_resampler_free};
 
 static void* async_poly_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,

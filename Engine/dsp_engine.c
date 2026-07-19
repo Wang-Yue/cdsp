@@ -661,12 +661,6 @@ static bool dsp_engine_get_device_capabilities(
   return *out_desc != NULL;
 }
 
-static bool dsp_engine_check_stop_requested(
-    dsp_engine_impl_t* impl, processing_stop_reason_t* out_reason) {
-  if (!impl || !impl->session.active) return false;
-  return dsp_session_is_stop_requested(impl->session.active, out_reason);
-}
-
 static void dsp_engine_set_state_file_path(void* ctx, const char* path) {
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   if (impl) engine_state_manager_set_state_file(impl->state_mgr, path);
@@ -717,7 +711,10 @@ static void dsp_engine_poll_impl(void* ctx) {
 
   pthread_mutex_lock(&impl->state_mutex);
   processing_stop_reason_t stop_reason;
-  bool stop_needed = dsp_engine_check_stop_requested(impl, &stop_reason);
+  bool stop_needed =
+      impl->session.active
+          ? dsp_session_is_stop_requested(impl->session.active, &stop_reason)
+          : false;
   pthread_mutex_unlock(&impl->state_mutex);
 
   if (stop_needed) {

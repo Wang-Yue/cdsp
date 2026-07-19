@@ -26,7 +26,8 @@ typedef struct diffeq_filter diffeq_filter_t;
  *
  * @param filter The difference equation filter instance to free.
  */
-static void diffeq_filter_free(diffeq_filter_t* filter) {
+static void diffeq_filter_free(void* instance) {
+  diffeq_filter_t* filter = (diffeq_filter_t*)instance;
   if (!filter) return;
   if (filter->x) free(filter->x);
   if (filter->y) free(filter->y);
@@ -139,8 +140,9 @@ static void* diffeq_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void diffeq_filter_process(diffeq_filter_t* filter,
+static void diffeq_filter_process(void* instance,
                                   mutable_waveform_t waveform, size_t count) {
+  diffeq_filter_t* filter = (diffeq_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   size_t nb = filter->b_count;
   size_t na = filter->a_count;
@@ -198,8 +200,10 @@ static void diffeq_filter_process(diffeq_filter_t* filter,
   filter->idx_y = idx_y;
 }
 
-static void diffeq_filter_transfer_state(diffeq_filter_t* dest,
-                                         const diffeq_filter_t* src) {
+static void diffeq_filter_transfer_state(void* dest_ptr,
+                                          const void* src_ptr) {
+  diffeq_filter_t* dest = (diffeq_filter_t*)dest_ptr;
+  const diffeq_filter_t* src = (const diffeq_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   // Transfer input history x
@@ -244,8 +248,6 @@ static void diffeq_filter_transfer_state(diffeq_filter_t* dest,
 const filter_vtable_t g_diffeq_vtable = {
     .validate = diffeq_config_validate,
     .create = diffeq_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))diffeq_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))diffeq_filter_transfer_state,
-    .free = (void (*)(void*))diffeq_filter_free};
+    .process = diffeq_filter_process,
+    .transfer_state = diffeq_filter_transfer_state,
+    .free = diffeq_filter_free};

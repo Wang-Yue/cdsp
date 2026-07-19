@@ -94,7 +94,8 @@ static void build_delay(double delay_samples, bool subsample,
  *
  * @param filter The delay filter instance to free.
  */
-static void delay_filter_free(delay_filter_t* filter) {
+static void delay_filter_free(void* instance) {
+  delay_filter_t* filter = (delay_filter_t*)instance;
   if (!filter) return;
   if (filter->queue) free(filter->queue);
   if (filter->biquad) g_biquad_vtable.free(filter->biquad);
@@ -223,8 +224,9 @@ static void* delay_filter_create(const char* name,
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void delay_filter_process(delay_filter_t* filter,
+static void delay_filter_process(void* instance,
                                  mutable_waveform_t waveform, size_t count) {
+  delay_filter_t* filter = (delay_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   // Apply integer delay using the circular buffer.
   if (filter->queue && filter->queue_count > 0) {
@@ -282,8 +284,10 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
   return 0.0;
 }
 
-static void delay_filter_transfer_state(delay_filter_t* dest,
-                                        const delay_filter_t* src) {
+static void delay_filter_transfer_state(void* dest_ptr,
+                                        const void* src_ptr) {
+  delay_filter_t* dest = (delay_filter_t*)dest_ptr;
+  const delay_filter_t* src = (const delay_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   if (dest->biquad && src->biquad) {
@@ -315,7 +319,6 @@ static void delay_filter_transfer_state(delay_filter_t* dest,
 const filter_vtable_t g_delay_vtable = {
     .validate = delay_config_validate,
     .create = delay_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))delay_filter_process,
-    .transfer_state = (void (*)(void*, const void*))delay_filter_transfer_state,
-    .free = (void (*)(void*))delay_filter_free};
+    .process = delay_filter_process,
+    .transfer_state = delay_filter_transfer_state,
+    .free = delay_filter_free};

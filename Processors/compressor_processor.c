@@ -61,8 +61,8 @@ typedef struct compressor_processor compressor_processor_t;
  * @param[in] processor Pointer to compressor processor.
  * @return The name of the processor.
  */
-static const char* compressor_processor_get_name(
-    const compressor_processor_t* processor) {
+static const char* compressor_processor_get_name(const void* impl) {
+  const compressor_processor_t* processor = (const compressor_processor_t*)impl;
   return processor ? processor->name : "";
 }
 
@@ -129,7 +129,8 @@ static int compressor_config_validate(const processor_config_t* config,
  *
  * @param processor Pointer to compressor processor to free.
  */
-static void compressor_processor_free(compressor_processor_t* processor) {
+static void compressor_processor_free(void* impl) {
+  compressor_processor_t* processor = (compressor_processor_t*)impl;
   if (!processor) return;
   free(processor->monitor_channels);
   free(processor->process_channels);
@@ -268,8 +269,9 @@ static void* compressor_processor_create(const char* name,
  * @param processor Pointer to compressor processor.
  * @param chunk Audio chunk to process in place.
  */
-static void compressor_processor_process(compressor_processor_t* processor,
+static void compressor_processor_process(void* impl,
                                          audio_chunk_t* chunk) {
+  compressor_processor_t* processor = (compressor_processor_t*)impl;
   if (!processor || !chunk || !processor->scratch) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
   if (count > processor->scratch_capacity) count = processor->scratch_capacity;
@@ -367,7 +369,9 @@ static void compressor_processor_process(compressor_processor_t* processor,
  * @param src The source compressor processor instance.
  */
 static void compressor_processor_transfer_state(
-    compressor_processor_t* dest, const compressor_processor_t* src) {
+    void* dest_ptr, const void* src_ptr) {
+  compressor_processor_t* dest = (compressor_processor_t*)dest_ptr;
+  const compressor_processor_t* src = (const compressor_processor_t*)src_ptr;
   if (!dest || !src) return;
   dest->prev_loudness = src->prev_loudness;
 }
@@ -375,8 +379,7 @@ static void compressor_processor_transfer_state(
 const processor_vtable_t g_compressor_vtable = {
     .validate = compressor_config_validate,
     .create = compressor_processor_create,
-    .process = (void (*)(void*, audio_chunk_t*))compressor_processor_process,
-    .get_name = (const char* (*)(const void*))compressor_processor_get_name,
-    .transfer_state =
-        (void (*)(void*, const void*))compressor_processor_transfer_state,
-    .free = (void (*)(void*))compressor_processor_free};
+    .process = compressor_processor_process,
+    .get_name = compressor_processor_get_name,
+    .transfer_state = compressor_processor_transfer_state,
+    .free = compressor_processor_free};

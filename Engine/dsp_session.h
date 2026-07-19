@@ -39,9 +39,6 @@
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Config/configuration.h"
-#include "engine_capture_loop.h"
-#include "engine_playback_loop.h"
-#include "engine_processing_loop.h"
 #include "engine_shared_state.h"
 
 /**

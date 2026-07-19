@@ -11,6 +11,9 @@
 
 #include "DoP/dsd_encoder.h"
 #include "dsp_session.h"
+#include "engine_capture_loop.h"
+#include "engine_playback_loop.h"
+#include "engine_processing_loop.h"
 
 struct dsp_session {
   // MARK: - Configuration

@@ -23,7 +23,8 @@ typedef struct clipper_filter clipper_filter_t;
  *
  * @param filter Pointer to the clipper filter instance to free.
  */
-static void clipper_filter_free(clipper_filter_t* filter) {
+static void clipper_filter_free(void* instance) {
+  clipper_filter_t* filter = (clipper_filter_t*)instance;
   if (filter) free(filter);
 }
 
@@ -101,8 +102,9 @@ static void* clipper_filter_create(const char* name,
  * @param waveform The waveform data to process.
  * @param count The number of samples to process.
  */
-static void clipper_filter_process(clipper_filter_t* filter,
+static void clipper_filter_process(void* instance,
                                    mutable_waveform_t waveform, size_t count) {
+  clipper_filter_t* filter = (clipper_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->soft_clip) {
     double inv_limit = 1.0 / filter->clip_limit;
@@ -142,7 +144,6 @@ static void clipper_filter_process(clipper_filter_t* filter,
 const filter_vtable_t g_clipper_vtable = {
     .validate = clipper_config_validate,
     .create = clipper_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))clipper_filter_process,
+    .process = clipper_filter_process,
     .transfer_state = NULL,
-    .free = (void (*)(void*))clipper_filter_free};
+    .free = clipper_filter_free};

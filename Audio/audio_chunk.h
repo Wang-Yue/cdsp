@@ -23,6 +23,11 @@
 typedef struct audio_chunk audio_chunk_t;
 
 /**
+ * @brief Callback signature for audio chunk processing taps.
+ */
+typedef void (*chunk_callback_t)(void* ctx, const audio_chunk_t* chunk);
+
+/**
  * @struct round_robin_chunk_pool
  * @brief A pool of audio chunks for reuse to avoid allocations in the hot path.
  */

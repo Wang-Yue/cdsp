@@ -53,7 +53,8 @@ typedef struct race_processor race_processor_t;
  * @param processor Pointer to the RACE processor.
  * @return The unique name of the processor instance.
  */
-static const char* race_processor_get_name(const race_processor_t* processor) {
+static const char* race_processor_get_name(const void* impl) {
+  const race_processor_t* processor = (const race_processor_t*)impl;
   return processor ? processor->name : "";
 }
 
@@ -113,7 +114,8 @@ static int race_config_validate(const processor_config_t* config,
  *
  * @param processor Pointer to RACE processor to free.
  */
-static void race_processor_free(race_processor_t* processor) {
+static void race_processor_free(void* impl) {
+  race_processor_t* processor = (race_processor_t*)impl;
   if (!processor) return;
   if (processor->delay_a) g_delay_vtable.free(processor->delay_a);
   if (processor->delay_b) g_delay_vtable.free(processor->delay_b);
@@ -252,8 +254,8 @@ static void* race_processor_create(const char* name,
  * @param processor Pointer to RACE processor.
  * @param chunk Audio chunk to process in place.
  */
-static void race_processor_process(race_processor_t* processor,
-                                   audio_chunk_t* chunk) {
+static void race_processor_process(void* impl, audio_chunk_t* chunk) {
+  race_processor_t* processor = (race_processor_t*)impl;
   if (!processor || !chunk) return;
   size_t count = audio_chunk_get_valid_frames(chunk);
   if (count == 0 || !processor->delay_a || !processor->delay_b ||
@@ -313,8 +315,10 @@ static void race_processor_process(race_processor_t* processor,
  * @param dest The destination RACE processor instance.
  * @param src The source RACE processor instance.
  */
-static void race_processor_transfer_state(race_processor_t* dest,
-                                          const race_processor_t* src) {
+static void race_processor_transfer_state(void* dest_ptr,
+                                          const void* src_ptr) {
+  race_processor_t* dest = (race_processor_t*)dest_ptr;
+  const race_processor_t* src = (const race_processor_t*)src_ptr;
   if (!dest || !src || dest == src) return;
   dest->feedback_a = src->feedback_a;
   dest->feedback_b = src->feedback_b;
@@ -329,8 +333,7 @@ static void race_processor_transfer_state(race_processor_t* dest,
 const processor_vtable_t g_race_vtable = {
     .validate = race_config_validate,
     .create = race_processor_create,
-    .process = (void (*)(void*, audio_chunk_t*))race_processor_process,
-    .get_name = (const char* (*)(const void*))race_processor_get_name,
-    .transfer_state =
-        (void (*)(void*, const void*))race_processor_transfer_state,
-    .free = (void (*)(void*))race_processor_free};
+    .process = race_processor_process,
+    .get_name = race_processor_get_name,
+    .transfer_state = race_processor_transfer_state,
+    .free = race_processor_free};

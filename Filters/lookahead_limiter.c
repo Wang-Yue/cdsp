@@ -103,7 +103,8 @@ static inline double get_occupied(lookahead_limiter_filter_t* filter,
  *
  * @param filter Pointer to the lookahead limiter filter instance to free.
  */
-static void lookahead_limiter_filter_free(lookahead_limiter_filter_t* filter) {
+static void lookahead_limiter_filter_free(void* instance) {
+  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)instance;
   if (!filter) return;
   if (filter->lookahead_data) free(filter->lookahead_data);
   if (filter->output_buffer) free(filter->output_buffer);
@@ -360,9 +361,10 @@ static void process_slice(lookahead_limiter_filter_t* filter,
  * @param waveform The waveform data to process.
  * @param count The number of samples to process.
  */
-static void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
+static void lookahead_limiter_filter_process(void* instance,
                                              mutable_waveform_t waveform,
                                              size_t count) {
+  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   size_t processed = 0;
   while (processed < count) {
@@ -376,7 +378,9 @@ static void lookahead_limiter_filter_process(lookahead_limiter_filter_t* filter,
 }
 
 static void lookahead_limiter_filter_transfer_state(
-    lookahead_limiter_filter_t* dest, const lookahead_limiter_filter_t* src) {
+    void* dest_ptr, const void* src_ptr) {
+  lookahead_limiter_filter_t* dest = (lookahead_limiter_filter_t*)dest_ptr;
+  const lookahead_limiter_filter_t* src = (const lookahead_limiter_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   dest->release_gain = src->release_gain;
@@ -409,8 +413,6 @@ static void lookahead_limiter_filter_transfer_state(
 const filter_vtable_t g_lookahead_limiter_vtable = {
     .validate = lookahead_limiter_config_validate,
     .create = lookahead_limiter_filter_create,
-    .process = (void (*)(void*, mutable_waveform_t,
-                         size_t))lookahead_limiter_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))lookahead_limiter_filter_transfer_state,
-    .free = (void (*)(void*))lookahead_limiter_filter_free};
+    .process = lookahead_limiter_filter_process,
+    .transfer_state = lookahead_limiter_filter_transfer_state,
+    .free = lookahead_limiter_filter_free};

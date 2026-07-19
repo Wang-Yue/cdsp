@@ -99,7 +99,8 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
  *
  * @param filter Pointer to the loudness filter instance to free.
  */
-static void loudness_filter_free(loudness_filter_t* filter) {
+static void loudness_filter_free(void* instance) {
+  loudness_filter_t* filter = (loudness_filter_t*)instance;
   if (!filter) return;
   if (filter->low_shelf_filter) g_biquad_vtable.free(filter->low_shelf_filter);
   if (filter->high_shelf_filter)
@@ -217,8 +218,9 @@ static void* loudness_filter_create(const char* name,
  * @param waveform The waveform containing the samples to be processed.
  * @param count The number of samples to process.
  */
-static void loudness_filter_process(loudness_filter_t* filter,
+static void loudness_filter_process(void* instance,
                                     mutable_waveform_t waveform, size_t count) {
+  loudness_filter_t* filter = (loudness_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (!filter->processing_parameters) return;
 
@@ -255,8 +257,10 @@ static void loudness_filter_process(loudness_filter_t* filter,
  * @param dest The destination loudness filter instance.
  * @param src The source loudness filter instance.
  */
-static void loudness_filter_transfer_state(loudness_filter_t* dest,
-                                           const loudness_filter_t* src) {
+static void loudness_filter_transfer_state(void* dest_ptr,
+                                           const void* src_ptr) {
+  loudness_filter_t* dest = (loudness_filter_t*)dest_ptr;
+  const loudness_filter_t* src = (const loudness_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
   g_biquad_vtable.transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
@@ -267,8 +271,6 @@ static void loudness_filter_transfer_state(loudness_filter_t* dest,
 const filter_vtable_t g_loudness_vtable = {
     .validate = loudness_config_validate,
     .create = loudness_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))loudness_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))loudness_filter_transfer_state,
-    .free = (void (*)(void*))loudness_filter_free};
+    .process = loudness_filter_process,
+    .transfer_state = loudness_filter_transfer_state,
+    .free = loudness_filter_free};

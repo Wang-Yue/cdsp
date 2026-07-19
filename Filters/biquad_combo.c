@@ -440,9 +440,10 @@ cleanup_fail:
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
-static void biquad_combo_filter_process(biquad_combo_filter_t* filter,
+static void biquad_combo_filter_process(void* instance,
                                         mutable_waveform_t waveform,
                                         size_t count) {
+  biquad_combo_filter_t* filter = (biquad_combo_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   for (size_t i = 0; i < filter->num_sections; i++) {
     if (filter->sections[i]) {
@@ -458,7 +459,9 @@ static void biquad_combo_filter_process(biquad_combo_filter_t* filter,
  * @param src The source combo filter instance.
  */
 static void biquad_combo_filter_transfer_state(
-    biquad_combo_filter_t* dest, const biquad_combo_filter_t* src) {
+    void* dest_ptr, const void* src_ptr) {
+  biquad_combo_filter_t* dest = (biquad_combo_filter_t*)dest_ptr;
+  const biquad_combo_filter_t* src = (const biquad_combo_filter_t*)src_ptr;
   if (!dest || !src) return;
   for (size_t i = 0; i < dest->num_sections; i++) {
     const char* dest_name = biquad_filter_get_name(dest->sections[i]);
@@ -478,7 +481,8 @@ static void biquad_combo_filter_transfer_state(
  *
  * @param filter The filter instance to free.
  */
-static void biquad_combo_filter_free(biquad_combo_filter_t* filter) {
+static void biquad_combo_filter_free(void* instance) {
+  biquad_combo_filter_t* filter = (biquad_combo_filter_t*)instance;
   if (!filter) return;
   for (size_t i = 0; i < filter->num_sections; i++) {
     if (filter->sections[i]) g_biquad_vtable.free(filter->sections[i]);
@@ -490,8 +494,6 @@ static void biquad_combo_filter_free(biquad_combo_filter_t* filter) {
 const filter_vtable_t g_biquad_combo_vtable = {
     .validate = biquad_combo_config_validate,
     .create = biquad_combo_filter_create,
-    .process = (void (*)(void*, mutable_waveform_t,
-                         size_t))biquad_combo_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))biquad_combo_filter_transfer_state,
-    .free = (void (*)(void*))biquad_combo_filter_free};
+    .process = biquad_combo_filter_process,
+    .transfer_state = biquad_combo_filter_transfer_state,
+    .free = biquad_combo_filter_free};

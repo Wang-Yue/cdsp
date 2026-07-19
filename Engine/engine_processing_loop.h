@@ -38,14 +38,6 @@
 #include "engine_shared_state.h"
 
 /**
- * @brief Callback function type for audio chunk events.
- *
- * @param ctx User-defined context pointer passed to the callback.
- * @param chunk Pointer to the audio chunk.
- */
-typedef void (*chunk_callback_t)(void* ctx, const audio_chunk_t* chunk);
-
-/**
  * @brief Opaque structure representing the processing loop.
  *
  * `@unchecked Sendable` is a *transfer* vouch, not a *share*

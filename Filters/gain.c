@@ -104,8 +104,9 @@ static void* gain_filter_create(const char* name, const filter_config_t* config,
  * @param waveform The waveform data to process.
  * @param count The number of samples to process.
  */
-static void gain_filter_process(gain_filter_t* filter,
+static void gain_filter_process(void* instance,
                                 mutable_waveform_t waveform, size_t count) {
+  gain_filter_t* filter = (gain_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->muted) {
     // If muted, we clear the buffer to output silence.
@@ -126,13 +127,14 @@ double gain_filter_process_single(gain_filter_t* filter, double sample) {
  *
  * @param filter Pointer to the gain filter instance to free.
  */
-static void gain_filter_free(gain_filter_t* filter) {
+static void gain_filter_free(void* instance) {
+  gain_filter_t* filter = (gain_filter_t*)instance;
   if (filter) free(filter);
 }
 
 const filter_vtable_t g_gain_vtable = {
     .validate = gain_config_validate,
     .create = gain_filter_create,
-    .process = (void (*)(void*, mutable_waveform_t, size_t))gain_filter_process,
+    .process = gain_filter_process,
     .transfer_state = NULL,
-    .free = (void (*)(void*))gain_filter_free};
+    .free = gain_filter_free};

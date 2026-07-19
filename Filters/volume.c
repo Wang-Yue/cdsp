@@ -55,7 +55,8 @@ static void fill_ramp(volume_filter_t* filter) {
  *
  * @param filter Pointer to the volume filter instance to free.
  */
-static void volume_filter_free(volume_filter_t* filter) {
+static void volume_filter_free(void* instance) {
+  volume_filter_t* filter = (volume_filter_t*)instance;
   if (!filter) return;
   if (filter->current_ramp_gains) free(filter->current_ramp_gains);
   free(filter);
@@ -215,8 +216,9 @@ void volume_filter_prepare_chunk(volume_filter_t* filter) {
 }
 
 /// Conforms to `Filter`. Processes a single channel's waveform slice.
-static void volume_filter_process(volume_filter_t* filter,
+static void volume_filter_process(void* instance,
                                   mutable_waveform_t waveform, size_t count) {
+  volume_filter_t* filter = (volume_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->ramp_step == 0) {
     // Optimization: avoid multiplication if gain is 1.0, or clear if 0.0.
@@ -269,8 +271,10 @@ void volume_filter_advance_ramp(volume_filter_t* filter) {
  * @param dest The destination volume filter instance.
  * @param src The source volume filter instance.
  */
-static void volume_filter_transfer_state(volume_filter_t* dest,
-                                         const volume_filter_t* src) {
+static void volume_filter_transfer_state(void* dest_ptr,
+                                         const void* src_ptr) {
+  volume_filter_t* dest = (volume_filter_t*)dest_ptr;
+  const volume_filter_t* src = (const volume_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
   dest->current_volume = src->current_volume;
   dest->target_volume = src->target_volume;
@@ -301,8 +305,6 @@ static void volume_filter_transfer_state(volume_filter_t* dest,
 const filter_vtable_t g_volume_vtable = {
     .validate = volume_config_validate,
     .create = volume_filter_create,
-    .process =
-        (void (*)(void*, mutable_waveform_t, size_t))volume_filter_process,
-    .transfer_state =
-        (void (*)(void*, const void*))volume_filter_transfer_state,
-    .free = (void (*)(void*))volume_filter_free};
+    .process = volume_filter_process,
+    .transfer_state = volume_filter_transfer_state,
+    .free = volume_filter_free};
