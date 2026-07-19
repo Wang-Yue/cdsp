@@ -29,7 +29,6 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 
-static void core_audio_capture_close(void* ctx);
 
 struct core_audio_capture {
   char device_name[256];
@@ -286,6 +285,50 @@ static bool allocate_render_buffers(core_audio_capture_t* capture) {
   return true;
 }
 
+/// Close the CoreAudio capture device and release HAL resources.
+static void core_audio_capture_close(void* ctx) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
+  if (!capture) return;
+  if (!capture->audio_unit && capture->opened_device_id == 0) return;
+  logger_info(&g_logger, "Closing CoreAudio capture device");
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
+  if (capture->rate_watcher) {
+    rate_change_watcher_free(capture->rate_watcher);
+    capture->rate_watcher = NULL;
+  }
+  if (capture->opened_device_id != 0) {
+    AudioObjectPropertyAddress alive_addr = {
+        .mSelector = kAudioDevicePropertyDeviceIsAlive,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    AudioObjectRemovePropertyListener(capture->opened_device_id, &alive_addr,
+                                      capture_alive_listener_callback, capture);
+  }
+  if (capture->audio_unit) {
+    AudioOutputUnitStop(capture->audio_unit);
+    AURenderCallbackStruct null_cb = {0};
+    AudioUnitSetProperty(capture->audio_unit,
+                         kAudioOutputUnitProperty_SetInputCallback,
+                         kAudioUnitScope_Global, 0, &null_cb, sizeof(null_cb));
+  }
+  while (atomic_load_explicit(&capture->active_callbacks,
+                              memory_order_acquire) > 0) {
+    usleep(500);
+  }
+  if (capture->audio_unit) {
+    AudioComponentInstanceDispose(capture->audio_unit);
+    capture->audio_unit = NULL;
+  }
+  deallocate_render_buffers(capture);
+  if (capture->read_scratch) {
+    free(capture->read_scratch);
+    capture->read_scratch = NULL;
+  }
+  capture->opened_device_id = 0;
+}
+
 /// Open the CoreAudio capture device and initialize the AudioUnit and render
 /// buffers.
 static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
@@ -534,49 +577,7 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
   return true;
 }
 
-/// Close the CoreAudio capture device and release HAL resources.
-static void core_audio_capture_close(void* ctx) {
-  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
-  if (!capture) return;
-  if (!capture->audio_unit && capture->opened_device_id == 0) return;
-  logger_info(&g_logger, "Closing CoreAudio capture device");
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
-  if (capture->rate_watcher) {
-    rate_change_watcher_free(capture->rate_watcher);
-    capture->rate_watcher = NULL;
-  }
-  if (capture->opened_device_id != 0) {
-    AudioObjectPropertyAddress alive_addr = {
-        .mSelector = kAudioDevicePropertyDeviceIsAlive,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectRemovePropertyListener(capture->opened_device_id, &alive_addr,
-                                      capture_alive_listener_callback, capture);
-  }
-  if (capture->audio_unit) {
-    AudioOutputUnitStop(capture->audio_unit);
-    AURenderCallbackStruct null_cb = {0};
-    AudioUnitSetProperty(capture->audio_unit,
-                         kAudioOutputUnitProperty_SetInputCallback,
-                         kAudioUnitScope_Global, 0, &null_cb, sizeof(null_cb));
-  }
-  while (atomic_load_explicit(&capture->active_callbacks,
-                              memory_order_acquire) > 0) {
-    usleep(500);
-  }
-  if (capture->audio_unit) {
-    AudioComponentInstanceDispose(capture->audio_unit);
-    capture->audio_unit = NULL;
-  }
-  deallocate_render_buffers(capture);
-  if (capture->read_scratch) {
-    free(capture->read_scratch);
-    capture->read_scratch = NULL;
-  }
-  capture->opened_device_id = 0;
-}
+
 
 /// Get any pending sample rate change detected on the capture device.
 static bool core_audio_capture_get_pending_rate_change(void* ctx,

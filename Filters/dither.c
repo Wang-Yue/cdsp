@@ -28,7 +28,12 @@ typedef struct dither_filter dither_filter_t;
 #include <string.h>
 
 // MARK: - NoiseShaper
-static void noise_shaper_free(noise_shaper_t* shaper);
+static void noise_shaper_free(noise_shaper_t* shaper) {
+  if (!shaper) return;
+  if (shaper->filter) free(shaper->filter);
+  if (shaper->buffer) free(shaper->buffer);
+  free(shaper);
+}
 
 static noise_shaper_t* noise_shaper_create(const double* filter_coeffs,
                                            size_t count) {
@@ -76,12 +81,7 @@ static double noise_shaper_process(noise_shaper_t* shaper, double scaled,
   return result_r;
 }
 
-static void noise_shaper_free(noise_shaper_t* shaper) {
-  if (!shaper) return;
-  if (shaper->filter) free(shaper->filter);
-  if (shaper->buffer) free(shaper->buffer);
-  free(shaper);
-}
+
 
 // MARK: - Noise Shaper Factory
 static noise_shaper_t* noise_shaper_create_for_type(dither_type_t type) {

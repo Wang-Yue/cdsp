@@ -18,10 +18,7 @@
 
 static const logger_t g_logger = {"dsp.backend.asio"};
 
-// COM Release helper
-static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid);
-static void asio_capture_close_internal(void* ctx);
-static void asio_playback_close_internal(void* ctx);
+
 
 #define SAFE_RELEASE(punk)         \
   if ((punk) != NULL) {            \
@@ -502,6 +499,52 @@ static void release_shared_asio(bool is_input, IASIO* iasio) {
 }
 
 /**
+ * @brief Searches the Windows Registry to find the CLSID of an ASIO driver by
+ * name.
+ *
+ * @param driver_name Name of the ASIO driver.
+ * @param out_clsid Pointer to a CLSID structure to receive the result.
+ * @return true if the CLSID was successfully found, false otherwise.
+ */
+static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
+  HKEY hk;
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "Software\\ASIO", 0, KEY_READ, &hk) !=
+      ERROR_SUCCESS) {
+    return false;
+  }
+
+  char subkey_name[256];
+  DWORD index = 0;
+  bool found = false;
+
+  while (RegEnumKeyA(hk, index++, subkey_name, sizeof(subkey_name)) ==
+         ERROR_SUCCESS) {
+    if (!driver_name || driver_name[0] == '\0' ||
+        strcasecmp(subkey_name, driver_name) == 0 ||
+        strstr(subkey_name, driver_name) != NULL) {
+      HKEY hk_driver;
+      if (RegOpenKeyExA(hk, subkey_name, 0, KEY_READ, &hk_driver) ==
+          ERROR_SUCCESS) {
+        char clsid_str[128];
+        DWORD size = sizeof(clsid_str);
+        if (RegQueryValueExA(hk_driver, "CLSID", NULL, NULL, (LPBYTE)clsid_str,
+                             &size) == ERROR_SUCCESS) {
+          wchar_t wclsid_str[128];
+          mbstowcs(wclsid_str, clsid_str, 128);
+          if (SUCCEEDED(CLSIDFromString(wclsid_str, out_clsid))) {
+            found = true;
+          }
+        }
+        RegCloseKey(hk_driver);
+      }
+      if (found) break;
+    }
+  }
+  RegCloseKey(hk);
+  return found;
+}
+
+/**
  * @brief Forces a sample rate change on some problematic ASIO drivers.
  *
  * Certain ASIO drivers do not apply sample rate changes until a stream cycle
@@ -634,51 +677,7 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
   return true;
 }
 
-/**
- * @brief Searches the Windows Registry to find the CLSID of an ASIO driver by
- * name.
- *
- * @param driver_name Name of the ASIO driver.
- * @param out_clsid Pointer to a CLSID structure to receive the result.
- * @return true if the CLSID was successfully found, false otherwise.
- */
-static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
-  HKEY hk;
-  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "Software\\ASIO", 0, KEY_READ, &hk) !=
-      ERROR_SUCCESS) {
-    return false;
-  }
 
-  char subkey_name[256];
-  DWORD index = 0;
-  bool found = false;
-
-  while (RegEnumKeyA(hk, index++, subkey_name, sizeof(subkey_name)) ==
-         ERROR_SUCCESS) {
-    if (!driver_name || driver_name[0] == '\0' ||
-        strcasecmp(subkey_name, driver_name) == 0 ||
-        strstr(subkey_name, driver_name) != NULL) {
-      HKEY hk_driver;
-      if (RegOpenKeyExA(hk, subkey_name, 0, KEY_READ, &hk_driver) ==
-          ERROR_SUCCESS) {
-        char clsid_str[128];
-        DWORD size = sizeof(clsid_str);
-        if (RegQueryValueExA(hk_driver, "CLSID", NULL, NULL, (LPBYTE)clsid_str,
-                             &size) == ERROR_SUCCESS) {
-          wchar_t wclsid_str[128];
-          mbstowcs(wclsid_str, clsid_str, 128);
-          if (SUCCEEDED(CLSIDFromString(wclsid_str, out_clsid))) {
-            found = true;
-          }
-        }
-        RegCloseKey(hk_driver);
-      }
-      if (found) break;
-    }
-  }
-  RegCloseKey(hk);
-  return found;
-}
 
 static bool init_asio_device(const char* device_name, double sample_rate,
                              bool is_dsd, IASIO** out_iasio, long* out_buf_size,
@@ -980,6 +979,62 @@ static ASIOCallbacks asio_callbacks = {
  * @return true if successful, false otherwise.
  */
 /**
+ * @brief Internal method to close the ASIO capture stream.
+ *
+ * Stops and disposes of buffers (or releases shared ASIO if full-duplex),
+ * and frees ring buffers, events, and COM.
+ *
+ * @param ctx Pointer to the asio_capture_t context.
+ */
+static void asio_capture_close_internal(void* ctx) {
+  asio_capture_t* capture = (asio_capture_t*)ctx;
+  if (!capture) return;
+  if (capture->iasio) {
+    capture->is_running = false;
+    if (capture->full_duplex) {
+      release_shared_asio(true, capture->iasio);
+      capture->iasio = NULL;
+    } else {
+      capture->iasio->lpVtbl->stop(capture->iasio);
+      capture->iasio->lpVtbl->disposeBuffers(capture->iasio);
+      SAFE_RELEASE(capture->iasio);
+    }
+  }
+  if (capture->ring_buffer) {
+    spsc_audio_ring_buffer_free(capture->ring_buffer);
+    capture->ring_buffer = NULL;
+  }
+  if (capture->decode_buf) {
+    free(capture->decode_buf);
+    capture->decode_buf = NULL;
+    capture->decode_buf_size = 0;
+  }
+  if (capture->callback_buf) {
+    free(capture->callback_buf);
+    capture->callback_buf = NULL;
+    capture->callback_buf_size = 0;
+  }
+  if (capture->buffer_infos) {
+    free(capture->buffer_infos);
+    capture->buffer_infos = NULL;
+  }
+  if (capture->channel_infos) {
+    free(capture->channel_infos);
+    capture->channel_infos = NULL;
+  }
+  if (g_capture_event) {
+    CloseHandle(g_capture_event);
+    g_capture_event = NULL;
+  }
+  if (g_active_capture == capture) g_active_capture = NULL;
+
+  if (capture->com_initialized) {
+    CoUninitialize();
+    capture->com_initialized = false;
+  }
+}
+
+/**
  * @brief Internal method to open the ASIO capture stream.
  *
  * @param ctx Pointer to the asio_capture_t context.
@@ -1125,61 +1180,7 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
   return true;
 }
 
-/**
- * @brief Internal method to close the ASIO capture stream.
- *
- * Stops and disposes of buffers (or releases shared ASIO if full-duplex),
- * and frees ring buffers, events, and COM.
- *
- * @param ctx Pointer to the asio_capture_t context.
- */
-static void asio_capture_close_internal(void* ctx) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return;
-  if (capture->iasio) {
-    capture->is_running = false;
-    if (capture->full_duplex) {
-      release_shared_asio(true, capture->iasio);
-      capture->iasio = NULL;
-    } else {
-      capture->iasio->lpVtbl->stop(capture->iasio);
-      capture->iasio->lpVtbl->disposeBuffers(capture->iasio);
-      SAFE_RELEASE(capture->iasio);
-    }
-  }
-  if (capture->ring_buffer) {
-    spsc_audio_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
-  }
-  if (capture->decode_buf) {
-    free(capture->decode_buf);
-    capture->decode_buf = NULL;
-    capture->decode_buf_size = 0;
-  }
-  if (capture->callback_buf) {
-    free(capture->callback_buf);
-    capture->callback_buf = NULL;
-    capture->callback_buf_size = 0;
-  }
-  if (capture->buffer_infos) {
-    free(capture->buffer_infos);
-    capture->buffer_infos = NULL;
-  }
-  if (capture->channel_infos) {
-    free(capture->channel_infos);
-    capture->channel_infos = NULL;
-  }
-  if (g_capture_event) {
-    CloseHandle(g_capture_event);
-    g_capture_event = NULL;
-  }
-  if (g_active_capture == capture) g_active_capture = NULL;
 
-  if (capture->com_initialized) {
-    CoUninitialize();
-    capture->com_initialized = false;
-  }
-}
 
 /**
  * @brief Internal method to wait for capture data.
@@ -1303,6 +1304,55 @@ const capture_backend_vtable_t g_asio_capture_vtable = {
 // ==========================================
 // Playback Backend Methods
 // ==========================================
+
+/**
+ * @brief Internal method to close the ASIO playback stream.
+ *
+ * @param ctx Pointer to the asio_playback_t context.
+ */
+static void asio_playback_close_internal(void* ctx) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  if (!playback) return;
+  if (playback->iasio) {
+    playback->is_running = false;
+    if (playback->full_duplex) {
+      release_shared_asio(false, playback->iasio);
+      playback->iasio = NULL;
+    } else {
+      playback->iasio->lpVtbl->stop(playback->iasio);
+      playback->iasio->lpVtbl->disposeBuffers(playback->iasio);
+      SAFE_RELEASE(playback->iasio);
+    }
+  }
+  if (playback->ring_buffer) {
+    spsc_audio_ring_buffer_free(playback->ring_buffer);
+    playback->ring_buffer = NULL;
+  }
+  if (playback->encode_buf) {
+    free(playback->encode_buf);
+    playback->encode_buf = NULL;
+    playback->encode_buf_size = 0;
+  }
+  if (playback->callback_buf) {
+    free(playback->callback_buf);
+    playback->callback_buf = NULL;
+    playback->callback_buf_size = 0;
+  }
+  if (playback->buffer_infos) {
+    free(playback->buffer_infos);
+    playback->buffer_infos = NULL;
+  }
+  if (playback->channel_infos) {
+    free(playback->channel_infos);
+    playback->channel_infos = NULL;
+  }
+  if (g_active_playback == playback) g_active_playback = NULL;
+
+  if (playback->com_initialized) {
+    CoUninitialize();
+    playback->com_initialized = false;
+  }
+}
 
 /**
  * @brief Internal method to open the ASIO playback stream.
@@ -1485,54 +1535,7 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
   return true;
 }
 
-/**
- * @brief Internal method to close the ASIO playback stream.
- *
- * @param ctx Pointer to the asio_playback_t context.
- */
-static void asio_playback_close_internal(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return;
-  if (playback->iasio) {
-    playback->is_running = false;
-    if (playback->full_duplex) {
-      release_shared_asio(false, playback->iasio);
-      playback->iasio = NULL;
-    } else {
-      playback->iasio->lpVtbl->stop(playback->iasio);
-      playback->iasio->lpVtbl->disposeBuffers(playback->iasio);
-      SAFE_RELEASE(playback->iasio);
-    }
-  }
-  if (playback->ring_buffer) {
-    spsc_audio_ring_buffer_free(playback->ring_buffer);
-    playback->ring_buffer = NULL;
-  }
-  if (playback->encode_buf) {
-    free(playback->encode_buf);
-    playback->encode_buf = NULL;
-    playback->encode_buf_size = 0;
-  }
-  if (playback->callback_buf) {
-    free(playback->callback_buf);
-    playback->callback_buf = NULL;
-    playback->callback_buf_size = 0;
-  }
-  if (playback->buffer_infos) {
-    free(playback->buffer_infos);
-    playback->buffer_infos = NULL;
-  }
-  if (playback->channel_infos) {
-    free(playback->channel_infos);
-    playback->channel_infos = NULL;
-  }
-  if (g_active_playback == playback) g_active_playback = NULL;
 
-  if (playback->com_initialized) {
-    CoUninitialize();
-    playback->com_initialized = false;
-  }
-}
 
 /**
  * @brief Internal method to get the current buffer level of the playback

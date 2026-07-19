@@ -129,8 +129,6 @@ static void async_poly_resampler_update_lengths(
       resampler->last_index, resampler->interpolator_len, resampler->fixed);
 }
 
-static void async_poly_resampler_free(async_poly_resampler_t* resampler);
-
 static void async_poly_resampler_free(async_poly_resampler_t* resampler) {
   if (!resampler) return;
   if (resampler->input_buffer) audio_buffers_free(resampler->input_buffer);

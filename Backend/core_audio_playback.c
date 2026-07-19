@@ -27,7 +27,6 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 
-static void core_audio_playback_close(void* ctx);
 
 struct core_audio_playback {
   char device_name[256];
@@ -205,6 +204,53 @@ static void core_audio_playback_set_pitch(void* ctx, double multiplier) {
 }
 
 
+
+/// Close the CoreAudio playback device and release HAL resources.
+static void core_audio_playback_close(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
+  if (!playback) return;
+  if (!playback->audio_unit && playback->opened_device_id == 0) return;
+  logger_info(&g_logger, "Closing CoreAudio playback device");
+  if (playback->rate_watcher) {
+    rate_change_watcher_free(playback->rate_watcher);
+    playback->rate_watcher = NULL;
+  }
+  if (playback->opened_device_id != 0) {
+    AudioObjectPropertyAddress alive_addr = {
+        .mSelector = kAudioDevicePropertyDeviceIsAlive,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    AudioObjectRemovePropertyListener(playback->opened_device_id, &alive_addr,
+                                      playback_alive_listener_callback,
+                                      playback);
+  }
+  if (playback->audio_unit) {
+    AudioOutputUnitStop(playback->audio_unit);
+    AURenderCallbackStruct null_cb = {0};
+    AudioUnitSetProperty(playback->audio_unit,
+                         kAudioUnitProperty_SetRenderCallback,
+                         kAudioUnitScope_Input, 0, &null_cb, sizeof(null_cb));
+  }
+  while (atomic_load_explicit(&playback->active_callbacks,
+                              memory_order_acquire) > 0) {
+    usleep(500);
+  }
+  if (playback->audio_unit) {
+    AudioComponentInstanceDispose(playback->audio_unit);
+    playback->audio_unit = NULL;
+  }
+  if (playback->did_acquire_hog_mode && playback->opened_device_id != 0) {
+    pid_t pid = -1;
+    AudioObjectPropertyAddress addr = {
+        .mSelector = kAudioDevicePropertyHogMode,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    AudioObjectSetPropertyData(playback->opened_device_id, &addr, 0, NULL,
+                               sizeof(pid_t), &pid);
+    playback->did_acquire_hog_mode = false;
+  }
+  playback->opened_device_id = 0;
+}
 
 /// Open the CoreAudio playback device and initialize output AudioUnit.
 static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
@@ -496,52 +542,7 @@ static bool core_audio_playback_write(void* ctx,
   return true;
 }
 
-/// Close the CoreAudio playback device and release HAL resources.
-static void core_audio_playback_close(void* ctx) {
-  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
-  if (!playback) return;
-  if (!playback->audio_unit && playback->opened_device_id == 0) return;
-  logger_info(&g_logger, "Closing CoreAudio playback device");
-  if (playback->rate_watcher) {
-    rate_change_watcher_free(playback->rate_watcher);
-    playback->rate_watcher = NULL;
-  }
-  if (playback->opened_device_id != 0) {
-    AudioObjectPropertyAddress alive_addr = {
-        .mSelector = kAudioDevicePropertyDeviceIsAlive,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectRemovePropertyListener(playback->opened_device_id, &alive_addr,
-                                      playback_alive_listener_callback,
-                                      playback);
-  }
-  if (playback->audio_unit) {
-    AudioOutputUnitStop(playback->audio_unit);
-    AURenderCallbackStruct null_cb = {0};
-    AudioUnitSetProperty(playback->audio_unit,
-                         kAudioUnitProperty_SetRenderCallback,
-                         kAudioUnitScope_Input, 0, &null_cb, sizeof(null_cb));
-  }
-  while (atomic_load_explicit(&playback->active_callbacks,
-                              memory_order_acquire) > 0) {
-    usleep(500);
-  }
-  if (playback->audio_unit) {
-    AudioComponentInstanceDispose(playback->audio_unit);
-    playback->audio_unit = NULL;
-  }
-  if (playback->did_acquire_hog_mode && playback->opened_device_id != 0) {
-    pid_t pid = -1;
-    AudioObjectPropertyAddress addr = {
-        .mSelector = kAudioDevicePropertyHogMode,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectSetPropertyData(playback->opened_device_id, &addr, 0, NULL,
-                               sizeof(pid_t), &pid);
-    playback->did_acquire_hog_mode = false;
-  }
-  playback->opened_device_id = 0;
-}
+
 
 /// Get the current buffer level in samples.
 static size_t core_audio_playback_get_buffer_level(void* ctx) {
