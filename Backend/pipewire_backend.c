@@ -180,6 +180,46 @@ static const struct pw_stream_events playback_stream_events = {
 // MARK: - Capture Backend implementation
 
 /**
+ * @brief Close the PipeWire capture device.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ */
+static void pipewire_capture_close(void* ctx) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture) return;
+  if (capture->loop) {
+    pw_thread_loop_lock(capture->loop);
+    if (capture->stream) {
+      pw_stream_destroy(capture->stream);
+      capture->stream = NULL;
+    }
+    if (capture->context) {
+      pw_context_destroy(capture->context);
+      capture->context = NULL;
+    }
+    pw_thread_loop_unlock(capture->loop);
+
+    pw_thread_loop_stop(capture->loop);
+    pw_thread_loop_destroy(capture->loop);
+    capture->loop = NULL;
+  }
+
+  if (capture->ring) {
+    spsc_audio_ring_buffer_free(capture->ring);
+    capture->ring = NULL;
+  }
+
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
+  }
+  if (capture->decode_buf) {
+    free(capture->decode_buf);
+    capture->decode_buf = NULL;
+  }
+}
+
+/**
  * @brief Open the PipeWire capture device.
  *
  * @param ctx Pointer to the PipeWire capture instance.
@@ -385,46 +425,6 @@ static bool pipewire_capture_read(void* ctx, size_t frames,
 }
 
 /**
- * @brief Close the PipeWire capture device.
- *
- * @param ctx Pointer to the PipeWire capture instance.
- */
-static void pipewire_capture_close(void* ctx) {
-  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
-  if (!capture) return;
-  if (capture->loop) {
-    pw_thread_loop_lock(capture->loop);
-    if (capture->stream) {
-      pw_stream_destroy(capture->stream);
-      capture->stream = NULL;
-    }
-    if (capture->context) {
-      pw_context_destroy(capture->context);
-      capture->context = NULL;
-    }
-    pw_thread_loop_unlock(capture->loop);
-
-    pw_thread_loop_stop(capture->loop);
-    pw_thread_loop_destroy(capture->loop);
-    capture->loop = NULL;
-  }
-
-  if (capture->ring) {
-    spsc_audio_ring_buffer_free(capture->ring);
-    capture->ring = NULL;
-  }
-
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
-  if (capture->decode_buf) {
-    free(capture->decode_buf);
-    capture->decode_buf = NULL;
-  }
-}
-
-/**
  * @brief Get any pending sample rate change.
  *
  * @param ctx Pointer to the PipeWire capture instance.
@@ -588,6 +588,50 @@ const capture_backend_vtable_t g_pipewire_capture_vtable = {
     .destroy = pipewire_capture_destroy};
 
 // MARK: - Playback Backend implementation
+
+/**
+ * @brief Close the PipeWire playback device.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ */
+static void pipewire_playback_close(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
+  if (!playback) return;
+  if (playback->loop) {
+    // Wait for the ring buffer to drain before closing the stream,
+    // ensuring all remaining audio is played back.
+    int retries = 200;  // wait up to 200ms
+    while (!playback->stopped && playback->ring &&
+           spsc_audio_ring_buffer_get_available_to_read(playback->ring) > 0 &&
+           retries-- > 0) {
+      cdsp_sleep_ms(1);
+    }
+
+    pw_thread_loop_lock(playback->loop);
+    if (playback->stream) {
+      pw_stream_destroy(playback->stream);
+      playback->stream = NULL;
+    }
+    if (playback->context) {
+      pw_context_destroy(playback->context);
+      playback->context = NULL;
+    }
+    pw_thread_loop_unlock(playback->loop);
+
+    pw_thread_loop_stop(playback->loop);
+    pw_thread_loop_destroy(playback->loop);
+    playback->loop = NULL;
+  }
+
+  if (playback->ring) {
+    spsc_audio_ring_buffer_free(playback->ring);
+    playback->ring = NULL;
+  }
+  if (playback->encode_buf) {
+    free(playback->encode_buf);
+    playback->encode_buf = NULL;
+  }
+}
 
 /**
  * @brief Open the PipeWire playback device.
@@ -809,50 +853,6 @@ static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
   spsc_audio_ring_buffer_write(playback->ring, playback->encode_buf, requested,
                                1);
   return true;
-}
-
-/**
- * @brief Close the PipeWire playback device.
- *
- * @param ctx Pointer to the PipeWire playback instance.
- */
-static void pipewire_playback_close(void* ctx) {
-  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
-  if (!playback) return;
-  if (playback->loop) {
-    // Wait for the ring buffer to drain before closing the stream,
-    // ensuring all remaining audio is played back.
-    int retries = 200;  // wait up to 200ms
-    while (!playback->stopped && playback->ring &&
-           spsc_audio_ring_buffer_get_available_to_read(playback->ring) > 0 &&
-           retries-- > 0) {
-      cdsp_sleep_ms(1);
-    }
-
-    pw_thread_loop_lock(playback->loop);
-    if (playback->stream) {
-      pw_stream_destroy(playback->stream);
-      playback->stream = NULL;
-    }
-    if (playback->context) {
-      pw_context_destroy(playback->context);
-      playback->context = NULL;
-    }
-    pw_thread_loop_unlock(playback->loop);
-
-    pw_thread_loop_stop(playback->loop);
-    pw_thread_loop_destroy(playback->loop);
-    playback->loop = NULL;
-  }
-
-  if (playback->ring) {
-    spsc_audio_ring_buffer_free(playback->ring);
-    playback->ring = NULL;
-  }
-  if (playback->encode_buf) {
-    free(playback->encode_buf);
-    playback->encode_buf = NULL;
-  }
 }
 
 /**
