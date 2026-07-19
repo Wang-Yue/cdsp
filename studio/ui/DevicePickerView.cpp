@@ -4,24 +4,32 @@
 
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <functional>
 
 namespace {
 
-class DeviceRowWidget : public QWidget {
+class DeviceRowWidget : public QFrame {
 public:
-    DeviceRowWidget(const QString& name, bool isSelected, QWidget* parent = nullptr) : QWidget(parent) {
-        auto layout = new QHBoxLayout(this);
-        layout->setContentsMargins(8, 4, 8, 4);
+    DeviceRowWidget(const QString& name, bool isSelected, std::function<void()> onSelect, QWidget* parent = nullptr)
+        : QFrame(parent), m_onSelect(onSelect) {
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover, true);
 
-        auto leftCheck = new QLabel(isSelected ? "✓" : " ", this);
-        leftCheck->setStyleSheet(isSelected ? "color: #007af5; font-weight: bold; font-size: 14px;" : "");
+        auto layout = new QHBoxLayout(this);
+        layout->setContentsMargins(8, 6, 8, 6);
+        layout->setSpacing(8);
+
+        auto leftCheck = new QLabel(isSelected ? "●" : "○", this);
+        leftCheck->setStyleSheet(isSelected ? "color: #007af5; font-size: 13px;" : "color: #8e8e93; font-size: 13px;");
         leftCheck->setFixedWidth(16);
         layout->addWidget(leftCheck);
 
@@ -31,6 +39,8 @@ public:
             f.setBold(true);
             textLbl->setFont(f);
             textLbl->setStyleSheet("color: #007af5;");
+        } else {
+            textLbl->setStyleSheet("color: #1c1c1e;");
         }
         layout->addWidget(textLbl);
         layout->addStretch();
@@ -40,7 +50,25 @@ public:
             rightCheck->setStyleSheet("color: #007af5; font-weight: bold; font-size: 12px;");
             layout->addWidget(rightCheck);
         }
+
+        if (isSelected) {
+            setStyleSheet("DeviceRowWidget { background-color: rgba(0, 122, 245, 0.08); border-radius: 4px; }");
+        } else {
+            setStyleSheet("DeviceRowWidget { background-color: transparent; border-radius: 4px; }"
+                          "DeviceRowWidget:hover { background-color: rgba(0, 0, 0, 0.04); }");
+        }
     }
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override {
+        QFrame::mousePressEvent(event);
+        if (m_onSelect) {
+            m_onSelect();
+        }
+    }
+
+private:
+    std::function<void()> m_onSelect;
 };
 
 } // namespace
@@ -123,7 +151,7 @@ void DevicePickerView::setupUi() {
             return;
         AudioBackendType b = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
         m_capStack->setCurrentIndex(getCapStackIndex(b));
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
     capBackendBox->addWidget(m_capBackendCombo);
     capBackendBox->addStretch();
@@ -163,6 +191,7 @@ void DevicePickerView::setupUi() {
     m_pbBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
 #endif
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
+    m_pbBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
 
     auto getPbStackIndex = [](AudioBackendType backend) {
         switch (backend) {
@@ -173,9 +202,11 @@ void DevicePickerView::setupUi() {
         case AudioBackendType::PulseAudio:
             return 0;
         case AudioBackendType::RawFile:
-        case AudioBackendType::WavFile:
-        case AudioBackendType::SignalGenerator:
             return 1;
+        case AudioBackendType::WavFile:
+            return 2;
+        case AudioBackendType::SignalGenerator:
+            return 0;
         }
         return 0;
     };
@@ -185,7 +216,7 @@ void DevicePickerView::setupUi() {
             return;
         AudioBackendType b = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
         m_pbStack->setCurrentIndex(getPbStackIndex(b));
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
     pbBackendBox->addWidget(m_pbBackendCombo);
     pbBackendBox->addStretch();
@@ -193,7 +224,8 @@ void DevicePickerView::setupUi() {
 
     m_pbStack = new QStackedWidget(pbGroup);
     m_pbStack->addWidget(createPbCoreAudioView());
-    m_pbStack->addWidget(createPbFileView());
+    m_pbStack->addWidget(createPbFileView(false));
+    m_pbStack->addWidget(createPbFileView(true));
     pbLayout->addWidget(m_pbStack);
 
     mainLayout->addWidget(pbGroup);
@@ -221,7 +253,7 @@ void DevicePickerView::setupUi() {
     connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() {
+        QTimer::singleShot(0, [this]() {
             if (m_chunkSizeCombo && m_settings) {
                 m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
             }
@@ -347,36 +379,75 @@ QString DevicePickerView::formatSampleRate(int rate) {
     return QString("%1 Hz").arg(rate);
 }
 
-void DevicePickerView::populateDeviceCombo(QComboBox* combo, QWidget* warningWidget,
-                                           const std::vector<AudioDevice>& devices,
-                                           const std::optional<std::string>& selectedDeviceName) {
-    combo->blockSignals(true);
-    combo->clear();
+void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warningWidget, QWidget* containerWidget,
+                                          const std::vector<AudioDevice>& devices,
+                                          const std::optional<std::string>& selectedDeviceName, bool isCapture) {
+    if (!listLayout || !warningWidget || !containerWidget)
+        return;
+
+    QLayoutItem* item;
+    while ((item = listLayout->takeAt(0)) != nullptr) {
+        if (item->widget()) {
+            delete item->widget();
+        }
+        delete item;
+    }
 
     if (devices.empty()) {
         warningWidget->show();
-        combo->hide();
-        combo->blockSignals(false);
+        containerWidget->hide();
         return;
     }
 
     warningWidget->hide();
-    combo->show();
+    containerWidget->show();
 
-    combo->addItem("System Default", QString(""));
+    bool defaultSelected = !selectedDeviceName.has_value();
+    auto defaultRow = new DeviceRowWidget(
+        "System Default", defaultSelected,
+        [this, isCapture]() {
+            if (m_isRefreshing)
+                return;
+            if (isCapture) {
+                m_devices->captureConfig.setDeviceName("");
+            } else {
+                m_devices->playbackConfig.setDeviceName("");
+            }
+            m_devices->refreshDeviceCapabilities();
+            m_devices->validateSampleRates();
+            applySettings();
+            refreshUi();
+        },
+        containerWidget);
+    listLayout->addWidget(defaultRow);
 
-    int selectedIdx = 0;
-    for (size_t i = 0; i < devices.size(); ++i) {
-        const auto& dev = devices[i];
-        QString devName = QString::fromStdString(dev.name);
-        combo->addItem(devName, devName);
-        if (selectedDeviceName.has_value() && selectedDeviceName.value() == dev.name) {
-            selectedIdx = static_cast<int>(i + 1);
-        }
+    auto div = new QFrame(containerWidget);
+    div->setFrameShape(QFrame::HLine);
+    div->setFrameShadow(QFrame::Sunken);
+    div->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
+    listLayout->addWidget(div);
+
+    for (const auto& dev : devices) {
+        bool isSelected = selectedDeviceName.has_value() && (selectedDeviceName.value() == dev.name);
+        std::string devName = dev.name;
+        auto row = new DeviceRowWidget(
+            QString::fromStdString(devName), isSelected,
+            [this, isCapture, devName]() {
+                if (m_isRefreshing)
+                    return;
+                if (isCapture) {
+                    m_devices->captureConfig.setDeviceName(devName);
+                } else {
+                    m_devices->playbackConfig.setDeviceName(devName);
+                }
+                m_devices->refreshDeviceCapabilities();
+                m_devices->validateSampleRates();
+                applySettings();
+                refreshUi();
+            },
+            containerWidget);
+        listLayout->addWidget(row);
     }
-
-    combo->setCurrentIndex(selectedIdx);
-    combo->blockSignals(false);
 }
 
 QWidget* DevicePickerView::createCapCoreAudioView() {
@@ -395,27 +466,15 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
 
-    m_capDeviceCombo = new QComboBox(w);
-    m_capDeviceCombo->setMinimumWidth(260);
-    connect(m_capDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (m_isRefreshing || idx < 0)
-            return;
-        QTimer::singleShot(0, this, [this]() {
-            if (m_capDeviceCombo->currentIndex() < 0)
-                return;
-            std::string newDev = m_capDeviceCombo->currentData().toString().toStdString();
-            m_devices->captureConfig.setDeviceName(newDev);
-            m_devices->refreshDeviceCapabilities();
-            m_devices->validateSampleRates();
-            applySettings();
-            refreshUi();
-        });
-    });
+    m_capDeviceListContainer = new QWidget(w);
+    m_capDeviceListLayout = new QVBoxLayout(m_capDeviceListContainer);
+    m_capDeviceListLayout->setContentsMargins(0, 0, 0, 0);
+    m_capDeviceListLayout->setSpacing(2);
 
     auto devBox = new QVBoxLayout();
     devBox->addWidget(m_capWarningWidget);
-    devBox->addWidget(m_capDeviceCombo);
-    form->addRow("Device Selection", devBox);
+    devBox->addWidget(m_capDeviceListContainer);
+    form->addRow("", devBox);
 
     auto chBox = new QHBoxLayout();
     m_capDevChannelsCombo = new QComboBox(w);
@@ -437,7 +496,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capDevChannelsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, onDevChChanged](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this, onDevChChanged]() {
+        QTimer::singleShot(0, [this, onDevChChanged]() {
             if (m_capDevChannelsCombo->currentIndex() >= 0) {
                 onDevChChanged(m_capDevChannelsCombo->currentData().toInt());
             }
@@ -476,7 +535,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
     m_capRateLabel = new QLabel(w);
@@ -496,7 +555,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
     m_capFormatLabel = new QLabel(w);
@@ -531,7 +590,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_dopCutoffCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
     cutoffBox->addWidget(m_dopCutoffCombo);
     cutoffBox->addStretch();
@@ -586,7 +645,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capWavFilePathEdit = new QLineEdit(w);
         m_capWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
         m_capWavFilePathEdit->setClearButtonEnabled(true);
-        connect(m_capWavFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
+        connect(m_capWavFilePathEdit, &QLineEdit::returnPressed, [this]() { applySettings(); });
         connect(m_capWavFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
             if (m_isRefreshing)
                 return;
@@ -645,7 +704,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         m_capRawFilePathEdit = new QLineEdit(w);
         m_capRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
         m_capRawFilePathEdit->setClearButtonEnabled(true);
-        connect(m_capRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
+        connect(m_capRawFilePathEdit, &QLineEdit::returnPressed, [this]() { applySettings(); });
         connect(m_capRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
             if (m_isRefreshing)
                 return;
@@ -840,27 +899,15 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
 
-    m_pbDeviceCombo = new QComboBox(w);
-    m_pbDeviceCombo->setMinimumWidth(260);
-    connect(m_pbDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (m_isRefreshing || idx < 0)
-            return;
-        QTimer::singleShot(0, this, [this]() {
-            if (m_pbDeviceCombo->currentIndex() < 0)
-                return;
-            std::string newDev = m_pbDeviceCombo->currentData().toString().toStdString();
-            m_devices->playbackConfig.setDeviceName(newDev);
-            m_devices->refreshDeviceCapabilities();
-            m_devices->validateSampleRates();
-            applySettings();
-            refreshUi();
-        });
-    });
+    m_pbDeviceListContainer = new QWidget(w);
+    m_pbDeviceListLayout = new QVBoxLayout(m_pbDeviceListContainer);
+    m_pbDeviceListLayout->setContentsMargins(0, 0, 0, 0);
+    m_pbDeviceListLayout->setSpacing(2);
 
     auto devBox = new QVBoxLayout();
     devBox->addWidget(m_pbWarningWidget);
-    devBox->addWidget(m_pbDeviceCombo);
-    form->addRow("Device Selection", devBox);
+    devBox->addWidget(m_pbDeviceListContainer);
+    form->addRow("", devBox);
 
     auto chBox = new QHBoxLayout();
     m_pbDevChannelsCombo = new QComboBox(w);
@@ -882,7 +929,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbDevChannelsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, onDevChChanged](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this, onDevChChanged]() {
+        QTimer::singleShot(0, [this, onDevChChanged]() {
             if (m_pbDevChannelsCombo->currentIndex() >= 0) {
                 onDevChChanged(m_pbDevChannelsCombo->currentData().toInt());
             }
@@ -921,7 +968,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() {
+        QTimer::singleShot(0, [this]() {
             applySettings();
             updateDoPCapability();
         });
@@ -939,7 +986,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
     m_pbFormatLabel = new QLabel(w);
@@ -998,7 +1045,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_sdmFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
     sdmBox->addWidget(m_sdmFilterCombo);
     sdmBox->addStretch();
@@ -1024,56 +1071,116 @@ void DevicePickerView::updateDoPCapability() {
     m_pbDopHintLabel->setVisible(!isCapable);
 }
 
-QWidget* DevicePickerView::createPbFileView() {
+QWidget* DevicePickerView::createPbFileView(bool isWav) {
     auto w = new QWidget();
     auto form = new QFormLayout(w);
     form->setSpacing(12);
 
     auto fileBox = new QHBoxLayout();
     auto pathLbl = new QLabel("File Path", w);
-    pathLbl->setFixedWidth(120);
+    pathLbl->setFixedWidth(100);
     fileBox->addWidget(pathLbl);
 
-    m_pbRawFilePathEdit = new QLineEdit(w);
-    m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
-    m_pbRawFilePathEdit->setClearButtonEnabled(true);
-    connect(m_pbRawFilePathEdit, &QLineEdit::returnPressed, this, [this]() { applySettings(); });
-    connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    fileBox->addWidget(m_pbRawFilePathEdit);
+    if (isWav) {
+        m_pbWavFilePathEdit = new QLineEdit(w);
+        m_pbWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
+        m_pbWavFilePathEdit->setClearButtonEnabled(true);
+        connect(m_pbWavFilePathEdit, &QLineEdit::returnPressed, [this]() { applySettings(); });
+        connect(m_pbWavFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        fileBox->addWidget(m_pbWavFilePathEdit);
 
-    auto browseBtn = new QPushButton("Select File...", w);
-    connect(browseBtn, &QPushButton::clicked, [this, w]() {
-        QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
-        if (!path.isEmpty())
-            m_pbRawFilePathEdit->setText(path);
-    });
-    fileBox->addWidget(browseBtn);
-    form->addRow("", fileBox);
+        auto browseBtn = new QPushButton("Select File...", w);
+        connect(browseBtn, &QPushButton::clicked, [this, w]() {
+            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "WAV Files (*.wav)");
+            if (!path.isEmpty())
+                m_pbWavFilePathEdit->setText(path);
+        });
+        fileBox->addWidget(browseBtn);
+        form->addRow("", fileBox);
 
-    m_pbRawFileFormatCombo = new QComboBox(w);
-    m_pbRawFileFormatCombo->addItems(
-        {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
-    connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        QTimer::singleShot(0, this, [this]() { applySettings(); });
-    });
-    form->addRow("Format", m_pbRawFileFormatCombo);
+        m_pbWavFileFormatCombo = new QComboBox(w);
+        m_pbWavFileFormatCombo->addItems({"S16_LE", "S24_3_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+        connect(m_pbWavFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            QTimer::singleShot(0, [this]() { applySettings(); });
+        });
+        form->addRow("Format", m_pbWavFileFormatCombo);
 
-    m_pbRawFileChannelsSpin = new QSpinBox(w);
-    m_pbRawFileChannelsSpin->setRange(1, 32);
-    m_pbRawFileChannelsSpin->setMinimumWidth(110);
-    m_pbRawFileChannelsSpin->setMaximumWidth(140);
-    connect(m_pbRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    form->addRow("Channels", m_pbRawFileChannelsSpin);
+        m_pbWavFileChannelsSpin = new QSpinBox(w);
+        m_pbWavFileChannelsSpin->setRange(1, 32);
+        m_pbWavFileChannelsSpin->setMinimumWidth(110);
+        m_pbWavFileChannelsSpin->setMaximumWidth(140);
+        connect(m_pbWavFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        form->addRow("Channels", m_pbWavFileChannelsSpin);
+
+        auto rf64Box = new QHBoxLayout();
+        auto rf64Lbl = new QLabel("WAV Format", w);
+        rf64Lbl->setFixedWidth(100);
+        rf64Box->addWidget(rf64Lbl);
+
+        m_pbWavUseRf64Combo = new QComboBox(w);
+        m_pbWavUseRf64Combo->addItem("Standard (RIFF)", false);
+        m_pbWavUseRf64Combo->addItem("RF64 (64-bit)", true);
+        connect(m_pbWavUseRf64Combo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        rf64Box->addWidget(m_pbWavUseRf64Combo);
+        rf64Box->addStretch();
+        form->addRow("", rf64Box);
+
+    } else {
+        m_pbRawFilePathEdit = new QLineEdit(w);
+        m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
+        m_pbRawFilePathEdit->setClearButtonEnabled(true);
+        connect(m_pbRawFilePathEdit, &QLineEdit::returnPressed, [this]() { applySettings(); });
+        connect(m_pbRawFilePathEdit, &QLineEdit::textChanged, [this](const QString&) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        fileBox->addWidget(m_pbRawFilePathEdit);
+
+        auto browseBtn = new QPushButton("Select File...", w);
+        connect(browseBtn, &QPushButton::clicked, [this, w]() {
+            QString path = QFileDialog::getSaveFileName(w, "Select Output File", "", "Raw Files (*.raw *.f64 *.f32)");
+            if (!path.isEmpty())
+                m_pbRawFilePathEdit->setText(path);
+        });
+        fileBox->addWidget(browseBtn);
+        form->addRow("", fileBox);
+
+        m_pbRawFileFormatCombo = new QComboBox(w);
+        m_pbRawFileFormatCombo->addItems(
+            {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+        connect(m_pbRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            QTimer::singleShot(0, [this]() { applySettings(); });
+        });
+        form->addRow("Format", m_pbRawFileFormatCombo);
+
+        m_pbRawFileChannelsSpin = new QSpinBox(w);
+        m_pbRawFileChannelsSpin->setRange(1, 32);
+        m_pbRawFileChannelsSpin->setMinimumWidth(110);
+        m_pbRawFileChannelsSpin->setMaximumWidth(140);
+        connect(m_pbRawFileChannelsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
+            if (m_isRefreshing)
+                return;
+            applySettings();
+        });
+        form->addRow("Channels", m_pbRawFileChannelsSpin);
+    }
 
     return w;
 }
@@ -1082,8 +1189,8 @@ void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
     // 1. Refresh Capture Devices List & CoreAudio controls
-    populateDeviceCombo(m_capDeviceCombo, m_capWarningWidget, m_devices->captureDevices,
-                        m_devices->captureConfig.deviceName());
+    populateDeviceList(m_capDeviceListLayout, m_capWarningWidget, m_capDeviceListContainer, m_devices->captureDevices,
+                       m_devices->captureConfig.deviceName(), true);
 
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
     if (capBackendIdx >= 0) {
@@ -1213,8 +1320,8 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    populateDeviceCombo(m_pbDeviceCombo, m_pbWarningWidget, m_devices->playbackDevices,
-                        m_devices->playbackConfig.deviceName());
+    populateDeviceList(m_pbDeviceListLayout, m_pbWarningWidget, m_pbDeviceListContainer, m_devices->playbackDevices,
+                       m_devices->playbackConfig.deviceName(), false);
 
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
     if (pbBackendIdx >= 0) {
@@ -1302,9 +1409,28 @@ void DevicePickerView::refreshUi() {
     updateDoPCapability();
 
     // 4. Refresh Playback File View
-    m_pbRawFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
-    m_pbRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
-    m_pbRawFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+    if (m_pbRawFilePathEdit)
+        m_pbRawFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+    if (m_pbRawFileFormatCombo)
+        m_pbRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
+    if (m_pbRawFileChannelsSpin)
+        m_pbRawFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+
+    if (m_pbWavFilePathEdit)
+        m_pbWavFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+    if (m_pbWavFileFormatCombo) {
+        QString fmt = QString::fromStdString(m_devices->playbackConfig.fileFormat);
+        if (fmt == "S24_4_RJ_LE")
+            fmt = "S16_LE";
+        m_pbWavFileFormatCombo->setCurrentText(fmt);
+    }
+    if (m_pbWavFileChannelsSpin)
+        m_pbWavFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
+    if (m_pbWavUseRf64Combo) {
+        int idx = m_pbWavUseRf64Combo->findData(m_devices->playbackConfig.useRf64);
+        if (idx >= 0)
+            m_pbWavUseRf64Combo->setCurrentIndex(idx);
+    }
 
     // 5. Refresh Processing Settings
     int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
@@ -1361,11 +1487,6 @@ void DevicePickerView::applySettings() {
     }
 
     if (isHardwareBackend(capCfg.backend)) {
-        if (m_capDeviceCombo->currentIndex() >= 0) {
-            std::string selectedDev = m_capDeviceCombo->currentData().toString().toStdString();
-            capCfg.setDeviceName(selectedDev);
-        }
-
         auto capSuppCh = capCfg.supportedChannels();
         if (!capSuppCh.empty() && m_capDevChannelsCombo->currentIndex() >= 0) {
             capCfg.deviceChannels = m_capDevChannelsCombo->currentData().toInt();
@@ -1418,11 +1539,6 @@ void DevicePickerView::applySettings() {
     }
 
     if (isHardwareBackend(pbCfg.backend)) {
-        if (m_pbDeviceCombo->currentIndex() >= 0) {
-            std::string selectedDev = m_pbDeviceCombo->currentData().toString().toStdString();
-            pbCfg.setDeviceName(selectedDev);
-        }
-
         auto pbSuppCh = pbCfg.supportedChannels();
         if (!pbSuppCh.empty() && m_pbDevChannelsCombo->currentIndex() >= 0) {
             pbCfg.deviceChannels = m_pbDevChannelsCombo->currentData().toInt();
@@ -1445,10 +1561,29 @@ void DevicePickerView::applySettings() {
             pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
         }
     } else if (pbCfg.backend == AudioBackendType::RawFile) {
-        pbCfg.filename = m_pbRawFilePathEdit->text().toStdString();
-        pbCfg.fileFormat = m_pbRawFileFormatCombo->currentText().toStdString();
-        pbCfg.channels = m_pbRawFileChannelsSpin->value();
+        if (m_pbRawFilePathEdit)
+            pbCfg.filename = m_pbRawFilePathEdit->text().toStdString();
+        if (m_pbRawFileFormatCombo)
+            pbCfg.fileFormat = m_pbRawFileFormatCombo->currentText().toStdString();
+        if (m_pbRawFileChannelsSpin)
+            pbCfg.channels = m_pbRawFileChannelsSpin->value();
         pbCfg.deviceChannels = pbCfg.channels;
+        pbCfg.isWav = false;
+    } else if (pbCfg.backend == AudioBackendType::WavFile) {
+        if (m_pbWavFilePathEdit)
+            pbCfg.filename = m_pbWavFilePathEdit->text().toStdString();
+        if (m_pbWavFileFormatCombo) {
+            std::string fmt = m_pbWavFileFormatCombo->currentText().toStdString();
+            if (fmt == "S24_4_RJ_LE")
+                fmt = "S16_LE";
+            pbCfg.fileFormat = fmt;
+        }
+        if (m_pbWavFileChannelsSpin)
+            pbCfg.channels = m_pbWavFileChannelsSpin->value();
+        pbCfg.deviceChannels = pbCfg.channels;
+        pbCfg.isWav = true;
+        if (m_pbWavUseRf64Combo && m_pbWavUseRf64Combo->currentIndex() >= 0)
+            pbCfg.useRf64 = m_pbWavUseRf64Combo->currentData().toBool();
     }
     m_devices->setPlaybackConfig(pbCfg);
 

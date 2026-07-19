@@ -44,7 +44,13 @@ public:
     bool fader4Muted = false;
 
     int silenceThreshold = -60;
+    double silenceThresholdDouble() const { return static_cast<double>(silenceThreshold); }
+    void setSilenceThresholdDouble(double val) { silenceThreshold = static_cast<int>(val); }
+
     int silenceTimeout = 0;
+    double silenceTimeoutDouble() const { return static_cast<double>(silenceTimeout); }
+    void setSilenceTimeoutDouble(double val) { silenceTimeout = static_cast<int>(val); }
+
     int queuelimit = 4;
     bool stopOnRateChange = false;
     double rateMeasureInterval = 1.0;

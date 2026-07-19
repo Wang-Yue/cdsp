@@ -27,6 +27,7 @@ public:
     std::vector<AudioDevice> playbackDevices;
 
     void fetchDevices();
+    void refreshDevices();
     void refreshDeviceCapabilities();
     void validateSampleRates();
     void startDeviceChangeListener();
@@ -42,6 +43,8 @@ public:
     void setPlaybackConfig(const DeviceConfig& config);
     void setExclusiveMode(bool exclusive);
     void saveConfigs();
+
+    static AudioBackendType defaultHardwareBackend();
 
     std::function<void()> onConfigChanged;
 
@@ -61,6 +64,8 @@ private:
     QMediaDevices m_mediaDevices;
     QMetaObject::Connection m_inputsConnection;
     QMetaObject::Connection m_outputsConnection;
+
+    void* m_coreAudioListenerBlock = nullptr;
 
     void loadSavedConfigs();
 };

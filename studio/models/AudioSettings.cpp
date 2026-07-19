@@ -89,6 +89,8 @@ void AudioSettings::notifyChange() {
 void AudioSettings::loadPreferences() {
     QSettings s("DSPMonitor", "MonitorQt");
     chunkSize = s.value("chunksize", 1024).toInt();
+    if (chunkSize <= 0)
+        chunkSize = 1024;
     enableRateAdjust = s.value("enableRateAdjust", false).toBool();
     resamplerEnabled = s.value("resamplerEnabled", false).toBool();
 
@@ -97,7 +99,11 @@ void AudioSettings::loadPreferences() {
     resamplerUseProfile = s.value("resamplerUseProfile", true).toBool();
     resamplerAttenuation = s.value("resamplerAttenuation", 0.0).toDouble();
     resamplerSincLen = s.value("resamplerSincLen", 256).toInt();
+    if (resamplerSincLen <= 0)
+        resamplerSincLen = 256;
     resamplerOversamplingFactor = s.value("resamplerOversamplingFactor", 128).toInt();
+    if (resamplerOversamplingFactor <= 0)
+        resamplerOversamplingFactor = 128;
     resamplerWindow = s.value("resamplerWindow", "BlackmanHarris").toString().toStdString();
     resamplerFCutoff = s.value("resamplerFCutoff", 0.95).toDouble();
     resamplerInterpolation =

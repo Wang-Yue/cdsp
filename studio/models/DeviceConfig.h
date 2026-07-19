@@ -31,6 +31,7 @@ struct DeviceConfig {
     std::string filename;
     std::string fileFormat = "S16_LE";
     bool isWav = false;
+    bool useRf64 = false;
     int skipBytes = 0;
     int readBytes = 0;
     int extraSamples = 0;
@@ -57,6 +58,7 @@ struct DeviceConfig {
 
     DeviceConfig enforced() const;
     static int bestRate(const std::vector<int>& rates, int currentRate);
+    static std::optional<std::pair<int, int>> parseWavHeader(const std::string& path);
 
     CaptureDeviceConfig toCaptureDeviceConfig() const;
     PlaybackDeviceConfig toPlaybackDeviceConfig() const;

@@ -219,6 +219,8 @@ std::string resamplerTypeToString(ResamplerType t) {
         return "AsyncSinc";
     case ResamplerType::AsyncPoly:
         return "AsyncPoly";
+    case ResamplerType::Slip:
+        return "Slip";
     }
     return "Synchronous";
 }
@@ -276,6 +278,8 @@ ResamplerType stringToResamplerType(const std::string& str) {
         return ResamplerType::AsyncSinc;
     if (str == "AsyncPoly")
         return ResamplerType::AsyncPoly;
+    if (str == "Slip")
+        return ResamplerType::Slip;
     return ResamplerType::Synchronous;
 }
 
@@ -699,6 +703,8 @@ RawFilePlaybackConfig RawFilePlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.format = json["format"].toString().toStdString();
     if (json.contains("wav_header"))
         cfg.wavHeader = json["wav_header"].toBool();
+    if (json.contains("use_rf64"))
+        cfg.useRf64 = json["use_rf64"].toBool();
     if (json.contains("channel_labels")) {
         QJsonArray arr = json["channel_labels"].toArray();
         for (const auto& val : arr)
@@ -715,6 +721,8 @@ QJsonObject RawFilePlaybackConfig::toJson() const {
     obj["format"] = QString::fromStdString(format);
     if (wavHeader.has_value())
         obj["wav_header"] = wavHeader.value();
+    if (useRf64.has_value())
+        obj["use_rf64"] = useRf64.value();
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)

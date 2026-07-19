@@ -118,6 +118,7 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
                 }
                 break;
             case ResamplerType::Synchronous:
+            case ResamplerType::Slip:
                 break;
             }
             config.devices.resampler = resCfg;

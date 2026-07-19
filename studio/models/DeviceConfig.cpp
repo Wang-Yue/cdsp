@@ -1,7 +1,9 @@
 #include "models/DeviceConfig.h"
 
+#include <QFile>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <set>
 
 std::vector<int> DeviceConfig::supportedChannels() const {
@@ -91,7 +93,7 @@ std::vector<std::string> DeviceConfig::supportedFormats() const {
 
 DeviceConfig DeviceConfig::enforced() const {
     DeviceConfig res = *this;
-    if (res.backend == AudioBackendType::CoreAudio) {
+    if (isHardwareBackend(res.backend)) {
         auto chs = res.supportedChannels();
         if (!chs.empty()) {
             auto it = std::find_if(chs.begin(), chs.end(), [&res](int c) { return c >= res.channels; });
@@ -114,11 +116,59 @@ DeviceConfig DeviceConfig::enforced() const {
         if (!fmts.empty() && std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
             res.format = fmts.empty() ? "F32" : fmts[0];
         }
+    } else if (res.backend == AudioBackendType::WavFile) {
+        if (!res.filename.empty()) {
+            if (auto wavInfo = parseWavHeader(res.filename)) {
+                res.channels = wavInfo->first;
+                res.sampleRate = wavInfo->second;
+            }
+        }
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
     } else {
         res.channels = std::max(1, std::min(32, res.channels));
         res.deviceChannels = res.channels;
     }
     return res;
+}
+
+std::optional<std::pair<int, int>> DeviceConfig::parseWavHeader(const std::string& path) {
+    if (path.empty())
+        return std::nullopt;
+    if (!QFile::exists(QString::fromStdString(path)))
+        return std::nullopt;
+    QFile file(QString::fromStdString(path));
+    if (!file.open(QIODevice::ReadOnly))
+        return std::nullopt;
+
+    QByteArray riffData = file.read(12);
+    if (riffData.size() < 12)
+        return std::nullopt;
+
+    std::string riff = riffData.left(4).toStdString();
+    std::string wave = riffData.mid(8, 4).toStdString();
+    if ((riff != "RIFF" && riff != "RF64") || wave != "WAVE")
+        return std::nullopt;
+
+    if (!file.seek(12))
+        return std::nullopt;
+    QByteArray remainingData = file.read(1024);
+    int fmtOffset = remainingData.indexOf("fmt ");
+    if (fmtOffset == -1 || fmtOffset + 16 > remainingData.size())
+        return std::nullopt;
+
+    uint16_t numChannels = 0;
+    std::memcpy(&numChannels, remainingData.constData() + fmtOffset + 10, sizeof(uint16_t));
+
+    uint32_t sampleRate = 0;
+    std::memcpy(&sampleRate, remainingData.constData() + fmtOffset + 12, sizeof(uint32_t));
+
+    if (numChannels < 1 || numChannels > 32)
+        return std::nullopt;
+    if (sampleRate < 8000 || sampleRate > 768000)
+        return std::nullopt;
+
+    return std::make_pair(static_cast<int>(numChannels), static_cast<int>(sampleRate));
 }
 
 int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
@@ -240,6 +290,9 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.rawFile.channels = channels;
         pb.rawFile.format = fileFormat;
         pb.rawFile.wavHeader = isWav;
+        if (isWav) {
+            pb.rawFile.useRf64 = useRf64;
+        }
         break;
     case AudioBackendType::SignalGenerator:
         break;
@@ -261,6 +314,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["filename"] = QString::fromStdString(filename);
     obj["fileFormat"] = QString::fromStdString(fileFormat);
     obj["isWav"] = isWav;
+    obj["useRf64"] = useRf64;
     obj["skipBytes"] = skipBytes;
     obj["readBytes"] = readBytes;
     obj["extraSamples"] = extraSamples;
@@ -305,6 +359,8 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.fileFormat = json["fileFormat"].toString().toStdString();
     if (json.contains("isWav"))
         cfg.isWav = json["isWav"].toBool();
+    if (json.contains("useRf64"))
+        cfg.useRf64 = json["useRf64"].toBool();
     if (json.contains("skipBytes"))
         cfg.skipBytes = json["skipBytes"].toInt();
     if (json.contains("readBytes"))
@@ -332,7 +388,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
-           isWav == other.isWav && skipBytes == other.skipBytes && readBytes == other.readBytes &&
-           extraSamples == other.extraSamples && generatorType == other.generatorType &&
+           isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
+           readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&
            generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel;
 }

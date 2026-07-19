@@ -14,6 +14,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <memory>
 
@@ -40,7 +41,8 @@ private:
 
     // Capture CoreAudio
     QWidget* m_capWarningWidget = nullptr;
-    QComboBox* m_capDeviceCombo = nullptr;
+    QWidget* m_capDeviceListContainer = nullptr;
+    QVBoxLayout* m_capDeviceListLayout = nullptr;
     QComboBox* m_capDevChannelsCombo = nullptr;
     QSpinBox* m_capDevChannelsSpin = nullptr;
     QSpinBox* m_capStreamChannelsSpin = nullptr;
@@ -92,7 +94,8 @@ private:
 
     // Playback CoreAudio / WASAPI / ASIO / ALSA / Pulse
     QWidget* m_pbWarningWidget = nullptr;
-    QComboBox* m_pbDeviceCombo = nullptr;
+    QWidget* m_pbDeviceListContainer = nullptr;
+    QVBoxLayout* m_pbDeviceListLayout = nullptr;
     QComboBox* m_pbDevChannelsCombo = nullptr;
     QSpinBox* m_pbDevChannelsSpin = nullptr;
     QSpinBox* m_pbStreamChannelsSpin = nullptr;
@@ -118,6 +121,11 @@ private:
     QComboBox* m_pbRawFileFormatCombo = nullptr;
     QSpinBox* m_pbRawFileChannelsSpin = nullptr;
 
+    QLineEdit* m_pbWavFilePathEdit = nullptr;
+    QComboBox* m_pbWavFileFormatCombo = nullptr;
+    QSpinBox* m_pbWavFileChannelsSpin = nullptr;
+    QComboBox* m_pbWavUseRf64Combo = nullptr;
+
     // Processing Settings
     QComboBox* m_chunkSizeCombo = nullptr;
     QLabel* m_latencyLabel = nullptr;
@@ -137,13 +145,14 @@ private:
     QWidget* createCapGeneratorView();
 
     QWidget* createPbCoreAudioView();
-    QWidget* createPbFileView();
+    QWidget* createPbFileView(bool isWav);
 
     static QString formatSampleRate(int rate);
     void updateDoPCapability();
     void updateLatencyText();
-    void populateDeviceCombo(QComboBox* combo, QWidget* warningWidget, const std::vector<AudioDevice>& devices,
-                             const std::optional<std::string>& selectedDeviceName);
+    void populateDeviceList(QVBoxLayout* listLayout, QWidget* warningWidget, QWidget* containerWidget,
+                            const std::vector<AudioDevice>& devices,
+                            const std::optional<std::string>& selectedDeviceName, bool isCapture);
 };
 
 #endif // DEVICE_PICKER_VIEW_H

@@ -8,6 +8,13 @@
 #include <algorithm>
 #include <set>
 
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+#include <CoreAudio/AudioHardware.h>
+
+static AudioObjectPropertyAddress s_devicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
+                                                      kAudioObjectPropertyElementMain};
+#endif
+
 AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings,
                                        QObject* parent)
     : QObject(parent), m_engine(engine), m_settings(settings) {
@@ -25,16 +32,44 @@ AudioDeviceManager::~AudioDeviceManager() {
     m_capabilitiesWatcher.waitForFinished();
 }
 
+AudioBackendType AudioDeviceManager::defaultHardwareBackend() {
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+    return AudioBackendType::CoreAudio;
+#elif defined(_WIN32) || defined(Q_OS_WIN)
+    return AudioBackendType::WASAPI;
+#else
+    return AudioBackendType::ALSA;
+#endif
+}
+
+void AudioDeviceManager::refreshDevices() {
+    fetchDevices();
+}
+
 void AudioDeviceManager::startDeviceChangeListener() {
     stopDeviceChangeListener();
     m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this]() {
         qDebug() << "[AudioDeviceManager] Qt audio input device change detected, refreshing devices...";
-        fetchDevices();
+        refreshDevices();
     });
     m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
         qDebug() << "[AudioDeviceManager] Qt audio output device change detected, refreshing devices...";
-        fetchDevices();
+        refreshDevices();
     });
+
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+    AudioObjectPropertyListenerBlock listener = Block_copy(^(UInt32, const AudioObjectPropertyAddress*) {
+      qDebug() << "[AudioDeviceManager] CoreAudio hardware devices changed, refreshing list...";
+      QMetaObject::invokeMethod(this, [this]() { refreshDevices(); });
+    });
+    OSStatus err = AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress,
+                                                       dispatch_get_main_queue(), listener);
+    if (err == noErr) {
+        m_coreAudioListenerBlock = (void*)listener;
+    } else {
+        Block_release(listener);
+    }
+#endif
 }
 
 void AudioDeviceManager::stopDeviceChangeListener() {
@@ -46,6 +81,16 @@ void AudioDeviceManager::stopDeviceChangeListener() {
         disconnect(m_outputsConnection);
         m_outputsConnection = {};
     }
+
+#if defined(__APPLE__) || defined(Q_OS_MAC)
+    if (m_coreAudioListenerBlock) {
+        AudioObjectPropertyListenerBlock listener = (AudioObjectPropertyListenerBlock)m_coreAudioListenerBlock;
+        AudioObjectRemovePropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress, dispatch_get_main_queue(),
+                                               listener);
+        Block_release(listener);
+        m_coreAudioListenerBlock = nullptr;
+    }
+#endif
 }
 
 void AudioDeviceManager::loadSavedConfigs() {
@@ -152,9 +197,8 @@ std::vector<int> AudioDeviceManager::playbackRateOptions() const {
 }
 
 double AudioDeviceManager::latencyMs() const {
-    if (captureConfig.sampleRate <= 0)
-        return 0.0;
-    return (static_cast<double>(m_settings->chunkSize) / static_cast<double>(captureConfig.sampleRate)) * 1000.0;
+    int rate = std::max(1, captureConfig.sampleRate);
+    return (static_cast<double>(m_settings->chunkSize) / static_cast<double>(rate)) * 1000.0;
 }
 
 bool AudioDeviceManager::devicesAvailable() const {
@@ -195,8 +239,12 @@ void AudioDeviceManager::fetchDevices() {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
     };
-    std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
-    std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+    std::string capBackendLower = isHardwareBackend(captureConfig.backend)
+                                      ? toLowerStr(audioBackendTypeToString(captureConfig.backend))
+                                      : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
+    std::string pbBackendLower = isHardwareBackend(playbackConfig.backend)
+                                     ? toLowerStr(audioBackendTypeToString(playbackConfig.backend))
+                                     : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
 
     m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, capBackendLower, pbBackendLower]() {
         auto cap = engine->getAvailableDevices(capBackendLower, true);
@@ -227,14 +275,8 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
     std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
 
-    bool isCapHw =
-        (captureConfig.backend == AudioBackendType::CoreAudio || captureConfig.backend == AudioBackendType::WASAPI ||
-         captureConfig.backend == AudioBackendType::ASIO || captureConfig.backend == AudioBackendType::ALSA ||
-         captureConfig.backend == AudioBackendType::PulseAudio);
-    bool isPbHw =
-        (playbackConfig.backend == AudioBackendType::CoreAudio || playbackConfig.backend == AudioBackendType::WASAPI ||
-         playbackConfig.backend == AudioBackendType::ASIO || playbackConfig.backend == AudioBackendType::ALSA ||
-         playbackConfig.backend == AudioBackendType::PulseAudio);
+    bool isCapHw = isHardwareBackend(captureConfig.backend);
+    bool isPbHw = isHardwareBackend(playbackConfig.backend);
 
     m_capabilitiesWatcher.setFuture(
         QtConcurrent::run([this, engine, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
@@ -248,15 +290,24 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                 pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
             }
 
-            QMetaObject::invokeMethod(this, [this, capDesc, pbDesc, isCapHw, isPbHw]() {
-                if (isCapHw && capDesc.has_value()) {
-                    captureConfig.capabilities = capDesc.value();
-                } else if (!isCapHw) {
+            QMetaObject::invokeMethod(this, [this, capName, pbName, capDesc, pbDesc, isCapHw, isPbHw]() {
+                if (isCapHw) {
+                    if (capDesc.has_value()) {
+                        captureConfig.capabilities = capDesc.value();
+                    } else {
+                        captureConfig.capabilities = AudioDeviceDescriptor{capName, {}};
+                    }
+                } else {
                     captureConfig.capabilities = AudioDeviceDescriptor();
                 }
-                if (isPbHw && pbDesc.has_value()) {
-                    playbackConfig.capabilities = pbDesc.value();
-                } else if (!isPbHw) {
+
+                if (isPbHw) {
+                    if (pbDesc.has_value()) {
+                        playbackConfig.capabilities = pbDesc.value();
+                    } else {
+                        playbackConfig.capabilities = AudioDeviceDescriptor{pbName, {}};
+                    }
+                } else {
                     playbackConfig.capabilities = AudioDeviceDescriptor();
                 }
 
@@ -301,9 +352,18 @@ void AudioDeviceManager::validateSampleRates() {
         captureConfig.sampleRate = playbackConfig.sampleRate;
         changed = true;
     }
+    if (m_settings->resamplerEnabled && m_settings->resamplerType == ResamplerType::Slip &&
+        captureConfig.sampleRate != playbackConfig.sampleRate) {
+        m_settings->resamplerType = ResamplerType::Synchronous;
+        m_settings->savePreferences();
+        changed = true;
+    }
 
     if (changed) {
         saveConfigs();
+        emit configChanged();
+        if (onConfigChanged)
+            onConfigChanged();
     }
 
     m_isValidating = false;
