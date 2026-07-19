@@ -227,6 +227,25 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.pulseAudio.device = deviceName();
         cap.pulseAudio.format = format;
         break;
+    case AudioBackendType::PipeWire:
+        cap.pipeWire.channels = channels;
+        cap.pipeWire.device = deviceName();
+        cap.pipeWire.format = format;
+        if (!nodeName.empty())
+            cap.pipeWire.nodeName = nodeName;
+        if (!nodeDescription.empty())
+            cap.pipeWire.nodeDescription = nodeDescription;
+        if (!nodeGroupName.empty())
+            cap.pipeWire.nodeGroupName = nodeGroupName;
+        if (!autoconnectTo.empty())
+            cap.pipeWire.autoconnectTo = autoconnectTo;
+        break;
+    case AudioBackendType::Stdin:
+        cap.stdIn.channels = channels;
+        cap.stdIn.format = fileFormat;
+        break;
+    case AudioBackendType::Stdout:
+        break;
     case AudioBackendType::WavFile:
         cap.wavFile.filename = filename.empty() ? "" : filename;
         cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
@@ -283,6 +302,25 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.pulseAudio.device = deviceName();
         pb.pulseAudio.format = format;
         break;
+    case AudioBackendType::PipeWire:
+        pb.pipeWire.channels = channels;
+        pb.pipeWire.device = deviceName();
+        pb.pipeWire.format = format;
+        if (!nodeName.empty())
+            pb.pipeWire.nodeName = nodeName;
+        if (!nodeDescription.empty())
+            pb.pipeWire.nodeDescription = nodeDescription;
+        if (!nodeGroupName.empty())
+            pb.pipeWire.nodeGroupName = nodeGroupName;
+        if (!autoconnectTo.empty())
+            pb.pipeWire.autoconnectTo = autoconnectTo;
+        break;
+    case AudioBackendType::Stdin:
+        break;
+    case AudioBackendType::Stdout:
+        pb.stdOut.channels = channels;
+        pb.stdOut.format = fileFormat;
+        break;
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
         pb.rawFile.filename = filename.empty() ? "" : filename;
@@ -320,6 +358,10 @@ QJsonObject DeviceConfig::toJson() const {
     obj["generatorType"] = QString::fromStdString(generatorType);
     obj["generatorFreq"] = generatorFreq;
     obj["generatorLevel"] = generatorLevel;
+    obj["nodeName"] = QString::fromStdString(nodeName);
+    obj["nodeDescription"] = QString::fromStdString(nodeDescription);
+    obj["nodeGroupName"] = QString::fromStdString(nodeGroupName);
+    obj["autoconnectTo"] = QString::fromStdString(autoconnectTo);
     obj["capabilities"] = capabilities.toJson();
     return obj;
 }
@@ -367,6 +409,14 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.generatorFreq = json["generatorFreq"].toDouble();
     if (json.contains("generatorLevel"))
         cfg.generatorLevel = json["generatorLevel"].toDouble();
+    if (json.contains("nodeName"))
+        cfg.nodeName = json["nodeName"].toString().toStdString();
+    if (json.contains("nodeDescription"))
+        cfg.nodeDescription = json["nodeDescription"].toString().toStdString();
+    if (json.contains("nodeGroupName"))
+        cfg.nodeGroupName = json["nodeGroupName"].toString().toStdString();
+    if (json.contains("autoconnectTo"))
+        cfg.autoconnectTo = json["autoconnectTo"].toString().toStdString();
     if (json.contains("capabilities") && json["capabilities"].isObject()) {
         cfg.capabilities = AudioDeviceDescriptor::fromJson(json["capabilities"].toObject());
     } else if (json.contains("deviceName")) {
@@ -382,5 +432,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
            isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
            readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&
-           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel;
+           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel &&
+           nodeName == other.nodeName && nodeDescription == other.nodeDescription &&
+           nodeGroupName == other.nodeGroupName && autoconnectTo == other.autoconnectTo;
 }

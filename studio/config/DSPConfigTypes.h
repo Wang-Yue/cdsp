@@ -168,11 +168,23 @@ struct AudioDeviceDescriptor {
     bool operator!=(const AudioDeviceDescriptor& other) const { return !(*this == other); }
 };
 
-enum class AudioBackendType { CoreAudio, WASAPI, ASIO, ALSA, PulseAudio, RawFile, WavFile, SignalGenerator };
+enum class AudioBackendType {
+    CoreAudio,
+    WASAPI,
+    ASIO,
+    ALSA,
+    PulseAudio,
+    PipeWire,
+    Stdin,
+    Stdout,
+    RawFile,
+    WavFile,
+    SignalGenerator
+};
 
 inline bool isHardwareBackend(AudioBackendType type) {
     return type == AudioBackendType::CoreAudio || type == AudioBackendType::WASAPI || type == AudioBackendType::ASIO ||
-           type == AudioBackendType::ALSA || type == AudioBackendType::PulseAudio;
+           type == AudioBackendType::ALSA || type == AudioBackendType::PulseAudio || type == AudioBackendType::PipeWire;
 }
 
 std::string audioBackendTypeToString(AudioBackendType type);
@@ -421,6 +433,72 @@ struct PulseAudioPlaybackConfig {
     bool operator!=(const PulseAudioPlaybackConfig& o) const { return !(*this == o); }
 };
 
+struct PipeWireCaptureConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<std::string> nodeName;
+    std::optional<std::string> nodeDescription;
+    std::optional<std::string> nodeGroupName;
+    std::optional<std::string> autoconnectTo;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static PipeWireCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const PipeWireCaptureConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && nodeName == o.nodeName &&
+               nodeDescription == o.nodeDescription && nodeGroupName == o.nodeGroupName &&
+               autoconnectTo == o.autoconnectTo && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const PipeWireCaptureConfig& o) const { return !(*this == o); }
+};
+
+struct PipeWirePlaybackConfig {
+    int channels = 2;
+    std::optional<std::string> device;
+    std::optional<std::string> format;
+    std::optional<std::string> nodeName;
+    std::optional<std::string> nodeDescription;
+    std::optional<std::string> nodeGroupName;
+    std::optional<std::string> autoconnectTo;
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static PipeWirePlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const PipeWirePlaybackConfig& o) const {
+        return channels == o.channels && device == o.device && format == o.format && nodeName == o.nodeName &&
+               nodeDescription == o.nodeDescription && nodeGroupName == o.nodeGroupName &&
+               autoconnectTo == o.autoconnectTo && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const PipeWirePlaybackConfig& o) const { return !(*this == o); }
+};
+
+struct StdInCaptureConfig {
+    int channels = 2;
+    std::string format = "S16_LE";
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static StdInCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const StdInCaptureConfig& o) const {
+        return channels == o.channels && format == o.format && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const StdInCaptureConfig& o) const { return !(*this == o); }
+};
+
+struct StdOutPlaybackConfig {
+    int channels = 2;
+    std::string format = "S16_LE";
+    std::vector<std::string> channelLabels;
+    QJsonObject toJson() const;
+    static StdOutPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const StdOutPlaybackConfig& o) const {
+        return channels == o.channels && format == o.format && channelLabels == o.channelLabels;
+    }
+    bool operator!=(const StdOutPlaybackConfig& o) const { return !(*this == o); }
+};
+
 struct WavFileCaptureConfig {
     std::string filename;
     std::optional<int> extraSamples;
@@ -489,6 +567,8 @@ struct CaptureDeviceConfig {
     ASIOCaptureConfig asio;
     ALSACaptureConfig alsa;
     PulseAudioCaptureConfig pulseAudio;
+    PipeWireCaptureConfig pipeWire;
+    StdInCaptureConfig stdIn;
     WavFileCaptureConfig wavFile;
     RawFileCaptureConfig rawFile;
     GeneratorCaptureConfig generator;
@@ -498,8 +578,8 @@ struct CaptureDeviceConfig {
 
     bool operator==(const CaptureDeviceConfig& o) const {
         return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
-               alsa == o.alsa && pulseAudio == o.pulseAudio && wavFile == o.wavFile && rawFile == o.rawFile &&
-               generator == o.generator;
+               alsa == o.alsa && pulseAudio == o.pulseAudio && pipeWire == o.pipeWire && stdIn == o.stdIn &&
+               wavFile == o.wavFile && rawFile == o.rawFile && generator == o.generator;
     }
     bool operator!=(const CaptureDeviceConfig& o) const { return !(*this == o); }
 };
@@ -511,6 +591,8 @@ struct PlaybackDeviceConfig {
     ASIOPlaybackConfig asio;
     ALSAPlaybackConfig alsa;
     PulseAudioPlaybackConfig pulseAudio;
+    PipeWirePlaybackConfig pipeWire;
+    StdOutPlaybackConfig stdOut;
     RawFilePlaybackConfig rawFile;
 
     QJsonObject toJson() const;
@@ -518,7 +600,8 @@ struct PlaybackDeviceConfig {
 
     bool operator==(const PlaybackDeviceConfig& o) const {
         return backend == o.backend && coreAudio == o.coreAudio && wasapi == o.wasapi && asio == o.asio &&
-               alsa == o.alsa && pulseAudio == o.pulseAudio && rawFile == o.rawFile;
+               alsa == o.alsa && pulseAudio == o.pulseAudio && pipeWire == o.pipeWire && stdOut == o.stdOut &&
+               rawFile == o.rawFile;
     }
     bool operator!=(const PlaybackDeviceConfig& o) const { return !(*this == o); }
 };

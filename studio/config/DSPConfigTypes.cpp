@@ -182,6 +182,12 @@ std::string audioBackendTypeToString(AudioBackendType type) {
         return "ALSA";
     case AudioBackendType::PulseAudio:
         return "PulseAudio";
+    case AudioBackendType::PipeWire:
+        return "PipeWire";
+    case AudioBackendType::Stdin:
+        return "Stdin";
+    case AudioBackendType::Stdout:
+        return "Stdout";
     case AudioBackendType::RawFile:
         return "RawFile";
     case AudioBackendType::WavFile:
@@ -206,6 +212,12 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
         return AudioBackendType::ALSA;
     if (lowerStr == "pulseaudio" || lowerStr == "pulse")
         return AudioBackendType::PulseAudio;
+    if (lowerStr == "pipewire")
+        return AudioBackendType::PipeWire;
+    if (lowerStr == "stdin")
+        return AudioBackendType::Stdin;
+    if (lowerStr == "stdout")
+        return AudioBackendType::Stdout;
     if (lowerStr == "rawfile" || lowerStr == "file")
         return AudioBackendType::RawFile;
     if (lowerStr == "wavfile")
@@ -1348,6 +1360,156 @@ QJsonObject PulseAudioPlaybackConfig::toJson() const {
     return obj;
 }
 
+PipeWireCaptureConfig PipeWireCaptureConfig::fromJson(const QJsonObject& json) {
+    PipeWireCaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("node_name"))
+        cfg.nodeName = json["node_name"].toString().toStdString();
+    if (json.contains("node_description"))
+        cfg.nodeDescription = json["node_description"].toString().toStdString();
+    if (json.contains("node_group_name"))
+        cfg.nodeGroupName = json["node_group_name"].toString().toStdString();
+    if (json.contains("autoconnect_to"))
+        cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject PipeWireCaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "PipeWire";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (nodeName.has_value())
+        obj["node_name"] = QString::fromStdString(nodeName.value());
+    if (nodeDescription.has_value())
+        obj["node_description"] = QString::fromStdString(nodeDescription.value());
+    if (nodeGroupName.has_value())
+        obj["node_group_name"] = QString::fromStdString(nodeGroupName.value());
+    if (autoconnectTo.has_value())
+        obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+PipeWirePlaybackConfig PipeWirePlaybackConfig::fromJson(const QJsonObject& json) {
+    PipeWirePlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("device"))
+        cfg.device = json["device"].toString().toStdString();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("node_name"))
+        cfg.nodeName = json["node_name"].toString().toStdString();
+    if (json.contains("node_description"))
+        cfg.nodeDescription = json["node_description"].toString().toStdString();
+    if (json.contains("node_group_name"))
+        cfg.nodeGroupName = json["node_group_name"].toString().toStdString();
+    if (json.contains("autoconnect_to"))
+        cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject PipeWirePlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "PipeWire";
+    obj["channels"] = channels;
+    if (device.has_value() && !device.value().empty())
+        obj["device"] = QString::fromStdString(device.value());
+    if (format.has_value())
+        obj["format"] = QString::fromStdString(format.value());
+    if (nodeName.has_value())
+        obj["node_name"] = QString::fromStdString(nodeName.value());
+    if (nodeDescription.has_value())
+        obj["node_description"] = QString::fromStdString(nodeDescription.value());
+    if (nodeGroupName.has_value())
+        obj["node_group_name"] = QString::fromStdString(nodeGroupName.value());
+    if (autoconnectTo.has_value())
+        obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+StdInCaptureConfig StdInCaptureConfig::fromJson(const QJsonObject& json) {
+    StdInCaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject StdInCaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "Stdin";
+    obj["channels"] = channels;
+    obj["format"] = QString::fromStdString(format);
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
+StdOutPlaybackConfig StdOutPlaybackConfig::fromJson(const QJsonObject& json) {
+    StdOutPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("format"))
+        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("channel_labels")) {
+        for (const auto& val : json["channel_labels"].toArray())
+            cfg.channelLabels.push_back(val.toString().toStdString());
+    }
+    return cfg;
+}
+
+QJsonObject StdOutPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "Stdout";
+    obj["channels"] = channels;
+    obj["format"] = QString::fromStdString(format);
+    if (!channelLabels.empty()) {
+        QJsonArray arr;
+        for (const auto& l : channelLabels)
+            arr.append(QString::fromStdString(l));
+        obj["channel_labels"] = arr;
+    }
+    return obj;
+}
+
 CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
     CaptureDeviceConfig cfg;
     std::string typeStr = json["type"].toString().toStdString();
@@ -1367,6 +1529,14 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
         break;
     case AudioBackendType::PulseAudio:
         cfg.pulseAudio = PulseAudioCaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::PipeWire:
+        cfg.pipeWire = PipeWireCaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::Stdin:
+        cfg.stdIn = StdInCaptureConfig::fromJson(json);
+        break;
+    case AudioBackendType::Stdout:
         break;
     case AudioBackendType::WavFile:
         cfg.wavFile = WavFileCaptureConfig::fromJson(json);
@@ -1393,6 +1563,12 @@ QJsonObject CaptureDeviceConfig::toJson() const {
         return alsa.toJson();
     case AudioBackendType::PulseAudio:
         return pulseAudio.toJson();
+    case AudioBackendType::PipeWire:
+        return pipeWire.toJson();
+    case AudioBackendType::Stdin:
+        return stdIn.toJson();
+    case AudioBackendType::Stdout:
+        return stdIn.toJson();
     case AudioBackendType::WavFile:
         return wavFile.toJson();
     case AudioBackendType::RawFile:
@@ -1423,6 +1599,14 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
     case AudioBackendType::PulseAudio:
         cfg.pulseAudio = PulseAudioPlaybackConfig::fromJson(json);
         break;
+    case AudioBackendType::PipeWire:
+        cfg.pipeWire = PipeWirePlaybackConfig::fromJson(json);
+        break;
+    case AudioBackendType::Stdin:
+        break;
+    case AudioBackendType::Stdout:
+        cfg.stdOut = StdOutPlaybackConfig::fromJson(json);
+        break;
     case AudioBackendType::RawFile:
     case AudioBackendType::WavFile:
         cfg.rawFile = RawFilePlaybackConfig::fromJson(json);
@@ -1446,12 +1630,17 @@ QJsonObject PlaybackDeviceConfig::toJson() const {
         return alsa.toJson();
     case AudioBackendType::PulseAudio:
         return pulseAudio.toJson();
+    case AudioBackendType::PipeWire:
+        return pipeWire.toJson();
+    case AudioBackendType::Stdin:
+        return stdOut.toJson();
+    case AudioBackendType::Stdout:
+        return stdOut.toJson();
     case AudioBackendType::RawFile:
-        return rawFile.toJson();
     case AudioBackendType::WavFile:
         return rawFile.toJson();
     case AudioBackendType::SignalGenerator:
-        return coreAudio.toJson();
+        return rawFile.toJson();
     }
     return coreAudio.toJson();
 }

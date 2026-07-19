@@ -119,7 +119,9 @@ void DevicePickerView::setupUi() {
 #else
     m_capBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
     m_capBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
+    m_capBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
+    m_capBackendCombo->addItem("Stdin", static_cast<int>(AudioBackendType::Stdin));
     m_capBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_capBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
     m_capBackendCombo->addItem("SignalGenerator", static_cast<int>(AudioBackendType::SignalGenerator));
@@ -131,7 +133,10 @@ void DevicePickerView::setupUi() {
         case AudioBackendType::ASIO:
         case AudioBackendType::ALSA:
         case AudioBackendType::PulseAudio:
+        case AudioBackendType::PipeWire:
             return 0;
+        case AudioBackendType::Stdin:
+        case AudioBackendType::Stdout:
         case AudioBackendType::RawFile:
             return 1;
         case AudioBackendType::WavFile:
@@ -191,7 +196,9 @@ void DevicePickerView::setupUi() {
 #else
     m_pbBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
     m_pbBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
+    m_pbBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
+    m_pbBackendCombo->addItem("Stdout", static_cast<int>(AudioBackendType::Stdout));
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_pbBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
 
@@ -202,7 +209,10 @@ void DevicePickerView::setupUi() {
         case AudioBackendType::ASIO:
         case AudioBackendType::ALSA:
         case AudioBackendType::PulseAudio:
+        case AudioBackendType::PipeWire:
             return 0;
+        case AudioBackendType::Stdin:
+        case AudioBackendType::Stdout:
         case AudioBackendType::RawFile:
             return 1;
         case AudioBackendType::WavFile:
@@ -1252,7 +1262,10 @@ static int getCapStackIndex(AudioBackendType backend) {
     case AudioBackendType::ASIO:
     case AudioBackendType::ALSA:
     case AudioBackendType::PulseAudio:
+    case AudioBackendType::PipeWire:
         return 0;
+    case AudioBackendType::Stdin:
+    case AudioBackendType::Stdout:
     case AudioBackendType::RawFile:
         return 1;
     case AudioBackendType::WavFile:
@@ -1270,7 +1283,10 @@ static int getPbStackIndex(AudioBackendType backend) {
     case AudioBackendType::ASIO:
     case AudioBackendType::ALSA:
     case AudioBackendType::PulseAudio:
+    case AudioBackendType::PipeWire:
         return 0;
+    case AudioBackendType::Stdin:
+    case AudioBackendType::Stdout:
     case AudioBackendType::RawFile:
         return 1;
     case AudioBackendType::WavFile:
