@@ -61,105 +61,20 @@ static uint64_t get_time_ns(void) { return cdsp_time_now_ns(); }
  */
 static double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
-/** @brief Vtable wrapper for generator_capture_open. */
-static bool vtable_open(void* ctx, backend_error_t* err) {
-  return generator_capture_open((generator_capture_t*)ctx, err);
-}
 
-/** @brief Vtable wrapper for generator_capture_read. */
-static bool vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                        backend_error_t* err) {
-  return generator_capture_read((generator_capture_t*)ctx, frames, chunk, err);
-}
 
-/** @brief Vtable wrapper for generator_capture_close. */
-static void vtable_close(void* ctx) {
-  generator_capture_close((generator_capture_t*)ctx);
-}
 
-/** @brief Vtable wrapper for generator_capture_get_pending_rate_change. */
-static bool vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return generator_capture_get_pending_rate_change((generator_capture_t*)ctx,
-                                                   out_rate);
-}
 
-/** @brief Vtable wrapper for generator_capture_pitch_control_supported. */
-static bool vtable_is_pitch_control_supported(void* ctx) {
-  return generator_capture_pitch_control_supported((generator_capture_t*)ctx);
-}
-
-/** @brief Vtable wrapper for generator_capture_set_pitch. */
-static void vtable_set_pitch(void* ctx, double multiplier) {
-  generator_capture_set_pitch((generator_capture_t*)ctx, multiplier);
-}
-
-/** @brief Vtable wrapper for generator_capture_wait. */
-static bool vtable_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  return generator_capture_wait((generator_capture_t*)ctx, timeout_ms);
-}
-
-/** @brief Vtable wrapper for generator_capture_destroy. */
-static void vtable_destroy(void* ctx) {
-  generator_capture_destroy((generator_capture_t*)ctx);
-}
-/** @brief Vtable wrapper for generator_capture_set_is_paused. */
-static void vtable_set_is_paused(void* ctx, bool paused) {
-  generator_capture_set_is_paused((generator_capture_t*)ctx, paused);
-}
-
-static const capture_backend_vtable_t generator_capture_vtable = {
-    .open = vtable_open,
-    .read = vtable_read,
-    .close = vtable_close,
-    .get_pending_rate_change = vtable_get_pending_rate_change,
-    .is_pitch_control_supported = vtable_is_pitch_control_supported,
-    .set_pitch = vtable_set_pitch,
-    .wait_for_data = vtable_wait_for_data,
-    .set_is_paused = vtable_set_is_paused,
-    .destroy = vtable_destroy};
-
-capture_backend_t* generator_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
-  (void)params;
-  (void)err;
-
-  if (sample_rate <= 0) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Invalid sample rate for generator");
-    }
-    return NULL;
-  }
-
-  generator_capture_t* capture =
-      (generator_capture_t*)calloc(1, sizeof(generator_capture_t));
-  if (!capture) return NULL;
-
-  capture->signal_type = config->cfg.generator.signal.type;
-  capture->frequency = config->cfg.generator.signal.frequency;
-  capture->amplitude = db_to_linear(config->cfg.generator.signal.level);
-
-  capture->sample_rate = sample_rate;
-  capture->channels = config->cfg.generator.channels;
-  capture->chunk_size = chunk_size;
-  capture->rand_seed = (unsigned int)(get_time_ns() & 0xFFFFFFFF);
-
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
-  if (!backend) {
-    free(capture);
-    return NULL;
-  }
-
-  backend->ctx = capture;
-  backend->vtable = &generator_capture_vtable;
-  backend->is_realtime = true;
-  return backend;
-}
-
-bool generator_capture_open(generator_capture_t* capture,
-                            backend_error_t* err) {
+/**
+ * @brief Open the generator capture device.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool generator_capture_open(void* ctx, backend_error_t* err) {
+  generator_capture_t* capture = (generator_capture_t*)ctx;
+  if (!capture) return false;
   (void)err;
   capture->last_read_time_ns = get_time_ns();
   capture->phase = 0.0;
@@ -171,8 +86,19 @@ bool generator_capture_open(generator_capture_t* capture,
   return true;
 }
 
-bool generator_capture_read(generator_capture_t* capture, size_t frames,
-                            audio_chunk_t* chunk, backend_error_t* err) {
+/**
+ * @brief Read audio frames from the generator capture device.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param frames Number of frames to read.
+ * @param chunk Pointer to the audio chunk to fill.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool generator_capture_read(void* ctx, size_t frames,
+                                   audio_chunk_t* chunk, backend_error_t* err) {
+  generator_capture_t* capture = (generator_capture_t*)ctx;
+  if (!capture) return false;
 #ifdef CDSP_TEST
   if (g_generator_mock_hang) {
     while (g_generator_mock_hang) {
@@ -259,37 +185,142 @@ bool generator_capture_read(generator_capture_t* capture, size_t frames,
   return true;
 }
 
-void generator_capture_close(generator_capture_t* capture) { (void)capture; }
+/**
+ * @brief Close the generator capture device.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ */
+static void generator_capture_close(void* ctx) { (void)ctx; }
 
-bool generator_capture_get_pending_rate_change(generator_capture_t* capture,
-                                               double* out_rate) {
-  (void)capture;
+/**
+ * @brief Get any pending sample rate change.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param out_rate Pointer to double to store the pending sample rate.
+ * @return true if a rate change is pending, false otherwise.
+ */
+static bool generator_capture_get_pending_rate_change(void* ctx,
+                                                      double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
 
-bool generator_capture_pitch_control_supported(generator_capture_t* capture) {
-  (void)capture;
+/**
+ * @brief Check if pitch control is supported by the generator capture backend.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @return true if supported, false otherwise.
+ */
+static bool generator_capture_pitch_control_supported(void* ctx) {
+  (void)ctx;
   return false;
 }
 
-void generator_capture_set_pitch(generator_capture_t* capture,
-                                 double multiplier) {
-  (void)capture;
+/**
+ * @brief Set the pitch multiplier for the generator capture backend.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param multiplier The pitch multiplier.
+ */
+static void generator_capture_set_pitch(void* ctx,
+                                        double multiplier) {
+  (void)ctx;
   (void)multiplier;
 }
 
-bool generator_capture_wait(generator_capture_t* capture, uint32_t timeout_ms) {
-  (void)capture;
+/**
+ * @brief Wait for the generator capture device to have data available.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return true if data is available, false on timeout or error.
+ */
+static bool generator_capture_wait(void* ctx, uint32_t timeout_ms) {
+  (void)ctx;
   cdsp_sleep_ms(timeout_ms);
   return true;
 }
 
-void generator_capture_destroy(generator_capture_t* capture) { free(capture); }
+/**
+ * @brief Stop the generator capture device.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ */
+static void generator_capture_stop(void* ctx) { (void)ctx; }
 
-void generator_capture_set_is_paused(generator_capture_t* capture,
-                                     bool paused) {
+/**
+ * @brief Destroy the generator capture backend instance.
+ *
+ * @param ctx Pointer to the generator capture instance to destroy.
+ */
+static void generator_capture_destroy(void* ctx) {
+  generator_capture_t* capture = (generator_capture_t*)ctx;
+  free(capture);
+}
+
+/**
+ * @brief Set the paused state of the generator capture backend.
+ *
+ * @param ctx Pointer to the generator capture instance.
+ * @param paused true to pause, false to resume.
+ */
+static void generator_capture_set_is_paused(void* ctx,
+                                            bool paused) {
+  generator_capture_t* capture = (generator_capture_t*)ctx;
   if (capture) {
     capture->is_paused = paused;
   }
+}
+
+static const capture_backend_vtable_t generator_capture_vtable = {
+    .open = generator_capture_open,
+    .read = generator_capture_read,
+    .close = generator_capture_close,
+    .get_pending_rate_change = generator_capture_get_pending_rate_change,
+    .is_pitch_control_supported = generator_capture_pitch_control_supported,
+    .set_pitch = generator_capture_set_pitch,
+    .wait_for_data = generator_capture_wait,
+    .set_is_paused = generator_capture_set_is_paused,
+    .stop = generator_capture_stop,
+    .destroy = generator_capture_destroy};
+
+capture_backend_t* generator_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
+    processing_parameters_t* params, backend_error_t* err) {
+  (void)params;
+  (void)err;
+
+  if (sample_rate <= 0) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Invalid sample rate for generator");
+    }
+    return NULL;
+  }
+
+  generator_capture_t* capture =
+      (generator_capture_t*)calloc(1, sizeof(generator_capture_t));
+  if (!capture) return NULL;
+
+  capture->signal_type = config->cfg.generator.signal.type;
+  capture->frequency = config->cfg.generator.signal.frequency;
+  capture->amplitude = db_to_linear(config->cfg.generator.signal.level);
+
+  capture->sample_rate = sample_rate;
+  capture->channels = config->cfg.generator.channels;
+  capture->chunk_size = chunk_size;
+  capture->rand_seed = (unsigned int)(get_time_ns() & 0xFFFFFFFF);
+
+  capture_backend_t* backend =
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  if (!backend) {
+    free(capture);
+    return NULL;
+  }
+
+  backend->ctx = capture;
+  backend->vtable = &generator_capture_vtable;
+  backend->is_realtime = true;
+  return backend;
 }

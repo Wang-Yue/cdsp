@@ -47,75 +47,27 @@ struct alsa_capture {
 /**
  * @brief Wrapper for opening the ALSA capture backend.
  */
-static bool vtable_open(void* ctx, backend_error_t* err) {
-  return alsa_capture_open((alsa_capture_t*)ctx, err);
-}
-
-/**
- * @brief Wrapper for reading audio frames from ALSA.
- */
-static bool vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                        backend_error_t* err) {
-  return alsa_capture_read((alsa_capture_t*)ctx, frames, chunk, err);
-}
-
-/**
- * @brief Wrapper for closing the ALSA capture backend.
- */
-static void vtable_close(void* ctx) {
-  alsa_capture_close((alsa_capture_t*)ctx);
-}
-
-/**
- * @brief Wrapper for querying pending rate changes.
- */
-static bool vtable_get_rate(void* ctx, double* out_rate) {
-  return alsa_capture_get_pending_rate_change((alsa_capture_t*)ctx, out_rate);
-}
-
-/**
- * @brief Wrapper for checking if pitch control is supported.
- */
-static bool vtable_pitch_supp(void* ctx) {
-  return alsa_capture_pitch_control_supported((alsa_capture_t*)ctx);
-}
-
-/**
- * @brief Wrapper for setting pitch multiplier.
- */
-static void vtable_set_pitch(void* ctx, double mult) {
-  alsa_capture_set_pitch((alsa_capture_t*)ctx, mult);
-}
-
-/**
- * @brief Wrapper for waiting for capture data to be available.
- */
-static bool vtable_wait(void* ctx, uint32_t t) {
-  return alsa_capture_wait((alsa_capture_t*)ctx, t);
-}
-
-/**
- * @brief Wrapper for destroying the ALSA capture backend instance.
- */
-static void vtable_stop(void* ctx) {
-  void alsa_capture_stop(alsa_capture_t * capture);
-  alsa_capture_stop((alsa_capture_t*)ctx);
-}
-
-static void vtable_destroy(void* ctx) {
-  alsa_capture_destroy((alsa_capture_t*)ctx);
-}
+static bool alsa_capture_open(void* ctx, backend_error_t* err);
+static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
+                              backend_error_t* err);
+static void alsa_capture_close(void* ctx);
+static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate);
+static bool alsa_capture_pitch_control_supported(void* ctx);
+static void alsa_capture_set_pitch(void* ctx, double multiplier);
+static bool alsa_capture_wait(void* ctx, uint32_t timeout_ms);
+static void alsa_capture_stop(void* ctx);
+static void alsa_capture_destroy(void* ctx);
 
 static const capture_backend_vtable_t ALSA_CAPTURE_VTABLE = {
-    .open = vtable_open,
-    .read = vtable_read,
-    .close = vtable_close,
-    .get_pending_rate_change = vtable_get_rate,
-    .is_pitch_control_supported = vtable_pitch_supp,
-    .set_pitch = vtable_set_pitch,
-    .wait_for_data = vtable_wait,
-    .stop = vtable_stop,
-    .destroy = vtable_destroy};
+    .open = alsa_capture_open,
+    .read = alsa_capture_read,
+    .close = alsa_capture_close,
+    .get_pending_rate_change = alsa_capture_get_pending_rate_change,
+    .is_pitch_control_supported = alsa_capture_pitch_control_supported,
+    .set_pitch = alsa_capture_set_pitch,
+    .wait_for_data = alsa_capture_wait,
+    .stop = alsa_capture_stop,
+    .destroy = alsa_capture_destroy};
 
 capture_backend_t* alsa_capture_create(const capture_device_config_t* config,
                                        int sample_rate, int chunk_size,
@@ -385,7 +337,16 @@ static void alsa_capture_sync_controls(alsa_capture_t* capture) {
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
-bool alsa_capture_open(alsa_capture_t* capture, backend_error_t* err) {
+/**
+ * @brief Opens the ALSA capture device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return True on success, false otherwise.
+ */
+static bool alsa_capture_open(void* ctx, backend_error_t* err) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture) return false;
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm != NULL) {
     pthread_mutex_unlock(&g_alsa_mutex);
@@ -572,9 +533,19 @@ error_cleanup:
   return false;
 }
 
-bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
+/**
+ * @brief Reads audio frames from the ALSA capture device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @param frames The number of frames to read.
+ * @param chunk Pointer to the audio chunk to store the read samples.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return True on success, false otherwise.
+ */
+static bool alsa_capture_read(void* ctx, size_t frames,
                        audio_chunk_t* chunk, backend_error_t* err) {
-  if (!capture->pcm) return false;
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture || !capture->pcm) return false;
 
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
@@ -672,7 +643,13 @@ bool alsa_capture_read(alsa_capture_t* capture, size_t frames,
   return true;
 }
 
-void alsa_capture_close(alsa_capture_t* capture) {
+/**
+ * @brief Closes the ALSA capture device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ */
+static void alsa_capture_close(void* ctx) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
@@ -699,18 +676,41 @@ void alsa_capture_close(alsa_capture_t* capture) {
   }
 }
 
-bool alsa_capture_get_pending_rate_change(alsa_capture_t* capture,
-                                          double* out_rate) {
-  (void)capture;
+/**
+ * @brief Checks if there is a pending sample rate change detected by the device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @param out_rate Pointer to store the new sample rate if a change is pending.
+ * @return True if a rate change is pending, false otherwise.
+ */
+static bool alsa_capture_get_pending_rate_change(void* ctx,
+                                                 double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
 
-bool alsa_capture_pitch_control_supported(alsa_capture_t* capture) {
+/**
+ * @brief Checks if pitch control is supported by the backend.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @return True if supported, false otherwise.
+ */
+static bool alsa_capture_pitch_control_supported(void* ctx) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture) return false;
   return capture->pitch_elem != NULL;
 }
 
-void alsa_capture_set_pitch(alsa_capture_t* capture, double multiplier) {
+/**
+ * @brief Sets the pitch multiplier for the capture device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @param multiplier The pitch multiplier factor.
+ */
+static void alsa_capture_set_pitch(void* ctx, double multiplier) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture) return;
   pthread_mutex_lock(&capture->mixer_mutex);
   if (!capture->pitch_elem) {
     pthread_mutex_unlock(&capture->mixer_mutex);
@@ -725,13 +725,27 @@ void alsa_capture_set_pitch(alsa_capture_t* capture, double multiplier) {
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
-bool alsa_capture_wait(alsa_capture_t* capture, uint32_t timeout_ms) {
-  if (!capture->pcm) return false;
+/**
+ * @brief Waits for the ALSA capture device to have data available.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ * @param timeout_ms The timeout in milliseconds.
+ * @return True if data is available, false if timeout or error.
+ */
+static bool alsa_capture_wait(void* ctx, uint32_t timeout_ms) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture || !capture->pcm) return false;
   int err = snd_pcm_wait(capture->pcm, (int)timeout_ms);
   return err > 0;
 }
 
-void alsa_capture_stop(alsa_capture_t* capture) {
+/**
+ * @brief Stops the ALSA capture device.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ */
+static void alsa_capture_stop(void* ctx) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
@@ -740,7 +754,13 @@ void alsa_capture_stop(alsa_capture_t* capture) {
   pthread_mutex_unlock(&g_alsa_mutex);
 }
 
-void alsa_capture_destroy(alsa_capture_t* capture) {
+/**
+ * @brief Destroys the ALSA capture instance and frees associated resources.
+ *
+ * @param ctx Pointer to the ALSA capture instance.
+ */
+static void alsa_capture_destroy(void* ctx) {
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   alsa_capture_close(capture);
   pthread_mutex_destroy(&capture->mixer_mutex);

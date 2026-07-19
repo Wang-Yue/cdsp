@@ -389,142 +389,16 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
 // MARK: - Capture Backend implementation
 
 /**
- * @brief Vtable adapter to open the WASAPI capture stream.
- * @param ctx Pointer to the wasapi_capture_t context.
- * @param err Pointer to backend_error_t to receive error details.
+ * @brief Opens the WASAPI capture stream.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return true if successful, false otherwise.
  */
-static bool cap_vtable_open(void* ctx, backend_error_t* err) {
-  return wasapi_capture_open((wasapi_capture_t*)ctx, err);
-}
 
-/**
- * @brief Vtable adapter to read frames from the WASAPI capture stream.
- * @param ctx Pointer to the wasapi_capture_t context.
- * @param frames Number of frames to read.
- * @param chunk Pointer to audio_chunk_t to store the read audio data.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool cap_vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                            backend_error_t* err) {
-  return wasapi_capture_read((wasapi_capture_t*)ctx, frames, chunk, err);
-}
-
-/**
- * @brief Vtable adapter to close the WASAPI capture stream.
- * @param ctx Pointer to the wasapi_capture_t context.
- */
-static void cap_vtable_close(void* ctx) {
-  wasapi_capture_close((wasapi_capture_t*)ctx);
-}
-
-/**
- * @brief Vtable adapter to check for pending rate changes.
- * @note WASAPI backend does not support dynamic rate changes.
- * @param ctx Pointer to the wasapi_capture_t context.
- * @param out_rate Pointer to store the new rate (unused).
- * @return Always false.
- */
-static bool cap_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return wasapi_capture_get_pending_rate_change((wasapi_capture_t*)ctx,
-                                                out_rate);
-}
-
-/**
- * @brief Vtable adapter to check if pitch control is supported.
- * @note WASAPI backend does not support pitch control.
- * @param ctx Pointer to the wasapi_capture_t context.
- * @return Always false.
- */
-static bool cap_vtable_is_pitch_control_supported(void* ctx) {
-  return wasapi_capture_pitch_control_supported((wasapi_capture_t*)ctx);
-}
-
-/**
- * @brief Vtable adapter to set pitch multiplier.
- * @note WASAPI backend does not support pitch control (no-op).
- * @param ctx Pointer to the wasapi_capture_t context.
- * @param multiplier The pitch multiplier.
- */
-static void cap_vtable_set_pitch(void* ctx, double multiplier) {
-  wasapi_capture_set_pitch((wasapi_capture_t*)ctx, multiplier);
-}
-
-/**
- * @brief Vtable adapter to wait for capture data to become available.
- * @param ctx Pointer to the wasapi_capture_t context.
- * @param timeout_ms Timeout in milliseconds.
- * @return true if data is available, false on timeout.
- */
-static bool cap_vtable_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  return wasapi_capture_wait((wasapi_capture_t*)ctx, timeout_ms);
-}
-
-/**
- * @brief Vtable adapter to destroy the WASAPI capture context.
- * @param ctx Pointer to the wasapi_capture_t context.
- */
-static void cap_vtable_destroy(void* ctx) {
-  wasapi_capture_destroy((wasapi_capture_t*)ctx);
-}
-
-static void cap_vtable_stop(void* ctx) {
-  void wasapi_capture_stop(wasapi_capture_t * capture);
-  wasapi_capture_stop((wasapi_capture_t*)ctx);
-}
-
-static const capture_backend_vtable_t wasapi_capture_vtable = {
-    .open = cap_vtable_open,
-    .read = cap_vtable_read,
-    .close = cap_vtable_close,
-    .get_pending_rate_change = cap_vtable_get_pending_rate_change,
-    .is_pitch_control_supported = cap_vtable_is_pitch_control_supported,
-    .set_pitch = cap_vtable_set_pitch,
-    .wait_for_data = cap_vtable_wait_for_data,
-    .stop = cap_vtable_stop,
-    .destroy = cap_vtable_destroy};
-
-capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
-  (void)params;
-  (void)err;
-  wasapi_capture_t* capture =
-      (wasapi_capture_t*)calloc(1, sizeof(wasapi_capture_t));
-  if (!capture) return NULL;
-
-  if (config->cfg.wasapi.has_device &&
-      strcmp(config->cfg.wasapi.device, "default") != 0) {
-    snprintf(capture->device, sizeof(capture->device), "%s",
-             config->cfg.wasapi.device);
-  } else {
-    capture->device[0] = '\0';
-  }
-
-  capture->sample_rate = sample_rate;
-  capture->channels = config->cfg.wasapi.channels;
-  capture->chunk_size = chunk_size;
-  capture->format = config->cfg.wasapi.format;
-  capture->loopback = config->cfg.wasapi.loopback;
-  capture->exclusive = config->cfg.wasapi.exclusive;
-  capture->polling =
-      config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
-
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
-  if (!backend) {
-    free(capture);
-    return NULL;
-  }
-  backend->ctx = capture;
-  backend->vtable = &wasapi_capture_vtable;
-  backend->is_realtime = true;
-  return backend;
-}
-
-bool wasapi_capture_open(wasapi_capture_t* capture, backend_error_t* err) {
+static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
+  if (!capture) return false;
   // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
@@ -806,8 +680,19 @@ error_cleanup:
   return false;
 }
 
-bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
-                         audio_chunk_t* chunk, backend_error_t* err) {
+/**
+ * @brief Reads audio data from the WASAPI capture stream.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @param frames Number of frames to read.
+ * @param chunk Pointer to the audio_chunk_t where the read data will be stored.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return true if successful, false otherwise.
+ */
+static bool wasapi_capture_read(void* ctx, size_t frames,
+                                audio_chunk_t* chunk, backend_error_t* err) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
+  if (!capture) return false;
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
@@ -928,7 +813,13 @@ bool wasapi_capture_read(wasapi_capture_t* capture, size_t frames,
   return true;
 }
 
-void wasapi_capture_close(wasapi_capture_t* capture) {
+/**
+ * @brief Closes the WASAPI capture stream.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ */
+static void wasapi_capture_close(void* ctx) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return;
   if (capture->client) {
     IAudioClient_Stop(capture->client);
@@ -960,8 +851,16 @@ void wasapi_capture_close(wasapi_capture_t* capture) {
   }
 }
 
-bool wasapi_capture_get_pending_rate_change(wasapi_capture_t* capture,
-                                            double* out_rate) {
+/**
+ * @brief Checks if there is a pending rate change for the capture backend.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @param out_rate Pointer to double to receive the new rate if pending.
+ * @return true if there is a pending rate change, false otherwise.
+ */
+static bool wasapi_capture_get_pending_rate_change(void* ctx,
+                                                   double* out_rate) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
   bool changed = capture->has_pending_rate_change;
   if (changed) {
@@ -973,17 +872,38 @@ bool wasapi_capture_get_pending_rate_change(wasapi_capture_t* capture,
   return changed;
 }
 
-bool wasapi_capture_pitch_control_supported(wasapi_capture_t* capture) {
-  (void)capture;
+/**
+ * @brief Checks if pitch control is supported by the capture backend.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @return true if supported, false otherwise.
+ */
+static bool wasapi_capture_pitch_control_supported(void* ctx) {
+  (void)ctx;
   return false;
 }
 
-void wasapi_capture_set_pitch(wasapi_capture_t* capture, double multiplier) {
-  (void)capture;
+/**
+ * @brief Sets the pitch multiplier for the capture backend.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @param multiplier The pitch multiplier to set.
+ */
+static void wasapi_capture_set_pitch(void* ctx, double multiplier) {
+  (void)ctx;
   (void)multiplier;
 }
 
-bool wasapi_capture_wait(wasapi_capture_t* capture, uint32_t timeout_ms) {
+/**
+ * @brief Waits for audio data to be available for capture.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return true if data is available, false on timeout or error.
+ */
+static bool wasapi_capture_wait(void* ctx, uint32_t timeout_ms) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
+  if (!capture) return false;
   if (capture->polling) {
     cdsp_sleep_ms(1);
     return true;
@@ -992,121 +912,80 @@ bool wasapi_capture_wait(wasapi_capture_t* capture, uint32_t timeout_ms) {
   return WaitForSingleObject(capture->event, timeout_ms) == WAIT_OBJECT_0;
 }
 
-void wasapi_capture_destroy(wasapi_capture_t* capture) {
+/**
+ * @brief Destroys the WASAPI capture instance and frees resources.
+ *
+ * @param ctx Pointer to the wasapi_capture_t instance to destroy.
+ */
+static void wasapi_capture_destroy(void* ctx) {
+  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (capture) {
     wasapi_capture_close(capture);
     free(capture);
   }
 }
 
+static const capture_backend_vtable_t wasapi_capture_vtable = {
+    .open = wasapi_capture_open,
+    .read = wasapi_capture_read,
+    .close = wasapi_capture_close,
+    .get_pending_rate_change = wasapi_capture_get_pending_rate_change,
+    .is_pitch_control_supported = wasapi_capture_pitch_control_supported,
+    .set_pitch = wasapi_capture_set_pitch,
+    .wait_for_data = wasapi_capture_wait,
+    .stop = wasapi_capture_stop,
+    .destroy = wasapi_capture_destroy};
+
+/**
+ * @brief Creates a WASAPI capture backend.
+ *
+ * @param config Configuration for the capture device.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The chunk size in frames.
+ * @param params Processing parameters.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return A pointer to the created capture_backend_t, or NULL on failure.
+ */
+capture_backend_t* wasapi_capture_create(const capture_device_config_t* config,
+                                         int sample_rate, int chunk_size,
+                                         processing_parameters_t* params,
+                                         backend_error_t* err) {
+  (void)params;
+  (void)err;
+  wasapi_capture_t* capture =
+      (wasapi_capture_t*)calloc(1, sizeof(wasapi_capture_t));
+  if (!capture) return NULL;
+
+  if (config->cfg.wasapi.has_device &&
+      strcmp(config->cfg.wasapi.device, "default") != 0) {
+    snprintf(capture->device, sizeof(capture->device), "%s",
+             config->cfg.wasapi.device);
+  } else {
+    capture->device[0] = '\0';
+  }
+
+  capture->sample_rate = sample_rate;
+  capture->channels = config->cfg.wasapi.channels;
+  capture->chunk_size = chunk_size;
+  capture->format = config->cfg.wasapi.format;
+  capture->loopback = config->cfg.wasapi.loopback;
+  capture->exclusive = config->cfg.wasapi.exclusive;
+  capture->polling =
+      config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+
+  capture_backend_t* backend =
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  if (!backend) {
+    free(capture);
+    return NULL;
+  }
+  backend->ctx = capture;
+  backend->vtable = &wasapi_capture_vtable;
+  backend->is_realtime = true;
+  return backend;
+}
+
 // MARK: - Playback Backend implementation
-
-/**
- * @brief Vtable adapter to open the WASAPI playback stream.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool play_vtable_open(void* ctx, backend_error_t* err) {
-  return wasapi_playback_open((wasapi_playback_t*)ctx, err);
-}
-
-/**
- * @brief Vtable adapter to write a chunk of audio to the WASAPI playback
- * stream.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @param chunk Pointer to audio_chunk_t containing the data to write.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool play_vtable_write(void* ctx, const audio_chunk_t* chunk,
-                              backend_error_t* err) {
-  return wasapi_playback_write((wasapi_playback_t*)ctx, chunk, err);
-}
-
-/**
- * @brief Vtable adapter to close the WASAPI playback stream.
- * @param ctx Pointer to the wasapi_playback_t context.
- */
-static void play_vtable_close(void* ctx) {
-  wasapi_playback_close((wasapi_playback_t*)ctx);
-}
-
-/**
- * @brief Vtable adapter to get the current playback buffer level in frames.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @return Buffer level in frames (padding).
- */
-static size_t play_vtable_get_buffer_level(void* ctx) {
-  return wasapi_playback_get_buffer_level((wasapi_playback_t*)ctx);
-}
-
-/**
- * @brief Vtable adapter to check for pending rate changes.
- * @note WASAPI backend does not support dynamic rate changes.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @param out_rate Pointer to store the new rate (unused).
- * @return Always false.
- */
-static bool play_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return wasapi_playback_get_pending_rate_change((wasapi_playback_t*)ctx,
-                                                 out_rate);
-}
-
-/**
- * @brief Vtable adapter to prefill the playback buffer with silence.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @param frames Number of silence frames to write.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool play_vtable_prefill_silence(void* ctx, size_t frames,
-                                        backend_error_t* err) {
-  return wasapi_playback_prefill_silence((wasapi_playback_t*)ctx, frames, err);
-}
-
-/**
- * @brief Vtable adapter to check if playback is paused.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @return true if paused, false otherwise.
- */
-static bool play_vtable_get_is_paused(void* ctx) {
-  return wasapi_playback_get_is_paused((wasapi_playback_t*)ctx);
-}
-
-/**
- * @brief Vtable adapter to set the paused state of playback.
- * @param ctx Pointer to the wasapi_playback_t context.
- * @param paused Desired paused state.
- */
-static void play_vtable_set_is_paused(void* ctx, bool paused) {
-  wasapi_playback_set_is_paused((wasapi_playback_t*)ctx, paused);
-}
-
-/**
- * @brief Vtable adapter to destroy the WASAPI playback context.
- * @param ctx Pointer to the wasapi_playback_t context.
- */
-static void play_vtable_destroy(void* ctx) {
-  wasapi_playback_destroy((wasapi_playback_t*)ctx);
-}
-
-static void play_vtable_stop(void* ctx) {
-  void wasapi_playback_stop(wasapi_playback_t * playback);
-  wasapi_playback_stop((wasapi_playback_t*)ctx);
-}
-
-static const playback_backend_vtable_t wasapi_playback_vtable = {
-    .open = play_vtable_open,
-    .write = play_vtable_write,
-    .close = play_vtable_close,
-    .get_buffer_level = play_vtable_get_buffer_level,
-    .get_pending_rate_change = play_vtable_get_pending_rate_change,
-    .prefill_silence = play_vtable_prefill_silence,
-    .get_is_paused = play_vtable_get_is_paused,
-    .set_is_paused = play_vtable_set_is_paused,
-    .stop = play_vtable_stop,
-    .destroy = play_vtable_destroy};
 
 static inline void encode_float_samples_to_wasapi(BYTE* dst, const float* src,
                                                   size_t frames, int channels,
@@ -1264,7 +1143,16 @@ playback_backend_t* wasapi_playback_create(
   return backend;
 }
 
-bool wasapi_playback_open(wasapi_playback_t* playback, backend_error_t* err) {
+/**
+ * @brief Opens the WASAPI playback stream.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return true if successful, false otherwise.
+ */
+static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
+  if (!playback) return false;
   // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
@@ -1612,8 +1500,18 @@ error_cleanup:
   return false;
 }
 
-bool wasapi_playback_write(wasapi_playback_t* playback,
-                           const audio_chunk_t* chunk, backend_error_t* err) {
+/**
+ * @brief Writes audio data to the WASAPI playback stream.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @param chunk Pointer to the audio_chunk_t containing data to write.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return true if successful, false otherwise.
+ */
+static bool wasapi_playback_write(void* ctx,
+                                const audio_chunk_t* chunk, backend_error_t* err) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
+  if (!playback) return false;
   if (atomic_load_explicit(&playback->paused, memory_order_acquire))
     return true;
 
@@ -1775,7 +1673,13 @@ bool wasapi_playback_write(wasapi_playback_t* playback,
   return true;
 }
 
-void wasapi_playback_close(wasapi_playback_t* playback) {
+/**
+ * @brief Closes the WASAPI playback stream.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ */
+static void wasapi_playback_close(void* ctx) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return;
   if (playback->thread_running) {
     atomic_store_explicit(&playback->thread_running, false,
@@ -1823,8 +1727,15 @@ void wasapi_playback_close(wasapi_playback_t* playback) {
   }
 }
 
-size_t wasapi_playback_get_buffer_level(wasapi_playback_t* playback) {
-  if (!playback->client) return 0;
+/**
+ * @brief Gets the current buffer level of the playback backend in frames.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @return The buffer level in frames.
+ */
+static size_t wasapi_playback_get_buffer_level(void* ctx) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
+  if (!playback || !playback->client) return 0;
   UINT32 padding = 0;
   IAudioClient_GetCurrentPadding(playback->client, &padding);
   if (playback->polling) {
@@ -1839,8 +1750,16 @@ size_t wasapi_playback_get_buffer_level(wasapi_playback_t* playback) {
   return padding + ring_frames;
 }
 
-bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
-                                             double* out_rate) {
+/**
+ * @brief Checks if there is a pending rate change for the playback backend.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @param out_rate Pointer to double to receive the new rate if pending.
+ * @return true if there is a pending rate change, false otherwise.
+ */
+static bool wasapi_playback_get_pending_rate_change(void* ctx,
+                                                    double* out_rate) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
   bool changed = playback->has_pending_rate_change;
   if (changed) {
@@ -1852,9 +1771,19 @@ bool wasapi_playback_get_pending_rate_change(wasapi_playback_t* playback,
   return changed;
 }
 
-bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
-                                     backend_error_t* err) {
+/**
+ * @brief Prefills the playback buffer with silence.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @param frames Number of frames of silence to prefill.
+ * @param err Pointer to a backend_error_t to receive error details on failure.
+ * @return true if successful, false otherwise.
+ */
+static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
+                                            backend_error_t* err) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   (void)frames;
+  if (!playback) return false;
   if (playback->polling || !playback->started) {
     if (!playback->render_client) return false;
     BYTE* data = NULL;
@@ -1913,28 +1842,37 @@ bool wasapi_playback_prefill_silence(wasapi_playback_t* playback, size_t frames,
   }
 }
 
-bool wasapi_playback_get_is_paused(wasapi_playback_t* playback) {
+/**
+ * @brief Checks if the playback is currently paused.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @return true if paused, false otherwise.
+ */
+static bool wasapi_playback_get_is_paused(void* ctx) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
-void wasapi_playback_set_is_paused(wasapi_playback_t* playback, bool paused) {
+/**
+ * @brief Sets the paused state of the playback.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ * @param paused true to pause, false to resume.
+ */
+static void wasapi_playback_set_is_paused(void* ctx, bool paused) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
 }
 
-void wasapi_capture_stop(wasapi_capture_t* capture) {
-  if (!capture) return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
-  if (capture->client) {
-    IAudioClient_Stop(capture->client);
-  }
-  if (capture->event) {
-    SetEvent(capture->event);
-  }
-}
-
-void wasapi_playback_stop(wasapi_playback_t* playback) {
+/**
+ * @brief Stops the WASAPI playback stream.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance.
+ */
+static void wasapi_playback_stop(void* ctx) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
   if (playback->client) {
@@ -1945,11 +1883,29 @@ void wasapi_playback_stop(wasapi_playback_t* playback) {
   }
 }
 
-void wasapi_playback_destroy(wasapi_playback_t* playback) {
+/**
+ * @brief Destroys the WASAPI playback instance and frees resources.
+ *
+ * @param ctx Pointer to the wasapi_playback_t instance to destroy.
+ */
+static void wasapi_playback_destroy(void* ctx) {
+  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (playback) {
     wasapi_playback_close(playback);
     free(playback);
   }
 }
+
+static const playback_backend_vtable_t wasapi_playback_vtable = {
+    .open = wasapi_playback_open,
+    .write = wasapi_playback_write,
+    .close = wasapi_playback_close,
+    .get_buffer_level = wasapi_playback_get_buffer_level,
+    .get_pending_rate_change = wasapi_playback_get_pending_rate_change,
+    .prefill_silence = wasapi_playback_prefill_silence,
+    .get_is_paused = wasapi_playback_get_is_paused,
+    .set_is_paused = wasapi_playback_set_is_paused,
+    .stop = wasapi_playback_stop,
+    .destroy = wasapi_playback_destroy};
 
 #endif  // ENABLE_WASAPI

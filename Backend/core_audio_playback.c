@@ -27,6 +27,8 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 
+static void core_audio_playback_close(void* ctx);
+
 struct core_audio_playback {
   char device_name[256];
   int channels;
@@ -180,141 +182,33 @@ static OSStatus playback_callback(void* inRefCon,
   return noErr;
 }
 
-/** @brief Vtable wrapper for core_audio_playback_open. */
-static bool vtable_open(void* ctx, backend_error_t* err) {
-  return core_audio_playback_open((core_audio_playback_t*)ctx, err);
-}
-/** @brief Vtable wrapper for core_audio_playback_write. */
-static bool vtable_write(void* ctx, const audio_chunk_t* chunk,
-                         backend_error_t* err) {
-  return core_audio_playback_write((core_audio_playback_t*)ctx, chunk, err);
-}
-/** @brief Vtable wrapper for core_audio_playback_close. */
-static void vtable_close(void* ctx) {
-  core_audio_playback_close((core_audio_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for core_audio_playback_get_buffer_level. */
-static size_t vtable_get_level(void* ctx) {
-  return core_audio_playback_get_buffer_level((core_audio_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for core_audio_playback_get_pending_rate_change. */
-static bool vtable_get_rate(void* ctx, double* out_rate) {
-  return core_audio_playback_get_pending_rate_change(
-      (core_audio_playback_t*)ctx, out_rate);
-}
-/** @brief Vtable wrapper for core_audio_playback_prefill_silence. */
-static bool vtable_prefill(void* ctx, size_t frames, backend_error_t* err) {
-  return core_audio_playback_prefill_silence((core_audio_playback_t*)ctx,
-                                             frames, err);
-}
-/** @brief Vtable wrapper for core_audio_playback_get_is_paused. */
-static bool vtable_get_paused(void* ctx) {
-  return core_audio_playback_get_is_paused((core_audio_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for core_audio_playback_set_is_paused. */
-static void vtable_set_paused(void* ctx, bool paused) {
-  core_audio_playback_set_is_paused((core_audio_playback_t*)ctx, paused);
-}
-static void vtable_destroy(void* ctx) {
-  core_audio_playback_destroy((core_audio_playback_t*)ctx);
+/**
+ * @brief Check if pitch control is supported on the CoreAudio playback device.
+ *
+ * @param ctx Pointer to the CoreAudio playback instance.
+ * @return true if supported, false otherwise.
+ */
+static bool core_audio_playback_pitch_control_supported(void* ctx) {
+  (void)ctx;
+  return false;
 }
 
-static void vtable_stop(void* ctx) {
-  void core_audio_playback_stop(core_audio_playback_t * playback);
-  core_audio_playback_stop((core_audio_playback_t*)ctx);
+/**
+ * @brief Apply pitch correction to the CoreAudio playback device.
+ *
+ * @param ctx Pointer to the CoreAudio playback instance.
+ * @param multiplier Pitch multiplier factor.
+ */
+static void core_audio_playback_set_pitch(void* ctx, double multiplier) {
+  (void)ctx;
+  (void)multiplier;
 }
 
-static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
-    .open = vtable_open,
-    .write = vtable_write,
-    .close = vtable_close,
-    .get_buffer_level = vtable_get_level,
-    .get_pending_rate_change = vtable_get_rate,
-    .prefill_silence = vtable_prefill,
-    .get_is_paused = vtable_get_paused,
-    .set_is_paused = vtable_set_paused,
-    .stop = vtable_stop,
-    .destroy = vtable_destroy};
 
-/// Create a CoreAudio playback backend instance.
-playback_backend_t* core_audio_playback_create(
-    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err) {
-  if (!config) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Config is NULL");
-    return NULL;
-  }
-  core_audio_playback_t* playback =
-      (core_audio_playback_t*)calloc(1, sizeof(core_audio_playback_t));
-  if (!playback) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    return NULL;
-  }
-  atomic_init(&playback->stopped, false);
-  const char* config_device = playback_device_config_get_device(config);
-  if (config_device && config_device[0] != '\0') {
-    strncpy(playback->device_name, config_device,
-            sizeof(playback->device_name) - 1);
-  }
-  int config_channels = playback_device_config_get_channels(config);
-  playback->channels = config_channels;
-  playback->sample_rate = (double)sample_rate;
-  playback->chunk_size = chunk_size;
-  playback->exclusive = playback_device_config_get_exclusive(config);
-
-  coreaudio_sample_format_t fmt = playback_device_config_get_format(config);
-  if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
-    const char* fmt_str = coreaudio_sample_format_to_string(fmt);
-    strncpy(playback->sample_format, fmt_str,
-            sizeof(playback->sample_format) - 1);
-    playback->has_sample_format = true;
-  }
-
-  playback->ring_buffer_size = chunk_size * 8;
-  playback->playback_rings = (spsc_audio_ring_buffer_t**)calloc(
-      config_channels, sizeof(spsc_audio_ring_buffer_t*));
-  if (!playback->playback_rings) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_playback_destroy(playback);
-    return NULL;
-  }
-  for (int i = 0; i < config_channels; i++) {
-    playback->playback_rings[i] =
-        spsc_audio_ring_buffer_create(playback->ring_buffer_size);
-    if (!playback->playback_rings[i]) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Out of memory");
-      core_audio_playback_destroy(playback);
-      return NULL;
-    }
-  }
-  atomic_init(&playback->is_device_alive, true);
-  atomic_init(&playback->is_paused, false);
-
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
-  if (!backend) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_playback_destroy(playback);
-    return NULL;
-  }
-  backend->ctx = playback;
-  backend->vtable = &CORE_AUDIO_PLAYBACK_VTABLE;
-  return backend;
-}
 
 /// Open the CoreAudio playback device and initialize output AudioUnit.
-bool core_audio_playback_open(core_audio_playback_t* playback,
-                              backend_error_t* err) {
+static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return false;
   logger_info(&g_logger,
               "Opening CoreAudio playback device '%s' (sample_rate=%.0f, "
@@ -522,9 +416,10 @@ cleanup:
 }
 
 /// Write an audio chunk into the playback ring buffers.
-bool core_audio_playback_write(core_audio_playback_t* playback,
-                               const audio_chunk_t* chunk,
-                               backend_error_t* err) {
+static bool core_audio_playback_write(void* ctx,
+                                      const audio_chunk_t* chunk,
+                                      backend_error_t* err) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return false;
   if (!atomic_load_explicit(&playback->is_device_alive, memory_order_acquire)) {
     if (err)
@@ -602,7 +497,8 @@ bool core_audio_playback_write(core_audio_playback_t* playback,
 }
 
 /// Close the CoreAudio playback device and release HAL resources.
-void core_audio_playback_close(core_audio_playback_t* playback) {
+static void core_audio_playback_close(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   if (!playback->audio_unit && playback->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio playback device");
@@ -648,7 +544,8 @@ void core_audio_playback_close(core_audio_playback_t* playback) {
 }
 
 /// Get the current buffer level in samples.
-size_t core_audio_playback_get_buffer_level(core_audio_playback_t* playback) {
+static size_t core_audio_playback_get_buffer_level(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback || !playback->playback_rings || !playback->playback_rings[0])
     return 0;
   return spsc_audio_ring_buffer_get_available_to_read(
@@ -656,16 +553,19 @@ size_t core_audio_playback_get_buffer_level(core_audio_playback_t* playback) {
 }
 
 /// Get any pending sample rate change detected on the playback device.
-bool core_audio_playback_get_pending_rate_change(
-    core_audio_playback_t* playback, double* out_rate) {
+static bool core_audio_playback_get_pending_rate_change(
+    void* ctx, double* out_rate) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback || !playback->rate_watcher) return false;
   return rate_change_watcher_get_pending_change(playback->rate_watcher,
                                                 out_rate);
 }
 
 /// Push zero samples into the playback ring buffer before real audio arrives.
-bool core_audio_playback_prefill_silence(core_audio_playback_t* playback,
-                                         size_t frames, backend_error_t* err) {
+static bool core_audio_playback_prefill_silence(void* ctx,
+                                                size_t frames,
+                                                backend_error_t* err) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   (void)err;
   if (!playback || frames == 0) return true;
   size_t to_write = frames < (size_t)playback->ring_buffer_size
@@ -679,22 +579,25 @@ bool core_audio_playback_prefill_silence(core_audio_playback_t* playback,
 }
 
 /// Check if playback is currently paused.
-bool core_audio_playback_get_is_paused(core_audio_playback_t* playback) {
+static bool core_audio_playback_get_is_paused(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   return playback
              ? atomic_load_explicit(&playback->is_paused, memory_order_acquire)
              : false;
 }
 
 /// Set playback paused status.
-void core_audio_playback_set_is_paused(core_audio_playback_t* playback,
-                                       bool paused) {
+static void core_audio_playback_set_is_paused(void* ctx,
+                                              bool paused) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (playback) {
     atomic_store_explicit(&playback->is_paused, paused, memory_order_release);
   }
 }
 
 /// Destroy and free the CoreAudio playback backend.
-void core_audio_playback_stop(core_audio_playback_t* playback) {
+static void core_audio_playback_stop(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
   if (playback->audio_unit) {
@@ -702,7 +605,8 @@ void core_audio_playback_stop(core_audio_playback_t* playback) {
   }
 }
 
-void core_audio_playback_destroy(core_audio_playback_t* playback) {
+static void core_audio_playback_destroy(void* ctx) {
+  core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   core_audio_playback_close(playback);
   if (playback->playback_rings) {
@@ -713,5 +617,95 @@ void core_audio_playback_destroy(core_audio_playback_t* playback) {
     free(playback->playback_rings);
   }
   free(playback);
+}
+
+static const playback_backend_vtable_t CORE_AUDIO_PLAYBACK_VTABLE = {
+    .open = core_audio_playback_open,
+    .write = core_audio_playback_write,
+    .close = core_audio_playback_close,
+    .get_buffer_level = core_audio_playback_get_buffer_level,
+    .get_pending_rate_change = core_audio_playback_get_pending_rate_change,
+    .prefill_silence = core_audio_playback_prefill_silence,
+    .get_is_paused = core_audio_playback_get_is_paused,
+    .set_is_paused = core_audio_playback_set_is_paused,
+    .pitch_control_supported = core_audio_playback_pitch_control_supported,
+    .set_pitch = core_audio_playback_set_pitch,
+    .stop = core_audio_playback_stop,
+    .destroy = core_audio_playback_destroy};
+
+/// Create a CoreAudio playback backend instance.
+playback_backend_t* core_audio_playback_create(
+    const playback_device_config_t* config, int sample_rate, size_t chunk_size,
+    backend_error_t* err) {
+  if (!config) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Config is NULL");
+    return NULL;
+  }
+  core_audio_playback_t* playback =
+      (core_audio_playback_t*)calloc(1, sizeof(core_audio_playback_t));
+  if (!playback) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    return NULL;
+  }
+  atomic_init(&playback->stopped, false);
+  const char* config_device = playback_device_config_get_device(config);
+  if (config_device && config_device[0] != '\0') {
+    strncpy(playback->device_name, config_device,
+            sizeof(playback->device_name) - 1);
+  }
+  int config_channels = playback_device_config_get_channels(config);
+  playback->channels = config_channels;
+  playback->sample_rate = (double)sample_rate;
+  playback->chunk_size = chunk_size;
+  playback->exclusive = playback_device_config_get_exclusive(config);
+
+  coreaudio_sample_format_t fmt = playback_device_config_get_format(config);
+  if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
+    const char* fmt_str = coreaudio_sample_format_to_string(fmt);
+    strncpy(playback->sample_format, fmt_str,
+            sizeof(playback->sample_format) - 1);
+    playback->has_sample_format = true;
+  }
+
+  playback->ring_buffer_size = chunk_size * 8;
+  playback->playback_rings = (spsc_audio_ring_buffer_t**)calloc(
+      config_channels, sizeof(spsc_audio_ring_buffer_t*));
+  if (!playback->playback_rings) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    core_audio_playback_destroy(playback);
+    return NULL;
+  }
+  for (int i = 0; i < config_channels; i++) {
+    playback->playback_rings[i] =
+        spsc_audio_ring_buffer_create(playback->ring_buffer_size);
+    if (!playback->playback_rings[i]) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Out of memory");
+      core_audio_playback_destroy(playback);
+      return NULL;
+    }
+  }
+  atomic_init(&playback->is_device_alive, true);
+  atomic_init(&playback->is_paused, false);
+
+  playback_backend_t* backend =
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  if (!backend) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    core_audio_playback_destroy(playback);
+    return NULL;
+  }
+  backend->ctx = playback;
+  backend->vtable = &CORE_AUDIO_PLAYBACK_VTABLE;
+  return backend;
 }
 #endif  // ENABLE_COREAUDIO

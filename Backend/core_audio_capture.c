@@ -29,6 +29,8 @@
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 
+static void core_audio_capture_close(void* ctx);
+
 struct core_audio_capture {
   char device_name[256];
   int channels;
@@ -284,178 +286,10 @@ static bool allocate_render_buffers(core_audio_capture_t* capture) {
   return true;
 }
 
-// --- Capture Backend VTable Adapters ---
-// The following static functions adapt the core_audio_capture_t interface
-// to the generic capture_backend_vtable_t callback structure.
-
-/**
- * @brief VTable callback to open the device.
- */
-static bool vtable_open(void* ctx, backend_error_t* err) {
-  return core_audio_capture_open((core_audio_capture_t*)ctx, err);
-}
-
-/**
- * @brief VTable callback to read audio frames.
- */
-static bool vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                        backend_error_t* err) {
-  return core_audio_capture_read((core_audio_capture_t*)ctx, frames, chunk,
-                                 err);
-}
-
-/**
- * @brief VTable callback to close the device.
- */
-static void vtable_close(void* ctx) {
-  core_audio_capture_close((core_audio_capture_t*)ctx);
-}
-
-/**
- * @brief VTable callback to check if there is a pending sample rate change
- * request.
- */
-static bool vtable_get_rate(void* ctx, double* out_rate) {
-  return core_audio_capture_get_pending_rate_change((core_audio_capture_t*)ctx,
-                                                    out_rate);
-}
-
-/**
- * @brief VTable callback to check if pitch control is supported.
- */
-static bool vtable_pitch_supp(void* ctx) {
-  return core_audio_capture_pitch_control_supported((core_audio_capture_t*)ctx);
-}
-
-/**
- * @brief VTable callback to set the pitch multiplier.
- */
-static void vtable_set_pitch(void* ctx, double mult) {
-  core_audio_capture_set_pitch((core_audio_capture_t*)ctx, mult);
-}
-
-/**
- * @brief VTable callback to wait for audio data (semaphore-based).
- */
-static bool vtable_wait(void* ctx, uint32_t t) {
-  return core_audio_capture_wait((core_audio_capture_t*)ctx, t);
-}
-
-static void vtable_destroy(void* ctx) {
-  core_audio_capture_destroy((core_audio_capture_t*)ctx);
-}
-
-static void vtable_stop(void* ctx) {
-  void core_audio_capture_stop(core_audio_capture_t * capture);
-  core_audio_capture_stop((core_audio_capture_t*)ctx);
-}
-
-static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
-    .open = vtable_open,
-    .read = vtable_read,
-    .close = vtable_close,
-    .get_pending_rate_change = vtable_get_rate,
-    .is_pitch_control_supported = vtable_pitch_supp,
-    .set_pitch = vtable_set_pitch,
-    .wait_for_data = vtable_wait,
-    .stop = vtable_stop,
-    .destroy = vtable_destroy};
-
-/// Create a CoreAudio capture backend instance.
-capture_backend_t* core_audio_capture_create(
-    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
-    backend_error_t* err) {
-  if (!config) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Config is NULL");
-    return NULL;
-  }
-  core_audio_capture_t* capture =
-      (core_audio_capture_t*)calloc(1, sizeof(core_audio_capture_t));
-  if (!capture) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    return NULL;
-  }
-  capture->semaphore = cdsp_sem_create();
-  if (!capture->semaphore) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create semaphore");
-    core_audio_capture_destroy(capture);
-    return NULL;
-  }
-  const char* config_device = capture_device_config_get_device(config);
-  if (config_device && config_device[0] != '\0') {
-    strncpy(capture->device_name, config_device,
-            sizeof(capture->device_name) - 1);
-  }
-  int config_channels = capture_device_config_get_channels(config);
-  capture->channels = config_channels;
-  capture->sample_rate = (double)sample_rate;
-  capture->chunk_size = chunk_size;
-
-  coreaudio_sample_format_t fmt = capture_device_config_get_format(config);
-  if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
-    const char* fmt_str = coreaudio_sample_format_to_string(fmt);
-    strncpy(capture->sample_format, fmt_str,
-            sizeof(capture->sample_format) - 1);
-    capture->has_sample_format = true;
-  }
-
-  capture->capture_rings = (spsc_audio_ring_buffer_t**)calloc(
-      config_channels, sizeof(spsc_audio_ring_buffer_t*));
-  if (!capture->capture_rings) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_capture_destroy(capture);
-    return NULL;
-  }
-  for (int i = 0; i < config_channels; i++) {
-    capture->capture_rings[i] = spsc_audio_ring_buffer_create(chunk_size * 4);
-    if (!capture->capture_rings[i]) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Out of memory");
-      core_audio_capture_destroy(capture);
-      return NULL;
-    }
-  }
-  atomic_init(&capture->is_device_alive, true);
-
-  AudioDeviceID dev_id = core_audio_device_id_for_name(
-      capture->device_name[0] ? capture->device_name : NULL,
-      CORE_AUDIO_SCOPE_INPUT);
-  if (dev_id != 0 &&
-      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
-    capture->pitch_control_active =
-        core_audio_device_select_adjustable_clock_source(dev_id);
-  } else {
-    capture->pitch_control_active = false;
-  }
-
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
-  if (!backend) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_capture_destroy(capture);
-    return NULL;
-  }
-  backend->ctx = capture;
-  backend->vtable = &CORE_AUDIO_CAPTURE_VTABLE;
-  backend->is_realtime = true;
-  return backend;
-}
-
 /// Open the CoreAudio capture device and initialize the AudioUnit and render
 /// buffers.
-bool core_audio_capture_open(core_audio_capture_t* capture,
-                             backend_error_t* err) {
+static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return false;
   core_audio_capture_close(capture);
 
@@ -655,8 +489,9 @@ cleanup:
 
 /// Read a chunk of audio from the capture ring buffers into the provided audio
 /// chunk.
-bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
-                             audio_chunk_t* chunk, backend_error_t* err) {
+static bool core_audio_capture_read(void* ctx, size_t frames,
+                                    audio_chunk_t* chunk, backend_error_t* err) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return false;
   // Verify that the hardware device is still alive using atomic access.
   if (!atomic_load_explicit(&capture->is_device_alive, memory_order_acquire)) {
@@ -700,7 +535,8 @@ bool core_audio_capture_read(core_audio_capture_t* capture, size_t frames,
 }
 
 /// Close the CoreAudio capture device and release HAL resources.
-void core_audio_capture_close(core_audio_capture_t* capture) {
+static void core_audio_capture_close(void* ctx) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return;
   if (!capture->audio_unit && capture->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio capture device");
@@ -743,35 +579,63 @@ void core_audio_capture_close(core_audio_capture_t* capture) {
 }
 
 /// Get any pending sample rate change detected on the capture device.
-bool core_audio_capture_get_pending_rate_change(core_audio_capture_t* capture,
-                                                double* out_rate) {
+static bool core_audio_capture_get_pending_rate_change(void* ctx,
+                                                        double* out_rate) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->rate_watcher) return false;
   return rate_change_watcher_get_pending_change(capture->rate_watcher,
                                                 out_rate);
 }
 
 /// Check if clock-pitch control is supported on the capture device.
-bool core_audio_capture_pitch_control_supported(core_audio_capture_t* capture) {
+static bool core_audio_capture_pitch_control_supported(void* ctx) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   return capture ? capture->pitch_control_active : false;
 }
 
 /// Apply a clock-pitch correction to the capture device.
-void core_audio_capture_set_pitch(core_audio_capture_t* capture,
-                                  double multiplier) {
+static void core_audio_capture_set_pitch(void* ctx,
+                                         double multiplier) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->pitch_control_active ||
       capture->opened_device_id == 0)
     return;
   core_audio_device_set_pitch(capture->opened_device_id, multiplier);
 }
 
-bool core_audio_capture_wait(core_audio_capture_t* capture,
-                             uint32_t timeout_ms) {
+/**
+ * @brief Wait for new samples to become available.
+ *
+ * @param ctx Pointer to the CoreAudio capture instance.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return true if data is available, false if timed out or error occurred.
+ */
+static bool core_audio_capture_wait(void* ctx,
+                                    uint32_t timeout_ms) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->semaphore) return false;
   if (capture->stopped) return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
-void core_audio_capture_stop(core_audio_capture_t* capture) {
+/**
+ * @brief Set the paused state of the capture backend.
+ *
+ * @param ctx Pointer to the CoreAudio capture instance.
+ * @param paused true to pause, false to resume.
+ */
+static void core_audio_capture_set_is_paused(void* ctx, bool paused) {
+  (void)ctx;
+  (void)paused;
+}
+
+/**
+ * @brief Stop the CoreAudio capture device.
+ *
+ * @param ctx Pointer to the CoreAudio capture instance.
+ */
+static void core_audio_capture_stop(void* ctx) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return;
   capture->stopped = true;
   if (capture->audio_unit) {
@@ -783,7 +647,8 @@ void core_audio_capture_stop(core_audio_capture_t* capture) {
 }
 
 /// Destroy and free the CoreAudio capture backend.
-void core_audio_capture_destroy(core_audio_capture_t* capture) {
+static void core_audio_capture_destroy(void* ctx) {
+  core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return;
   core_audio_capture_close(capture);
   if (capture->read_scratch) {
@@ -802,5 +667,108 @@ void core_audio_capture_destroy(core_audio_capture_t* capture) {
     capture->semaphore = NULL;
   }
   free(capture);
+}
+
+static const capture_backend_vtable_t CORE_AUDIO_CAPTURE_VTABLE = {
+    .open = core_audio_capture_open,
+    .read = core_audio_capture_read,
+    .close = core_audio_capture_close,
+    .get_pending_rate_change = core_audio_capture_get_pending_rate_change,
+    .is_pitch_control_supported = core_audio_capture_pitch_control_supported,
+    .set_pitch = core_audio_capture_set_pitch,
+    .wait_for_data = core_audio_capture_wait,
+    .set_is_paused = core_audio_capture_set_is_paused,
+    .stop = core_audio_capture_stop,
+    .destroy = core_audio_capture_destroy};
+
+/// Create a CoreAudio capture backend instance.
+capture_backend_t* core_audio_capture_create(
+    const capture_device_config_t* config, int sample_rate, size_t chunk_size,
+    backend_error_t* err) {
+  if (!config) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Config is NULL");
+    return NULL;
+  }
+  core_audio_capture_t* capture =
+      (core_audio_capture_t*)calloc(1, sizeof(core_audio_capture_t));
+  if (!capture) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    return NULL;
+  }
+  capture->semaphore = cdsp_sem_create();
+  if (!capture->semaphore) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to create semaphore");
+    core_audio_capture_destroy(capture);
+    return NULL;
+  }
+  const char* config_device = capture_device_config_get_device(config);
+  if (config_device && config_device[0] != '\0') {
+    strncpy(capture->device_name, config_device,
+            sizeof(capture->device_name) - 1);
+  }
+  int config_channels = capture_device_config_get_channels(config);
+  capture->channels = config_channels;
+  capture->sample_rate = (double)sample_rate;
+  capture->chunk_size = chunk_size;
+
+  coreaudio_sample_format_t fmt = capture_device_config_get_format(config);
+  if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
+    const char* fmt_str = coreaudio_sample_format_to_string(fmt);
+    strncpy(capture->sample_format, fmt_str,
+            sizeof(capture->sample_format) - 1);
+    capture->has_sample_format = true;
+  }
+
+  capture->capture_rings = (spsc_audio_ring_buffer_t**)calloc(
+      config_channels, sizeof(spsc_audio_ring_buffer_t*));
+  if (!capture->capture_rings) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    core_audio_capture_destroy(capture);
+    return NULL;
+  }
+  for (int i = 0; i < config_channels; i++) {
+    capture->capture_rings[i] = spsc_audio_ring_buffer_create(chunk_size * 4);
+    if (!capture->capture_rings[i]) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Out of memory");
+      core_audio_capture_destroy(capture);
+      return NULL;
+    }
+  }
+  atomic_init(&capture->is_device_alive, true);
+
+  AudioDeviceID dev_id = core_audio_device_id_for_name(
+      capture->device_name[0] ? capture->device_name : NULL,
+      CORE_AUDIO_SCOPE_INPUT);
+  if (dev_id != 0 &&
+      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
+    capture->pitch_control_active =
+        core_audio_device_select_adjustable_clock_source(dev_id);
+  } else {
+    capture->pitch_control_active = false;
+  }
+
+  capture_backend_t* backend =
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  if (!backend) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    core_audio_capture_destroy(capture);
+    return NULL;
+  }
+  backend->ctx = capture;
+  backend->vtable = &CORE_AUDIO_CAPTURE_VTABLE;
+  backend->is_realtime = true;
+  return backend;
 }
 #endif  // ENABLE_COREAUDIO

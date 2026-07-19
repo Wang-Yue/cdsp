@@ -614,54 +614,346 @@ static inline void encode_samples_interleave(uint8_t* dst,
 
 // MARK: - File Capture Backend implementation
 
-/** @brief Vtable wrapper for file_capture_open. */
-static bool cap_vtable_open(void* ctx, backend_error_t* err) {
-  return file_capture_open((file_capture_t*)ctx, err);
+/**
+ * @brief Open the file capture device.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool file_capture_open(void* ctx, backend_error_t* err) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+  if (!capture) return false;
+  if (capture->is_stdin) {
+    capture->f = stdin;
+  } else {
+    capture->f = cdsp_fopen(capture->filename, "rb");
+    if (!capture->f) {
+      if (err) {
+        char err_msg[1024];
+        snprintf(err_msg, sizeof(err_msg), "Failed to open input file '%s': %s",
+                 capture->filename, strerror(errno));
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, err_msg);
+      }
+      return false;
+    }
+  }
+
+  if (capture->is_wav && !capture->is_stdin) {
+    wav_info_t info;
+    char msg[256];
+    if (!parse_wav_header(capture->f, &info, msg, sizeof(msg))) {
+      fclose(capture->f);
+      capture->f = NULL;
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      return false;
+    }
+    capture->sample_rate = info.sample_rate;
+    capture->channels = info.channels;
+    capture->format = info.format;
+    capture->read_bytes = info.data_bytes;
+
+    logger_info(&g_logger,
+                "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
+                info.sample_rate, info.channels,
+                binary_sample_format_to_string(info.format));
+
+    fseek_64(capture->f, info.data_start_offset, SEEK_SET);
+  } else {
+    if (capture->skip_bytes > 0 && !capture->is_stdin) {
+      fseek_64(capture->f, capture->skip_bytes, SEEK_SET);
+    }
+  }
+
+  size_t sample_size = get_sample_size(capture->format);
+  if (sample_size == 0 || capture->channels <= 0 || capture->chunk_size <= 0) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Invalid format, channels, or chunk size for file capture");
+    }
+    if (!capture->is_stdin && capture->f) {
+      fclose(capture->f);
+      capture->f = NULL;
+    }
+    return false;
+  }
+  capture->raw_buf_capacity =
+      capture->chunk_size * capture->channels * sample_size * 4;
+  capture->raw_buf =
+      (uint8_t*)calloc(capture->raw_buf_capacity, sizeof(uint8_t));
+  if (!capture->raw_buf) {
+    if (!capture->is_stdin) {
+      fclose(capture->f);
+      capture->f = NULL;
+    }
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
+    return false;
+  }
+
+  capture->total_bytes_read = 0;
+  capture->extra_samples_generated = 0;
+  capture->last_read_time_ns = get_time_ns();
+#ifdef CDSP_TEST
+  capture->start_time_ns = get_time_ns();
+  capture->total_frames_read = 0;
+#endif
+  return true;
 }
-/** @brief Vtable wrapper for file_capture_read. */
-static bool cap_vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                            backend_error_t* err) {
-  return file_capture_read((file_capture_t*)ctx, frames, chunk, err);
+
+/**
+ * @brief Read audio frames from the file capture device.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param frames Number of frames to read.
+ * @param chunk Pointer to the audio chunk to fill.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool file_capture_read(void* ctx, size_t frames,
+                             audio_chunk_t* chunk, backend_error_t* err) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+  if (!capture) return false;
+  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
+    cdsp_sleep_ms(10);
+  }
+  if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
+    }
+    return false;
+  }
+
+#if !defined(_WIN32)
+  bool should_poll = true;
+  struct stat st;
+  if (fstat(fileno(capture->f), &st) == 0 && S_ISREG(st.st_mode)) {
+    should_poll = false;
+  }
+
+  if (should_poll) {
+    struct pollfd pfd = {
+        .fd = fileno(capture->f), .events = POLLIN, .revents = 0};
+    int poll_ret = poll(&pfd, 1, 50);
+    if (poll_ret == 0) {
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    } else if (poll_ret < 0) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Poll error");
+      }
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    }
+  }
+#endif
+
+  size_t sample_size = get_sample_size(capture->format);
+  if (sample_size == 0 || capture->channels == 0) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return false;
+  }
+  size_t frames_to_read = frames;
+
+  size_t bytes_to_read = frames_to_read * capture->channels * sample_size;
+  if (capture->read_bytes > 0 &&
+      (capture->total_bytes_read + bytes_to_read) > capture->read_bytes) {
+    bytes_to_read = capture->read_bytes - capture->total_bytes_read;
+  }
+
+  size_t bytes_read = 0;
+  if (bytes_to_read > 0) {
+    if (bytes_to_read > capture->raw_buf_capacity) {
+      uint8_t* new_buf = (uint8_t*)realloc(capture->raw_buf, bytes_to_read);
+      if (!new_buf) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to reallocate file capture raw buffer");
+        }
+        audio_chunk_set_valid_frames(chunk, 0);
+        return false;
+      }
+      capture->raw_buf = new_buf;
+      capture->raw_buf_capacity = bytes_to_read;
+    }
+    bytes_read = fread(capture->raw_buf, 1, bytes_to_read, capture->f);
+    capture->total_bytes_read += bytes_read;
+  }
+
+  size_t frames_read = bytes_read / (capture->channels * sample_size);
+
+  double* dst_channels[capture->channels];
+  for (int c = 0; c < capture->channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+  decode_samples_deinterleave(dst_channels, capture->raw_buf, frames_read,
+                              capture->channels, capture->format);
+
+  if (frames_read < frames) {
+    size_t remaining_frames = frames - frames_read;
+    size_t extra_to_generate =
+        capture->extra_samples - capture->extra_samples_generated;
+    if (extra_to_generate > remaining_frames) {
+      extra_to_generate = remaining_frames;
+    }
+
+    if (extra_to_generate > 0) {
+      for (size_t f = frames_read; f < (frames_read + extra_to_generate); f++) {
+        for (int c = 0; c < capture->channels; c++) {
+          audio_chunk_get_channel(chunk, c)[f] = 0.0;
+        }
+      }
+      capture->extra_samples_generated += extra_to_generate;
+      frames_read += extra_to_generate;
+    }
+  }
+
+  audio_chunk_set_valid_frames(chunk, frames_read);
+
+#ifdef CDSP_TEST
+  if (frames_read > 0) {
+    if (capture->total_frames_read == 0) {
+      capture->start_time_ns = get_time_ns();
+    }
+    capture->total_frames_read += frames_read;
+    if (capture->realtime) {
+      uint64_t target_elapsed_ns = (uint64_t)capture->total_frames_read *
+                                   1000000000ULL /
+                                   (uint64_t)capture->sample_rate;
+      uint64_t actual_elapsed_ns = get_time_ns() - capture->start_time_ns;
+      if (target_elapsed_ns > actual_elapsed_ns) {
+        uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
+        cdsp_sleep_us(sleep_ns / 1000ULL);
+      }
+    }
+  }
+#endif
+
+  if (frames_read == 0) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_READ_EOF,
+                         "End of file/stream reached");
+    }
+  }
+
+  return (frames_read > 0);
 }
-/** @brief Vtable wrapper for file_capture_close. */
-static void cap_vtable_close(void* ctx) {
-  file_capture_close((file_capture_t*)ctx);
+
+/**
+ * @brief Close the file capture device.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ */
+static void file_capture_close(void* ctx) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+  if (!capture) return;
+  if (capture->f && !capture->is_stdin) {
+    fclose(capture->f);
+    capture->f = NULL;
+  }
+  if (capture->raw_buf) {
+    free(capture->raw_buf);
+    capture->raw_buf = NULL;
+  }
 }
-/** @brief Vtable wrapper for file_capture_get_pending_rate_change. */
-static bool cap_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return file_capture_get_pending_rate_change((file_capture_t*)ctx, out_rate);
+
+/**
+ * @brief Get any pending sample rate change.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param out_rate Pointer to double to store the pending sample rate.
+ * @return true if a rate change is pending, false otherwise.
+ */
+static bool file_capture_get_pending_rate_change(void* ctx,
+                                                 double* out_rate) {
+  (void)ctx;
+  (void)out_rate;
+  return false;
 }
-/** @brief Vtable wrapper for file_capture_pitch_control_supported. */
-static bool cap_vtable_is_pitch_control_supported(void* ctx) {
-  return file_capture_pitch_control_supported((file_capture_t*)ctx);
+
+/**
+ * @brief Check if pitch control is supported by the file capture backend.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @return true if supported, false otherwise.
+ */
+static bool file_capture_pitch_control_supported(void* ctx) {
+  (void)ctx;
+  return false;
 }
-/** @brief Vtable wrapper for file_capture_set_pitch. */
-static void cap_vtable_set_pitch(void* ctx, double multiplier) {
-  file_capture_set_pitch((file_capture_t*)ctx, multiplier);
+
+/**
+ * @brief Set the pitch multiplier for the file capture backend.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param multiplier The pitch multiplier.
+ */
+static void file_capture_set_pitch(void* ctx, double multiplier) {
+  (void)ctx;
+  (void)multiplier;
 }
-/** @brief Vtable wrapper for file_capture_wait. */
-static bool cap_vtable_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  return file_capture_wait((file_capture_t*)ctx, timeout_ms);
+
+/**
+ * @brief Wait for the file capture device to have data available.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return true if data is available, false on timeout or error.
+ */
+static bool file_capture_wait(void* ctx, uint32_t timeout_ms) {
+  (void)ctx;
+  cdsp_sleep_ms(timeout_ms);
+  return true;
 }
-/** @brief Vtable wrapper for file_capture_destroy. */
-static void cap_vtable_destroy(void* ctx) {
-  file_capture_destroy((file_capture_t*)ctx);
+
+/**
+ * @brief Set the paused state of the file capture backend.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ * @param paused true to pause, false to resume.
+ */
+static void file_capture_set_is_paused(void* ctx, bool paused) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+  if (capture) {
+    atomic_store_explicit(&capture->is_paused, paused, memory_order_release);
+  }
 }
-/** @brief Vtable wrapper for file_capture_set_is_paused. */
-static void cap_vtable_set_is_paused(void* ctx, bool paused) {
-  file_capture_set_is_paused((file_capture_t*)ctx, paused);
+
+/**
+ * @brief Stop the file capture device.
+ *
+ * @param ctx Pointer to the file_capture_t instance.
+ */
+static void file_capture_stop(void* ctx) { (void)ctx; }
+
+/**
+ * @brief Destroy the file capture backend instance.
+ *
+ * @param ctx Pointer to the file_capture_t instance to destroy.
+ */
+static void file_capture_destroy(void* ctx) {
+  file_capture_t* capture = (file_capture_t*)ctx;
+  if (!capture) return;
+  file_capture_close(capture);
+  free(capture);
 }
 
 static const capture_backend_vtable_t file_capture_vtable = {
-    .open = cap_vtable_open,
-    .read = cap_vtable_read,
-    .close = cap_vtable_close,
-    .get_pending_rate_change = cap_vtable_get_pending_rate_change,
-    .is_pitch_control_supported = cap_vtable_is_pitch_control_supported,
-    .set_pitch = cap_vtable_set_pitch,
-    .wait_for_data = cap_vtable_wait_for_data,
-    .set_is_paused = cap_vtable_set_is_paused,
-    .destroy = cap_vtable_destroy};
+    .open = file_capture_open,
+    .read = file_capture_read,
+    .close = file_capture_close,
+    .get_pending_rate_change = file_capture_get_pending_rate_change,
+    .is_pitch_control_supported = file_capture_pitch_control_supported,
+    .set_pitch = file_capture_set_pitch,
+    .wait_for_data = file_capture_wait,
+    .set_is_paused = file_capture_set_is_paused,
+    .stop = file_capture_stop,
+    .destroy = file_capture_destroy};
 
 capture_backend_t* file_capture_create(const capture_device_config_t* config,
                                        int sample_rate, int chunk_size,
@@ -743,399 +1035,18 @@ capture_backend_t* file_capture_create(const capture_device_config_t* config,
   return backend;
 }
 
-bool file_capture_open(file_capture_t* capture, backend_error_t* err) {
-  if (capture->is_stdin) {
-    capture->f = stdin;
-  } else {
-    capture->f = cdsp_fopen(capture->filename, "rb");
-    if (!capture->f) {
-      if (err) {
-        char err_msg[1024];
-        snprintf(err_msg, sizeof(err_msg), "Failed to open input file '%s': %s",
-                 capture->filename, strerror(errno));
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, err_msg);
-      }
-      return false;
-    }
-  }
-
-  if (capture->is_wav && !capture->is_stdin) {
-    wav_info_t info;
-    char msg[256];
-    if (!parse_wav_header(capture->f, &info, msg, sizeof(msg))) {
-      fclose(capture->f);
-      capture->f = NULL;
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-      return false;
-    }
-    capture->sample_rate = info.sample_rate;
-    capture->channels = info.channels;
-    capture->format = info.format;
-    capture->read_bytes = info.data_bytes;
-
-    logger_info(&g_logger,
-                "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
-                info.sample_rate, info.channels,
-                binary_sample_format_to_string(info.format));
-
-    fseek_64(capture->f, info.data_start_offset, SEEK_SET);
-  } else {
-    if (capture->skip_bytes > 0 && !capture->is_stdin) {
-      fseek_64(capture->f, capture->skip_bytes, SEEK_SET);
-    }
-  }
-
-  size_t sample_size = get_sample_size(capture->format);
-  if (sample_size == 0 || capture->channels <= 0 || capture->chunk_size <= 0) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INITIALIZATION_FAILED,
-          "Invalid format, channels, or chunk size for file capture");
-    }
-    if (!capture->is_stdin && capture->f) {
-      fclose(capture->f);
-      capture->f = NULL;
-    }
-    return false;
-  }
-  capture->raw_buf_capacity =
-      capture->chunk_size * capture->channels * sample_size * 4;
-  capture->raw_buf =
-      (uint8_t*)calloc(capture->raw_buf_capacity, sizeof(uint8_t));
-  if (!capture->raw_buf) {
-    if (!capture->is_stdin) {
-      fclose(capture->f);
-      capture->f = NULL;
-    }
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Memory allocation failure");
-    return false;
-  }
-
-  capture->total_bytes_read = 0;
-  capture->extra_samples_generated = 0;
-  capture->last_read_time_ns = get_time_ns();
-#ifdef CDSP_TEST
-  capture->start_time_ns = get_time_ns();
-  capture->total_frames_read = 0;
-#endif
-  return true;
-}
-
-bool file_capture_read(file_capture_t* capture, size_t frames,
-                       audio_chunk_t* chunk, backend_error_t* err) {
-  if (atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
-    cdsp_sleep_ms(10);
-  }
-  if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INVALID_CHANNELS,
-          "Chunk channels count does not match capture channels");
-    }
-    return false;
-  }
-
-#if !defined(_WIN32)
-  bool should_poll = true;
-  struct stat st;
-  if (fstat(fileno(capture->f), &st) == 0 && S_ISREG(st.st_mode)) {
-    should_poll = false;
-  }
-
-  if (should_poll) {
-    // Poll the file descriptor to see if data is readable.
-    // Timeout is set to 50ms. If no data, return false (no data read) so that
-    // the engine capture loop doesn't block forever and can check stop
-    // requests.
-    struct pollfd pfd = {
-        .fd = fileno(capture->f), .events = POLLIN, .revents = 0};
-    int poll_ret = poll(&pfd, 1, 50);
-    if (poll_ret == 0) {
-      // Timeout
-      audio_chunk_set_valid_frames(chunk, 0);
-      return false;
-    } else if (poll_ret < 0) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Poll error");
-      }
-      audio_chunk_set_valid_frames(chunk, 0);
-      return false;
-    }
-  }
-#endif
-
-  size_t sample_size = get_sample_size(capture->format);
-  if (sample_size == 0 || capture->channels == 0) {
-    audio_chunk_set_valid_frames(chunk, 0);
-    return false;
-  }
-  size_t frames_to_read = frames;
-
-  size_t bytes_to_read = frames_to_read * capture->channels * sample_size;
-  if (capture->read_bytes > 0 &&
-      (capture->total_bytes_read + bytes_to_read) > capture->read_bytes) {
-    bytes_to_read = capture->read_bytes - capture->total_bytes_read;
-  }
-
-  size_t bytes_read = 0;
-  if (bytes_to_read > 0) {
-    if (bytes_to_read > capture->raw_buf_capacity) {
-      uint8_t* new_buf = (uint8_t*)realloc(capture->raw_buf, bytes_to_read);
-      if (!new_buf) {
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             "Failed to reallocate file capture raw buffer");
-        }
-        audio_chunk_set_valid_frames(chunk, 0);
-        return false;
-      }
-      capture->raw_buf = new_buf;
-      capture->raw_buf_capacity = bytes_to_read;
-    }
-    bytes_read = fread(capture->raw_buf, 1, bytes_to_read, capture->f);
-    capture->total_bytes_read += bytes_read;
-  }
-
-  size_t frames_read = bytes_read / (capture->channels * sample_size);
-
-  // Decode read frames
-  double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-  decode_samples_deinterleave(dst_channels, capture->raw_buf, frames_read,
-                              capture->channels, capture->format);
-
-  // Check EOF and generate extra samples if configured
-  // If we read fewer frames than requested (e.g., EOF), and we have configured
-  // extra samples to generate, append silence up to the requested number of
-  // frames or until the extra samples limit is reached.
-  if (frames_read < frames) {
-    size_t remaining_frames = frames - frames_read;
-    size_t extra_to_generate =
-        capture->extra_samples - capture->extra_samples_generated;
-    if (extra_to_generate > remaining_frames) {
-      extra_to_generate = remaining_frames;
-    }
-
-    if (extra_to_generate > 0) {
-      for (size_t f = frames_read; f < (frames_read + extra_to_generate); f++) {
-        for (int c = 0; c < capture->channels; c++) {
-          audio_chunk_get_channel(chunk, c)[f] = 0.0;
-        }
-      }
-      capture->extra_samples_generated += extra_to_generate;
-      frames_read += extra_to_generate;
-    }
-  }
-
-  audio_chunk_set_valid_frames(chunk, frames_read);
-
-#ifdef CDSP_TEST
-  if (frames_read > 0) {
-    if (capture->total_frames_read == 0) {
-      capture->start_time_ns = get_time_ns();
-    }
-    capture->total_frames_read += frames_read;
-    if (capture->realtime) {
-      uint64_t target_elapsed_ns = (uint64_t)capture->total_frames_read *
-                                   1000000000ULL /
-                                   (uint64_t)capture->sample_rate;
-      uint64_t actual_elapsed_ns = get_time_ns() - capture->start_time_ns;
-      if (target_elapsed_ns > actual_elapsed_ns) {
-        uint64_t sleep_ns = target_elapsed_ns - actual_elapsed_ns;
-        cdsp_sleep_us(sleep_ns / 1000ULL);
-      }
-    }
-  }
-#endif
-
-  if (frames_read == 0) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_READ_EOF,
-                         "End of file/stream reached");
-    }
-  }
-
-  return (frames_read > 0);
-}
-
-void file_capture_close(file_capture_t* capture) {
-  if (!capture) return;
-  if (capture->f && !capture->is_stdin) {
-    fclose(capture->f);
-    capture->f = NULL;
-  }
-  if (capture->raw_buf) {
-    free(capture->raw_buf);
-    capture->raw_buf = NULL;
-  }
-}
-
-bool file_capture_get_pending_rate_change(file_capture_t* capture,
-                                          double* out_rate) {
-  (void)capture;
-  (void)out_rate;
-  return false;
-}
-
-bool file_capture_pitch_control_supported(file_capture_t* capture) {
-  (void)capture;
-  return false;
-}
-
-void file_capture_set_pitch(file_capture_t* capture, double multiplier) {
-  (void)capture;
-  (void)multiplier;
-}
-
-bool file_capture_wait(file_capture_t* capture, uint32_t timeout_ms) {
-  (void)capture;
-  cdsp_sleep_ms(timeout_ms);
-  return true;
-}
-
-void file_capture_destroy(file_capture_t* capture) {
-  if (!capture) return;
-  file_capture_close(capture);
-  free(capture);
-}
-
-void file_capture_set_is_paused(file_capture_t* capture, bool paused) {
-  if (capture) {
-    atomic_store_explicit(&capture->is_paused, paused, memory_order_release);
-  }
-}
-
 // MARK: - File Playback Backend implementation
 
-/** @brief Vtable wrapper for file_playback_open. */
-static bool play_vtable_open(void* ctx, backend_error_t* err) {
-  return file_playback_open((file_playback_t*)ctx, err);
-}
-/** @brief Vtable wrapper for file_playback_write. */
-static bool play_vtable_write(void* ctx, const audio_chunk_t* chunk,
-                              backend_error_t* err) {
-  return file_playback_write((file_playback_t*)ctx, chunk, err);
-}
-/** @brief Vtable wrapper for file_playback_close. */
-static void play_vtable_close(void* ctx) {
-  file_playback_close((file_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for file_playback_get_buffer_level. */
-static size_t play_vtable_get_buffer_level(void* ctx) {
-  return file_playback_get_buffer_level((file_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for file_playback_get_pending_rate_change. */
-static bool play_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return file_playback_get_pending_rate_change((file_playback_t*)ctx, out_rate);
-}
-/** @brief Vtable wrapper for file_playback_prefill_silence. */
-static bool play_vtable_prefill_silence(void* ctx, size_t frames,
-                                        backend_error_t* err) {
-  return file_playback_prefill_silence((file_playback_t*)ctx, frames, err);
-}
-/** @brief Vtable wrapper for file_playback_get_is_paused. */
-static bool play_vtable_get_is_paused(void* ctx) {
-  return file_playback_get_is_paused((file_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for file_playback_set_is_paused. */
-static void play_vtable_set_is_paused(void* ctx, bool paused) {
-  file_playback_set_is_paused((file_playback_t*)ctx, paused);
-}
-/** @brief Vtable wrapper for file_playback_destroy. */
-/** @brief Vtable wrapper for file_playback_stop. */
-static void play_vtable_stop(void* ctx) {
-#ifdef CDSP_TEST
+/**
+ * @brief Open the file playback device.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool file_playback_open(void* ctx, backend_error_t* err) {
   file_playback_t* playback = (file_playback_t*)ctx;
-  if (playback) {
-    playback->stopped = true;
-  }
-#else
-  (void)ctx;
-#endif
-}
-/** @brief Vtable wrapper for file_playback_destroy. */
-static void play_vtable_destroy(void* ctx) {
-  file_playback_destroy((file_playback_t*)ctx);
-}
-
-static const playback_backend_vtable_t file_playback_vtable = {
-    .open = play_vtable_open,
-    .write = play_vtable_write,
-    .close = play_vtable_close,
-    .get_buffer_level = play_vtable_get_buffer_level,
-    .get_pending_rate_change = play_vtable_get_pending_rate_change,
-    .prefill_silence = play_vtable_prefill_silence,
-    .get_is_paused = play_vtable_get_is_paused,
-    .set_is_paused = play_vtable_set_is_paused,
-    .stop = play_vtable_stop,
-    .destroy = play_vtable_destroy};
-
-playback_backend_t* file_playback_create(const playback_device_config_t* config,
-                                         int sample_rate, int chunk_size,
-                                         processing_parameters_t* params,
-                                         backend_error_t* err) {
-  (void)sample_rate;
-  (void)params;
-  (void)err;
-  if (config->type == AUDIO_BACKEND_TYPE_FILE &&
-      config->cfg.raw_file.wav_header &&
-      config->cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INITIALIZATION_FAILED,
-          "Wav files do not support the S24_4_RJ_LE sample format");
-    }
-    return NULL;
-  }
-
-  file_playback_t* playback =
-      (file_playback_t*)calloc(1, sizeof(file_playback_t));
-  if (!playback) return NULL;
-
-  if (config->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-    playback->is_stdout = true;
-    playback->format = config->cfg.stdout_out.format;
-    playback->is_wav = config->cfg.stdout_out.wav_header;
-    playback->use_rf64 = false;
-    playback->channels = config->cfg.stdout_out.channels;
-#ifdef CDSP_TEST
-    playback->realtime = false;
-#endif
-  } else {
-    snprintf(playback->filename, sizeof(playback->filename), "%s",
-             config->cfg.raw_file.filename);
-    playback->format = config->cfg.raw_file.format;
-    playback->is_wav = config->cfg.raw_file.wav_header;
-    playback->use_rf64 = config->cfg.raw_file.has_use_rf64
-                             ? config->cfg.raw_file.use_rf64
-                             : false;
-    playback->channels = config->cfg.raw_file.channels;
-#ifdef CDSP_TEST
-    playback->realtime = config->cfg.raw_file.has_realtime
-                             ? config->cfg.raw_file.realtime
-                             : false;
-#endif
-  }
-  playback->chunk_size = chunk_size;
-  playback->sample_rate = sample_rate;
-
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
-  if (!backend) {
-    free(playback);
-    return NULL;
-  }
-  backend->ctx = playback;
-  backend->vtable = &file_playback_vtable;
-  return backend;
-}
-
-bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
+  if (!playback) return false;
   if (playback->is_stdout) {
     playback->f = stdout;
   } else {
@@ -1215,8 +1126,18 @@ bool file_playback_open(file_playback_t* playback, backend_error_t* err) {
   return true;
 }
 
-bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
-                         backend_error_t* err) {
+/**
+ * @brief Write an audio chunk to the file playback device.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @param chunk Pointer to the audio chunk to write.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
+                                backend_error_t* err) {
+  file_playback_t* playback = (file_playback_t*)ctx;
+  if (!playback) return false;
 #ifdef CDSP_TEST
   if (playback->stopped) {
     if (err) {
@@ -1236,9 +1157,6 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
   size_t frames = audio_chunk_get_valid_frames(chunk);
   size_t sample_size = get_sample_size(playback->format);
 
-  // Allocate larger buffer if chunk size exceeds chunk_size
-  // Dynamically reallocate the raw buffer if the incoming chunk has more frames
-  // than our pre-allocated capacity (which was based on chunk_size).
   size_t required_bytes = frames * playback->channels * sample_size;
 
   if (playback->is_wav && playback->is_seekable && !playback->use_rf64) {
@@ -1268,7 +1186,6 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
     playback->raw_buf_capacity = required_bytes;
   }
 
-  // Encode samples
   const double* src_channels[playback->channels];
   for (int c = 0; c < playback->channels; c++) {
     src_channels[c] = audio_chunk_get_channel((audio_chunk_t*)chunk, c);
@@ -1302,11 +1219,16 @@ bool file_playback_write(file_playback_t* playback, const audio_chunk_t* chunk,
   return success;
 }
 
-void file_playback_close(file_playback_t* playback) {
+/**
+ * @brief Close the file playback device.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ */
+static void file_playback_close(void* ctx) {
+  file_playback_t* playback = (file_playback_t*)ctx;
   if (!playback) return;
   if (playback->f) {
     if (playback->is_wav && playback->is_seekable && !playback->is_stdout) {
-      // Write completed WAV header
       if (playback->use_rf64) {
         write_rf64_header_to_file(playback->f, playback->channels,
                                   playback->format, playback->sample_rate,
@@ -1328,41 +1250,165 @@ void file_playback_close(file_playback_t* playback) {
   }
 }
 
-size_t file_playback_get_buffer_level(file_playback_t* playback) {
-  (void)playback;
+/**
+ * @brief Get the current buffer level of the file playback backend.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @return The buffer level in samples.
+ */
+static size_t file_playback_get_buffer_level(void* ctx) {
+  (void)ctx;
   return 0;
 }
 
-bool file_playback_get_pending_rate_change(file_playback_t* playback,
-                                           double* out_rate) {
-  (void)playback;
+/**
+ * @brief Get any pending sample rate change.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @param out_rate Pointer to double to store the pending sample rate.
+ * @return true if a rate change is pending, false otherwise.
+ */
+static bool file_playback_get_pending_rate_change(void* ctx,
+                                                  double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
 
-bool file_playback_prefill_silence(file_playback_t* playback, size_t frames,
-                                   backend_error_t* err) {
-  (void)err;
-  // For file playback, we don't need to prefill silence because it is not
-  // real-time audio. However, to keep it clean and avoid errors, we just return
-  // true.
-  (void)playback;
+/**
+ * @brief Prefill the file playback buffer with silence.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @param frames Number of frames of silence to prefill.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool file_playback_prefill_silence(void* ctx, size_t frames,
+                                          backend_error_t* err) {
+  (void)ctx;
   (void)frames;
+  (void)err;
   return true;
 }
 
-bool file_playback_get_is_paused(file_playback_t* playback) {
-  (void)playback;
+/**
+ * @brief Check if file playback is currently paused.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @return true if paused, false otherwise.
+ */
+static bool file_playback_get_is_paused(void* ctx) {
+  (void)ctx;
   return false;
 }
 
-void file_playback_set_is_paused(file_playback_t* playback, bool paused) {
-  (void)playback;
+/**
+ * @brief Set the paused state of the file playback backend.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ * @param paused true to pause, false to resume.
+ */
+static void file_playback_set_is_paused(void* ctx, bool paused) {
+  (void)ctx;
   (void)paused;
 }
 
-void file_playback_destroy(file_playback_t* playback) {
+/**
+ * @brief Stop the file playback device.
+ *
+ * @param ctx Pointer to the file_playback_t instance.
+ */
+static void file_playback_stop(void* ctx) {
+#ifdef CDSP_TEST
+  file_playback_t* playback = (file_playback_t*)ctx;
+  if (playback) {
+    playback->stopped = true;
+  }
+#else
+  (void)ctx;
+#endif
+}
+
+/**
+ * @brief Destroy the file playback backend instance.
+ *
+ * @param ctx Pointer to the file_playback_t instance to destroy.
+ */
+static void file_playback_destroy(void* ctx) {
+  file_playback_t* playback = (file_playback_t*)ctx;
   if (!playback) return;
   file_playback_close(playback);
   free(playback);
+}
+
+static const playback_backend_vtable_t file_playback_vtable = {
+    .open = file_playback_open,
+    .write = file_playback_write,
+    .close = file_playback_close,
+    .get_buffer_level = file_playback_get_buffer_level,
+    .get_pending_rate_change = file_playback_get_pending_rate_change,
+    .prefill_silence = file_playback_prefill_silence,
+    .get_is_paused = file_playback_get_is_paused,
+    .set_is_paused = file_playback_set_is_paused,
+    .stop = file_playback_stop,
+    .destroy = file_playback_destroy};
+
+playback_backend_t* file_playback_create(const playback_device_config_t* config,
+                                         int sample_rate, int chunk_size,
+                                         processing_parameters_t* params,
+                                         backend_error_t* err) {
+  (void)sample_rate;
+  (void)params;
+  (void)err;
+  if (config->type == AUDIO_BACKEND_TYPE_FILE &&
+      config->cfg.raw_file.wav_header &&
+      config->cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Wav files do not support the S24_4_RJ_LE sample format");
+    }
+    return NULL;
+  }
+
+  file_playback_t* playback =
+      (file_playback_t*)calloc(1, sizeof(file_playback_t));
+  if (!playback) return NULL;
+
+  if (config->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    playback->is_stdout = true;
+    playback->format = config->cfg.stdout_out.format;
+    playback->is_wav = config->cfg.stdout_out.wav_header;
+    playback->use_rf64 = false;
+    playback->channels = config->cfg.stdout_out.channels;
+#ifdef CDSP_TEST
+    playback->realtime = false;
+#endif
+  } else {
+    snprintf(playback->filename, sizeof(playback->filename), "%s",
+             config->cfg.raw_file.filename);
+    playback->format = config->cfg.raw_file.format;
+    playback->is_wav = config->cfg.raw_file.wav_header;
+    playback->use_rf64 = config->cfg.raw_file.has_use_rf64
+                             ? config->cfg.raw_file.use_rf64
+                             : false;
+    playback->channels = config->cfg.raw_file.channels;
+#ifdef CDSP_TEST
+    playback->realtime = config->cfg.raw_file.has_realtime
+                             ? config->cfg.raw_file.realtime
+                             : false;
+#endif
+  }
+  playback->chunk_size = chunk_size;
+  playback->sample_rate = sample_rate;
+
+  playback_backend_t* backend =
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  if (!backend) {
+    free(playback);
+    return NULL;
+  }
+  backend->ctx = playback;
+  backend->vtable = &file_playback_vtable;
+  return backend;
 }

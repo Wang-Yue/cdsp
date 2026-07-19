@@ -979,6 +979,13 @@ static ASIOCallbacks asio_callbacks = {
  * @param err Pointer to backend_error_t to receive error details.
  * @return true if successful, false otherwise.
  */
+/**
+ * @brief Internal method to open the ASIO capture stream.
+ *
+ * @param ctx Pointer to the asio_capture_t context.
+ * @param err Pointer to backend_error_t to receive error details.
+ * @return true if successful, false otherwise.
+ */
 static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
   asio_capture_t* capture = (asio_capture_t*)ctx;
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -1200,6 +1207,13 @@ static void asio_capture_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+/**
+ * @brief Checks if there is a pending rate change for the ASIO capture backend.
+ *
+ * @param ctx Pointer to the asio_capture_t context.
+ * @param out_rate Pointer to double to receive the new rate if pending.
+ * @return true if there is a pending rate change, false otherwise.
+ */
 static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   asio_capture_t* capture = (asio_capture_t*)ctx;
   if (!capture) return false;
@@ -1215,9 +1229,21 @@ static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   return changed;
 }
 
-static void asio_capture_stop_internal(void* ctx) {
-  void asio_capture_stop(asio_capture_t * capture);
-  asio_capture_stop((asio_capture_t*)ctx);
+/**
+ * @brief Stops the ASIO capture stream.
+ *
+ * @param ctx Pointer to the asio_capture_t context.
+ */
+static void asio_capture_stop(void* ctx) {
+  asio_capture_t* capture = (asio_capture_t*)ctx;
+  if (!capture) return;
+  capture->stopped = true;
+  if (capture->iasio) {
+    capture->iasio->lpVtbl->stop(capture->iasio);
+  }
+  if (g_capture_event) {
+    SetEvent(g_capture_event);
+  }
 }
 
 static const capture_backend_vtable_t asio_capture_vtable = {
@@ -1229,7 +1255,7 @@ static const capture_backend_vtable_t asio_capture_vtable = {
     .set_pitch = NULL,
     .wait_for_data = asio_capture_wait_for_data,
     .set_is_paused = NULL,
-    .stop = asio_capture_stop_internal,
+    .stop = asio_capture_stop,
     .destroy = asio_capture_destroy_internal};
 
 capture_backend_t* asio_capture_new(const capture_device_config_t* config,
@@ -1520,6 +1546,13 @@ static void asio_playback_destroy_internal(void* ctx) {
   free(ctx);
 }
 
+/**
+ * @brief Checks if there is a pending rate change for the ASIO playback backend.
+ *
+ * @param ctx Pointer to the asio_playback_t context.
+ * @param out_rate Pointer to double to receive the new rate if pending.
+ * @return true if there is a pending rate change, false otherwise.
+ */
 static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   asio_playback_t* playback = (asio_playback_t*)ctx;
   if (!playback) return false;
@@ -1535,9 +1568,18 @@ static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   return changed;
 }
 
-static void asio_playback_stop_internal(void* ctx) {
-  void asio_playback_stop(asio_playback_t * playback);
-  asio_playback_stop((asio_playback_t*)ctx);
+/**
+ * @brief Stops the ASIO playback stream.
+ *
+ * @param ctx Pointer to the asio_playback_t context.
+ */
+static void asio_playback_stop(void* ctx) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  if (!playback) return;
+  playback->stopped = true;
+  if (playback->iasio) {
+    playback->iasio->lpVtbl->stop(playback->iasio);
+  }
 }
 
 static const playback_backend_vtable_t asio_playback_vtable = {
@@ -1551,7 +1593,7 @@ static const playback_backend_vtable_t asio_playback_vtable = {
     .set_is_paused = NULL,
     .pitch_control_supported = NULL,
     .set_pitch = NULL,
-    .stop = asio_playback_stop_internal,
+    .stop = asio_playback_stop,
     .destroy = asio_playback_destroy_internal};
 
 playback_backend_t* asio_playback_new(const playback_device_config_t* config,
@@ -1580,25 +1622,6 @@ playback_backend_t* asio_playback_new(const playback_device_config_t* config,
   backend->ctx = playback;
   backend->vtable = &asio_playback_vtable;
   return backend;
-}
-
-void asio_capture_stop(asio_capture_t* capture) {
-  if (!capture) return;
-  capture->stopped = true;
-  if (capture->iasio) {
-    capture->iasio->lpVtbl->stop(capture->iasio);
-  }
-  if (g_capture_event) {
-    SetEvent(g_capture_event);
-  }
-}
-
-void asio_playback_stop(asio_playback_t* playback) {
-  if (!playback) return;
-  playback->stopped = true;
-  if (playback->iasio) {
-    playback->iasio->lpVtbl->stop(playback->iasio);
-  }
 }
 
 #endif  // ENABLE_ASIO

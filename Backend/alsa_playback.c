@@ -42,154 +42,34 @@ struct alsa_playback {
  * @param err Pointer to backend_error_t to receive error details.
  * @return true if successful, false otherwise.
  */
-static bool vtable_open(void* ctx, backend_error_t* err) {
-  return alsa_playback_open((alsa_playback_t*)ctx, err);
-}
-
-/**
- * @brief Write audio samples to the ALSA device.
- *
- * Wrapper for alsa_playback_write to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param chunk Audio chunk to write.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool vtable_write(void* ctx, const audio_chunk_t* chunk,
-                         backend_error_t* err) {
-  return alsa_playback_write((alsa_playback_t*)ctx, chunk, err);
-}
-
-/**
- * @brief Close the ALSA playback device.
- *
- * Wrapper for alsa_playback_close to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- */
-static void vtable_close(void* ctx) {
-  alsa_playback_close((alsa_playback_t*)ctx);
-}
-
-/**
- * @brief Get the current ALSA buffer latency level.
- *
- * Wrapper for alsa_playback_get_buffer_level to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @return Current buffer level in frames.
- */
-static size_t vtable_get_buffer_level(void* ctx) {
-  return alsa_playback_get_buffer_level((alsa_playback_t*)ctx);
-}
-
-/**
- * @brief Check for pending rate change.
- *
- * Wrapper for alsa_playback_get_pending_rate_change to match the backend
- * vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param out_rate Pointer to receive the new rate.
- * @return true if a rate change is pending, false otherwise.
- */
-static bool vtable_get_rate(void* ctx, double* out_rate) {
-  return alsa_playback_get_pending_rate_change((alsa_playback_t*)ctx, out_rate);
-}
-
-/**
- * @brief Prefill ALSA buffer with silence.
- *
- * Wrapper for alsa_playback_prefill_silence to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param frames Number of silence frames to prefill.
- * @param err Pointer to backend_error_t to receive error details.
- * @return true if successful, false otherwise.
- */
-static bool vtable_prefill(void* ctx, size_t frames, backend_error_t* err) {
-  return alsa_playback_prefill_silence((alsa_playback_t*)ctx, frames, err);
-}
-
-/**
- * @brief Get the pause status of the ALSA playback.
- *
- * Wrapper for alsa_playback_get_is_paused to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @return true if paused, false otherwise.
- */
-static bool vtable_get_paused(void* ctx) {
-  return alsa_playback_get_is_paused((alsa_playback_t*)ctx);
-}
-
-/**
- * @brief Set the pause status of the ALSA playback.
- *
- * Wrapper for alsa_playback_set_is_paused to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param paused true to pause, false to resume.
- */
-static void vtable_set_paused(void* ctx, bool paused) {
-  alsa_playback_set_is_paused((alsa_playback_t*)ctx, paused);
-}
-
-/**
- * @brief Destroy the ALSA playback context.
- *
- * Wrapper for alsa_playback_destroy to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- */
-static void vtable_destroy(void* ctx) {
-  alsa_playback_destroy((alsa_playback_t*)ctx);
-}
-
-/**
- * @brief Check if pitch control is supported by the ALSA device.
- *
- * Wrapper for alsa_playback_pitch_control_supported to match the backend
- * vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @return true if pitch control is supported, false otherwise.
- */
-static bool vtable_pitch_control_supported(void* ctx) {
-  return alsa_playback_pitch_control_supported((alsa_playback_t*)ctx);
-}
-
-/**
- * @brief Set the pitch multiplier for playback.
- *
- * Wrapper for alsa_playback_set_pitch to match the backend vtable.
- *
- * @param ctx Pointer to the alsa_playback_t context.
- * @param mult Pitch multiplier.
- */
-static void vtable_set_pitch(void* ctx, double mult) {
-  alsa_playback_set_pitch((alsa_playback_t*)ctx, mult);
-}
-
-static void vtable_stop(void* ctx) {
-  void alsa_playback_stop(alsa_playback_t * playback);
-  alsa_playback_stop((alsa_playback_t*)ctx);
-}
+static bool alsa_playback_open(void* ctx, backend_error_t* err);
+static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
+                                backend_error_t* err);
+static void alsa_playback_close(void* ctx);
+static size_t alsa_playback_get_buffer_level(void* ctx);
+static bool alsa_playback_get_pending_rate_change(void* ctx, double* out_rate);
+static bool alsa_playback_prefill_silence(void* ctx, size_t frames,
+                                          backend_error_t* err);
+static bool alsa_playback_get_is_paused(void* ctx);
+static void alsa_playback_set_is_paused(void* ctx, bool paused);
+static bool alsa_playback_pitch_control_supported(void* ctx);
+static void alsa_playback_set_pitch(void* ctx, double multiplier);
+static void alsa_playback_stop(void* ctx);
+static void alsa_playback_destroy(void* ctx);
 
 static const playback_backend_vtable_t ALSA_PLAYBACK_VTABLE = {
-    .open = vtable_open,
-    .write = vtable_write,
-    .close = vtable_close,
-    .get_buffer_level = vtable_get_buffer_level,
-    .get_pending_rate_change = vtable_get_rate,
-    .prefill_silence = vtable_prefill,
-    .get_is_paused = vtable_get_paused,
-    .set_is_paused = vtable_set_paused,
-    .pitch_control_supported = vtable_pitch_control_supported,
-    .set_pitch = vtable_set_pitch,
-    .stop = vtable_stop,
-    .destroy = vtable_destroy};
+    .open = alsa_playback_open,
+    .write = alsa_playback_write,
+    .close = alsa_playback_close,
+    .get_buffer_level = alsa_playback_get_buffer_level,
+    .get_pending_rate_change = alsa_playback_get_pending_rate_change,
+    .prefill_silence = alsa_playback_prefill_silence,
+    .get_is_paused = alsa_playback_get_is_paused,
+    .set_is_paused = alsa_playback_set_is_paused,
+    .pitch_control_supported = alsa_playback_pitch_control_supported,
+    .set_pitch = alsa_playback_set_pitch,
+    .stop = alsa_playback_stop,
+    .destroy = alsa_playback_destroy};
 
 playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
                                          int sample_rate, int chunk_size,
@@ -225,7 +105,16 @@ playback_backend_t* alsa_playback_create(const playback_device_config_t* config,
   return backend;
 }
 
-bool alsa_playback_open(alsa_playback_t* playback, backend_error_t* err) {
+/**
+ * @brief Open the ALSA playback device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param err Pointer to store error details if opening fails.
+ * @return true if the device was successfully opened, false otherwise.
+ */
+static bool alsa_playback_open(void* ctx, backend_error_t* err) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback) return false;
   pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm != NULL) {
     pthread_mutex_unlock(&g_alsa_mutex);
@@ -465,9 +354,18 @@ error_cleanup:
   return false;
 }
 
-bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
-                         backend_error_t* err) {
-  if (!playback->pcm) return false;
+/**
+ * @brief Write a chunk of audio to the ALSA device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param chunk Pointer to the audio chunk to write.
+ * @param[out] err Pointer to store error details if the write fails.
+ * @return true on success, false on failure (e.g. xrun or write error).
+ */
+static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
+                                backend_error_t* err) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback || !playback->pcm) return false;
 
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
@@ -641,7 +539,13 @@ bool alsa_playback_write(alsa_playback_t* playback, const audio_chunk_t* chunk,
   return true;
 }
 
-void alsa_playback_close(alsa_playback_t* playback) {
+/**
+ * @brief Close the ALSA playback device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ */
+static void alsa_playback_close(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm) {
@@ -665,8 +569,15 @@ void alsa_playback_close(alsa_playback_t* playback) {
   pthread_mutex_unlock(&playback->mixer_mutex);
 }
 
-size_t alsa_playback_get_buffer_level(alsa_playback_t* playback) {
-  if (!playback->pcm) return 0;
+/**
+ * @brief Get the current buffer level of the ALSA device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @return The buffer level in frames.
+ */
+static size_t alsa_playback_get_buffer_level(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback || !playback->pcm) return 0;
   snd_pcm_sframes_t delay = 0;
   int err = snd_pcm_delay(playback->pcm, &delay);
   if (err < 0) {
@@ -678,9 +589,16 @@ size_t alsa_playback_get_buffer_level(alsa_playback_t* playback) {
   return delay < 0 ? 0 : (size_t)delay;
 }
 
-bool alsa_playback_get_pending_rate_change(alsa_playback_t* playback,
-                                           double* out_rate) {
-  (void)playback;
+/**
+ * @brief Check if there is a pending sample rate change on the ALSA device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param[out] out_rate Pointer to store the new sample rate if a change is pending.
+ * @return true if a rate change was detected, false otherwise.
+ */
+static bool alsa_playback_get_pending_rate_change(void* ctx,
+                                                  double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
@@ -695,9 +613,18 @@ static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
   return false;
 }
 
-bool alsa_playback_prefill_silence(alsa_playback_t* playback, size_t frames,
-                                   backend_error_t* err) {
-  if (!playback->pcm) return false;
+/**
+ * @brief Prefill the ALSA playback buffer with silence.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param frames Number of silence frames to write.
+ * @param[out] err Pointer to store error details if prefilling fails.
+ * @return true on success, false on failure.
+ */
+static bool alsa_playback_prefill_silence(void* ctx, size_t frames,
+                                          backend_error_t* err) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback || !playback->pcm) return false;
 
   int bits = snd_pcm_format_physical_width(playback->format);
   size_t sample_size = (bits > 0) ? ((size_t)bits / 8) : 4;
@@ -723,17 +650,38 @@ bool alsa_playback_prefill_silence(alsa_playback_t* playback, size_t frames,
   return true;
 }
 
-bool alsa_playback_get_is_paused(alsa_playback_t* playback) {
+/**
+ * @brief Get the paused status of the ALSA playback.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @return true if paused, false otherwise.
+ */
+static bool alsa_playback_get_is_paused(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return false;
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
-void alsa_playback_set_is_paused(alsa_playback_t* playback, bool paused) {
+/**
+ * @brief Set the paused status of the ALSA playback.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param paused true to pause, false to resume.
+ */
+static void alsa_playback_set_is_paused(void* ctx, bool paused) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
 }
 
-bool alsa_playback_pitch_control_supported(alsa_playback_t* playback) {
+/**
+ * @brief Check if the ALSA playback backend supports pitch control.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @return true if supported, false otherwise.
+ */
+static bool alsa_playback_pitch_control_supported(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return false;
   pthread_mutex_lock(&playback->mixer_mutex);
   bool res = playback->pitch_elem != NULL;
@@ -741,16 +689,20 @@ bool alsa_playback_pitch_control_supported(alsa_playback_t* playback) {
   return res;
 }
 
-void alsa_playback_set_pitch(alsa_playback_t* playback, double multiplier) {
+/**
+ * @brief Set the pitch of the ALSA playback device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ * @param multiplier The clock rate multiplier.
+ */
+static void alsa_playback_set_pitch(void* ctx, double multiplier) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   pthread_mutex_lock(&playback->mixer_mutex);
   if (!playback->pitch_elem) {
     pthread_mutex_unlock(&playback->mixer_mutex);
     return;
   }
-  // Calculate raw pitch value. The pitch element expects a value mapped to
-  // 1000000 / multiplier. A higher multiplier means higher pitch (faster
-  // playback), which translates to a smaller interval value on the control.
   long value = (long)round(1000000.0 / multiplier);
   if (snd_mixer_selem_has_playback_volume(playback->pitch_elem)) {
     snd_mixer_selem_set_playback_volume_all(playback->pitch_elem, value);
@@ -760,7 +712,13 @@ void alsa_playback_set_pitch(alsa_playback_t* playback, double multiplier) {
   pthread_mutex_unlock(&playback->mixer_mutex);
 }
 
-void alsa_playback_stop(alsa_playback_t* playback) {
+/**
+ * @brief Stop the ALSA playback device.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ */
+static void alsa_playback_stop(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   pthread_mutex_lock(&g_alsa_mutex);
   playback->stopped = true;
@@ -770,7 +728,13 @@ void alsa_playback_stop(alsa_playback_t* playback) {
   pthread_mutex_unlock(&g_alsa_mutex);
 }
 
-void alsa_playback_destroy(alsa_playback_t* playback) {
+/**
+ * @brief Destroy the ALSA playback backend.
+ *
+ * @param ctx Pointer to the ALSA playback instance.
+ */
+static void alsa_playback_destroy(void* ctx) {
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   alsa_playback_close(playback);
   pthread_mutex_destroy(&playback->mixer_mutex);

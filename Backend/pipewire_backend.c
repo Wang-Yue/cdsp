@@ -176,112 +176,17 @@ static const struct pw_stream_events playback_stream_events = {
 
 // MARK: - Capture Backend implementation
 
-/** @brief Vtable wrapper for pipewire_capture_open. */
-static bool cap_vtable_open(void* ctx, backend_error_t* err) {
-  return pipewire_capture_open((pipewire_capture_t*)ctx, err);
-}
-/** @brief Vtable wrapper for pipewire_capture_read. */
-static bool cap_vtable_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                            backend_error_t* err) {
-  return pipewire_capture_read((pipewire_capture_t*)ctx, frames, chunk, err);
-}
-/** @brief Vtable wrapper for pipewire_capture_close. */
-static void cap_vtable_close(void* ctx) {
-  pipewire_capture_close((pipewire_capture_t*)ctx);
-}
-/** @brief Vtable wrapper for pipewire_capture_get_pending_rate_change. */
-static bool cap_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return pipewire_capture_get_pending_rate_change((pipewire_capture_t*)ctx,
-                                                  out_rate);
-}
-/** @brief Vtable wrapper for pipewire_capture_pitch_control_supported. */
-static bool cap_vtable_is_pitch_control_supported(void* ctx) {
-  return pipewire_capture_pitch_control_supported((pipewire_capture_t*)ctx);
-}
-/** @brief Vtable wrapper for pipewire_capture_set_pitch. */
-static void cap_vtable_set_pitch(void* ctx, double multiplier) {
-  pipewire_capture_set_pitch((pipewire_capture_t*)ctx, multiplier);
-}
-/** @brief Vtable wrapper for pipewire_capture_wait. */
-static bool cap_vtable_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  return pipewire_capture_wait((pipewire_capture_t*)ctx, timeout_ms);
-}
-/** @brief Vtable wrapper for pipewire_capture_destroy. */
-static void cap_vtable_destroy(void* ctx) {
-  pipewire_capture_destroy((pipewire_capture_t*)ctx);
-}
+/**
+ * @brief Open the PipeWire capture device.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
 
-static void cap_vtable_stop(void* ctx) {
-  void pipewire_capture_stop(pipewire_capture_t * capture);
-  pipewire_capture_stop((pipewire_capture_t*)ctx);
-}
-
-static const capture_backend_vtable_t pipewire_capture_vtable = {
-    .open = cap_vtable_open,
-    .read = cap_vtable_read,
-    .close = cap_vtable_close,
-    .get_pending_rate_change = cap_vtable_get_pending_rate_change,
-    .is_pitch_control_supported = cap_vtable_is_pitch_control_supported,
-    .set_pitch = cap_vtable_set_pitch,
-    .wait_for_data = cap_vtable_wait_for_data,
-    .stop = cap_vtable_stop,
-    .destroy = cap_vtable_destroy};
-
-capture_backend_t* pipewire_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
-    processing_parameters_t* params, backend_error_t* err) {
-  (void)params;
-  (void)err;
-  pipewire_capture_t* capture =
-      (pipewire_capture_t*)calloc(1, sizeof(pipewire_capture_t));
-  if (!capture) return NULL;
-
-  if (config->cfg.pipewire.has_device &&
-      strcmp(config->cfg.pipewire.device, "default") != 0) {
-    snprintf(capture->device, sizeof(capture->device), "%s",
-             config->cfg.pipewire.device);
-  } else {
-    capture->device[0] = '\0';
-  }
-
-  capture->sample_rate = sample_rate;
-  capture->channels = config->cfg.pipewire.channels;
-  capture->chunk_size = chunk_size;
-
-  if (config->cfg.pipewire.has_node_name) {
-    snprintf(capture->node_name, sizeof(capture->node_name), "%s",
-             config->cfg.pipewire.node_name);
-    capture->has_node_name = true;
-  }
-  if (config->cfg.pipewire.has_node_description) {
-    snprintf(capture->node_description, sizeof(capture->node_description), "%s",
-             config->cfg.pipewire.node_description);
-    capture->has_node_description = true;
-  }
-  if (config->cfg.pipewire.has_node_group_name) {
-    snprintf(capture->node_group_name, sizeof(capture->node_group_name), "%s",
-             config->cfg.pipewire.node_group_name);
-    capture->has_node_group_name = true;
-  }
-  if (config->cfg.pipewire.has_autoconnect_to) {
-    snprintf(capture->autoconnect_to, sizeof(capture->autoconnect_to), "%s",
-             config->cfg.pipewire.autoconnect_to);
-    capture->has_autoconnect_to = true;
-  }
-
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
-  if (!backend) {
-    free(capture);
-    return NULL;
-  }
-  backend->ctx = capture;
-  backend->vtable = &pipewire_capture_vtable;
-  backend->is_realtime = true;
-  return backend;
-}
-
-bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
+static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture) return false;
   pw_init(NULL, NULL);
 
   capture->loop = pw_thread_loop_new("CDSP-Capture-Loop", NULL);
@@ -413,8 +318,19 @@ bool pipewire_capture_open(pipewire_capture_t* capture, backend_error_t* err) {
   return true;
 }
 
-bool pipewire_capture_read(pipewire_capture_t* capture, size_t frames,
-                           audio_chunk_t* chunk, backend_error_t* err) {
+/**
+ * @brief Read audio frames from the PipeWire capture device.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @param frames Number of frames to read.
+ * @param chunk Pointer to the audio chunk to fill.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool pipewire_capture_read(void* ctx, size_t frames,
+                                  audio_chunk_t* chunk, backend_error_t* err) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture) return false;
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
@@ -464,7 +380,13 @@ bool pipewire_capture_read(pipewire_capture_t* capture, size_t frames,
   return true;
 }
 
-void pipewire_capture_close(pipewire_capture_t* capture) {
+/**
+ * @brief Close the PipeWire capture device.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ */
+static void pipewire_capture_close(void* ctx) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
   if (!capture) return;
   if (capture->loop) {
     pw_thread_loop_lock(capture->loop);
@@ -493,26 +415,52 @@ void pipewire_capture_close(pipewire_capture_t* capture) {
   }
 }
 
-bool pipewire_capture_get_pending_rate_change(pipewire_capture_t* capture,
-                                              double* out_rate) {
-  (void)capture;
+/**
+ * @brief Get any pending sample rate change.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @param out_rate Pointer to double to store the pending sample rate.
+ * @return true if a rate change is pending, false otherwise.
+ */
+static bool pipewire_capture_get_pending_rate_change(void* ctx,
+                                                     double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
 
-bool pipewire_capture_pitch_control_supported(pipewire_capture_t* capture) {
-  (void)capture;
+/**
+ * @brief Check if pitch control is supported by the PipeWire capture backend.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @return true if supported, false otherwise.
+ */
+static bool pipewire_capture_pitch_control_supported(void* ctx) {
+  (void)ctx;
   return false;
 }
 
-void pipewire_capture_set_pitch(pipewire_capture_t* capture,
-                                double multiplier) {
-  (void)capture;
+/**
+ * @brief Set the pitch multiplier for the PipeWire capture backend.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @param multiplier The pitch multiplier.
+ */
+static void pipewire_capture_set_pitch(void* ctx, double multiplier) {
+  (void)ctx;
   (void)multiplier;
 }
 
-bool pipewire_capture_wait(pipewire_capture_t* capture, uint32_t timeout_ms) {
-  if (!capture->ring) return false;
+/**
+ * @brief Wait for the PipeWire capture device to have data available.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return true if data is available, false on timeout or error.
+ */
+static bool pipewire_capture_wait(void* ctx, uint32_t timeout_ms) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture || !capture->ring) return false;
   size_t requested = capture->chunk_size * capture->channels;
   uint32_t elapsed = 0;
   while (spsc_audio_ring_buffer_get_available_to_read(capture->ring) <
@@ -526,129 +474,124 @@ bool pipewire_capture_wait(pipewire_capture_t* capture, uint32_t timeout_ms) {
   return true;
 }
 
-void pipewire_capture_destroy(pipewire_capture_t* capture) {
+/**
+ * @brief Stop the PipeWire capture stream.
+ *
+ * @param ctx Pointer to the PipeWire capture instance.
+ */
+static void pipewire_capture_stop(void* ctx) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture) return;
+  if (capture->loop) {
+    pw_thread_loop_lock(capture->loop);
+    capture->stopped = true;
+    if (capture->stream) {
+      pw_stream_set_active(capture->stream, false);
+    }
+    pw_thread_loop_unlock(capture->loop);
+  }
+}
+
+/**
+ * @brief Destroy the PipeWire capture backend instance.
+ *
+ * @param ctx Pointer to the PipeWire capture instance to destroy.
+ */
+static void pipewire_capture_destroy(void* ctx) {
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
   if (capture) {
     pipewire_capture_close(capture);
     free(capture);
   }
 }
 
-// MARK: - Playback Backend implementation
+static const capture_backend_vtable_t pipewire_capture_vtable = {
+    .open = pipewire_capture_open,
+    .read = pipewire_capture_read,
+    .close = pipewire_capture_close,
+    .get_pending_rate_change = pipewire_capture_get_pending_rate_change,
+    .is_pitch_control_supported = pipewire_capture_pitch_control_supported,
+    .set_pitch = pipewire_capture_set_pitch,
+    .wait_for_data = pipewire_capture_wait,
+    .stop = pipewire_capture_stop,
+    .destroy = pipewire_capture_destroy};
 
-/** @brief Vtable wrapper for pipewire_playback_open. */
-static bool play_vtable_open(void* ctx, backend_error_t* err) {
-  return pipewire_playback_open((pipewire_playback_t*)ctx, err);
-}
-/** @brief Vtable wrapper for pipewire_playback_write. */
-static bool play_vtable_write(void* ctx, const audio_chunk_t* chunk,
-                              backend_error_t* err) {
-  return pipewire_playback_write((pipewire_playback_t*)ctx, chunk, err);
-}
-/** @brief Vtable wrapper for pipewire_playback_close. */
-static void play_vtable_close(void* ctx) {
-  pipewire_playback_close((pipewire_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for pipewire_playback_get_buffer_level. */
-static size_t play_vtable_get_buffer_level(void* ctx) {
-  return pipewire_playback_get_buffer_level((pipewire_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for pipewire_playback_get_pending_rate_change. */
-static bool play_vtable_get_pending_rate_change(void* ctx, double* out_rate) {
-  return pipewire_playback_get_pending_rate_change((pipewire_playback_t*)ctx,
-                                                   out_rate);
-}
-/** @brief Vtable wrapper for pipewire_playback_prefill_silence. */
-static bool play_vtable_prefill_silence(void* ctx, size_t frames,
-                                        backend_error_t* err) {
-  return pipewire_playback_prefill_silence((pipewire_playback_t*)ctx, frames,
-                                           err);
-}
-/** @brief Vtable wrapper for pipewire_playback_get_is_paused. */
-static bool play_vtable_get_is_paused(void* ctx) {
-  return pipewire_playback_get_is_paused((pipewire_playback_t*)ctx);
-}
-/** @brief Vtable wrapper for pipewire_playback_set_is_paused. */
-static void play_vtable_set_is_paused(void* ctx, bool paused) {
-  pipewire_playback_set_is_paused((pipewire_playback_t*)ctx, paused);
-}
-/** @brief Vtable wrapper for pipewire_playback_destroy. */
-static void play_vtable_destroy(void* ctx) {
-  pipewire_playback_destroy((pipewire_playback_t*)ctx);
-}
-
-static void play_vtable_stop(void* ctx) {
-  void pipewire_playback_stop(pipewire_playback_t * playback);
-  pipewire_playback_stop((pipewire_playback_t*)ctx);
-}
-
-static const playback_backend_vtable_t pipewire_playback_vtable = {
-    .open = play_vtable_open,
-    .write = play_vtable_write,
-    .close = play_vtable_close,
-    .get_buffer_level = play_vtable_get_buffer_level,
-    .get_pending_rate_change = play_vtable_get_pending_rate_change,
-    .prefill_silence = play_vtable_prefill_silence,
-    .get_is_paused = play_vtable_get_is_paused,
-    .set_is_paused = play_vtable_set_is_paused,
-    .stop = play_vtable_stop,
-    .destroy = play_vtable_destroy};
-
-playback_backend_t* pipewire_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
+/**
+ * @brief Create a PipeWire capture backend instance.
+ *
+ * @param config Pointer to the capture device configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param params Pointer to processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created capture_backend_t instance, or NULL on failure.
+ */
+capture_backend_t* pipewire_capture_create(
+    const capture_device_config_t* config, int sample_rate, int chunk_size,
     processing_parameters_t* params, backend_error_t* err) {
   (void)params;
   (void)err;
-  pipewire_playback_t* playback =
-      (pipewire_playback_t*)calloc(1, sizeof(pipewire_playback_t));
-  if (!playback) return NULL;
+  pipewire_capture_t* capture =
+      (pipewire_capture_t*)calloc(1, sizeof(pipewire_capture_t));
+  if (!capture) return NULL;
 
   if (config->cfg.pipewire.has_device &&
       strcmp(config->cfg.pipewire.device, "default") != 0) {
-    snprintf(playback->device, sizeof(playback->device), "%s",
+    snprintf(capture->device, sizeof(capture->device), "%s",
              config->cfg.pipewire.device);
   } else {
-    playback->device[0] = '\0';
+    capture->device[0] = '\0';
   }
 
-  playback->sample_rate = sample_rate;
-  playback->channels = config->cfg.pipewire.channels;
-  playback->chunk_size = chunk_size;
+  capture->sample_rate = sample_rate;
+  capture->channels = config->cfg.pipewire.channels;
+  capture->chunk_size = chunk_size;
 
   if (config->cfg.pipewire.has_node_name) {
-    snprintf(playback->node_name, sizeof(playback->node_name), "%s",
+    snprintf(capture->node_name, sizeof(capture->node_name), "%s",
              config->cfg.pipewire.node_name);
-    playback->has_node_name = true;
+    capture->has_node_name = true;
   }
   if (config->cfg.pipewire.has_node_description) {
-    snprintf(playback->node_description, sizeof(playback->node_description),
-             "%s", config->cfg.pipewire.node_description);
-    playback->has_node_description = true;
+    snprintf(capture->node_description, sizeof(capture->node_description), "%s",
+             config->cfg.pipewire.node_description);
+    capture->has_node_description = true;
   }
   if (config->cfg.pipewire.has_node_group_name) {
-    snprintf(playback->node_group_name, sizeof(playback->node_group_name), "%s",
+    snprintf(capture->node_group_name, sizeof(capture->node_group_name), "%s",
              config->cfg.pipewire.node_group_name);
-    playback->has_node_group_name = true;
+    capture->has_node_group_name = true;
   }
   if (config->cfg.pipewire.has_autoconnect_to) {
-    snprintf(playback->autoconnect_to, sizeof(playback->autoconnect_to), "%s",
+    snprintf(capture->autoconnect_to, sizeof(capture->autoconnect_to), "%s",
              config->cfg.pipewire.autoconnect_to);
-    playback->has_autoconnect_to = true;
+    capture->has_autoconnect_to = true;
   }
 
-  atomic_init(&playback->paused, false);
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  capture_backend_t* backend =
+      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
-    free(playback);
+    free(capture);
     return NULL;
   }
-  backend->ctx = playback;
-  backend->vtable = &pipewire_playback_vtable;
+  backend->ctx = capture;
+  backend->vtable = &pipewire_capture_vtable;
+  backend->is_realtime = true;
   return backend;
 }
 
-bool pipewire_playback_open(pipewire_playback_t* playback,
-                            backend_error_t* err) {
+// MARK: - Playback Backend implementation
+
+/**
+ * @brief Open the PipeWire playback device.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
+  if (!playback) return false;
   pw_init(NULL, NULL);
 
   playback->loop = pw_thread_loop_new("CDSP-Playback-Loop", NULL);
@@ -782,8 +725,18 @@ bool pipewire_playback_open(pipewire_playback_t* playback,
   return true;
 }
 
-bool pipewire_playback_write(pipewire_playback_t* playback,
-                             const audio_chunk_t* chunk, backend_error_t* err) {
+/**
+ * @brief Write an audio chunk to the PipeWire playback device.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @param chunk Pointer to the audio chunk to write.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool pipewire_playback_write(void* ctx,
+                                const audio_chunk_t* chunk, backend_error_t* err) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
+  if (!playback) return false;
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
       backend_error_init(
@@ -851,7 +804,13 @@ bool pipewire_playback_write(pipewire_playback_t* playback,
   return true;
 }
 
-void pipewire_playback_close(pipewire_playback_t* playback) {
+/**
+ * @brief Close the PipeWire playback device.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ */
+static void pipewire_playback_close(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return;
   if (playback->loop) {
     // Wait for the ring buffer to drain before closing the stream,
@@ -889,64 +848,85 @@ void pipewire_playback_close(pipewire_playback_t* playback) {
   }
 }
 
-size_t pipewire_playback_get_buffer_level(pipewire_playback_t* playback) {
-  if (!playback->ring) return 0;
+/**
+ * @brief Get the current buffer level of the PipeWire playback backend.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @return The buffer level in samples.
+ */
+static size_t pipewire_playback_get_buffer_level(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
+  if (!playback || !playback->ring) return 0;
   return spsc_audio_ring_buffer_get_available_to_read(playback->ring) /
          playback->channels;
 }
 
-bool pipewire_playback_get_pending_rate_change(pipewire_playback_t* playback,
-                                               double* out_rate) {
-  (void)playback;
+/**
+ * @brief Get any pending sample rate change.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @param out_rate Pointer to double to store the pending sample rate.
+ * @return true if a rate change is pending, false otherwise.
+ */
+static bool pipewire_playback_get_pending_rate_change(void* ctx,
+                                                      double* out_rate) {
+  (void)ctx;
   (void)out_rate;
   return false;
 }
 
-bool pipewire_playback_prefill_silence(pipewire_playback_t* playback,
-                                       size_t frames, backend_error_t* err) {
+/**
+ * @brief Prefill the PipeWire playback buffer with silence.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @param frames Number of frames of silence to prefill.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return true if successful, false otherwise.
+ */
+static bool pipewire_playback_prefill_silence(void* ctx,
+                                              size_t frames,
+                                              backend_error_t* err) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   (void)err;
-  if (!playback->ring) return false;
+  if (!playback || !playback->ring) return false;
 
   spsc_audio_ring_buffer_write_silence(playback->ring,
                                        frames * playback->channels);
   return true;
 }
 
-bool pipewire_playback_get_is_paused(pipewire_playback_t* playback) {
+/**
+ * @brief Check if PipeWire playback is currently paused.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @return true if paused, false otherwise.
+ */
+static bool pipewire_playback_get_is_paused(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return false;
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
-bool pipewire_playback_pitch_control_supported(pipewire_playback_t* playback) {
-  (void)playback;
-  return false;
-}
-
-void pipewire_playback_set_pitch(pipewire_playback_t* playback,
-                                 double multiplier) {
-  (void)playback;
-  (void)multiplier;
-}
-
-void pipewire_playback_set_is_paused(pipewire_playback_t* playback,
-                                     bool paused) {
+/**
+ * @brief Set the paused state of the PipeWire playback backend.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ * @param paused true to pause, false to resume.
+ */
+static void pipewire_playback_set_is_paused(void* ctx,
+                                            bool paused) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
 }
 
-void pipewire_capture_stop(pipewire_capture_t* capture) {
-  if (!capture) return;
-  if (capture->loop) {
-    pw_thread_loop_lock(capture->loop);
-    capture->stopped = true;
-    if (capture->stream) {
-      pw_stream_set_active(capture->stream, false);
-    }
-    pw_thread_loop_unlock(capture->loop);
-  }
-}
-
-void pipewire_playback_stop(pipewire_playback_t* playback) {
+/**
+ * @brief Stop the PipeWire playback stream.
+ *
+ * @param ctx Pointer to the PipeWire playback instance.
+ */
+static void pipewire_playback_stop(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return;
   if (playback->loop) {
     pw_thread_loop_lock(playback->loop);
@@ -958,11 +938,93 @@ void pipewire_playback_stop(pipewire_playback_t* playback) {
   }
 }
 
-void pipewire_playback_destroy(pipewire_playback_t* playback) {
+/**
+ * @brief Destroy the PipeWire playback backend instance.
+ *
+ * @param ctx Pointer to the PipeWire playback instance to destroy.
+ */
+static void pipewire_playback_destroy(void* ctx) {
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (playback) {
     pipewire_playback_close(playback);
     free(playback);
   }
+}
+
+static const playback_backend_vtable_t pipewire_playback_vtable = {
+    .open = pipewire_playback_open,
+    .write = pipewire_playback_write,
+    .close = pipewire_playback_close,
+    .get_buffer_level = pipewire_playback_get_buffer_level,
+    .get_pending_rate_change = pipewire_playback_get_pending_rate_change,
+    .prefill_silence = pipewire_playback_prefill_silence,
+    .get_is_paused = pipewire_playback_get_is_paused,
+    .set_is_paused = pipewire_playback_set_is_paused,
+    .stop = pipewire_playback_stop,
+    .destroy = pipewire_playback_destroy};
+
+/**
+ * @brief Create a PipeWire playback backend instance.
+ *
+ * @param config Pointer to the playback device configuration.
+ * @param sample_rate The sample rate in Hz.
+ * @param chunk_size The size of each audio chunk in frames.
+ * @param params Pointer to processing parameters.
+ * @param err Pointer to a backend_error_t struct to report errors.
+ * @return Pointer to the created playback_backend_t instance, or NULL on failure.
+ */
+playback_backend_t* pipewire_playback_create(
+    const playback_device_config_t* config, int sample_rate, int chunk_size,
+    processing_parameters_t* params, backend_error_t* err) {
+  (void)params;
+  (void)err;
+  pipewire_playback_t* playback =
+      (pipewire_playback_t*)calloc(1, sizeof(pipewire_playback_t));
+  if (!playback) return NULL;
+
+  if (config->cfg.pipewire.has_device &&
+      strcmp(config->cfg.pipewire.device, "default") != 0) {
+    snprintf(playback->device, sizeof(playback->device), "%s",
+             config->cfg.pipewire.device);
+  } else {
+    playback->device[0] = '\0';
+  }
+
+  playback->sample_rate = sample_rate;
+  playback->channels = config->cfg.pipewire.channels;
+  playback->chunk_size = chunk_size;
+
+  if (config->cfg.pipewire.has_node_name) {
+    snprintf(playback->node_name, sizeof(playback->node_name), "%s",
+             config->cfg.pipewire.node_name);
+    playback->has_node_name = true;
+  }
+  if (config->cfg.pipewire.has_node_description) {
+    snprintf(playback->node_description, sizeof(playback->node_description),
+             "%s", config->cfg.pipewire.node_description);
+    playback->has_node_description = true;
+  }
+  if (config->cfg.pipewire.has_node_group_name) {
+    snprintf(playback->node_group_name, sizeof(playback->node_group_name), "%s",
+             config->cfg.pipewire.node_group_name);
+    playback->has_node_group_name = true;
+  }
+  if (config->cfg.pipewire.has_autoconnect_to) {
+    snprintf(playback->autoconnect_to, sizeof(playback->autoconnect_to), "%s",
+             config->cfg.pipewire.autoconnect_to);
+    playback->has_autoconnect_to = true;
+  }
+
+  atomic_init(&playback->paused, false);
+  playback_backend_t* backend =
+      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  if (!backend) {
+    free(playback);
+    return NULL;
+  }
+  backend->ctx = playback;
+  backend->vtable = &pipewire_playback_vtable;
+  return backend;
 }
 
 #endif  // ENABLE_PIPEWIRE
