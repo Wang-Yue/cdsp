@@ -395,6 +395,16 @@ TEST(SlipResampler_Basic) {
     ASSERT_DOUBLE_EQ((double)(i + 1), out_data[i]);
   }
 
+  // 4. Ratio NAN -> Expect it to clamp to min_ratio and not output NaN or crash
+  resampler_set_relative_ratio(res, nan(""));
+  err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  size_t got_out = audio_chunk_get_valid_frames(out_chunk);
+  out_data = audio_chunk_get_channel(out_chunk, 0);
+  for (size_t i = 0; i < got_out; i++) {
+    ASSERT_FALSE(isnan(out_data[i]));
+  }
+
   audio_chunk_free(in_chunk);
   audio_chunk_free(out_chunk);
   resampler_free(res);

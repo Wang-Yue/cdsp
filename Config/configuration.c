@@ -91,6 +91,12 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                      "silence_threshold must be less than or equal to 0");
     return -1;
   }
+  if (config->devices.has_volume_ramp_time_ms &&
+      config->devices.volume_ramp_time_ms < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "volume_ramp_time_ms cannot be negative");
+    return -1;
+  }
   if (config->devices.has_volume_limit) {
     if (config->devices.volume_limit > 50.0) {
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE,

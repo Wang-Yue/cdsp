@@ -496,14 +496,17 @@ static void* dither_filter_create(const char* name,
 
   // Initialize RNG seed
   filter->rng_state = 123456789U;
+  uint32_t hash = 5381;
   if (name) {
-    uint32_t hash = 5381;
     for (const char* p = name; *p; p++) {
       hash = ((hash << 5) + hash) + (uint8_t)*p;
     }
-    if (hash != 0) {
-      filter->rng_state = hash;
-    }
+  }
+  // Add uniqueness (e.g., memory address of instance) to prevent channel correlation
+  uintptr_t addr = (uintptr_t)filter;
+  hash ^= (uint32_t)(addr ^ (addr >> 32));
+  if (hash != 0) {
+    filter->rng_state = hash;
   }
 
   int bits = params ? params->bits : 16;

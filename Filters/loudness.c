@@ -266,7 +266,9 @@ static void loudness_filter_transfer_state(void* dest_ptr,
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
                                  src->high_shelf_filter);
   dest->last_volume = src->last_volume;
+  recompute_shelves(dest, dest->last_volume);
 }
+
 
 const filter_vtable_t g_loudness_vtable = {
     .validate = loudness_config_validate,

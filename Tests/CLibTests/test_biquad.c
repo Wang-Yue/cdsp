@@ -325,7 +325,7 @@ TEST(FreeBiquad) {
 
 TEST(GeneralNotchHP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
-                            .q = 1.0,
+                            .q_p = 1.0,
                             .freq_notch = 1000.0,
                             .freq_pole = 2000.0,
                             .normalize_at_dc = false};
@@ -340,7 +340,7 @@ TEST(GeneralNotchHP) {
 
 TEST(GeneralNotchLP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
-                            .q = 1.0,
+                            .q_p = 1.0,
                             .freq_notch = 1000.0,
                             .freq_pole = 500.0,
                             .normalize_at_dc = true};

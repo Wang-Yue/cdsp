@@ -794,6 +794,22 @@ static void* async_sinc_resampler_create_impl(
 static int async_sinc_resampler_config_validate(
     const resampler_config_t* config, config_error_t* err) {
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_SINC) return -1;
+
+  bool has_free = config->has_sinc_len || config->has_oversampling_factor ||
+                  config->has_window || config->has_interpolation ||
+                  config->has_f_cutoff;
+  bool has_profile = config->has_profile;
+
+  if (has_free && has_profile) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSinc: cannot specify both profile and free parameters");
+    return -1;
+  }
+  if (!has_free && !has_profile) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSinc: must specify either profile or free parameters");
+    return -1;
+  }
   if (config->has_window) {
     if (window_function_from_string(config->window, WINDOW_FUNCTION_LAST) ==
         WINDOW_FUNCTION_LAST) {

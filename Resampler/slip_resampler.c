@@ -267,8 +267,11 @@ static void slip_resampler_set_relative_ratio(void* impl_ptr,
     double min_r, max_r;
     slip_resampler_get_ratio_range(impl, &min_r, &max_r);
     double target = multiplier;
-    if (target > max_r) target = max_r;
-    if (target < min_r) target = min_r;
+    if (isnan(target) || target < min_r) {
+      target = min_r;
+    } else if (target > max_r) {
+      target = max_r;
+    }
     impl->resample_ratio = target;
     slip_resampler_replan(impl);
   }

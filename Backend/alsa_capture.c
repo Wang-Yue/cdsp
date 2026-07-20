@@ -42,6 +42,7 @@ struct alsa_capture {
   void* interleaved_buf;
   size_t interleaved_buf_size;
   pthread_mutex_t mixer_mutex;
+  bool was_stalled;
 };
 
 /**
@@ -499,6 +500,30 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
   if (frames > (size_t)capture->chunk_size) {
     frames = capture->chunk_size;
+  }
+
+  // Wait for capture device to be ready to prevent infinite block in snd_pcm_readi.
+  int timeout_ms = (int)((double)frames * 1000.0 / capture->sample_rate * 2.0);
+  if (timeout_ms < 500) timeout_ms = 500;
+
+  int err_wait = snd_pcm_wait(capture->pcm, timeout_ms);
+  if (err_wait == 0) {
+    // Timeout (device stalled).
+    capture->was_stalled = true;
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_NONE, "Capture device wait timeout (device stalled)");
+    }
+    return false;
+  } else if (err_wait < 0) {
+    // Error! Attempt recovery.
+    snd_pcm_recover(capture->pcm, err_wait, 0);
+  }
+
+  // If we recovered from a stall, drop stale hardware buffer data and prepare PCM.
+  if (capture->was_stalled) {
+    snd_pcm_drop(capture->pcm);
+    snd_pcm_prepare(capture->pcm);
+    capture->was_stalled = false;
   }
 
   // Read interleaved frames from ALSA

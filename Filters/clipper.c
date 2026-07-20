@@ -122,8 +122,9 @@ static void clipper_filter_process(void* instance, mutable_waveform_t waveform,
 
       // Apply the cubic soft-clipping polynomial: f(x) = x - x^3 / 6.75
       // and scale it back to the original clip limit.
+      const double inv_6_75 = 1.0 / 6.75;
       waveform[i] =
-          (scaled - (scaled * scaled * scaled) / 6.75) * filter->clip_limit;
+          scaled * (1.0 - (scaled * scaled) * inv_6_75) * filter->clip_limit;
     }
   } else {
     double low_limit = -filter->clip_limit;

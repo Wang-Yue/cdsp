@@ -145,8 +145,7 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
       // pole frequency. Uses bilinear transform.
       double freq_z = params->freq_notch > 0 ? params->freq_notch : 1000.0;
       double freq_p = params->freq_pole > 0 ? params->freq_pole : 1000.0;
-      double q_p =
-          params->q_p > 0 ? params->q_p : (params->q > 0 ? params->q : 0.5);
+      double q_p = params->q_p;
       bool normalize = params->normalize_at_dc;
       double tn_z = tan(M_PI * freq_z / fs);
       double tn_p = tan(M_PI * freq_p / fs);
@@ -350,79 +349,198 @@ static void biquad_filter_free(void* instance) {
  * @return 0 on success, -1 on failure.
  */
 static int biquad_config_validate(const filter_config_t* config,
-                                  int sample_rate, config_error_t* err) {
+                           int sample_rate, config_error_t* err) {
   if (!config || config->type != FILTER_TYPE_BIQUAD) return -1;
   const biquad_config_t* params = &config->parameters.biquad;
   double nyquist = (double)sample_rate / 2.0;
-  if (params->type != BIQUAD_TYPE_FREE &&
-      params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM &&
-      params->type != BIQUAD_TYPE_GENERAL_NOTCH) {
-    if (params->freq <= 0.0 || params->freq >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
-    if (params->freq_notch <= 0.0 || params->freq_notch >= nyquist ||
-        params->freq_pole <= 0.0 || params->freq_pole >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-    if (params->q_p <= 0.0 && params->q <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
-      return -1;
-    }
-  }
-  if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
-    if (params->freq_act <= 0.0 || params->freq_act >= nyquist ||
-        params->freq_target <= 0.0 || params->freq_target >= nyquist) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "freq out of range");
-      return -1;
-    }
-    if (params->q_act <= 0.0 || params->q_target <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+
+  // 0. Enforce steepness type constraints
+  if (params->type == BIQUAD_TYPE_LOWPASS ||
+      params->type == BIQUAD_TYPE_HIGHPASS) {
+    if (params->steepness_type != STEEPNESS_TYPE_Q) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Lowpass/Highpass only supports Q steepness type");
+      }
       return -1;
     }
   }
   if (params->type == BIQUAD_TYPE_PEAKING ||
-      params->type == BIQUAD_TYPE_LOWPASS ||
-      params->type == BIQUAD_TYPE_HIGHPASS ||
       params->type == BIQUAD_TYPE_BANDPASS ||
       params->type == BIQUAD_TYPE_NOTCH ||
-      params->type == BIQUAD_TYPE_ALLPASS ||
-      params->type == BIQUAD_TYPE_GENERAL_NOTCH ||
-      params->type == BIQUAD_TYPE_HIGHSHELF ||
-      params->type == BIQUAD_TYPE_LOWSHELF) {
-    if (params->q <= 0.0 && params->bandwidth <= 0.0 && params->slope <= 0.0) {
-      if (err)
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "q out of range");
+      params->type == BIQUAD_TYPE_ALLPASS) {
+    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Peaking/Bandpass/Notch/Allpass does not support Slope steepness type");
+      }
       return -1;
     }
   }
   if (params->type == BIQUAD_TYPE_HIGHSHELF ||
       params->type == BIQUAD_TYPE_LOWSHELF) {
-    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
-      if (params->slope <= 0.0 || params->slope > 12.0) {
-        if (err)
-          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                           "slope out of range");
-        return -1;
-      }
-    }
-  }
-  if (sample_rate > 0) {
-    if (!biquad_config_check_stability(params, sample_rate)) {
-      if (err)
+    if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
+      if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Unstable or invalid biquad filter specified");
+                         "Highshelf/Lowshelf does not support Bandwidth steepness type");
+      }
       return -1;
     }
   }
+
+  // 1. Check Frequency (matching Rust validate_config match block 1)
+  bool has_standard_freq = 
+      (params->type == BIQUAD_TYPE_HIGHPASS ||
+       params->type == BIQUAD_TYPE_LOWPASS ||
+       params->type == BIQUAD_TYPE_HIGHPASS_FO ||
+       params->type == BIQUAD_TYPE_LOWPASS_FO ||
+       params->type == BIQUAD_TYPE_PEAKING ||
+       params->type == BIQUAD_TYPE_HIGHSHELF ||
+       params->type == BIQUAD_TYPE_LOWSHELF ||
+       params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+       params->type == BIQUAD_TYPE_LOWSHELF_FO ||
+       params->type == BIQUAD_TYPE_NOTCH ||
+       params->type == BIQUAD_TYPE_BANDPASS ||
+       params->type == BIQUAD_TYPE_ALLPASS ||
+       params->type == BIQUAD_TYPE_ALLPASS_FO);
+
+  if (has_standard_freq) {
+    if (params->freq <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be > 0");
+      }
+      return -1;
+    }
+    if (params->freq >= nyquist) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be < samplerate/2");
+      }
+      return -1;
+    }
+  }
+
+  // 2. Check Q (matching Rust validate_config match block 2)
+  bool check_q_val = false;
+  double q_to_check = 0.0;
+  if (params->type == BIQUAD_TYPE_HIGHPASS ||
+      params->type == BIQUAD_TYPE_LOWPASS) {
+    check_q_val = true;
+    q_to_check = params->q;
+  } else if (params->type == BIQUAD_TYPE_PEAKING ||
+             params->type == BIQUAD_TYPE_NOTCH ||
+             params->type == BIQUAD_TYPE_BANDPASS ||
+             params->type == BIQUAD_TYPE_ALLPASS ||
+             params->type == BIQUAD_TYPE_HIGHSHELF ||
+             params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->steepness_type == STEEPNESS_TYPE_Q) {
+      check_q_val = true;
+      q_to_check = params->q;
+    }
+  } else if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
+    check_q_val = true;
+    q_to_check = params->q_p;
+  }
+
+  if (check_q_val && q_to_check <= 0.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Q must be > 0");
+    }
+    return -1;
+  }
+
+  // 3. Check Bandwidth (matching Rust validate_config match block 3)
+  bool check_bw_val = false;
+  if (params->type == BIQUAD_TYPE_PEAKING ||
+      params->type == BIQUAD_TYPE_NOTCH ||
+      params->type == BIQUAD_TYPE_BANDPASS ||
+      params->type == BIQUAD_TYPE_ALLPASS) {
+    if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
+      check_bw_val = true;
+    }
+  }
+  if (check_bw_val && params->bandwidth <= 0.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Bandwidth must be > 0");
+    }
+    return -1;
+  }
+
+  // 4. Check Slope (matching Rust validate_config match block 4)
+  bool check_slope_val = false;
+  if (params->type == BIQUAD_TYPE_HIGHSHELF ||
+      params->type == BIQUAD_TYPE_LOWSHELF) {
+    if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
+      check_slope_val = true;
+    }
+  }
+  if (check_slope_val) {
+    if (params->slope <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Slope must be > 0");
+      }
+      return -1;
+    }
+    if (params->slope > 12.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Slope must be <= 12.0");
+      }
+      return -1;
+    }
+  }
+
+  // 5. Check LT (matching Rust validate_config LT block)
+  if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
+    if (params->freq_act <= 0.0 || params->freq_target <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Frequency must be > 0");
+      }
+      return -1;
+    }
+    if (params->freq_act >= nyquist || params->freq_target >= nyquist) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Frequency must be < samplerate/2");
+      }
+      return -1;
+    }
+    if (params->q_act <= 0.0 || params->q_target <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Q must be > 0");
+      }
+      return -1;
+    }
+  }
+
+  // 6. Check GeneralNotch frequencies (matching Rust GeneralNotch block)
+  if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
+    if (params->freq_pole <= 0.0 || params->freq_notch <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Pole and zero frequencies must be > 0");
+      }
+      return -1;
+    }
+    if (params->freq_pole >= nyquist || params->freq_notch >= nyquist) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Pole and zero frequencies must be < samplerate/2");
+      }
+      return -1;
+    }
+  }
+
+  // 7. Check Stability (matching Rust stability check)
+  if (sample_rate > 0) {
+    if (!biquad_config_check_stability(params, sample_rate)) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Unstable filter specified");
+      }
+      return -1;
+    }
+  }
+
   return 0;
 }
 
@@ -540,8 +658,8 @@ static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
     z2 = b2 * in + neg_a2 * out;
     waveform[i] = out;
   }
-  if (!isnormal(z1)) z1 = 0.0;
-  if (!isnormal(z2)) z2 = 0.0;
+  if (fpclassify(z1) == FP_SUBNORMAL) z1 = 0.0;
+  if (fpclassify(z2) == FP_SUBNORMAL) z2 = 0.0;
   filter->z1 = z1;
   filter->z2 = z2;
 #endif
@@ -565,8 +683,6 @@ double biquad_filter_process_single(biquad_filter_t* filter, double sample) {
   double tmp = b1 * sample + filter->z2;
   filter->z1 = filter->neg_a1 * out + tmp;
   filter->z2 = b2 * sample + filter->neg_a2 * out;
-  if (!isnormal(filter->z1)) filter->z1 = 0.0;
-  if (!isnormal(filter->z2)) filter->z2 = 0.0;
   return out;
 #endif
 }

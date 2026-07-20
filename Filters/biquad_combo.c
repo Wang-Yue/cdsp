@@ -191,10 +191,10 @@ static int biquad_combo_config_validate(const filter_config_t* config,
       }
       break;
     case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ:
-      if (params->qls < 0.0 || params->qhs < 0.0 || params->qp1 < 0.0 ||
-          params->qp2 < 0.0 || params->qp3 < 0.0) {
+      if (params->qls <= 0.0 || params->qhs <= 0.0 || params->qp1 <= 0.0 ||
+          params->qp2 <= 0.0 || params->qp3 <= 0.0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all Q-values must be >= 0");
+                         "FivePointPeq: all Q-values must be positive");
         return -1;
       }
       if (params->fls >= nyquist || params->fhs >= nyquist ||

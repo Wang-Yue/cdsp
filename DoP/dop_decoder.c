@@ -208,7 +208,21 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
                  channels);
     return NULL;
   }
+  if (sample_rate <= 0.0) {
+    logger_error(&g_logger, "Invalid sample rate for DoP decoder: %.1f",
+                 sample_rate);
+    return NULL;
+  }
+  if (!bypass_dop) {
+    if (cutoff_hz <= 0.0 || cutoff_hz >= (sample_rate * 16.0) / 2.0) {
+      logger_error(&g_logger, "Invalid cutoff frequency for DoP decoder: %.1f",
+                   cutoff_hz);
+      return NULL;
+    }
+  }
+
   dop_decoder_t* dec = (dop_decoder_t*)calloc(1, sizeof(dop_decoder_t));
+
   if (!dec) {
     logger_error(&g_logger, "Memory allocation failed for dop_decoder_t");
     return NULL;

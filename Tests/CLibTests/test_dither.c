@@ -117,4 +117,35 @@ TEST(test_noise_shaping_has_noise) {
   g_dither_vtable.free(filter);
 }
 
+TEST(test_channel_correlation) {
+  double waveform1[100] = {0.0};
+  double waveform2[100] = {0.0};
+  dither_config_t params = {.type = DITHER_TYPE_FLAT,
+                            .bits = 16,
+                            .amplitude = 2.0,
+                            .has_amplitude = true};
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* filter1 = g_dither_vtable.create("dither", &cfg, 0, 0, NULL, NULL);
+  void* filter2 = g_dither_vtable.create("dither", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter1 != NULL);
+  ASSERT_TRUE(filter2 != NULL);
+
+  g_dither_vtable.process(filter1, waveform1, 100);
+  g_dither_vtable.process(filter2, waveform2, 100);
+
+  bool identical = true;
+  for (size_t i = 0; i < 100; i++) {
+    if (waveform1[i] != waveform2[i]) {
+      identical = false;
+      break;
+    }
+  }
+  // The two dither sequences should be uncorrelated / not identical!
+  ASSERT_FALSE(identical);
+
+  g_dither_vtable.free(filter1);
+  g_dither_vtable.free(filter2);
+}
+
 TEST_MAIN()

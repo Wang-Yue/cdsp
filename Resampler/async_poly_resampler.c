@@ -567,6 +567,20 @@ static void* async_poly_resampler_create_impl(
 static int async_poly_resampler_config_validate(
     const resampler_config_t* config, config_error_t* err) {
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY) return -1;
+
+  bool has_interpolation = config->has_interpolation;
+  bool has_profile = config->has_profile;
+
+  if (has_interpolation && has_profile) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPoly: cannot specify both profile and interpolation parameters");
+    return -1;
+  }
+  if (!has_interpolation && !has_profile) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPoly: must specify either profile or interpolation parameters");
+    return -1;
+  }
   if (config->has_interpolation) {
     if (poly_interpolation_from_string(config->interpolation) ==
         POLY_INTERPOLATION_LAST) {

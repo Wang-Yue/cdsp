@@ -46,7 +46,7 @@ TEST(ParseValidConfig) {
   dsp_config_free(config);
 }
 
-TEST(ParseResamplerConfig) {
+TEST(ParseResamplerConfigProfile) {
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -55,7 +55,44 @@ TEST(ParseResamplerConfig) {
       "        \"capture_samplerate\": 44100,\n"
       "        \"resampler\": {\n"
       "            \"type\": \"AsyncSinc\",\n"
-      "            \"profile\": \"Balanced\",\n"
+      "            \"profile\": \"Balanced\"\n"
+      "        },\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(48000, config->devices.samplerate);
+  ASSERT_EQ(44100, config->devices.capture_samplerate);
+  ASSERT_TRUE(config->devices.has_resampler);
+  ASSERT_EQ(RESAMPLER_TYPE_ASYNC_SINC, config->devices.resampler.type);
+  ASSERT_TRUE(config->devices.resampler.has_profile);
+  ASSERT_STR_EQ("Balanced", config->devices.resampler.profile);
+  ASSERT_FALSE(config->devices.resampler.has_interpolation);
+  ASSERT_FALSE(config->devices.resampler.has_window);
+  dsp_config_free(config);
+}
+
+TEST(ParseResamplerConfigFree) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture_samplerate\": 44100,\n"
+      "        \"resampler\": {\n"
+      "            \"type\": \"AsyncSinc\",\n"
       "            \"interpolation\": \"Cubic\",\n"
       "            \"sinc_len\": 256,\n"
       "            \"oversampling_factor\": 512,\n"
@@ -82,8 +119,7 @@ TEST(ParseResamplerConfig) {
   ASSERT_EQ(44100, config->devices.capture_samplerate);
   ASSERT_TRUE(config->devices.has_resampler);
   ASSERT_EQ(RESAMPLER_TYPE_ASYNC_SINC, config->devices.resampler.type);
-  ASSERT_TRUE(config->devices.resampler.has_profile);
-  ASSERT_STR_EQ("Balanced", config->devices.resampler.profile);
+  ASSERT_FALSE(config->devices.resampler.has_profile);
   ASSERT_TRUE(config->devices.resampler.has_interpolation);
   ASSERT_STR_EQ("Cubic", config->devices.resampler.interpolation);
   ASSERT_EQ(256, config->devices.resampler.sinc_len);
