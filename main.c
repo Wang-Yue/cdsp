@@ -329,9 +329,9 @@ int main(int argc, char** argv) {
       return 1;
     }
     char* result = NULL;
-    bool is_error = false;
+    cdsp_config_error_type_t is_error = CDSP_CONFIG_ERR_NONE;
     if (cdsp_validate_config_file(config_path, &result, &is_error) &&
-        !is_error) {
+        is_error == CDSP_CONFIG_ERR_NONE) {
       logger_info(&g_logger, "Configuration check succeeded for %s",
                   config_path);
       printf("Configuration is valid.\n");
