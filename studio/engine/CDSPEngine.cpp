@@ -191,8 +191,10 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
 
     cdsp_spectrum_t res;
     memset(&res, 0, sizeof(res));
-    uint32_t ch = channel >= 0 ? static_cast<uint32_t>(channel) : 0;
-    bool success = cdsp_get_spectrum(m_engine, isCapture, ch, minFreq, maxFreq, nBins, &res);
+    cdsp_spectrum_side_t side = isCapture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
+    uint32_t ch_val = channel >= 0 ? static_cast<uint32_t>(channel) : 0;
+    const uint32_t* ch_ptr = channel >= 0 ? &ch_val : nullptr;
+    bool success = cdsp_get_spectrum(m_engine, side, ch_ptr, minFreq, maxFreq, nBins, &res);
     if (!success || !res.frequencies || !res.magnitudes || res.count == 0) {
         cdsp_free_spectrum(&res);
         return false;
