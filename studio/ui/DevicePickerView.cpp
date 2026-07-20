@@ -502,17 +502,18 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
     listLayout->addWidget(div);
 
     for (const auto& dev : devices) {
-        bool isSelected = selectedDeviceName.has_value() && (selectedDeviceName.value() == dev.name);
-        std::string devName = dev.name;
+        bool isSelected = selectedDeviceName.has_value() && (selectedDeviceName.value() == dev.id);
+        std::string devId = dev.id;
+        std::string devDisplay = dev.name;
         auto row = new DeviceRowWidget(
-            QString::fromStdString(devName), isSelected,
-            [this, isCapture, devName]() {
+            QString::fromStdString(devDisplay), isSelected,
+            [this, isCapture, devId]() {
                 if (m_isRefreshing)
                     return;
                 if (isCapture) {
-                    m_devices->captureConfig.setDeviceName(devName);
+                    m_devices->captureConfig.setDeviceName(devId);
                 } else {
-                    m_devices->playbackConfig.setDeviceName(devName);
+                    m_devices->playbackConfig.setDeviceName(devId);
                 }
                 m_devices->refreshDeviceCapabilities();
                 m_devices->validateSampleRates();

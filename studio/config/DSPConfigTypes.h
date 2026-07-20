@@ -77,9 +77,10 @@ struct StateUpdate {
 };
 
 struct AudioDevice {
+    std::string id;
     std::string name;
 
-    bool operator==(const AudioDevice& other) const { return name == other.name; }
+    bool operator==(const AudioDevice& other) const { return id == other.id && name == other.name; }
     bool operator!=(const AudioDevice& other) const { return !(*this == other); }
 };
 

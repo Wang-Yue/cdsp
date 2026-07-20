@@ -217,7 +217,7 @@ bool AudioDeviceManager::devicesAvailable() const {
     if (auto name = captureConfig.deviceName()) {
         bool found = false;
         for (const auto& d : captureDevices) {
-            if (d.name == name.value()) {
+            if (d.id == name.value()) {
                 found = true;
                 break;
             }
@@ -228,7 +228,7 @@ bool AudioDeviceManager::devicesAvailable() const {
     if (auto name = playbackConfig.deviceName()) {
         bool found = false;
         for (const auto& d : playbackDevices) {
-            if (d.name == name.value()) {
+            if (d.id == name.value()) {
                 found = true;
                 break;
             }
