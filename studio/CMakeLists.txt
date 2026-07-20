@@ -48,9 +48,13 @@ elseif(WIN32)
     add_compile_definitions(ENABLE_WASAPI ENABLE_ASIO ENABLE_FFTW _WIN32 COBJMACROS UNICODE _UNICODE _USE_MATH_DEFINES)
 else()
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(DBUS dbus-1)
-    set(PLATFORM_LIBS m rt dbus-1 asound ${ALSA_LIBRARIES} ${PULSE_LIBRARIES})
-    add_compile_definitions(ENABLE_ALSA ENABLE_PULSE _GNU_SOURCE)
+    pkg_check_modules(DBUS dbus-1 REQUIRED)
+    pkg_check_modules(PIPEWIRE libpipewire-0.3 REQUIRED)
+    pkg_check_modules(FFTW3 fftw3 REQUIRED)
+    pkg_check_modules(FFTW3F fftw3f REQUIRED)
+    set(PLATFORM_LIBS m rt dbus-1 asound ${ALSA_LIBRARIES} ${PULSE_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${FFTW3_LIBRARIES} ${FFTW3F_LIBRARIES})
+    include_directories(${PIPEWIRE_INCLUDE_DIRS} ${FFTW3_INCLUDE_DIRS} ${FFTW3F_INCLUDE_DIRS})
+    add_compile_definitions(ENABLE_ALSA ENABLE_PULSE ENABLE_PIPEWIRE ENABLE_FFTW _GNU_SOURCE)
 endif()
 
 # CDSP FetchContent (fetched directly from GitHub: Wang-Yue/cdsp)
@@ -106,6 +110,7 @@ set(CDSP_LIB cdsp_static)
 include_directories(
     src
     ${fftw3_SOURCE_DIR}/api
+    ${DBUS_INCLUDE_DIRS}
     ${CDSP_DIR}
     ${CDSP_DIR}/Engine
     ${CDSP_DIR}/Audio

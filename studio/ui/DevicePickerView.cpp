@@ -462,7 +462,7 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
     QLayoutItem* item;
     while ((item = listLayout->takeAt(0)) != nullptr) {
         if (item->widget()) {
-            delete item->widget();
+            item->widget()->deleteLater();
         }
         delete item;
     }
