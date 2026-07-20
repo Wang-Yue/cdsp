@@ -227,7 +227,10 @@ static inline double pcm_sample_decode_s24_3bytes(const uint8_t* src) {
  */
 static inline void pcm_sample_encode_s24_4_rj_bytes(double val, uint8_t* dst) {
   int32_t s24 = pcm_sample_encode_s24(val);
-  memcpy(dst, &s24, sizeof(int32_t));
+  dst[0] = (uint8_t)(s24 & 0xFF);
+  dst[1] = (uint8_t)((s24 >> 8) & 0xFF);
+  dst[2] = (uint8_t)((s24 >> 16) & 0xFF);
+  dst[3] = 0;
 }
 
 /**
@@ -337,28 +340,14 @@ static inline uint32_t pcm_sample_u32_from_f32(float fval) {
   return bits;
 }
 
-/**
- * @brief Encode a normalized double sample to a 32-bit uint32_t raw bit pattern
- * representing an IEEE 754 float.
- *
- * @param val Input double sample in [-1.0, 1.0].
- * @return Encoded 32-bit uint32_t bit pattern.
- */
-static inline uint32_t pcm_sample_encode_f32_u32(double val) {
-  float fval = pcm_sample_encode_f32(val);
-  return pcm_sample_u32_from_f32(fval);
-}
+
 
 /**
- * @brief Decode a raw 32-bit uint32_t bit pattern representing an IEEE 754
- * float to a normalized double sample. Non-finite values (NaN, Inf) are
- * replaced with 0.0.
- *
- * @param bits Raw 32-bit uint32_t bit pattern.
- * @return Normalized double sample in [-1.0, 1.0].
+ * @brief Decode a raw 32-bit DSD container bit pattern to a double sample
+ * without checking isfinite() to preserve raw DSD bits.
  */
-static inline double pcm_sample_decode_f32_u32(uint32_t bits) {
-  return pcm_sample_decode_f32(pcm_sample_f32_from_u32(bits));
+static inline double pcm_sample_decode_dsd_u32(uint32_t bits) {
+  return (double)pcm_sample_f32_from_u32(bits);
 }
 
 // MARK: - 64-Bit Floating-Point Format (F64)

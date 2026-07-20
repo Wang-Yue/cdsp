@@ -21,6 +21,18 @@ TEST(SampleConversion_S24_RoundTrip) {
     pcm_sample_encode_s24_3bytes(samples[i], buf3);
     double decoded_3b = pcm_sample_decode_s24_3bytes(buf3);
     ASSERT_NEAR(samples[i], decoded_3b, 1e-6);
+
+    uint8_t buf4_rj[4];
+    pcm_sample_encode_s24_4_rj_bytes(samples[i], buf4_rj);
+    double decoded_4rj = pcm_sample_decode_s24_4_rj_bytes(buf4_rj);
+    ASSERT_NEAR(samples[i], decoded_4rj, 1e-6);
+    // Verify padding byte (byte 3) is strictly 0 (no sign extension on negative values)
+    ASSERT_EQ(0, buf4_rj[3]);
+
+    uint8_t buf4_lj[4];
+    pcm_sample_encode_s24_4_lj_bytes(samples[i], buf4_lj);
+    double decoded_4lj = pcm_sample_decode_s24_4_lj_bytes(buf4_lj);
+    ASSERT_NEAR(samples[i], decoded_4lj, 1e-6);
   }
 }
 
@@ -119,23 +131,48 @@ TEST(SampleConversion_Utilities) {
   ASSERT_NEAR(0.0, pcm_clamp_sample(NAN), 1e-15);
 }
 
-TEST(SampleConversion_DSD_U32) {
-  uint8_t buf_msb[4];
-  uint8_t buf_lsb[4];
+TEST(SampleConversion_DSD_U8_RoundTrip) {
+  double samples[] = {-0.5, 0.0, 0.5};
+  for (size_t i = 0; i < 3; i++) {
+    uint8_t encoded = pcm_sample_encode_dsd_u8(samples[i]);
+    double decoded = pcm_sample_decode_dsd_u8(encoded);
+    ASSERT_NEAR(samples[i], decoded, 1e-4);
+  }
+}
 
-  // Encode positive full scale -> float 1.0f (0x3f800000) -> bytes 0x3F, 0x80,
-  // 0x00, 0x00
-  pcm_sample_encode_dsd_u32_bytes(1.0f, buf_msb);
-  ASSERT_EQ(0x3F, buf_msb[0]);
-  ASSERT_EQ(0x80, buf_msb[1]);
-  ASSERT_EQ(0x00, buf_msb[2]);
-  ASSERT_EQ(0x00, buf_msb[3]);
-
-  pcm_sample_encode_dsd_u32_reversed_bytes(1.0f, buf_lsb);
-  ASSERT_EQ(pcm_reverse_bits_u8(0x3F), buf_lsb[0]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0x80), buf_lsb[1]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0x00), buf_lsb[2]);
-  ASSERT_EQ(pcm_reverse_bits_u8(0x00), buf_lsb[3]);
+TEST(SampleConversion_DSD_U32_RoundTrip) {
+  uint32_t patterns[] = {0x3F800000, 0xBF800000, 0x00000000}; // 1.0f, -1.0f, 0.0f
+  double expected_doubles[] = {1.0, -1.0, 0.0};
+  
+  for (size_t i = 0; i < 3; i++) {
+    double decoded = pcm_sample_decode_dsd_u32(patterns[i]);
+    ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
+    
+    float val_f = (float)decoded;
+    uint8_t buf_msb[4];
+    pcm_sample_encode_dsd_u32_bytes(val_f, buf_msb);
+    
+    // Convert back from bytes to u32 bits
+    uint32_t val_msb_bits;
+    memcpy(&val_msb_bits, buf_msb, sizeof(uint32_t));
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    uint32_t val_msb_host = __builtin_bswap32(val_msb_bits);
+#else
+    uint32_t val_msb_host = val_msb_bits;
+#endif
+    ASSERT_EQ(patterns[i], val_msb_host);
+    
+    // LSB reversed bytes
+    uint8_t buf_lsb[4];
+    pcm_sample_encode_dsd_u32_reversed_bytes(val_f, buf_lsb);
+    
+    // Check that LSB bytes are indeed bit-reversed versions of MSB bytes
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[0]), buf_lsb[0]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[1]), buf_lsb[1]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[2]), buf_lsb[2]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[3]), buf_lsb[3]);
+  }
 }
 
 TEST_MAIN()

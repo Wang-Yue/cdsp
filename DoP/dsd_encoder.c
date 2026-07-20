@@ -338,7 +338,7 @@ static inline double pack_dsd_sample(uint32_t word, size_t bit_depth,
       return pcm_sample_decode_s24(int_val);
     }
   } else if (bit_depth == 32) {
-    return pcm_sample_decode_f32_u32(word);
+    return pcm_sample_decode_dsd_u32(word);
   } else {
     return pcm_sample_decode_dsd_u8((uint8_t)word);
   }
@@ -542,7 +542,7 @@ void dsd_encoder_fill_silence(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
       sample_val = pcm_sample_decode_s16((int16_t)0x6969);
     } else if (encoder->dsd_bit_depth == 32) {
       uint32_t silence_word = 0x69696969;
-      sample_val = pcm_sample_decode_f32_u32(silence_word);
+      sample_val = pcm_sample_decode_dsd_u32(silence_word);
     }
 
     for (int ch = 0; ch < encoder->channels; ch++) {
