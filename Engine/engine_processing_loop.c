@@ -239,13 +239,13 @@ static void processing_loop_record_metrics(engine_processing_loop_t* loop,
         (uint64_t)frames * 1000000000ULL / loop->pipeline_rate;
     if (chunk_duration_ns > 0) {
       double p_load =
-          (double)(pipe_end - pipe_start) / (double)chunk_duration_ns;
+          ((double)(pipe_end - pipe_start) / (double)chunk_duration_ns) * 100.0;
       processing_parameters_set_processing_load(loop->processing_params,
                                                 p_load);
 
       if (loop->resampler) {
         double r_load =
-            (double)(res_end - res_start) / (double)chunk_duration_ns;
+            ((double)(res_end - res_start) / (double)chunk_duration_ns) * 100.0;
         processing_parameters_set_resampler_load(loop->processing_params,
                                                  r_load);
       } else {

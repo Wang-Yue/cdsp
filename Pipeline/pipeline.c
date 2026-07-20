@@ -109,24 +109,27 @@ static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
 
 /// Transfer filter states between two filter chains matching the same channel.
 static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
-                                   const parallel_filter_chain_t* src_chain) {
+                                   const parallel_filter_chain_t* src_chain,
+                                   bool* dest_used) {
   if (!dest_chain || !src_chain || src_chain->filters_count == 0) return;
-  bool used[512] = {0};
+  bool src_used[512] = {0};
   size_t max_src =
       src_chain->filters_count < 512 ? src_chain->filters_count : 512;
 
   for (size_t i = 0; i < dest_chain->filters_count; i++) {
+    if (dest_used[i]) continue;
     filter_t* dest_f = dest_chain->filters[i];
     const char* dname = filter_get_name(dest_f);
     if (!dname) continue;
 
     for (size_t j = 0; j < max_src; j++) {
-      if (used[j]) continue;
+      if (src_used[j]) continue;
       filter_t* src_f = src_chain->filters[j];
       const char* sname = filter_get_name(src_f);
       if (sname && strcmp(dname, sname) == 0) {
         filter_transfer_state(dest_f, src_f);
-        used[j] = true;
+        src_used[j] = true;
+        dest_used[i] = true;
         break;
       }
     }
@@ -138,6 +141,7 @@ static void transfer_parallel_filters_state(
     const pipeline_exec_step_t* dest_step, const pipeline_t* src) {
   for (size_t dc = 0; dc < dest_step->chains_count; dc++) {
     parallel_filter_chain_t* dest_chain = &dest_step->chains[dc];
+    bool dest_used[512] = {0};
 
     for (size_t s = 0; s < src->steps_count; s++) {
       const pipeline_exec_step_t* src_step = &src->steps[s];
@@ -146,7 +150,7 @@ static void transfer_parallel_filters_state(
       for (size_t sc = 0; sc < src_step->chains_count; sc++) {
         const parallel_filter_chain_t* src_chain = &src_step->chains[sc];
         if (src_chain->channel == dest_chain->channel) {
-          transfer_chain_filters(dest_chain, src_chain);
+          transfer_chain_filters(dest_chain, src_chain, dest_used);
         }
       }
     }

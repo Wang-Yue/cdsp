@@ -253,7 +253,7 @@ static const sdm_preset_t* sdm_find_preset(sdm_filter_t filter_name,
       if (sdm_presets[i].freq <= freq) {
         return &sdm_presets[i];
       }
-      if (!best_match) {
+      if (!best_match || sdm_presets[i].freq < best_match->freq) {
         best_match = &sdm_presets[i];
       }
     }
