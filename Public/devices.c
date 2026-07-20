@@ -30,10 +30,32 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
       return false;
     }
     for (int i = 0; i < count; i++) {
-      strncpy(list[i].identifier, devs[i].name, sizeof(list[i].identifier) - 1);
-      list[i].identifier[sizeof(list[i].identifier) - 1] = '\0';
-      strncpy(list[i].name, devs[i].name, sizeof(list[i].name) - 1);
-      list[i].name[sizeof(list[i].name) - 1] = '\0';
+      char* paren = strstr(devs[i].name, " (");
+      if (paren) {
+        size_t id_len = paren - devs[i].name;
+        if (id_len >= sizeof(list[i].identifier)) {
+          id_len = sizeof(list[i].identifier) - 1;
+        }
+        strncpy(list[i].identifier, devs[i].name, id_len);
+        list[i].identifier[id_len] = '\0';
+
+        const char* name_start = paren + 2;
+        size_t name_len = strlen(name_start);
+        if (name_len > 0 && name_start[name_len - 1] == ')') {
+          name_len--;
+        }
+        if (name_len >= sizeof(list[i].name)) {
+          name_len = sizeof(list[i].name) - 1;
+        }
+        strncpy(list[i].name, name_start, name_len);
+        list[i].name[name_len] = '\0';
+      } else {
+        strncpy(list[i].identifier, devs[i].name,
+                sizeof(list[i].identifier) - 1);
+        list[i].identifier[sizeof(list[i].identifier) - 1] = '\0';
+        strncpy(list[i].name, devs[i].name, sizeof(list[i].name) - 1);
+        list[i].name[sizeof(list[i].name) - 1] = '\0';
+      }
       list[i].has_name = true;
     }
     *out_devices = list;
