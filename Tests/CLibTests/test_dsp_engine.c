@@ -2,8 +2,8 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(ENABLE_ALSA)
@@ -15,10 +15,10 @@
 #endif
 
 #include "Audio/audio_chunk.h"
-#include "Engine/dsp_session.h"
 #include "Backend/file_backend.h"
 #include "Backend/generator_capture.h"
 #include "Engine/dsp_engine.h"
+#include "Engine/dsp_session.h"
 #include "Engine/engine_capture_loop.h"
 #include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
@@ -713,7 +713,8 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   fclose(conf_f);
 
   char alsa_env[1024];
-  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s",
+           alsa_conf);
   setenv("ALSA_CONFIG_PATH", alsa_env, 1);
   snd_config_update();
 
@@ -732,14 +733,15 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   ASSERT_EQ(0, pcm_err);
   ASSERT_TRUE(pcm_play1 != NULL);
   snd_pcm_set_params(pcm_play1, SND_PCM_FORMAT_S16_LE,
-                     SND_PCM_ACCESS_RW_INTERLEAVED,
-                     (unsigned int)channel_count, 44100, 1, 500000);
+                     SND_PCM_ACCESS_RW_INTERLEAVED, (unsigned int)channel_count,
+                     44100, 1, 500000);
   snd_pcm_sframes_t written_frames =
       snd_pcm_writei(pcm_play1, input_samples, frame_count);
   ASSERT_EQ((snd_pcm_sframes_t)frame_count, written_frames);
   snd_pcm_close(pcm_play1);
 
-  // 3. Use CDSP to listen to capture side of loopback 1, and playback to loopback 2's playback side
+  // 3. Use CDSP to listen to capture side of loopback 1, and playback to
+  // loopback 2's playback side
   char json[1024];
   snprintf(json, sizeof(json),
            "{\n"
@@ -785,14 +787,16 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
 
   printf("ℹ️ raw_loop2 size: %ld bytes (expected >= %zu bytes)\n", out_size,
          (512 + frame_count) * channel_count * sizeof(int16_t));
-  ASSERT_TRUE(out_size >= (long)((512 + frame_count) * channel_count * sizeof(int16_t)));
+  ASSERT_TRUE(out_size >=
+              (long)((512 + frame_count) * channel_count * sizeof(int16_t)));
 
   // Skip 512 pre-fill silence frames (512 * 2 channels * 2 bytes = 2048 bytes)
   fseek(out_f, 512 * channel_count * sizeof(int16_t), SEEK_SET);
 
   int16_t output_samples[total_samples];
   memset(output_samples, 0, sizeof(output_samples));
-  size_t read_count = fread(output_samples, sizeof(int16_t), total_samples, out_f);
+  size_t read_count =
+      fread(output_samples, sizeof(int16_t), total_samples, out_f);
   fclose(out_f);
   ASSERT_EQ(total_samples, read_count);
 
@@ -859,9 +863,12 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   char raw_loop2[256];
   char alsa_conf[256];
 
-  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_rate_loop1_%d.raw", getpid());
-  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_rate_loop2_%d.raw", getpid());
-  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_rate_conf_%d.conf", getpid());
+  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_rate_loop1_%d.raw",
+           getpid());
+  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_rate_loop2_%d.raw",
+           getpid());
+  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_rate_conf_%d.conf",
+           getpid());
 
   unlink(raw_loop1);
   remove(raw_loop2);
@@ -901,7 +908,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   fclose(conf_f);
 
   char alsa_env[1024];
-  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s",
+           alsa_conf);
   setenv("ALSA_CONFIG_PATH", alsa_env, 1);
   snd_config_update();
 
@@ -965,7 +973,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   printf("ℹ️ debug: switching player to 48kHz...\n");
   atomic_store(&player.change_rate, 48000);
 
-  // 3. Expect CDSP to throw a CAPTURE RATE CHANGE error (STOP_REASON_CAPTURE_FORMAT_CHANGE)
+  // 3. Expect CDSP to throw a CAPTURE RATE CHANGE error
+  // (STOP_REASON_CAPTURE_FORMAT_CHANGE)
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
@@ -993,7 +1002,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
 
-  // 4. Change the config for the capture rate to 48kHz and it should play smoothly again
+  // 4. Change the config for the capture rate to 48kHz and it should play
+  // smoothly again
   char json_48k[1024];
   snprintf(json_48k, sizeof(json_48k),
            "{\n"
@@ -1024,7 +1034,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
       .change_rate = 0,
       .stop = false,
   };
-  pthread_create(&player48k_2.thread, NULL, alsa_loopback_player_func, &player48k_2);
+  pthread_create(&player48k_2.thread, NULL, alsa_loopback_player_func,
+                 &player48k_2);
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -1059,7 +1070,11 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
 #endif
 }
 
+#if defined(ENABLE_COREAUDIO)
+#include <sys/file.h>
 
+#include "Backend/core_audio_device.h"
+#endif
 
 TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
@@ -1067,9 +1082,12 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   char raw_loop2[256];
   char alsa_conf[256];
 
-  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_play_rate_loop1_%d.raw", getpid());
-  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_play_rate_loop2_%d.raw", getpid());
-  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_play_rate_conf_%d.conf", getpid());
+  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_play_rate_loop1_%d.raw",
+           getpid());
+  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_play_rate_loop2_%d.raw",
+           getpid());
+  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_play_rate_conf_%d.conf",
+           getpid());
 
   unlink(raw_loop1);
   remove(raw_loop2);
@@ -1108,7 +1126,8 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   fclose(conf_f);
 
   char alsa_env[1024];
-  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s",
+           alsa_conf);
   setenv("ALSA_CONFIG_PATH", alsa_env, 1);
   snd_config_update();
 
@@ -1167,7 +1186,8 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   // Switch external streaming player to 48kHz
   atomic_store(&player.change_rate, 48000);
 
-  // Expect engine to stop with STOP_REASON_CAPTURE_FORMAT_CHANGE / STOP_REASON_PLAYBACK_FORMAT_CHANGE
+  // Expect engine to stop with STOP_REASON_CAPTURE_FORMAT_CHANGE /
+  // STOP_REASON_PLAYBACK_FORMAT_CHANGE
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
@@ -1252,11 +1272,15 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
 TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
 #if defined(__linux__) && defined(ENABLE_PIPEWIRE)
   // Ensure test WAV files exist
-  system("python3 -c \"import wave, math, struct; "
-         "f1=wave.open('/tmp/pw_test_44k.wav','w'); f1.setnchannels(2); f1.setsampwidth(2); f1.setframerate(44100); "
-         "f1.writeframesraw(struct.pack('<hh', 1000, 1000)*44100*4); f1.close(); "
-         "f2=wave.open('/tmp/pw_test_48k.wav','w'); f2.setnchannels(2); f2.setsampwidth(2); f2.setframerate(48000); "
-         "f2.writeframesraw(struct.pack('<hh', 1000, 1000)*48000*4); f2.close()\" >/dev/null 2>&1");
+  system(
+      "python3 -c \"import wave, math, struct; "
+      "f1=wave.open('/tmp/pw_test_44k.wav','w'); f1.setnchannels(2); "
+      "f1.setsampwidth(2); f1.setframerate(44100); "
+      "f1.writeframesraw(struct.pack('<hh', 1000, 1000)*44100*4); f1.close(); "
+      "f2=wave.open('/tmp/pw_test_48k.wav','w'); f2.setnchannels(2); "
+      "f2.setsampwidth(2); f2.setframerate(48000); "
+      "f2.writeframesraw(struct.pack('<hh', 1000, 1000)*48000*4); f2.close()\" "
+      ">/dev/null 2>&1");
 
   // Play 44.1kHz wave to PipeWire in background
   system("pw-play /tmp/pw_test_44k.wav >/dev/null 2>&1 &");
@@ -1291,7 +1315,10 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   audio_backend_error_t berr;
   memset(&berr, 0, sizeof(berr));
   if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
-    printf("PipeWire unavailable (%s), skipping PipeWire capture rate change test\n", berr.message);
+    printf(
+        "PipeWire unavailable (%s), skipping PipeWire capture rate change "
+        "test\n",
+        berr.message);
     if (engine->free) engine->free(engine->ctx);
     return;
   }
@@ -1313,7 +1340,8 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // External command: play 48kHz wave file into PipeWire to trigger rate renegotiation
+  // External command: play 48kHz wave file into PipeWire to trigger rate
+  // renegotiation
   system("pw-play /tmp/pw_test_48k.wav >/dev/null 2>&1 &");
   system("pw-metadata -n settings 0 clock.force-rate 48000 >/dev/null 2>&1");
 
@@ -1339,7 +1367,9 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
 
   if (!rate_change_stopped) {
-    printf("PipeWire environment internal resampling did not fire rate change event, skipping recovery check\n");
+    printf(
+        "PipeWire environment internal resampling did not fire rate change "
+        "event, skipping recovery check\n");
     cdsp_stop(engine);
     if (engine && engine->free) engine->free(engine->ctx);
     return;
@@ -1431,7 +1461,10 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   audio_backend_error_t berr;
   memset(&berr, 0, sizeof(berr));
   if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
-    printf("PipeWire unavailable (%s), skipping PipeWire playback rate change test\n", berr.message);
+    printf(
+        "PipeWire unavailable (%s), skipping PipeWire playback rate change "
+        "test\n",
+        berr.message);
     if (engine->free) engine->free(engine->ctx);
     return;
   }
@@ -1454,7 +1487,8 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   cdsp_sleep_ms(100);
 
   // External command: force PipeWire graph sample rate to 48000 Hz
-  int ret = system("pw-metadata -n settings 0 clock.force-rate 48000 >/dev/null 2>&1");
+  int ret = system(
+      "pw-metadata -n settings 0 clock.force-rate 48000 >/dev/null 2>&1");
   (void)ret;
 
   bool rate_change_stopped = false;
@@ -1480,7 +1514,9 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
 
   if (!rate_change_stopped) {
-    printf("PipeWire environment internal resampling did not fire rate change event, skipping recovery check\n");
+    printf(
+        "PipeWire environment internal resampling did not fire rate change "
+        "event, skipping recovery check\n");
     cdsp_stop(engine);
     if (engine && engine->free) engine->free(engine->ctx);
     return;
@@ -1583,6 +1619,321 @@ TEST(DSPEngineE2E_CoreAudio) {
       "    }\n"
       "}";
   run_e2e_test_config(json, "CoreAudio");
+#endif
+}
+
+TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
+#if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
+  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_EX);
+  }
+
+  // Resolve capture device ID and nominal rate
+  AudioDeviceID dev_id =
+      core_audio_device_id_for_name("BlackHole 2ch", CORE_AUDIO_SCOPE_INPUT);
+  ASSERT_NE(0, dev_id);
+
+  double initial_rate = 44100.0;
+  core_audio_device_get_nominal_sample_rate(dev_id, &initial_rate);
+
+  int init_sr = (int)(initial_rate + 0.5);
+  int target_sr = (init_sr == 44100) ? 48000 : 44100;
+
+  printf(
+      "ℹ️ debug: initial capture device nominal rate is %d Hz, will change to "
+      "%d Hz...\n",
+      init_sr, target_sr);
+
+  // 1. Configure the engine with BlackHole 2ch at initial nominal samplerate
+  char json_init[1024];
+  snprintf(json_init, sizeof(json_init),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 2ch\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 16ch\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           init_sr);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_init, &berr);
+  ASSERT_TRUE(success);
+
+  // Wait until engine starts running (allow up to 4 seconds for physical
+  // hardware device settling)
+  bool running = false;
+  for (int i = 0; i < 400; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  // Let 44.1kHz capture run for a short duration
+  cdsp_sleep_ms(100);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  // 2. Change capture hardware nominal sample rate to target_sr
+  printf(
+      "ℹ️ debug: changing CoreAudio capture device nominal rate to %d Hz...\n",
+      target_sr);
+  core_audio_device_set_nominal_sample_rate(dev_id, (double)target_sr);
+
+  // 3. Expect CDSP to throw a CAPTURE RATE CHANGE error
+  // (STOP_REASON_CAPTURE_FORMAT_CHANGE)
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // 4. Re-configure the engine for target_sr and verify it restarts and runs
+  // smoothly
+  char json_reinit[1024];
+  snprintf(json_reinit, sizeof(json_reinit),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 2ch\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 16ch\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           target_sr);
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  success = engine->set_config_json(engine->ctx, json_reinit, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 400; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Restore the hardware nominal rate to its initial state
+  core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
+
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_UN);
+    close(lock_fd);
+  }
+#endif
+}
+
+TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
+#if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
+  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_EX);
+  }
+
+  // Resolve playback device ID and nominal rate
+  AudioDeviceID dev_id =
+      core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
+  ASSERT_NE(0, dev_id);
+
+  double initial_rate = 44100.0;
+  core_audio_device_get_nominal_sample_rate(dev_id, &initial_rate);
+
+  int init_sr = (int)(initial_rate + 0.5);
+  int target_sr = (init_sr == 44100) ? 48000 : 44100;
+
+  printf(
+      "ℹ️ debug: initial playback device nominal rate is %d Hz, will change to "
+      "%d Hz...\n",
+      init_sr, target_sr);
+
+  // 1. Configure the engine with BlackHole 2ch as capture and BlackHole 16ch as
+  // playback at initial nominal samplerate
+  char json_init[1024];
+  snprintf(json_init, sizeof(json_init),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 2ch\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 16ch\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           init_sr);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_init, &berr);
+  ASSERT_TRUE(success);
+
+  // Wait until engine starts running (allow up to 4 seconds for physical
+  // hardware device settling)
+  bool running = false;
+  for (int i = 0; i < 400; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  // Let playback run for a short duration
+  cdsp_sleep_ms(100);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  // 2. Change playback hardware nominal sample rate to target_sr
+  printf(
+      "ℹ️ debug: changing CoreAudio playback device nominal rate to %d Hz...\n",
+      target_sr);
+  core_audio_device_set_nominal_sample_rate(dev_id, (double)target_sr);
+
+  // 3. Expect CDSP to throw a PLAYBACK RATE CHANGE error
+  // (STOP_REASON_PLAYBACK_FORMAT_CHANGE)
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // 4. Re-configure the engine for target_sr and verify it restarts and runs
+  // smoothly
+  char json_reinit[1024];
+  snprintf(json_reinit, sizeof(json_reinit),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 2ch\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"BlackHole 16ch\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           target_sr);
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  success = engine->set_config_json(engine->ctx, json_reinit, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 400; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Restore the hardware nominal rate to its initial state
+  core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
+
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_UN);
+    close(lock_fd);
+  }
 #endif
 }
 
