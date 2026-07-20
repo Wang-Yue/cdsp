@@ -37,7 +37,11 @@ static char* read_file_to_str(const char* path) {
 // Static JSON pointer locate helper (copied from ws_rpc_dispatcher.c)
 static cJSON* locate_pointer(cJSON* root, const char* pointer,
                              cJSON** out_parent, const char** out_key,
-                             int* out_index) {
+                             int* out_index, char* out_new_key,
+                             size_t new_key_max_len) {
+  if (out_new_key && new_key_max_len > 0) {
+    out_new_key[0] = '\0';
+  }
   if (!root || !pointer) return NULL;
   const char* ptr = pointer;
   if (*ptr == '/') ptr++;
@@ -51,7 +55,20 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
     size_t seg_len = 0;
     while (*ptr && *ptr != '/') {
       if (seg_len >= sizeof(segment) - 1) return NULL;
-      segment[seg_len++] = *ptr++;
+      if (*ptr == '~') {
+        ptr++;
+        if (*ptr == '1') {
+          segment[seg_len++] = '/';
+          ptr++;
+        } else if (*ptr == '0') {
+          segment[seg_len++] = '~';
+          ptr++;
+        } else {
+          segment[seg_len++] = '~';
+        }
+      } else {
+        segment[seg_len++] = *ptr++;
+      }
     }
     segment[seg_len] = '\0';
     if (*ptr == '/') ptr++;
@@ -61,13 +78,24 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
       cJSON* child = curr->child;
       curr = NULL;
       last_key = NULL;
+      bool found = false;
       while (child) {
         if (child->string && strcmp(child->string, segment) == 0) {
           curr = child;
           last_key = child->string;
+          found = true;
           break;
         }
         child = child->next;
+      }
+      if (!found) {
+        if (*ptr == '\0') {
+          if (out_new_key && new_key_max_len > 0) {
+            strncpy(out_new_key, segment, new_key_max_len - 1);
+            out_new_key[new_key_max_len - 1] = '\0';
+          }
+        }
+        break;
       }
       last_idx = -1;
     } else if (cJSON_IsArray(curr)) {
@@ -293,7 +321,7 @@ char* cdsp_get_config_value(const dsp_engine_t* engine, const char* json_ptr) {
   free(json);
   if (!root) return NULL;
 
-  cJSON* node = locate_pointer(root, json_ptr, NULL, NULL, NULL);
+  cJSON* node = locate_pointer(root, json_ptr, NULL, NULL, NULL, NULL, 0);
   if (!node) {
     cJSON_Delete(root);
     return NULL;
@@ -324,7 +352,8 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
   cJSON* parent = NULL;
   const char* key = NULL;
   int idx = -1;
-  cJSON* target = locate_pointer(root, json_ptr, &parent, &key, &idx);
+  char new_key[128] = "";
+  cJSON* target = locate_pointer(root, json_ptr, &parent, &key, &idx, new_key, sizeof(new_key));
   (void)target;
   if (!parent) {
     cJSON_Delete(root);
@@ -338,11 +367,9 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
   }
 
   if (key) {
-    if (cJSON_HasObjectItem(parent, key)) {
-      cJSON_ReplaceItemInObject(parent, key, new_node);
-    } else {
-      cJSON_AddItemToObject(parent, key, new_node);
-    }
+    cJSON_ReplaceItemInObject(parent, key, new_node);
+  } else if (new_key[0] != '\0') {
+    cJSON_AddItemToObject(parent, new_key, new_node);
   } else if (idx >= 0) {
     cJSON_ReplaceItemInArray(parent, idx, new_node);
   } else {
@@ -361,6 +388,44 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
   return ok;
 }
 
+static void json_merge_patch(cJSON* target, cJSON* patch) {
+  if (!target || !patch) return;
+  cJSON* child = patch->child;
+  while (child) {
+    if (child->string) {
+      cJSON* target_item = cJSON_GetObjectItemCaseSensitive(target, child->string);
+      if (cJSON_IsNull(child)) {
+        if (target_item) {
+          cJSON_DeleteItemFromObject(target, child->string);
+        }
+      } else if (cJSON_IsObject(child)) {
+        if (target_item && cJSON_IsObject(target_item)) {
+          json_merge_patch(target_item, child);
+        } else {
+          cJSON* copy = cJSON_Duplicate(child, true);
+          if (copy) {
+            if (target_item) {
+              cJSON_ReplaceItemInObject(target, child->string, copy);
+            } else {
+              cJSON_AddItemToObject(target, child->string, copy);
+            }
+          }
+        }
+      } else {
+        cJSON* copy = cJSON_Duplicate(child, true);
+        if (copy) {
+          if (target_item) {
+            cJSON_ReplaceItemInObject(target, child->string, copy);
+          } else {
+            cJSON_AddItemToObject(target, child->string, copy);
+          }
+        }
+      }
+    }
+    child = child->next;
+  }
+}
+
 bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
                        cdsp_backend_error_t* out_err) {
   char* json = NULL;
@@ -377,21 +442,7 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
     return false;
   }
 
-  // Basic object merge patch
-  cJSON* child = patch->child;
-  while (child) {
-    if (child->string) {
-      cJSON* copy = cJSON_Duplicate(child, true);
-      if (copy) {
-        if (cJSON_HasObjectItem(root, child->string)) {
-          cJSON_ReplaceItemInObject(root, child->string, copy);
-        } else {
-          cJSON_AddItemToObject(root, child->string, copy);
-        }
-      }
-    }
-    child = child->next;
-  }
+  json_merge_patch(root, patch);
   cJSON_Delete(patch);
 
   char* updated_json = cJSON_PrintUnformatted(root);

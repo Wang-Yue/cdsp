@@ -228,6 +228,9 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           parse_json_str(params, "filename", cp->filename,
                          sizeof(cp->filename));
           parse_json_str(params, "format", cp->format, sizeof(cp->format));
+          if (strlen(cp->format) == 0) {
+            strncpy(cp->format, "TEXT", sizeof(cp->format) - 1);
+          }
           parse_json_int(params, "channel", &cp->channel);
           parse_json_int(params, "length", &cp->length);
           parse_json_int(params, "skip_bytes_lines", &cp->skip_bytes_lines);

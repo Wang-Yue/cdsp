@@ -362,18 +362,6 @@ static resampler_error_t async_poly_resampler_process(
     output_frames = resampler->max_output_frames;
   }
 
-  if (output_frames == 0) {
-    resampler->last_index -= (double)resampler->needed_input_size;
-    resampler->resample_ratio = resampler->target_ratio;
-    async_poly_resampler_update_lengths(resampler);
-    audio_chunk_set_valid_frames(output, 0);
-    return RESAMPLER_OK;
-  }
-
-  if (audio_chunk_get_frames(output) < output_frames) {
-    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
-  }
-
   size_t n_len = resampler->interpolator_len;
   size_t two_n_len = 2 * n_len;
 
@@ -396,6 +384,18 @@ static resampler_error_t async_poly_resampler_process(
   }
 
   resampler->current_buffer_fill = resampler->needed_input_size;
+
+  if (output_frames == 0) {
+    resampler->last_index -= (double)resampler->needed_input_size;
+    resampler->resample_ratio = resampler->target_ratio;
+    async_poly_resampler_update_lengths(resampler);
+    audio_chunk_set_valid_frames(output, 0);
+    return RESAMPLER_OK;
+  }
+
+  if (audio_chunk_get_frames(output) < output_frames) {
+    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
+  }
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
   double t_ratio_end = 1.0 / resampler->target_ratio;

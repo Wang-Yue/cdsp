@@ -26,6 +26,7 @@ struct spectrum_analyzer {
   size_t fft_n;
   real_fftf_t* fft_setup;
   float* window;
+  float window_sum;
   // Preallocated reusable scratch buffers to eliminate frame-by-frame
   // allocations
   float* data;
@@ -69,6 +70,11 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
 
   if (analyzer->window) {
     dsp_ops_float_hann_window(analyzer->window, analyzer->fft_n);
+    float sum = 0.0f;
+    for (size_t i = 0; i < analyzer->fft_n; i++) {
+      sum += analyzer->window[i];
+    }
+    analyzer->window_sum = sum;
   }
 
   analyzer->out_capacity = 1024;
@@ -152,7 +158,7 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                     analyzer->imagp);
 
   // 3. Compute magnitudes in dBFS directly into preallocated arrays
-  float scale = 2.0f / (float)analyzer->fft_n;
+  float scale = 2.0f / analyzer->window_sum;
   float floor_val = 1e-10f;  // Threshold to prevent log10(0)
 
   dsp_ops_float_zvabs(analyzer->realp, analyzer->imagp, analyzer->magnitudes,

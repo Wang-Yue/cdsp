@@ -110,7 +110,7 @@ fn make_resampler(
                 PolynomialDegree::Linear,
                 chunk_size,
                 1,
-                FixedAsync::Output,
+                FixedAsync::Input,
             )
             .unwrap(),
         ),
@@ -121,7 +121,7 @@ fn make_resampler(
                 PolynomialDegree::Cubic,
                 chunk_size,
                 1,
-                FixedAsync::Output,
+                FixedAsync::Input,
             )
             .unwrap(),
         ),
@@ -132,7 +132,7 @@ fn make_resampler(
                 PolynomialDegree::Quintic,
                 chunk_size,
                 1,
-                FixedAsync::Output,
+                FixedAsync::Input,
             )
             .unwrap(),
         ),
@@ -143,7 +143,7 @@ fn make_resampler(
                 PolynomialDegree::Septic,
                 chunk_size,
                 1,
-                FixedAsync::Output,
+                FixedAsync::Input,
             )
             .unwrap(),
         ),

@@ -262,8 +262,11 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
   cJSON* sr_item = cJSON_GetObjectItemCaseSensitive(devices_obj, "samplerate");
   if (cJSON_IsNumber(sr_item)) sr = sr_item->valueint;
   int ch = 0;
-  cJSON* ch_item = cJSON_GetObjectItemCaseSensitive(devices_obj, "channels");
-  if (cJSON_IsNumber(ch_item)) ch = ch_item->valueint;
+  cJSON* capture_obj = cJSON_GetObjectItemCaseSensitive(devices_obj, "capture");
+  if (capture_obj) {
+    cJSON* ch_item = cJSON_GetObjectItemCaseSensitive(capture_obj, "channels");
+    if (cJSON_IsNumber(ch_item)) ch = ch_item->valueint;
+  }
 
   if (sr > 0 || ch > 0) {
     replace_tokens_in_json_node(root, sr, ch, 0);
