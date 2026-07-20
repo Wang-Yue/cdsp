@@ -140,11 +140,15 @@ void spsc_audio_ring_buffer_write(spsc_audio_ring_buffer_t* ring,
   const float* src = source;
   size_t cnt = count;
   size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
-  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
-  if (cnt > limit) {
-    size_t skip = cnt - limit;
+  if (cnt > ring->capacity) {
+    size_t skip = cnt - ring->capacity;
     src += skip * stride;
-    cnt = limit;
+    cnt = ring->capacity;
+  }
+  if (!ring->overwrite_on_overflow) {
+    if (cnt > avail) {
+      cnt = avail;
+    }
   }
   if (cnt == 0) return;
   uint64_t seq = atomic_load_explicit(&ring->write_seq, memory_order_relaxed);
@@ -200,11 +204,15 @@ void spsc_audio_ring_buffer_append_converting_double_to_float(
   const double* src = source;
   size_t cnt = count;
   size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
-  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
-  if (cnt > limit) {
-    size_t skip = cnt - limit;
+  if (cnt > ring->capacity) {
+    size_t skip = cnt - ring->capacity;
     src += skip;
-    cnt = limit;
+    cnt = ring->capacity;
+  }
+  if (!ring->overwrite_on_overflow) {
+    if (cnt > avail) {
+      cnt = avail;
+    }
   }
   if (cnt == 0) return;
   uint64_t seq = atomic_load_explicit(&ring->write_seq, memory_order_relaxed);
@@ -239,9 +247,13 @@ void spsc_audio_ring_buffer_write_silence(spsc_audio_ring_buffer_t* ring,
   if (count == 0 || !ring) return;
   size_t cnt = count;
   size_t avail = spsc_audio_ring_buffer_get_available_to_write(ring);
-  size_t limit = ring->overwrite_on_overflow ? ring->capacity : avail;
-  if (cnt > limit) {
-    cnt = limit;
+  if (cnt > ring->capacity) {
+    cnt = ring->capacity;
+  }
+  if (!ring->overwrite_on_overflow) {
+    if (cnt > avail) {
+      cnt = avail;
+    }
   }
   if (cnt == 0) return;
   uint64_t seq = atomic_load_explicit(&ring->write_seq, memory_order_relaxed);

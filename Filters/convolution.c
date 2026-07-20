@@ -20,6 +20,9 @@ struct convolution_filter {
   double* spec_accum_re;
   double* spec_accum_im;
   double* tail_scratch;
+  double* input_buffer;
+  double* output_buffer;
+  size_t buf_pos;
 };
 
 typedef struct convolution_filter convolution_filter_t;
@@ -82,6 +85,9 @@ static size_t get_raw_sample_size(binary_sample_format_t format) {
       return 2;
     case BINARY_SAMPLE_FORMAT_S24_3_LE:
       return 3;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+      return 4;
     case BINARY_SAMPLE_FORMAT_S32_LE:
       return 4;
     case BINARY_SAMPLE_FORMAT_F32_LE:
@@ -108,21 +114,73 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   FILE* f = cdsp_fopen(path, "rb");
   if (!f) return NULL;
 
-  uint8_t header[44];
-  if (fread(header, 1, 44, f) != 44) {
+  uint16_t audio_format = 0;
+  uint16_t channels = 0;
+  uint16_t bits_per_sample = 0;
+  bool fmt_found = false;
+  bool data_found = false;
+  uint32_t data_bytes = 0;
+
+  uint8_t riff_header[12];
+  if (fread(riff_header, 1, 12, f) != 12) {
     fclose(f);
     return NULL;
   }
 
-  if (memcmp(header, "RIFF", 4) != 0 || memcmp(header + 8, "WAVE", 4) != 0 ||
-      memcmp(header + 12, "fmt ", 4) != 0) {
+  if ((memcmp(riff_header, "RIFF", 4) != 0 && memcmp(riff_header, "RF64", 4) != 0) ||
+      memcmp(riff_header + 8, "WAVE", 4) != 0) {
     fclose(f);
     return NULL;
   }
 
-  uint16_t audio_format = header[20] | (header[21] << 8);
-  uint16_t channels = header[22] | (header[23] << 8);
-  uint16_t bits_per_sample = header[34] | (header[35] << 8);
+  uint8_t chunk_id[4];
+  uint32_t chunk_size;
+  while (fread(chunk_id, 1, 4, f) == 4) {
+    if (fread(&chunk_size, 4, 1, f) != 1) break;
+
+    if (memcmp(chunk_id, "fmt ", 4) == 0) {
+      if (chunk_size < 16) {
+        fclose(f);
+        return NULL;
+      }
+      uint8_t* fmt_data = (uint8_t*)malloc(chunk_size);
+      if (!fmt_data) {
+        fclose(f);
+        return NULL;
+      }
+      if (fread(fmt_data, 1, chunk_size, f) != chunk_size) {
+        free(fmt_data);
+        fclose(f);
+        return NULL;
+      }
+      audio_format = fmt_data[0] | (fmt_data[1] << 8);
+      channels = fmt_data[2] | (fmt_data[3] << 8);
+      bits_per_sample = fmt_data[14] | (fmt_data[15] << 8);
+
+      if (audio_format == 65534) { // WAVE_FORMAT_EXTENSIBLE
+        if (chunk_size >= 40) {
+          audio_format = fmt_data[24] | (fmt_data[25] << 8);
+        }
+      }
+      free(fmt_data);
+      fmt_found = true;
+      if (chunk_size % 2 != 0) {
+        fseek(f, 1, SEEK_CUR);
+      }
+    } else if (memcmp(chunk_id, "data", 4) == 0) {
+      data_bytes = chunk_size;
+      data_found = true;
+      break;
+    } else {
+      uint32_t skip_bytes = (chunk_size + 1) & ~1;
+      fseek(f, skip_bytes, SEEK_CUR);
+    }
+  }
+
+  if (!fmt_found || !data_found || data_bytes == 0) {
+    fclose(f);
+    return NULL;
+  }
 
   if (audio_format != 1 && audio_format != 3) {
     fclose(f);
@@ -130,30 +188,6 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   }
 
   if (channel < 0 || channel >= (int)channels) {
-    fclose(f);
-    return NULL;
-  }
-
-  // Find data chunk
-  uint32_t data_bytes = 0;
-  if (memcmp(header + 36, "data", 4) == 0) {
-    data_bytes = header[40] | (header[41] << 8) | (header[42] << 16) |
-                 (header[43] << 24);
-  } else {
-    fseek(f, 36, SEEK_SET);
-    uint8_t chunk_id[4];
-    uint32_t chunk_size;
-    while (fread(chunk_id, 1, 4, f) == 4) {
-      if (fread(&chunk_size, 4, 1, f) != 1) break;
-      if (memcmp(chunk_id, "data", 4) == 0) {
-        data_bytes = chunk_size;
-        break;
-      }
-      fseek(f, chunk_size, SEEK_CUR);
-    }
-  }
-
-  if (data_bytes == 0) {
     fclose(f);
     return NULL;
   }
@@ -399,6 +433,8 @@ static void convolution_filter_free(void* instance) {
   if (filter->spec_accum_re) free(filter->spec_accum_re);
   if (filter->spec_accum_im) free(filter->spec_accum_im);
   if (filter->tail_scratch) free(filter->tail_scratch);
+  if (filter->input_buffer) free(filter->input_buffer);
+  if (filter->output_buffer) free(filter->output_buffer);
   free(filter);
 }
 
@@ -607,9 +643,13 @@ static void* convolution_filter_create(const char* name,
   filter->spec_accum_re = (double*)calloc(spec_len, sizeof(double));
   filter->spec_accum_im = (double*)calloc(spec_len, sizeof(double));
   filter->tail_scratch = (double*)calloc(chunk_size, sizeof(double));
+  filter->input_buffer = (double*)calloc(chunk_size, sizeof(double));
+  filter->output_buffer = (double*)calloc(chunk_size, sizeof(double));
+  filter->buf_pos = 0;
 
   if (!filter->overlap_buffer || !filter->time_buf || !filter->spec_accum_re ||
-      !filter->spec_accum_im || !filter->tail_scratch) {
+      !filter->spec_accum_im || !filter->tail_scratch ||
+      !filter->input_buffer || !filter->output_buffer) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate convolution scratch buffers");
     goto fail;
@@ -763,18 +803,38 @@ static void convolution_filter_process(void* instance,
   convolution_filter_t* filter = (convolution_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   size_t cs = filter->chunk_size;
-  size_t processed = 0;
-  while (processed + cs <= count) {
-    process_chunk(filter, waveform + processed);
-    processed += cs;
+  size_t i = 0;
+
+  // 1. If we have some accumulated input, we must complete it first
+  if (filter->buf_pos > 0) {
+    size_t len = count - i;
+    if (len > cs - filter->buf_pos) len = cs - filter->buf_pos;
+    if (len > 0) {
+      memcpy(filter->input_buffer + filter->buf_pos, waveform + i, len * sizeof(double));
+      memcpy(waveform + i, filter->output_buffer + filter->buf_pos, len * sizeof(double));
+      filter->buf_pos += len;
+      i += len;
+    }
+    if (filter->buf_pos == cs) {
+      process_chunk(filter, filter->input_buffer);
+      memcpy(filter->output_buffer, filter->input_buffer, cs * sizeof(double));
+      filter->buf_pos = 0;
+    }
   }
-  if (processed < count) {
-    size_t rem = count - processed;
-    double* temp = filter->tail_scratch;
-    memset(temp, 0, cs * sizeof(double));
-    memcpy(temp, waveform + processed, rem * sizeof(double));
-    process_chunk(filter, temp);
-    memcpy(waveform + processed, temp, rem * sizeof(double));
+
+  // 2. Process any full blocks in-place directly from/to the waveform
+  while (i + cs <= count) {
+    process_chunk(filter, waveform + i);
+    i += cs;
+  }
+
+  // 3. Buffer any remaining partial block
+  size_t len = count - i;
+  if (len > 0) {
+    memcpy(filter->input_buffer + filter->buf_pos, waveform + i, len * sizeof(double));
+    memcpy(waveform + i, filter->output_buffer + filter->buf_pos, len * sizeof(double));
+    filter->buf_pos += len;
+    i += len;
   }
 }
 
@@ -799,6 +859,9 @@ static void convolution_filter_transfer_state(void* dest_ptr,
       memcpy(dest->hist_im[s], src->hist_im[s], spec_len * sizeof(double));
     }
     dest->write_idx = src->write_idx;
+    memcpy(dest->input_buffer, src->input_buffer, dest->chunk_size * sizeof(double));
+    memcpy(dest->output_buffer, src->output_buffer, dest->chunk_size * sizeof(double));
+    dest->buf_pos = src->buf_pos;
   }
 }
 
