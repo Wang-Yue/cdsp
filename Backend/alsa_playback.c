@@ -445,6 +445,19 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     }
   }
 
+  // Wait for playback device to be ready to prevent infinite block in snd_pcm_writei.
+  int timeout_ms = (int)((double)frames_to_write * 1000.0 / playback->sample_rate * 2.0);
+  if (timeout_ms < 500) timeout_ms = 500;
+
+  int err_wait = snd_pcm_wait(playback->pcm, timeout_ms);
+  if (err_wait == 0) {
+    logger_warn(&g_logger, "Playback device wait timeout (device stalled), recovering...");
+    snd_pcm_drop(playback->pcm);
+    snd_pcm_prepare(playback->pcm);
+  } else if (err_wait < 0) {
+    snd_pcm_recover(playback->pcm, err_wait, 0);
+  }
+
   // Write interleaved samples to ALSA device.
   // In case of write failure (e.g., underrun), attempt to recover and retry the
   // write once.
