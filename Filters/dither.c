@@ -445,20 +445,32 @@ static int dither_config_validate(const filter_config_t* config,
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DITHER) return -1;
   const dither_config_t* params = &config->parameters.dither;
-  if (params->bits < 2) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Dither bit depth must be at least 2, got %d",
-                     params->bits);
+
+  if (params->bits <= 1) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Dither bit depth must be at least 2");
+    }
     return -1;
   }
-  if (params->has_amplitude) {
-    if (params->amplitude < 0.0 || params->amplitude > 100.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Dither amplitude must be in [0, 100], got %g",
-                       params->amplitude);
+
+  if (params->type == DITHER_TYPE_FLAT && params->has_amplitude) {
+    if (params->amplitude < 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Dither amplitude cannot be negative");
+      }
+      return -1;
+    }
+    if (params->amplitude > 100.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Dither amplitude must be less than 100");
+      }
       return -1;
     }
   }
+
   return 0;
 }
 

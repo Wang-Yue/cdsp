@@ -122,54 +122,37 @@ static void lookahead_limiter_filter_free(void* instance) {
 static int lookahead_limiter_config_validate(const filter_config_t* config,
                                              int sample_rate,
                                              config_error_t* err) {
-  if (sample_rate <= 0) {
-    config_error_set(
-        err, CONFIG_ERR_INVALID_FILTER,
-        "Lookahead Limiter: sample_rate must be greater than 0, got %d",
-        sample_rate);
-    return -1;
-  }
   if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER) return -1;
   const lookahead_limiter_config_t* params =
       &config->parameters.lookahead_limiter;
   if (!params) return 0;
-  if (!isfinite(params->limit)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter limit must be finite, got %g",
-                     params->limit);
-    return -1;
-  }
-  if (!isfinite(params->attack)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: attack must be finite");
-    return -1;
-  }
+
   if (params->attack < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: attack cannot be negative, got %g",
-                     params->attack);
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Attack time must be greater than or equal to 0.");
+    }
     return -1;
   }
-  if (!isfinite(params->release)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: release must be finite");
-    return -1;
-  }
-  if (params->release < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: release cannot be negative, got %g",
-                     params->release);
-    return -1;
-  }
-  double attack_samples =
-      compute_time_samples(params->attack, params->attack_unit, sample_rate);
+
+  double attack_samples = round(
+      compute_time_samples(params->attack, params->attack_unit, sample_rate));
   if (attack_samples > (double)sample_rate) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Lookahead Limiter: attack time cannot be longer than 1 "
-                     "second, got %g samples",
-                     attack_samples);
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Lookahead limiter attack time must be less than or equal to 1 second.");
+    }
     return -1;
   }
+
+  if (params->release < 0.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Release time must be greater than or equal to 0.");
+    }
+    return -1;
+  }
+
   return 0;
 }
 

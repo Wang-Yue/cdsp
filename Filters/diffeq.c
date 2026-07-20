@@ -190,10 +190,10 @@ static void diffeq_filter_process(void* instance, mutable_waveform_t waveform,
   }
 
   for (size_t k = 0; k < nb; k++) {
-    if (!isnormal(x[k])) x[k] = 0.0;
+    if (fpclassify(x[k]) == FP_SUBNORMAL) x[k] = 0.0;
   }
   for (size_t k = 0; k < na; k++) {
-    if (!isnormal(y[k])) y[k] = 0.0;
+    if (fpclassify(y[k]) == FP_SUBNORMAL) y[k] = 0.0;
   }
 
   filter->idx_x = idx_x;

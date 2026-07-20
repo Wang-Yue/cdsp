@@ -128,27 +128,51 @@ static int loudness_config_validate(const filter_config_t* config,
                        "Loudness filter requires 'reference_level'");
     return -1;
   }
-  if (params->reference_level < -100.0 || params->reference_level > 20.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "reference_level must be in [-100, 20], got %g",
-                     params->reference_level);
+  if (params->reference_level > 20.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Reference level must be less than 20");
+    }
     return -1;
   }
-  if (params->has_high_boost) {
-    if (params->high_boost < 0.0 || params->high_boost > 20.0) {
+  if (params->reference_level < -100.0) {
+    if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "high_boost must be in [0, 20], got %g",
-                       params->high_boost);
-      return -1;
+                       "Reference level must be higher than -100");
     }
+    return -1;
   }
-  if (params->has_low_boost) {
-    if (params->low_boost < 0.0 || params->low_boost > 20.0) {
+
+  double high_boost = params->has_high_boost ? params->high_boost : 10.0;
+  double low_boost = params->has_low_boost ? params->low_boost : 10.0;
+
+  if (high_boost < 0.0) {
+    if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "low_boost must be in [0, 20], got %g",
-                       params->low_boost);
-      return -1;
+                       "High boost cannot be less than 0");
     }
+    return -1;
+  }
+  if (high_boost > 20.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "High boost cannot be larger than 20");
+    }
+    return -1;
+  }
+  if (low_boost < 0.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Low boost cannot be less than 0");
+    }
+    return -1;
+  }
+  if (low_boost > 20.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Low boost cannot be larger than 20");
+    }
+    return -1;
   }
   return 0;
 }

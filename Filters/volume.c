@@ -78,9 +78,10 @@ static int volume_config_validate(const filter_config_t* config,
   if (!params) return 0;
   if (params->has_ramp_time_ms) {
     if (params->ramp_time_ms < 0.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Volume ramp time cannot be negative, got %g",
-                       params->ramp_time_ms);
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Ramp time cannot be negative");
+      }
       return -1;
     }
   }

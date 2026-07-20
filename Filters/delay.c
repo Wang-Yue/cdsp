@@ -118,14 +118,11 @@ static int delay_config_validate(const filter_config_t* config, int sample_rate,
   if (!config || config->type != FILTER_TYPE_DELAY) return -1;
   const delay_config_t* params = &config->parameters.delay;
   if (!params) return 0;
-  if (!isfinite(params->delay)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Delay must be a finite number");
-    return -1;
-  }
   if (params->delay < 0.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Delay cannot be negative, got %g", params->delay);
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Delay cannot be negative");
+    }
     return -1;
   }
   return 0;

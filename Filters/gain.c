@@ -29,29 +29,51 @@ static int gain_config_validate(const filter_config_t* config, int sample_rate,
   if (!config || config->type != FILTER_TYPE_GAIN) return -1;
   const gain_config_t* params = &config->parameters.gain;
   if (!params || !params->has_gain) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "gain is a required parameter for the Gain filter");
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "gain is a required parameter for the Gain filter");
+    }
     return -1;
   }
   if (!isfinite(params->gain)) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "gain must be a finite number");
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "gain must be a finite number");
+    }
     return -1;
   }
-  if (params->scale == GAIN_SCALE_LINEAR) {
-    if (params->gain < -10.0 || params->gain > 10.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "linear gain must be in [-10, 10], got %g",
-                       params->gain);
+  if (params->scale == GAIN_SCALE_DB) {
+    if (params->gain < -150.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Gain must be larger than -150 dB");
+      }
+      return -1;
+    }
+    if (params->gain > 150.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Gain must be less than +150 dB");
+      }
       return -1;
     }
   } else {
-    if (params->gain < -150.0 || params->gain > 150.0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "gain must be in [-150, 150] dB, got %g", params->gain);
+    if (params->gain < -10.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Linear gain must be larger than -10.0");
+      }
+      return -1;
+    }
+    if (params->gain > 10.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Linear gain must be less than +10.0");
+      }
       return -1;
     }
   }
+
   return 0;
 }
 

@@ -3,9 +3,9 @@
 
 /**
  * @file convolution.h
- * @brief Uniform-partitioned overlap-save FIR convolution filter.
+ * @brief Uniform-partitioned overlap-add FIR convolution filter.
  *
- * Stockham-style segmented overlap-save with one 2N-point real FFT per
+ * Stockham-style segmented overlap-add with one 2N-point real FFT per
  * chunk and an N+1-bin spectrum-domain multiply-accumulate across the
  * segment history.
  *

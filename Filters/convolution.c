@@ -41,9 +41,8 @@ static inline void store_double4(double* p, double4 v) { *(double4*)p = v; }
 #include <string.h>
 
 #include "Config/engine_config_types.h"
-
-// Uniform-partitioned overlap-save FIR convolution.
-// Stockham-style segmented overlap-save with one 2N-point real FFT per
+// Uniform-partitioned overlap-add FIR convolution.
+// Stockham-style segmented overlap-add with one 2N-point real FFT per
 // chunk and an N+1-bin spectrum-domain multiply-accumulate across the
 // segment history.
 //
