@@ -155,7 +155,11 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t* impl,
   config_error_t cerr = {0};
   if (config_loader_parse(json, &parsed, &cerr) != 0 || !parsed) {
     if (err) {
-      err->type = AUDIO_BACKEND_ERR_CONFIG_PARSE;
+      if (cerr.type == CONFIG_ERR_PARSE) {
+        err->type = AUDIO_BACKEND_ERR_CONFIG_READ;
+      } else {
+        err->type = AUDIO_BACKEND_ERR_CONFIG_PARSE;
+      }
       strncpy(err->message, cerr.message, sizeof(err->message) - 1);
       err->message[sizeof(err->message) - 1] = '\0';
     }

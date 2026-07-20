@@ -147,6 +147,8 @@ static cdsp_backend_error_type_t map_backend_error_type(
       return CDSP_BACKEND_ERR_DEVICE_NOT_FOUND;
     case AUDIO_BACKEND_ERR_DEVICE_BUSY:
       return CDSP_BACKEND_ERR_DEVICE_BUSY;
+    case AUDIO_BACKEND_ERR_CONFIG_READ:
+      return CDSP_BACKEND_ERR_CONFIG_READ;
     default:
       return CDSP_BACKEND_ERR_UNKNOWN;
   }
@@ -434,30 +436,34 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
 }
 
 bool cdsp_validate_config_json(const char* json_str, char** out_result,
-                               bool* is_error) {
-  if (!json_str || !out_result || !is_error) return false;
+                               cdsp_config_error_type_t* out_err_type) {
+  if (!json_str || !out_result || !out_err_type) return false;
   dsp_config_t* parsed = NULL;
   config_error_t cerr = {0};
   if (config_loader_parse(json_str, &parsed, &cerr) == 0 && parsed) {
     *out_result = strdup(json_str);
-    *is_error = false;
+    *out_err_type = CDSP_CONFIG_ERR_NONE;
     dsp_config_free(parsed);
     return true;
   } else {
     *out_result = strdup(cerr.message);
-    *is_error = true;
+    if (cerr.type == CONFIG_ERR_PARSE) {
+      *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    } else {
+      *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
+    }
     return false;
   }
 }
 
 bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
-                               bool* is_error) {
-  if (!yaml_str || !out_result || !is_error) return false;
+                               cdsp_config_error_type_t* out_err_type) {
+  if (!yaml_str || !out_result || !out_err_type) return false;
   char* err_msg = NULL;
   cJSON* json_root = cdsp_yaml_to_json(yaml_str, &err_msg);
   if (!json_root) {
     *out_result = strdup(err_msg ? err_msg : "Invalid YAML syntax");
-    *is_error = true;
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
     if (err_msg) free(err_msg);
     return false;
   }
@@ -466,13 +472,13 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
   cJSON_Delete(json_root);
   if (!json_str) {
     *out_result = strdup("Memory allocation error during YAML validation");
-    *is_error = true;
+    *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
     return false;
   }
   char* json_res = NULL;
-  bool ok = cdsp_validate_config_json(json_str, &json_res, is_error);
+  bool ok = cdsp_validate_config_json(json_str, &json_res, out_err_type);
   free(json_str);
-  if (ok && json_res && !*is_error) {
+  if (ok && json_res && *out_err_type == CDSP_CONFIG_ERR_NONE) {
     cJSON* val_root = cJSON_Parse(json_res);
     if (val_root) {
       free(json_res);
@@ -486,21 +492,21 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
 }
 
 bool cdsp_validate_config_file(const char* path, char** out_result,
-                               bool* is_error) {
+                               cdsp_config_error_type_t* out_err_type) {
   if (!path) return false;
   char* file_str = read_file_to_str(path);
   if (!file_str) {
     if (out_result) *out_result = strdup("Could not read file");
-    if (is_error) *is_error = true;
+    if (out_err_type) *out_err_type = CDSP_CONFIG_ERR_PARSE;
     return false;
   }
   const char* p = file_str;
   while (isspace((unsigned char)*p)) p++;
   bool ok = false;
   if (*p == '{') {
-    ok = cdsp_validate_config_json(file_str, out_result, is_error);
+    ok = cdsp_validate_config_json(file_str, out_result, out_err_type);
   } else {
-    ok = cdsp_validate_config_yaml(file_str, out_result, is_error);
+    ok = cdsp_validate_config_yaml(file_str, out_result, out_err_type);
   }
   free(file_str);
   return ok;

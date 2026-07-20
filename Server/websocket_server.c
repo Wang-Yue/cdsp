@@ -617,10 +617,15 @@ static void* server_thread_func(void* arg) {
                                 : 0.0;
           if (now - session->last_spectrum_push_time >= interval) {
             cdsp_spectrum_t spec = {0};
+            cdsp_spectrum_side_t side_val =
+                session->spectrum_is_capture ? CDSP_SPECTRUM_SIDE_CAPTURE
+                                             : CDSP_SPECTRUM_SIDE_PLAYBACK;
+            const uint32_t* chan_ptr = (session->spectrum_channel == (uint32_t)-1)
+                                           ? NULL
+                                           : &session->spectrum_channel;
             bool spec_ok =
                 server && server->engine &&
-                cdsp_get_spectrum(server->engine, session->spectrum_is_capture,
-                                  session->spectrum_channel,
+                cdsp_get_spectrum(server->engine, side_val, chan_ptr,
                                   session->spectrum_min_freq,
                                   session->spectrum_max_freq,
                                   session->spectrum_n_bins, &spec);

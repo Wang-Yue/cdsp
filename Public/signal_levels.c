@@ -69,29 +69,23 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu) {
   vu->capture_peak = NULL;
 }
 
-static void get_labels_from_json(cJSON* devices, const char* dir_key,
-                                 char*** out_labels, size_t* out_count) {
+static void get_labels_from_array(cJSON* labels_arr, char*** out_labels, size_t* out_count) {
   if (!out_labels || !out_count) return;
   *out_labels = NULL;
   *out_count = 0;
-  if (!devices) return;
-  cJSON* dir = cJSON_GetObjectItem(devices, dir_key);
-  if (!dir) return;
-  cJSON* labels = cJSON_GetObjectItem(dir, "channel_labels");
-  if (labels && cJSON_IsArray(labels)) {
-    size_t count = cJSON_GetArraySize(labels);
-    if (count > 0) {
-      char** arr = (char**)malloc(count * sizeof(char*));
-      if (!arr) return;
-      for (size_t i = 0; i < count; i++) {
-        cJSON* item = cJSON_GetArrayItem(labels, i);
-        arr[i] = (item && cJSON_IsString(item) && item->valuestring)
-                     ? strdup(item->valuestring)
-                     : NULL;
-      }
-      *out_labels = arr;
-      *out_count = count;
+  if (!labels_arr || !cJSON_IsArray(labels_arr)) return;
+  size_t count = cJSON_GetArraySize(labels_arr);
+  if (count > 0) {
+    char** arr = (char**)malloc(count * sizeof(char*));
+    if (!arr) return;
+    for (size_t i = 0; i < count; i++) {
+      cJSON* item = cJSON_GetArrayItem(labels_arr, i);
+      arr[i] = (item && cJSON_IsString(item) && item->valuestring)
+                   ? strdup(item->valuestring)
+                   : NULL;
     }
+    *out_labels = arr;
+    *out_count = count;
   }
 }
 
@@ -111,13 +105,54 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
   free(active_json);
   if (!root) return false;
 
+  cJSON* playback_labels_arr = NULL;
+  cJSON* playback_dev_labels_arr = NULL;
+  cJSON* capture_labels_arr = NULL;
+
   cJSON* devices = cJSON_GetObjectItem(root, "devices");
   if (devices) {
-    get_labels_from_json(devices, "playback", out_playback_labels,
-                         out_playback_count);
-    get_labels_from_json(devices, "capture", out_capture_labels,
-                         out_capture_count);
+    cJSON* capture = cJSON_GetObjectItem(devices, "capture");
+    if (capture) {
+      capture_labels_arr = cJSON_GetObjectItem(capture, "labels");
+    }
+    cJSON* playback = cJSON_GetObjectItem(devices, "playback");
+    if (playback) {
+      playback_dev_labels_arr = cJSON_GetObjectItem(playback, "labels");
+    }
   }
+
+  // Resolve playback labels from pipeline mixer or fallback to playback device labels
+  cJSON* pipeline = cJSON_GetObjectItem(root, "pipeline");
+  cJSON* mixers = cJSON_GetObjectItem(root, "mixers");
+  if (pipeline && mixers && cJSON_IsArray(pipeline)) {
+    int pipeline_size = cJSON_GetArraySize(pipeline);
+    for (int i = pipeline_size - 1; i >= 0; i--) {
+      cJSON* step = cJSON_GetArrayItem(pipeline, i);
+      if (step && cJSON_IsObject(step)) {
+        cJSON* type_node = cJSON_GetObjectItem(step, "type");
+        if (type_node && cJSON_IsString(type_node) && strcmp(type_node->valuestring, "Mixer") == 0) {
+          cJSON* name_node = cJSON_GetObjectItem(step, "name");
+          if (name_node && cJSON_IsString(name_node)) {
+            cJSON* mixer = cJSON_GetObjectItem(mixers, name_node->valuestring);
+            if (mixer && cJSON_IsObject(mixer)) {
+              cJSON* labels_node = cJSON_GetObjectItem(mixer, "labels");
+              if (labels_node && cJSON_IsArray(labels_node)) {
+                playback_labels_arr = labels_node;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!playback_labels_arr) {
+    playback_labels_arr = playback_dev_labels_arr;
+  }
+
+  get_labels_from_array(playback_labels_arr, out_playback_labels, out_playback_count);
+  get_labels_from_array(capture_labels_arr, out_capture_labels, out_capture_count);
 
   cJSON_Delete(root);
   return true;

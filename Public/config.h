@@ -195,7 +195,7 @@ CDSP_API bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_json(const char* json_str, char** out_result,
-                               bool* is_error);
+                               cdsp_config_error_type_t* out_err_type);
 
 /**
  * @brief Parse and fill defaults for a YAML configuration string without
@@ -204,11 +204,11 @@ CDSP_API bool cdsp_validate_config_json(const char* json_str, char** out_result,
  * @param yaml_str Inputs YAML configuration string.
  * @param out_result Output allocated YAML string with default values filled (or
  * error description).
- * @param is_error Out boolean set to true if parsing/validation failed.
+ * @param out_err_type Out error type enum pointer.
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
-                               bool* is_error);
+                               cdsp_config_error_type_t* out_err_type);
 
 /**
  * @brief Parse and fill defaults for a configuration file on disk without
@@ -217,11 +217,11 @@ CDSP_API bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
  * @param path Path to the configuration file.
  * @param out_result Output allocated configuration string (YAML format) with
  * default values filled (or error description).
- * @param is_error Out boolean set to true if parsing/validation failed.
+ * @param out_err_type Out error type enum pointer.
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_file(const char* path, char** out_result,
-                               bool* is_error);
+                               cdsp_config_error_type_t* out_err_type);
 
 #ifdef __cplusplus
 }

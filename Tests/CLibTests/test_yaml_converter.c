@@ -147,10 +147,10 @@ TEST(YamlConverter_Validation) {
       "    format: S16LE\n";
 
   char* result_yaml = NULL;
-  bool is_error = true;
-  bool valid = cdsp_validate_config_yaml(yaml_config, &result_yaml, &is_error);
+  cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_PARSE;
+  bool valid = cdsp_validate_config_yaml(yaml_config, &result_yaml, &err_type);
   ASSERT_TRUE(valid);
-  ASSERT_FALSE(is_error);
+  ASSERT_EQ(CDSP_CONFIG_ERR_NONE, err_type);
   ASSERT_TRUE(result_yaml != NULL);
   ASSERT_TRUE(strstr(result_yaml, "samplerate:") != NULL);
 

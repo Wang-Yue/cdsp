@@ -308,31 +308,7 @@ void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
   }
 }
 
-bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (!mock || !mock->get_vu_levels || !out_vu) return false;
-  vu_levels_t raw_vu = {0};
-  if (mock->get_vu_levels(mock->ctx, &raw_vu)) {
-    out_vu->playback_rms = raw_vu.playback_rms;
-    out_vu->playback_peak = raw_vu.playback_peak;
-    out_vu->capture_rms = raw_vu.capture_rms;
-    out_vu->capture_peak = raw_vu.capture_peak;
-    out_vu->playback_channels = raw_vu.playback_channels;
-    out_vu->capture_channels = raw_vu.capture_channels;
-    return true;
-  }
-  return false;
-}
 
-void cdsp_free_vu_levels(cdsp_vu_levels_t* levels) {
-  if (levels) {
-    if (levels->playback_rms) free(levels->playback_rms);
-    if (levels->playback_peak) free(levels->playback_peak);
-    if (levels->capture_rms) free(levels->capture_rms);
-    if (levels->capture_peak) free(levels->capture_peak);
-    memset(levels, 0, sizeof(cdsp_vu_levels_t));
-  }
-}
 
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices,
@@ -383,13 +359,15 @@ void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc) {
   if (desc) free(desc);
 }
 
-bool cdsp_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
+bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side, const uint32_t* channel,
                        double min_freq, double max_freq, size_t n_bins,
                        cdsp_spectrum_t* out_spec) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (!mock || !mock->get_spectrum) return false;
+  bool is_capture = (side == CDSP_SPECTRUM_SIDE_CAPTURE);
+  uint32_t chan_val = channel ? *channel : (uint32_t)-1;
   spectrum_t raw_spec = {0};
-  if (mock->get_spectrum(mock->ctx, is_capture, channel, min_freq, max_freq,
+  if (mock->get_spectrum(mock->ctx, is_capture, chan_val, min_freq, max_freq,
                          n_bins, &raw_spec)) {
     out_spec->count = raw_spec.count;
     if (raw_spec.count > 0) {
@@ -410,6 +388,8 @@ bool cdsp_get_spectrum(dsp_engine_t* engine, bool is_capture, uint32_t channel,
   return false;
 }
 
+
+
 void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
   if (spec) {
     if (spec->frequencies) free(spec->frequencies);
@@ -417,12 +397,7 @@ void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
   }
 }
 
-void cdsp_stop(dsp_engine_t* engine) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->stop) {
-    mock->stop(mock->ctx);
-  }
-}
+
 
 float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
@@ -550,7 +525,7 @@ TEST(test_websocket_commands) {
   ASSERT_STR_EQ("Ok", res1->valuestring);
   cJSON* ver1 = cJSON_GetObjectItem(val1, "value");
   ASSERT_TRUE(ver1 != NULL);
-  ASSERT_STR_EQ("CamillaDSP-C-Embedded 2.0.0", ver1->valuestring);
+  ASSERT_STR_EQ("2.0.0", ver1->valuestring);
   cJSON_Delete(root1);
 
   // Send GetState command
@@ -587,7 +562,7 @@ TEST(test_websocket_handle_command_direct) {
   cJSON* cmd = cJSON_GetObjectItem(root, "GetVersion");
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
-  ASSERT_STR_EQ("CamillaDSP-C-Embedded 2.0.0",
+  ASSERT_STR_EQ("2.0.0",
                 cJSON_GetObjectItem(cmd, "value")->valuestring);
   cJSON_Delete(root);
 
@@ -904,7 +879,24 @@ TEST(test_websocket_format_alignments) {
   cJSON* cmd;
   cJSON* value;
 
-  // 1. GetConfig value format (should be a JSON string, not parsed object)
+  // 1. GetConfigJson value format (should be a JSON string, not parsed object)
+  websocket_server_handle_command(server, 0, "\"GetConfigJson\"", resp,
+                                  sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  cmd = cJSON_GetObjectItem(root, "GetConfigJson");
+  ASSERT_TRUE(cmd != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
+  value = cJSON_GetObjectItem(cmd, "value");
+  ASSERT_TRUE(value != NULL);
+  ASSERT_EQ(cJSON_String, value->type);
+  cJSON* parsed_val = cJSON_Parse(value->valuestring);
+  ASSERT_TRUE(parsed_val != NULL);
+  ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(parsed_val, "my_config")));
+  cJSON_Delete(parsed_val);
+  cJSON_Delete(root);
+
+  // 1b. GetConfig value format (should be a YAML string)
   websocket_server_handle_command(server, 0, "\"GetConfig\"", resp,
                                   sizeof(resp));
   root = cJSON_Parse(resp);
@@ -915,10 +907,7 @@ TEST(test_websocket_format_alignments) {
   value = cJSON_GetObjectItem(cmd, "value");
   ASSERT_TRUE(value != NULL);
   ASSERT_EQ(cJSON_String, value->type);
-  cJSON* parsed_val = cJSON_Parse(value->valuestring);
-  ASSERT_TRUE(parsed_val != NULL);
-  ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(parsed_val, "my_config")));
-  cJSON_Delete(parsed_val);
+  ASSERT_TRUE(strstr(value->valuestring, "my_config:") != NULL);
   cJSON_Delete(root);
 
   // 2. ReadConfigJson value format (should return input config string as value)
