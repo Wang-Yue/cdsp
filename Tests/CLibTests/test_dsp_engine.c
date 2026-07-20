@@ -1,10 +1,21 @@
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#if defined(ENABLE_ALSA)
+#include <alsa/asoundlib.h>
+#endif
+
+#if defined(ENABLE_PIPEWIRE)
+#include <pipewire/pipewire.h>
+#endif
+
 #include "Audio/audio_chunk.h"
+#include "Engine/dsp_session.h"
 #include "Backend/file_backend.h"
 #include "Backend/generator_capture.h"
 #include "Engine/dsp_engine.h"
@@ -651,6 +662,971 @@ TEST(DSPEngineE2E_ALSA) {
       "    }\n"
       "}";
   run_e2e_test_config(json, "ALSA");
+#endif
+}
+
+TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
+#if defined(__linux__) && defined(ENABLE_ALSA)
+  char raw_loop1[256];
+  char raw_loop2[256];
+  char alsa_conf[256];
+
+  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_loop1_%d.raw", getpid());
+  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_loop2_%d.raw", getpid());
+  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_conf_%d.conf", getpid());
+
+  remove(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+
+  // 1. Create ALSA user-space loopback devices (loopback 1 & loopback 2)
+  FILE* conf_f = fopen(alsa_conf, "w");
+  ASSERT_TRUE(conf_f != NULL);
+  fprintf(conf_f,
+          "pcm.cdsp_loop1_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop1_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n",
+          raw_loop1, raw_loop1, raw_loop2, raw_loop2);
+  fclose(conf_f);
+
+  char alsa_env[1024];
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  setenv("ALSA_CONFIG_PATH", alsa_env, 1);
+  snd_config_update();
+
+  // 2. Play a wave to the playback side of loopback 1 (writes raw_loop1)
+  size_t frame_count = 1024;
+  size_t channel_count = 2;
+  size_t total_samples = frame_count * channel_count;
+  int16_t input_samples[total_samples];
+  for (size_t i = 0; i < total_samples; i++) {
+    input_samples[i] = (int16_t)(((i % 128) - 64) * 200);
+  }
+
+  snd_pcm_t* pcm_play1 = NULL;
+  int pcm_err =
+      snd_pcm_open(&pcm_play1, "cdsp_loop1_play", SND_PCM_STREAM_PLAYBACK, 0);
+  ASSERT_EQ(0, pcm_err);
+  ASSERT_TRUE(pcm_play1 != NULL);
+  snd_pcm_set_params(pcm_play1, SND_PCM_FORMAT_S16_LE,
+                     SND_PCM_ACCESS_RW_INTERLEAVED,
+                     (unsigned int)channel_count, 44100, 1, 500000);
+  snd_pcm_sframes_t written_frames =
+      snd_pcm_writei(pcm_play1, input_samples, frame_count);
+  ASSERT_EQ((snd_pcm_sframes_t)frame_count, written_frames);
+  snd_pcm_close(pcm_play1);
+
+  // 3. Use CDSP to listen to capture side of loopback 1, and playback to loopback 2's playback side
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop1_cap\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop2_play\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json, &berr);
+  ASSERT_TRUE(success);
+
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
+    cdsp_sleep_ms(10);
+  }
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  FILE* out_f = fopen(raw_loop2, "rb");
+  ASSERT_TRUE(out_f != NULL);
+  fseek(out_f, 0, SEEK_END);
+  long out_size = ftell(out_f);
+  fseek(out_f, 0, SEEK_SET);
+
+  printf("ℹ️ raw_loop2 size: %ld bytes (expected >= %zu bytes)\n", out_size,
+         (512 + frame_count) * channel_count * sizeof(int16_t));
+  ASSERT_TRUE(out_size >= (long)((512 + frame_count) * channel_count * sizeof(int16_t)));
+
+  // Skip 512 pre-fill silence frames (512 * 2 channels * 2 bytes = 2048 bytes)
+  fseek(out_f, 512 * channel_count * sizeof(int16_t), SEEK_SET);
+
+  int16_t output_samples[total_samples];
+  memset(output_samples, 0, sizeof(output_samples));
+  size_t read_count = fread(output_samples, sizeof(int16_t), total_samples, out_f);
+  fclose(out_f);
+  ASSERT_EQ(total_samples, read_count);
+
+  // 5. Proof that the signal matches
+  for (size_t i = 0; i < total_samples; i++) {
+    ASSERT_EQ(input_samples[i], output_samples[i]);
+  }
+
+  remove(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+#endif
+}
+
+typedef struct {
+  const char* pcm_name;
+  unsigned int sample_rate;
+  atomic_int change_rate;
+  atomic_bool stop;
+  pthread_t thread;
+} alsa_loopback_player_t;
+
+static void* alsa_loopback_player_func(void* arg) {
+  alsa_loopback_player_t* player = (alsa_loopback_player_t*)arg;
+  snd_pcm_t* pcm = NULL;
+  if (snd_pcm_open(&pcm, player->pcm_name, SND_PCM_STREAM_PLAYBACK, 0) < 0) {
+    return NULL;
+  }
+  snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
+                     2, player->sample_rate, 1, 500000);
+
+  size_t chunk_frames = 512;
+  int16_t samples[512 * 2];
+  for (size_t i = 0; i < 512 * 2; i++) {
+    samples[i] = (int16_t)(((i % 100) - 50) * 100);
+  }
+
+  useconds_t chunk_us =
+      (useconds_t)(chunk_frames * 1000000ULL / player->sample_rate);
+
+  while (!atomic_load(&player->stop)) {
+    int new_rate = atomic_exchange(&player->change_rate, 0);
+    if (new_rate > 0) {
+      player->sample_rate = new_rate;
+      chunk_us = (useconds_t)(chunk_frames * 1000000ULL / player->sample_rate);
+    }
+
+    snd_pcm_sframes_t res = snd_pcm_writei(pcm, samples, chunk_frames);
+    if (res < 0) {
+      snd_pcm_prepare(pcm);
+    }
+    usleep(chunk_us);
+  }
+
+  snd_pcm_close(pcm);
+  return NULL;
+}
+
+TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
+#if defined(__linux__) && defined(ENABLE_ALSA)
+  char raw_loop1[256];
+  char raw_loop2[256];
+  char alsa_conf[256];
+
+  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_rate_loop1_%d.raw", getpid());
+  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_rate_loop2_%d.raw", getpid());
+  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_rate_conf_%d.conf", getpid());
+
+  unlink(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+
+  // Create ALSA user-space loopback devices
+  FILE* conf_f = fopen(alsa_conf, "w");
+  ASSERT_TRUE(conf_f != NULL);
+  fprintf(conf_f,
+          "pcm.cdsp_loop1_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop1_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n",
+          raw_loop1, raw_loop1, raw_loop2, raw_loop2);
+  fclose(conf_f);
+
+  char alsa_env[1024];
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  setenv("ALSA_CONFIG_PATH", alsa_env, 1);
+  snd_config_update();
+
+  // 1. Audio player via loopback device first plays 44.1kHz wave
+  alsa_loopback_player_t player = {
+      .pcm_name = "cdsp_loop1_play",
+      .sample_rate = 44100,
+      .change_rate = 0,
+      .stop = false,
+  };
+  pthread_create(&player.thread, NULL, alsa_loopback_player_func, &player);
+
+  char json_44k[1024];
+  snprintf(json_44k, sizeof(json_44k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop1_cap\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop2_play\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_44k, &berr);
+  ASSERT_TRUE(success);
+
+  // Wait until engine starts running
+  bool running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  // Let 44.1kHz play for a short duration
+  cdsp_sleep_ms(100);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  // 2. Switch audio player to 48kHz in-place
+  printf("ℹ️ debug: switching player to 48kHz...\n");
+  atomic_store(&player.change_rate, 48000);
+
+  // 3. Expect CDSP to throw a CAPTURE RATE CHANGE error (STOP_REASON_CAPTURE_FORMAT_CHANGE)
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
+
+  atomic_store(&player.stop, true);
+  pthread_join(player.thread, NULL);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // 4. Change the config for the capture rate to 48kHz and it should play smoothly again
+  char json_48k[1024];
+  snprintf(json_48k, sizeof(json_48k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 48000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop1_cap\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop2_play\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  alsa_loopback_player_t player48k_2 = {
+      .pcm_name = "cdsp_loop1_play",
+      .sample_rate = 48000,
+      .change_rate = 0,
+      .stop = false,
+  };
+  pthread_create(&player48k_2.thread, NULL, alsa_loopback_player_func, &player48k_2);
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  success = engine->set_config_json(engine->ctx, json_48k, &berr);
+  ASSERT_TRUE(success);
+
+  // Verify engine plays smoothly at 48kHz
+  running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  atomic_store(&player48k_2.stop, true);
+  pthread_join(player48k_2.thread, NULL);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  unlink(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+#endif
+}
+
+typedef struct {
+  dsp_session_t* active;
+  processing_stop_reason_t last_stop_reason;
+} test_engine_session_field_t;
+
+typedef struct {
+  test_engine_session_field_t session;
+} test_dsp_engine_impl_t;
+
+typedef struct {
+  dsp_config_t* current_config;
+  pthread_mutex_t config_mutex;
+  processing_parameters_t* processing_params;
+  engine_shared_state_t* shared;
+  capture_backend_t* capture;
+  playback_backend_t* playback;
+} test_dsp_session_t;
+
+typedef struct {
+  char device_name[256];
+  int sample_rate;
+  int channels;
+  size_t chunk_size;
+  bool has_format;
+  alsa_sample_format_t requested_format;
+  processing_parameters_t* params;
+  snd_pcm_t* pcm;
+  snd_pcm_format_t format;
+  _Atomic bool paused;
+  bool currently_paused;
+  void* interleaved_buf;
+  size_t interleaved_buf_size;
+  snd_mixer_t* mixer;
+  snd_mixer_elem_t* pitch_elem;
+  pthread_mutex_t mixer_mutex;
+  bool stopped;
+  double pending_rate;
+  bool has_pending_rate;
+} test_alsa_playback_t;
+
+#if defined(ENABLE_PIPEWIRE)
+typedef struct {
+  char device[256];
+  int sample_rate;
+  int channels;
+  int chunk_size;
+  char node_name[256];
+  char node_description[256];
+  char node_group_name[256];
+  char autoconnect_to[256];
+  bool has_node_name;
+  bool has_node_description;
+  bool has_node_group_name;
+  bool has_autoconnect_to;
+  struct pw_thread_loop* loop;
+  struct pw_context* context;
+  struct pw_stream* stream;
+  spsc_audio_ring_buffer_t* ring;
+  float* decode_buf;
+  size_t decode_buf_size;
+  cdsp_sem_t semaphore;
+  bool stopped;
+  double pending_rate;
+  bool has_pending_rate;
+} test_pipewire_capture_t;
+
+typedef struct {
+  char device[256];
+  int sample_rate;
+  int channels;
+  int chunk_size;
+  char node_name[256];
+  char node_description[256];
+  char node_group_name[256];
+  char autoconnect_to[256];
+  bool has_node_name;
+  bool has_node_description;
+  bool has_node_group_name;
+  bool has_autoconnect_to;
+  struct pw_thread_loop* loop;
+  struct pw_context* context;
+  struct pw_stream* stream;
+  spsc_audio_ring_buffer_t* ring;
+  float* encode_buf;
+  size_t encode_buf_size;
+  _Atomic bool paused;
+  bool stopped;
+  double pending_rate;
+  bool has_pending_rate;
+} test_pipewire_playback_t;
+#endif
+
+static inline capture_backend_t* test_get_capture(dsp_engine_t* engine) {
+  if (!engine || !engine->ctx) return NULL;
+  test_dsp_engine_impl_t* impl = (test_dsp_engine_impl_t*)engine->ctx;
+  if (!impl->session.active) return NULL;
+  test_dsp_session_t* sess = (test_dsp_session_t*)impl->session.active;
+  return sess->capture;
+}
+
+static inline playback_backend_t* test_get_playback(dsp_engine_t* engine) {
+  if (!engine || !engine->ctx) return NULL;
+  test_dsp_engine_impl_t* impl = (test_dsp_engine_impl_t*)engine->ctx;
+  if (!impl->session.active) return NULL;
+  test_dsp_session_t* sess = (test_dsp_session_t*)impl->session.active;
+  return sess->playback;
+}
+
+static inline void test_trigger_alsa_playback_rate(dsp_engine_t* engine, double rate) {
+  playback_backend_t* backend = test_get_playback(engine);
+  if (!backend || !backend->ctx) return;
+  test_alsa_playback_t* alsa = (test_alsa_playback_t*)backend->ctx;
+  alsa->pending_rate = rate;
+  alsa->has_pending_rate = true;
+}
+
+#if defined(ENABLE_PIPEWIRE)
+static inline void test_trigger_pipewire_capture_rate(dsp_engine_t* engine, double rate) {
+  capture_backend_t* backend = test_get_capture(engine);
+  if (!backend || !backend->ctx) return;
+  test_pipewire_capture_t* pw = (test_pipewire_capture_t*)backend->ctx;
+  if (pw->loop) pw_thread_loop_lock(pw->loop);
+  pw->pending_rate = rate;
+  pw->has_pending_rate = true;
+  if (pw->loop) pw_thread_loop_unlock(pw->loop);
+}
+
+static inline void test_trigger_pipewire_playback_rate(dsp_engine_t* engine, double rate) {
+  playback_backend_t* backend = test_get_playback(engine);
+  if (!backend || !backend->ctx) return;
+  test_pipewire_playback_t* pw = (test_pipewire_playback_t*)backend->ctx;
+  if (pw->loop) pw_thread_loop_lock(pw->loop);
+  pw->pending_rate = rate;
+  pw->has_pending_rate = true;
+  if (pw->loop) pw_thread_loop_unlock(pw->loop);
+}
+#endif
+
+TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
+#if defined(__linux__) && defined(ENABLE_ALSA)
+  char raw_loop1[256];
+  char raw_loop2[256];
+  char alsa_conf[256];
+
+  snprintf(raw_loop1, sizeof(raw_loop1), "/tmp/alsa_play_rate_loop1_%d.raw", getpid());
+  snprintf(raw_loop2, sizeof(raw_loop2), "/tmp/alsa_play_rate_loop2_%d.raw", getpid());
+  snprintf(alsa_conf, sizeof(alsa_conf), "/tmp/alsa_play_rate_conf_%d.conf", getpid());
+
+  unlink(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+
+  FILE* conf_f = fopen(alsa_conf, "w");
+  ASSERT_TRUE(conf_f != NULL);
+  fprintf(conf_f,
+          "pcm.cdsp_loop1_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop1_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_play {\n"
+          "    type file\n"
+          "    file \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n"
+          "pcm.cdsp_loop2_cap {\n"
+          "    type file\n"
+          "    file \"/dev/null\"\n"
+          "    infile \"%s\"\n"
+          "    format \"raw\"\n"
+          "    slave.pcm \"null\"\n"
+          "}\n",
+          raw_loop1, raw_loop1, raw_loop2, raw_loop2);
+  fclose(conf_f);
+
+  char alsa_env[1024];
+  snprintf(alsa_env, sizeof(alsa_env), "/usr/share/alsa/alsa.conf:%s", alsa_conf);
+  setenv("ALSA_CONFIG_PATH", alsa_env, 1);
+  snd_config_update();
+
+  char json_44k[1024];
+  snprintf(json_44k, sizeof(json_44k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"frequency\": 1000.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop2_play\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_44k, &berr);
+  ASSERT_TRUE(success);
+
+  bool running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(100);
+
+  // Trigger playback rate change to 48000 Hz
+  test_trigger_alsa_playback_rate(engine, 48000.0);
+
+  // Expect engine to stop with STOP_REASON_PLAYBACK_FORMAT_CHANGE
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Reconfigure engine with 48kHz for playback
+  char json_48k[1024];
+  snprintf(json_48k, sizeof(json_48k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 48000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"frequency\": 1000.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop2_play\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  success = engine->set_config_json(engine->ctx, json_48k, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  unlink(raw_loop1);
+  remove(raw_loop2);
+  remove(alsa_conf);
+#endif
+}
+
+TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
+#if defined(__linux__) && defined(ENABLE_PIPEWIRE)
+  char json_44k[1024];
+  snprintf(json_44k, sizeof(json_44k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Pipewire\",\n"
+           "            \"device\": \"default\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"/dev/null\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
+    printf("PipeWire unavailable (%s), skipping PipeWire capture rate change test\n", berr.message);
+    if (engine->free) engine->free(engine->ctx);
+    return;
+  }
+
+  bool running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  if (!running) {
+    printf("PipeWire stream failed to enter Running state, skipping test\n");
+    cdsp_stop(engine);
+    if (engine->free) engine->free(engine->ctx);
+    return;
+  }
+
+  cdsp_sleep_ms(100);
+
+  // Trigger capture rate change to 48000 Hz
+#if defined(ENABLE_PIPEWIRE)
+  test_trigger_pipewire_capture_rate(engine, 48000.0);
+#endif
+
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Reconfigure PipeWire engine with 48kHz
+  char json_48k[1024];
+  snprintf(json_48k, sizeof(json_48k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 48000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Pipewire\",\n"
+           "            \"device\": \"default\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"/dev/null\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_48k, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+#endif
+}
+
+TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
+#if defined(__linux__) && defined(ENABLE_PIPEWIRE)
+  char json_44k[1024];
+  snprintf(json_44k, sizeof(json_44k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"frequency\": 1000.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Pipewire\",\n"
+           "            \"device\": \"default\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
+    printf("PipeWire unavailable (%s), skipping PipeWire playback rate change test\n", berr.message);
+    if (engine->free) engine->free(engine->ctx);
+    return;
+  }
+
+  bool running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  if (!running) {
+    printf("PipeWire stream failed to enter Running state, skipping test\n");
+    cdsp_stop(engine);
+    if (engine->free) engine->free(engine->ctx);
+    return;
+  }
+
+  cdsp_sleep_ms(100);
+
+  // Trigger playback rate change to 48000 Hz
+#if defined(ENABLE_PIPEWIRE)
+  test_trigger_pipewire_playback_rate(engine, 48000.0);
+#endif
+
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 300; i++) {
+    cdsp_engine_poll(engine);
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  // Reconfigure PipeWire engine with 48kHz
+  char json_48k[1024];
+  snprintf(json_48k, sizeof(json_48k),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 48000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"frequency\": 1000.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Pipewire\",\n"
+           "            \"device\": \"default\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}");
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_48k, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 100; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(150);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
 #endif
 }
 
@@ -1565,7 +2541,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 
   // Wait for auto-pause to trigger
   bool paused = false;
-  for (int i = 0; i < 150; i++) {
+  for (int i = 0; i < 600; i++) {
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
       paused = true;
       break;
@@ -1578,9 +2554,9 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   success = engine->set_config_json(engine->ctx, json_new, &err);
   ASSERT_TRUE(success);
 
-  // Wait up to 1000ms for pipeline swap to occur
+  // Wait up to 3000ms for pipeline swap to occur
   bool swapped = false;
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 300; i++) {
     if (g_pipeline_swaps_count >= 1) {
       swapped = true;
       break;

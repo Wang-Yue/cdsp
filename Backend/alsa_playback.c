@@ -31,6 +31,9 @@ struct alsa_playback {
   snd_mixer_elem_t* pitch_elem;
   pthread_mutex_t mixer_mutex;
   bool stopped;
+
+  double pending_rate;
+  bool has_pending_rate;
 };
 /**
  * @brief Open the ALSA playback device.
@@ -538,10 +541,19 @@ static size_t alsa_playback_get_buffer_level(void* ctx) {
  * @return true if a rate change was detected, false otherwise.
  */
 static bool alsa_playback_get_pending_rate_change(void* ctx, double* out_rate) {
-  (void)ctx;
-  (void)out_rate;
-  return false;
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback) return false;
+  pthread_mutex_lock(&g_alsa_mutex);
+  bool pending = playback->has_pending_rate;
+  if (pending) {
+    if (out_rate) *out_rate = playback->pending_rate;
+    playback->has_pending_rate = false;
+  }
+  pthread_mutex_unlock(&g_alsa_mutex);
+  return pending;
 }
+
+
 
 static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
   if (format == SND_PCM_FORMAT_DSD_U8) return true;

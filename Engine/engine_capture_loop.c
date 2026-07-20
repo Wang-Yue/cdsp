@@ -291,7 +291,12 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
       loop->pending_chunk = NULL;
     }
   } else {
+    // Ref: engine_state_management.md - Section 3.3 (Silence Auto-Pause & Resume Flow)
+    // While PAUSED, enqueue 0-frame control tick chunks so processing_thread can
+    // unblock, process pending pipeline swaps, and maintain state synchronization.
     loop->pending_chunk = NULL;
+    audio_chunk_set_valid_frames(chunk, 0);
+    engine_shared_state_enqueue_captured(loop->shared, chunk);
   }
   return false;
 }

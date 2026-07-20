@@ -42,6 +42,9 @@ struct pipewire_capture {
   size_t decode_buf_size;
   cdsp_sem_t semaphore;
   bool stopped;
+
+  double pending_rate;
+  bool has_pending_rate;
 };
 
 struct pipewire_playback {
@@ -68,6 +71,9 @@ struct pipewire_playback {
   size_t encode_buf_size;
   _Atomic bool paused;
   bool stopped;
+
+  double pending_rate;
+  bool has_pending_rate;
 };
 
 // MARK: - PipeWire Callbacks
@@ -114,9 +120,28 @@ static void on_capture_stream_state_changed(void* data,
               error ? error : "none");
 }
 
+static void on_capture_param_changed(void* data, uint32_t id,
+                                      const struct spa_pod* param) {
+  pipewire_capture_t* c = (pipewire_capture_t*)data;
+  if (!c || id != SPA_PARAM_Format || !param) return;
+  struct spa_audio_info info;
+  memset(&info, 0, sizeof(info));
+  if (spa_format_audio_parse(param, &info) >= 0) {
+    if (info.media_type == SPA_MEDIA_TYPE_audio &&
+        info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
+      uint32_t rate = info.info.raw.rate;
+      if (rate > 0 && (int)rate != c->sample_rate) {
+        c->pending_rate = (double)rate;
+        c->has_pending_rate = true;
+      }
+    }
+  }
+}
+
 static const struct pw_stream_events capture_stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_capture_stream_state_changed,
+    .param_changed = on_capture_param_changed,
     .process = on_capture_process,
 };
 
@@ -171,9 +196,28 @@ static void on_playback_stream_state_changed(void* data,
               error ? error : "none");
 }
 
+static void on_playback_param_changed(void* data, uint32_t id,
+                                       const struct spa_pod* param) {
+  pipewire_playback_t* p = (pipewire_playback_t*)data;
+  if (!p || id != SPA_PARAM_Format || !param) return;
+  struct spa_audio_info info;
+  memset(&info, 0, sizeof(info));
+  if (spa_format_audio_parse(param, &info) >= 0) {
+    if (info.media_type == SPA_MEDIA_TYPE_audio &&
+        info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
+      uint32_t rate = info.info.raw.rate;
+      if (rate > 0 && (int)rate != p->sample_rate) {
+        p->pending_rate = (double)rate;
+        p->has_pending_rate = true;
+      }
+    }
+  }
+}
+
 static const struct pw_stream_events playback_stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_playback_stream_state_changed,
+    .param_changed = on_playback_param_changed,
     .process = on_playback_process,
 };
 
@@ -433,10 +477,19 @@ static bool pipewire_capture_read(void* ctx, size_t frames,
  */
 static bool pipewire_capture_get_pending_rate_change(void* ctx,
                                                      double* out_rate) {
-  (void)ctx;
-  (void)out_rate;
-  return false;
+  pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
+  if (!capture) return false;
+  if (capture->loop) pw_thread_loop_lock(capture->loop);
+  bool pending = capture->has_pending_rate;
+  if (pending) {
+    if (out_rate) *out_rate = capture->pending_rate;
+    capture->has_pending_rate = false;
+  }
+  if (capture->loop) pw_thread_loop_unlock(capture->loop);
+  return pending;
 }
+
+
 
 /**
  * @brief Check if pitch control is supported by the PipeWire capture backend.
@@ -877,10 +930,19 @@ static size_t pipewire_playback_get_buffer_level(void* ctx) {
  */
 static bool pipewire_playback_get_pending_rate_change(void* ctx,
                                                       double* out_rate) {
-  (void)ctx;
-  (void)out_rate;
-  return false;
+  pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
+  if (!playback) return false;
+  if (playback->loop) pw_thread_loop_lock(playback->loop);
+  bool pending = playback->has_pending_rate;
+  if (pending) {
+    if (out_rate) *out_rate = playback->pending_rate;
+    playback->has_pending_rate = false;
+  }
+  if (playback->loop) pw_thread_loop_unlock(playback->loop);
+  return pending;
 }
+
+
 
 /**
  * @brief Prefill the PipeWire playback buffer with silence.

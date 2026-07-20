@@ -514,7 +514,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   // Wait for capture device to be ready to prevent infinite block in
   // snd_pcm_readi.
   int timeout_ms = (int)((double)frames * 1000.0 / capture->sample_rate * 2.0);
-  if (timeout_ms < 500) timeout_ms = 500;
+  if (timeout_ms < 100) timeout_ms = 100;
 
   int err_wait = snd_pcm_wait(capture->pcm, timeout_ms);
   if (err_wait == 0) {
