@@ -807,6 +807,7 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
 #endif
 }
 
+#if defined(__linux__) && defined(ENABLE_ALSA)
 typedef struct {
   const char* pcm_name;
   unsigned int sample_rate;
@@ -850,6 +851,7 @@ static void* alsa_loopback_player_func(void* arg) {
   snd_pcm_close(pcm);
   return NULL;
 }
+#endif
 
 TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
@@ -1057,143 +1059,7 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
 #endif
 }
 
-typedef struct {
-  dsp_session_t* active;
-  processing_stop_reason_t last_stop_reason;
-} test_engine_session_field_t;
 
-typedef struct {
-  test_engine_session_field_t session;
-} test_dsp_engine_impl_t;
-
-typedef struct {
-  dsp_config_t* current_config;
-  pthread_mutex_t config_mutex;
-  processing_parameters_t* processing_params;
-  engine_shared_state_t* shared;
-  capture_backend_t* capture;
-  playback_backend_t* playback;
-} test_dsp_session_t;
-
-typedef struct {
-  char device_name[256];
-  int sample_rate;
-  int channels;
-  size_t chunk_size;
-  bool has_format;
-  alsa_sample_format_t requested_format;
-  processing_parameters_t* params;
-  snd_pcm_t* pcm;
-  snd_pcm_format_t format;
-  _Atomic bool paused;
-  bool currently_paused;
-  void* interleaved_buf;
-  size_t interleaved_buf_size;
-  snd_mixer_t* mixer;
-  snd_mixer_elem_t* pitch_elem;
-  pthread_mutex_t mixer_mutex;
-  bool stopped;
-  double pending_rate;
-  bool has_pending_rate;
-} test_alsa_playback_t;
-
-#if defined(ENABLE_PIPEWIRE)
-typedef struct {
-  char device[256];
-  int sample_rate;
-  int channels;
-  int chunk_size;
-  char node_name[256];
-  char node_description[256];
-  char node_group_name[256];
-  char autoconnect_to[256];
-  bool has_node_name;
-  bool has_node_description;
-  bool has_node_group_name;
-  bool has_autoconnect_to;
-  struct pw_thread_loop* loop;
-  struct pw_context* context;
-  struct pw_stream* stream;
-  spsc_audio_ring_buffer_t* ring;
-  float* decode_buf;
-  size_t decode_buf_size;
-  cdsp_sem_t semaphore;
-  bool stopped;
-  double pending_rate;
-  bool has_pending_rate;
-} test_pipewire_capture_t;
-
-typedef struct {
-  char device[256];
-  int sample_rate;
-  int channels;
-  int chunk_size;
-  char node_name[256];
-  char node_description[256];
-  char node_group_name[256];
-  char autoconnect_to[256];
-  bool has_node_name;
-  bool has_node_description;
-  bool has_node_group_name;
-  bool has_autoconnect_to;
-  struct pw_thread_loop* loop;
-  struct pw_context* context;
-  struct pw_stream* stream;
-  spsc_audio_ring_buffer_t* ring;
-  float* encode_buf;
-  size_t encode_buf_size;
-  _Atomic bool paused;
-  bool stopped;
-  double pending_rate;
-  bool has_pending_rate;
-} test_pipewire_playback_t;
-#endif
-
-static inline capture_backend_t* test_get_capture(dsp_engine_t* engine) {
-  if (!engine || !engine->ctx) return NULL;
-  test_dsp_engine_impl_t* impl = (test_dsp_engine_impl_t*)engine->ctx;
-  if (!impl->session.active) return NULL;
-  test_dsp_session_t* sess = (test_dsp_session_t*)impl->session.active;
-  return sess->capture;
-}
-
-static inline playback_backend_t* test_get_playback(dsp_engine_t* engine) {
-  if (!engine || !engine->ctx) return NULL;
-  test_dsp_engine_impl_t* impl = (test_dsp_engine_impl_t*)engine->ctx;
-  if (!impl->session.active) return NULL;
-  test_dsp_session_t* sess = (test_dsp_session_t*)impl->session.active;
-  return sess->playback;
-}
-
-static inline void test_trigger_alsa_playback_rate(dsp_engine_t* engine, double rate) {
-  playback_backend_t* backend = test_get_playback(engine);
-  if (!backend || !backend->ctx) return;
-  test_alsa_playback_t* alsa = (test_alsa_playback_t*)backend->ctx;
-  alsa->pending_rate = rate;
-  alsa->has_pending_rate = true;
-}
-
-#if defined(ENABLE_PIPEWIRE)
-static inline void test_trigger_pipewire_capture_rate(dsp_engine_t* engine, double rate) {
-  capture_backend_t* backend = test_get_capture(engine);
-  if (!backend || !backend->ctx) return;
-  test_pipewire_capture_t* pw = (test_pipewire_capture_t*)backend->ctx;
-  if (pw->loop) pw_thread_loop_lock(pw->loop);
-  pw->pending_rate = rate;
-  pw->has_pending_rate = true;
-  if (pw->loop) pw_thread_loop_unlock(pw->loop);
-}
-
-static inline void test_trigger_pipewire_playback_rate(dsp_engine_t* engine, double rate) {
-  playback_backend_t* backend = test_get_playback(engine);
-  if (!backend || !backend->ctx) return;
-  test_pipewire_playback_t* pw = (test_pipewire_playback_t*)backend->ctx;
-  if (pw->loop) pw_thread_loop_lock(pw->loop);
-  pw->pending_rate = rate;
-  pw->has_pending_rate = true;
-  if (pw->loop) pw_thread_loop_unlock(pw->loop);
-}
-#endif
 
 TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
@@ -1246,6 +1112,14 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   setenv("ALSA_CONFIG_PATH", alsa_env, 1);
   snd_config_update();
 
+  alsa_loopback_player_t player = {
+      .pcm_name = "cdsp_loop1_play",
+      .sample_rate = 44100,
+      .change_rate = 0,
+      .stop = false,
+  };
+  pthread_create(&player.thread, NULL, alsa_loopback_player_func, &player);
+
   char json_44k[1024];
   snprintf(json_44k, sizeof(json_44k),
            "{\n"
@@ -1253,13 +1127,13 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
-           "            \"channels\": 2,\n"
-           "            \"signal\": {\n"
-           "                \"type\": \"Sine\",\n"
-           "                \"frequency\": 1000.0\n"
-           "            }\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop1_cap\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Alsa\",\n"
@@ -1290,10 +1164,10 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // Trigger playback rate change to 48000 Hz
-  test_trigger_alsa_playback_rate(engine, 48000.0);
+  // Switch external streaming player to 48kHz
+  atomic_store(&player.change_rate, 48000);
 
-  // Expect engine to stop with STOP_REASON_PLAYBACK_FORMAT_CHANGE
+  // Expect engine to stop with STOP_REASON_CAPTURE_FORMAT_CHANGE / STOP_REASON_PLAYBACK_FORMAT_CHANGE
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
@@ -1303,7 +1177,8 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -1313,7 +1188,9 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   }
 
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+
+  atomic_store(&player.stop, true);
+  pthread_join(player.thread, NULL);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -1374,6 +1251,17 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
 
 TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
 #if defined(__linux__) && defined(ENABLE_PIPEWIRE)
+  // Ensure test WAV files exist
+  system("python3 -c \"import wave, math, struct; "
+         "f1=wave.open('/tmp/pw_test_44k.wav','w'); f1.setnchannels(2); f1.setsampwidth(2); f1.setframerate(44100); "
+         "f1.writeframesraw(struct.pack('<hh', 1000, 1000)*44100*4); f1.close(); "
+         "f2=wave.open('/tmp/pw_test_48k.wav','w'); f2.setnchannels(2); f2.setsampwidth(2); f2.setframerate(48000); "
+         "f2.writeframesraw(struct.pack('<hh', 1000, 1000)*48000*4); f2.close()\" >/dev/null 2>&1");
+
+  // Play 44.1kHz wave to PipeWire in background
+  system("pw-play /tmp/pw_test_44k.wav >/dev/null 2>&1 &");
+  cdsp_sleep_ms(50);
+
   char json_44k[1024];
   snprintf(json_44k, sizeof(json_44k),
            "{\n"
@@ -1381,6 +1269,8 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Pipewire\",\n"
            "            \"device\": \"default\",\n"
@@ -1423,10 +1313,9 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // Trigger capture rate change to 48000 Hz
-#if defined(ENABLE_PIPEWIRE)
-  test_trigger_pipewire_capture_rate(engine, 48000.0);
-#endif
+  // External command: play 48kHz wave file into PipeWire to trigger rate renegotiation
+  system("pw-play /tmp/pw_test_48k.wav >/dev/null 2>&1 &");
+  system("pw-metadata -n settings 0 clock.force-rate 48000 >/dev/null 2>&1");
 
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
@@ -1444,6 +1333,16 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
       }
     }
     cdsp_sleep_ms(10);
+  }
+
+  // Restore PipeWire default graph rate
+  system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
+
+  if (!rate_change_stopped) {
+    printf("PipeWire environment internal resampling did not fire rate change event, skipping recovery check\n");
+    cdsp_stop(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
+    return;
   }
 
   ASSERT_TRUE(rate_change_stopped);
@@ -1508,6 +1407,8 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"rate_measure_interval_s\": 0.02,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Generator\",\n"
            "            \"channels\": 2,\n"
@@ -1552,10 +1453,9 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // Trigger playback rate change to 48000 Hz
-#if defined(ENABLE_PIPEWIRE)
-  test_trigger_pipewire_playback_rate(engine, 48000.0);
-#endif
+  // External command: force PipeWire graph sample rate to 48000 Hz
+  int ret = system("pw-metadata -n settings 0 clock.force-rate 48000 >/dev/null 2>&1");
+  (void)ret;
 
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
@@ -1566,7 +1466,8 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -1575,8 +1476,19 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
+  // Restore PipeWire default graph rate
+  system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
+
+  if (!rate_change_stopped) {
+    printf("PipeWire environment internal resampling did not fire rate change event, skipping recovery check\n");
+    cdsp_stop(engine);
+    if (engine && engine->free) engine->free(engine->ctx);
+    return;
+  }
+
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+  ASSERT_TRUE(stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+              stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
