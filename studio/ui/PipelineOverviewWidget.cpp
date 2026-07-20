@@ -858,14 +858,14 @@ void PipelineOverviewWidget::rebuildOverview() {
             stageActionsHBox->setSpacing(4);
 
             auto moveLeftBtn = new QPushButton("◀", stCard);
-            moveLeftBtn->setFixedSize(22, 20);
+            moveLeftBtn->setFixedSize(24, 22);
             moveLeftBtn->setToolTip("Move stage left");
             moveLeftBtn->setEnabled(i > 0);
             moveLeftBtn->setCursor(i > 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
             moveLeftBtn->setStyleSheet(
                 QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
-                        "4px; font-size: 9px; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; }")
+                        "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; margin: 0px; text-align: center; }")
                     .arg(StyleTheme::textPrimary().name())
                     .arg(StyleTheme::textSecondary().name()));
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
@@ -878,14 +878,14 @@ void PipelineOverviewWidget::rebuildOverview() {
             stageActionsHBox->addWidget(moveLeftBtn);
 
             auto moveRightBtn = new QPushButton("▶", stCard);
-            moveRightBtn->setFixedSize(22, 20);
+            moveRightBtn->setFixedSize(24, 22);
             moveRightBtn->setToolTip("Move stage right");
             moveRightBtn->setEnabled(i + 1 < pipe->stages.size());
             moveRightBtn->setCursor(i + 1 < pipe->stages.size() ? Qt::PointingHandCursor : Qt::ArrowCursor);
             moveRightBtn->setStyleSheet(
                 QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
-                        "4px; font-size: 9px; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; }")
+                        "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; margin: 0px; text-align: center; }")
                     .arg(StyleTheme::textPrimary().name())
                     .arg(StyleTheme::textSecondary().name()));
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
@@ -900,11 +900,11 @@ void PipelineOverviewWidget::rebuildOverview() {
             stageActionsHBox->addStretch();
 
             auto deleteBtn = new QPushButton("🗑", stCard);
-            deleteBtn->setFixedSize(22, 20);
+            deleteBtn->setFixedSize(24, 22);
             deleteBtn->setToolTip("Delete stage");
             deleteBtn->setCursor(Qt::PointingHandCursor);
-            deleteBtn->setStyleSheet("background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: none; "
-                                     "border-radius: 4px; font-size: 10px;");
+            deleteBtn->setStyleSheet("QPushButton { background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: none; "
+                                     "border-radius: 4px; font-size: 11px; padding: 0px; margin: 0px; text-align: center; }");
             connect(deleteBtn, &QPushButton::clicked, [this, stageId = stage.id]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->deleteStage(stageId);

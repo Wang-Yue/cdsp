@@ -118,11 +118,11 @@ void DashboardView::updateFaderUi() {
         if (muted) {
             row.muteBtn->setText("🔇");
             row.muteBtn->setStyleSheet(
-                "background-color: transparent; color: #ff3b30; border: none; font-size: 16px; font-weight: bold;");
+                "background-color: transparent; color: #ff3b30; border: none; font-size: 16px; font-weight: bold; padding: 0px; margin: 0px;");
         } else {
             row.muteBtn->setText("🔊");
             row.muteBtn->setStyleSheet(
-                QString("background-color: transparent; color: %1; border: none; font-size: 16px;")
+                QString("background-color: transparent; color: %1; border: none; font-size: 16px; padding: 0px; margin: 0px;")
                     .arg(StyleTheme::textPrimary().name()));
         }
     }
@@ -257,7 +257,7 @@ void DashboardView::setupUi() {
 
         auto muteBtn = new QPushButton("🔊", m_faderGroup);
         muteBtn->setCheckable(true);
-        muteBtn->setFixedSize(20, 28);
+        muteBtn->setFixedSize(24, 28);
         muteBtn->setFlat(true);
         muteBtn->setCursor(Qt::PointingHandCursor);
 
