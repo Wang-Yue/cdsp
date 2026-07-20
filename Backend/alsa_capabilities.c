@@ -31,7 +31,18 @@ int alsa_capabilities_available_device_names(bool is_capture,
     snprintf(name, sizeof(name), "hw:%d", card_idx);
     char* card_name = NULL;
     if (snd_card_get_name(card_idx, &card_name) == 0) {
-      snprintf(out_names[count++], 256, "%s (%s)", name, card_name);
+      if (strstr(card_name, "Loopback") != NULL) {
+        if (count < max_names) {
+          snprintf(out_names[count++], 256, "%s,0 (%s Subdevice 0)", name,
+                   card_name);
+        }
+        if (count < max_names) {
+          snprintf(out_names[count++], 256, "%s,1 (%s Subdevice 1)", name,
+                   card_name);
+        }
+      } else {
+        snprintf(out_names[count++], 256, "%s (%s)", name, card_name);
+      }
       free(card_name);
     } else {
       snprintf(out_names[count++], 256, "%s", name);
