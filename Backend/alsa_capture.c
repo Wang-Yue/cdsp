@@ -460,6 +460,15 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
 
   alsa_capture_init_controls(capture);
 
+  rc = snd_pcm_start(capture->pcm);
+  if (rc < 0) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         snd_strerror(rc));
+    }
+    goto error_cleanup;
+  }
+
   pthread_mutex_unlock(&g_alsa_mutex);
   return true;
 
@@ -502,7 +511,8 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     frames = capture->chunk_size;
   }
 
-  // Wait for capture device to be ready to prevent infinite block in snd_pcm_readi.
+  // Wait for capture device to be ready to prevent infinite block in
+  // snd_pcm_readi.
   int timeout_ms = (int)((double)frames * 1000.0 / capture->sample_rate * 2.0);
   if (timeout_ms < 500) timeout_ms = 500;
 
@@ -511,7 +521,8 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     // Timeout (device stalled).
     capture->was_stalled = true;
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_NONE, "Capture device wait timeout (device stalled)");
+      backend_error_init(err, BACKEND_ERROR_NONE,
+                         "Capture device wait timeout (device stalled)");
     }
     return false;
   } else if (err_wait < 0) {
@@ -519,7 +530,8 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     snd_pcm_recover(capture->pcm, err_wait, 0);
   }
 
-  // If we recovered from a stall, drop stale hardware buffer data and prepare PCM.
+  // If we recovered from a stall, drop stale hardware buffer data and prepare
+  // PCM.
   if (capture->was_stalled) {
     snd_pcm_drop(capture->pcm);
     snd_pcm_prepare(capture->pcm);
