@@ -142,52 +142,12 @@ static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents* This) {
   return rc;
 }
 
-static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(
-    IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) {
-  (void)This;
-  (void)NewDisplayName;
-  (void)EventContext;
-  return S_OK;
-}
-static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(
-    IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) {
-  (void)This;
-  (void)NewIconPath;
-  (void)EventContext;
-  return S_OK;
-}
-static HRESULT STDMETHODCALLTYPE
-session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume,
-                              BOOL NewMute, LPCGUID EventContext) {
-  (void)This;
-  (void)NewVolume;
-  (void)NewMute;
-  (void)EventContext;
-  return S_OK;
-}
-static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(
-    IAudioSessionEvents* This, DWORD ChannelCount,
-    float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) {
-  (void)This;
-  (void)ChannelCount;
-  (void)NewChannelVolumeArray;
-  (void)ChangedChannel;
-  (void)EventContext;
-  return S_OK;
-}
-static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(
-    IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) {
-  (void)This;
-  (void)NewGroupingParam;
-  (void)EventContext;
-  return S_OK;
-}
-static HRESULT STDMETHODCALLTYPE
-session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
-  (void)This;
-  (void)NewState;
-  return S_OK;
-}
+static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) { (void)This; (void)NewDisplayName; (void)EventContext; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) { (void)This; (void)NewIconPath; (void)EventContext; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume, BOOL NewMute, LPCGUID EventContext) { (void)This; (void)NewVolume; (void)NewMute; (void)EventContext; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(IAudioSessionEvents* This, DWORD ChannelCount, float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) { (void)This; (void)ChannelCount; (void)NewChannelVolumeArray; (void)ChangedChannel; (void)EventContext; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) { (void)This; (void)NewGroupingParam; (void)EventContext; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) { (void)This; (void)NewState; return S_OK; }
 
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
     IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
@@ -402,6 +362,41 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
  * @return true if successful, false otherwise.
  */
 
+static bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
+                                       WAVEFORMATEX** out_final_wfx,
+                                       int* out_bits_per_sample,
+                                       int* out_valid_bits,
+                                       bool* out_is_float) {
+  WAVEFORMATEX* mix_wfx = NULL;
+  HRESULT hr = IAudioClient_GetMixFormat(client, &mix_wfx);
+  if (FAILED(hr) || !mix_wfx) return false;
+
+  size_t full_size = sizeof(WAVEFORMATEX) + mix_wfx->cbSize;
+  WAVEFORMATEX* final_wfx = (WAVEFORMATEX*)CoTaskMemAlloc(full_size);
+  if (!final_wfx) {
+    CoTaskMemFree(mix_wfx);
+    return false;
+  }
+
+  memcpy(final_wfx, mix_wfx, full_size);
+  final_wfx->nSamplesPerSec = target_sample_rate;
+  final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
+
+  *out_bits_per_sample = final_wfx->wBitsPerSample;
+  if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+    WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
+    *out_valid_bits = ext->Samples.wValidBitsPerSample;
+    *out_is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+  } else {
+    *out_valid_bits = final_wfx->wBitsPerSample;
+    *out_is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
+  }
+
+  CoTaskMemFree(mix_wfx);
+  *out_final_wfx = final_wfx;
+  return true;
+}
+
 static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
@@ -463,29 +458,11 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   bool format_found = false;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    WAVEFORMATEX* mix_wfx = NULL;
-    hr = IAudioClient_GetMixFormat(capture->client, &mix_wfx);
-    if (SUCCEEDED(hr) && mix_wfx) {
-      size_t full_size = sizeof(WAVEFORMATEX) + mix_wfx->cbSize;
-      final_wfx = (WAVEFORMATEX*)CoTaskMemAlloc(full_size);
-      if (final_wfx) {
-        memcpy(final_wfx, mix_wfx, full_size);
-        final_wfx->nSamplesPerSec = capture->sample_rate;
-        final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
-
-        capture->bits_per_sample = final_wfx->wBitsPerSample;
-        if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-          WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
-          capture->valid_bits = ext->Samples.wValidBitsPerSample;
-          capture->is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
-        } else {
-          capture->valid_bits = final_wfx->wBitsPerSample;
-          capture->is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
-        }
-        format_found = true;
-      }
-      CoTaskMemFree(mix_wfx);
-    }
+    format_found = wasapi_setup_shared_format(capture->client, capture->sample_rate,
+                                              &final_wfx,
+                                              &capture->bits_per_sample,
+                                              &capture->valid_bits,
+                                              &capture->is_float);
   }
 
   if (!format_found) {
@@ -1335,29 +1312,11 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   bool format_found = false;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    WAVEFORMATEX* mix_wfx = NULL;
-    hr = IAudioClient_GetMixFormat(playback->client, &mix_wfx);
-    if (SUCCEEDED(hr) && mix_wfx) {
-      size_t full_size = sizeof(WAVEFORMATEX) + mix_wfx->cbSize;
-      final_wfx = (WAVEFORMATEX*)CoTaskMemAlloc(full_size);
-      if (final_wfx) {
-        memcpy(final_wfx, mix_wfx, full_size);
-        final_wfx->nSamplesPerSec = playback->sample_rate;
-        final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
-
-        playback->bits_per_sample = final_wfx->wBitsPerSample;
-        if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-          WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
-          playback->valid_bits = ext->Samples.wValidBitsPerSample;
-          playback->is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
-        } else {
-          playback->valid_bits = final_wfx->wBitsPerSample;
-          playback->is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
-        }
-        format_found = true;
-      }
-      CoTaskMemFree(mix_wfx);
-    }
+    format_found = wasapi_setup_shared_format(playback->client, playback->sample_rate,
+                                              &final_wfx,
+                                              &playback->bits_per_sample,
+                                              &playback->valid_bits,
+                                              &playback->is_float);
   }
 
   if (!format_found) {
