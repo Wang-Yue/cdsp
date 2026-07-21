@@ -27,7 +27,13 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
     char temp[512];
 #ifdef _WIN32
     char win_format[512];
-    (snprintf)(win_format, sizeof(win_format), "./%s", format + 5);
+    const char* temp_env = getenv("TEMP");
+    if (!temp_env) temp_env = getenv("TMP");
+    if (temp_env) {
+      (snprintf)(win_format, sizeof(win_format), "%s\\%s", temp_env, format + 5);
+    } else {
+      (snprintf)(win_format, sizeof(win_format), "./%s", format + 5);
+    }
     ret = vsnprintf(temp, sizeof(temp), win_format, args);
 #else
     ret = vsnprintf(temp, sizeof(temp), format, args);
