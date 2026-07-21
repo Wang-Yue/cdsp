@@ -18,12 +18,7 @@ AR ?= ar
 CFLAGS ?= -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
 UNAME_S := $(shell uname -s)
 
-ifeq ($(IS_RPI_ARM64)$(IS_RPI),1)
-    IS_RPI_ARM64 := 1
-    IS_LINUX := 1
-    IS_DARWIN := 0
-    IS_WINDOWS := 0
-else ifeq ($(IS_WINDOWS),1)
+ifeq ($(IS_WINDOWS),1)
     IS_DARWIN := 0
     IS_LINUX := 0
 else ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
@@ -40,43 +35,9 @@ else
     IS_DARWIN := 0
 endif
 
-ifeq ($(IS_RPI_ARM64),1)
-    TARGET_TRIPLE ?= aarch64-linux-gnu
-    SYSROOT ?= $(ROOT_DIR)/sysroot-rpi-arm64
-    LLD_PATH := $(shell which /opt/homebrew/opt/lld@21/bin/ld.lld /opt/homebrew/opt/llvm/bin/ld.lld ld.lld 2>/dev/null | head -n1)
-    LLVM_AR_PATH := $(shell which /opt/homebrew/opt/llvm@21/bin/llvm-ar /opt/homebrew/opt/llvm/bin/llvm-ar llvm-ar 2>/dev/null | head -n1)
-    CC := clang --target=$(TARGET_TRIPLE) --sysroot=$(SYSROOT)
-    AR := $(if $(LLVM_AR_PATH),$(LLVM_AR_PATH),ar)
-    CFLAGS += -I$(SYSROOT)/usr/include -I$(SYSROOT)/usr/include/aarch64-linux-gnu -I$(SYSROOT)/usr/include/pipewire-0.3 -I$(SYSROOT)/usr/include/spa-0.2 -mcpu=cortex-a53
-    LDFLAGS += --ld-path=$(LLD_PATH) -L$(SYSROOT)/lib/aarch64-linux-gnu -L$(SYSROOT)/usr/lib/aarch64-linux-gnu -Wl,-rpath-link,$(SYSROOT)/usr/lib/aarch64-linux-gnu:$(SYSROOT)/lib/aarch64-linux-gnu
-    ENABLE_COREAUDIO ?= 0
-    ENABLE_ACCELERATE ?= 0
-    ENABLE_ALSA ?= 1
-    ENABLE_PIPEWIRE ?= 1
-    ENABLE_FFTW ?= 1
-    ENABLE_BLAS ?= 0
-    ENABLE_WASAPI ?= 0
-    ENABLE_ASIO ?= 0
-    ENABLE_OPENMP ?= 0
-    USE_LIBDISPATCH ?= 1
-    ENABLE_DBUS ?= 0
-    CLI_BIN_EXT :=
-else ifeq ($(IS_WINDOWS),1)
-    ifneq ($(CROSS_COMPILE),)
-        CC := $(CROSS_COMPILE)gcc
-        AR := $(CROSS_COMPILE)gcc-ar
-    else ifneq ($(shell command -v x86_64-w64-mingw32-gcc 2>/dev/null),)
-        ifneq ($(filter-out Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)),)
-            CC := x86_64-w64-mingw32-gcc
-            AR := x86_64-w64-mingw32-ar
-        else
-            CC := gcc
-            AR := gcc-ar
-        endif
-    else
-        CC := gcc
-        AR := gcc-ar
-    endif
+ifeq ($(IS_WINDOWS),1)
+    CC := clang
+    AR := llvm-ar
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 0
@@ -237,17 +198,11 @@ CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))
 
-.PHONY: all build lib test run-test-runner bench cli clean format windows rpi
+.PHONY: all build lib test run-test-runner bench cli clean format
 
 all: cli
 
 build: all
-
-windows:
-	+$(MAKE) IS_WINDOWS=1 clean cli
-
-rpi:
-	+$(MAKE) IS_RPI_ARM64=1 clean cli
 
 lib: $(LIB_TARGET)
 
