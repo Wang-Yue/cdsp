@@ -241,7 +241,11 @@ $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.
 # Build combined unit test runner binary
 $(UNIT_TEST_RUNNER): $(UNIT_TEST_SRCS) $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
+ifeq ($(IS_WINDOWS),1)
+	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,free -Wl,--wrap,CoCreateInstance -Wl,--wrap,RegOpenKeyExA -Wl,--wrap,RegEnumKeyA -Wl,--wrap,RegQueryValueExA -Wl,--wrap,RegCloseKey -o $@
+else
 	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -o $@
+endif
 
 $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)

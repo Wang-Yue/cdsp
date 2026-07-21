@@ -25,7 +25,13 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
   int ret;
   if (strncmp(format, "/tmp/", 5) == 0) {
     char temp[512];
+#ifdef _WIN32
+    char win_format[512];
+    (snprintf)(win_format, sizeof(win_format), "./%s", format + 5);
+    ret = vsnprintf(temp, sizeof(temp), win_format, args);
+#else
     ret = vsnprintf(temp, sizeof(temp), format, args);
+#endif
     if (ret >= 0 && ret < (int)sizeof(temp)) {
       char* dot = strrchr(temp, '.');
       if (dot && strcmp(dot, ".raw") == 0) {

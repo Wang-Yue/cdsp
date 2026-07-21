@@ -293,7 +293,6 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
                                    ASIOBufferInfo** out_buffer_infos,
                                    ASIOChannelInfo** out_channel_infos,
                                    long* out_buf_size, backend_error_t* err) {
-  (void)format;
   AcquireSRWLockExclusive(&g_asio_shared.lock);
 
   if (!g_asio_shared.initialized) {
@@ -489,9 +488,11 @@ static void release_shared_asio(bool is_input, IASIO* iasio) {
       if (g_asio_shared.combined_channel_infos)
         free(g_asio_shared.combined_channel_infos);
 
+      SRWLOCK lock = g_asio_shared.lock;
+      CONDITION_VARIABLE cond = g_asio_shared.cond;
       g_asio_shared = (asio_shared_state_t){0};
-      InitializeSRWLock(&g_asio_shared.lock);
-      InitializeConditionVariable(&g_asio_shared.cond);
+      g_asio_shared.lock = lock;
+      g_asio_shared.cond = cond;
     }
   }
   ReleaseSRWLockExclusive(&g_asio_shared.lock);

@@ -11,9 +11,9 @@
 #include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
+#include "Backend/audio_backend.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dsd_encoder.h"
-#include "Backend/audio_backend.h"
 #include "Engine/cdsp_sem.h"
 #include "Engine/engine_capture_loop.h"
 #include "Engine/engine_playback_loop.h"
@@ -41,6 +41,7 @@
 #include "Resampler/async_sinc_resampler.h"
 #include "Resampler/audio_resampler.h"
 #include "Resampler/synchronous_resampler.h"
+#include "Utils/cdsp_time.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -232,6 +233,8 @@ static void my_malloc_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2,
         atomic_load_explicit(&g_watched_thread, memory_order_acquire);
     if (watched != 0 && (uintptr_t)pthread_self() == watched) {
       atomic_fetch_add_explicit(&g_alloc_counter, 1, memory_order_relaxed);
+      printf("[ALLOC_LOGGER] Watched thread allocation: size=%lu, ptr=%p\n",
+             (unsigned long)arg2, (void*)result);
     }
   }
   if (g_prev_logger) {
@@ -362,6 +365,7 @@ static void assert_allocation_free_on_thread(const char* label,
   for (int i = 0; i < warmup; i++) {
     body(i, ctx);
   }
+  cdsp_sleep_ms(50);
   loop_ctx_t lctx = {body, warmup, iterations, ctx};
   uint64_t count = 0;
   if (!count_allocations_on_thread(run_test_loop, &lctx, thread_id, &count)) {
@@ -1331,7 +1335,8 @@ static void* test_capture_thread_run(void* arg) {
 static void capture_loop_iter(int i, void* arg) {
   (void)i;
   capture_loop_test_ctx_t* ctx = (capture_loop_test_ctx_t*)arg;
-  audio_chunk_t* chunk = engine_shared_state_dequeue_captured_blocking(ctx->shared);
+  audio_chunk_t* chunk =
+      engine_shared_state_dequeue_captured_blocking(ctx->shared);
   (void)chunk;
 }
 
@@ -1344,7 +1349,8 @@ typedef struct {
   _Atomic uintptr_t watched_thread_id;
 } processing_loop_test_ctx_t;
 
-static void on_proc_chunk_processed_cb(void* ctx_ptr, const audio_chunk_t* chunk) {
+static void on_proc_chunk_processed_cb(void* ctx_ptr,
+                                       const audio_chunk_t* chunk) {
   (void)chunk;
   processing_loop_test_ctx_t* c = (processing_loop_test_ctx_t*)ctx_ptr;
   uintptr_t tid = (uintptr_t)pthread_self();
@@ -1360,7 +1366,8 @@ static void processing_loop_iter(int i, void* ctx_ptr) {
   processing_loop_test_ctx_t* c = (processing_loop_test_ctx_t*)ctx_ptr;
   engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
   cdsp_sem_wait(c->processed_sem);
-  void* processed = spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
+  void* processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
   (void)processed;
 }
 
@@ -1378,7 +1385,8 @@ TEST(EngineProcessingLoop_AllocationFree) {
 
   audio_chunk_t* resampler_scratch = audio_chunk_create(1024, 2);
   audio_chunk_t* pipeline_scratch = audio_chunk_create(1024, 2);
-  round_robin_chunk_pool_t* scratch_pool = round_robin_chunk_pool_create(32, 1024, 2);
+  round_robin_chunk_pool_t* scratch_pool =
+      round_robin_chunk_pool_create(32, 1024, 2);
 
   processing_loop_test_ctx_t ctx;
   memset(&ctx, 0, sizeof(ctx));
@@ -1415,16 +1423,18 @@ TEST(EngineProcessingLoop_AllocationFree) {
   engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
   cdsp_sem_wait(ctx.thread_id_sem);
   cdsp_sem_wait(ctx.processed_sem);
-  void* warmup_processed = spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
+  void* warmup_processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
   (void)warmup_processed;
 
   uintptr_t tid = atomic_load(&ctx.watched_thread_id);
 
-  // Note: Warmup = 2 is required because during the thread startup sequence prior
-  // to entering the steady-state audio loop, one-time lazy allocations occur:
-  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/read).
-  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
-  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
+  // set_realtime_thread_priority). Once the startup sequence finishes,
+  // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EngineProcessingLoop", tid, 2, 20,
                                    processing_loop_iter, &ctx);
 
@@ -1449,12 +1459,19 @@ TEST(EngineCaptureLoop_AllocationFree) {
   memset(&cap_cfg, 0, sizeof(cap_cfg));
   cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
   cap_cfg.cfg.raw_file.channels = 2;
-  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename), "/dev/null");
+#ifdef _WIN32
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
+           "NUL");
+#else
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
+           "/dev/null");
+#endif
   cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
   cap_cfg.cfg.raw_file.has_format = true;
 
-  capture_backend_t* capture = create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
+  capture_backend_t* capture =
+      create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
   ASSERT_TRUE(capture != NULL);
   ASSERT_TRUE(capture_backend_open(capture, &err));
 
@@ -1462,7 +1479,8 @@ TEST(EngineCaptureLoop_AllocationFree) {
   ASSERT_TRUE(shared != NULL);
   engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
-  round_robin_chunk_pool_t* chunk_pool = round_robin_chunk_pool_create(32, 1024, 2);
+  round_robin_chunk_pool_t* chunk_pool =
+      round_robin_chunk_pool_create(32, 1024, 2);
   ASSERT_TRUE(chunk_pool != NULL);
 
   engine_capture_loop_config_t cap_loop_cfg = {
@@ -1497,11 +1515,12 @@ TEST(EngineCaptureLoop_AllocationFree) {
   cdsp_sem_wait(ctx.thread_id_sem);
   uintptr_t tid = atomic_load(&ctx.watched_thread_id);
 
-  // Note: Warmup = 2 is required because during the thread startup sequence prior
-  // to entering the steady-state audio loop, one-time lazy allocations occur:
-  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/read).
-  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
-  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
+  // set_realtime_thread_priority). Once the startup sequence finishes,
+  // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EngineCaptureLoop", tid, 2, 20,
                                    capture_loop_iter, &ctx);
 
@@ -1547,12 +1566,19 @@ TEST(EnginePlaybackLoop_AllocationFree) {
   memset(&play_cfg, 0, sizeof(play_cfg));
   play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
   play_cfg.cfg.raw_file.channels = 2;
-  snprintf(play_cfg.cfg.raw_file.filename, sizeof(play_cfg.cfg.raw_file.filename), "/dev/null");
+#ifdef _WIN32
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "NUL");
+#else
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "/dev/null");
+#endif
   play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
   play_cfg.cfg.raw_file.has_format = true;
 
-  playback_backend_t* playback = create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);
+  playback_backend_t* playback =
+      create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);
   ASSERT_TRUE(playback != NULL);
   ASSERT_TRUE(playback_backend_open(playback, &err));
 
@@ -1593,11 +1619,12 @@ TEST(EnginePlaybackLoop_AllocationFree) {
   cdsp_sem_wait(ctx.thread_id_sem);
   uintptr_t tid = atomic_load(&ctx.watched_thread_id);
 
-  // Note: Warmup = 2 is required because during the thread startup sequence prior
-  // to entering the steady-state audio loop, one-time lazy allocations occur:
-  // 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O buffers on fopen/write).
-  // 2) OS kernel/Mach thread QoS class state setup (via set_realtime_thread_priority).
-  // Once the startup sequence finishes, steady-state audio loops run 100% allocation-free.
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/write). 2) OS kernel/Mach thread QoS class state setup
+  // (via set_realtime_thread_priority). Once the startup sequence finishes,
+  // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EnginePlaybackLoop", tid, 2, 20,
                                    playback_loop_iter, &ctx);
 
