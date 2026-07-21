@@ -7,6 +7,11 @@
 
 #include "wasapi_playback.h"
 
+#include <windef.h>
+#include <windows.h>
+#ifndef CDECL
+#define CDECL __cdecl
+#endif
 #include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
