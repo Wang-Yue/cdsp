@@ -152,7 +152,7 @@ static HRESULT STDMETHODCALLTYPE session_OnStateChanged(IAudioSessionEvents* Thi
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
     IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
   CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
-  logger_info(&g_logger, "DEBUG: session_OnSessionDisconnected called, reason=%d, is_capture=%d",
+  logger_debug(&g_logger, "session_OnSessionDisconnected called, reason=%d, is_capture=%d",
               (int)DisconnectReason, (int)self->is_capture);
   if (DisconnectReason == DisconnectReasonFormatChanged ||
       DisconnectReason == DisconnectReasonServerShutdown) {
@@ -723,7 +723,7 @@ static double wasapi_device_get_current_mix_rate(const char* device_name, bool i
   }
 
   IAudioClient* client = NULL;
-  logger_info(&g_logger, "DEBUG: wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
+  logger_trace(&g_logger, "wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
               device_name[0] != '\0' ? device_name : "default", (int)is_capture);
   for (int i = 0; i < 40; i++) {
     hr = mm_device->lpVtbl->Activate(mm_device, &IID_IAudioClient,
@@ -733,17 +733,17 @@ static double wasapi_device_get_current_mix_rate(const char* device_name, bool i
       hr = IAudioClient_GetMixFormat(client, &wfx);
       if (SUCCEEDED(hr) && wfx) {
         double rate = (double)wfx->nSamplesPerSec;
-        logger_info(&g_logger, "DEBUG: GetMixFormat succeeded, rate=%f", rate);
+        logger_trace(&g_logger, "GetMixFormat succeeded, rate=%f", rate);
         CoTaskMemFree(wfx);
         client->lpVtbl->Release(client);
         mm_device->lpVtbl->Release(mm_device);
         enumerator->lpVtbl->Release(enumerator);
         return rate;
       }
-      logger_info(&g_logger, "DEBUG: GetMixFormat failed: hr=0x%08lX", (unsigned long)hr);
+      logger_trace(&g_logger, "GetMixFormat failed: hr=0x%08lX", (unsigned long)hr);
       client->lpVtbl->Release(client);
     } else {
-      logger_info(&g_logger, "DEBUG: Activate failed: hr=0x%08lX", (unsigned long)hr);
+      logger_trace(&g_logger, "Activate failed: hr=0x%08lX", (unsigned long)hr);
     }
     cdsp_sleep_ms(100);
   }
@@ -1205,7 +1205,7 @@ static void* wasapi_playback_thread_func(void* arg) {
       DWORD now = GetTickCount();
       DWORD elapsed = (last_write_time == 0) ? 0 : (now - last_write_time);
       last_write_time = now;
-      logger_debug(&g_logger,
+      logger_trace(&g_logger,
                    "Thread wrote to WASAPI: frames=%u, ring_avail=%zu, "
                    "padding=%u, elapsed=%u ms",
                    to_write, ring_avail, padding, (unsigned int)elapsed);

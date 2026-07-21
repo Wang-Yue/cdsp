@@ -250,6 +250,13 @@ static inline void logger_debug_impl(const logger_t* logger, const char* msg,
                  a1, a2, a3, a4);
 }
 
+static inline void logger_trace_impl(const logger_t* logger, const char* msg,
+                                     log_argument_t a1, log_argument_t a2,
+                                     log_argument_t a3, log_argument_t a4) {
+  app_logger_log(app_logger_get_shared(), LOG_LEVEL_TRACE, logger->label, msg,
+                 a1, a2, a3, a4);
+}
+
 static inline log_argument_t _log_arg_auto_int(int64_t v) {
   return log_arg_int(v);
 }
@@ -370,6 +377,15 @@ static inline double _log_dbl_val(double d) { return d; }
  */
 #define logger_debug(logger, msg, ...) \
   logger_debug_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
+
+/**
+ * @brief Logs a trace message with 0 to 4 optional log arguments.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param ... Optional log arguments.
+ */
+#define logger_trace(logger, msg, ...) \
+  logger_trace_impl((logger), (msg), _LOG_PAD(__VA_ARGS__))
 
 /**
  * @brief Logs a control-plane message with a direct raw string parameter.
