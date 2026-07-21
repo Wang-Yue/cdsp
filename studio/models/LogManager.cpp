@@ -5,7 +5,16 @@
 #include <QSettings>
 #include <cstdio>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#define pipe(fds) _pipe(fds, 4096, _O_TEXT)
+#define dup2 _dup2
+#define read _read
+#define close _close
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+#else
 #include <unistd.h>
 #include <fcntl.h>
 #endif
@@ -103,7 +112,6 @@ void LogManager::clear() {
 }
 
 void LogManager::setupCapture() {
-#ifndef _WIN32
     // Disable buffering for stdout and stderr so we get real-time output
     setvbuf(stdout, nullptr, _IOLBF, 0);
     setvbuf(stderr, nullptr, _IOLBF, 0);
@@ -133,11 +141,9 @@ void LogManager::setupCapture() {
             close(m_stderrPipe[1]);
         }
     }
-#endif
 }
 
 void LogManager::readPipeLoop(int readFd, LogLevel defaultLevel) {
-#ifndef _WIN32
     char buffer[4096];
     std::string accumulator;
     while (true) {
@@ -156,10 +162,6 @@ void LogManager::readPipeLoop(int readFd, LogLevel defaultLevel) {
         }
     }
     close(readFd);
-#else
-    (void)readFd;
-    (void)defaultLevel;
-#endif
 }
 
 void LogManager::processCapturedLine(const std::string& line, LogLevel defaultLevel) {

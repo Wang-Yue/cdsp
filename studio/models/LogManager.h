@@ -54,13 +54,11 @@ private:
     void readPipeLoop(int readFd, LogLevel defaultLevel);
     void processCapturedLine(const std::string& line, LogLevel defaultLevel);
 
-#ifndef _WIN32
     int m_stdoutPipe[2] = {-1, -1};
     int m_stderrPipe[2] = {-1, -1};
     std::thread m_stdoutThread;
     std::thread m_stderrThread;
     bool m_capturing = false;
-#endif
 };
 
 Q_DECLARE_METATYPE(LogEntry)
