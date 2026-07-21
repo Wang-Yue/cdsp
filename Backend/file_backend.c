@@ -718,7 +718,8 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   file_capture_t* capture = (file_capture_t*)ctx;
   if (!capture) return false;
 #ifdef CDSP_TEST
-  if (capture->realtime && atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
+  if (capture->realtime &&
+      atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
     cdsp_sleep_ms(10);
   }
 #endif

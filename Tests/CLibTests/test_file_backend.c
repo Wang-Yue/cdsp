@@ -793,23 +793,23 @@ TEST(FileBackendRF64Read) {
 
   // RF64 WAV header
   uint8_t header[80] = {
-      'R',  'F',  '6', '4', 0xFF, 0xFF, 0xFF, 0xFF, 'W', 'A', 'V',
-      'E',  'd',  's', '6', '4',  28,   0,    0,    0,  // ds64 chunk size (28)
-      250,  0,    0,   0,   0,    0,    0,    0,        // RIFF size (64-bit)
-      0,    1,    0,   0,   0,    0,    0,    0,    // Data size (64-bit: 256
-                                                    // bytes)
-      128,  0,    0,   0,   0,    0,    0,    0,    // Sample count (64-bit: 128
-                                                    // samples)
-      0,    0,    0,   0,                           // table entry count
-      'f',  'm',  't', ' ', 16,   0,    0,    0,    // fmt chunk size (16)
-      1,    0,                                      // format tag (PCM)
-      1,    0,                                      // channels (1)
-      0x80, 0x3E, 0,   0,                           // sample rate (16000)
-      0x00, 0x7D, 0,   0,                           // byte rate (32000)
-      2,    0,                                      // block align (2)
-      16,   0,                                      // bits per sample (16)
-      'd',  'a',  't', 'a', 0xFF, 0xFF, 0xFF, 0xFF  // data size placeholder
-                                                    // (RF64 style)
+      'R', 'F', '6', '4', 0xFF, 0xFF, 0xFF, 0xFF, 'W', 'A', 'V', 'E', 'd', 's',
+      '6', '4', 28, 0, 0, 0,                      // ds64 chunk size (28)
+      250, 0, 0, 0, 0, 0, 0, 0,                   // RIFF size (64-bit)
+      0, 1, 0, 0, 0, 0, 0, 0,                     // Data size (64-bit: 256
+                                                  // bytes)
+      128, 0, 0, 0, 0, 0, 0, 0,                   // Sample count (64-bit: 128
+                                                  // samples)
+      0, 0, 0, 0,                                 // table entry count
+      'f', 'm', 't', ' ', 16, 0, 0, 0,            // fmt chunk size (16)
+      1, 0,                                       // format tag (PCM)
+      1, 0,                                       // channels (1)
+      0x80, 0x3E, 0, 0,                           // sample rate (16000)
+      0x00, 0x7D, 0, 0,                           // byte rate (32000)
+      2, 0,                                       // block align (2)
+      16, 0,                                      // bits per sample (16)
+      'd', 'a', 't', 'a', 0xFF, 0xFF, 0xFF, 0xFF  // data size placeholder
+                                                  // (RF64 style)
   };
 
   fwrite(header, 1, sizeof(header), f);
@@ -954,22 +954,22 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   FILE* f = fopen(rf64_in_filename, "wb");
   ASSERT_TRUE(f != NULL);
   uint8_t rf64_header[80] = {
-      'R',  'F',  '6', '4', 0xFF, 0xFF, 0xFF, 0xFF, 'W', 'A', 'V',
-      'E',  'd',  's', '6', '4',  28,   0,    0,    0,  // ds64 chunk size (28)
-      250,  0,    0,   0,   0,    0,    0,    0,        // RIFF size (64-bit)
-      0,    1,    0,   0,   0,    0,    0,    0,    // Data size (64-bit: 256
-                                                    // bytes)
-      128,  0,    0,   0,   0,    0,    0,    0,    // Sample count (64-bit: 128
-                                                    // samples)
-      0,    0,    0,   0,                           // table entry count
-      'f',  'm',  't', ' ', 16,   0,    0,    0,    // fmt chunk size (16)
-      1,    0,                                      // format tag (PCM)
-      1,    0,                                      // channels (1)
-      0x80, 0x3E, 0,   0,                           // sample rate (16000)
-      0x00, 0x7D, 0,   0,                           // byte rate (32000)
-      2,    0,                                      // block align (2)
-      16,   0,                                      // bits per sample (16)
-      'd',  'a',  't', 'a', 0xFF, 0xFF, 0xFF, 0xFF  // data size placeholder
+      'R', 'F', '6', '4', 0xFF, 0xFF, 0xFF, 0xFF, 'W', 'A', 'V', 'E', 'd', 's',
+      '6', '4', 28, 0, 0, 0,                      // ds64 chunk size (28)
+      250, 0, 0, 0, 0, 0, 0, 0,                   // RIFF size (64-bit)
+      0, 1, 0, 0, 0, 0, 0, 0,                     // Data size (64-bit: 256
+                                                  // bytes)
+      128, 0, 0, 0, 0, 0, 0, 0,                   // Sample count (64-bit: 128
+                                                  // samples)
+      0, 0, 0, 0,                                 // table entry count
+      'f', 'm', 't', ' ', 16, 0, 0, 0,            // fmt chunk size (16)
+      1, 0,                                       // format tag (PCM)
+      1, 0,                                       // channels (1)
+      0x80, 0x3E, 0, 0,                           // sample rate (16000)
+      0x00, 0x7D, 0, 0,                           // byte rate (32000)
+      2, 0,                                       // block align (2)
+      16, 0,                                      // bits per sample (16)
+      'd', 'a', 't', 'a', 0xFF, 0xFF, 0xFF, 0xFF  // data size placeholder
   };
   fwrite(rf64_header, 1, sizeof(rf64_header), f);
   int16_t samples[128] = {0};

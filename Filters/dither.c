@@ -514,7 +514,8 @@ static void* dither_filter_create(const char* name,
       hash = ((hash << 5) + hash) + (uint8_t)*p;
     }
   }
-  // Add uniqueness (e.g., memory address of instance) to prevent channel correlation
+  // Add uniqueness (e.g., memory address of instance) to prevent channel
+  // correlation
   uintptr_t addr = (uintptr_t)filter;
   hash ^= (uint32_t)(addr ^ (addr >> 32));
   if (hash != 0) {

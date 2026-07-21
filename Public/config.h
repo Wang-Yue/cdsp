@@ -34,7 +34,8 @@ CDSP_API void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path);
  * @param out_json Pointer to write the allocated JSON string to.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json);
+CDSP_API bool cdsp_get_active_config_json(const dsp_engine_t* engine,
+                                          char** out_json);
 
 /**
  * @brief Get the active configuration in YAML format.
@@ -46,7 +47,8 @@ CDSP_API bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out
  * @param out_yaml Pointer to write the allocated YAML string to.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out_yaml);
+CDSP_API bool cdsp_get_active_config_yaml(const dsp_engine_t* engine,
+                                          char** out_yaml);
 
 /**
  * @brief Get the previously active configuration in JSON format.
@@ -58,7 +60,8 @@ CDSP_API bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out
  * @param out_json Pointer to write the allocated JSON string to.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_previous_config_json(const dsp_engine_t* engine, char** out_json);
+CDSP_API bool cdsp_get_previous_config_json(const dsp_engine_t* engine,
+                                            char** out_json);
 
 /**
  * @brief Get the previously active configuration in YAML format.
@@ -70,7 +73,8 @@ CDSP_API bool cdsp_get_previous_config_json(const dsp_engine_t* engine, char** o
  * @param out_yaml Pointer to write the allocated YAML string to.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine, char** out_yaml);
+CDSP_API bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine,
+                                            char** out_yaml);
 
 /**
  * @brief Upload and immediately apply a new configuration from a JSON string.
@@ -82,7 +86,7 @@ CDSP_API bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine, char** o
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
-                           cdsp_backend_error_t* out_err);
+                                   cdsp_backend_error_t* out_err);
 
 /**
  * @brief Upload and immediately apply a new configuration from a YAML string.
@@ -94,7 +98,7 @@ CDSP_API bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
-                           cdsp_backend_error_t* out_err);
+                                   cdsp_backend_error_t* out_err);
 
 /**
  * @brief Parse, configure, and start the engine using a config file on disk,
@@ -116,11 +120,10 @@ CDSP_API bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
  * fails.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
-                                 int samplerate_override, int channels_override,
-                                 const char* format_override,
-                                 int extra_samples_override,
-                                 cdsp_backend_error_t* out_err);
+CDSP_API bool cdsp_engine_set_config_file(
+    dsp_engine_t* engine, const char* path, int samplerate_override,
+    int channels_override, const char* format_override,
+    int extra_samples_override, cdsp_backend_error_t* out_err);
 
 /**
  * @brief Read the title field from the active configuration.
@@ -145,7 +148,8 @@ CDSP_API char* cdsp_get_config_description(const dsp_engine_t* engine);
  * @return Allocated JSON string representation of the value, or NULL if path
  * not found. Caller must free it.
  */
-CDSP_API char* cdsp_get_config_value(const dsp_engine_t* engine, const char* json_ptr);
+CDSP_API char* cdsp_get_config_value(const dsp_engine_t* engine,
+                                     const char* json_ptr);
 
 /**
  * @brief Set a single value in the active configuration using a JSON Pointer
@@ -161,7 +165,8 @@ CDSP_API char* cdsp_get_config_value(const dsp_engine_t* engine, const char* jso
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
-                           const char* val_json, cdsp_backend_error_t* out_err);
+                                    const char* val_json,
+                                    cdsp_backend_error_t* out_err);
 
 /**
  * @brief Apply a partial patch to the active configuration.
@@ -174,7 +179,7 @@ CDSP_API bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
-                       cdsp_backend_error_t* out_err);
+                                cdsp_backend_error_t* out_err);
 
 /**
  * @brief Reload the active configuration file from disk.
@@ -182,7 +187,8 @@ CDSP_API bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
  * @param out_err Pointer to write backend error if reload fails.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err);
+CDSP_API bool cdsp_reload_config(dsp_engine_t* engine,
+                                 cdsp_backend_error_t* out_err);
 
 /**
  * @brief Parse and fill defaults for a JSON configuration string without
@@ -195,7 +201,7 @@ CDSP_API bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_json(const char* json_str, char** out_result,
-                               cdsp_config_error_type_t* out_err_type);
+                                        cdsp_config_error_type_t* out_err_type);
 
 /**
  * @brief Parse and fill defaults for a YAML configuration string without
@@ -208,7 +214,7 @@ CDSP_API bool cdsp_validate_config_json(const char* json_str, char** out_result,
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
-                               cdsp_config_error_type_t* out_err_type);
+                                        cdsp_config_error_type_t* out_err_type);
 
 /**
  * @brief Parse and fill defaults for a configuration file on disk without
@@ -221,7 +227,7 @@ CDSP_API bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_validate_config_file(const char* path, char** out_result,
-                               cdsp_config_error_type_t* out_err_type);
+                                        cdsp_config_error_type_t* out_err_type);
 
 #ifdef __cplusplus
 }

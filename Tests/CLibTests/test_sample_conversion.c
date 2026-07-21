@@ -26,7 +26,8 @@ TEST(SampleConversion_S24_RoundTrip) {
     pcm_sample_encode_s24_4_rj_bytes(samples[i], buf4_rj);
     double decoded_4rj = pcm_sample_decode_s24_4_rj_bytes(buf4_rj);
     ASSERT_NEAR(samples[i], decoded_4rj, 1e-6);
-    // Verify padding byte (byte 3) is strictly 0 (no sign extension on negative values)
+    // Verify padding byte (byte 3) is strictly 0 (no sign extension on negative
+    // values)
     ASSERT_EQ(0, buf4_rj[3]);
 
     uint8_t buf4_lj[4];
@@ -141,17 +142,18 @@ TEST(SampleConversion_DSD_U8_RoundTrip) {
 }
 
 TEST(SampleConversion_DSD_U32_RoundTrip) {
-  uint32_t patterns[] = {0x3F800000, 0xBF800000, 0x00000000}; // 1.0f, -1.0f, 0.0f
+  uint32_t patterns[] = {0x3F800000, 0xBF800000,
+                         0x00000000};  // 1.0f, -1.0f, 0.0f
   double expected_doubles[] = {1.0, -1.0, 0.0};
-  
+
   for (size_t i = 0; i < 3; i++) {
     double decoded = pcm_sample_decode_dsd_u32(patterns[i]);
     ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
-    
+
     float val_f = (float)decoded;
     uint8_t buf_msb[4];
     pcm_sample_encode_dsd_u32_bytes(val_f, buf_msb);
-    
+
     // Convert back from bytes to u32 bits
     uint32_t val_msb_bits;
     memcpy(&val_msb_bits, buf_msb, sizeof(uint32_t));
@@ -162,11 +164,11 @@ TEST(SampleConversion_DSD_U32_RoundTrip) {
     uint32_t val_msb_host = val_msb_bits;
 #endif
     ASSERT_EQ(patterns[i], val_msb_host);
-    
+
     // LSB reversed bytes
     uint8_t buf_lsb[4];
     pcm_sample_encode_dsd_u32_reversed_bytes(val_f, buf_lsb);
-    
+
     // Check that LSB bytes are indeed bit-reversed versions of MSB bytes
     ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[0]), buf_lsb[0]);
     ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[1]), buf_lsb[1]);

@@ -126,7 +126,8 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
     return NULL;
   }
 
-  if ((memcmp(riff_header, "RIFF", 4) != 0 && memcmp(riff_header, "RF64", 4) != 0) ||
+  if ((memcmp(riff_header, "RIFF", 4) != 0 &&
+       memcmp(riff_header, "RF64", 4) != 0) ||
       memcmp(riff_header + 8, "WAVE", 4) != 0) {
     fclose(f);
     return NULL;
@@ -156,7 +157,7 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
       channels = fmt_data[2] | (fmt_data[3] << 8);
       bits_per_sample = fmt_data[14] | (fmt_data[15] << 8);
 
-      if (audio_format == 65534) { // WAVE_FORMAT_EXTENSIBLE
+      if (audio_format == 65534) {  // WAVE_FORMAT_EXTENSIBLE
         if (chunk_size >= 40) {
           audio_format = fmt_data[24] | (fmt_data[25] << 8);
         }
@@ -809,8 +810,10 @@ static void convolution_filter_process(void* instance,
     size_t len = count - i;
     if (len > cs - filter->buf_pos) len = cs - filter->buf_pos;
     if (len > 0) {
-      memcpy(filter->input_buffer + filter->buf_pos, waveform + i, len * sizeof(double));
-      memcpy(waveform + i, filter->output_buffer + filter->buf_pos, len * sizeof(double));
+      memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
+             len * sizeof(double));
+      memcpy(waveform + i, filter->output_buffer + filter->buf_pos,
+             len * sizeof(double));
       filter->buf_pos += len;
       i += len;
     }
@@ -830,8 +833,10 @@ static void convolution_filter_process(void* instance,
   // 3. Buffer any remaining partial block
   size_t len = count - i;
   if (len > 0) {
-    memcpy(filter->input_buffer + filter->buf_pos, waveform + i, len * sizeof(double));
-    memcpy(waveform + i, filter->output_buffer + filter->buf_pos, len * sizeof(double));
+    memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
+           len * sizeof(double));
+    memcpy(waveform + i, filter->output_buffer + filter->buf_pos,
+           len * sizeof(double));
     filter->buf_pos += len;
     i += len;
   }
@@ -858,8 +863,10 @@ static void convolution_filter_transfer_state(void* dest_ptr,
       memcpy(dest->hist_im[s], src->hist_im[s], spec_len * sizeof(double));
     }
     dest->write_idx = src->write_idx;
-    memcpy(dest->input_buffer, src->input_buffer, dest->chunk_size * sizeof(double));
-    memcpy(dest->output_buffer, src->output_buffer, dest->chunk_size * sizeof(double));
+    memcpy(dest->input_buffer, src->input_buffer,
+           dest->chunk_size * sizeof(double));
+    memcpy(dest->output_buffer, src->output_buffer,
+           dest->chunk_size * sizeof(double));
     dest->buf_pos = src->buf_pos;
   }
 }

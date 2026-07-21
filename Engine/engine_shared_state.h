@@ -106,7 +106,8 @@ typedef struct pipeline_s pipeline_t;
  * @brief Retires a swapped-out pipeline instance for off-thread collection.
  * @param state Pointer to the shared state instance.
  * @param pipeline Pointer to the pipeline object to retire.
- * @return Pointer to any previously uncollected retired pipeline (normally NULL).
+ * @return Pointer to any previously uncollected retired pipeline (normally
+ * NULL).
  */
 pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
                                                 pipeline_t* pipeline);

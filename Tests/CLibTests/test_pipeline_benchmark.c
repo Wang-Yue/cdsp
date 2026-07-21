@@ -198,7 +198,8 @@ TEST(Pipeline_Biquads_Benchmark) {
 
   char* post_names[16];
   for (int i = 0; i < 16; i++) {
-    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d", i + 1);
+    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d",
+             i + 1);
     filters[16 + i].filter.type = FILTER_TYPE_BIQUAD;
     filters[16 + i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[16 + i].filter.parameters.biquad.freq = post_bq_freqs[i];
@@ -339,7 +340,8 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
 
   char* post_names[18];
   for (int i = 0; i < 16; i++) {
-    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d", i + 1);
+    snprintf(filters[16 + i].name, sizeof(filters[16 + i].name), "post_bq_%d",
+             i + 1);
     filters[16 + i].filter.type = FILTER_TYPE_BIQUAD;
     filters[16 + i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[16 + i].filter.parameters.biquad.freq = post_bq_freqs[i];

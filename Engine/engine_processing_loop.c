@@ -195,11 +195,13 @@ static void processing_loop_check_pipeline_swap(
       if (uncollected) {
         // Ref: engine_state_management.md - Section 1.7.2 (Rule 4)
         // Under normal operation, dsp_engine collects retired pipelines on the
-        // main thread prior to config reloads, so retired_pipeline will be NULL.
-        // In the unexpected event of an uncollected prior pipeline, log a warning
-        // and free the uncollected pipeline on the processing thread to prevent a memory leak.
+        // main thread prior to config reloads, so retired_pipeline will be
+        // NULL. In the unexpected event of an uncollected prior pipeline, log a
+        // warning and free the uncollected pipeline on the processing thread to
+        // prevent a memory leak.
         logger_warn(&g_logger,
-                    "Prior retired pipeline uncollected by main thread; freeing on processing thread");
+                    "Prior retired pipeline uncollected by main thread; "
+                    "freeing on processing thread");
         pipeline_free(uncollected);
       }
     }

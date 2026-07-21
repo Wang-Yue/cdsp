@@ -340,8 +340,6 @@ static inline uint32_t pcm_sample_u32_from_f32(float fval) {
   return bits;
 }
 
-
-
 /**
  * @brief Decode a raw 32-bit DSD container bit pattern to a double sample
  * without checking isfinite() to preserve raw DSD bits.

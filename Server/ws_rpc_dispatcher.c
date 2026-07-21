@@ -46,11 +46,13 @@ cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason) {
       return root;
     case CDSP_STOP_REASON_CAPTURE_FORMAT_CHANGE:
       root = cJSON_CreateObject();
-      cJSON_AddNumberToObject(root, "CaptureFormatChange", reason->format_change_rate);
+      cJSON_AddNumberToObject(root, "CaptureFormatChange",
+                              reason->format_change_rate);
       return root;
     case CDSP_STOP_REASON_PLAYBACK_FORMAT_CHANGE:
       root = cJSON_CreateObject();
-      cJSON_AddNumberToObject(root, "PlaybackFormatChange", reason->format_change_rate);
+      cJSON_AddNumberToObject(root, "PlaybackFormatChange",
+                              reason->format_change_rate);
       return root;
     case CDSP_STOP_REASON_UNKNOWN_ERROR:
       root = cJSON_CreateObject();
@@ -912,7 +914,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
   if (!arg || !cJSON_IsObject(arg)) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "Arguments must be a JSON object");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Arguments must be a JSON object");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -920,7 +923,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   cJSON* item_side = cJSON_GetObjectItemCaseSensitive(arg, "side");
   if (!item_side || !cJSON_IsString(item_side)) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "Missing or invalid 'side' parameter");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Missing or invalid 'side' parameter");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -930,7 +934,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
     is_capture = false;
   } else {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "side must be 'capture' or 'playback'");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "side must be 'capture' or 'playback'");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -940,14 +945,16 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
     if (cJSON_IsNumber(item_chan)) {
       if (item_chan->valueint < 0) {
         cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "InvalidValueError", "channel must be non-negative");
+        cJSON_AddStringToObject(err, "InvalidValueError",
+                                "channel must be non-negative");
         reply_error(cmd_name, NULL, err, ds);
         return;
       }
       channel = (uint32_t)item_chan->valueint;
     } else {
       cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidValueError", "channel must be an integer or null");
+      cJSON_AddStringToObject(err, "InvalidValueError",
+                              "channel must be an integer or null");
       reply_error(cmd_name, NULL, err, ds);
       return;
     }
@@ -959,7 +966,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   }
   if (min_freq <= 0.0) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "min_freq must be greater than 0");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "min_freq must be greater than 0");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -970,7 +978,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   }
   if (max_freq <= min_freq) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "max_freq must be greater than min_freq");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "max_freq must be greater than min_freq");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -981,7 +990,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   }
   if (n_bins < 2) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "n_bins must be at least 2");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "n_bins must be at least 2");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -1389,9 +1399,10 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
       reply_ok(cmd_name, cJSON_CreateString(result ? result : config_json), ds);
     } else {
       cJSON* err = cJSON_CreateObject();
-      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE) ? "ConfigReadError" : "ConfigValidationError";
-      cJSON_AddStringToObject(err, err_key,
-                              result ? result : "Invalid config");
+      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
+                                ? "ConfigReadError"
+                                : "ConfigValidationError";
+      cJSON_AddStringToObject(err, err_key, result ? result : "Invalid config");
       reply_error(cmd_name, NULL, err, ds);
     }
     if (result) free(result);
@@ -1417,9 +1428,10 @@ static void handle_cmd_read_config_yaml(websocket_server_t* server,
       reply_ok(cmd_name, cJSON_CreateString(result ? result : config_yaml), ds);
     } else {
       cJSON* err = cJSON_CreateObject();
-      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE) ? "ConfigReadError" : "ConfigValidationError";
-      cJSON_AddStringToObject(err, err_key,
-                              result ? result : "Invalid config");
+      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
+                                ? "ConfigReadError"
+                                : "ConfigValidationError";
+      cJSON_AddStringToObject(err, err_key, result ? result : "Invalid config");
       reply_error(cmd_name, NULL, err, ds);
     }
     if (result) free(result);
@@ -1440,11 +1452,14 @@ static void handle_cmd_read_config_file(websocket_server_t* server,
     const char* path = arg->valuestring;
     char* result = NULL;
     cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_NONE;
-    if (cdsp_validate_config_file(path, &result, &err_type) && err_type == CDSP_CONFIG_ERR_NONE) {
+    if (cdsp_validate_config_file(path, &result, &err_type) &&
+        err_type == CDSP_CONFIG_ERR_NONE) {
       reply_ok(cmd_name, cJSON_CreateString(result), ds);
     } else {
       cJSON* err = cJSON_CreateObject();
-      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE) ? "ConfigReadError" : "ConfigValidationError";
+      const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
+                                ? "ConfigReadError"
+                                : "ConfigValidationError";
       cJSON_AddStringToObject(err, err_key,
                               result ? result : "Invalid config file");
       reply_error(cmd_name, NULL, err, ds);
@@ -1934,7 +1949,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 
   if (!arg || !cJSON_IsObject(arg)) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "Arguments must be a JSON object");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Arguments must be a JSON object");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -1942,7 +1958,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   cJSON* item_side = cJSON_GetObjectItemCaseSensitive(arg, "side");
   if (!item_side || !cJSON_IsString(item_side)) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "Missing or invalid 'side' parameter");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "Missing or invalid 'side' parameter");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -1952,7 +1969,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     is_capture = false;
   } else {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "side must be 'capture' or 'playback'");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "side must be 'capture' or 'playback'");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -1962,14 +1980,16 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     if (cJSON_IsNumber(item_chan)) {
       if (item_chan->valueint < 0) {
         cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "InvalidValueError", "channel must be non-negative");
+        cJSON_AddStringToObject(err, "InvalidValueError",
+                                "channel must be non-negative");
         reply_error(cmd_name, NULL, err, ds);
         return;
       }
       channel = (uint32_t)item_chan->valueint;
     } else {
       cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidValueError", "channel must be an integer or null");
+      cJSON_AddStringToObject(err, "InvalidValueError",
+                              "channel must be an integer or null");
       reply_error(cmd_name, NULL, err, ds);
       return;
     }
@@ -1981,7 +2001,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   }
   if (min_freq <= 0.0) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "min_freq must be greater than 0");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "min_freq must be greater than 0");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -1992,7 +2013,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   }
   if (max_freq <= min_freq) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError", "max_freq must be greater than min_freq");
+    cJSON_AddStringToObject(err, "InvalidValueError",
+                            "max_freq must be greater than min_freq");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
@@ -2003,18 +2025,20 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   }
   if (n_bins < 2) {
     cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "n_bins must be at least 2");
+    cJSON_AddStringToObject(err, "InvalidRequestError",
+                            "n_bins must be at least 2");
     reply_error(cmd_name, NULL, err, ds);
     return;
   }
 
-  cdsp_spectrum_side_t side_val = is_capture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
+  cdsp_spectrum_side_t side_val =
+      is_capture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
   const uint32_t* chan_ptr = (channel == (uint32_t)-1) ? NULL : &channel;
 
   cdsp_spectrum_t spec = {0};
   bool spec_ok = server && server->engine &&
-                 cdsp_get_spectrum(server->engine, side_val, chan_ptr,
-                                   min_freq, max_freq, n_bins, &spec);
+                 cdsp_get_spectrum(server->engine, side_val, chan_ptr, min_freq,
+                                   max_freq, n_bins, &spec);
   if (spec_ok) {
     cJSON* spec_json = serialize_spectrum(&spec);
     if (spec_json) {
@@ -2288,7 +2312,8 @@ static void handle_cmd_get_supported_device_types(websocket_server_t* server,
   char** cap_types = NULL;
   size_t cap_count = 0;
 
-  cdsp_get_supported_device_types(&play_types, &play_count, &cap_types, &cap_count);
+  cdsp_get_supported_device_types(&play_types, &play_count, &cap_types,
+                                  &cap_count);
 
   cJSON* arr = cJSON_CreateArray();
 

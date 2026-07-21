@@ -572,13 +572,15 @@ static int async_poly_resampler_config_validate(
   bool has_profile = config->has_profile;
 
   if (has_interpolation && has_profile) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPoly: cannot specify both profile and interpolation parameters");
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncPoly: cannot specify both profile and interpolation parameters");
     return -1;
   }
   if (!has_interpolation && !has_profile) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncPoly: must specify either profile or interpolation parameters");
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncPoly: must specify either profile or interpolation parameters");
     return -1;
   }
   if (config->has_interpolation) {

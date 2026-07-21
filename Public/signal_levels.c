@@ -69,7 +69,8 @@ void cdsp_free_vu_levels(cdsp_vu_levels_t* vu) {
   vu->capture_peak = NULL;
 }
 
-static void get_labels_from_array(cJSON* labels_arr, char*** out_labels, size_t* out_count) {
+static void get_labels_from_array(cJSON* labels_arr, char*** out_labels,
+                                  size_t* out_count) {
   if (!out_labels || !out_count) return;
   *out_labels = NULL;
   *out_count = 0;
@@ -121,7 +122,8 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
     }
   }
 
-  // Resolve playback labels from pipeline mixer or fallback to playback device labels
+  // Resolve playback labels from pipeline mixer or fallback to playback device
+  // labels
   cJSON* pipeline = cJSON_GetObjectItem(root, "pipeline");
   cJSON* mixers = cJSON_GetObjectItem(root, "mixers");
   if (pipeline && mixers && cJSON_IsArray(pipeline)) {
@@ -130,7 +132,8 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
       cJSON* step = cJSON_GetArrayItem(pipeline, i);
       if (step && cJSON_IsObject(step)) {
         cJSON* type_node = cJSON_GetObjectItem(step, "type");
-        if (type_node && cJSON_IsString(type_node) && strcmp(type_node->valuestring, "Mixer") == 0) {
+        if (type_node && cJSON_IsString(type_node) &&
+            strcmp(type_node->valuestring, "Mixer") == 0) {
           cJSON* name_node = cJSON_GetObjectItem(step, "name");
           if (name_node && cJSON_IsString(name_node)) {
             cJSON* mixer = cJSON_GetObjectItem(mixers, name_node->valuestring);
@@ -151,8 +154,10 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
     playback_labels_arr = playback_dev_labels_arr;
   }
 
-  get_labels_from_array(playback_labels_arr, out_playback_labels, out_playback_count);
-  get_labels_from_array(capture_labels_arr, out_capture_labels, out_capture_count);
+  get_labels_from_array(playback_labels_arr, out_playback_labels,
+                        out_playback_count);
+  get_labels_from_array(capture_labels_arr, out_capture_labels,
+                        out_capture_count);
 
   cJSON_Delete(root);
   return true;

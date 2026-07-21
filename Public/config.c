@@ -353,7 +353,8 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
   const char* key = NULL;
   int idx = -1;
   char new_key[128] = "";
-  cJSON* target = locate_pointer(root, json_ptr, &parent, &key, &idx, new_key, sizeof(new_key));
+  cJSON* target = locate_pointer(root, json_ptr, &parent, &key, &idx, new_key,
+                                 sizeof(new_key));
   (void)target;
   if (!parent) {
     cJSON_Delete(root);
@@ -393,7 +394,8 @@ static void json_merge_patch(cJSON* target, cJSON* patch) {
   cJSON* child = patch->child;
   while (child) {
     if (child->string) {
-      cJSON* target_item = cJSON_GetObjectItemCaseSensitive(target, child->string);
+      cJSON* target_item =
+          cJSON_GetObjectItemCaseSensitive(target, child->string);
       if (cJSON_IsNull(child)) {
         if (target_item) {
           cJSON_DeleteItemFromObject(target, child->string);

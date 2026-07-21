@@ -27,9 +27,9 @@ CDSP_API const char* cdsp_get_version(void);
  * @param out_capture_count Output count for capture device types.
  */
 CDSP_API void cdsp_get_supported_device_types(char*** out_playback_types,
-                                      size_t* out_playback_count,
-                                      char*** out_capture_types,
-                                      size_t* out_capture_count);
+                                              size_t* out_playback_count,
+                                              char*** out_capture_types,
+                                              size_t* out_capture_count);
 
 /**
  * @brief Free the arrays allocated by cdsp_get_supported_device_types.

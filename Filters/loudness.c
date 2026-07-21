@@ -293,7 +293,6 @@ static void loudness_filter_transfer_state(void* dest_ptr,
   recompute_shelves(dest, dest->last_volume);
 }
 
-
 const filter_vtable_t g_loudness_vtable = {
     .validate = loudness_config_validate,
     .create = loudness_filter_create,

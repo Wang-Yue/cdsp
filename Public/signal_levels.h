@@ -20,7 +20,8 @@ extern "C" {
  * @param out_vu Pointer to write the VU levels to.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu);
+CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
+                                 cdsp_vu_levels_t* out_vu);
 
 /**
  * @brief Free the arrays inside the cdsp_vu_levels_t structure.
@@ -44,10 +45,10 @@ CDSP_API void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
  * @return true on success, false on failure (or if no labels are configured).
  */
 CDSP_API bool cdsp_get_channel_labels(const dsp_engine_t* engine,
-                              char*** out_playback_labels,
-                              size_t* out_playback_count,
-                              char*** out_capture_labels,
-                              size_t* out_capture_count);
+                                      char*** out_playback_labels,
+                                      size_t* out_playback_count,
+                                      char*** out_capture_labels,
+                                      size_t* out_capture_count);
 
 /**
  * @brief Free channel labels arrays and strings.

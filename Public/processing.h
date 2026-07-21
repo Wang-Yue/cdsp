@@ -23,7 +23,7 @@ CDSP_API cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine);
  * @param out_reason Pointer to write the stop reason details into.
  */
 CDSP_API void cdsp_get_stop_reason(const dsp_engine_t* engine,
-                          cdsp_stop_reason_t* out_reason);
+                                   cdsp_stop_reason_t* out_reason);
 
 /**
  * @brief Get the active sample rate of the capture device.
@@ -52,11 +52,11 @@ CDSP_API double cdsp_get_signal_range(const dsp_engine_t* engine);
  * @return true on success, false on failure (e.g. engine not running).
  */
 CDSP_API bool cdsp_get_processing_status(const dsp_engine_t* engine,
-                                double* out_rate_adjust,
-                                double* out_buffer_level,
-                                uint64_t* out_clipped_samples,
-                                double* out_processing_load,
-                                double* out_resampler_load);
+                                         double* out_rate_adjust,
+                                         double* out_buffer_level,
+                                         uint64_t* out_clipped_samples,
+                                         double* out_processing_load,
+                                         double* out_resampler_load);
 
 /**
  * @brief Reset the clipped samples counter to zero.
@@ -99,9 +99,10 @@ CDSP_API bool cdsp_get_state_file_updated(const dsp_engine_t* engine);
  * @return Pointer to a newly allocated cdsp_audio_samples_t structure, or NULL
  * on failure. Must be freed with cdsp_free_samples().
  */
-CDSP_API cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
-                                       size_t n_frames,
-                                       cdsp_backend_error_t* out_err);
+CDSP_API cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine,
+                                                bool is_capture,
+                                                size_t n_frames,
+                                                cdsp_backend_error_t* out_err);
 
 /**
  * @brief Free the resources allocated for audio samples.

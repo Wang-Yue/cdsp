@@ -122,14 +122,14 @@ pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
                                                 pipeline_t* pipeline) {
   if (!state || !pipeline) return NULL;
   return atomic_exchange_explicit(&state->retired_pipeline, pipeline,
-                                 memory_order_acq_rel);
+                                  memory_order_acq_rel);
 }
 
 pipeline_t* engine_shared_state_collect_retired_pipeline(
     engine_shared_state_t* state) {
   if (!state) return NULL;
   return atomic_exchange_explicit(&state->retired_pipeline, NULL,
-                                 memory_order_acquire);
+                                  memory_order_acquire);
 }
 
 processing_stop_reason_t engine_shared_state_get_stop_reason(

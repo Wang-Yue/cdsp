@@ -74,7 +74,8 @@ CDSP_API bool cdsp_state_has_config_path(const cdsp_state_t* state);
  * @param state The DSP state instance.
  * @param has_path True if it has a configuration path, false otherwise.
  */
-CDSP_API void cdsp_state_set_has_config_path(cdsp_state_t* state, bool has_path);
+CDSP_API void cdsp_state_set_has_config_path(cdsp_state_t* state,
+                                             bool has_path);
 
 /**
  * @brief Get the mute status for a channel index from the DSP state.
@@ -106,7 +107,8 @@ CDSP_API double cdsp_state_get_volume(const cdsp_state_t* state, int index);
  * @param index The channel index.
  * @param volume The volume value to set.
  */
-CDSP_API void cdsp_state_set_volume(cdsp_state_t* state, int index, double volume);
+CDSP_API void cdsp_state_set_volume(cdsp_state_t* state, int index,
+                                    double volume);
 
 #ifdef __cplusplus
 }

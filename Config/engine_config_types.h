@@ -102,8 +102,8 @@ typedef enum {
   AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING, /**< Engine is not running. */
   AUDIO_BACKEND_ERR_BUFFER_EMPTY,       /**< Buffer is empty. */
   AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND,   /**< Audio device not found. */
-  AUDIO_BACKEND_ERR_DEVICE_BUSY,         /**< Audio device is busy. */
-  AUDIO_BACKEND_ERR_CONFIG_READ          /**< Configuration read/syntax error. */
+  AUDIO_BACKEND_ERR_DEVICE_BUSY,        /**< Audio device is busy. */
+  AUDIO_BACKEND_ERR_CONFIG_READ         /**< Configuration read/syntax error. */
 } audio_backend_error_type_t;
 
 /**

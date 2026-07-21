@@ -93,10 +93,9 @@ typedef enum {
 
 typedef enum {
   CDSP_CONFIG_ERR_NONE = 0,
-  CDSP_CONFIG_ERR_PARSE,      /* Syntax / Read Error */
-  CDSP_CONFIG_ERR_VALIDATION  /* Semantic / Validation Error */
+  CDSP_CONFIG_ERR_PARSE,     /* Syntax / Read Error */
+  CDSP_CONFIG_ERR_VALIDATION /* Semantic / Validation Error */
 } cdsp_config_error_type_t;
-
 
 /**
  * @brief Structure representing backend error.

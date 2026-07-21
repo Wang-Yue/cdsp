@@ -32,9 +32,10 @@ typedef struct {
  * @param out_spec Pointer to write the allocated spectrum data to.
  * @return true on success, false on failure (e.g. processing not running).
  */
-CDSP_API bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side, const uint32_t* channel,
-                       double min_freq, double max_freq, size_t n_bins,
-                       cdsp_spectrum_t* out_spec);
+CDSP_API bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side,
+                                const uint32_t* channel, double min_freq,
+                                double max_freq, size_t n_bins,
+                                cdsp_spectrum_t* out_spec);
 
 /**
  * @brief Free the dynamically allocated spectrum data.

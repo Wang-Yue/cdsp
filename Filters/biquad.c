@@ -349,7 +349,7 @@ static void biquad_filter_free(void* instance) {
  * @return 0 on success, -1 on failure.
  */
 static int biquad_config_validate(const filter_config_t* config,
-                           int sample_rate, config_error_t* err) {
+                                  int sample_rate, config_error_t* err) {
   if (!config || config->type != FILTER_TYPE_BIQUAD) return -1;
   const biquad_config_t* params = &config->parameters.biquad;
   double nyquist = (double)sample_rate / 2.0;
@@ -372,7 +372,8 @@ static int biquad_config_validate(const filter_config_t* config,
     if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
       if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Peaking/Bandpass/Notch/Allpass does not support Slope steepness type");
+                         "Peaking/Bandpass/Notch/Allpass does not support "
+                         "Slope steepness type");
       }
       return -1;
     }
@@ -381,28 +382,28 @@ static int biquad_config_validate(const filter_config_t* config,
       params->type == BIQUAD_TYPE_LOWSHELF) {
     if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
       if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Highshelf/Lowshelf does not support Bandwidth steepness type");
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "Highshelf/Lowshelf does not support Bandwidth steepness type");
       }
       return -1;
     }
   }
 
   // 1. Check Frequency (matching Rust validate_config match block 1)
-  bool has_standard_freq = 
-      (params->type == BIQUAD_TYPE_HIGHPASS ||
-       params->type == BIQUAD_TYPE_LOWPASS ||
-       params->type == BIQUAD_TYPE_HIGHPASS_FO ||
-       params->type == BIQUAD_TYPE_LOWPASS_FO ||
-       params->type == BIQUAD_TYPE_PEAKING ||
-       params->type == BIQUAD_TYPE_HIGHSHELF ||
-       params->type == BIQUAD_TYPE_LOWSHELF ||
-       params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
-       params->type == BIQUAD_TYPE_LOWSHELF_FO ||
-       params->type == BIQUAD_TYPE_NOTCH ||
-       params->type == BIQUAD_TYPE_BANDPASS ||
-       params->type == BIQUAD_TYPE_ALLPASS ||
-       params->type == BIQUAD_TYPE_ALLPASS_FO);
+  bool has_standard_freq = (params->type == BIQUAD_TYPE_HIGHPASS ||
+                            params->type == BIQUAD_TYPE_LOWPASS ||
+                            params->type == BIQUAD_TYPE_HIGHPASS_FO ||
+                            params->type == BIQUAD_TYPE_LOWPASS_FO ||
+                            params->type == BIQUAD_TYPE_PEAKING ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF ||
+                            params->type == BIQUAD_TYPE_LOWSHELF ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+                            params->type == BIQUAD_TYPE_LOWSHELF_FO ||
+                            params->type == BIQUAD_TYPE_NOTCH ||
+                            params->type == BIQUAD_TYPE_BANDPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS_FO);
 
   if (has_standard_freq) {
     if (params->freq <= 0.0) {
@@ -484,7 +485,8 @@ static int biquad_config_validate(const filter_config_t* config,
     }
     if (params->slope > 12.0) {
       if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Slope must be <= 12.0");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Slope must be <= 12.0");
       }
       return -1;
     }
@@ -494,13 +496,15 @@ static int biquad_config_validate(const filter_config_t* config,
   if (params->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
     if (params->freq_act <= 0.0 || params->freq_target <= 0.0) {
       if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Frequency must be > 0");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be > 0");
       }
       return -1;
     }
     if (params->freq_act >= nyquist || params->freq_target >= nyquist) {
       if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Frequency must be < samplerate/2");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be < samplerate/2");
       }
       return -1;
     }

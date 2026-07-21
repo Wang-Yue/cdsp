@@ -801,13 +801,15 @@ static int async_sinc_resampler_config_validate(
   bool has_profile = config->has_profile;
 
   if (has_free && has_profile) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSinc: cannot specify both profile and free parameters");
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSinc: cannot specify both profile and free parameters");
     return -1;
   }
   if (!has_free && !has_profile) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "AsyncSinc: must specify either profile or free parameters");
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "AsyncSinc: must specify either profile or free parameters");
     return -1;
   }
   if (config->has_window) {

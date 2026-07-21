@@ -140,7 +140,8 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
   if (attack_samples > (double)sample_rate) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Lookahead limiter attack time must be less than or equal to 1 second.");
+                       "Lookahead limiter attack time must be less than or "
+                       "equal to 1 second.");
     }
     return -1;
   }

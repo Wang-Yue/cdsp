@@ -95,24 +95,32 @@ TEST(LoudnessFilterStateTransferBug) {
   processing_parameters_t* proc_params = processing_parameters_create(2, 2);
 
   // Set initial volume for src: -20.0 dB
-  processing_parameters_set_current_volume_for_fader(proc_params, -20.0, FADER_MAIN);
-  filter_t* src = filter_create("loudness_src", &config, 48000, 256, proc_params, &err);
+  processing_parameters_set_current_volume_for_fader(proc_params, -20.0,
+                                                     FADER_MAIN);
+  filter_t* src =
+      filter_create("loudness_src", &config, 48000, 256, proc_params, &err);
   ASSERT_TRUE(src != NULL);
 
   // Set initial volume for dest: -10.0 dB
-  processing_parameters_set_current_volume_for_fader(proc_params, -10.0, FADER_MAIN);
-  filter_t* dest = filter_create("loudness_dest", &config, 48000, 256, proc_params, &err);
+  processing_parameters_set_current_volume_for_fader(proc_params, -10.0,
+                                                     FADER_MAIN);
+  filter_t* dest =
+      filter_create("loudness_dest", &config, 48000, 256, proc_params, &err);
   ASSERT_TRUE(dest != NULL);
 
-  // Now, change the target volume in proc_params to -20.0 dB, so that they both should run at -20.0 dB.
-  processing_parameters_set_current_volume_for_fader(proc_params, -20.0, FADER_MAIN);
+  // Now, change the target volume in proc_params to -20.0 dB, so that they both
+  // should run at -20.0 dB.
+  processing_parameters_set_current_volume_for_fader(proc_params, -20.0,
+                                                     FADER_MAIN);
 
   // Transfer state from src to dest.
-  // Since src's last_volume was -20.0 dB, this copies last_volume = -20.0 dB into dest.
+  // Since src's last_volume was -20.0 dB, this copies last_volume = -20.0 dB
+  // into dest.
   filter_transfer_state(dest, src);
 
   // Now, process a buffer with dest.
-  // The input buffer will contain a 50 Hz sine wave, where the low shelf boost is very audible.
+  // The input buffer will contain a 50 Hz sine wave, where the low shelf boost
+  // is very audible.
   double buffer_dest[256];
   double buffer_src[256];
   for (size_t i = 0; i < 256; i++) {
@@ -123,12 +131,13 @@ TEST(LoudnessFilterStateTransferBug) {
   // Process src (which was at -20.0 dB)
   filter_process(src, buffer_src, 256);
 
-  // Process dest (which is now at -20.0 dB current volume, and we transferred state)
+  // Process dest (which is now at -20.0 dB current volume, and we transferred
+  // state)
   filter_process(dest, buffer_dest, 256);
 
-  // If the bug is present, dest still has shelves for -10.0 dB, so its output will not match src's output.
-  // Specifically, low boost is 10 dB at -20.0 dB, but only 5 dB at -10.0 dB.
-  // So the outputs will be significantly different.
+  // If the bug is present, dest still has shelves for -10.0 dB, so its output
+  // will not match src's output. Specifically, low boost is 10 dB at -20.0 dB,
+  // but only 5 dB at -10.0 dB. So the outputs will be significantly different.
   for (size_t i = 0; i < 256; i++) {
     ASSERT_NEAR(buffer_src[i], buffer_dest[i], 1e-4);
   }
@@ -139,4 +148,3 @@ TEST(LoudnessFilterStateTransferBug) {
 }
 
 TEST_MAIN()
-

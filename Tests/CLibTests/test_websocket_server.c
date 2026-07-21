@@ -308,8 +308,6 @@ void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
   }
 }
 
-
-
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices,
                                 size_t* out_count) {
@@ -359,8 +357,9 @@ void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc) {
   if (desc) free(desc);
 }
 
-bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side, const uint32_t* channel,
-                       double min_freq, double max_freq, size_t n_bins,
+bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side,
+                       const uint32_t* channel, double min_freq,
+                       double max_freq, size_t n_bins,
                        cdsp_spectrum_t* out_spec) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
   if (!mock || !mock->get_spectrum) return false;
@@ -388,16 +387,12 @@ bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side, const ui
   return false;
 }
 
-
-
 void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
   if (spec) {
     if (spec->frequencies) free(spec->frequencies);
     if (spec->magnitudes) free(spec->magnitudes);
   }
 }
-
-
 
 float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
   const dsp_engine_t* mock = (const dsp_engine_t*)engine;
@@ -562,8 +557,7 @@ TEST(test_websocket_handle_command_direct) {
   cJSON* cmd = cJSON_GetObjectItem(root, "GetVersion");
   ASSERT_TRUE(cmd != NULL);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(cmd, "result")->valuestring);
-  ASSERT_STR_EQ("2.0.0",
-                cJSON_GetObjectItem(cmd, "value")->valuestring);
+  ASSERT_STR_EQ("2.0.0", cJSON_GetObjectItem(cmd, "value")->valuestring);
   cJSON_Delete(root);
 
   websocket_server_handle_command(server, 0, "\"GetState\"", resp,

@@ -121,7 +121,7 @@ static void on_capture_stream_state_changed(void* data,
 }
 
 static void on_capture_param_changed(void* data, uint32_t id,
-                                      const struct spa_pod* param) {
+                                     const struct spa_pod* param) {
   pipewire_capture_t* c = (pipewire_capture_t*)data;
   if (!c || id != SPA_PARAM_Format || !param) return;
   struct spa_audio_info info;
@@ -197,7 +197,7 @@ static void on_playback_stream_state_changed(void* data,
 }
 
 static void on_playback_param_changed(void* data, uint32_t id,
-                                       const struct spa_pod* param) {
+                                      const struct spa_pod* param) {
   pipewire_playback_t* p = (pipewire_playback_t*)data;
   if (!p || id != SPA_PARAM_Format || !param) return;
   struct spa_audio_info info;
@@ -488,8 +488,6 @@ static bool pipewire_capture_get_pending_rate_change(void* ctx,
   if (capture->loop) pw_thread_loop_unlock(capture->loop);
   return pending;
 }
-
-
 
 /**
  * @brief Check if pitch control is supported by the PipeWire capture backend.
@@ -941,8 +939,6 @@ static bool pipewire_playback_get_pending_rate_change(void* ctx,
   if (playback->loop) pw_thread_loop_unlock(playback->loop);
   return pending;
 }
-
-
 
 /**
  * @brief Prefill the PipeWire playback buffer with silence.
