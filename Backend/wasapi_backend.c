@@ -67,6 +67,7 @@ struct wasapi_capture {
   _Atomic bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
+  DWORD last_rate_check_time;
 };
 
 struct wasapi_playback {
@@ -104,6 +105,7 @@ struct wasapi_playback {
   _Atomic bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
+  DWORD last_rate_check_time;
 };
 
 // Custom COM IAudioSessionEvents implementation in C
@@ -408,6 +410,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
   atomic_init(&capture->stopped, false);
+  capture->last_rate_check_time = GetTickCount();
 
   HRESULT hr =
       CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
@@ -788,6 +791,16 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t frames_read = 0;
   DWORD start_time = GetTickCount();
 
+  DWORD now = GetTickCount();
+  if (now - capture->last_rate_check_time > 1000) {
+    capture->last_rate_check_time = now;
+    double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
+    if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
+      capture->pending_rate = mix_rate;
+      capture->has_pending_rate_change = true;
+    }
+  }
+
   // 1. Consume any remaining samples from the residual buffer
   if (capture->residual_frames > 0) {
     size_t to_copy = frames - frames_read;
@@ -1159,6 +1172,16 @@ static void* wasapi_playback_thread_func(void* arg) {
       continue;
     }
 
+    DWORD now = GetTickCount();
+    if (now - playback->last_rate_check_time > 1000) {
+      playback->last_rate_check_time = now;
+      double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+      if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+        playback->pending_rate = mix_rate;
+        playback->has_pending_rate_change = true;
+      }
+    }
+
     UINT32 padding = 0;
     if (!playback->exclusive) {
       HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
@@ -1258,9 +1281,9 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
   WAVEFORMATEX* final_wfx = NULL;
-  // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
+  playback->last_rate_check_time = GetTickCount();
 
   HRESULT hr =
       CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
@@ -1642,6 +1665,16 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   if (!playback) return false;
   if (atomic_load_explicit(&playback->paused, memory_order_acquire))
     return true;
+
+  DWORD now = GetTickCount();
+  if (now - playback->last_rate_check_time > 1000) {
+    playback->last_rate_check_time = now;
+    double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+    if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+      playback->pending_rate = mix_rate;
+      playback->has_pending_rate_change = true;
+    }
+  }
 
   if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
     if (err) {
