@@ -52,7 +52,7 @@ static void* async_sinc_resampler_create_impl(
 static void* async_sinc_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
-    config_error_t* err);
+    fixed_async_t fixed, config_error_t* err);
 
 struct async_sinc_resampler {
   size_t channels;
@@ -877,7 +877,8 @@ static void* async_sinc_resampler_create(const resampler_config_t* config,
       prof = resampler_profile_from_string(config->profile);
     }
     return async_sinc_resampler_create_from_profile(
-        channels, input_rate, output_rate, prof, chunk_size, 1.1, err);
+        channels, input_rate, output_rate, prof, chunk_size, 1.1, fixed_mode,
+        err);
   }
 }
 
@@ -897,7 +898,7 @@ const resampler_vtable_t g_async_sinc_resampler_vtable = {
 static void* async_sinc_resampler_create_from_profile(
     size_t channels, size_t input_rate, size_t output_rate,
     resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
-    config_error_t* err) {
+    fixed_async_t fixed, config_error_t* err) {
   size_t sinc_len = 192;
   size_t oversampling_factor = 512;
   window_function_t window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
@@ -935,5 +936,5 @@ static void* async_sinc_resampler_create_from_profile(
   return async_sinc_resampler_create_impl(
       channels, input_rate, output_rate, sinc_len, oversampling_factor,
       interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
-      FIXED_ASYNC_OUTPUT, err);
+      fixed, err);
 }
