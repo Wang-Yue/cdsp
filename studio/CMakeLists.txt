@@ -131,7 +131,7 @@ include_directories(
 # Collect source files
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h")
 
-add_executable(MonitorQt ${SOURCES})
+add_executable(MonitorQt WIN32 ${SOURCES})
 
 if(APPLE)
     set_target_properties(MonitorQt PROPERTIES
