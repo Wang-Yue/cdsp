@@ -412,19 +412,33 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  REFERENCE_TIME duration = (REFERENCE_TIME)(((double)playback->chunk_size *
-                                              1.0 / playback->sample_rate) *
-                                             10000000.0);
-  if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    duration = 0;
+  REFERENCE_TIME duration = 0;
+  REFERENCE_TIME periodicity = 0;
+  REFERENCE_TIME def_period = 0, min_period = 0;
+  IAudioClient_GetDevicePeriod(playback->client, &def_period, &min_period);
+
+  if (playback->exclusive) {
+    REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
+        playback->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : &wfx);
+    if (playback->polling) {
+      duration = 8 * aligned_time;
+      periodicity = aligned_time;
+    } else {
+      duration = aligned_time;
+      periodicity = aligned_time;
+    }
+  } else {
+    duration = 8 * def_period;
+    periodicity = 0;
   }
+
   DWORD flags = 0;
   if (!playback->polling) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
 
   hr = IAudioClient_Initialize(playback->client, mode, flags, duration,
-                               playback->exclusive ? duration : 0,
+                               periodicity,
                                final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;

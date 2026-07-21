@@ -171,4 +171,42 @@ double wasapi_device_get_current_mix_rate(const char* device_name, bool is_captu
   return rate;
 }
 
+REFERENCE_TIME wasapi_calculate_aligned_period_near(
+    IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
+    const WAVEFORMATEXTENSIBLE* wfx) {
+  
+  REFERENCE_TIME def_period = 0, min_period = 0;
+  HRESULT hr = IAudioClient_GetDevicePeriod(client, &def_period, &min_period);
+  if (FAILED(hr)) {
+    return desired_period;
+  }
+  
+  REFERENCE_TIME adjusted_desired_period = desired_period > min_period ? desired_period : min_period;
+  uint32_t frame_bytes = wfx->Format.nBlockAlign;
+  
+  uint32_t period_alignment_bytes = frame_bytes;
+  if (align_bytes > 0) {
+    uint32_t a = frame_bytes, b = align_bytes;
+    while (b) {
+      uint32_t t = b;
+      b = a % b;
+      a = t;
+    }
+    period_alignment_bytes = (frame_bytes * align_bytes) / a;
+  }
+  
+  int64_t samplerate = wfx->Format.nSamplesPerSec;
+  int64_t period_alignment_frames = (int64_t)period_alignment_bytes / frame_bytes;
+  int64_t desired_period_frames = (adjusted_desired_period * samplerate + 5000000) / 10000000;
+  int64_t min_period_frames = (min_period * samplerate + 9999999) / 10000000;
+  
+  int64_t nbr_segments = desired_period_frames / period_alignment_frames;
+  if (nbr_segments * period_alignment_frames < min_period_frames) {
+    nbr_segments++;
+  }
+  
+  REFERENCE_TIME aligned_period = (REFERENCE_TIME)((period_alignment_frames * nbr_segments * 10000000 + (samplerate / 2)) / samplerate);
+  return aligned_period;
+}
+
 #endif // ENABLE_WASAPI

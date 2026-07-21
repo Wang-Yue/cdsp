@@ -71,6 +71,19 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
  */
 double wasapi_device_get_current_mix_rate(const char* device_name, bool is_capture);
 
+/**
+ * @brief Calculates the closest hardware period aligned to a given frame/byte boundary.
+ *
+ * @param client Pointer to the active IAudioClient.
+ * @param desired_period The desired periodicity/buffer duration in 100ns units.
+ * @param align_bytes Optional byte alignment constraint (e.g. 128 bytes). Pass 0 for no alignment constraint.
+ * @param wfx The extensible wave format descriptor of the stream.
+ * @return The aligned period in 100ns units.
+ */
+REFERENCE_TIME wasapi_calculate_aligned_period_near(
+    IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
+    const WAVEFORMATEXTENSIBLE* wfx);
+
 #endif // ENABLE_WASAPI
 
 #endif // CLIB_BACKEND_WASAPI_DEVICE_H

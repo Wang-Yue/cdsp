@@ -269,12 +269,26 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  REFERENCE_TIME duration =
-      (REFERENCE_TIME)(((double)capture->chunk_size / capture->sample_rate) *
-                       10000000.0);
-  if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    duration = 0;
+  REFERENCE_TIME duration = 0;
+  REFERENCE_TIME periodicity = 0;
+  REFERENCE_TIME def_period = 0, min_period = 0;
+  IAudioClient_GetDevicePeriod(capture->client, &def_period, &min_period);
+
+  if (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) {
+    REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
+        capture->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : &wfx);
+    if (capture->polling) {
+      duration = 8 * aligned_time;
+      periodicity = aligned_time;
+    } else {
+      duration = aligned_time;
+      periodicity = aligned_time;
+    }
+  } else {
+    duration = 8 * def_period;
+    periodicity = 0;
   }
+
   DWORD flags = (capture->loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0);
   if (!capture->polling) {
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
@@ -282,7 +296,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   hr = IAudioClient_Initialize(
       capture->client, mode, flags, duration,
-      (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) ? duration : 0,
+      periodicity,
       final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;
