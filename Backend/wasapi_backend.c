@@ -961,6 +961,12 @@ static bool wasapi_capture_get_pending_rate_change(void* ctx,
   if (!capture) return false;
   bool changed = capture->has_pending_rate_change;
   if (changed) {
+    if (capture->pending_rate == 0.0) {
+      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
+      if (mix_rate > 0.0) {
+        capture->pending_rate = mix_rate;
+      }
+    }
     if (out_rate) {
       *out_rate = capture->pending_rate;
     }
@@ -1893,6 +1899,12 @@ static bool wasapi_playback_get_pending_rate_change(void* ctx,
   if (!playback) return false;
   bool changed = playback->has_pending_rate_change;
   if (changed) {
+    if (playback->pending_rate == 0.0) {
+      double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+      if (mix_rate > 0.0) {
+        playback->pending_rate = mix_rate;
+      }
+    }
     if (out_rate) {
       *out_rate = playback->pending_rate;
     }
