@@ -190,7 +190,10 @@ session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
     IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
   CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
-  if (DisconnectReason == DisconnectReasonFormatChanged) {
+  logger_info(&g_logger, "DEBUG: session_OnSessionDisconnected called, reason=%d, is_capture=%d",
+              (int)DisconnectReason, (int)self->is_capture);
+  if (DisconnectReason == DisconnectReasonFormatChanged ||
+      DisconnectReason == DisconnectReasonServerShutdown) {
     if (self->is_capture) {
       struct wasapi_capture* capture = (struct wasapi_capture*)self->parent;
       capture->pending_rate = 0.0;  // 0.0 signals format change reload
@@ -400,6 +403,7 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
 static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
+  WAVEFORMATEX* final_wfx = NULL;
   // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
@@ -429,6 +433,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   hr = IMMDevice_Activate(capture->mm_device, &IID_IAudioClient, CLSCTX_ALL,
                           NULL, (void**)&capture->client);
+
+
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -452,21 +458,34 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   wfx.dwChannelMask =
       (capture->channels == 2) ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT) : 0;
 
-  // WASAPI Shared mode usually only supports IEEE Float formats.
-  // Exclusive mode can support raw PCM.
   bool format_found = false;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    wfx.Format.wBitsPerSample = 32;
-    wfx.Format.nBlockAlign = 4 * capture->channels;
-    wfx.Format.nAvgBytesPerSec = capture->sample_rate * wfx.Format.nBlockAlign;
-    wfx.Samples.wValidBitsPerSample = 32;
-    wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+    WAVEFORMATEX* mix_wfx = NULL;
+    hr = IAudioClient_GetMixFormat(capture->client, &mix_wfx);
+    if (SUCCEEDED(hr) && mix_wfx) {
+      size_t full_size = sizeof(WAVEFORMATEX) + mix_wfx->cbSize;
+      final_wfx = (WAVEFORMATEX*)CoTaskMemAlloc(full_size);
+      if (final_wfx) {
+        memcpy(final_wfx, mix_wfx, full_size);
+        final_wfx->nSamplesPerSec = capture->sample_rate;
+        final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
 
-    capture->bits_per_sample = 32;
-    capture->valid_bits = 32;
-    capture->is_float = true;
-    format_found = true;
-  } else {
+        capture->bits_per_sample = final_wfx->wBitsPerSample;
+        if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+          WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
+          capture->valid_bits = ext->Samples.wValidBitsPerSample;
+          capture->is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+        } else {
+          capture->valid_bits = final_wfx->wBitsPerSample;
+          capture->is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
+        }
+        format_found = true;
+      }
+      CoTaskMemFree(mix_wfx);
+    }
+  }
+
+  if (!format_found) {
     if (capture->format == WASAPI_SAMPLE_FORMAT_S16) {
       wfx.Format.wBitsPerSample = 16;
       wfx.Format.nBlockAlign = 2 * capture->channels;
@@ -556,14 +575,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
       (REFERENCE_TIME)(((double)capture->chunk_size / capture->sample_rate) *
                        10000000.0);
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    REFERENCE_TIME def_time = 0, min_time = 0;
-    if (SUCCEEDED(IAudioClient_GetDevicePeriod(capture->client, &def_time,
-                                               &min_time)) &&
-        def_time > 0) {
-      duration = 8 * def_time;
-    } else {
-      duration = 0;
-    }
+    duration = 0;
   }
   DWORD flags = (capture->loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0);
   if (!capture->polling) {
@@ -573,9 +585,34 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   hr = IAudioClient_Initialize(
       capture->client, mode, flags, duration,
-      (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) ? duration : 0, (WAVEFORMATEX*)&wfx,
-      NULL);
+      (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) ? duration : 0,
+      final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
   if (FAILED(hr)) {
+    WAVEFORMATEX* mix_wfx = NULL;
+    if (SUCCEEDED(IAudioClient_GetMixFormat(capture->client, &mix_wfx)) && mix_wfx) {
+      if (mix_wfx->wFormatTag == 65534) {
+        WAVEFORMATEXTENSIBLE* wfx_ext = (WAVEFORMATEXTENSIBLE*)mix_wfx;
+        LPOLESTR subformat_str = NULL;
+        StringFromCLSID(&wfx_ext->SubFormat, &subformat_str);
+        char fmt_buf[512];
+        snprintf(fmt_buf, sizeof(fmt_buf),
+                 "Capture mix format EXT: rate=%u, channels=%u, bits=%u, valid_bits=%u, subformat=%ls",
+                 (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
+                 (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)wfx_ext->Samples.wValidBitsPerSample,
+                 subformat_str);
+        logger_error(&g_logger, "%s", fmt_buf);
+        CoTaskMemFree(subformat_str);
+      } else {
+        logger_error(&g_logger, "Capture mix format std: rate=%u, channels=%u, bits=%u, tag=%u",
+                     (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
+                     (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)mix_wfx->wFormatTag);
+      }
+      CoTaskMemFree(mix_wfx);
+    }
+    REFERENCE_TIME debug_def = 0, debug_min = 0;
+    IAudioClient_GetDevicePeriod(capture->client, &debug_def, &debug_min);
+    logger_error(&g_logger, "Capture periods: def=%lld, min=%lld, requested_duration=%lld, flags=0x%08lX",
+                 (long long)debug_def, (long long)debug_min, (long long)duration, (unsigned long)flags);
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
@@ -649,9 +686,11 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   logger_info(&g_logger, "WASAPI capture options: loopback=%d, exclusive=%d",
               capture->loopback, capture->exclusive);
 
+  if (final_wfx) CoTaskMemFree(final_wfx);
   return true;
 
 error_cleanup:
+  if (final_wfx) CoTaskMemFree(final_wfx);
   if (capture->session_control) {
     SAFE_RELEASE(capture->session_control);
   }
@@ -691,6 +730,49 @@ error_cleanup:
  * @param err Pointer to a backend_error_t to receive error details on failure.
  * @return true if successful, false otherwise.
  */
+static double wasapi_device_get_current_mix_rate(const char* device_name, bool is_capture) {
+  IMMDeviceEnumerator* enumerator = NULL;
+  HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+                                &IID_IMMDeviceEnumerator, (void**)&enumerator);
+  if (FAILED(hr)) return 0.0;
+
+  IMMDevice* mm_device = wasapi_find_device_by_name(enumerator, device_name, is_capture);
+  if (!mm_device) {
+    enumerator->lpVtbl->Release(enumerator);
+    return 0.0;
+  }
+
+  IAudioClient* client = NULL;
+  logger_info(&g_logger, "DEBUG: wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
+              device_name[0] != '\0' ? device_name : "default", (int)is_capture);
+  for (int i = 0; i < 40; i++) {
+    hr = mm_device->lpVtbl->Activate(mm_device, &IID_IAudioClient,
+                                     CLSCTX_ALL, NULL, (void**)&client);
+    if (SUCCEEDED(hr) && client) {
+      WAVEFORMATEX* wfx = NULL;
+      hr = IAudioClient_GetMixFormat(client, &wfx);
+      if (SUCCEEDED(hr) && wfx) {
+        double rate = (double)wfx->nSamplesPerSec;
+        logger_info(&g_logger, "DEBUG: GetMixFormat succeeded, rate=%f", rate);
+        CoTaskMemFree(wfx);
+        client->lpVtbl->Release(client);
+        mm_device->lpVtbl->Release(mm_device);
+        enumerator->lpVtbl->Release(enumerator);
+        return rate;
+      }
+      logger_info(&g_logger, "DEBUG: GetMixFormat failed: hr=0x%08lX", (unsigned long)hr);
+      client->lpVtbl->Release(client);
+    } else {
+      logger_info(&g_logger, "DEBUG: Activate failed: hr=0x%08lX", (unsigned long)hr);
+    }
+    cdsp_sleep_ms(100);
+  }
+
+  mm_device->lpVtbl->Release(mm_device);
+  enumerator->lpVtbl->Release(enumerator);
+  return 0.0;
+}
+
 static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                                 backend_error_t* err) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
@@ -734,6 +816,11 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       return false;
     }
     if (GetTickCount() - start_time > 1000) {
+      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
+      if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
+        capture->pending_rate = mix_rate;
+        capture->has_pending_rate_change = true;
+      }
       if (err) {
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                            "WASAPI capture timeout (device stalled)");
@@ -746,6 +833,16 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     HRESULT hr = IAudioCaptureClient_GetNextPacketSize(capture->capture_client,
                                                        &packet_size);
     if (FAILED(hr)) {
+      if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
+        capture->pending_rate = 0.0;
+        capture->has_pending_rate_change = true;
+      } else {
+        double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
+        if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
+          capture->pending_rate = mix_rate;
+          capture->has_pending_rate_change = true;
+        }
+      }
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                            "Failed to get packet size");
@@ -1061,7 +1158,18 @@ static void* wasapi_playback_thread_func(void* arg) {
     UINT32 padding = 0;
     if (!playback->exclusive) {
       HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
-      if (FAILED(hr)) continue;
+      if (FAILED(hr)) {
+        if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+            hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+            hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+          double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+          if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+            playback->pending_rate = mix_rate;
+            playback->has_pending_rate_change = true;
+          }
+        }
+        continue;
+      }
     }
 
     UINT32 to_write = playback->exclusive
@@ -1076,6 +1184,17 @@ static void* wasapi_playback_thread_func(void* arg) {
     BYTE* data = NULL;
     HRESULT hr =
         IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
+    if (FAILED(hr)) {
+      if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+          hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+          hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+        double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+        if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+          playback->pending_rate = mix_rate;
+          playback->has_pending_rate_change = true;
+        }
+      }
+    }
     if (SUCCEEDED(hr) && data) {
       static DWORD last_write_time = 0;
       DWORD now = GetTickCount();
@@ -1133,6 +1252,7 @@ static void* wasapi_playback_thread_func(void* arg) {
 static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
+  WAVEFORMATEX* final_wfx = NULL;
   // Initialize COM library for multithreaded operations.
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
@@ -1161,6 +1281,8 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   hr = IMMDevice_Activate(playback->mm_device, &IID_IAudioClient, CLSCTX_ALL,
                           NULL, (void**)&playback->client);
+
+
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -1183,21 +1305,34 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
                           ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT)
                           : 0;
 
-  // WASAPI Shared mode usually only supports IEEE Float formats.
-  // Exclusive mode can support raw PCM.
   bool format_found = false;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    wfx.Format.wBitsPerSample = 32;
-    wfx.Format.nBlockAlign = 4 * playback->channels;
-    wfx.Format.nAvgBytesPerSec = playback->sample_rate * wfx.Format.nBlockAlign;
-    wfx.Samples.wValidBitsPerSample = 32;
-    wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+    WAVEFORMATEX* mix_wfx = NULL;
+    hr = IAudioClient_GetMixFormat(playback->client, &mix_wfx);
+    if (SUCCEEDED(hr) && mix_wfx) {
+      size_t full_size = sizeof(WAVEFORMATEX) + mix_wfx->cbSize;
+      final_wfx = (WAVEFORMATEX*)CoTaskMemAlloc(full_size);
+      if (final_wfx) {
+        memcpy(final_wfx, mix_wfx, full_size);
+        final_wfx->nSamplesPerSec = playback->sample_rate;
+        final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
 
-    playback->bits_per_sample = 32;
-    playback->valid_bits = 32;
-    playback->is_float = true;
-    format_found = true;
-  } else {
+        playback->bits_per_sample = final_wfx->wBitsPerSample;
+        if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+          WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
+          playback->valid_bits = ext->Samples.wValidBitsPerSample;
+          playback->is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+        } else {
+          playback->valid_bits = final_wfx->wBitsPerSample;
+          playback->is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
+        }
+        format_found = true;
+      }
+      CoTaskMemFree(mix_wfx);
+    }
+  }
+
+  if (!format_found) {
     if (playback->format == WASAPI_SAMPLE_FORMAT_S16) {
       wfx.Format.wBitsPerSample = 16;
       wfx.Format.nBlockAlign = 2 * playback->channels;
@@ -1287,14 +1422,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
                                               1.0 / playback->sample_rate) *
                                              10000000.0);
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    REFERENCE_TIME def_time = 0, min_time = 0;
-    if (SUCCEEDED(IAudioClient_GetDevicePeriod(playback->client, &def_time,
-                                               &min_time)) &&
-        def_time > 0) {
-      duration = 8 * def_time;
-    } else {
-      duration = 0;
-    }
+    duration = 0;
   }
   DWORD flags = 0;
   if (!playback->polling) {
@@ -1304,20 +1432,33 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   hr = IAudioClient_Initialize(playback->client, mode, flags, duration,
                                playback->exclusive ? duration : 0,
-                               (WAVEFORMATEX*)&wfx, NULL);
+                               final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;
-    if (SUCCEEDED(IAudioClient_GetMixFormat(playback->client, &mix_wfx)) &&
-        mix_wfx) {
-      logger_error(&g_logger,
-                   "WASAPI playback device mix format: rate=%u, channels=%u, "
-                   "bits=%u, tag=%u",
-                   (unsigned int)mix_wfx->nSamplesPerSec,
-                   (unsigned int)mix_wfx->nChannels,
-                   (unsigned int)mix_wfx->wBitsPerSample,
-                   (unsigned int)mix_wfx->wFormatTag);
+    if (SUCCEEDED(IAudioClient_GetMixFormat(playback->client, &mix_wfx)) && mix_wfx) {
+      if (mix_wfx->wFormatTag == 65534) {
+        WAVEFORMATEXTENSIBLE* wfx_ext = (WAVEFORMATEXTENSIBLE*)mix_wfx;
+        LPOLESTR subformat_str = NULL;
+        StringFromCLSID(&wfx_ext->SubFormat, &subformat_str);
+        char fmt_buf[512];
+        snprintf(fmt_buf, sizeof(fmt_buf),
+                 "Playback mix format EXT: rate=%u, channels=%u, bits=%u, valid_bits=%u, subformat=%ls",
+                 (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
+                 (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)wfx_ext->Samples.wValidBitsPerSample,
+                 subformat_str);
+        logger_error(&g_logger, "%s", fmt_buf);
+        CoTaskMemFree(subformat_str);
+      } else {
+        logger_error(&g_logger, "Playback mix format std: rate=%u, channels=%u, bits=%u, tag=%u",
+                     (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
+                     (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)mix_wfx->wFormatTag);
+      }
       CoTaskMemFree(mix_wfx);
     }
+    REFERENCE_TIME debug_def = 0, debug_min = 0;
+    IAudioClient_GetDevicePeriod(playback->client, &debug_def, &debug_min);
+    logger_error(&g_logger, "Playback periods: def=%lld, min=%lld, requested_duration=%lld, flags=0x%08lX",
+                 (long long)debug_def, (long long)debug_min, (long long)duration, (unsigned long)flags);
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
@@ -1433,10 +1574,11 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   }
-
+  if (final_wfx) CoTaskMemFree(final_wfx);
   return true;
 
 error_cleanup:
+  if (final_wfx) CoTaskMemFree(final_wfx);
   if (playback->thread_running) {
     atomic_store_explicit(&playback->thread_running, false,
                           memory_order_release);
@@ -1559,6 +1701,16 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
         frames_written += to_write;
       } else {
+        if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
+          playback->pending_rate = 0.0;
+          playback->has_pending_rate_change = true;
+        } else {
+          double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+          if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+            playback->pending_rate = mix_rate;
+            playback->has_pending_rate_change = true;
+          }
+        }
         logger_error(&g_logger,
                      "IAudioRenderClient_GetBuffer failed: hr=0x%08lX "
                      "(to_write=%u, available=%u)",

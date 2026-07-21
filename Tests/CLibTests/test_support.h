@@ -30,7 +30,15 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
     const char* temp_env = getenv("TEMP");
     if (!temp_env) temp_env = getenv("TMP");
     if (temp_env) {
-      (snprintf)(win_format, sizeof(win_format), "%s\\%s", temp_env, format + 5);
+      char clean_temp[512];
+      strncpy(clean_temp, temp_env, sizeof(clean_temp) - 1);
+      clean_temp[sizeof(clean_temp) - 1] = '\0';
+      for (int i = 0; clean_temp[i] != '\0'; i++) {
+        if (clean_temp[i] == '\\') {
+          clean_temp[i] = '/';
+        }
+      }
+      (snprintf)(win_format, sizeof(win_format), "%s/%s", clean_temp, format + 5);
     } else {
       (snprintf)(win_format, sizeof(win_format), "./%s", format + 5);
     }

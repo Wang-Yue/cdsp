@@ -380,6 +380,24 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
+      // Check if there is a pending format change first
+      double rate = 0.0;
+      if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
+        if (!loop->has_last_observed_playback_pending_rate ||
+            rate != loop->last_observed_playback_pending_rate) {
+          loop->last_observed_playback_pending_rate = rate;
+          loop->has_last_observed_playback_pending_rate = true;
+          logger_warn(&g_logger,
+                      "Playback device rate changed to %f Hz during write error; stopping engine",
+                      rate);
+          processing_stop_reason_t reason = {
+              .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,
+              .format_change_rate = (int)(rate + 0.5)};
+          engine_shared_state_request_stop(loop->shared, reason);
+          reached_eos = false;
+          break;
+        }
+      }
       // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
       // Step 1: Playback thread detects a hardware write error. Requests stop
       // with PLAYBACK_ERROR, which immediately transitions state to INACTIVE

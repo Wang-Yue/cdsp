@@ -160,6 +160,20 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   }
   // If reading fails with an error, trigger an engine stop.
   if (err->type != BACKEND_ERROR_NONE) {
+    // Check if there is a pending rate change first (e.g. from service invalidation/format changes)
+    double rate = 0.0;
+    if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {
+      if (fabs(rate - (double)loop->samplerate) >= 0.5) {
+        logger_warn(&g_logger,
+                    "Capture device rate changed to %f Hz during read error; stopping engine",
+                    rate);
+        processing_stop_reason_t reason = {
+            .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
+            .format_change_rate = (int)(rate + 0.5)};
+        engine_shared_state_request_stop(loop->shared, reason);
+        return true;
+      }
+    }
     // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
     // Step 1: Capture thread detects a hardware read error, requests stop with
     // CAPTURE_ERROR, which immediately transitions state to INACTIVE and wakes

@@ -2838,6 +2838,7 @@ TEST(DSPEngineE2E_ASIOSampleRateChange) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        printf("ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n", stop_reason.type, stop_reason.message);
         if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
@@ -4179,7 +4180,7 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 // Define property keys locally to avoid missing header errors on some
 // environments
 
-static bool wasapi_device_set_sample_rate(EDataFlow flow, int sample_rate) {
+static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
 
@@ -4216,7 +4217,7 @@ static bool wasapi_device_set_sample_rate(EDataFlow flow, int sample_rate) {
                 temp_store, &friendly_name_key, &nameProp)) &&
             nameProp.vt == VT_LPWSTR) {
           if (wcsstr(nameProp.pwszVal, L"CABLE") != NULL) {
-            device = temp_device;  // Found VB-Cable!
+            device = temp_device;
             PropVariantClear(&nameProp);
             temp_store->lpVtbl->Release(temp_store);
             break;
@@ -4231,7 +4232,6 @@ static bool wasapi_device_set_sample_rate(EDataFlow flow, int sample_rate) {
   }
 
   if (!device) {
-    // Fallback to default audio endpoint
     hr = enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, flow, eConsole,
                                                      &device);
   }
@@ -4242,89 +4242,111 @@ static bool wasapi_device_set_sample_rate(EDataFlow flow, int sample_rate) {
     return false;
   }
 
+  int old_rate = 48000;
+  IAudioClient* client = NULL;
+  hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&client);
+  if (SUCCEEDED(hr) && client) {
+    WAVEFORMATEX* wfx = NULL;
+    hr = client->lpVtbl->GetMixFormat(client, &wfx);
+    if (SUCCEEDED(hr) && wfx) {
+      old_rate = (int)wfx->nSamplesPerSec;
+      CoTaskMemFree(wfx);
+    }
+    client->lpVtbl->Release(client);
+  }
+
+  if (old_rate == sample_rate) {
+    device->lpVtbl->Release(device);
+    if (com_ok) CoUninitialize();
+    return true;
+  }
+
   IPropertyStore* store = NULL;
   hr = device->lpVtbl->OpenPropertyStore(device, STGM_READWRITE, &store);
-  device->lpVtbl->Release(device);
   if (FAILED(hr)) {
+    device->lpVtbl->Release(device);
     if (com_ok) CoUninitialize();
     return false;
   }
+  device->lpVtbl->Release(device);
 
-  {
-    PROPVARIANT nameProp;
-    PropVariantInit(&nameProp);
-    PROPERTYKEY K_PKEY_Device_FriendlyName = {
-        {0xa45c254e,
-         0xdf1c,
-         0x4efd,
-         {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}},
-        14};
-    hr = store->lpVtbl->GetValue(store, &K_PKEY_Device_FriendlyName, &nameProp);
-    if (SUCCEEDED(hr) && nameProp.vt == VT_LPWSTR) {
-      printf("ℹ️ debug: Default %s device friendly name: %ls\n",
-             (flow == eCapture) ? "Capture" : "Playback", nameProp.pwszVal);
-    }
-    PropVariantClear(&nameProp);
-  }
+  DWORD prop_count = 0;
+  store->lpVtbl->GetCount(store, &prop_count);
+  bool modified = false;
 
-  // 1. Update Device Format
-  PROPVARIANT prop;
-  PropVariantInit(&prop);
-  hr = store->lpVtbl->GetValue(store, &PKEY_AudioEngine_DeviceFormat, &prop);
-  if (SUCCEEDED(hr) && prop.vt == VT_BLOB) {
-    ULONG cbSize = prop.blob.cbSize;
-    BYTE* pLocalData = (BYTE*)CoTaskMemAlloc(cbSize);
-    if (pLocalData) {
-      memcpy(pLocalData, prop.blob.pBlobData, cbSize);
-      WAVEFORMATEX* wfx = (WAVEFORMATEX*)pLocalData;
-      printf("ℹ️ debug: %s initial sample rate was %d Hz, setting to %d Hz...\n",
-             (flow == eCapture) ? "Capture" : "Playback",
-             (int)wfx->nSamplesPerSec, sample_rate);
-      wfx->nSamplesPerSec = sample_rate;
-      wfx->nAvgBytesPerSec = wfx->nSamplesPerSec * wfx->nBlockAlign;
+  for (DWORD i = 0; i < prop_count; i++) {
+    PROPERTYKEY key;
+    hr = store->lpVtbl->GetAt(store, i, &key);
+    if (FAILED(hr)) continue;
 
-      // Clear original prop
-      PropVariantClear(&prop);
+    PROPVARIANT prop;
+    PropVariantInit(&prop);
+    hr = store->lpVtbl->GetValue(store, &key, &prop);
+    if (SUCCEEDED(hr) && prop.vt == VT_BLOB) {
+      if (prop.blob.cbSize >= sizeof(WAVEFORMATEX)) {
+        WAVEFORMATEX* wfx = (WAVEFORMATEX*)prop.blob.pBlobData;
+        if ((int)wfx->nSamplesPerSec == old_rate) {
+          ULONG cbSize = prop.blob.cbSize;
+          BYTE* pLocalData = (BYTE*)CoTaskMemAlloc(cbSize);
+          if (pLocalData) {
+            memcpy(pLocalData, prop.blob.pBlobData, cbSize);
+            WAVEFORMATEX* wfx_new = (WAVEFORMATEX*)pLocalData;
+            wfx_new->nSamplesPerSec = sample_rate;
+            wfx_new->nAvgBytesPerSec = wfx_new->nSamplesPerSec * wfx_new->nBlockAlign;
 
-      // Re-init with copy
-      PropVariantInit(&prop);
-      prop.vt = VT_BLOB;
-      prop.blob.cbSize = cbSize;
-      prop.blob.pBlobData = pLocalData;
+            PropVariantClear(&prop);
+            PropVariantInit(&prop);
+            prop.vt = VT_BLOB;
+            prop.blob.cbSize = cbSize;
+            prop.blob.pBlobData = pLocalData;
 
-      hr =
-          store->lpVtbl->SetValue(store, &PKEY_AudioEngine_DeviceFormat, &prop);
-      if (FAILED(hr)) {
-        printf("⚠️ debug: SetValue failed: HRESULT 0x%lx\n", hr);
+            hr = store->lpVtbl->SetValue(store, &key, &prop);
+            if (SUCCEEDED(hr)) {
+              modified = true;
+            }
+          }
+        }
       }
     }
-  } else {
-    printf("⚠️ debug: GetValue failed: HRESULT 0x%lx, vt %d\n", hr, prop.vt);
+    PropVariantClear(&prop);
   }
-  PropVariantClear(&prop);
 
-  hr = store->lpVtbl->Commit(store);
-  if (FAILED(hr)) {
-    printf("⚠️ debug: Commit failed: HRESULT 0x%lx\n", hr);
+  if (modified) {
+    hr = store->lpVtbl->Commit(store);
   }
   store->lpVtbl->Release(store);
   if (com_ok) CoUninitialize();
-  if (SUCCEEDED(hr)) {
-    system(
-        "powershell -Command \"Get-PnpDevice -FriendlyName 'VB-Audio Virtual "
-        "Cable' | Disable-PnpDevice -Confirm:$false; Get-PnpDevice "
-        "-FriendlyName 'VB-Audio Virtual Cable' | Enable-PnpDevice "
-        "-Confirm:$false\"");
-    cdsp_sleep_ms(500);  // Allow Windows Audio service to apply format changes
-  }
-  return SUCCEEDED(hr);
+
+  return modified && SUCCEEDED(hr);
+}
+
+static void wasapi_trigger_disconnect() {
+  printf("ℹ️ debug: Triggering disconnect by stopping AudioEndpointBuilder...\n");
+  system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force\"");
+}
+
+static bool wasapi_complete_rate_change(int sample_rate) {
+  printf("ℹ️ debug: Writing target formats to endpoint registry stores...\n");
+  bool cap_ok = wasapi_write_endpoint_formats(eCapture, sample_rate);
+  bool render_ok = wasapi_write_endpoint_formats(eRender, sample_rate);
+  printf("ℹ️ debug: Write endpoint formats: Capture=%d, Render=%d\n", cap_ok, render_ok);
+
+  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint properties...\n");
+  system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force; Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
+  Sleep(4000);
+  return cap_ok && render_ok;
+}
+
+static bool wasapi_set_both_rates(int sample_rate) {
+  system("powershell -Command \"Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
+  Sleep(1000);
+  return wasapi_complete_rate_change(sample_rate);
 }
 
 TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
-  if (!wasapi_device_set_sample_rate(eCapture, 48000) ||
-      !wasapi_device_set_sample_rate(eRender, 48000)) {
+  if (!wasapi_set_both_rates(48000)) {
     printf(
         "⚠️ [WASAPI Warning] Skipping WASAPI Loopback rate change test (Failed "
         "to set initial device rates)\n");
@@ -4384,14 +4406,16 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
+           "            \"device\": \"\",\n"
            "            \"channels\": 2,\n"
-           "            \"loopback\": true\n"
+           "            \"loopback\": true,\n"
+           "            \"polling\": true\n"
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
-           "            \"channels\": 2\n"
+           "            \"device\": \"\",\n"
+           "            \"channels\": 2,\n"
+           "            \"polling\": true\n"
            "        }\n"
            "    }\n"
            "}",
@@ -4424,13 +4448,7 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
       "ℹ️ debug: changing WASAPI playback device sample rate from %d Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  if (!wasapi_device_set_sample_rate(eRender, target_sr)) {
-    printf(
-        "⚠️ [WASAPI Warning] Skipping loopback test (Set sample rate failed)\n");
-    engine->stop(engine->ctx);
-    engine->free(engine->ctx);
-    return;
-  }
+  wasapi_trigger_disconnect();
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
@@ -4441,7 +4459,9 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+        printf("ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n", stop_reason.type, stop_reason.message);
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -4450,22 +4470,18 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
-  if (!rate_change_stopped) {
-    printf(
-        "ℹ️ [WASAPI Note] Rate change event not received. This is expected on "
-        "headless VMs using virtual drivers (like VB-Cable) because the OS "
-        "does not notify active streams of shared-mode format changes.\n");
-    engine->stop(engine->ctx);
-    engine->free(engine->ctx);
-    wasapi_device_set_sample_rate(eCapture, 48000);
-    wasapi_device_set_sample_rate(eRender, 48000);
-    return;
-  } else {
-    ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
-  }
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_TRUE(stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
+              stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE);
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
+
+  // Restart the services first, so they are running when we open the property store and write the formats
+  system("powershell -Command \"Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
+  Sleep(1000);
+
+  ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
 
   cdsp_sleep_ms(500);  // Allow Windows Audio service to apply the deferred
                        // format change once idle
@@ -4479,14 +4495,16 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
+           "            \"device\": \"\",\n"
            "            \"channels\": 2,\n"
-           "            \"loopback\": true\n"
+           "            \"loopback\": true,\n"
+           "            \"polling\": true\n"
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
-           "            \"channels\": 2\n"
+           "            \"device\": \"\",\n"
+           "            \"channels\": 2,\n"
+           "            \"polling\": true\n"
            "        }\n"
            "    }\n"
            "}",
@@ -4513,15 +4531,13 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
   engine->free(engine->ctx);
 
   // Restore initial rates
-  wasapi_device_set_sample_rate(eCapture, 48000);
-  wasapi_device_set_sample_rate(eRender, 48000);
+  wasapi_set_both_rates(48000);
 }
 
 TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
-  if (!wasapi_device_set_sample_rate(eCapture, 48000) ||
-      !wasapi_device_set_sample_rate(eRender, 48000)) {
+  if (!wasapi_set_both_rates(48000)) {
     printf(
         "⚠️ [WASAPI Warning] Skipping WASAPI Playback rate change test (Failed "
         "to set initial device rates)\n");
@@ -4539,13 +4555,16 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       "        \"chunksize\": 512,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Output (VB-Audio Virtual Cable)\",\n"
-      "            \"channels\": 2\n"
+      "            \"device\": \"\",\n"
+      "            \"channels\": 2,\n"
+      "            \"loopback\": true,\n"
+      "            \"polling\": true\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
-      "            \"channels\": 2\n"
+      "            \"device\": \"\",\n"
+      "            \"channels\": 2,\n"
+      "            \"polling\": true\n"
       "        }\n"
       "    }\n"
       "}",
@@ -4577,13 +4596,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       "ℹ️ debug: changing WASAPI playback device sample rate from %d Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  if (!wasapi_device_set_sample_rate(eRender, target_sr)) {
-    printf(
-        "⚠️ [WASAPI Warning] Skipping playback test (Set sample rate failed)\n");
-    engine->stop(engine->ctx);
-    engine->free(engine->ctx);
-    return;
-  }
+  wasapi_trigger_disconnect();
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
@@ -4594,7 +4607,8 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -4603,22 +4617,14 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
-  if (!rate_change_stopped) {
-    printf(
-        "ℹ️ [WASAPI Note] Rate change event not received. This is expected on "
-        "headless VMs using virtual drivers (like VB-Cable) because the OS "
-        "does not notify active streams of shared-mode format changes.\n");
-    engine->stop(engine->ctx);
-    engine->free(engine->ctx);
-    wasapi_device_set_sample_rate(eCapture, 48000);
-    wasapi_device_set_sample_rate(eRender, 48000);
-    return;
-  } else {
-    ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
-  }
+  ASSERT_TRUE(rate_change_stopped);
+  ASSERT_TRUE(stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+              stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE);
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
+
+  ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
 
   cdsp_sleep_ms(500);  // Allow Windows Audio service to apply the deferred
                        // format change once idle
@@ -4633,13 +4639,16 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       "        \"chunksize\": 512,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Output (VB-Audio Virtual Cable)\",\n"
-      "            \"channels\": 2\n"
+      "            \"device\": \"\",\n"
+      "            \"channels\": 2,\n"
+      "            \"loopback\": true,\n"
+      "            \"polling\": true\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
-      "            \"channels\": 2\n"
+      "            \"device\": \"\",\n"
+      "            \"channels\": 2,\n"
+      "            \"polling\": true\n"
       "        }\n"
       "    }\n"
       "}",
@@ -4666,8 +4675,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   engine->free(engine->ctx);
 
   // Restore initial rates
-  wasapi_device_set_sample_rate(eCapture, 48000);
-  wasapi_device_set_sample_rate(eRender, 48000);
+  wasapi_set_both_rates(48000);
 }
 #endif
 
