@@ -250,6 +250,15 @@ static inline void logger_debug_impl(const logger_t* logger, const char* msg,
                  a1, a2, a3, a4);
 }
 
+/**
+ * @brief Implementation function for logging a trace message.
+ * @param logger Pointer to the logger handle.
+ * @param msg Message format string.
+ * @param a1 First optional argument.
+ * @param a2 Second optional argument.
+ * @param a3 Third optional argument.
+ * @param a4 Fourth optional argument.
+ */
 static inline void logger_trace_impl(const logger_t* logger, const char* msg,
                                      log_argument_t a1, log_argument_t a2,
                                      log_argument_t a3, log_argument_t a4) {

@@ -362,6 +362,21 @@ static inline void encode_samples_to_wasapi(BYTE* dst,
  * @return true if successful, false otherwise.
  */
 
+/**
+ * @brief Sets up the wave format structure for WASAPI shared-mode streams.
+ *
+ * Retrieves the device's native mix format, allocates COM memory to create a copy,
+ * overrides the sample rate with the user-configured target rate, and decodes the
+ * bit depth, validity, and floating-point status of the format.
+ *
+ * @param client Pointer to the active IAudioClient.
+ * @param target_sample_rate The target sample rate configured by the user.
+ * @param out_final_wfx Output pointer to receive the allocated WAVEFORMATEX structure.
+ * @param out_bits_per_sample Output pointer to receive the bits per sample value.
+ * @param out_valid_bits Output pointer to receive the valid bits per sample value.
+ * @param out_is_float Output pointer to receive whether the format is floating-point.
+ * @return true if format setup succeeded, false otherwise.
+ */
 static bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
                                        WAVEFORMATEX** out_final_wfx,
                                        int* out_bits_per_sample,
