@@ -175,6 +175,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
       (capture->channels == 2) ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT) : 0;
 
   bool format_found = false;
+  WAVEFORMATEX std_wfx = {0};
+  bool use_ext = true;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
     format_found = wasapi_setup_shared_format(capture->client, capture->sample_rate,
                                               &final_wfx,
@@ -191,9 +193,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 16;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(capture->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
         capture->bits_per_sample = 16;
         capture->valid_bits = 16;
         capture->is_float = false;
@@ -206,9 +206,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(capture->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
         capture->bits_per_sample = 32;
         capture->valid_bits = 32;
         capture->is_float = false;
@@ -221,9 +219,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
-      hr = IAudioClient_IsFormatSupported(capture->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
         capture->bits_per_sample = 32;
         capture->valid_bits = 32;
         capture->is_float = true;
@@ -236,9 +232,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 24;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(capture->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
         capture->bits_per_sample = 24;
         capture->valid_bits = 24;
         capture->is_float = false;
@@ -250,9 +244,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
             capture->sample_rate * wfx.Format.nBlockAlign;
         wfx.Samples.wValidBitsPerSample = 24;
         wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-        hr = IAudioClient_IsFormatSupported(capture->client, mode,
-                                            (WAVEFORMATEX*)&wfx, NULL);
-        if (SUCCEEDED(hr)) {
+        if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
           capture->bits_per_sample = 32;
           capture->valid_bits = 24;
           capture->is_float = false;
@@ -276,7 +268,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   if (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) {
     REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
-        capture->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : &wfx);
+        capture->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : (use_ext ? &wfx : (WAVEFORMATEXTENSIBLE*)&std_wfx));
     if (capture->polling) {
       duration = 8 * aligned_time;
       periodicity = aligned_time;
@@ -297,7 +289,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   hr = IAudioClient_Initialize(
       capture->client, mode, flags, duration,
       periodicity,
-      final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
+      final_wfx ? final_wfx : (use_ext ? (WAVEFORMATEX*)&wfx : &std_wfx), NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;
     if (SUCCEEDED(IAudioClient_GetMixFormat(capture->client, &mix_wfx)) && mix_wfx) {
@@ -482,22 +474,24 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
       return false;
     }
-    if (GetTickCount() - start_time > 1000) {
-      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
-      if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
-        capture->pending_rate = mix_rate;
-        capture->has_pending_rate_change = true;
-      }
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                           "WASAPI capture timeout (device stalled)");
-      }
-      return false;
+    if (GetTickCount() - start_time > 250) {
+      audio_chunk_set_valid_frames(chunk, 0);
+      return true;
     }
 
     UINT32 packet_size = 0;
-    HRESULT hr = IAudioCaptureClient_GetNextPacketSize(capture->capture_client,
-                                                       &packet_size);
+    HRESULT hr = S_OK;
+    if (capture->exclusive) {
+      if (capture->polling) {
+        hr = IAudioClient_GetCurrentPadding(capture->client, &packet_size);
+      } else {
+        packet_size = capture->buffer_frame_count;
+        hr = S_OK;
+      }
+    } else {
+      hr = IAudioCaptureClient_GetNextPacketSize(capture->capture_client,
+                                                 &packet_size);
+    }
     if (FAILED(hr)) {
       double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
       if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
@@ -558,7 +552,7 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       if (capture->polling) {
         cdsp_sleep_ms(1);
       } else {
-        if (!cdsp_sem_timedwait(capture->semaphore, 2000)) {
+        if (!cdsp_sem_timedwait(capture->semaphore, 250)) {
           // Timeout or error wait
         }
       }

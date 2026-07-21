@@ -181,7 +181,7 @@ static void* wasapi_playback_thread_func(void* arg) {
     }
 
     UINT32 padding = 0;
-    if (!playback->exclusive) {
+    if (!playback->exclusive || playback->polling) {
       HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
       if (FAILED(hr)) {
         if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
@@ -197,7 +197,7 @@ static void* wasapi_playback_thread_func(void* arg) {
       }
     }
 
-    UINT32 to_write = playback->exclusive
+    UINT32 to_write = (playback->exclusive && !playback->polling)
                           ? playback->buffer_frame_count
                           : (playback->buffer_frame_count - padding);
     if (to_write == 0) continue;
@@ -318,6 +318,8 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
                           : 0;
 
   bool format_found = false;
+  WAVEFORMATEX std_wfx = {0};
+  bool use_ext = true;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
     format_found = wasapi_setup_shared_format(playback->client, playback->sample_rate,
                                               &final_wfx,
@@ -334,9 +336,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
           playback->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 16;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(playback->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(playback->client, mode, &wfx, &std_wfx, &use_ext)) {
         playback->bits_per_sample = 16;
         playback->valid_bits = 16;
         playback->is_float = false;
@@ -349,9 +349,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
           playback->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(playback->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(playback->client, mode, &wfx, &std_wfx, &use_ext)) {
         playback->bits_per_sample = 32;
         playback->valid_bits = 32;
         playback->is_float = false;
@@ -364,9 +362,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
           playback->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
-      hr = IAudioClient_IsFormatSupported(playback->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(playback->client, mode, &wfx, &std_wfx, &use_ext)) {
         playback->bits_per_sample = 32;
         playback->valid_bits = 32;
         playback->is_float = true;
@@ -379,9 +375,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
           playback->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 24;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      hr = IAudioClient_IsFormatSupported(playback->client, mode,
-                                          (WAVEFORMATEX*)&wfx, NULL);
-      if (SUCCEEDED(hr)) {
+      if (wasapi_check_format_supported(playback->client, mode, &wfx, &std_wfx, &use_ext)) {
         playback->bits_per_sample = 24;
         playback->valid_bits = 24;
         playback->is_float = false;
@@ -393,9 +387,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
             playback->sample_rate * wfx.Format.nBlockAlign;
         wfx.Samples.wValidBitsPerSample = 24;
         wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-        hr = IAudioClient_IsFormatSupported(playback->client, mode,
-                                            (WAVEFORMATEX*)&wfx, NULL);
-        if (SUCCEEDED(hr)) {
+        if (wasapi_check_format_supported(playback->client, mode, &wfx, &std_wfx, &use_ext)) {
           playback->bits_per_sample = 32;
           playback->valid_bits = 24;
           playback->is_float = false;
@@ -419,7 +411,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   if (playback->exclusive) {
     REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
-        playback->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : &wfx);
+        playback->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : (use_ext ? &wfx : (WAVEFORMATEXTENSIBLE*)&std_wfx));
     if (playback->polling) {
       duration = 8 * aligned_time;
       periodicity = aligned_time;
@@ -439,7 +431,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   hr = IAudioClient_Initialize(playback->client, mode, flags, duration,
                                periodicity,
-                               final_wfx ? final_wfx : (WAVEFORMATEX*)&wfx, NULL);
+                               final_wfx ? final_wfx : (use_ext ? (WAVEFORMATEX*)&wfx : &std_wfx), NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;
     if (SUCCEEDED(IAudioClient_GetMixFormat(playback->client, &mix_wfx)) && mix_wfx) {

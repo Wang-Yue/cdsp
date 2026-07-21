@@ -84,6 +84,21 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
     IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
     const WAVEFORMATEXTENSIBLE* wfx);
 
+/**
+ * @brief Checks if a format is supported by the device, falling back to standard WAVEFORMATEX for stereo if needed.
+ *
+ * @param client Pointer to the active IAudioClient.
+ * @param mode Sharing mode (shared/exclusive).
+ * @param ext_wfx The extensible wave format descriptor to test.
+ * @param out_std_wfx Output pointer to standard WAVEFORMATEX initialized if fallback succeeded.
+ * @param out_use_ext Output pointer set to true if extensible format should be used, false if standard fallback should be used.
+ * @return true if format is supported (either directly or via fallback), false otherwise.
+ */
+bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
+                                   const WAVEFORMATEXTENSIBLE* ext_wfx,
+                                   WAVEFORMATEX* out_std_wfx,
+                                   bool* out_use_ext);
+
 #endif // ENABLE_WASAPI
 
 #endif // CLIB_BACKEND_WASAPI_DEVICE_H

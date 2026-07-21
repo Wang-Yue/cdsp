@@ -209,4 +209,39 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
   return aligned_period;
 }
 
+bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
+                                   const WAVEFORMATEXTENSIBLE* ext_wfx,
+                                   WAVEFORMATEX* out_std_wfx,
+                                   bool* out_use_ext) {
+  HRESULT hr = IAudioClient_IsFormatSupported(client, mode, (const WAVEFORMATEX*)ext_wfx, NULL);
+  if (SUCCEEDED(hr)) {
+    *out_use_ext = true;
+    return true;
+  }
+
+  if (ext_wfx->Format.nChannels <= 2) {
+    memset(out_std_wfx, 0, sizeof(WAVEFORMATEX));
+    out_std_wfx->nChannels = ext_wfx->Format.nChannels;
+    out_std_wfx->nSamplesPerSec = ext_wfx->Format.nSamplesPerSec;
+    out_std_wfx->wBitsPerSample = ext_wfx->Format.wBitsPerSample;
+    out_std_wfx->nBlockAlign = ext_wfx->Format.nBlockAlign;
+    out_std_wfx->nAvgBytesPerSec = ext_wfx->Format.nAvgBytesPerSec;
+    out_std_wfx->cbSize = 0;
+
+    if (IsEqualGUID(&ext_wfx->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+      out_std_wfx->wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
+    } else {
+      out_std_wfx->wFormatTag = WAVE_FORMAT_PCM;
+    }
+
+    hr = IAudioClient_IsFormatSupported(client, mode, out_std_wfx, NULL);
+    if (SUCCEEDED(hr)) {
+      *out_use_ext = false;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 #endif // ENABLE_WASAPI
