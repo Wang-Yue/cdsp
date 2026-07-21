@@ -3,6 +3,12 @@
 #include "engine/CDSPEngine.h"
 
 #include <QSettings>
+#include <cstdio>
+
+#ifndef _WIN32
+#include <unistd.h>
+#include <fcntl.h>
+#endif
 
 QString logLevelToString(LogLevel level) {
     switch (level) {
@@ -43,6 +49,7 @@ LogManager::LogManager(QObject* parent) : QObject(parent) {
     if (settings.contains("selectedLogLevel")) {
         m_logLevel = stringToLogLevel(settings.value("selectedLogLevel").toString());
     }
+    setupCapture();
 }
 
 LogManager* LogManager::instance() {
@@ -93,4 +100,98 @@ void LogManager::clear() {
         m_entries.clear();
     }
     emit logsCleared();
+}
+
+void LogManager::setupCapture() {
+#ifndef _WIN32
+    // Disable buffering for stdout and stderr so we get real-time output
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+    setvbuf(stderr, nullptr, _IOLBF, 0);
+
+    // Create stdout pipe
+    if (pipe(m_stdoutPipe) == 0) {
+        if (dup2(m_stdoutPipe[1], STDOUT_FILENO) != -1) {
+            close(m_stdoutPipe[1]);
+            m_stdoutThread = std::thread(&LogManager::readPipeLoop, this, m_stdoutPipe[0], LogLevel::Info);
+            m_stdoutThread.detach();
+            m_capturing = true;
+        } else {
+            close(m_stdoutPipe[0]);
+            close(m_stdoutPipe[1]);
+        }
+    }
+
+    // Create stderr pipe
+    if (pipe(m_stderrPipe) == 0) {
+        if (dup2(m_stderrPipe[1], STDERR_FILENO) != -1) {
+            close(m_stderrPipe[1]);
+            m_stderrThread = std::thread(&LogManager::readPipeLoop, this, m_stderrPipe[0], LogLevel::Error);
+            m_stderrThread.detach();
+            m_capturing = true;
+        } else {
+            close(m_stderrPipe[0]);
+            close(m_stderrPipe[1]);
+        }
+    }
+#endif
+}
+
+void LogManager::readPipeLoop(int readFd, LogLevel defaultLevel) {
+#ifndef _WIN32
+    char buffer[4096];
+    std::string accumulator;
+    while (true) {
+        ssize_t bytesRead = read(readFd, buffer, sizeof(buffer) - 1);
+        if (bytesRead <= 0) {
+            break; // EOF or error
+        }
+        buffer[bytesRead] = '\0';
+        accumulator += buffer;
+
+        size_t pos;
+        while ((pos = accumulator.find('\n')) != std::string::npos) {
+            std::string line = accumulator.substr(0, pos);
+            accumulator.erase(0, pos + 1);
+            processCapturedLine(line, defaultLevel);
+        }
+    }
+    close(readFd);
+#else
+    (void)readFd;
+    (void)defaultLevel;
+#endif
+}
+
+void LogManager::processCapturedLine(const std::string& line, LogLevel defaultLevel) {
+    if (line.empty()) return;
+
+    QString qline = QString::fromStdString(line).trimmed();
+    LogLevel level = defaultLevel;
+
+    // Parse level prefix if present, e.g. "[INFO] Component: Message"
+    if (qline.startsWith("[")) {
+        int closeBracket = qline.indexOf(']');
+        if (closeBracket > 0) {
+            QString levelStr = qline.mid(1, closeBracket - 1).trimmed().toUpper();
+            bool hasLevel = true;
+            if (levelStr == "ERROR") {
+                level = LogLevel::Error;
+            } else if (levelStr == "WARN" || levelStr == "WARNING") {
+                level = LogLevel::Warn;
+            } else if (levelStr == "INFO") {
+                level = LogLevel::Info;
+            } else if (levelStr == "DEBUG") {
+                level = LogLevel::Debug;
+            } else if (levelStr == "TRACE") {
+                level = LogLevel::Trace;
+            } else {
+                hasLevel = false;
+            }
+            if (hasLevel) {
+                qline = qline.mid(closeBracket + 1).trimmed();
+            }
+        }
+    }
+
+    appendLog(level, qline);
 }
