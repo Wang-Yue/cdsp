@@ -164,7 +164,7 @@ ifneq ($(ENABLE_COREAUDIO),1)
 endif
 
 ifneq ($(ENABLE_WASAPI),1)
-    SRCS := $(filter-out %/wasapi_backend.c %/wasapi_capabilities.c, $(SRCS))
+    SRCS := $(filter-out %/wasapi_capture.c %/wasapi_playback.c %/wasapi_device.c %/wasapi_capabilities.c, $(SRCS))
 endif
 
 ifneq ($(ENABLE_ASIO),1)

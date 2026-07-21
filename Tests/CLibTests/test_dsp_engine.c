@@ -3671,12 +3671,13 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"File\",\n"
-           "            \"filename\": \"/tmp/startup_fail_out.raw\",\n"
+           "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
-           "}");
+           "}",
+           "/tmp/startup_fail_out.raw");
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -3707,6 +3708,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
 
   if (engine && engine->free) engine->free(engine->ctx);
+  remove("/tmp/startup_fail_out.raw");
 }
 
 // Real-world scenario simulated:
@@ -4176,6 +4178,7 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 #include <propidl.h>
 #include <propkey.h>
 #include <windows.h>
+#include "Backend/wasapi_device.h"
 
 // Define property keys locally to avoid missing header errors on some
 // environments
@@ -4216,7 +4219,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate) {
         if (SUCCEEDED(temp_store->lpVtbl->GetValue(
                 temp_store, &friendly_name_key, &nameProp)) &&
             nameProp.vt == VT_LPWSTR) {
-          if (wcsstr(nameProp.pwszVal, L"CABLE") != NULL) {
+          if (wcsstr(nameProp.pwszVal, L"CABLE") != NULL ||
+              wcsstr(nameProp.pwszVal, L"Cable") != NULL) {
             device = temp_device;
             PropVariantClear(&nameProp);
             temp_store->lpVtbl->Release(temp_store);
@@ -4320,9 +4324,18 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate) {
   return modified && SUCCEEDED(hr);
 }
 
-static void wasapi_trigger_disconnect() {
-  printf("ℹ️ debug: Triggering disconnect by stopping AudioEndpointBuilder...\n");
-  system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force\"");
+
+static void wasapi_wait_for_endpoints_ready(const char* device_name, bool is_capture) {
+  printf("ℹ️ debug: Waiting dynamically for WASAPI endpoint '%s' to be responsive...\n", device_name);
+  for (int i = 0; i < 150; i++) {
+    double rate = wasapi_device_get_current_mix_rate(device_name, is_capture);
+    if (rate > 0.0) {
+      printf("ℹ️ debug: WASAPI endpoint '%s' ready (rate=%.1f Hz) after %d ms\n", device_name, rate, i * 100);
+      Sleep(1000); // Allow streaming subsystem to settle
+      break;
+    }
+    Sleep(100);
+  }
 }
 
 static bool wasapi_complete_rate_change(int sample_rate) {
@@ -4333,8 +4346,26 @@ static bool wasapi_complete_rate_change(int sample_rate) {
 
   printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint properties...\n");
   system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force; Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
-  Sleep(4000);
+  wasapi_wait_for_endpoints_ready("CABLE Input", false);
   return cap_ok && render_ok;
+}
+
+static bool wasapi_change_capture_rate_only(int sample_rate) {
+  printf("ℹ️ debug: Writing target capture format to endpoint registry...\n");
+  bool cap_ok = wasapi_write_endpoint_formats(eCapture, sample_rate);
+  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture endpoint...\n");
+  system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force; Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
+  wasapi_wait_for_endpoints_ready("CABLE Output", true);
+  return cap_ok;
+}
+
+static bool wasapi_change_playback_rate_only(int sample_rate) {
+  printf("ℹ️ debug: Writing target playback format to endpoint registry...\n");
+  bool render_ok = wasapi_write_endpoint_formats(eRender, sample_rate);
+  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback endpoint...\n");
+  system("powershell -Command \"Stop-Service AudioEndpointBuilder -Force; Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
+  wasapi_wait_for_endpoints_ready("CABLE Input", false);
+  return render_ok;
 }
 
 static bool wasapi_set_both_rates(int sample_rate) {
@@ -4343,12 +4374,12 @@ static bool wasapi_set_both_rates(int sample_rate) {
   return wasapi_complete_rate_change(sample_rate);
 }
 
-TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
+TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
   if (!wasapi_set_both_rates(48000)) {
     printf(
-        "⚠️ [WASAPI Warning] Skipping WASAPI Loopback rate change test (Failed "
+        "⚠️ [WASAPI Warning] Skipping WASAPI Capture rate change test (Failed "
         "to set initial device rates)\n");
     return;
   }
@@ -4398,6 +4429,10 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
     CoUninitialize();
   }
 
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/wasapi_cap_test_out.raw");
+  remove(out_file);
+
   char json_init[1024];
   snprintf(json_init, sizeof(json_init),
            "{\n"
@@ -4406,20 +4441,20 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"\",\n"
+           "            \"device\": \"CABLE Output\",\n"
            "            \"channels\": 2,\n"
-           "            \"loopback\": true,\n"
+           "            \"loopback\": false,\n"
            "            \"polling\": true\n"
            "        },\n"
            "        \"playback\": {\n"
-           "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"\",\n"
-           "            \"channels\": 2,\n"
-           "            \"polling\": true\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
            "}",
-           init_sr);
+           init_sr, out_file);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4442,13 +4477,11 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // Trigger sample rate change on default playback device (which propagates to
-  // loopback capture)
   printf(
-      "ℹ️ debug: changing WASAPI playback device sample rate from %d Hz to %d "
+      "ℹ️ debug: changing WASAPI capture device sample rate from %d Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  wasapi_trigger_disconnect();
+  ASSERT_TRUE(wasapi_change_capture_rate_only(target_sr));
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
@@ -4460,8 +4493,7 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
         printf("ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n", stop_reason.type, stop_reason.message);
-        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
-            stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -4471,16 +4503,13 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
   }
 
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_TRUE(stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
-              stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE);
+  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
+  ASSERT_EQ(target_sr, stop_reason.format_change_rate);
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
 
-  // Restart the services first, so they are running when we open the property store and write the formats
-  system("powershell -Command \"Start-Service AudioEndpointBuilder, Audiosrv; while (((Get-Service AudioEndpointBuilder).Status -ne 'Running') -or ((Get-Service Audiosrv).Status -ne 'Running')) { Start-Sleep -Milliseconds 100 }\"");
-  Sleep(1000);
-
+  // Re-enable playback rate change too to keep default formats aligned for subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
 
   cdsp_sleep_ms(500);  // Allow Windows Audio service to apply the deferred
@@ -4495,20 +4524,20 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"\",\n"
+           "            \"device\": \"CABLE Output\",\n"
            "            \"channels\": 2,\n"
-           "            \"loopback\": true,\n"
+           "            \"loopback\": false,\n"
            "            \"polling\": true\n"
            "        },\n"
            "        \"playback\": {\n"
-           "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"\",\n"
-           "            \"channels\": 2,\n"
-           "            \"polling\": true\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
            "}",
-           target_sr);
+           target_sr, out_file);
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4532,9 +4561,11 @@ TEST(DSPEngineE2E_WASAPILoopbackSampleRateChange) {
 
   // Restore initial rates
   wasapi_set_both_rates(48000);
+  remove(out_file);
 }
 
 TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
+
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
   if (!wasapi_set_both_rates(48000)) {
@@ -4554,15 +4585,12 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       "        \"samplerate\": %d,\n"
       "        \"chunksize\": 512,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"\",\n"
-      "            \"channels\": 2,\n"
-      "            \"loopback\": true,\n"
-      "            \"polling\": true\n"
+      "            \"type\": \"Generator\",\n"
+      "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"\",\n"
+      "            \"device\": \"CABLE Input\",\n"
       "            \"channels\": 2,\n"
       "            \"polling\": true\n"
       "        }\n"
@@ -4591,12 +4619,11 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
 
   cdsp_sleep_ms(100);
 
-  // Trigger sample rate change on default playback device
   printf(
       "ℹ️ debug: changing WASAPI playback device sample rate from %d Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  wasapi_trigger_disconnect();
+  ASSERT_TRUE(wasapi_change_playback_rate_only(target_sr));
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
@@ -4607,8 +4634,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
-            stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
           rate_change_stopped = true;
           break;
         }
@@ -4618,12 +4644,13 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   }
 
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_TRUE(stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
-              stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE);
+  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
+  ASSERT_EQ(target_sr, stop_reason.format_change_rate);
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
 
+  // Re-enable playback rate change too to keep default formats aligned for subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
 
   cdsp_sleep_ms(500);  // Allow Windows Audio service to apply the deferred
@@ -4638,15 +4665,12 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       "        \"samplerate\": %d,\n"
       "        \"chunksize\": 512,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"\",\n"
-      "            \"channels\": 2,\n"
-      "            \"loopback\": true,\n"
-      "            \"polling\": true\n"
+      "            \"type\": \"Generator\",\n"
+      "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"\",\n"
+      "            \"device\": \"CABLE Input\",\n"
       "            \"channels\": 2,\n"
       "            \"polling\": true\n"
       "        }\n"

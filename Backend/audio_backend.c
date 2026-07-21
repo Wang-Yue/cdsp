@@ -19,7 +19,8 @@
 #include "asio_backend.h"
 #endif
 #if defined(ENABLE_WASAPI)
-#include "wasapi_backend.h"
+#include "wasapi_capture.h"
+#include "wasapi_playback.h"
 #endif
 
 #include <stdlib.h>
