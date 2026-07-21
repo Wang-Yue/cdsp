@@ -5,19 +5,21 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include <initguid.h>
 #include "wasapi_capture.h"
-#include "wasapi_device.h"
-#include "wasapi_capabilities.h"
-#include "Audio/sample_conversion.h"
-#include "Utils/cdsp_time.h"
-#include <stdio.h>
-#include <string.h>
+
+#include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
-#include <stdbool.h>
 #include <stdatomic.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "Audio/sample_conversion.h"
 #include "Engine/cdsp_sem.h"
+#include "Utils/cdsp_time.h"
+#include "wasapi_capabilities.h"
+#include "wasapi_device.h"
 
 struct wasapi_capture {
   char device[256];
@@ -48,7 +50,6 @@ struct wasapi_capture {
   _Atomic bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
-  DWORD last_rate_check_time;
 };
 
 static void wasapi_capture_on_format_change(void* parent, double new_rate) {
@@ -129,7 +130,6 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
   atomic_init(&capture->stopped, false);
-  capture->last_rate_check_time = GetTickCount();
 
   HRESULT hr =
       CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
@@ -178,11 +178,9 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   WAVEFORMATEX std_wfx = {0};
   bool use_ext = true;
   if (mode == AUDCLNT_SHAREMODE_SHARED) {
-    format_found = wasapi_setup_shared_format(capture->client, capture->sample_rate,
-                                              &final_wfx,
-                                              &capture->bits_per_sample,
-                                              &capture->valid_bits,
-                                              &capture->is_float);
+    format_found = wasapi_setup_shared_format(
+        capture->client, capture->sample_rate, &final_wfx,
+        &capture->bits_per_sample, &capture->valid_bits, &capture->is_float);
   }
 
   if (!format_found) {
@@ -193,7 +191,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 16;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx,
+                                        &use_ext)) {
         capture->bits_per_sample = 16;
         capture->valid_bits = 16;
         capture->is_float = false;
@@ -206,7 +205,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx,
+                                        &use_ext)) {
         capture->bits_per_sample = 32;
         capture->valid_bits = 32;
         capture->is_float = false;
@@ -219,7 +219,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 32;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
-      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx,
+                                        &use_ext)) {
         capture->bits_per_sample = 32;
         capture->valid_bits = 32;
         capture->is_float = true;
@@ -232,7 +233,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
           capture->sample_rate * wfx.Format.nBlockAlign;
       wfx.Samples.wValidBitsPerSample = 24;
       wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
+      if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx,
+                                        &use_ext)) {
         capture->bits_per_sample = 24;
         capture->valid_bits = 24;
         capture->is_float = false;
@@ -244,7 +246,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
             capture->sample_rate * wfx.Format.nBlockAlign;
         wfx.Samples.wValidBitsPerSample = 24;
         wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-        if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx, &use_ext)) {
+        if (wasapi_check_format_supported(capture->client, mode, &wfx, &std_wfx,
+                                          &use_ext)) {
           capture->bits_per_sample = 32;
           capture->valid_bits = 24;
           capture->is_float = false;
@@ -268,7 +271,9 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   if (mode == AUDCLNT_SHAREMODE_EXCLUSIVE) {
     REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
-        capture->client, def_period, 128, final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx : (use_ext ? &wfx : (WAVEFORMATEXTENSIBLE*)&std_wfx));
+        capture->client, def_period, 128,
+        final_wfx ? (WAVEFORMATEXTENSIBLE*)final_wfx
+                  : (use_ext ? &wfx : (WAVEFORMATEXTENSIBLE*)&std_wfx));
     if (capture->polling) {
       duration = 8 * aligned_time;
       periodicity = aligned_time;
@@ -287,35 +292,45 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   }
 
   hr = IAudioClient_Initialize(
-      capture->client, mode, flags, duration,
-      periodicity,
+      capture->client, mode, flags, duration, periodicity,
       final_wfx ? final_wfx : (use_ext ? (WAVEFORMATEX*)&wfx : &std_wfx), NULL);
   if (FAILED(hr)) {
     WAVEFORMATEX* mix_wfx = NULL;
-    if (SUCCEEDED(IAudioClient_GetMixFormat(capture->client, &mix_wfx)) && mix_wfx) {
+    if (SUCCEEDED(IAudioClient_GetMixFormat(capture->client, &mix_wfx)) &&
+        mix_wfx) {
       if (mix_wfx->wFormatTag == 65534) {
         WAVEFORMATEXTENSIBLE* wfx_ext = (WAVEFORMATEXTENSIBLE*)mix_wfx;
         LPOLESTR subformat_str = NULL;
         StringFromCLSID(&wfx_ext->SubFormat, &subformat_str);
         char fmt_buf[512];
         snprintf(fmt_buf, sizeof(fmt_buf),
-                 "Capture mix format EXT: rate=%u, channels=%u, bits=%u, valid_bits=%u, subformat=%ls",
-                 (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
-                 (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)wfx_ext->Samples.wValidBitsPerSample,
+                 "Capture mix format EXT: rate=%u, channels=%u, bits=%u, "
+                 "valid_bits=%u, subformat=%ls",
+                 (unsigned int)mix_wfx->nSamplesPerSec,
+                 (unsigned int)mix_wfx->nChannels,
+                 (unsigned int)mix_wfx->wBitsPerSample,
+                 (unsigned int)wfx_ext->Samples.wValidBitsPerSample,
                  subformat_str);
         logger_error(&g_wasapi_logger, "%s", fmt_buf);
         CoTaskMemFree(subformat_str);
       } else {
-        logger_error(&g_wasapi_logger, "Capture mix format std: rate=%u, channels=%u, bits=%u, tag=%u",
-                     (unsigned int)mix_wfx->nSamplesPerSec, (unsigned int)mix_wfx->nChannels,
-                     (unsigned int)mix_wfx->wBitsPerSample, (unsigned int)mix_wfx->wFormatTag);
+        logger_error(
+            &g_wasapi_logger,
+            "Capture mix format std: rate=%u, channels=%u, bits=%u, tag=%u",
+            (unsigned int)mix_wfx->nSamplesPerSec,
+            (unsigned int)mix_wfx->nChannels,
+            (unsigned int)mix_wfx->wBitsPerSample,
+            (unsigned int)mix_wfx->wFormatTag);
       }
       CoTaskMemFree(mix_wfx);
     }
     REFERENCE_TIME debug_def = 0, debug_min = 0;
     IAudioClient_GetDevicePeriod(capture->client, &debug_def, &debug_min);
-    logger_error(&g_wasapi_logger, "Capture periods: def=%lld, min=%lld, requested_duration=%lld, flags=0x%08lX",
-                 (long long)debug_def, (long long)debug_min, (long long)duration, (unsigned long)flags);
+    logger_error(&g_wasapi_logger,
+                 "Capture periods: def=%lld, min=%lld, "
+                 "requested_duration=%lld, flags=0x%08lX",
+                 (long long)debug_def, (long long)debug_min,
+                 (long long)duration, (unsigned long)flags);
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
@@ -386,7 +401,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
               "Opened WASAPI capture: device=%s, rate=%d, channels=%d",
               capture->device[0] != '\0' ? capture->device : "default",
               capture->sample_rate, capture->channels);
-  logger_info(&g_wasapi_logger, "WASAPI capture options: loopback=%d, exclusive=%d",
+  logger_info(&g_wasapi_logger,
+              "WASAPI capture options: loopback=%d, exclusive=%d",
               capture->loopback, capture->exclusive);
 
   if (final_wfx) CoTaskMemFree(final_wfx);
@@ -439,16 +455,6 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t frames_read = 0;
   DWORD start_time = GetTickCount();
 
-  DWORD now = GetTickCount();
-  if (now - capture->last_rate_check_time > 1000) {
-    capture->last_rate_check_time = now;
-    double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
-    if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
-      capture->pending_rate = mix_rate;
-      capture->has_pending_rate_change = true;
-    }
-  }
-
   if (capture->residual_frames > 0) {
     size_t to_copy = frames - frames_read;
     if (to_copy > capture->residual_frames) {
@@ -493,13 +499,20 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                                                  &packet_size);
     }
     if (FAILED(hr)) {
-      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
-      if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
-        capture->pending_rate = mix_rate;
-        capture->has_pending_rate_change = true;
-      } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
-        capture->pending_rate = 0.0;
-        capture->has_pending_rate_change = true;
+      if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+          hr == AUDCLNT_E_RESOURCES_INVALIDATED || hr == 0x88890010 ||
+          hr == 0x88890018) {
+        double mix_rate = 0.0;
+        for (int i = 0; i < 10; i++) {
+          mix_rate = wasapi_device_get_current_mix_rate(capture->device,
+                                                        !capture->loopback);
+          if (mix_rate > 0.0) break;
+          cdsp_sleep_ms(50);
+        }
+        if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
+          capture->pending_rate = mix_rate;
+          capture->has_pending_rate_change = true;
+        }
       }
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -600,20 +613,39 @@ static bool wasapi_capture_get_pending_rate_change(void* ctx,
                                                    double* out_rate) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
-  bool changed = capture->has_pending_rate_change;
-  if (changed) {
-    if (capture->pending_rate == 0.0) {
-      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
-      if (mix_rate > 0.0) {
-        capture->pending_rate = mix_rate;
+  if (capture->has_pending_rate_change) {
+    logger_info(&g_wasapi_logger,
+                "capture get_pending_rate_change detected flag: "
+                "pending_rate=%f, sample_rate=%d",
+                capture->pending_rate, capture->sample_rate);
+    double rate = capture->pending_rate;
+    if (rate == 0.0) {
+      for (int i = 0; i < 10; i++) {
+        rate = wasapi_device_get_current_mix_rate(capture->device,
+                                                  !capture->loopback);
+        logger_info(
+            &g_wasapi_logger,
+            "capture get_pending_rate_change: query attempt %d returned %f", i,
+            rate);
+        if (rate > 0.0) break;
+        cdsp_sleep_ms(50);
       }
     }
-    if (out_rate) {
-      *out_rate = capture->pending_rate;
-    }
     capture->has_pending_rate_change = false;
+    logger_info(&g_wasapi_logger,
+                "capture get_pending_rate_change evaluated final rate=%f",
+                rate);
+    if (rate > 0.0 && rate != (double)capture->sample_rate) {
+      if (out_rate) {
+        *out_rate = rate;
+      }
+      logger_info(&g_wasapi_logger,
+                  "capture get_pending_rate_change returning true with rate=%f",
+                  rate);
+      return true;
+    }
   }
-  return changed;
+  return false;
 }
 
 static bool wasapi_capture_pitch_control_supported(void* ctx) {
@@ -704,4 +736,4 @@ const capture_backend_vtable_t g_wasapi_capture_vtable = {
     .stop = wasapi_capture_stop,
     .destroy = wasapi_capture_destroy};
 
-#endif // ENABLE_WASAPI
+#endif  // ENABLE_WASAPI
