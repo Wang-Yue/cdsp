@@ -78,7 +78,7 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
       capture_backend_set_pitch(loop->capture, speed);
     } else if (loop->playback &&
                playback_backend_pitch_control_supported(loop->playback)) {
-      playback_backend_set_pitch(loop->playback, speed);
+      playback_backend_set_pitch(loop->playback, 1.0 / speed);
     } else if (loop->shared) {
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
