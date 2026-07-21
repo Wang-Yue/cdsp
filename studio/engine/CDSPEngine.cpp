@@ -242,7 +242,7 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
     bool success = cdsp_get_available_devices(backend.c_str(), input, &devs, &count);
     if (success && count > 0 && devs) {
         for (size_t i = 0; i < count; ++i) {
-            result.push_back(AudioDevice{devs[i].name});
+            result.push_back(AudioDevice{devs[i].identifier, devs[i].name});
         }
     }
     if (devs) {
