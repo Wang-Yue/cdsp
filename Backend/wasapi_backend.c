@@ -833,15 +833,13 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     HRESULT hr = IAudioCaptureClient_GetNextPacketSize(capture->capture_client,
                                                        &packet_size);
     if (FAILED(hr)) {
-      if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
+      double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
+      if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
+        capture->pending_rate = mix_rate;
+        capture->has_pending_rate_change = true;
+      } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
         capture->pending_rate = 0.0;
         capture->has_pending_rate_change = true;
-      } else {
-        double mix_rate = wasapi_device_get_current_mix_rate(capture->device, !capture->loopback);
-        if (mix_rate > 0.0 && mix_rate != (double)capture->sample_rate) {
-          capture->pending_rate = mix_rate;
-          capture->has_pending_rate_change = true;
-        }
       }
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -1185,14 +1183,15 @@ static void* wasapi_playback_thread_func(void* arg) {
     HRESULT hr =
         IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
     if (FAILED(hr)) {
-      if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
-          hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
-          hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
-        double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
-        if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
-          playback->pending_rate = mix_rate;
-          playback->has_pending_rate_change = true;
-        }
+      double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+      if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+        playback->pending_rate = mix_rate;
+        playback->has_pending_rate_change = true;
+      } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+                 hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+                 hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+        playback->pending_rate = 0.0;
+        playback->has_pending_rate_change = true;
       }
     }
     if (SUCCEEDED(hr) && data) {
@@ -1701,15 +1700,13 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
         frames_written += to_write;
       } else {
-        if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
+        double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
+        if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
+          playback->pending_rate = mix_rate;
+          playback->has_pending_rate_change = true;
+        } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == 0x88890010 || hr == 0x88890018) {
           playback->pending_rate = 0.0;
           playback->has_pending_rate_change = true;
-        } else {
-          double mix_rate = wasapi_device_get_current_mix_rate(playback->device, false);
-          if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
-            playback->pending_rate = mix_rate;
-            playback->has_pending_rate_change = true;
-          }
         }
         logger_error(&g_logger,
                      "IAudioRenderClient_GetBuffer failed: hr=0x%08lX "
