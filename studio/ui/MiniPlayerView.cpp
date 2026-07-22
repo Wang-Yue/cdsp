@@ -130,7 +130,17 @@ void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
 
 void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
     if (m_isDragging && (event->buttons() & Qt::LeftButton)) {
-        move(event->globalPosition().toPoint() - m_dragPosition);
+        QPoint newPos = event->globalPosition().toPoint() - m_dragPosition;
+        if (auto screen = QGuiApplication::screenAt(event->globalPosition().toPoint())) {
+            QRect screenGeom = screen->availableGeometry();
+            int minX = screenGeom.left() - width() + 30;
+            int maxX = screenGeom.right() - 30;
+            int minY = screenGeom.top();
+            int maxY = screenGeom.bottom() - 30;
+            newPos.setX(qBound(minX, newPos.x(), maxX));
+            newPos.setY(qBound(minY, newPos.y(), maxY));
+        }
+        move(newPos);
         event->accept();
         return;
     }

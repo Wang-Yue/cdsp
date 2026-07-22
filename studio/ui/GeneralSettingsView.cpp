@@ -87,7 +87,12 @@ void GeneralSettingsView::setupUi() {
     pollForm->addRow(pollBox);
 
     auto pollSubLbl = new QLabel("Adjust the frequency of UI updates for meters and spectrum.", pollGroup);
-    pollSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    pollSubLbl->setProperty("secondary", true);
+    {
+        QFont font = pollSubLbl->font();
+        font.setPointSize(11);
+        pollSubLbl->setFont(font);
+    }
     pollForm->addRow(pollSubLbl);
 
     connect(m_pollingRateSlider, &QSlider::valueChanged, [this](int val) {
@@ -160,7 +165,12 @@ void GeneralSettingsView::setupUi() {
 
     auto silenceSubLbl =
         new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
-    silenceSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
+    silenceSubLbl->setProperty("secondary", true);
+    {
+        QFont font = silenceSubLbl->font();
+        font.setPointSize(11);
+        silenceSubLbl->setFont(font);
+    }
     silenceForm->addRow(silenceSubLbl);
 
     mainLayout->addWidget(silenceGroup);

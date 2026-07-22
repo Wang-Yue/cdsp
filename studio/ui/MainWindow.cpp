@@ -147,6 +147,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         m_devices->validateSampleRates();
         m_dspController->applyConfig();
     };
+    m_devices->onConfigChanged = [this]() { m_dspController->applyConfig(); };
 
     connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &MainWindow::onPipelineChanged);
     connect(m_dspController.get(), &DSPEngineController::statusChanged, this, &MainWindow::onEngineStatusChanged);
@@ -299,7 +300,7 @@ void MainWindow::setupUi() {
     auto line = new QFrame(rightPanel);
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
-    line->setStyleSheet("color: rgba(255, 255, 255, 0.1);");
+    line->setProperty("themeBorder", true);
     rightLayout->addWidget(line);
 
     m_centralStack = new QStackedWidget(rightPanel);
@@ -328,18 +329,17 @@ void MainWindow::setupStatusBar() {
     m_stopReasonBanner = new QLabel(this);
     m_statusMuteLabel = new QLabel("Unmuted", this);
 
-    m_statusStateLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
-    m_statusSampleRateBadge->setStyleSheet("padding: 2px 8px; color: #007aff; background-color: rgba(0, 122, 255, "
-                                           "0.15); border-radius: 4px; font-weight: bold; font-family: monospace;");
-    m_statusBufferLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
-    m_statusResamplerLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
-    m_statusStagesLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
-    m_statusActivePresetLabel->setStyleSheet("padding: 0 8px; color: #8e8e93;");
-    m_statusRuntimeLabel->setStyleSheet("padding: 0 8px; color: #8e8e93; font-family: monospace;");
-    m_stopReasonBanner->setStyleSheet(
-        "padding: 2px 8px; color: #ffffff; background-color: #ff3b30; border-radius: 4px; font-weight: bold;");
+    m_statusStateLabel->setProperty("state", "inactive");
+    m_statusSampleRateBadge->setProperty("badge", "sample-rate");
+    m_statusBufferLabel->setProperty("secondary", true);
+    m_statusResamplerLabel->setProperty("secondary", true);
+    m_statusStagesLabel->setProperty("secondary", true);
+    m_statusActivePresetLabel->setProperty("secondary", true);
+    m_statusRuntimeLabel->setProperty("secondary", true);
+    m_statusRuntimeLabel->setFont(QFont("monospace"));
+    m_stopReasonBanner->setProperty("banner", "error");
     m_stopReasonBanner->hide();
-    m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
+    m_statusMuteLabel->setProperty("muteState", "unmuted");
 
     bar->addWidget(m_statusStateLabel);
     bar->addWidget(m_statusSampleRateBadge);
@@ -775,19 +775,19 @@ void MainWindow::updateMuteDisplay() {
     bool muted = m_settings->getMuted(Fader::Main);
     if (muted) {
         m_toolbarMuteBtn->setText("🔇");
-        m_toolbarMuteBtn->setStyleSheet(
-            "QPushButton { background: transparent; color: #ff3b30; font-size: 14px; padding: 2px 4px; border: none; } "
-            "QPushButton:hover { background-color: rgba(255, 59, 48, 0.1); border-radius: 4px; }");
+        m_toolbarMuteBtn->setProperty("muteState", "muted");
         m_statusMuteLabel->setText("MUTED");
-        m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #ff3b30; font-weight: bold;");
+        m_statusMuteLabel->setProperty("muteState", "muted");
     } else {
         m_toolbarMuteBtn->setText("🔊");
-        m_toolbarMuteBtn->setStyleSheet(
-            "QPushButton { background: transparent; color: inherit; font-size: 14px; padding: 2px 4px; border: none; } "
-            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; }");
+        m_toolbarMuteBtn->setProperty("muteState", "unmuted");
         m_statusMuteLabel->setText("Unmuted");
-        m_statusMuteLabel->setStyleSheet("padding: 0 8px; color: #34c759; font-weight: bold;");
+        m_statusMuteLabel->setProperty("muteState", "unmuted");
     }
+    m_toolbarMuteBtn->style()->unpolish(m_toolbarMuteBtn);
+    m_toolbarMuteBtn->style()->polish(m_toolbarMuteBtn);
+    m_statusMuteLabel->style()->unpolish(m_statusMuteLabel);
+    m_statusMuteLabel->style()->polish(m_statusMuteLabel);
 
     if (m_trayMuteAction) {
         m_trayMuteAction->setChecked(muted);
@@ -802,44 +802,40 @@ void MainWindow::updateVolumeDisplay() {
     m_headerVolumeSlider->blockSignals(false);
 
     m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
-    if (gain > 0.0f) {
-        m_gainValueLabel->setStyleSheet(
-            "font-family: monospace; font-size: 10pt; color: #ff3b30; padding-right: 10px;");
-    } else {
-        m_gainValueLabel->setStyleSheet(
-            QString("font-family: monospace; font-size: 10pt; color: %1; padding-right: 10px;")
-                .arg(StyleTheme::textPrimary().name()));
-    }
+    m_gainValueLabel->setProperty("clipping", gain > 0.0f);
+    m_gainValueLabel->style()->polish(m_gainValueLabel);
 }
 
 void MainWindow::updateStatusBar() {
     QString stateStr;
-    QString colorStyle;
+    QString statePropVal;
     switch (m_dspController->status) {
     case ProcessingState::Running:
         stateStr = "🟢 Running";
-        colorStyle = "padding: 0 8px; color: #34c759; font-weight: bold;";
+        statePropVal = "running";
         break;
     case ProcessingState::Starting:
-        stateStr = "🟡 Starting";
-        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
+        stateStr = "⏳ Starting";
+        statePropVal = "warning";
         break;
     case ProcessingState::Paused:
         stateStr = "🟡 Paused";
-        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
+        statePropVal = "warning";
         break;
     case ProcessingState::Stalled:
         stateStr = "🟡 Stalled";
-        colorStyle = "padding: 0 8px; color: #ffcc00; font-weight: bold;";
+        statePropVal = "warning";
         break;
     case ProcessingState::Inactive:
     default:
         stateStr = "🔴 Inactive";
-        colorStyle = "padding: 0 8px; color: #ff3b30; font-weight: bold;";
+        statePropVal = "inactive";
         break;
     }
     m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
-    m_statusStateLabel->setStyleSheet(colorStyle);
+    m_statusStateLabel->setProperty("state", statePropVal);
+    m_statusStateLabel->style()->unpolish(m_statusStateLabel);
+    m_statusStateLabel->style()->polish(m_statusStateLabel);
     m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
     if (m_statusSampleRateBadge) {
         m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
@@ -884,10 +880,9 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     case ProcessingState::Stalled:
         m_startStopBtn->setText("🛑 Stop");
         m_startStopBtn->setToolTip("Stop Engine");
-        m_startStopBtn->setStyleSheet(
-            "QPushButton { background-color: transparent; color: #ff3b30; font-weight: bold; padding: 4px 8px; border: "
-            "none; } "
-            "QPushButton:hover { background-color: rgba(255, 59, 48, 0.1); border-radius: 4px; }");
+        m_startStopBtn->setProperty("state", "running");
+        m_startStopBtn->style()->unpolish(m_startStopBtn);
+        m_startStopBtn->style()->polish(m_startStopBtn);
         if (state == ProcessingState::Running) {
             if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
                 m_engineRunTimer.start();
@@ -900,17 +895,17 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     case ProcessingState::Starting:
         m_startStopBtn->setText("⏳ Starting...");
         m_startStopBtn->setToolTip("Starting Engine...");
-        m_startStopBtn->setStyleSheet("QPushButton { background-color: transparent; color: #ffcc00; font-weight: bold; "
-                                      "padding: 4px 8px; border: none; }");
+        m_startStopBtn->setProperty("state", "warning");
+        m_startStopBtn->style()->unpolish(m_startStopBtn);
+        m_startStopBtn->style()->polish(m_startStopBtn);
         break;
     case ProcessingState::Inactive:
     default:
         m_startStopBtn->setText("▶️ Start");
         m_startStopBtn->setToolTip("Start Engine");
-        m_startStopBtn->setStyleSheet(
-            "QPushButton { background-color: transparent; color: #34c759; font-weight: bold; padding: 4px 8px; border: "
-            "none; } "
-            "QPushButton:hover { background-color: rgba(52, 199, 89, 0.1); border-radius: 4px; }");
+        m_startStopBtn->setProperty("state", "inactive");
+        m_startStopBtn->style()->unpolish(m_startStopBtn);
+        m_startStopBtn->style()->polish(m_startStopBtn);
         m_runtimeUpdateTimer.stop();
         if (m_statusRuntimeLabel) {
             m_statusRuntimeLabel->setText("Run Time: 00:00:00");
@@ -930,10 +925,7 @@ void MainWindow::setupToolbar() {
 
     m_startStopBtn = new QPushButton("▶️ Start", this);
     m_startStopBtn->setToolTip("Start Engine");
-    m_startStopBtn->setStyleSheet(
-        "QPushButton { background-color: transparent; color: #34c759; font-weight: bold; padding: 4px 8px; border: "
-        "none; } "
-        "QPushButton:hover { background-color: rgba(52, 199, 89, 0.1); border-radius: 4px; }");
+    m_startStopBtn->setProperty("state", "inactive");
     connect(m_startStopBtn, &QPushButton::clicked, [this]() {
         if (m_dspController->status == ProcessingState::Running || m_dspController->status == ProcessingState::Paused ||
             m_dspController->status == ProcessingState::Stalled) {
@@ -946,15 +938,13 @@ void MainWindow::setupToolbar() {
 
     m_sampleRateBadge = new QLabel("48000 Hz", this);
     m_sampleRateBadge->setFont(QFont("monospace", 11));
-    m_sampleRateBadge->setStyleSheet("color: #8e8e93; padding-right: 8px; padding-left: 8px;");
+    m_sampleRateBadge->setProperty("secondary", true);
     toolBar->addWidget(m_sampleRateBadge);
 
     m_toolbarMuteBtn = new QPushButton("🔊", this);
     m_toolbarMuteBtn->setToolTip("Toggle Mute");
     m_toolbarMuteBtn->setFlat(true);
-    m_toolbarMuteBtn->setStyleSheet(
-        "QPushButton { background: transparent; font-size: 14px; padding: 2px 4px; border: none; } "
-        "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; }");
+    m_toolbarMuteBtn->setProperty("muteState", "unmuted");
     connect(m_toolbarMuteBtn, &QPushButton::clicked, this, &MainWindow::toggleMute);
     toolBar->addWidget(m_toolbarMuteBtn);
 
@@ -973,10 +963,9 @@ void MainWindow::setupToolbar() {
     toolBar->addWidget(m_headerVolumeSlider);
 
     m_gainValueLabel = new QLabel("  0.0 dB", this);
-    m_gainValueLabel->setFont(QFont("monospace", 10));
     m_gainValueLabel->setFixedWidth(50);
     m_gainValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_gainValueLabel->setStyleSheet("padding-right: 10px;");
+    m_gainValueLabel->setProperty("clipping", false);
     updateVolumeDisplay();
     toolBar->addWidget(m_gainValueLabel);
 }
@@ -1410,7 +1399,12 @@ void MainWindow::onPipelineChanged() {
         lblTitle->setFont(QFont("-apple-system", 18, QFont::Bold));
         lblTitle->setAlignment(Qt::AlignCenter);
         auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", m_unavailableWidget);
-        lblDesc->setStyleSheet("color: #8e8e93; font-size: 13px;");
+        lblDesc->setProperty("secondary", true);
+        {
+            QFont font = lblDesc->font();
+            font.setPointSize(13);
+            lblDesc->setFont(font);
+        }
         lblDesc->setAlignment(Qt::AlignCenter);
         layout->addStretch();
         layout->addWidget(lblTitle);

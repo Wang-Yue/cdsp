@@ -168,6 +168,7 @@ public:
                 background-color: #ffffff;
                 color: #000000;
                 border: 1px solid #d1d1d6;
+                border-radius: 6px;
                 selection-background-color: #007aff;
                 selection-color: #ffffff;
                 padding: 4px;
@@ -288,6 +289,118 @@ public:
             }
             QSplitter::handle:vertical {
                 height: 1px;
+            }
+
+            /* Custom Dynamic Properties - Light */
+            QFrame[themeBorder="true"] {
+                color: #d1d1d6;
+            }
+            QLabel[secondary="true"] {
+                color: #6c6c70;
+            }
+            QToolBar QLabel[secondary="true"] {
+                padding: 0 8px;
+            }
+            QStatusBar QLabel {
+                padding: 0 8px;
+            }
+            QLabel[badge="sample-rate"] {
+                color: #007aff;
+                background-color: rgba(0, 122, 255, 0.15);
+                border-radius: 4px;
+                font-weight: bold;
+                font-family: monospace;
+                padding: 2px 8px;
+            }
+            QLabel[banner="error"] {
+                padding: 2px 8px;
+                color: #ffffff;
+                background-color: #ff3b30;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QLabel[muteState="muted"] {
+                color: #ff3b30;
+                font-weight: bold;
+            }
+            QLabel[muteState="unmuted"] {
+                color: #34c759;
+                font-weight: bold;
+            }
+            QPushButton[muteState="muted"] {
+                background-color: transparent;
+                color: #ff3b30;
+                font-size: 14px;
+                padding: 2px 4px;
+                border: none;
+            }
+            QPushButton[muteState="muted"]:hover {
+                background-color: rgba(255, 59, 48, 0.1);
+                border-radius: 4px;
+            }
+            QPushButton[muteState="unmuted"] {
+                background-color: transparent;
+                color: #000000;
+                font-size: 14px;
+                padding: 2px 4px;
+                border: none;
+            }
+            QPushButton[muteState="unmuted"]:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+                border-radius: 4px;
+            }
+            QLabel[state="running"] {
+                color: #34c759;
+                font-weight: bold;
+            }
+            QLabel[state="warning"] {
+                color: #ff9500;
+                font-weight: bold;
+            }
+            QLabel[state="inactive"] {
+                color: #ff3b30;
+                font-weight: bold;
+            }
+            QPushButton[state="running"] {
+                background-color: transparent;
+                color: #ff3b30;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="running"]:hover {
+                background-color: rgba(255, 59, 48, 0.1);
+                border-radius: 4px;
+            }
+            QPushButton[state="warning"] {
+                background-color: transparent;
+                color: #ff9500;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="inactive"] {
+                background-color: transparent;
+                color: #34c759;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="inactive"]:hover {
+                background-color: rgba(52, 199, 89, 0.1);
+                border-radius: 4px;
+            }
+            QLabel[clipping="true"] {
+                font-family: monospace;
+                font-size: 10pt;
+                color: #ff3b30;
+                padding-right: 10px;
+            }
+            QLabel[clipping="false"] {
+                font-family: monospace;
+                font-size: 10pt;
+                color: #000000;
+                padding-right: 10px;
             }
         )";
     }
@@ -444,6 +557,7 @@ public:
                 background-color: #1e2029;
                 color: #ffffff;
                 border: 1px solid #343746;
+                border-radius: 6px;
                 selection-background-color: #007af5;
                 selection-color: #ffffff;
                 padding: 4px;
@@ -558,6 +672,118 @@ public:
             }
             QSplitter::handle:vertical {
                 height: 1px;
+            }
+
+            /* Custom Dynamic Properties - Dark */
+            QFrame[themeBorder="true"] {
+                color: #2c2d3a;
+            }
+            QLabel[secondary="true"] {
+                color: #a0a5b5;
+            }
+            QToolBar QLabel[secondary="true"] {
+                padding: 0 8px;
+            }
+            QStatusBar QLabel {
+                padding: 0 8px;
+            }
+            QLabel[badge="sample-rate"] {
+                color: #007af5;
+                background-color: rgba(0, 122, 245, 0.15);
+                border-radius: 4px;
+                font-weight: bold;
+                font-family: monospace;
+                padding: 2px 8px;
+            }
+            QLabel[banner="error"] {
+                padding: 2px 8px;
+                color: #ffffff;
+                background-color: #ff453a;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QLabel[muteState="muted"] {
+                color: #ff453a;
+                font-weight: bold;
+            }
+            QLabel[muteState="unmuted"] {
+                color: #2cb67d;
+                font-weight: bold;
+            }
+            QPushButton[muteState="muted"] {
+                background-color: transparent;
+                color: #ff453a;
+                font-size: 14px;
+                padding: 2px 4px;
+                border: none;
+            }
+            QPushButton[muteState="muted"]:hover {
+                background-color: rgba(255, 69, 58, 0.15);
+                border-radius: 4px;
+            }
+            QPushButton[muteState="unmuted"] {
+                background-color: transparent;
+                color: #ffffff;
+                font-size: 14px;
+                padding: 2px 4px;
+                border: none;
+            }
+            QPushButton[muteState="unmuted"]:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+            }
+            QLabel[state="running"] {
+                color: #2cb67d;
+                font-weight: bold;
+            }
+            QLabel[state="warning"] {
+                color: #ff9f0a;
+                font-weight: bold;
+            }
+            QLabel[state="inactive"] {
+                color: #ff453a;
+                font-weight: bold;
+            }
+            QPushButton[state="running"] {
+                background-color: transparent;
+                color: #ff453a;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="running"]:hover {
+                background-color: rgba(255, 69, 58, 0.15);
+                border-radius: 4px;
+            }
+            QPushButton[state="warning"] {
+                background-color: transparent;
+                color: #ff9f0a;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="inactive"] {
+                background-color: transparent;
+                color: #2cb67d;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: none;
+            }
+            QPushButton[state="inactive"]:hover {
+                background-color: rgba(44, 182, 125, 0.15);
+                border-radius: 4px;
+            }
+            QLabel[clipping="true"] {
+                font-family: monospace;
+                font-size: 10pt;
+                color: #ff453a;
+                padding-right: 10px;
+            }
+            QLabel[clipping="false"] {
+                font-family: monospace;
+                font-size: 10pt;
+                color: #ffffff;
+                padding-right: 10px;
             }
         )";
     }
