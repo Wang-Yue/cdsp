@@ -787,6 +787,14 @@ static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
       size_t read_samples = spsc_audio_ring_buffer_consume(
           g_active_playback->ring_buffer, interleaved_buf, needed_samples);
       if (read_samples < needed_samples) {
+        static DWORD last_underflow_log = 0;
+        DWORD now = GetTickCount();
+        if (now - last_underflow_log > 1000) {
+          logger_warn(&g_logger,
+                      "ASIO playback underflow detected: missing_samples=%zu",
+                      needed_samples - read_samples);
+          last_underflow_log = now;
+        }
         if (is_native_dsd) {
           uint32_t silence_u32 = 0x55555555;
           float silence_fval = pcm_sample_f32_from_u32(silence_u32);

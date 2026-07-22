@@ -257,6 +257,14 @@ static void* wasapi_playback_thread_func(void* arg) {
 
       if (consumed_frames < to_write) {
         size_t silent_frames = to_write - consumed_frames;
+        static DWORD last_underflow_log = 0;
+        DWORD now = GetTickCount();
+        if (now - last_underflow_log > 1000) {
+          logger_warn(&g_wasapi_logger,
+                      "WASAPI playback underflow detected: silent_frames=%zu",
+                      silent_frames);
+          last_underflow_log = now;
+        }
         BYTE* silence_start = data + consumed_frames * playback->channels *
                                          (playback->bits_per_sample / 8);
         memset(silence_start, 0,
