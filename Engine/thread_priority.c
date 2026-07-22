@@ -460,6 +460,33 @@ fallback:
 }
 #elif defined(_WIN32)
 #include <windows.h>
+
+typedef HANDLE(WINAPI* AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
+typedef BOOL(WINAPI* AvRevertMmThreadCharacteristicsFn)(HANDLE);
+
+static pthread_key_t g_win32_avrt_key;
+static pthread_once_t g_win32_avrt_once = PTHREAD_ONCE_INIT;
+
+static void win32_avrt_cleanup(void* val) {
+  if (val) {
+    HANDLE task_handle = (HANDLE)val;
+    HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
+    if (avrt_module) {
+      AvRevertMmThreadCharacteristicsFn revert_fn =
+          (AvRevertMmThreadCharacteristicsFn)GetProcAddress(
+              avrt_module, "AvRevertMmThreadCharacteristics");
+      if (revert_fn) {
+        revert_fn(task_handle);
+      }
+      FreeLibrary(avrt_module);
+    }
+  }
+}
+
+static void win32_avrt_init_key(void) {
+  pthread_key_create(&g_win32_avrt_key, win32_avrt_cleanup);
+}
+
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {
 #ifdef CDSP_TEST
@@ -470,11 +497,42 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
 #else
   (void)buffer_frames;
   (void)sample_rate;
+
+  HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
+  if (avrt_module) {
+    AvSetMmThreadCharacteristicsWFn set_fn =
+        (AvSetMmThreadCharacteristicsWFn)GetProcAddress(
+            avrt_module, "AvSetMmThreadCharacteristicsW");
+    if (set_fn) {
+      DWORD task_index = 0;
+      HANDLE task_handle = set_fn(L"Audio", &task_index);
+      if (task_handle) {
+        logger_info(
+            &g_logger,
+            "[%s] Thread promoted to Windows MMCSS (Audio task, index=%lu)",
+            name ? name : "unknown", task_index);
+
+        pthread_once(&g_win32_avrt_once, win32_avrt_init_key);
+        void* old_val = pthread_getspecific(g_win32_avrt_key);
+        if (old_val) {
+          win32_avrt_cleanup(old_val);
+        }
+        pthread_setspecific(g_win32_avrt_key, (void*)task_handle);
+
+        FreeLibrary(avrt_module);
+        return;
+      }
+    }
+    FreeLibrary(avrt_module);
+  }
+
+  // Fallback to standard SetThreadPriority if MMCSS failed
   HANDLE thread = GetCurrentThread();
   BOOL success = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL);
   if (success) {
-    logger_info(&g_logger,
-                "[%s] Thread promoted to Windows THREAD_PRIORITY_TIME_CRITICAL",
+    logger_warn(&g_logger,
+                "[%s] MMCSS failed; thread promoted to fallback Windows "
+                "THREAD_PRIORITY_TIME_CRITICAL",
                 name ? name : "unknown");
   } else {
     logger_warn(&g_logger,
