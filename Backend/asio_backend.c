@@ -1615,8 +1615,11 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
     ReleaseSRWLockShared(&g_asio_shared.lock);
 
     if (last_cb > 0) {
-      if (now_ms - last_cb > 1500) {
-        logger_error(&g_logger, "ASIO playback driver stalled (no callbacks for %llu ms)", now_ms - last_cb);
+      uint64_t elapsed = (now_ms > last_cb) ? (now_ms - last_cb) : 0;
+      if (elapsed > 1500) {
+        logger_error(&g_logger,
+                     "ASIO playback driver stalled (no callbacks for %llu ms)",
+                     elapsed);
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "ASIO playback driver stalled (no callbacks)");

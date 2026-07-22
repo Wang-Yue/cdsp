@@ -140,8 +140,7 @@ static void* volume_filter_create(const char* name,
 
   filter->ramptime_in_chunks = (int)round(
       ramp_time_ms / (1000.0 * (double)chunk_size / (double)sample_rate));
-  filter->stale_ramp_threshold_ns =
-      1500000000ULL * (uint64_t)chunk_size / (uint64_t)sample_rate;
+  filter->stale_ramp_threshold_ns = 1500000000ULL; // 1.5 seconds flat
   // Pre-allocate array
   filter->current_ramp_gains =
       (double*)calloc(chunk_size > 0 ? chunk_size : 1, sizeof(double));
