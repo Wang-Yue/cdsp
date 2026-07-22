@@ -56,7 +56,7 @@ private:
     bool m_isLoaded = false;
 
     bool loadFromDiskCache(std::vector<AutoEqIndexEntry>& entries);
-    void saveToDiskCache(const QByteArray& jsonBytes);
+    void saveToDiskCache(const std::vector<AutoEqIndexEntry>& entries);
 };
 
 #endif // AUTO_EQ_SERVICE_H

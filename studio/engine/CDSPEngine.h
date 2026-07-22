@@ -37,6 +37,7 @@ public:
     bool start(const std::string& configJson, std::string& errorMessage);
     bool setConfig(const std::string& configJson, std::string& errorMessage);
     void stop();
+    void poll();
 
     void setFaderVolume(Fader fader, float db, bool instant = false);
     void setFaderMute(Fader fader, bool mute);
@@ -58,7 +59,6 @@ public:
 
 private:
     dsp_engine_t* m_engine = nullptr;
-    mutable std::mutex m_mutex;
 
     static cdsp_fader_t faderToCFader(Fader fader);
 };

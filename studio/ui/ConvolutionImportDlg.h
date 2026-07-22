@@ -4,11 +4,15 @@
 #include "models/PipelineStore.h"
 
 #include <QDialog>
+#include <QFutureWatcher>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QVBoxLayout>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 class ConvolutionImportDlg : public QDialog {
@@ -16,10 +20,12 @@ class ConvolutionImportDlg : public QDialog {
 
 public:
     ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr);
+    ~ConvolutionImportDlg() override;
 
 private slots:
     void onAddFilesClicked();
     void onImportClicked();
+    void onImportFinished();
     void updateItemsList();
 
 private:
@@ -32,6 +38,13 @@ private:
         int channel = 0;
     };
 
+    struct ImportResult {
+        bool success = false;
+        QString errorMessage;
+        std::map<int, std::string> paths;
+        int firstCoeffCount = 0;
+    };
+
     std::vector<ImportItem> m_items;
 
     QLineEdit* m_nameEdit;
@@ -42,8 +55,11 @@ private:
     QWidget* m_errorWidget;
     QLabel* m_errorLabel;
     QPushButton* m_importBtn;
+    QPushButton* m_cancelBtn;
+    QScrollArea* m_scrollArea;
 
     bool m_isImporting = false;
+    QFutureWatcher<ImportResult> m_watcher;
 
     void setupUi();
     bool hasDuplicateRates() const;

@@ -65,10 +65,15 @@ bool OratoryPresetService::loadFromDiskCache(std::vector<OratoryIndexEntry>& ent
     return false;
 }
 
-void OratoryPresetService::saveToDiskCache(const QByteArray& jsonBytes) {
+void OratoryPresetService::saveToDiskCache(const std::vector<OratoryIndexEntry>& entries) {
+    QJsonArray arr;
+    for (const auto& entry : entries) {
+        arr.append(entry.toJson());
+    }
+    QJsonDocument doc(arr);
     QFile file(getOratoryCacheFilePath());
     if (file.open(QIODevice::WriteOnly)) {
-        file.write(jsonBytes);
+        file.write(doc.toJson(QJsonDocument::Compact));
         file.close();
     }
 }
@@ -107,8 +112,6 @@ void OratoryPresetService::fetchIndex(
         }
 
         QByteArray data = reply->readAll();
-        weakThis->saveToDiskCache(data);
-
         QJsonDocument doc = QJsonDocument::fromJson(data);
         if (!doc.isObject()) {
             if (weakThis->loadFromDiskCache(weakThis->m_allEntries)) {
@@ -145,6 +148,7 @@ void OratoryPresetService::fetchIndex(
         }
         weakThis->m_allEntries = entries;
         weakThis->m_isLoaded = true;
+        weakThis->saveToDiskCache(weakThis->m_allEntries);
         callback(true, weakThis->m_allEntries);
     });
 }

@@ -19,6 +19,7 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 #include <set>
 #include <stdexcept>
 
@@ -27,6 +28,14 @@ ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeli
     setWindowTitle("Import Impulse Responses");
     resize(480, 580);
     setupUi();
+    connect(&m_watcher, &QFutureWatcher<ImportResult>::finished, this, &ConvolutionImportDlg::onImportFinished);
+}
+
+ConvolutionImportDlg::~ConvolutionImportDlg() {
+    if (m_watcher.isRunning()) {
+        m_watcher.cancel();
+        m_watcher.waitForFinished();
+    }
 }
 
 void ConvolutionImportDlg::setupUi() {
@@ -55,11 +64,11 @@ void ConvolutionImportDlg::setupUi() {
     outerLayout->addWidget(topDivider);
 
     // Scrollable Central Area
-    auto scrollArea = new QScrollArea(this);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
 
-    auto contentWidget = new QWidget(scrollArea);
+    auto contentWidget = new QWidget(m_scrollArea);
     auto contentLayout = new QVBoxLayout(contentWidget);
     contentLayout->setContentsMargins(16, 16, 16, 16);
     contentLayout->setSpacing(20);
@@ -155,8 +164,8 @@ void ConvolutionImportDlg::setupUi() {
     contentLayout->addWidget(m_errorWidget);
 
     contentLayout->addStretch();
-    scrollArea->setWidget(contentWidget);
-    outerLayout->addWidget(scrollArea);
+    m_scrollArea->setWidget(contentWidget);
+    outerLayout->addWidget(m_scrollArea);
 
     auto bottomDivider = new QFrame(this);
     bottomDivider->setFrameShape(QFrame::HLine);
@@ -170,9 +179,9 @@ void ConvolutionImportDlg::setupUi() {
     btnLayout->setSpacing(12);
     btnLayout->addStretch();
 
-    auto cancelBtn = new QPushButton("Cancel", footerWidget);
-    connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    btnLayout->addWidget(cancelBtn);
+    m_cancelBtn = new QPushButton("Cancel", footerWidget);
+    connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
+    btnLayout->addWidget(m_cancelBtn);
 
     m_importBtn = new QPushButton("Import", footerWidget);
     m_importBtn->setDefault(true);
@@ -374,54 +383,90 @@ void ConvolutionImportDlg::onImportClicked() {
         return;
 
     m_isImporting = true;
+    m_importBtn->setText("Importing...");
     m_importBtn->setEnabled(false);
+    m_cancelBtn->setEnabled(false);
+    m_scrollArea->setEnabled(false);
     m_errorWidget->setVisible(false);
 
-    try {
-        QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        QDir irDir(appDataDir + "/IRs");
-        if (!irDir.exists())
-            irDir.mkpath(".");
+    QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir irDir(appDataDir + "/IRs");
+    if (!irDir.exists())
+        irDir.mkpath(".");
 
-        QUuid presetId = QUuid::createUuid();
-        std::map<int, std::string> paths;
+    QUuid presetId = QUuid::createUuid();
+    QString presetIdStr = presetId.toString(QUuid::WithoutBraces).left(8);
+
+    auto future = QtConcurrent::run([items = m_items, irDirPath = irDir.absolutePath(), presetIdStr]() {
+        ImportResult res;
+        res.success = true;
         int firstCoeffCount = 0;
 
-        for (const auto& item : m_items) {
-            auto coeffs = ConvCoefficientLoader::loadCoefficients(
-                item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
+        for (const auto& item : items) {
+            try {
+                auto coeffs = ConvCoefficientLoader::loadCoefficients(
+                    item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
 
-            if (coeffs.empty()) {
-                throw std::runtime_error(QString("File '%1' contains zero coefficients.")
-                                             .arg(QFileInfo(item.filePath).fileName())
-                                             .toStdString());
+                if (coeffs.empty()) {
+                    res.success = false;
+                    res.errorMessage =
+                        QString("File '%1' contains zero coefficients.").arg(QFileInfo(item.filePath).fileName());
+                    break;
+                }
+
+                if (firstCoeffCount == 0) {
+                    firstCoeffCount = static_cast<int>(coeffs.size());
+                }
+
+                QString destFileName = QString("Imported-%1-%2.f64").arg(presetIdStr).arg(item.sampleRate);
+                QDir dir(irDirPath);
+                QString destPath = dir.filePath(destFileName);
+
+                if (!ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString())) {
+                    res.success = false;
+                    res.errorMessage = QString("Failed to save imported file: %1").arg(destFileName);
+                    break;
+                }
+                res.paths[item.sampleRate] = destPath.toStdString();
+            } catch (const std::exception& ex) {
+                res.success = false;
+                res.errorMessage = QString::fromStdString(ex.what());
+                break;
+            } catch (...) {
+                res.success = false;
+                res.errorMessage = "An unknown error occurred during import.";
+                break;
             }
-
-            if (firstCoeffCount == 0) {
-                firstCoeffCount = static_cast<int>(coeffs.size());
-            }
-
-            QString destFileName =
-                QString("Imported-%1-%2.f64").arg(presetId.toString(QUuid::WithoutBraces).left(8)).arg(item.sampleRate);
-            QString destPath = irDir.filePath(destFileName);
-
-            ConvCoefficientLoader::saveRawFloat64(coeffs, destPath.toStdString());
-            paths[item.sampleRate] = destPath.toStdString();
         }
+        res.firstCoeffCount = firstCoeffCount;
+        return res;
+    });
 
+    m_watcher.setFuture(future);
+}
+
+void ConvolutionImportDlg::onImportFinished() {
+    ImportResult res = m_watcher.result();
+
+    if (res.success) {
         std::string name = m_nameEdit->text().trimmed().toStdString();
         std::string kind = m_kindEdit->text().trimmed().toStdString();
         if (kind.empty())
             kind = "Imported";
 
-        ConvolutionPreset preset(name, paths, firstCoeffCount, kind);
+        ConvolutionPreset preset(name, res.paths, res.firstCoeffCount, kind);
         m_pipeline->addConvPreset(preset);
 
         accept();
-    } catch (const std::exception& ex) {
-        m_errorLabel->setText(ex.what());
+    } else {
+        m_errorLabel->setText(res.errorMessage);
         m_errorWidget->setVisible(true);
+
         m_isImporting = false;
+        m_importBtn->setText("Import");
         m_importBtn->setEnabled(true);
+        m_cancelBtn->setEnabled(true);
+        m_scrollArea->setEnabled(true);
+        updateImportButtonState();
     }
 }

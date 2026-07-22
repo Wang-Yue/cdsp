@@ -6,8 +6,10 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QPointer>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QtConcurrent>
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -141,44 +143,64 @@ std::vector<BiquadParameters> MeasurementSession::randomMockSystem() {
 }
 
 void MeasurementSession::generateMockMeasurement(bool append) {
+    if (isCapturing)
+        return;
+    isCapturing = true;
     status = "Generating mock measurement…";
+    emit sessionUpdated();
+
     if (!append)
         positions.clear();
 
+    double f1 = sweepF1;
+    double f2 = sweepF2;
+    double duration = sweepDurationSeconds;
+    int rate = sampleRate;
+    size_t currentPosCount = positions.size();
     auto mockChain = randomMockSystem();
-    auto [sweep, inv] = SweepGenerator::sweepAndInverse(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, 0.02, 0.02);
-    std::vector<double> captured = sweep;
 
-    for (const auto& p : mockChain) {
-        auto coeffs = BiquadCoefficients::compute(p, sampleRate);
-        if (coeffs.has_value()) {
-            double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-            const auto& c = coeffs.value();
-            for (size_t i = 0; i < captured.size(); ++i) {
-                double x = captured[i];
-                double y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
-                x2 = x1;
-                x1 = x;
-                y2 = y1;
-                y1 = y;
-                captured[i] = y;
+    QPointer<MeasurementSession> weakThis(this);
+
+    (void)QtConcurrent::run([weakThis, append, f1, f2, duration, rate, currentPosCount, mockChain]() {
+        auto [sweep, inv] = SweepGenerator::sweepAndInverse(f1, f2, duration, rate, 0.02, 0.02);
+        std::vector<double> captured = sweep;
+
+        for (const auto& p : mockChain) {
+            auto coeffs = BiquadCoefficients::compute(p, rate);
+            if (coeffs.has_value()) {
+                double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+                const auto& c = coeffs.value();
+                for (size_t i = 0; i < captured.size(); ++i) {
+                    double x = captured[i];
+                    double y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+                    x2 = x1;
+                    x1 = x;
+                    y2 = y1;
+                    y1 = y;
+                    captured[i] = y;
+                }
             }
         }
-    }
 
-    ImpulseResponse ir = SweepDeconvolver::deconvolve(captured, sweepF1, sweepF2, sweepDurationSeconds, sampleRate);
-    ImpulseResponse windowed = ir.windowed(sampleRate / 200, sampleRate / 5, 0.1);
-    FrequencyResponse fr = FrequencyResponse::from(windowed);
+        ImpulseResponse ir = SweepDeconvolver::deconvolve(captured, f1, f2, duration, rate);
+        ImpulseResponse windowed = ir.windowed(rate / 200, rate / 5, 0.1);
+        FrequencyResponse fr = FrequencyResponse::from(windowed);
 
-    std::string name = "Position " + std::to_string(positions.size() + 1);
-    positions.push_back(MeasurementPosition(name, fr, windowed));
+        QMetaObject::invokeMethod(weakThis.data(), [weakThis, append, fr, windowed, currentPosCount]() {
+            if (!weakThis)
+                return;
+            weakThis->isCapturing = false;
+            std::string name = "Position " + std::to_string(currentPosCount + 1);
+            weakThis->positions.push_back(MeasurementPosition(name, fr, windowed));
 
-    recomputeAverage();
-    if (!append) {
-        correctionPreset = EQPreset("Room Correction", 0.0, {});
-    }
-    status = "Mock measurement ready (" + std::to_string(positions.size()) + " positions).";
-    emit sessionUpdated();
+            weakThis->recomputeAverage();
+            if (!append) {
+                weakThis->correctionPreset = EQPreset("Room Correction", 0.0, {});
+            }
+            weakThis->status = "Mock measurement ready (" + std::to_string(weakThis->positions.size()) + " positions).";
+            emit weakThis->sessionUpdated();
+        });
+    });
 }
 
 #include "room_correction/SweepRecorder.h"
@@ -195,44 +217,66 @@ void MeasurementSession::recordPosition(bool append, const std::string& inputDev
     if (!append)
         positions.clear();
 
-    SweepCaptureResult cap = SweepRecorder::capture(sweepF1, sweepF2, sweepDurationSeconds, sampleRate, inputDeviceName,
-                                                    outputDeviceName, inputChannel, outputChannel, -12.0);
+    double f1 = sweepF1;
+    double f2 = sweepF2;
+    double duration = sweepDurationSeconds;
+    int rate = sampleRate;
 
-    isCapturing = false;
+    QPointer<MeasurementSession> weakThis(this);
 
-    if (cap.captured.empty()) {
-        status = "Capture failed: no microphone samples captured.";
-        emit sessionUpdated();
-        if (callback)
-            callback(false, "Microphone capture buffer empty.");
-        return;
-    }
+    (void)QtConcurrent::run([weakThis, append, inputDeviceName, outputDeviceName, inputChannel, outputChannel, f1, f2,
+                             duration, rate, callback]() {
+        SweepCaptureResult cap = SweepRecorder::capture(f1, f2, duration, rate, inputDeviceName, outputDeviceName,
+                                                        inputChannel, outputChannel, -12.0);
 
-    ImpulseResponse ir = SweepDeconvolver::deconvolve(cap.captured, sweepF1, sweepF2, sweepDurationSeconds, sampleRate);
-    ImpulseResponse windowed = ir.windowed(sampleRate / 200, sampleRate / 5, 0.1);
-    FrequencyResponse fr = FrequencyResponse::from(windowed);
+        if (!weakThis)
+            return;
 
-    std::string positionName = "Position " + std::to_string(positions.size() + 1);
-    positions.push_back(MeasurementPosition(positionName, fr, windowed));
+        if (cap.captured.empty()) {
+            QMetaObject::invokeMethod(weakThis.data(), [weakThis, callback]() {
+                if (!weakThis)
+                    return;
+                weakThis->isCapturing = false;
+                weakThis->status = "Capture failed: no microphone samples captured.";
+                emit weakThis->sessionUpdated();
+                if (callback)
+                    callback(false, "Microphone capture buffer empty.");
+            });
+            return;
+        }
 
-    recomputeAverage();
-    if (!append) {
-        correctionPreset = EQPreset("Room Correction", 0.0, {});
-    }
+        ImpulseResponse ir = SweepDeconvolver::deconvolve(cap.captured, f1, f2, duration, rate);
+        ImpulseResponse windowed = ir.windowed(rate / 200, rate / 5, 0.1);
+        FrequencyResponse fr = FrequencyResponse::from(windowed);
 
-    double latencyMs = static_cast<double>(cap.roundTripSamples) / static_cast<double>(sampleRate) * 1000.0;
-    std::string peakDB = (cap.peakAbsolute > 0.0)
-                             ? QString::number(20.0 * std::log10(cap.peakAbsolute), 'f', 1).toStdString() + " dBFS"
-                             : "—";
-    std::string warning =
-        (cap.peakAbsolute > 0.95) ? " · clipping risk!" : (cap.peakAbsolute < 0.05 ? " · low signal" : "");
+        double latencyMs = static_cast<double>(cap.roundTripSamples) / static_cast<double>(rate) * 1000.0;
+        std::string peakDB = (cap.peakAbsolute > 0.0)
+                                 ? QString::number(20.0 * std::log10(cap.peakAbsolute), 'f', 1).toStdString() + " dBFS"
+                                 : "—";
+        std::string warning =
+            (cap.peakAbsolute > 0.95) ? " · clipping risk!" : (cap.peakAbsolute < 0.05 ? " · low signal" : "");
 
-    status = "Captured " + positionName + " — peak " + peakDB + ", round-trip " +
-             QString::number(latencyMs, 'f', 0).toStdString() + " ms" + warning + ".";
-    emit sessionUpdated();
+        QMetaObject::invokeMethod(
+            weakThis.data(), [weakThis, append, fr, windowed, latencyMs, peakDB, warning, callback]() {
+                if (!weakThis)
+                    return;
+                weakThis->isCapturing = false;
+                std::string positionName = "Position " + std::to_string(weakThis->positions.size() + 1);
+                weakThis->positions.push_back(MeasurementPosition(positionName, fr, windowed));
 
-    if (callback)
-        callback(true, status);
+                weakThis->recomputeAverage();
+                if (!append) {
+                    weakThis->correctionPreset = EQPreset("Room Correction", 0.0, {});
+                }
+
+                weakThis->status = "Captured " + positionName + " — peak " + peakDB + ", round-trip " +
+                                   QString::number(latencyMs, 'f', 0).toStdString() + " ms" + warning + ".";
+                emit weakThis->sessionUpdated();
+
+                if (callback)
+                    callback(true, weakThis->status);
+            });
+    });
 }
 
 void MeasurementSession::importPositionFRD(const std::string& path) {

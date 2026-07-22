@@ -140,6 +140,8 @@ void MonitoringController::poll() {
     if (!m_engine)
         return;
 
+    m_engine->poll();
+
     // 1. Poll Status
     StateUpdate update = m_engine->getStatus();
     handleStateUpdate(update.state, update.stopReason);

@@ -62,7 +62,7 @@ private:
     bool m_isLoaded = false;
 
     bool loadFromDiskCache(std::vector<OratoryIndexEntry>& entries);
-    void saveToDiskCache(const QByteArray& jsonBytes);
+    void saveToDiskCache(const std::vector<OratoryIndexEntry>& entries);
 };
 
 #endif // ORATORY_PRESET_SERVICE_H

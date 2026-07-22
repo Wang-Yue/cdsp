@@ -4,12 +4,10 @@
 #include <iostream>
 
 CDSPEngine::CDSPEngine() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     m_engine = cdsp_engine_create();
 }
 
 CDSPEngine::~CDSPEngine() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         cdsp_engine_free(m_engine);
         m_engine = nullptr;
@@ -33,7 +31,6 @@ cdsp_fader_t CDSPEngine::faderToCFader(Fader fader) {
 }
 
 bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage) {
-    std::lock_guard<std::mutex> lock(m_mutex);
     errorMessage.clear();
     if (!m_engine)
         return false;
@@ -57,28 +54,30 @@ bool CDSPEngine::setConfig(const std::string& configJson, std::string& errorMess
 }
 
 void CDSPEngine::stop() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         cdsp_stop(m_engine);
     }
 }
 
+void CDSPEngine::poll() {
+    if (m_engine) {
+        cdsp_engine_poll(m_engine);
+    }
+}
+
 void CDSPEngine::setFaderVolume(Fader fader, float db, bool instant) {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         cdsp_set_fader_volume(m_engine, faderToCFader(fader), db, instant);
     }
 }
 
 void CDSPEngine::setFaderMute(Fader fader, bool mute) {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         cdsp_set_fader_mute(m_engine, faderToCFader(fader), mute);
     }
 }
 
 float CDSPEngine::getFaderVolume(Fader fader) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         return cdsp_get_fader_volume(m_engine, faderToCFader(fader));
     }
@@ -86,7 +85,6 @@ float CDSPEngine::getFaderVolume(Fader fader) const {
 }
 
 bool CDSPEngine::isFaderMuted(Fader fader) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_engine) {
         return cdsp_get_fader_mute(m_engine, faderToCFader(fader));
     }
@@ -94,7 +92,6 @@ bool CDSPEngine::isFaderMuted(Fader fader) const {
 }
 
 StateUpdate CDSPEngine::getStatus() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     StateUpdate res;
     if (!m_engine)
         return res;
@@ -159,7 +156,6 @@ StateUpdate CDSPEngine::getStatus() const {
 }
 
 VuLevels CDSPEngine::getVuLevels() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     VuLevels res;
     if (!m_engine)
         return res;
@@ -185,7 +181,6 @@ VuLevels CDSPEngine::getVuLevels() const {
 
 bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins,
                              SpectrumData& outSpectrum) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_engine)
         return false;
 
@@ -207,7 +202,6 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
 }
 
 bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& outSamples) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_engine)
         return false;
 
@@ -234,7 +228,6 @@ bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& ou
 }
 
 std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& backend, bool input) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<AudioDevice> result;
 
     cdsp_device_info_t* devs = nullptr;
@@ -253,8 +246,6 @@ std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& back
 
 std::optional<AudioDeviceDescriptor>
 CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
     cdsp_device_error_t devErr;
     memset(&devErr, 0, sizeof(devErr));
     cdsp_device_descriptor_t* desc = nullptr;
@@ -308,6 +299,5 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
 }
 
 void CDSPEngine::setLogLevel(const std::string& levelStr) {
-    std::lock_guard<std::mutex> lock(m_mutex);
     cdsp_set_log_level(levelStr.c_str());
 }
