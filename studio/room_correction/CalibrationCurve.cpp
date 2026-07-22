@@ -67,6 +67,14 @@ std::vector<double> CalibrationCurve::sampledMagnitudeDB(const std::vector<doubl
     return result;
 }
 
+static bool isNumericToken(const std::string& str) {
+    if (str.empty())
+        return false;
+    char* end = nullptr;
+    std::strtod(str.c_str(), &end);
+    return end != str.c_str() && *end == '\0';
+}
+
 std::optional<CalibrationCurve> CalibrationCurve::parse(const std::string& text, const std::string& sourcePath) {
     (void)sourcePath;
     std::vector<double> freqs, mags, phases;
@@ -95,29 +103,30 @@ std::optional<CalibrationCurve> CalibrationCurve::parse(const std::string& text,
             fields.push_back(token);
         }
 
-        if (fields.size() < 2)
+        if (fields.empty())
             continue;
 
-        double f = 0.0, m = 0.0;
-        try {
-            f = std::stod(fields[0]);
-            m = std::stod(fields[1]);
-        } catch (...) {
+        // Skip unrecognized header lines whose first token is not numeric.
+        if (!isNumericToken(fields[0])) {
             continue;
         }
+
+        // If the first token IS numeric, but the line lacks a valid second numeric magnitude field, reject as
+        // malformed.
+        if (fields.size() < 2 || !isNumericToken(fields[1])) {
+            return std::nullopt;
+        }
+
+        double f = std::stod(fields[0]);
+        double m = std::stod(fields[1]);
 
         freqs.push_back(f);
         mags.push_back(m);
 
-        if (fields.size() >= 3) {
-            try {
-                double p = std::stod(fields[2]);
-                phases.push_back(p);
-                sawPhaseColumn = true;
-            } catch (...) {
-                if (sawPhaseColumn)
-                    phases.push_back(0.0);
-            }
+        if (fields.size() >= 3 && isNumericToken(fields[2])) {
+            double p = std::stod(fields[2]);
+            phases.push_back(p);
+            sawPhaseColumn = true;
         } else if (sawPhaseColumn) {
             phases.push_back(0.0);
         }

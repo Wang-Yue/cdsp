@@ -67,8 +67,43 @@ std::vector<double> PEQAutoFit::smoothLogOctave(const std::vector<double>& value
         for (size_t j = 0; j < n; ++j) {
             double d = logF[j] - logF[i];
             if (std::abs(d) > radius) {
-                if (d > radius)
-                    break;
+                continue;
+            }
+            double w = std::exp(-0.5 * d * d / (sigma * sigma));
+            sum += w * values[j];
+            wsum += w;
+        }
+        out[i] = wsum > 0.0 ? sum / wsum : values[i];
+    }
+    return out;
+}
+
+std::vector<double> PEQAutoFit::smoothPsychoacoustic(const std::vector<double>& values,
+                                                     const std::vector<double>& frequencies) {
+    if (values.size() != frequencies.size() || values.empty())
+        return values;
+    size_t n = values.size();
+    std::vector<double> logF(n);
+    for (size_t i = 0; i < n; ++i) {
+        logF[i] = std::log10(std::max(frequencies[i], 1.0));
+    }
+    double log10_2 = std::log10(2.0);
+
+    std::vector<double> out(n);
+    for (size_t i = 0; i < n; ++i) {
+        double f = std::max(frequencies[i], 1.0);
+        // Equivalent Rectangular Bandwidth (ERB) in Hz:
+        double erb = 24.7 * (4.37 * f / 1000.0 + 1.0);
+        // Fractional octave width for 1 ERB at frequency f:
+        double octWidth = std::log2(1.0 + erb / f);
+        double sigma = octWidth * log10_2 / 2.0;
+        double radius = 3.0 * sigma;
+        double sum = 0.0;
+        double wsum = 0.0;
+
+        for (size_t j = 0; j < n; ++j) {
+            double d = logF[j] - logF[i];
+            if (std::abs(d) > radius) {
                 continue;
             }
             double w = std::exp(-0.5 * d * d / (sigma * sigma));
@@ -248,7 +283,11 @@ static BiquadParameters optimizeBand(const BiquadParameters& band, const std::ve
 
         if (curr.type != BiquadType::Lowshelf && curr.type != BiquadType::Highshelf) {
             // Optimize Q
-            curr.q = goldenSectionSearch(options.minQ, options.maxQ, 0.005, true, [&](double q) {
+            double qLo = (options.modalMode && curr.type == BiquadType::Peaking &&
+                          curr.freq.value_or(0.0) <= options.schroederHz)
+                             ? std::max(options.minQ, options.modalMinQ)
+                             : options.minQ;
+            curr.q = goldenSectionSearch(qLo, options.maxQ, 0.005, true, [&](double q) {
                 BiquadParameters b = curr;
                 b.q = q;
                 return cost(b, rwb, frequencies, sampleRate);

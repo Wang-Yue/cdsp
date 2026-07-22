@@ -23,7 +23,17 @@ std::string channelKindToString(MeasurementChannelKind kind);
 enum class FIRKind { MinimumPhase, LinearPhase, MeasurementDriven };
 std::string firKindToString(FIRKind kind);
 
-enum class DisplaySmoothing { Off, Oct1over1, Oct1over3, Oct1over6, Oct1over12, Oct1over24, Oct1over48, Variable };
+enum class DisplaySmoothing {
+    Off,
+    Oct1over1,
+    Oct1over3,
+    Oct1over6,
+    Oct1over12,
+    Oct1over24,
+    Oct1over48,
+    Variable,
+    Psychoacoustic
+};
 std::string displaySmoothingToString(DisplaySmoothing s);
 
 enum class FDWCycles { Off, Cycles1, Cycles5, Cycles10, Cycles15 };

@@ -22,12 +22,14 @@ static double snapToCommonCrossover(double f) {
 
 SubwooferRecommendation SubwooferAssist::recommend(const ImpulseResponse& mainsIR, const ImpulseResponse& subIR) {
     SubwooferRecommendation rec;
-    if (mainsIR.samples.empty() || subIR.samples.empty() || mainsIR.sampleRate <= 0) {
+    if (mainsIR.samples.empty() || subIR.samples.empty() || mainsIR.sampleRate <= 0 ||
+        mainsIR.sampleRate != subIR.sampleRate) {
         return rec;
     }
 
     int sr = mainsIR.sampleRate;
-    int maxLag = std::min(sr / 10, static_cast<int>(std::min(mainsIR.samples.size(), subIR.samples.size())) - 1);
+    int maxLag =
+        std::max(0, std::min(sr / 10, static_cast<int>(std::min(mainsIR.samples.size(), subIR.samples.size())) - 1));
 
     int bestLag = 0;
     double bestVal = -1e18;

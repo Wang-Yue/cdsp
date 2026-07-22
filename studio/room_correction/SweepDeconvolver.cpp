@@ -11,7 +11,7 @@ std::vector<double> SweepDeconvolver::convolve(const std::vector<double>& a, con
         return {};
 
     size_t totalLen = a.size() + b.size() - 1;
-    size_t nFft = 1;
+    size_t nFft = 8;
     while (nFft < totalLen)
         nFft <<= 1;
 

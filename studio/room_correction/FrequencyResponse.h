@@ -26,9 +26,10 @@ public:
 
     std::vector<double> unwrappedPhase() const;
     std::vector<double> groupDelay() const;
+    std::vector<double> groupDelaySeconds() const { return groupDelay(); }
 
-    static FrequencyResponse from(const ImpulseResponse& ir, int fftSize = 4096);
-    static FrequencyResponse fdw(const ImpulseResponse& ir, double cycles, int fftSize = 4096);
+    static FrequencyResponse from(const ImpulseResponse& ir, int fftSize = 0);
+    static FrequencyResponse fdw(const ImpulseResponse& ir, double cycles, int fftSize = 0);
 
     static std::vector<std::pair<double, FrequencyResponse>> stft(const ImpulseResponse& ir, int sliceCount = 30,
                                                                   double maxTimeSeconds = 0.5, int windowLength = 2048,

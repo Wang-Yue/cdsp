@@ -55,7 +55,9 @@ std::string displaySmoothingToString(DisplaySmoothing s) {
     case DisplaySmoothing::Oct1over48:
         return "1/48 oct";
     case DisplaySmoothing::Variable:
-        return "Var (ERB)";
+        return "Var oct";
+    case DisplaySmoothing::Psychoacoustic:
+        return "Psychoacoustic";
     }
     return "1/6 oct";
 }
@@ -99,8 +101,9 @@ std::vector<double> MeasurementSession::displayedMagDB() const {
         octaves = 1.0 / 48.0;
         break;
     case DisplaySmoothing::Variable:
-        octaves = 1.0 / 12.0;
-        break;
+        return PEQAutoFit::smoothLogOctave(measuredMagDB, grid, 1.0 / 3.0, 1.0 / 24.0, 100.0, 10000.0);
+    case DisplaySmoothing::Psychoacoustic:
+        return PEQAutoFit::smoothPsychoacoustic(measuredMagDB, grid);
     }
     return PEQAutoFit::smoothLogOctave(measuredMagDB, grid, octaves);
 }

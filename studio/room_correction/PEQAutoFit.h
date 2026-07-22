@@ -40,6 +40,9 @@ public:
                                                double midOctaves, double trebleOctaves, double transitionLowHz,
                                                double transitionHighHz);
 
+    static std::vector<double> smoothPsychoacoustic(const std::vector<double>& magDB,
+                                                    const std::vector<double>& frequencies);
+
     static std::vector<double> sampleMagnitudeDB(const FrequencyResponse& fr, const std::vector<double>& atFrequencies);
 
     static std::vector<BiquadParameters> fit(const std::vector<double>& measuredMagDB,

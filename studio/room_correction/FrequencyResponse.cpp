@@ -102,7 +102,9 @@ FrequencyResponse FrequencyResponse::from(const ImpulseResponse& ir, int targetF
 }
 
 FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycles, int targetFftSize) {
-    int n = std::max(targetFftSize, static_cast<int>(ir.samples.size()));
+    int req = (targetFftSize > 0) ? targetFftSize
+                                  : (static_cast<int>(ir.samples.size()) + (static_cast<int>(ir.samples.size()) % 2));
+    int n = std::max(2, req);
     if (n % 2 != 0)
         n += 1;
     size_t bins = n / 2 + 1;
@@ -126,13 +128,15 @@ FrequencyResponse FrequencyResponse::fdw(const ImpulseResponse& ir, double cycle
         double iSum = 0.0;
 
         double kOverN = static_cast<double>(k) / static_cast<double>(n);
-        for (int i = startIdx; i <= endIdx; ++i) {
-            double d = std::abs(static_cast<double>(i) - static_cast<double>(p));
-            if (d <= h_k && h_k > 0.0) {
-                double w = 0.5 * (1.0 + std::cos(M_PI * d / h_k));
-                double angle = twoPi * kOverN * static_cast<double>(i);
-                rSum += ir.samples[i] * w * std::cos(angle);
-                iSum -= ir.samples[i] * w * std::sin(angle);
+        if (startIdx <= endIdx) {
+            for (int i = startIdx; i <= endIdx; ++i) {
+                double d = std::abs(static_cast<double>(i) - static_cast<double>(p));
+                if (d <= h_k && h_k > 0.0) {
+                    double w = 0.5 * (1.0 + std::cos(M_PI * d / h_k));
+                    double angle = twoPi * kOverN * static_cast<double>(i);
+                    rSum += ir.samples[i] * w * std::cos(angle);
+                    iSum -= ir.samples[i] * w * std::sin(angle);
+                }
             }
         }
         re[k] = rSum;
@@ -146,31 +150,42 @@ std::vector<std::pair<double, FrequencyResponse>> FrequencyResponse::stft(const 
                                                                           double maxTimeSeconds, int windowLength,
                                                                           int targetFftSize) {
     std::vector<std::pair<double, FrequencyResponse>> slices;
-    if (ir.samples.empty() || sliceCount <= 0)
+    if (ir.samples.empty() || sliceCount <= 0 || windowLength <= 0 || targetFftSize <= 0 || targetFftSize % 2 != 0)
         return slices;
 
-    size_t zeroIdx = ir.zeroIndex;
-    double fs = static_cast<double>(ir.sampleRate);
-    double dt = maxTimeSeconds / static_cast<double>(std::max(1, sliceCount - 1));
+    size_t p = ir.zeroIndex;
+    int totalSamples = static_cast<int>(ir.samples.size());
+    int maxSampleOffset = static_cast<int>(maxTimeSeconds * static_cast<double>(ir.sampleRate));
+    int timeStride = maxSampleOffset / std::max(1, sliceCount - 1);
 
-    for (int s = 0; s < sliceCount; ++s) {
-        double timeSec = static_cast<double>(s) * dt;
-        size_t offsetSamples = static_cast<size_t>(timeSec * fs);
-        size_t startIdx = zeroIdx + offsetSamples;
+    std::vector<double> hann(windowLength, 0.0);
+    for (int i = 0; i < windowLength; ++i) {
+        hann[i] = 0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength - 1)));
+    }
 
-        std::vector<double> sliceSamples(windowLength, 0.0);
-        for (int i = 0; i < windowLength; ++i) {
-            size_t idx = startIdx + i;
-            if (idx < ir.samples.size()) {
-                double w =
-                    0.5 * (1.0 - std::cos(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(windowLength - 1)));
-                sliceSamples[i] = ir.samples[idx] * w;
+    size_t bins = targetFftSize / 2 + 1;
+    std::vector<double> padded(targetFftSize, 0.0);
+
+    for (int sliceIdx = 0; sliceIdx < sliceCount; ++sliceIdx) {
+        int sampleOffset = sliceIdx * timeStride;
+        double t = static_cast<double>(sampleOffset) / static_cast<double>(ir.sampleRate);
+        int sliceStart = static_cast<int>(p) + sampleOffset;
+
+        std::fill(padded.begin(), padded.end(), 0.0);
+
+        for (int wIdx = 0; wIdx < windowLength; ++wIdx) {
+            int srcIdx = sliceStart + wIdx;
+            if (srcIdx >= 0 && srcIdx < totalSamples) {
+                padded[wIdx] = ir.samples[srcIdx] * hann[wIdx];
             }
         }
 
-        ImpulseResponse sliceIR(sliceSamples, ir.sampleRate);
-        FrequencyResponse fr = from(sliceIR, targetFftSize);
-        slices.push_back({timeSec, fr});
+        std::vector<double> re(bins, 0.0);
+        std::vector<double> im(bins, 0.0);
+        MeasurementFFT::forward(padded, re, im);
+
+        FrequencyResponse fr(re, im, ir.sampleRate, targetFftSize);
+        slices.push_back({t, fr});
     }
 
     return slices;

@@ -19,7 +19,7 @@ struct TargetBreakpoint {
     bool operator==(const TargetBreakpoint& other) const { return freqHz == other.freqHz && gainDB == other.gainDB; }
 };
 
-enum class TargetPreset { Flat, BruelKjaer, Harman };
+enum class TargetPreset { Flat, BruelKjaer, Harman, Tilt, BassBoost };
 
 class TargetCurve {
 public:
@@ -64,9 +64,10 @@ public:
                 double logF = std::log10(freqHz);
                 double logLo = std::log10(lo.freqHz);
                 double logHi = std::log10(hi.freqHz);
-                if (logHi <= logLo)
+                double denom = logHi - logLo;
+                if (denom < 1e-9)
                     return lo.gainDB;
-                double t = (logF - logLo) / (logHi - logLo);
+                double t = (logF - logLo) / denom;
                 return lo.gainDB + t * (hi.gainDB - lo.gainDB);
             }
         }
@@ -141,6 +142,17 @@ public:
                             TargetBreakpoint(20000.0, -5.5)});
     }
 
+    static TargetCurve tilt(double slopeDbPerOct = -1.0, double pivotHz = 1000.0) {
+        double gain20 = slopeDbPerOct * (std::log10(20.0 / pivotHz) / std::log10(2.0));
+        double gain20k = slopeDbPerOct * (std::log10(20000.0 / pivotHz) / std::log10(2.0));
+        return TargetCurve({TargetBreakpoint(20.0, gain20), TargetBreakpoint(20000.0, gain20k)});
+    }
+
+    static TargetCurve bassBoost(double boostDB = 4.0, double cornerHz = 80.0, double transitionHz = 200.0) {
+        return TargetCurve({TargetBreakpoint(20.0, boostDB), TargetBreakpoint(cornerHz, boostDB),
+                            TargetBreakpoint(transitionHz, 0.0), TargetBreakpoint(20000.0, 0.0)});
+    }
+
     static TargetCurve getPreset(TargetPreset preset) {
         switch (preset) {
         case TargetPreset::Flat:
@@ -149,6 +161,10 @@ public:
             return bruelKjaer();
         case TargetPreset::Harman:
             return harman();
+        case TargetPreset::Tilt:
+            return tilt();
+        case TargetPreset::BassBoost:
+            return bassBoost();
         }
         return flat();
     }

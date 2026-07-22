@@ -13,16 +13,16 @@ ImpulseResponse::ImpulseResponse(const std::vector<double>& samples, int sampleR
 size_t ImpulseResponse::peakIndex() const {
     if (samples.empty())
         return 0;
-    size_t idx = 0;
-    double maxVal = -1.0;
-    for (size_t i = 0; i < samples.size(); ++i) {
+    size_t best = 0;
+    double bestVal = std::abs(samples[0]);
+    for (size_t i = 1; i < samples.size(); ++i) {
         double v = std::abs(samples[i]);
-        if (v > maxVal) {
-            maxVal = v;
-            idx = i;
+        if (v > bestVal) {
+            bestVal = v;
+            best = i;
         }
     }
-    return idx;
+    return best;
 }
 
 double ImpulseResponse::peakValue() const {
@@ -49,17 +49,21 @@ ImpulseResponse ImpulseResponse::windowed(size_t leftSamples, size_t rightSample
         }
     }
 
-    size_t leftTaper = static_cast<size_t>(leftSamples * taperFraction);
-    size_t rightTaper = static_cast<size_t>(rightSamples * taperFraction);
+    size_t leftTaper = static_cast<size_t>(static_cast<double>(leftSamples) * taperFraction);
+    size_t rightTaper = static_cast<size_t>(static_cast<double>(rightSamples) * taperFraction);
 
-    for (size_t i = 0; i < std::min(leftTaper, n); ++i) {
-        double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(leftTaper)));
-        out[i] *= w;
+    if (leftTaper > 0) {
+        for (size_t i = 0; i < std::min(leftTaper, n); ++i) {
+            double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(leftTaper)));
+            out[i] *= w;
+        }
     }
 
-    for (size_t i = 0; i < std::min(rightTaper, n); ++i) {
-        double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(rightTaper)));
-        out[n - 1 - i] *= w;
+    if (rightTaper > 0) {
+        for (size_t i = 0; i < std::min(rightTaper, n); ++i) {
+            double w = 0.5 * (1.0 - std::cos(M_PI * static_cast<double>(i) / static_cast<double>(rightTaper)));
+            out[n - 1 - i] *= w;
+        }
     }
 
     return ImpulseResponse(out, sampleRate, leftSamples);

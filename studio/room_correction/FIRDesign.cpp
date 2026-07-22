@@ -205,7 +205,9 @@ std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& 
     MeasurementFFT::inverse(hReal, hImag, minPhaseIR);
 
     int outLen = options.outputLength.value_or(nFft);
-    minPhaseIR.resize(outLen);
+    if (outLen < static_cast<int>(minPhaseIR.size())) {
+        minPhaseIR.resize(outLen);
+    }
     return minPhaseIR;
 }
 
@@ -236,8 +238,8 @@ std::vector<double> FIRDesign::fromMeasurement(const FrequencyResponse& measured
         double correction = 0.0;
 
         if (freq >= options.minFreqHz && freq <= options.maxFreqHz) {
-            size_t mBin = static_cast<size_t>(std::round(freq / measuredBinHz));
-            size_t mb = std::min(measured.bins() - 1, mBin);
+            int mBin = static_cast<int>(std::round(freq / measuredBinHz));
+            size_t mb = static_cast<size_t>(std::max(0, std::min(static_cast<int>(measured.bins() - 1), mBin)));
             double mRe = measured.real[mb];
             double mIm = measured.imag[mb];
             double mMag = std::sqrt(mRe * mRe + mIm * mIm);
