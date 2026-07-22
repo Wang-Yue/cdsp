@@ -715,8 +715,8 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       } else {
         if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
             hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
-            hr == AUDCLNT_E_SERVICE_NOT_RUNNING || hr == 0x88890010 ||
-            hr == 0x88890018) {
+            hr == AUDCLNT_E_SERVICE_NOT_RUNNING ||
+            hr == AUDCLNT_E_BUFFER_ERROR) {
           double mix_rate = 0.0;
           for (int i = 0; i < 60; i++) {
             mix_rate =

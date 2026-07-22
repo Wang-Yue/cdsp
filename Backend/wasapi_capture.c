@@ -505,8 +505,8 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     }
     if (FAILED(hr)) {
       if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
-          hr == AUDCLNT_E_RESOURCES_INVALIDATED || hr == 0x88890010 ||
-          hr == 0x88890018) {
+          hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+          hr == AUDCLNT_E_SERVICE_NOT_RUNNING || hr == AUDCLNT_E_BUFFER_ERROR) {
         double mix_rate = 0.0;
         for (int i = 0; i < 60; i++) {
           mix_rate = wasapi_device_get_current_mix_rate(capture->device,

@@ -908,8 +908,8 @@ static void file_capture_set_pitch(void* ctx, double multiplier) {
  * @return true if data is available, false on timeout or error.
  */
 static bool file_capture_wait(void* ctx, uint32_t timeout_ms) {
-  file_capture_t* capture = (file_capture_t*)ctx;
 #ifdef CDSP_TEST
+  file_capture_t* capture = (file_capture_t*)ctx;
   if (capture && capture->realtime) {
     cdsp_sleep_ms(timeout_ms);
   }

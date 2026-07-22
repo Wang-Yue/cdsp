@@ -473,7 +473,7 @@ static void win32_avrt_cleanup(void* val) {
     HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
     if (avrt_module) {
       AvRevertMmThreadCharacteristicsFn revert_fn =
-          (AvRevertMmThreadCharacteristicsFn)GetProcAddress(
+          (AvRevertMmThreadCharacteristicsFn)(void (*)(void))GetProcAddress(
               avrt_module, "AvRevertMmThreadCharacteristics");
       if (revert_fn) {
         revert_fn(task_handle);
@@ -501,7 +501,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
   if (avrt_module) {
     AvSetMmThreadCharacteristicsWFn set_fn =
-        (AvSetMmThreadCharacteristicsWFn)GetProcAddress(
+        (AvSetMmThreadCharacteristicsWFn)(void (*)(void))GetProcAddress(
             avrt_module, "AvSetMmThreadCharacteristicsW");
     if (set_fn) {
       DWORD task_index = 0;

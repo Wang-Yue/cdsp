@@ -29,12 +29,6 @@ typedef struct convolution_filter convolution_filter_t;
 
 typedef double double4 __attribute__((vector_size(32), aligned(8)));
 
-static inline double4 load_double4(const double* p) {
-  return *(const double4*)p;
-}
-
-static inline void store_double4(double* p, double4 v) { *(double4*)p = v; }
-
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -722,33 +716,33 @@ static void process_chunk(convolution_filter_t* filter,
 
     size_t vec_len = (spec_len / 16) * 16;
     for (size_t k = 0; k < vec_len; k += 16) {
-      double4 h_re0 = load_double4(&hre[k]);
-      double4 h_im0 = load_double4(&him[k]);
-      double4 s_re0 = load_double4(&sre[k]);
-      double4 s_im0 = load_double4(&sim[k]);
-      double4 a_re0 = load_double4(&acc_re[k]);
-      double4 a_im0 = load_double4(&acc_im[k]);
+      double4 h_re0 = *(const double4*)&hre[k];
+      double4 h_im0 = *(const double4*)&him[k];
+      double4 s_re0 = *(const double4*)&sre[k];
+      double4 s_im0 = *(const double4*)&sim[k];
+      double4 a_re0 = *(const double4*)&acc_re[k];
+      double4 a_im0 = *(const double4*)&acc_im[k];
 
-      double4 h_re1 = load_double4(&hre[k + 4]);
-      double4 h_im1 = load_double4(&him[k + 4]);
-      double4 s_re1 = load_double4(&sre[k + 4]);
-      double4 s_im1 = load_double4(&sim[k + 4]);
-      double4 a_re1 = load_double4(&acc_re[k + 4]);
-      double4 a_im1 = load_double4(&acc_im[k + 4]);
+      double4 h_re1 = *(const double4*)&hre[k + 4];
+      double4 h_im1 = *(const double4*)&him[k + 4];
+      double4 s_re1 = *(const double4*)&sre[k + 4];
+      double4 s_im1 = *(const double4*)&sim[k + 4];
+      double4 a_re1 = *(const double4*)&acc_re[k + 4];
+      double4 a_im1 = *(const double4*)&acc_im[k + 4];
 
-      double4 h_re2 = load_double4(&hre[k + 8]);
-      double4 h_im2 = load_double4(&him[k + 8]);
-      double4 s_re2 = load_double4(&sre[k + 8]);
-      double4 s_im2 = load_double4(&sim[k + 8]);
-      double4 a_re2 = load_double4(&acc_re[k + 8]);
-      double4 a_im2 = load_double4(&acc_im[k + 8]);
+      double4 h_re2 = *(const double4*)&hre[k + 8];
+      double4 h_im2 = *(const double4*)&him[k + 8];
+      double4 s_re2 = *(const double4*)&sre[k + 8];
+      double4 s_im2 = *(const double4*)&sim[k + 8];
+      double4 a_re2 = *(const double4*)&acc_re[k + 8];
+      double4 a_im2 = *(const double4*)&acc_im[k + 8];
 
-      double4 h_re3 = load_double4(&hre[k + 12]);
-      double4 h_im3 = load_double4(&him[k + 12]);
-      double4 s_re3 = load_double4(&sre[k + 12]);
-      double4 s_im3 = load_double4(&sim[k + 12]);
-      double4 a_re3 = load_double4(&acc_re[k + 12]);
-      double4 a_im3 = load_double4(&acc_im[k + 12]);
+      double4 h_re3 = *(const double4*)&hre[k + 12];
+      double4 h_im3 = *(const double4*)&him[k + 12];
+      double4 s_re3 = *(const double4*)&sre[k + 12];
+      double4 s_im3 = *(const double4*)&sim[k + 12];
+      double4 a_re3 = *(const double4*)&acc_re[k + 12];
+      double4 a_im3 = *(const double4*)&acc_im[k + 12];
 
       a_re0 += h_re0 * s_re0 - h_im0 * s_im0;
       a_im0 += h_re0 * s_im0 + h_im0 * s_re0;
@@ -762,14 +756,14 @@ static void process_chunk(convolution_filter_t* filter,
       a_re3 += h_re3 * s_re3 - h_im3 * s_im3;
       a_im3 += h_re3 * s_im3 + h_im3 * s_re3;
 
-      store_double4(&acc_re[k], a_re0);
-      store_double4(&acc_im[k], a_im0);
-      store_double4(&acc_re[k + 4], a_re1);
-      store_double4(&acc_im[k + 4], a_im1);
-      store_double4(&acc_re[k + 8], a_re2);
-      store_double4(&acc_im[k + 8], a_im2);
-      store_double4(&acc_re[k + 12], a_re3);
-      store_double4(&acc_im[k + 12], a_im3);
+      *(double4*)&acc_re[k] = a_re0;
+      *(double4*)&acc_im[k] = a_im0;
+      *(double4*)&acc_re[k + 4] = a_re1;
+      *(double4*)&acc_im[k + 4] = a_im1;
+      *(double4*)&acc_re[k + 8] = a_re2;
+      *(double4*)&acc_im[k + 8] = a_im2;
+      *(double4*)&acc_re[k + 12] = a_re3;
+      *(double4*)&acc_im[k + 12] = a_im3;
     }
     for (size_t k = vec_len; k < spec_len; k++) {
       acc_re[k] += hre[k] * sre[k] - him[k] * sim[k];
