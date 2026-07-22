@@ -953,8 +953,10 @@ static long asio_message(long selector, long value, void* message,
       logger_warn(&g_logger, "ASIO reset request received from driver.");
       if (g_asio_shared.iasio) {
         ASIOSampleRate current_rate = 0.0;
-        if (g_asio_shared.iasio->lpVtbl->getSampleRate(g_asio_shared.iasio, &current_rate) == 0) {
-          logger_info(&g_logger, "ASIO driver current rate: %f", (double)current_rate);
+        if (g_asio_shared.iasio->lpVtbl->getSampleRate(g_asio_shared.iasio,
+                                                       &current_rate) == 0) {
+          logger_info(&g_logger, "ASIO driver current rate: %f",
+                      (double)current_rate);
           AcquireSRWLockExclusive(&g_asio_shared.lock);
           if (g_active_capture) {
             g_active_capture->pending_rate = (double)current_rate;
@@ -1211,7 +1213,9 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
 
     if (last_cb > 0) {
       if (now_ms - last_cb > 1500) {
-        logger_error(&g_logger, "ASIO capture driver stalled (no callbacks for %llu ms)", now_ms - last_cb);
+        logger_error(&g_logger,
+                     "ASIO capture driver stalled (no callbacks for %llu ms)",
+                     now_ms - last_cb);
         if (err) {
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "ASIO capture driver stalled (no callbacks)");
@@ -1221,7 +1225,9 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
       }
     } else {
       if (now_ms - start_wait > 10000) {
-        logger_error(&g_logger, "ASIO capture driver failed to start callbacks within 10 seconds");
+        logger_error(
+            &g_logger,
+            "ASIO capture driver failed to start callbacks within 10 seconds");
         if (err) {
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "ASIO capture driver failed to start callbacks");
@@ -1296,9 +1302,12 @@ static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
 
   if (!changed && capture->iasio) {
     ASIOSampleRate current_rate = 0.0;
-    if (capture->iasio->lpVtbl->getSampleRate(capture->iasio, &current_rate) == 0) {
+    if (capture->iasio->lpVtbl->getSampleRate(capture->iasio, &current_rate) ==
+        0) {
       if (current_rate > 0.0 && (int)current_rate != capture->sample_rate) {
-        logger_warn(&g_logger, "ASIO capture driver sample rate mismatch detected: nominal=%d, driver=%f",
+        logger_warn(&g_logger,
+                    "ASIO capture driver sample rate mismatch detected: "
+                    "nominal=%d, driver=%f",
                     capture->sample_rate, (double)current_rate);
         capture->pending_rate = (double)current_rate;
         capture->has_pending_rate_change = true;
@@ -1629,7 +1638,9 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
       }
     } else {
       if (now_ms - start_wait > 10000) {
-        logger_error(&g_logger, "ASIO playback driver failed to start callbacks within 10 seconds");
+        logger_error(
+            &g_logger,
+            "ASIO playback driver failed to start callbacks within 10 seconds");
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "ASIO playback driver failed to start callbacks");
@@ -1701,11 +1712,18 @@ static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
 
   if (!changed && playback->iasio) {
     ASIOSampleRate current_rate = 0.0;
-    if (playback->iasio->lpVtbl->getSampleRate(playback->iasio, &current_rate) == 0) {
-      if (current_rate > 0.0 && (int)current_rate != playback->sample_rate) {
-        logger_warn(&g_logger, "ASIO playback driver sample rate mismatch detected: nominal=%d, driver=%f",
-                    playback->sample_rate, (double)current_rate);
-        playback->pending_rate = (double)current_rate;
+    if (playback->iasio->lpVtbl->getSampleRate(playback->iasio,
+                                               &current_rate) == 0) {
+      int expected_rate = playback->output_dsd ? playback->sample_rate * 32
+                                               : playback->sample_rate;
+      if (current_rate > 0.0 && (int)current_rate != expected_rate) {
+        logger_warn(&g_logger,
+                    "ASIO playback driver sample rate mismatch detected: "
+                    "nominal=%d, driver=%f",
+                    expected_rate, (double)current_rate);
+        playback->pending_rate = playback->output_dsd
+                                     ? (double)current_rate / 32.0
+                                     : (double)current_rate;
         playback->has_pending_rate_change = true;
         changed = true;
       }
