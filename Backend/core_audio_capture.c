@@ -45,7 +45,6 @@ struct core_audio_capture {
   /// Per-channel SPSC ring buffer of `Float` samples. Render callback
   /// is the producer; `read(frames:)` is the consumer.
   spsc_audio_ring_buffer_t** capture_rings;
-  size_t ring_buffer_size;
   /// Capacity (samples per channel) the rings were sized for.
   /// Whether the audio unit delivers interleaved or non-interleaved
   /// audio. Determined in `open()`; read by the render callback.
@@ -471,29 +470,6 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
       capture->audio_unit, kAudioUnitProperty_MaximumFramesPerSlice,
       kAudioUnitScope_Global, 0, &max_frames, sizeof(max_frames));
 
-  size_t needed_ring_size = (size_t)max_frames * 4;
-  if (needed_ring_size > capture->ring_buffer_size) {
-    logger_info(&g_logger,
-                "Resizing capture ring buffers from %zu to %zu frames",
-                capture->ring_buffer_size, needed_ring_size);
-    for (int i = 0; i < capture->channels; i++) {
-      if (capture->capture_rings[i]) {
-        spsc_audio_ring_buffer_free(capture->capture_rings[i]);
-      }
-      capture->capture_rings[i] =
-          spsc_audio_ring_buffer_create(needed_ring_size);
-      if (!capture->capture_rings[i]) {
-        logger_error(&g_logger, "Failed to resize ring buffer %d", i);
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                             "Failed to allocate resized ring buffer");
-        }
-        goto cleanup;
-      }
-    }
-    capture->ring_buffer_size = needed_ring_size;
-  }
-
   // Preallocate render buffers.
   if (!allocate_render_buffers(capture)) {
     if (err)
@@ -759,10 +735,8 @@ static capture_backend_t* core_audio_capture_create(
     core_audio_capture_destroy(capture);
     return NULL;
   }
-  capture->ring_buffer_size = chunk_size * 4;
   for (int i = 0; i < config_channels; i++) {
-    capture->capture_rings[i] =
-        spsc_audio_ring_buffer_create(capture->ring_buffer_size);
+    capture->capture_rings[i] = spsc_audio_ring_buffer_create(chunk_size * 4);
     if (!capture->capture_rings[i]) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,

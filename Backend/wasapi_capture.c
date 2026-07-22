@@ -389,11 +389,8 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  size_t max_frames = (size_t)capture->chunk_size * 4;
-  if ((size_t)capture->buffer_frame_count * 4 > max_frames) {
-    max_frames = (size_t)capture->buffer_frame_count * 4;
-  }
-  capture->residual_chunk = audio_chunk_create(max_frames, capture->channels);
+  capture->residual_chunk =
+      audio_chunk_create(capture->chunk_size * 4, capture->channels);
   if (!capture->residual_chunk) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -554,10 +551,8 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
               data + (size_t)to_copy * capture->channels * sample_size;
           UINT32 extra_frames = num_frames - to_copy;
 
-          size_t residual_capacity =
-              audio_chunk_get_frames(capture->residual_chunk);
-          if (extra_frames > (UINT32)residual_capacity) {
-            extra_frames = (UINT32)residual_capacity;
+          if (extra_frames > (UINT32)capture->chunk_size * 4) {
+            extra_frames = (UINT32)capture->chunk_size * 4;
           }
 
           decode_samples_from_wasapi(capture->residual_chunk, 0, extra_data,
