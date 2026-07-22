@@ -23,28 +23,12 @@ if(APPLE)
     set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
     add_compile_definitions(ENABLE_COREAUDIO ENABLE_ACCELERATE)
 elseif(WIN32)
-    include(FetchContent)
-    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
-    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FFTW3 fftw3 REQUIRED)
+    pkg_check_modules(FFTW3F fftw3f REQUIRED)
 
-    # Build libfftw3 (double precision)
-    set(ENABLE_FLOAT OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        fftw3
-        URL https://www.fftw.org/fftw-3.3.10.tar.gz
-    )
-    FetchContent_MakeAvailable(fftw3)
-
-    # Build libfftw3f (single precision)
-    set(ENABLE_FLOAT ON CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        fftw3f
-        URL https://www.fftw.org/fftw-3.3.10.tar.gz
-    )
-    FetchContent_MakeAvailable(fftw3f)
-
-    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid dbghelp fftw3 fftw3f)
+    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid dbghelp ${FFTW3_LIBRARIES} ${FFTW3F_LIBRARIES})
+    include_directories(${FFTW3_INCLUDE_DIRS} ${FFTW3F_INCLUDE_DIRS})
     add_compile_definitions(ENABLE_WASAPI ENABLE_ASIO ENABLE_FFTW _WIN32 COBJMACROS UNICODE _UNICODE _USE_MATH_DEFINES)
 else()
     find_package(PkgConfig REQUIRED)
