@@ -519,8 +519,12 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
         }
         pthread_setspecific(g_win32_avrt_key, (void*)task_handle);
 
-        FreeLibrary(avrt_module);
+        // Keep avrt_module loaded as we have active handles referring to it
         return;
+      } else {
+        logger_warn(&g_logger,
+                    "[%s] AvSetMmThreadCharacteristicsW failed: err=%lu",
+                    name ? name : "unknown", GetLastError());
       }
     }
     FreeLibrary(avrt_module);
