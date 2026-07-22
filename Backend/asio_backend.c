@@ -175,6 +175,7 @@ struct asio_capture {
   bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
+  uint64_t last_callback_time_ms;
 };
 
 struct asio_playback {
@@ -202,6 +203,7 @@ struct asio_playback {
   bool stopped;
   double pending_rate;
   bool has_pending_rate_change;
+  uint64_t last_callback_time_ms;
 };
 
 // Global active backend references
@@ -765,6 +767,16 @@ static bool init_asio_device(const char* device_name, double sample_rate,
 static void asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
   (void)directProcess;
 
+  uint64_t now_ms = cdsp_time_now_ns() / 1000000;
+  AcquireSRWLockExclusive(&g_asio_shared.lock);
+  if (g_active_playback) {
+    g_active_playback->last_callback_time_ms = now_ms;
+  }
+  if (g_active_capture) {
+    g_active_capture->last_callback_time_ms = now_ms;
+  }
+  ReleaseSRWLockExclusive(&g_asio_shared.lock);
+
   // Playback phase
   if (g_active_playback && g_active_playback->is_running) {
     long frames = g_active_playback->actual_buffer_size;
@@ -937,8 +949,24 @@ static long asio_message(long selector, long value, void* message,
       return 2;  // ASIO 2.0
     case 3:      // kAsioSupportsTimeInfo
       return 1;
-    case 5:  // kAsioResetRequest {
+    case 5:  // kAsioResetRequest
       logger_warn(&g_logger, "ASIO reset request received from driver.");
+      if (g_asio_shared.iasio) {
+        ASIOSampleRate current_rate = 0.0;
+        if (g_asio_shared.iasio->lpVtbl->getSampleRate(g_asio_shared.iasio, &current_rate) == 0) {
+          logger_info(&g_logger, "ASIO driver current rate: %f", (double)current_rate);
+          AcquireSRWLockExclusive(&g_asio_shared.lock);
+          if (g_active_capture) {
+            g_active_capture->pending_rate = (double)current_rate;
+            g_active_capture->has_pending_rate_change = true;
+          }
+          if (g_active_playback) {
+            g_active_playback->pending_rate = (double)current_rate;
+            g_active_playback->has_pending_rate_change = true;
+          }
+          ReleaseSRWLockExclusive(&g_asio_shared.lock);
+        }
+      }
       return 1;
     case 6:  // kAsioBufferSizeChange
       return 1;
@@ -1164,11 +1192,45 @@ static bool asio_capture_read_internal(void* ctx, size_t frames,
     capture->decode_buf_size = requested;
   }
 
+  uint64_t start_wait = cdsp_time_now_ns() / 1000000;
   while (spsc_audio_ring_buffer_get_available_to_read(capture->ring_buffer) <
          requested) {
     if (capture->stopped) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Capture stream stopped");
+      }
       return false;
     }
+
+    uint64_t now_ms = cdsp_time_now_ns() / 1000000;
+    uint64_t last_cb = 0;
+    AcquireSRWLockShared(&g_asio_shared.lock);
+    last_cb = capture->last_callback_time_ms;
+    ReleaseSRWLockShared(&g_asio_shared.lock);
+
+    if (last_cb > 0) {
+      if (now_ms - last_cb > 1500) {
+        logger_error(&g_logger, "ASIO capture driver stalled (no callbacks for %llu ms)", now_ms - last_cb);
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "ASIO capture driver stalled (no callbacks)");
+        }
+        capture->stopped = true;
+        return false;
+      }
+    } else {
+      if (now_ms - start_wait > 10000) {
+        logger_error(&g_logger, "ASIO capture driver failed to start callbacks within 10 seconds");
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "ASIO capture driver failed to start callbacks");
+        }
+        capture->stopped = true;
+        return false;
+      }
+    }
+
     if (!cdsp_sem_timedwait(capture->semaphore, 100)) {
       if (!capture->is_running) return false;
     }
@@ -1231,6 +1293,20 @@ static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   if (!capture) return false;
   AcquireSRWLockExclusive(&g_asio_shared.lock);
   bool changed = capture->has_pending_rate_change;
+
+  if (!changed && capture->iasio) {
+    ASIOSampleRate current_rate = 0.0;
+    if (capture->iasio->lpVtbl->getSampleRate(capture->iasio, &current_rate) == 0) {
+      if (current_rate > 0.0 && (int)current_rate != capture->sample_rate) {
+        logger_warn(&g_logger, "ASIO capture driver sample rate mismatch detected: nominal=%d, driver=%f",
+                    capture->sample_rate, (double)current_rate);
+        capture->pending_rate = (double)current_rate;
+        capture->has_pending_rate_change = true;
+        changed = true;
+      }
+    }
+  }
+
   if (changed) {
     if (out_rate) {
       *out_rate = capture->pending_rate;
@@ -1522,6 +1598,7 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
   }
 
   size_t written = 0;
+  uint64_t start_wait = cdsp_time_now_ns() / 1000000;
   while (written < requested) {
     if (playback->stopped) {
       if (err) {
@@ -1530,6 +1607,35 @@ static bool asio_playback_write_internal(void* ctx, const audio_chunk_t* chunk,
       }
       return false;
     }
+
+    uint64_t now_ms = cdsp_time_now_ns() / 1000000;
+    uint64_t last_cb = 0;
+    AcquireSRWLockShared(&g_asio_shared.lock);
+    last_cb = playback->last_callback_time_ms;
+    ReleaseSRWLockShared(&g_asio_shared.lock);
+
+    if (last_cb > 0) {
+      if (now_ms - last_cb > 1500) {
+        logger_error(&g_logger, "ASIO playback driver stalled (no callbacks for %llu ms)", now_ms - last_cb);
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "ASIO playback driver stalled (no callbacks)");
+        }
+        playback->stopped = true;
+        return false;
+      }
+    } else {
+      if (now_ms - start_wait > 10000) {
+        logger_error(&g_logger, "ASIO playback driver failed to start callbacks within 10 seconds");
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "ASIO playback driver failed to start callbacks");
+        }
+        playback->stopped = true;
+        return false;
+      }
+    }
+
     // Since ring buffer holds flat interleaved float array, stride = 1
     size_t available_space =
         spsc_audio_ring_buffer_get_capacity(playback->ring_buffer) -
@@ -1589,6 +1695,20 @@ static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   if (!playback) return false;
   AcquireSRWLockExclusive(&g_asio_shared.lock);
   bool changed = playback->has_pending_rate_change;
+
+  if (!changed && playback->iasio) {
+    ASIOSampleRate current_rate = 0.0;
+    if (playback->iasio->lpVtbl->getSampleRate(playback->iasio, &current_rate) == 0) {
+      if (current_rate > 0.0 && (int)current_rate != playback->sample_rate) {
+        logger_warn(&g_logger, "ASIO playback driver sample rate mismatch detected: nominal=%d, driver=%f",
+                    playback->sample_rate, (double)current_rate);
+        playback->pending_rate = (double)current_rate;
+        playback->has_pending_rate_change = true;
+        changed = true;
+      }
+    }
+  }
+
   if (changed) {
     if (out_rate) {
       *out_rate = playback->pending_rate;

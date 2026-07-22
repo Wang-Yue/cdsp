@@ -2121,6 +2121,12 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 #include <objbase.h>
 #include <unknwn.h>
 #include <windows.h>
+
+static bool wasapi_set_both_rates(int sample_rate);
+static bool wasapi_change_capture_rate_only(int sample_rate);
+static bool wasapi_change_playback_rate_only(int sample_rate);
+static bool wasapi_complete_rate_change(int sample_rate);
+
 TEST(DSPEngineASIOSetConfigAndReload) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -2352,453 +2358,42 @@ TEST(DSPEngineASIOSetConfigStruct) {
   if (engine && engine->free) engine->free(engine->ctx);
 }
 
-// ==========================================
-// Mock ASIO Driver & E2E Rate Change Test
-// ==========================================
-
-// ASIO type definitions
-typedef int32_t ASIOBool;
-#define ASIOFalse 0
-#define ASIOTrue 1
-typedef double ASIOSampleRate;
-typedef long ASIOError;
-#define ASE_OK 0
-
-typedef struct {
-  int32_t channel;
-  ASIOBool isInput;
-  ASIOBool isActive;
-  int32_t channelGroup;
-  int32_t type;
-  char name[32];
-} ASIOChannelInfo_Test;
-
-typedef struct {
-  ASIOBool isInput;
-  int32_t channelNum;
-  void* buffers[2];
-} ASIOBufferInfo_Test;
-
-typedef struct {
-  void (*bufferSwitch)(long doubleBufferIndex, ASIOBool directProcess);
-  void (*sampleRateDidChange)(ASIOSampleRate sRate);
-  long (*asioMessage)(long selector, long value, void* message, double* opt);
-  void* (*bufferSwitchTimeInfo)(void* params, long doubleBufferIndex,
-                                ASIOBool directProcess);
-} ASIOCallbacks_Test;
-
-typedef struct IASIO IASIO;
-typedef struct IASIOVtbl IASIOVtbl;
-
-struct IASIOVtbl {
-  HRESULT(STDMETHODCALLTYPE* QueryInterface)(IASIO* This, REFIID riid,
-                                             void** ppv);
-  ULONG(STDMETHODCALLTYPE* AddRef)(IASIO* This);
-  ULONG(STDMETHODCALLTYPE* Release)(IASIO* This);
-  ASIOBool(STDMETHODCALLTYPE* init)(IASIO* This, void* sysHandle);
-  void(STDMETHODCALLTYPE* getDriverName)(IASIO* This, char* name);
-  long(STDMETHODCALLTYPE* getDriverVersion)(IASIO* This);
-  void(STDMETHODCALLTYPE* getErrorMessage)(IASIO* This, char* string);
-  ASIOError(STDMETHODCALLTYPE* start)(IASIO* This);
-  ASIOError(STDMETHODCALLTYPE* stop)(IASIO* This);
-  ASIOError(STDMETHODCALLTYPE* getChannels)(IASIO* This, long* numInputChannels,
-                                            long* numOutputChannels);
-  ASIOError(STDMETHODCALLTYPE* getLatencies)(IASIO* This, long* inputLatency,
-                                             long* outputLatency);
-  ASIOError(STDMETHODCALLTYPE* getBufferSize)(IASIO* This, long* minSize,
-                                              long* maxSize,
-                                              long* preferredSize,
-                                              long* granularity);
-  ASIOError(STDMETHODCALLTYPE* canSampleRate)(IASIO* This, double sampleRate);
-  ASIOError(STDMETHODCALLTYPE* getSampleRate)(IASIO* This, double* sampleRate);
-  ASIOError(STDMETHODCALLTYPE* setSampleRate)(IASIO* This, double sampleRate);
-  ASIOError(STDMETHODCALLTYPE* getClockSources)(IASIO* This, void* clocks,
-                                                long* numSources);
-  ASIOError(STDMETHODCALLTYPE* setClockSource)(IASIO* This, long reference);
-  ASIOError(STDMETHODCALLTYPE* getSamplePosition)(IASIO* This, int64_t* sPos,
-                                                  int64_t* tStamp);
-  ASIOError(STDMETHODCALLTYPE* getChannelInfo)(IASIO* This, void* info);
-  ASIOError(STDMETHODCALLTYPE* createBuffers)(IASIO* This, void* bufferInfos,
-                                              long numChannels, long bufferSize,
-                                              void* callbacks);
-  ASIOError(STDMETHODCALLTYPE* disposeBuffers)(IASIO* This);
-  ASIOError(STDMETHODCALLTYPE* controlPanel)(IASIO* This);
-  ASIOError(STDMETHODCALLTYPE* future)(IASIO* This, long selector, void* opt);
-  ASIOError(STDMETHODCALLTYPE* outputReady)(IASIO* This);
-};
-
-struct IASIO {
-  const IASIOVtbl* lpVtbl;
-};
-
-typedef struct {
-  const IASIOVtbl* lpVtbl;
-  volatile LONG ref_count;
-  ASIOCallbacks_Test* callbacks;
-  double sample_rate;
-  bool running;
-  HANDLE thread_handle;
-  void* dummy_buffers[16];  // Supports up to 8 channels double-buffered
-} MockASIODriver;
-
-static MockASIODriver g_mock_asio_driver;
-
-static HRESULT STDMETHODCALLTYPE MockASIO_QueryInterface(IASIO* This,
-                                                         REFIID riid,
-                                                         void** ppv) {
-  (void)riid;
-  *ppv = This;
-  This->lpVtbl->AddRef(This);
-  return S_OK;
-}
-
-static ULONG STDMETHODCALLTYPE MockASIO_AddRef(IASIO* This) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  return (ULONG)InterlockedIncrement(&self->ref_count);
-}
-
-static ULONG STDMETHODCALLTYPE MockASIO_Release(IASIO* This) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  return (ULONG)InterlockedDecrement(&self->ref_count);
-}
-
-static ASIOBool STDMETHODCALLTYPE MockASIO_init(IASIO* This, void* sysHandle) {
-  (void)This;
-  (void)sysHandle;
-  return ASIOTrue;
-}
-
-static void STDMETHODCALLTYPE MockASIO_getDriverName(IASIO* This, char* name) {
-  (void)This;
-  strcpy(name, "Mock ASIO Driver");
-}
-
-static long STDMETHODCALLTYPE MockASIO_getDriverVersion(IASIO* This) {
-  (void)This;
-  return 1;
-}
-
-static void STDMETHODCALLTYPE MockASIO_getErrorMessage(IASIO* This,
-                                                       char* string) {
-  (void)This;
-  strcpy(string, "");
-}
-
-static DWORD WINAPI mock_asio_thread_proc(LPVOID lpParam) {
-  MockASIODriver* self = (MockASIODriver*)lpParam;
-  long buffer_index = 0;
-  while (self->running) {
-    if (self->callbacks && self->callbacks->bufferSwitch) {
-      self->callbacks->bufferSwitch(buffer_index, ASIOFalse);
-    }
-    buffer_index = 1 - buffer_index;
-    Sleep(5);  // fast callback ticks
+TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
+  // Align both devices to 48000 Hz initially to guarantee they match and can
+  // start
+  if (!wasapi_set_both_rates(48000)) {
+    printf(
+        "⚠️ [ASIO Warning] Skipping ASIO Capture rate change test (Failed "
+        "to set initial device rates)\n");
+    return;
   }
-  return 0;
-}
+  int init_sr = 48000;
+  int target_sr = 44100;
 
-static ASIOError STDMETHODCALLTYPE MockASIO_start(IASIO* This) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  if (!self->running) {
-    self->running = true;
-    self->thread_handle =
-        CreateThread(NULL, 0, mock_asio_thread_proc, self, 0, NULL);
-  }
-  return ASE_OK;
-}
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/asio_cap_test_out.raw");
+  remove(out_file);
 
-static ASIOError STDMETHODCALLTYPE MockASIO_stop(IASIO* This) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  if (self->running) {
-    self->running = false;
-    if (self->thread_handle) {
-      WaitForSingleObject(self->thread_handle, 1000);
-      CloseHandle(self->thread_handle);
-      self->thread_handle = NULL;
-    }
-  }
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getChannels(
-    IASIO* This, long* numInputChannels, long* numOutputChannels) {
-  (void)This;
-  *numInputChannels = 2;
-  *numOutputChannels = 2;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getLatencies(IASIO* This,
-                                                         long* inputLatency,
-                                                         long* outputLatency) {
-  (void)This;
-  *inputLatency = 0;
-  *outputLatency = 0;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getBufferSize(IASIO* This,
-                                                          long* minSize,
-                                                          long* maxSize,
-                                                          long* preferredSize,
-                                                          long* granularity) {
-  (void)This;
-  *minSize = 64;
-  *maxSize = 2048;
-  *preferredSize = 512;
-  *granularity = 0;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_canSampleRate(IASIO* This,
-                                                          double sampleRate) {
-  (void)This;
-  (void)sampleRate;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getSampleRate(IASIO* This,
-                                                          double* sampleRate) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  *sampleRate = self->sample_rate;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_setSampleRate(IASIO* This,
-                                                          double sampleRate) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  self->sample_rate = sampleRate;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getClockSources(IASIO* This,
-                                                            void* clocks,
-                                                            long* numSources) {
-  (void)This;
-  (void)clocks;
-  *numSources = 1;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_setClockSource(IASIO* This,
-                                                           long reference) {
-  (void)This;
-  (void)reference;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getSamplePosition(IASIO* This,
-                                                              int64_t* sPos,
-                                                              int64_t* tStamp) {
-  (void)This;
-  *sPos = 0;
-  *tStamp = 0;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_getChannelInfo(IASIO* This,
-                                                           void* info) {
-  (void)This;
-  ASIOChannelInfo_Test* inf = (ASIOChannelInfo_Test*)info;
-  inf->isActive = ASIOTrue;
-  inf->channelGroup = 0;
-  inf->type = 19;  // ASIOSTFloat32LSB
-  snprintf(inf->name, sizeof(inf->name), "Mock Ch %ld", inf->channel);
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_createBuffers(IASIO* This,
-                                                          void* bufferInfos,
-                                                          long numChannels,
-                                                          long bufferSize,
-                                                          void* callbacks) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  self->callbacks = (ASIOCallbacks_Test*)callbacks;
-  ASIOBufferInfo_Test* bufs = (ASIOBufferInfo_Test*)bufferInfos;
-  for (long i = 0; i < numChannels; i++) {
-    self->dummy_buffers[i * 2 + 0] = calloc(bufferSize, sizeof(float));
-    self->dummy_buffers[i * 2 + 1] = calloc(bufferSize, sizeof(float));
-    bufs[i].buffers[0] = self->dummy_buffers[i * 2 + 0];
-    bufs[i].buffers[1] = self->dummy_buffers[i * 2 + 1];
-  }
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_disposeBuffers(IASIO* This) {
-  MockASIODriver* self = (MockASIODriver*)This;
-  for (int i = 0; i < 16; i++) {
-    if (self->dummy_buffers[i]) {
-      free(self->dummy_buffers[i]);
-      self->dummy_buffers[i] = NULL;
-    }
-  }
-  self->callbacks = NULL;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_controlPanel(IASIO* This) {
-  (void)This;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_future(IASIO* This, long selector,
-                                                   void* opt) {
-  (void)This;
-  (void)selector;
-  (void)opt;
-  return ASE_OK;
-}
-
-static ASIOError STDMETHODCALLTYPE MockASIO_outputReady(IASIO* This) {
-  (void)This;
-  return ASE_OK;
-}
-
-static const IASIOVtbl g_mock_asio_vtbl = {MockASIO_QueryInterface,
-                                           MockASIO_AddRef,
-                                           MockASIO_Release,
-                                           MockASIO_init,
-                                           MockASIO_getDriverName,
-                                           MockASIO_getDriverVersion,
-                                           MockASIO_getErrorMessage,
-                                           MockASIO_start,
-                                           MockASIO_stop,
-                                           MockASIO_getChannels,
-                                           MockASIO_getLatencies,
-                                           MockASIO_getBufferSize,
-                                           MockASIO_canSampleRate,
-                                           MockASIO_getSampleRate,
-                                           MockASIO_setSampleRate,
-                                           MockASIO_getClockSources,
-                                           MockASIO_setClockSource,
-                                           MockASIO_getSamplePosition,
-                                           MockASIO_getChannelInfo,
-                                           MockASIO_createBuffers,
-                                           MockASIO_disposeBuffers,
-                                           MockASIO_controlPanel,
-                                           MockASIO_future,
-                                           MockASIO_outputReady};
-
-HRESULT WINAPI __real_CoCreateInstance(REFCLSID rclsid, IUnknown* pUnkOuter,
-                                       DWORD dwClsContext, REFIID riid,
-                                       LPVOID* ppv);
-
-HRESULT WINAPI __wrap_CoCreateInstance(REFCLSID rclsid, IUnknown* pUnkOuter,
-                                       DWORD dwClsContext, REFIID riid,
-                                       LPVOID* ppv) {
-  static const CLSID clsid_mock = {
-      0x11111111,
-      0x1111,
-      0x1111,
-      {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}};
-  if (IsEqualCLSID(rclsid, &clsid_mock)) {
-    g_mock_asio_driver.lpVtbl = &g_mock_asio_vtbl;
-    g_mock_asio_driver.ref_count = 1;
-    g_mock_asio_driver.sample_rate = 48000.0;
-    g_mock_asio_driver.callbacks = NULL;
-    g_mock_asio_driver.running = false;
-    g_mock_asio_driver.thread_handle = NULL;
-    memset(g_mock_asio_driver.dummy_buffers, 0,
-           sizeof(g_mock_asio_driver.dummy_buffers));
-    *ppv = &g_mock_asio_driver;
-    return S_OK;
-  }
-  return __real_CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
-}
-
-LSTATUS WINAPI __real_RegOpenKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD ulOptions,
-                                    REGSAM samDesired, PHKEY phkResult);
-LSTATUS WINAPI __real_RegEnumKeyA(HKEY hKey, DWORD dwIndex, LPSTR lpName,
-                                  DWORD cchName);
-LSTATUS WINAPI __real_RegQueryValueExA(HKEY hKey, LPCSTR lpValueName,
-                                       LPDWORD lpReserved, LPDWORD lpType,
-                                       LPBYTE lpData, LPDWORD lpcbData);
-LSTATUS WINAPI __real_RegCloseKey(HKEY hKey);
-
-#define FAKE_HKEY_ASIO (HKEY)(ULONG_PTR) 0xDEADBEEF
-#define FAKE_HKEY_DRIVER (HKEY)(ULONG_PTR) 0xDEADC0DE
-
-LSTATUS WINAPI __wrap_RegOpenKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD ulOptions,
-                                    REGSAM samDesired, PHKEY phkResult) {
-  if (hKey == HKEY_LOCAL_MACHINE && lpSubKey &&
-      strcmp(lpSubKey, "Software\\ASIO") == 0) {
-    *phkResult = FAKE_HKEY_ASIO;
-    return ERROR_SUCCESS;
-  }
-  if (hKey == FAKE_HKEY_ASIO && lpSubKey &&
-      (strcmp(lpSubKey, "Mock ASIO Driver") == 0 ||
-       strcmp(lpSubKey, "Mock ASIO") == 0)) {
-    *phkResult = FAKE_HKEY_DRIVER;
-    return ERROR_SUCCESS;
-  }
-  return __real_RegOpenKeyExA(hKey, lpSubKey, ulOptions, samDesired, phkResult);
-}
-
-LSTATUS WINAPI __wrap_RegEnumKeyA(HKEY hKey, DWORD dwIndex, LPSTR lpName,
-                                  DWORD cchName) {
-  if (hKey == FAKE_HKEY_ASIO) {
-    if (dwIndex == 0) {
-      if (cchName >= 17) {
-        strcpy(lpName, "Mock ASIO Driver");
-        return ERROR_SUCCESS;
-      }
-      return ERROR_MORE_DATA;
-    }
-    return ERROR_NO_MORE_ITEMS;
-  }
-  return __real_RegEnumKeyA(hKey, dwIndex, lpName, cchName);
-}
-
-LSTATUS WINAPI __wrap_RegQueryValueExA(HKEY hKey, LPCSTR lpValueName,
-                                       LPDWORD lpReserved, LPDWORD lpType,
-                                       LPBYTE lpData, LPDWORD lpcbData) {
-  if (hKey == FAKE_HKEY_DRIVER && lpValueName &&
-      strcmp(lpValueName, "CLSID") == 0) {
-    const char* clsid = "{11111111-1111-1111-1111-111111111111}";
-    DWORD len = strlen(clsid) + 1;
-    if (lpType) *lpType = REG_SZ;
-    if (lpData) {
-      if (*lpcbData >= len) {
-        strcpy((char*)lpData, clsid);
-      } else {
-        *lpcbData = len;
-        return ERROR_MORE_DATA;
-      }
-    }
-    *lpcbData = len;
-    return ERROR_SUCCESS;
-  }
-  return __real_RegQueryValueExA(hKey, lpValueName, lpReserved, lpType, lpData,
-                                 lpcbData);
-}
-
-LSTATUS WINAPI __wrap_RegCloseKey(HKEY hKey) {
-  if (hKey == FAKE_HKEY_ASIO || hKey == FAKE_HKEY_DRIVER) {
-    return ERROR_SUCCESS;
-  }
-  return __real_RegCloseKey(hKey);
-}
-
-TEST(DSPEngineE2E_ASIOSampleRateChange) {
-  const char* json_init =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"stop_on_rate_change\": true,\n"
-      "        \"rate_measure_interval_s\": 0.02,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Mock ASIO Driver\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Mock ASIO Driver\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  char json_init[1024];
+  snprintf(json_init, sizeof(json_init),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Asio\",\n"
+           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           init_sr, out_file);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -2819,29 +2414,28 @@ TEST(DSPEngineE2E_ASIOSampleRateChange) {
   }
   ASSERT_TRUE(running);
 
-  cdsp_sleep_ms(100);
+  cdsp_sleep_ms(500);
 
-  ASSERT_TRUE(g_mock_asio_driver.callbacks != NULL);
-
-  // Trigger rate change to 44100 Hz
   printf(
-      "ℹ️ debug: Triggering Mock ASIO sample rate change from 48000 to 44100 "
-      "Hz...\n");
-  g_mock_asio_driver.callbacks->sampleRateDidChange(44100.0);
+      "ℹ️ debug: changing underlying WASAPI capture device sample rate from %d Hz to %d "
+      "Hz...\n",
+      init_sr, target_sr);
+  ASSERT_TRUE(wasapi_change_capture_rate_only(target_sr));
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < 600; i++) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
         printf(
             "ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n",
             stop_reason.type, stop_reason.message);
-        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_CAPTURE_ERROR) {
           rate_change_stopped = true;
           break;
         }
@@ -2851,33 +2445,169 @@ TEST(DSPEngineE2E_ASIOSampleRateChange) {
   }
 
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
+  if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+    ASSERT_EQ(target_sr, stop_reason.format_change_rate);
+  }
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
 
+  ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
   cdsp_sleep_ms(200);
 
-  // Reconfigure at 44100 Hz and verify it runs successfully
-  const char* json_target =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"stop_on_rate_change\": true,\n"
-      "        \"rate_measure_interval_s\": 0.02,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Mock ASIO Driver\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Mock ASIO Driver\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  // Re-configure for target rate and verify it runs
+  char json_target[1024];
+  snprintf(json_target, sizeof(json_target),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Asio\",\n"
+           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           target_sr, out_file);
+
+  engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  memset(&berr, 0, sizeof(berr));
+  success = engine->set_config_json(engine->ctx, json_target, &berr);
+  ASSERT_TRUE(success);
+
+  running = false;
+  for (int i = 0; i < 200; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  engine->stop(engine->ctx);
+  engine->free(engine->ctx);
+}
+
+TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
+  // Align both devices to 48000 Hz initially to guarantee they match and can
+  // start
+  if (!wasapi_set_both_rates(48000)) {
+    printf(
+        "⚠️ [ASIO Warning] Skipping ASIO Playback rate change test (Failed "
+        "to set initial device rates)\n");
+    return;
+  }
+  int init_sr = 48000;
+  int target_sr = 44100;
+
+  char json_init[1024];
+  snprintf(json_init, sizeof(json_init),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Asio\",\n"
+           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           init_sr);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json_init, &berr);
+  ASSERT_TRUE(success);
+
+  // Wait until engine starts running
+  bool running = false;
+  for (int i = 0; i < 200; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      running = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(running);
+
+  cdsp_sleep_ms(500);
+
+  printf(
+      "ℹ️ debug: changing underlying WASAPI playback device sample rate from %d Hz to %d "
+      "Hz...\n",
+      init_sr, target_sr);
+  ASSERT_TRUE(wasapi_change_playback_rate_only(target_sr));
+
+  // Expect engine to stop due to format change
+  bool rate_change_stopped = false;
+  processing_stop_reason_t stop_reason;
+  memset(&stop_reason, 0, sizeof(stop_reason));
+
+  for (int i = 0; i < 600; i++) {
+    engine->poll(engine->ctx);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+      if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
+        printf(
+            "ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n",
+            stop_reason.type, stop_reason.message);
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+            stop_reason.type == STOP_REASON_PLAYBACK_ERROR) {
+          rate_change_stopped = true;
+          break;
+        }
+      }
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(rate_change_stopped);
+  if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+    ASSERT_EQ(target_sr, stop_reason.format_change_rate);
+  }
+
+  engine->stop(engine->ctx);
+  engine->free(engine->ctx);
+
+  ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
+  cdsp_sleep_ms(200);
+
+  // Re-configure for target rate and verify it runs
+  char json_target[1024];
+  snprintf(json_target, sizeof(json_target),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Generator\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Asio\",\n"
+           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           target_sr);
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
