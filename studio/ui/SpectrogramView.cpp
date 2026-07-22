@@ -4,6 +4,7 @@
 
 #include <QFontDatabase>
 #include <QPainterPath>
+#include <QResizeEvent>
 #include <cmath>
 
 SpectrogramView::SpectrogramView(QWidget* parent) : QWidget(parent) {
@@ -42,10 +43,150 @@ void SpectrogramView::hideEvent(QHideEvent* event) {
 }
 
 void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool show3D, ColorPalette palette) {
+    bool forceRedraw = (show3D != m_show3D || palette != m_palette || (history.empty() && !m_history.empty()));
     m_history = history;
     m_show3D = show3D;
     m_palette = palette;
+
+    if (!m_show3D) {
+        QDateTime now = QDateTime::currentDateTime();
+        double elapsed = 0.05;
+        if (m_lastUpdateTime.isValid()) {
+            elapsed = m_lastUpdateTime.msecsTo(now) / 1000.0;
+        }
+        if (elapsed >= 0.05 || forceRedraw) {
+            updateBuffer(m_history, size(), elapsed);
+            m_lastUpdateTime = now;
+        }
+    } else {
+        update();
+    }
+}
+
+void SpectrogramView::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (!m_show3D) {
+        recreateBuffer(event->size(), m_history);
+    }
+}
+
+void SpectrogramView::recreateBuffer(const QSize& size, const std::deque<SpectrumData>& history) {
+    if (size.width() <= 0 || size.height() <= 0)
+        return;
+
+    m_bufferImage = QImage(size, QImage::Format_ARGB32_Premultiplied);
+    m_bufferImage.fill(Qt::transparent);
+    m_currentX = 0;
+
+    int marginL = 40;
+    int marginB = 20;
+    int drawWidth = size.width() - marginL;
+    int drawHeight = size.height() - marginB;
+
+    redrawAllHistory(m_bufferImage, history, size, drawWidth, drawHeight);
+}
+
+void SpectrogramView::redrawAllHistory(QImage& bufferImage, const std::deque<SpectrumData>& history, const QSize& size,
+                                       int drawWidth, int drawHeight) {
+    QPainter painter(&bufferImage);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.fillRect(QRect(0, 0, size.width(), size.height()), Qt::transparent);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+
+    int marginL = 40;
+    size_t count = history.size();
+    QDateTime now = QDateTime::currentDateTime();
+
+    for (size_t i = 0; i < count; ++i) {
+        const auto& frame = history[i];
+        QDateTime frameTime = frame.timestamp.isValid()
+                                  ? frame.timestamp
+                                  : now.addMSecs(-static_cast<qint64>((count - 1 - i) * 1000 / 30));
+        double timeAgo = frameTime.msecsTo(now) / 1000.0;
+        if (timeAgo > 10.0)
+            continue;
+
+        double x = marginL + drawWidth * (1.0 - timeAgo / 10.0);
+
+        double nextX;
+        if (i < count - 1) {
+            const auto& nextFrame = history[i + 1];
+            QDateTime nextFrameTime = nextFrame.timestamp.isValid()
+                                          ? nextFrame.timestamp
+                                          : now.addMSecs(-static_cast<qint64>((count - 2 - i) * 1000 / 30));
+            double nextTimeAgo = nextFrameTime.msecsTo(now) / 1000.0;
+            nextX = marginL + drawWidth * (1.0 - nextTimeAgo / 10.0);
+        } else {
+            nextX = size.width();
+        }
+
+        double stripWidth = std::max(1.0, nextX - x);
+        drawFrame(painter, frame, x, stripWidth, drawHeight, m_engine ? m_engine->nBins : 200);
+    }
+}
+
+void SpectrogramView::updateBuffer(const std::deque<SpectrumData>& history, const QSize& size, double elapsedSeconds) {
+    if (m_bufferImage.isNull() || m_bufferImage.size() != size) {
+        recreateBuffer(size, history);
+        return;
+    }
+
+    if (history.empty()) {
+        m_bufferImage.fill(Qt::transparent);
+        m_currentX = 0;
+        update();
+        return;
+    }
+
+    const auto& lastFrame = history.back();
+
+    int marginL = 40;
+    int marginB = 20;
+    int drawWidth = size.width() - marginL;
+    int drawHeight = size.height() - marginB;
+
+    double stripWidth = drawWidth * (elapsedSeconds / 10.0);
+    double clearWidth = std::max(1.0, std::ceil(stripWidth));
+
+    QPainter painter(&m_bufferImage);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+
+    // Clear stale portion before drawing new data
+    painter.fillRect(QRectF(marginL + m_currentX, 0, clearWidth, size.height()), Qt::transparent);
+    if (m_currentX + clearWidth > drawWidth) {
+        double wrappedWidth = (m_currentX + clearWidth) - drawWidth;
+        painter.fillRect(QRectF(marginL, 0, wrappedWidth, size.height()), Qt::transparent);
+    }
+
+    // Draw new data at m_currentX
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    drawFrame(painter, lastFrame, marginL + m_currentX, stripWidth, drawHeight, m_engine ? m_engine->nBins : 200);
+
+    // Advance cursor
+    m_currentX += stripWidth;
+    if (m_currentX >= drawWidth) {
+        m_currentX -= drawWidth;
+    }
+
     update();
+}
+
+void SpectrogramView::drawFrame(QPainter& painter, const SpectrumData& frame, double x, double width, double drawHeight,
+                                size_t nBins) {
+    double barHeight = drawHeight / static_cast<double>(nBins);
+    size_t count = std::min(nBins, frame.magnitudes.size());
+
+    for (size_t j = 0; j < count; ++j) {
+        float db = frame.magnitudes[j];
+        float normalized = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
+
+        if (normalized <= 0.05f)
+            continue;
+
+        QColor color = colorForDB(db, m_palette);
+        double y = drawHeight - (j + 1) * barHeight;
+        painter.fillRect(QRectF(x, y, width, barHeight), color);
+    }
 }
 
 static QColor interpColors(float t, const std::vector<QColor>& stops) {
@@ -143,7 +284,6 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     }
     return color;
 }
-
 void SpectrogramView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
@@ -160,58 +300,34 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
     int h = height();
 
     if (!m_show3D) {
-        // 2D Mode: Vertical Y-axis log-frequency, horizontal X-axis rolling time (0s to -10s)
+        // 2D Mode: Draw the cached buffer image with scrolling wrap-around!
         int marginL = 40;
         int marginB = 20;
         int plotW = w - marginL;
         int plotH = h - marginB;
 
-        size_t colCount = m_history.size();
-        int colW = std::max(2, plotW / static_cast<int>(colCount));
-
         double logMin = std::log10(20.0), logMax = std::log10(20000.0);
 
-        const auto& firstSpec = m_history.front();
-        size_t binCount = firstSpec.magnitudes.size();
-
-        struct BinY {
-            int yTop;
-            int binH;
-        };
-        std::vector<BinY> binLayout(binCount);
-        for (size_t bin = 0; bin < binCount; ++bin) {
-            float freqLower = (bin < firstSpec.frequencies.size())
-                                  ? firstSpec.frequencies[bin]
-                                  : static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin) / binCount));
-            float freqUpper;
-            if (bin + 1 < firstSpec.frequencies.size()) {
-                freqUpper = firstSpec.frequencies[bin + 1];
-            } else if (bin < firstSpec.frequencies.size() && bin > 0) {
-                freqUpper = firstSpec.frequencies[bin] + (firstSpec.frequencies[bin] - firstSpec.frequencies[bin - 1]);
-            } else {
-                freqUpper = static_cast<float>(20.0 * std::pow(1000.0, static_cast<double>(bin + 1) / binCount));
-            }
-
-            freqLower = std::max(20.0f, std::min(20000.0f, freqLower));
-            freqUpper = std::max(20.0f, std::min(20000.0f, freqUpper));
-
-            double fracYBot = (std::log10(freqLower) - logMin) / (logMax - logMin);
-            double fracYTop = (std::log10(freqUpper) - logMin) / (logMax - logMin);
-
-            int yBottom = plotH - static_cast<int>(fracYBot * plotH);
-            int yTop = plotH - static_cast<int>(fracYTop * plotH);
-            binLayout[bin] = {yTop, std::max(1, yBottom - yTop)};
+        if (m_bufferImage.isNull() || m_bufferImage.size() != rect().size()) {
+            recreateBuffer(rect().size(), m_history);
         }
 
-        for (size_t col = 0; col < colCount; ++col) {
-            const auto& spec = m_history[col];
-            int x = marginL + static_cast<int>(col) * colW;
-            size_t count = std::min(binCount, spec.magnitudes.size());
+        double drawWidth = plotW;
+        double leftPartWidth = drawWidth - m_currentX;
 
-            for (size_t bin = 0; bin < count; ++bin) {
-                float db = spec.magnitudes[bin];
-                p.fillRect(x, binLayout[bin].yTop, colW, binLayout[bin].binH, colorForDB(db, m_palette));
-            }
+        if (leftPartWidth > 0) {
+            p.save();
+            p.setClipRect(marginL, 0, leftPartWidth, h);
+            p.drawImage(marginL - m_currentX, 0, m_bufferImage);
+            p.restore();
+        }
+
+        double rightPartWidth = m_currentX;
+        if (rightPartWidth > 0) {
+            p.save();
+            p.setClipRect(marginL + leftPartWidth, 0, rightPartWidth, h);
+            p.drawImage(w - m_currentX, 0, m_bufferImage);
+            p.restore();
         }
 
         // Draw Frequency Y-axis labels & grid lines (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
@@ -269,7 +385,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         };
 
         // 1. Draw 3D floor grid lines (Time Grid Lines)
-        p.setPen(QPen(StyleTheme::gridPenColor(), 1));
+        p.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
             QPainterPath timeGridPath;
             double xFlat = leftPadding + fraction * drawWidth;
@@ -311,25 +427,14 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             if (drawBins < 2)
                 continue;
 
-            float maxDbInFrame = -60.0f;
-
             for (size_t k = 0; k < drawBins; ++k) {
                 size_t j = std::min(
                     nBins - 1, static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1))));
-                float freq = (j < frame.frequencies.size())
-                                 ? frame.frequencies[j]
-                                 : static_cast<float>(
-                                       20.0 * std::pow(1000.0, static_cast<double>(j) /
-                                                                   std::max(1.0, static_cast<double>(nBins - 1))));
-                freq = std::max(20.0f, std::min(20000.0f, freq));
 
-                double binFrac = (std::log10(freq) - logMin) / (logMax - logMin);
-                binFrac = std::max(0.0, std::min(1.0, binFrac));
+                double binFrac = static_cast<double>(j) / std::max<double>(1.0, nBins - 1);
                 double xFlat = leftPadding + binFrac * drawWidth;
 
                 float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -60.0f;
-                maxDbInFrame = std::max(maxDbInFrame, db);
-
                 float normMag = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
                 double yFlat = baselineY - normMag * drawHeight;
 
@@ -355,7 +460,9 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             }
 
             // Occlusion fill
-            p.fillPath(fillPath, StyleTheme::cardBg());
+            QColor occlColor = StyleTheme::cardBg();
+            occlColor.setAlphaF(0.92);
+            p.fillPath(fillPath, occlColor);
 
             // Smooth log-frequency & depth age combined color mapping
             float tf = static_cast<float>(t);

@@ -229,10 +229,7 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     double refPeak = 0.0;
     const auto& firstFr = m_slices.front().second;
     for (size_t bin = 0; bin < firstFr.bins(); ++bin) {
-        double f = firstFr.frequency(bin);
-        if (f >= fMin && f <= fMax) {
-            refPeak = std::max(refPeak, firstFr.magnitude(bin));
-        }
+        refPeak = std::max(refPeak, firstFr.magnitude(bin));
     }
     double refDB = (refPeak > 0.0) ? 20.0 * std::log10(refPeak) : 0.0;
 

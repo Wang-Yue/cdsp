@@ -53,6 +53,7 @@ void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParti
     m_traceDecayRate = traceDecayRate;
     if (m_samples.channels.empty() && m_samples.left().empty() && m_samples.right().empty()) {
         m_persistenceBuffer = QImage();
+        m_autoScaleFactor = 1.0f;
     }
     update();
 }
@@ -148,10 +149,11 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             m_balanceSmoothed = m_balanceSmoothed * 0.85f + rawBal * 0.15f;
 
             bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
-            float autoScaleFactor = 1.0f;
+            float targetAutoScaleFactor = 1.0f;
             if (enableAutoScale && maxVal > 1e-6f && std::isfinite(maxVal)) {
-                autoScaleFactor = std::min(0.90f / maxVal, 32.0f);
+                targetAutoScaleFactor = std::min(0.90f / maxVal, 32.0f);
             }
+            m_autoScaleFactor = m_autoScaleFactor * 0.95f + targetAutoScaleFactor * 0.05f;
 
             if (!m_showParticles) {
                 QPainterPath path;
@@ -161,8 +163,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                     float m = (l + r) * 0.7071f;
                     float s = (l - r) * 0.7071f;
 
-                    float px = centerPt.x() + s * (centerRadius * autoScaleFactor);
-                    float py = centerPt.y() - m * (centerRadius * autoScaleFactor);
+                    float px = centerPt.x() + s * (centerRadius * m_autoScaleFactor);
+                    float py = centerPt.y() - m * (centerRadius * m_autoScaleFactor);
 
                     if (i == 0)
                         path.moveTo(px, py);
@@ -182,19 +184,19 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                     float m = (l + r) * 0.7071f;
                     float s = (l - r) * 0.7071f;
 
-                    float px = centerPt.x() + s * (centerRadius * autoScaleFactor);
-                    float py = centerPt.y() - m * (centerRadius * autoScaleFactor);
+                    float px = centerPt.x() + s * (centerRadius * m_autoScaleFactor);
+                    float py = centerPt.y() - m * (centerRadius * m_autoScaleFactor);
 
                     float particleSize = 1.0f + 3.5f * t;
-                    float alpha = 0.05f + 0.85f * t;
+                    float alpha = 0.03f + 0.82f * t;
 
                     float hue = 0.65f - 0.15f * t;
                     QColor particleColor = QColor::fromHsvF(hue, 0.85f, 0.95f, alpha);
 
                     if (t > 0.9f) {
-                        float glowSize = particleSize * 2.2f;
+                        float glowSize = particleSize * 2.0f;
                         QColor haloColor = particleColor;
-                        haloColor.setAlphaF(0.30f);
+                        haloColor.setAlphaF(alpha * 0.25f);
                         bufPainter.setBrush(haloColor);
                         bufPainter.drawEllipse(QPointF(px, py), glowSize / 2.0f, glowSize / 2.0f);
                     }

@@ -29,7 +29,8 @@ public:
     size_t maxHistory = 300;
     double timeWindow = 10.0;
 
-    void pushSpectrum(const SpectrumData& newData) {
+    void pushSpectrum(SpectrumData newData) {
+        newData.timestamp = QDateTime::currentDateTime();
         history.push_back(newData);
         if (history.size() > maxHistory) {
             history.pop_front();

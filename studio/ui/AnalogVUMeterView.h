@@ -52,6 +52,13 @@ private:
 
     float computeAngleForLevel(float dbFS) const;
     void drawSingleVU(QPainter& p, const QRect& totalRect, float angle, const QString& label, float scale);
+
+    QTimer* m_physicsTimer = nullptr;
+    std::vector<float> m_currentAngles;
+    std::vector<float> m_velocities;
+
+private slots:
+    void updateNeedlePhysics();
 };
 
 #endif // ANALOG_VU_METER_VIEW_H

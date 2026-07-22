@@ -217,16 +217,15 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     size_t count = std::min(m_data.frequencies.size(), m_data.magnitudes.size());
     float spacing = 2.0f;
 
-    // 3. Dynamic gradient audio level bars (green -> yellow -> orange -> red)
+    // 3. Dynamic gradient audio level bars (green -> yellow -> orange -> red with 0.9 opacity)
     QLinearGradient barGrad(0, marginT + plotH, 0, marginT);
-    barGrad.setColorAt(0.0, QColor("#34c759"));
-    barGrad.setColorAt(0.35, QColor("#34c759"));
-    barGrad.setColorAt(0.55, QColor("#ffcc00"));
-    barGrad.setColorAt(0.75, QColor("#ff9500"));
-    barGrad.setColorAt(0.95, QColor("#ff3b30"));
-    barGrad.setColorAt(1.0, QColor("#ff3b30"));
+    barGrad.setColorAt(0.0, QColor(52, 199, 89, 230));
+    barGrad.setColorAt(0.35, QColor(52, 199, 89, 230));
+    barGrad.setColorAt(0.55, QColor(255, 204, 0, 230));
+    barGrad.setColorAt(0.75, QColor(255, 149, 0, 230));
+    barGrad.setColorAt(0.95, QColor(255, 59, 48, 230));
+    barGrad.setColorAt(1.0, QColor(255, 59, 48, 230));
 
-    QPainterPath curvePath;
     for (size_t i = 0; i < count; ++i) {
         float freq = m_data.frequencies[i];
         if (freq < minF || freq > maxF)
@@ -256,15 +255,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
             p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 240) : QColor(30, 30, 30, 240), 1.8));
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
         }
-
-        if (i == 0)
-            curvePath.moveTo(x, marginT + plotH - barHeight);
-        else
-            curvePath.lineTo(x, marginT + plotH - barHeight);
     }
-
-    p.setPen(QPen(StyleTheme::gridPenColor(), 1.0));
-    p.drawPath(curvePath);
 
     // 4. Hover Crosshair & Tooltip Readout Formatting
     if (m_isHovered && m_hoverPos.x() >= marginL && m_hoverPos.x() <= w && m_hoverPos.y() >= marginT &&

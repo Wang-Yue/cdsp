@@ -45,7 +45,7 @@ QColor EQDiagramWidget::bandColor(int index) {
 double EQDiagramWidget::freqToX(double f, double width) const {
     double minLog = std::log10(fMin);
     double maxLog = std::log10(fMax);
-    double logF = std::log10(std::max(fMin, std::min(fMax, f)));
+    double logF = std::log10(std::max(fMin, f));
     return width * (logF - minLog) / (maxLog - minLog);
 }
 
@@ -124,7 +124,8 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
     // Grid Lines (Solid 0.5px lines with 0.06 opacity matching SwiftUI)
     painter.setFont(QFont("monospace", 9));
-    QColor gridPenColor(255, 255, 255, 15);
+    QColor gridPenColor = StyleTheme::textPrimary();
+    gridPenColor.setAlpha(15); // 0.06 opacity (15/255)
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         if (db == 0.0)
             continue; // 0 dB line drawn separately
@@ -144,7 +145,9 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // 0 dB Baseline (Solid 1.0px line with 0.2 opacity matching SwiftUI)
-    painter.setPen(QPen(QColor(255, 255, 255, 51), 1.0, Qt::SolidLine));
+    QColor zeroDbPenColor = StyleTheme::textPrimary();
+    zeroDbPenColor.setAlpha(51); // 0.20 opacity (51/255)
+    painter.setPen(QPen(zeroDbPenColor, 1.0, Qt::SolidLine));
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
     painter.setPen(StyleTheme::textSecondary());
@@ -170,7 +173,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             }
         }
 
-        // 1. Target Curve (Dashed Amber)
+        // 1. Target Curve (Dashed Secondary Gray)
         if (!m_overlay.targetCurve.breakpoints.empty()) {
             QPainterPath targetPath;
             for (int x = 0; x <= w; x += 2) {
@@ -182,11 +185,13 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                 else
                     targetPath.lineTo(x, y);
             }
-            painter.setPen(QPen(QColor("#ffcc00"), 1.8, Qt::DashLine));
+            QPen targetPen(StyleTheme::textSecondary(), 1.2);
+            targetPen.setDashPattern({4, 3});
+            painter.setPen(targetPen);
             painter.drawPath(targetPath);
         }
 
-        // 2. Measured Response Curve (Cyan, Normalized by normDB)
+        // 2. Measured Response Curve (Blue, Normalized by normDB)
         if (!m_overlay.measuredMagDB.empty() && m_overlay.measuredMagDB.size() == m_overlay.frequencies.size()) {
             QPainterPath measuredPath;
             for (size_t i = 0; i < m_overlay.measuredMagDB.size(); ++i) {
@@ -199,7 +204,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                 else
                     measuredPath.lineTo(x, y);
             }
-            painter.setPen(QPen(QColor(0, 198, 255, 180), 1.2));
+            painter.setPen(QPen(QColor("#007AFF"), 1.4));
             painter.drawPath(measuredPath);
 
             // 3. Corrected Response Curve (Orange)
@@ -283,7 +288,9 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             else
                 loudnessPath.lineTo(x, y);
         }
-        painter.setPen(QPen(QColor(255, 149, 0, 166), 1.5, Qt::DashLine));
+        QPen loudnessPen(QColor(255, 149, 0, 166), 1.5);
+        loudnessPen.setDashPattern({4, 4});
+        painter.setPen(loudnessPen);
         painter.drawPath(loudnessPath);
     }
 

@@ -37,6 +37,7 @@ private:
     QImage m_persistenceBuffer;
     float m_phaseCorrSmoothed = 1.0f;
     float m_balanceSmoothed = 0.0f;
+    float m_autoScaleFactor = 1.0f;
 };
 
 #endif // VECTOR_SCOPE_VIEW_H

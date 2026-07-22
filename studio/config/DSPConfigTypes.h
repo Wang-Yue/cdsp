@@ -3,6 +3,7 @@
 
 #include "config/BiquadCoefficients.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -100,9 +101,10 @@ struct VuLevels {
 struct SpectrumData {
     std::vector<float> frequencies;
     std::vector<float> magnitudes;
+    QDateTime timestamp = QDateTime::currentDateTime();
 
     bool operator==(const SpectrumData& other) const {
-        return frequencies == other.frequencies && magnitudes == other.magnitudes;
+        return frequencies == other.frequencies && magnitudes == other.magnitudes && timestamp == other.timestamp;
     }
     bool operator!=(const SpectrumData& other) const { return !(*this == other); }
 };

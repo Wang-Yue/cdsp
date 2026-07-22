@@ -16,6 +16,10 @@
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(160);
+
+    m_physicsTimer = new QTimer(this);
+    connect(m_physicsTimer, &QTimer::timeout, this, &AnalogVUMeterView::updateNeedlePhysics);
+    m_physicsTimer->start(16); // ~60 FPS
 }
 
 void AnalogVUMeterView::showEvent(QShowEvent* event) {
@@ -89,7 +93,13 @@ void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
             levelDb = (i == 0) ? m_leftDB : m_rightDB;
         }
 
-        float angle = computeAngleForLevel(levelDb);
+        float angle = -35.0f;
+        if (i < m_currentAngles.size()) {
+            angle = m_currentAngles[i];
+        } else {
+            angle = computeAngleForLevel(levelDb);
+        }
+
         int xPos = spacing + static_cast<int>(i) * (meterWidth + spacing);
         QRect totalRect(xPos, 4, meterWidth, h - 8);
 
@@ -302,4 +312,54 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
     p.drawText(labelRect, Qt::AlignCenter, label);
 
     p.restore();
+}
+
+void AnalogVUMeterView::updateNeedlePhysics() {
+    size_t chCount = 2;
+    if (m_levelState && !m_levelState->playbackRms.empty()) {
+        chCount = std::max(static_cast<size_t>(1), m_levelState->playbackRms.size());
+    }
+
+    if (m_currentAngles.size() != chCount) {
+        m_currentAngles.resize(chCount, -35.0f);
+        m_velocities.resize(chCount, 0.0f);
+    }
+
+    float dt = 0.016f; // ~60 FPS time step
+    bool needsUpdate = false;
+
+    for (size_t i = 0; i < chCount; ++i) {
+        float levelDb = -100.0f;
+        if (m_levelState && i < m_levelState->playbackRms.size()) {
+            levelDb = m_levelState->playbackRms[i];
+        } else {
+            levelDb = (i == 0) ? m_leftDB : m_rightDB;
+        }
+
+        // Apply gain calibration offset
+        levelDb += m_gainCalibrationDb;
+
+        float targetAngle = computeAngleForLevel(levelDb);
+        float diff = targetAngle - m_currentAngles[i];
+
+        // Second-order spring-damper dynamics
+        // K = 180.0 (spring coefficient), D = 22.0 (damping ratio ~ 0.8)
+        float springForce = diff * 180.0f;
+        float dampingForce = m_velocities[i] * 22.0f;
+        float accel = springForce - dampingForce;
+
+        m_velocities[i] += accel * dt;
+        m_currentAngles[i] += m_velocities[i] * dt;
+
+        // Dial physical limits (allow a bit of overshoot beyond -35 and +35)
+        m_currentAngles[i] = std::clamp(m_currentAngles[i], -45.0f, 45.0f);
+
+        if (std::abs(m_velocities[i]) > 0.01f || std::abs(diff) > 0.01f) {
+            needsUpdate = true;
+        }
+    }
+
+    if (needsUpdate) {
+        update();
+    }
 }
