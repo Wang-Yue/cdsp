@@ -40,22 +40,34 @@ public:
 
     bool isMiniPlayerActive = false;
 
-    bool showLevelMetersInDashboard() const { return m_showLevelMetersInDashboard; }
+    bool showLevelMetersInDashboard() const {
+        return m_settings ? m_settings->showLevelMetersInDashboard : m_showLevelMetersInDashboard;
+    }
     void setShowLevelMetersInDashboard(bool show);
 
-    bool showSpectrumInDashboard() const { return m_showSpectrumInDashboard; }
+    bool showSpectrumInDashboard() const {
+        return m_settings ? m_settings->showSpectrumInDashboard : m_showSpectrumInDashboard;
+    }
     void setShowSpectrumInDashboard(bool show);
 
-    bool showSpectrogramInDashboard() const { return m_showSpectrogramInDashboard; }
+    bool showSpectrogramInDashboard() const {
+        return m_settings ? m_settings->showSpectrogramInDashboard : m_showSpectrogramInDashboard;
+    }
     void setShowSpectrogramInDashboard(bool show);
 
-    bool showVectorScopeInDashboard() const { return m_showVectorScopeInDashboard; }
+    bool showVectorScopeInDashboard() const {
+        return m_settings ? m_settings->showVectorScopeInDashboard : m_showVectorScopeInDashboard;
+    }
     void setShowVectorScopeInDashboard(bool show);
 
-    bool showAnalogVUInDashboard() const { return m_showAnalogVUInDashboard; }
+    bool showAnalogVUInDashboard() const {
+        return m_settings ? m_settings->showAnalogVUInDashboard : m_showAnalogVUInDashboard;
+    }
     void setShowAnalogVUInDashboard(bool show);
 
-    bool showSignalGraphInDashboard() const { return m_showSignalGraphInDashboard; }
+    bool showSignalGraphInDashboard() const {
+        return m_settings ? m_settings->showSignalGraphInDashboard : m_showSignalGraphInDashboard;
+    }
     void setShowSignalGraphInDashboard(bool show);
 
     bool m_showLevelMetersInDashboard = true;

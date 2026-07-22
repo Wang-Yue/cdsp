@@ -6,8 +6,8 @@
 #include <cstdio>
 
 #ifdef _WIN32
-#include <io.h>
 #include <fcntl.h>
+#include <io.h>
 #define pipe(fds) _pipe(fds, 4096, _O_TEXT)
 #define dup2 _dup2
 #define read _read
@@ -15,8 +15,8 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 #else
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 #endif
 
 QString logLevelToString(LogLevel level) {
@@ -165,7 +165,8 @@ void LogManager::readPipeLoop(int readFd, LogLevel defaultLevel) {
 }
 
 void LogManager::processCapturedLine(const std::string& line, LogLevel defaultLevel) {
-    if (line.empty()) return;
+    if (line.empty())
+        return;
 
     QString qline = QString::fromStdString(line).trimmed();
     LogLevel level = defaultLevel;
@@ -189,9 +190,11 @@ void LogManager::processCapturedLine(const std::string& line, LogLevel defaultLe
             } else {
                 hasLevel = false;
             }
+            /*
             if (hasLevel) {
                 qline = qline.mid(closeBracket + 1).trimmed();
             }
+            */
         }
     }
 

@@ -68,37 +68,67 @@ void MonitoringController::setPollingRate(double rateHz) {
 
 void MonitoringController::setShowLevelMetersInDashboard(bool show) {
     m_showLevelMetersInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_levels_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showLevelMetersInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_levels_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
 void MonitoringController::setShowSpectrumInDashboard(bool show) {
     m_showSpectrumInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrum_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showSpectrumInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrum_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
 void MonitoringController::setShowSpectrogramInDashboard(bool show) {
     m_showSpectrogramInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrogram_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showSpectrogramInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrogram_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
 void MonitoringController::setShowVectorScopeInDashboard(bool show) {
     m_showVectorScopeInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_vectorscope_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showVectorScopeInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_vectorscope_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
 void MonitoringController::setShowAnalogVUInDashboard(bool show) {
     m_showAnalogVUInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_analog_vu_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showAnalogVUInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_analog_vu_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
 void MonitoringController::setShowSignalGraphInDashboard(bool show) {
     m_showSignalGraphInDashboard = show;
-    QSettings("DSPMonitor", "MonitorQt").setValue("show_signal_graph_in_dashboard", show);
+    if (m_settings) {
+        m_settings->showSignalGraphInDashboard = show;
+        m_settings->savePreferences();
+    } else {
+        QSettings("DSPMonitor", "MonitorQt").setValue("show_signal_graph_in_dashboard", show);
+    }
     emit dashboardVisibilityChanged();
 }
 
@@ -235,11 +265,17 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
             LogLevel::Warn,
             QString("[MonitoringController] Capture format change detected, switching to %1 Hz").arg(newRate));
         if (m_settings && m_settings->resamplerEnabled) {
-            if (m_devices)
-                m_devices->captureConfig.sampleRate = newRate;
+            if (m_devices) {
+                DeviceConfig newCfg = m_devices->captureConfig;
+                newCfg.sampleRate = newRate;
+                m_devices->setCaptureConfig(newCfg);
+            }
         } else {
-            if (m_devices)
-                m_devices->playbackConfig.sampleRate = newRate;
+            if (m_devices) {
+                DeviceConfig newCfg = m_devices->playbackConfig;
+                newCfg.sampleRate = newRate;
+                m_devices->setPlaybackConfig(newCfg);
+            }
         }
         if (onRestartEngine) {
             onRestartEngine();
@@ -252,8 +288,11 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
         LogManager::instance()->appendLog(
             LogLevel::Warn,
             QString("[MonitoringController] Playback format change detected, switching to %1 Hz").arg(newRate));
-        if (m_devices)
-            m_devices->playbackConfig.sampleRate = newRate;
+        if (m_devices) {
+            DeviceConfig newCfg = m_devices->playbackConfig;
+            newCfg.sampleRate = newRate;
+            m_devices->setPlaybackConfig(newCfg);
+        }
         if (onRestartEngine) {
             onRestartEngine();
         }

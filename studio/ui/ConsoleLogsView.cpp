@@ -195,11 +195,12 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
     m_table->setItem(row, 0, timeItem);
     m_table->setItem(row, 1, msgItem);
 
+    m_table->resizeRowToContents(row);
+
     constexpr int kMaxTableRows = 2000;
     while (m_table->rowCount() > kMaxTableRows) {
         m_table->removeRow(0);
     }
-    m_table->resizeRowsToContents();
 
     if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
         m_table->scrollToBottom();

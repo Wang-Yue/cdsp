@@ -125,8 +125,7 @@ void GeneralSettingsView::setupUi() {
 
     connect(m_silenceThresholdSlider, &QSlider::valueChanged, [this](int val) {
         if (m_settings) {
-            m_settings->silenceThreshold = val;
-            m_settings->savePreferences();
+            m_settings->setSilenceThreshold(val);
         }
         m_silenceThresholdLabel->setText(QString("%1 dB").arg(val));
     });
@@ -150,8 +149,7 @@ void GeneralSettingsView::setupUi() {
 
     connect(m_silenceTimeoutSlider, &QSlider::valueChanged, [this](int val) {
         if (m_settings) {
-            m_settings->silenceTimeout = val;
-            m_settings->savePreferences();
+            m_settings->setSilenceTimeout(val);
         }
         if (val == 0) {
             m_silenceTimeoutLabel->setText("Disabled");
