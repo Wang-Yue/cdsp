@@ -67,7 +67,6 @@ struct engine_shared_state {
   _Atomic double resampler_ratio;
 
   /**
-  /**
    * @brief Single atomic pointer for swapped-out retired pipeline structure.
    */
   _Atomic(pipeline_t*) retired_pipeline;
@@ -86,6 +85,12 @@ struct engine_shared_state {
    * @brief Timestamp of the last successfully captured chunk in nanoseconds.
    */
   _Atomic uint64_t last_capture_time_ns;
+
+  /**
+   * @brief The total number of audio frames currently queued in the processed
+   * queue.
+   */
+  _Atomic size_t processed_queued_frames;
 };
 
 spsc_queue_t* engine_shared_state_get_captured_queue(
@@ -96,6 +101,13 @@ spsc_queue_t* engine_shared_state_get_captured_queue(
 spsc_queue_t* engine_shared_state_get_processed_queue(
     engine_shared_state_t* state) {
   return state ? audio_sync_queue_get_spsc_queue(state->processed_queue) : NULL;
+}
+
+size_t engine_shared_state_get_processed_queued_frames(
+    const engine_shared_state_t* state) {
+  return state ? atomic_load_explicit(&state->processed_queued_frames,
+                                      memory_order_relaxed)
+               : 0;
 }
 
 bool engine_shared_state_should_stop(const engine_shared_state_t* state) {
@@ -158,6 +170,7 @@ engine_shared_state_t* engine_shared_state_create(
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));
   atomic_init(&state->stop_once, false);
   atomic_init(&state->last_capture_time_ns, cdsp_time_now_ns());
+  atomic_init(&state->processed_queued_frames, 0);
   pthread_mutex_init(&state->stop_reason_mutex, NULL);
 
   if (!state->captured_queue || !state->processed_queue) {
@@ -267,7 +280,13 @@ bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
 bool engine_shared_state_enqueue_processed(engine_shared_state_t* state,
                                            audio_chunk_t* chunk) {
   if (!state) return false;
-  return audio_sync_queue_enqueue(state->processed_queue, chunk);
+  bool ok = audio_sync_queue_enqueue(state->processed_queue, chunk);
+  if (ok && chunk) {
+    atomic_fetch_add_explicit(&state->processed_queued_frames,
+                              audio_chunk_get_valid_frames(chunk),
+                              memory_order_relaxed);
+  }
+  return ok;
 }
 
 audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
@@ -280,8 +299,14 @@ audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
-  return (audio_chunk_t*)audio_sync_queue_dequeue_blocking(
-      state->processed_queue);
+  audio_chunk_t* chunk =
+      (audio_chunk_t*)audio_sync_queue_dequeue_blocking(state->processed_queue);
+  if (chunk) {
+    atomic_fetch_sub_explicit(&state->processed_queued_frames,
+                              audio_chunk_get_valid_frames(chunk),
+                              memory_order_relaxed);
+  }
+  return chunk;
 }
 
 processing_state_t engine_shared_state_get_state(

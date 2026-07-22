@@ -15,6 +15,9 @@
  * capture, consumer = processing.
  * - `processed_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
  * processing, consumer = playback.
+ * - `processed_queued_frames`: Atomic counter tracking the total number of
+ * audio frames currently in `processed_queue` to avoid unsafe concurrent queue
+ * traversal or dereferencing.
  * - `resampler_ratio`: Playback writes (rate-adjust), processing reads (per
  * chunk). 64-bit atomic.
  * - `state_raw`: Raw byte encoding of `processing_state_t` (`_Atomic uint8_t`).
@@ -76,6 +79,15 @@ spsc_queue_t* engine_shared_state_get_captured_queue(
  */
 spsc_queue_t* engine_shared_state_get_processed_queue(
     engine_shared_state_t* state);
+
+/**
+ * @brief Gets the total number of audio frames currently queued in the
+ * processed queue.
+ * @param state Pointer to the shared state instance.
+ * @return Total number of queued frames.
+ */
+size_t engine_shared_state_get_processed_queued_frames(
+    const engine_shared_state_t* state);
 
 /**
  * @brief Checks if the engine should stop.

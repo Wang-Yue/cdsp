@@ -189,9 +189,7 @@ static void playback_loop_update_rate_adjust(
   // processed queue frames (matching upstream CamillaDSP).
   size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
   size_t processed_queued =
-      spsc_queue_get_count(
-          engine_shared_state_get_processed_queue(loop->shared)) *
-      loop->chunk_size;
+      engine_shared_state_get_processed_queued_frames(loop->shared);
   double total_buffer_fill = (double)(ring_fill + processed_queued);
   processing_parameters_set_buffer_level(loop->processing_params,
                                          total_buffer_fill);
@@ -388,7 +386,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
           loop->last_observed_playback_pending_rate = rate;
           loop->has_last_observed_playback_pending_rate = true;
           logger_warn(&g_logger,
-                      "Playback device rate changed to %f Hz during write error; stopping engine",
+                      "Playback device rate changed to %f Hz during write "
+                      "error; stopping engine",
                       rate);
           processing_stop_reason_t reason = {
               .type = STOP_REASON_PLAYBACK_FORMAT_CHANGE,

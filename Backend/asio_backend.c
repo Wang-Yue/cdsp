@@ -1096,7 +1096,11 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  size_t ring_size = capture->channels * capture->chunk_size * 8;
+  size_t max_frames = capture->chunk_size;
+  if ((size_t)capture->actual_buffer_size > max_frames) {
+    max_frames = (size_t)capture->actual_buffer_size;
+  }
+  size_t ring_size = capture->channels * max_frames * 8;
   capture->ring_buffer = spsc_audio_ring_buffer_create(ring_size);
   capture->semaphore = cdsp_sem_create();
   g_active_capture = capture;
@@ -1436,7 +1440,11 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  size_t ring_size = playback->channels * playback->chunk_size * 8;
+  size_t max_frames = playback->chunk_size;
+  if ((size_t)playback->actual_buffer_size > max_frames) {
+    max_frames = (size_t)playback->actual_buffer_size;
+  }
+  size_t ring_size = playback->channels * max_frames * 8;
   playback->ring_buffer = spsc_audio_ring_buffer_create(ring_size);
   g_active_playback = playback;
 
