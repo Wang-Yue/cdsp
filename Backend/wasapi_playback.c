@@ -666,21 +666,31 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
 
   if (playback->polling || !playback->started) {
-    if (total_frames > playback->buffer_frame_count) {
-      logger_error(&g_wasapi_logger,
-                   "Input chunk size %zu exceeds WASAPI buffer capacity %u",
-                   total_frames, playback->buffer_frame_count);
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Input chunk size exceeds WASAPI buffer capacity");
+    size_t direct_write_limit = playback->buffer_frame_count;
+    if (playback->polling) {
+      if (total_frames > playback->buffer_frame_count) {
+        logger_error(&g_wasapi_logger,
+                     "Input chunk size %zu exceeds WASAPI buffer capacity %u",
+                     total_frames, playback->buffer_frame_count);
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Input chunk size exceeds WASAPI buffer capacity");
+        }
+        return false;
       }
-      return false;
+      direct_write_limit = total_frames;
+    } else {
+      // Event-driven exclusive mode prefill:
+      // Limit direct write to the hardware buffer capacity.
+      if (direct_write_limit > total_frames) {
+        direct_write_limit = total_frames;
+      }
     }
 
     size_t frames_written = 0;
     DWORD start_time = GetTickCount();
 
-    while (frames_written < total_frames) {
+    while (frames_written < direct_write_limit) {
       if (GetTickCount() - start_time > 3000) {
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -699,7 +709,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
 
       UINT32 available_frames = playback->buffer_frame_count - padding;
-      UINT32 to_write = total_frames - frames_written;
+      UINT32 to_write = (UINT32)(direct_write_limit - frames_written);
 
       if (available_frames < to_write) {
         cdsp_sleep_ms(1);
@@ -745,6 +755,85 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
         }
         return false;
+      }
+    }
+
+    if (!playback->started && !playback->polling) {
+      HRESULT hr = IAudioClient_Start(playback->client);
+      if (FAILED(hr)) {
+        if (err) {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "Failed to start IAudioClient in write: hr=0x%08lX",
+                   (unsigned long)hr);
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+        }
+        return false;
+      }
+      playback->started = true;
+    }
+
+    if (!playback->polling && frames_written < total_frames) {
+      size_t remaining_frames = total_frames - frames_written;
+      if (remaining_frames * playback->channels > playback->write_buf_cap) {
+        playback->write_buf_cap = remaining_frames * playback->channels;
+        playback->write_buf = (float*)realloc(
+            playback->write_buf, playback->write_buf_cap * sizeof(float));
+        if (!playback->write_buf) {
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                               "Failed to allocate write buffer");
+          }
+          return false;
+        }
+      }
+
+      for (size_t f = 0; f < remaining_frames; f++) {
+        for (int c = 0; c < playback->channels; c++) {
+          playback->write_buf[f * playback->channels + c] =
+              (float)audio_chunk_get_channel(chunk, c)[frames_written + f];
+        }
+      }
+
+      size_t written = 0;
+      size_t requested = remaining_frames * playback->channels;
+      start_time = GetTickCount();
+
+      while (written < requested) {
+        if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                               "Playback stream stopped");
+          }
+          return false;
+        }
+        if (GetTickCount() - start_time > 3000) {
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                               "WASAPI write timeout (ring buffer full)");
+          }
+          return false;
+        }
+
+        size_t available_space =
+            spsc_audio_ring_buffer_get_capacity(playback->ring_buffer) -
+            spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
+        size_t to_write = requested - written;
+        if (to_write > available_space) to_write = available_space;
+
+        if (to_write > 0) {
+          spsc_audio_ring_buffer_write(playback->ring_buffer,
+                                       playback->write_buf + written, to_write,
+                                       1);
+          written += to_write;
+          start_time = GetTickCount();
+        } else {
+          cdsp_sleep_ms(1);
+          if (!atomic_load_explicit(&playback->thread_running,
+                                    memory_order_acquire)) {
+            return false;
+          }
+        }
       }
     }
   } else {
@@ -807,21 +896,6 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         }
       }
     }
-  }
-
-  if (!playback->started) {
-    HRESULT hr = IAudioClient_Start(playback->client);
-    if (FAILED(hr)) {
-      if (err) {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                 "Failed to start IAudioClient in write: hr=0x%08lX",
-                 (unsigned long)hr);
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
-      }
-      return false;
-    }
-    playback->started = true;
   }
 
   return true;
