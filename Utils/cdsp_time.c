@@ -20,7 +20,9 @@ static inline uint64_t cdsp_time_now_ns_internal(void) {
   }
   LARGE_INTEGER counter;
   QueryPerformanceCounter(&counter);
-  return (uint64_t)((counter.QuadPart * 1000000000ULL) / freq.QuadPart);
+  uint64_t seconds = (uint64_t)(counter.QuadPart / freq.QuadPart);
+  uint64_t fraction = (uint64_t)(counter.QuadPart % freq.QuadPart);
+  return seconds * 1000000000ULL + (fraction * 1000000000ULL) / freq.QuadPart;
 #else
   struct timespec ts = {0};
   clock_gettime(CLOCK_MONOTONIC, &ts);
