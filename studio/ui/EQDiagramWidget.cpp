@@ -123,6 +123,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Grid Lines (Solid 0.5px lines with 0.06 opacity matching SwiftUI)
+    painter.setFont(QFont("monospace", 9));
     QColor gridPenColor(255, 255, 255, 15);
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         if (db == 0.0)

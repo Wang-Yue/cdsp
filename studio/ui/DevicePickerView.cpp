@@ -641,11 +641,11 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     fmtBox->addStretch();
     form->addRow("", fmtBox);
 
-    auto dopDiv = new QFrame(w);
-    dopDiv->setFrameShape(QFrame::HLine);
-    dopDiv->setFrameShadow(QFrame::Sunken);
-    dopDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
-    form->addRow("", dopDiv);
+    m_capDopDivider = new QFrame(w);
+    m_capDopDivider->setFrameShape(QFrame::HLine);
+    m_capDopDivider->setFrameShadow(QFrame::Sunken);
+    m_capDopDivider->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
+    form->addRow("", m_capDopDivider);
 
     m_bypassDoPCheck = new QCheckBox("Bypass DoP Detection", w);
     connect(m_bypassDoPCheck, &QCheckBox::toggled, [this](bool checked) {
@@ -657,12 +657,14 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     form->addRow("", m_bypassDoPCheck);
 
-    auto cutoffBox = new QHBoxLayout();
-    m_dopCutoffLabel = new QLabel("DoP Cutoff", w);
+    m_capDopCutoffRow = new QWidget(w);
+    auto cutoffLayout = new QHBoxLayout(m_capDopCutoffRow);
+    cutoffLayout->setContentsMargins(0, 0, 0, 0);
+    m_dopCutoffLabel = new QLabel("DoP Cutoff", m_capDopCutoffRow);
     m_dopCutoffLabel->setFixedWidth(100);
-    cutoffBox->addWidget(m_dopCutoffLabel);
+    cutoffLayout->addWidget(m_dopCutoffLabel);
 
-    m_dopCutoffCombo = new QComboBox(w);
+    m_dopCutoffCombo = new QComboBox(m_capDopCutoffRow);
     m_dopCutoffCombo->addItem("20 kHz", 20000.0);
     m_dopCutoffCombo->addItem("25 kHz", 25000.0);
     m_dopCutoffCombo->addItem("30 kHz", 30000.0);
@@ -673,9 +675,9 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
             return;
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
-    cutoffBox->addWidget(m_dopCutoffCombo);
-    cutoffBox->addStretch();
-    form->addRow("", cutoffBox);
+    cutoffLayout->addWidget(m_dopCutoffCombo);
+    cutoffLayout->addStretch();
+    form->addRow("", m_capDopCutoffRow);
 
     m_dopCutoffHint = new QLabel("Lower cutoff = higher SINAD; higher cutoff preserves more ultrasonic content", w);
     m_dopCutoffHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
@@ -1117,11 +1119,11 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_pbWasapiPollingCheck);
 
-    auto pbDopDiv = new QFrame(w);
-    pbDopDiv->setFrameShape(QFrame::HLine);
-    pbDopDiv->setFrameShadow(QFrame::Sunken);
-    pbDopDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
-    form->addRow("", pbDopDiv);
+    m_pbDopDivider = new QFrame(w);
+    m_pbDopDivider->setFrameShape(QFrame::HLine);
+    m_pbDopDivider->setFrameShadow(QFrame::Sunken);
+    m_pbDopDivider->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
+    form->addRow("", m_pbDopDivider);
 
     m_outputDoPCheck = new QCheckBox("Output DoP (DSD-over-PCM)", w);
     connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool) {
@@ -1140,12 +1142,14 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_outputDSDCheck);
 
-    auto sdmBox = new QHBoxLayout();
-    m_sdmFilterLabel = new QLabel("SDM Filter", w);
+    m_pbSdmFilterRow = new QWidget(w);
+    auto sdmLayout = new QHBoxLayout(m_pbSdmFilterRow);
+    sdmLayout->setContentsMargins(0, 0, 0, 0);
+    m_sdmFilterLabel = new QLabel("SDM Filter", m_pbSdmFilterRow);
     m_sdmFilterLabel->setFixedWidth(100);
-    sdmBox->addWidget(m_sdmFilterLabel);
+    sdmLayout->addWidget(m_sdmFilterLabel);
 
-    m_sdmFilterCombo = new QComboBox(w);
+    m_sdmFilterCombo = new QComboBox(m_pbSdmFilterRow);
     m_sdmFilterCombo->addItem("clans-4", static_cast<int>(SDMFilter::Clans4));
     m_sdmFilterCombo->addItem("sdm-4", static_cast<int>(SDMFilter::SDM4));
     m_sdmFilterCombo->addItem("clans-5", static_cast<int>(SDMFilter::Clans5));
@@ -1161,9 +1165,9 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
             return;
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
-    sdmBox->addWidget(m_sdmFilterCombo);
-    sdmBox->addStretch();
-    form->addRow("", sdmBox);
+    sdmLayout->addWidget(m_sdmFilterCombo);
+    sdmLayout->addStretch();
+    form->addRow("", m_pbSdmFilterRow);
 
     m_pbDopHintLabel = new QLabel("Sample rate must be a DSD carrier rate to enable DoP output", w);
     m_pbDopHintLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
@@ -1178,11 +1182,13 @@ void DevicePickerView::updateDoPCapability() {
     int currentRate = m_pbRateCombo->currentData().toInt();
     bool isCapable = (currentRate == 176400 || currentRate == 192000 || currentRate == 352800 ||
                       currentRate == 384000 || currentRate == 705600 || currentRate == 768000);
-    m_outputDoPCheck->setEnabled(isCapable);
-    bool sdmEnabled = isCapable && m_outputDoPCheck->isChecked();
+    bool isRust = m_devices && m_devices->isRustEngine();
+
+    m_outputDoPCheck->setEnabled(isCapable && !isRust);
+    bool sdmEnabled = isCapable && m_outputDoPCheck->isChecked() && !isRust;
     m_sdmFilterLabel->setEnabled(sdmEnabled);
     m_sdmFilterCombo->setEnabled(sdmEnabled);
-    m_pbDopHintLabel->setVisible(!isCapable);
+    m_pbDopHintLabel->setVisible(!isCapable && !isRust);
 }
 
 QWidget* DevicePickerView::createPbFileView(bool isWav) {
@@ -1436,6 +1442,12 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture DoP
+    bool capDopVisible = !m_devices->isRustEngine();
+    m_capDopDivider->setVisible(capDopVisible);
+    m_bypassDoPCheck->setVisible(capDopVisible);
+    m_capDopCutoffRow->setVisible(capDopVisible);
+    m_dopCutoffHint->setVisible(capDopVisible);
+
     m_bypassDoPCheck->setChecked(m_devices->captureConfig.bypassDoP);
     m_dopCutoffLabel->setEnabled(!m_devices->captureConfig.bypassDoP);
     m_dopCutoffCombo->setEnabled(!m_devices->captureConfig.bypassDoP);
@@ -1555,6 +1567,12 @@ void DevicePickerView::refreshUi() {
     isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
 #endif
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
+
+    bool pbDopVisible = !m_devices->isRustEngine();
+    m_pbDopDivider->setVisible(pbDopVisible);
+    m_outputDoPCheck->setVisible(pbDopVisible);
+    m_pbSdmFilterRow->setVisible(pbDopVisible);
+
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     bool supportsNativeDSD = false;

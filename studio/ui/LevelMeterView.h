@@ -11,6 +11,7 @@
 #include <memory>
 
 class MonitoringController;
+class MeterGroupWidget;
 
 class LevelMeterView : public QWidget {
     Q_OBJECT
@@ -31,8 +32,8 @@ public:
     bool isCapture() const { return m_isCapture; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");
 
-    QSize sizeHint() const override { return QSize(300, 120); }
-    QSize minimumSizeHint() const override { return QSize(180, 90); }
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -59,13 +60,14 @@ public:
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
 
 private:
     std::shared_ptr<MonitoringController> m_monitoring;
     std::shared_ptr<DSPEngineController> m_dsp;
     QLabel* m_statusLabel;
     QWidget* m_statusDot;
+    MeterGroupWidget* m_captureGroup = nullptr;
+    MeterGroupWidget* m_playbackGroup = nullptr;
 };
 
 #endif // LEVEL_METER_VIEW_H

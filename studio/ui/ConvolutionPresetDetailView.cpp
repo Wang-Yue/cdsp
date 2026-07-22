@@ -173,7 +173,9 @@ void ConvolutionPresetDetailView::setupUi() {
 }
 
 void ConvolutionPresetDetailView::refreshUi() {
+    m_nameEdit->blockSignals(true);
     m_nameEdit->setText(QString::fromStdString(m_preset.name));
+    m_nameEdit->blockSignals(false);
     m_kindLabel->setText(QString::fromStdString(m_preset.kindLabel()));
     m_tapsLabel->setText(QString::number(m_preset.taps));
 
@@ -202,8 +204,11 @@ void ConvolutionPresetDetailView::refreshUi() {
             });
         }
         int comboIdx = m_ratePreviewCombo->findData(m_previewRate);
-        if (comboIdx >= 0)
+        if (comboIdx >= 0) {
+            m_ratePreviewCombo->blockSignals(true);
             m_ratePreviewCombo->setCurrentIndex(comboIdx);
+            m_ratePreviewCombo->blockSignals(false);
+        }
 
         std::string p = m_preset.irPath(m_previewRate);
         if (!p.empty()) {

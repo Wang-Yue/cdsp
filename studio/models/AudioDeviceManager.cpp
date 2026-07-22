@@ -239,6 +239,10 @@ bool AudioDeviceManager::devicesAvailable() const {
     return true;
 }
 
+bool AudioDeviceManager::isRustEngine() const {
+    return m_engine && m_engine->isRustEngine();
+}
+
 void AudioDeviceManager::fetchDevices() {
     auto engine = m_engine;
     if (!engine)

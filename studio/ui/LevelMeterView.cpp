@@ -5,12 +5,32 @@
 
 #include <QHBoxLayout>
 #include <QPainterPath>
+#include <QSizePolicy>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
 
-LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(160);
+LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {}
+
+QSize LevelMeterView::sizeHint() const {
+    std::vector<float> emptyVec;
+    const std::vector<float>& rmsVec =
+        m_hasExplicitLevels
+            ? m_rms
+            : (m_levelState ? (m_isCapture ? m_levelState->captureRms : m_levelState->playbackRms) : emptyVec);
+    size_t chCount = rmsVec.size();
+    if (chCount == 0)
+        chCount = 2;    // Default to 2 channels
+    int barHeight = 18; // Match SwiftUI height: 18px per channel
+    int spacing = 8;
+    int basePadding = m_title.isEmpty() ? 8 : 50;
+    int totalH = static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing + basePadding;
+    return QSize(300, totalH);
+}
+
+QSize LevelMeterView::minimumSizeHint() const {
+    QSize sh = sizeHint();
+    return QSize(180, sh.height());
 }
 
 void LevelMeterView::showEvent(QShowEvent* event) {
@@ -52,10 +72,14 @@ static QColor appThemeColor(float value) {
 }
 
 void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title) {
+    bool sizeChanged = (m_rms.size() != rms.size() || m_title != title);
     m_rms = rms;
     m_peak = peak;
     m_title = title;
     m_hasExplicitLevels = true;
+    if (sizeChanged) {
+        updateGeometry();
+    }
     update();
 }
 
@@ -182,6 +206,153 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     }
 }
 
+static void drawMicIcon(QPainter& p, int x, int y) {
+    p.save();
+    p.translate(x + 6, y + 6); // center inside 12x12
+    p.setPen(QPen(StyleTheme::textSecondary(), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(Qt::NoBrush);
+
+    QPainterPath mic;
+    mic.addRoundedRect(QRectF(-2.5, -5, 5, 8), 2.5, 2.5);
+    p.drawPath(mic);
+
+    QPainterPath stand;
+    stand.arcMoveTo(QRectF(-4.5, -2, 9, 8), -180);
+    stand.arcTo(QRectF(-4.5, -2, 9, 8), -180, 180);
+    stand.moveTo(0, 6);
+    stand.lineTo(0, 9);
+    stand.moveTo(-3, 9);
+    stand.lineTo(3, 9);
+    p.drawPath(stand);
+    p.restore();
+}
+
+static void drawSpeakerIcon(QPainter& p, int x, int y) {
+    p.save();
+    p.translate(x + 6, y + 6); // center inside 12x12
+    p.setPen(QPen(StyleTheme::textSecondary(), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(Qt::NoBrush);
+
+    // Outer box
+    p.drawRoundedRect(QRectF(-4.5, -6, 9, 12), 1, 1);
+    // Tweeter
+    p.drawEllipse(QRectF(-1.5, -4, 3, 3));
+    // Woofer
+    p.drawEllipse(QRectF(-2.5, 0, 5, 5));
+    p.restore();
+}
+
+class CompactMultiChannelMeter : public QWidget {
+public:
+    explicit CompactMultiChannelMeter(bool isPlayback, QWidget* parent = nullptr)
+        : QWidget(parent), m_isPlayback(isPlayback) {
+        setFixedHeight(6);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    }
+    void setLevelState(LevelState* levelState) {
+        if (m_levelState == levelState)
+            return;
+        m_levelState = levelState;
+        updateGeometry();
+        update();
+    }
+    QSize sizeHint() const override {
+        if (!m_levelState)
+            return QSize(0, 6);
+        size_t count = m_isPlayback ? m_levelState->playbackRms.size() : m_levelState->captureRms.size();
+        if (count == 0)
+            count = 2; // default
+        int barW = (count > 4) ? 40 : 80;
+        int spacing = 4;
+        int totalWidth = static_cast<int>((barW + spacing) * count - spacing);
+        return QSize(totalWidth, 6);
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event);
+        if (!m_levelState)
+            return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        size_t count = m_isPlayback ? m_levelState->playbackRms.size() : m_levelState->captureRms.size();
+        if (count == 0)
+            return;
+
+        int barW = (count > 4) ? 40 : 80;
+        int barH = 6;
+        int spacing = 4;
+        QColor trackBg = StyleTheme::isDark() ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 15);
+
+        const auto& peakLevels = m_isPlayback ? m_levelState->playbackPeak : m_levelState->capturePeak;
+
+        for (size_t i = 0; i < count; ++i) {
+            int x = static_cast<int>(i * (barW + spacing));
+            QPainterPath trackPath;
+            trackPath.addRoundedRect(QRectF(x, 0, barW, barH), 1.5, 1.5);
+            p.fillPath(trackPath, trackBg);
+
+            if (i < peakLevels.size()) {
+                float frac = normDB(peakLevels[i]);
+                int fillW = static_cast<int>(frac * barW);
+                if (fillW > 0) {
+                    QPainterPath fillPath;
+                    fillPath.addRoundedRect(QRectF(x, 0, fillW, barH), 1.5, 1.5);
+                    p.fillPath(fillPath, appThemeColor(frac));
+                }
+            }
+        }
+    }
+
+private:
+    bool m_isPlayback;
+    LevelState* m_levelState = nullptr;
+};
+
+class MeterGroupWidget : public QWidget {
+public:
+    MeterGroupWidget(bool isPlayback, LevelState* levelState, QWidget* parent = nullptr)
+        : QWidget(parent), m_isPlayback(isPlayback) {
+        auto layout = new QHBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(6);
+
+        // We leave 12px spacing on the left for the icon which we draw in paintEvent
+        auto spacer = new QWidget(this);
+        spacer->setFixedWidth(12);
+        layout->addWidget(spacer);
+
+        m_meter = new CompactMultiChannelMeter(isPlayback, this);
+        m_meter->setLevelState(levelState);
+        layout->addWidget(m_meter);
+
+        setFixedHeight(16);
+    }
+    void setLevelState(LevelState* levelState) { m_meter->setLevelState(levelState); }
+    void updateMeters() {
+        update();
+        if (m_meter)
+            m_meter->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        if (m_isPlayback) {
+            drawSpeakerIcon(p, 0, (height() - 12) / 2);
+        } else {
+            drawMicIcon(p, 0, (height() - 12) / 2);
+        }
+    }
+
+private:
+    bool m_isPlayback;
+    CompactMultiChannelMeter* m_meter;
+};
+
 // MARK: - CompactLevelMeterBar Implementation
 
 CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
@@ -192,6 +363,15 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
 
     auto layout = new QHBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 4);
+    layout->setSpacing(16);
+
+    LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
+
+    m_captureGroup = new MeterGroupWidget(false, levelState, this);
+    m_playbackGroup = new MeterGroupWidget(true, levelState, this);
+
+    layout->addWidget(m_captureGroup);
+    layout->addWidget(m_playbackGroup);
 
     m_statusDot = new QWidget(this);
     m_statusDot->setFixedSize(8, 8);
@@ -205,7 +385,12 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     layout->addWidget(m_statusDot);
     layout->addWidget(m_statusLabel);
 
-    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() { update(); });
+    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+        if (m_captureGroup)
+            m_captureGroup->updateMeters();
+        if (m_playbackGroup)
+            m_playbackGroup->updateMeters();
+    });
     connect(m_dsp.get(), &DSPEngineController::statusChanged, this, [this](ProcessingState) { updateState(); });
     updateState();
 }
@@ -251,66 +436,5 @@ void CompactLevelMeterBar::updateState() {
         m_statusLabel->setText("Inactive");
         m_statusLabel->setStyleSheet("color: #8e8e93;");
         break;
-    }
-}
-
-void CompactLevelMeterBar::paintEvent(QPaintEvent* event) {
-    Q_UNUSED(event);
-    if (!m_monitoring)
-        return;
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-
-    const auto& st = m_monitoring->levelState;
-    size_t capCount = st.captureRms.size();
-    size_t pbCount = st.playbackRms.size();
-
-    size_t effectiveCap = (capCount > 0) ? capCount : 2;
-    size_t effectivePb = (pbCount > 0) ? pbCount : 2;
-
-    int barW = (effectiveCap > 4) ? 40 : 80;
-    int barH = 6;
-    int spacing = 4;
-    int yPos = (height() - barH) / 2;
-    int startX = 12;
-
-    QColor trackBg = StyleTheme::isDark() ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 15);
-
-    // Draw Capture Level Bars
-    for (size_t i = 0; i < effectiveCap; ++i) {
-        QPainterPath trackPath;
-        trackPath.addRoundedRect(QRectF(startX, yPos, barW, barH), 1.5, 1.5);
-        p.fillPath(trackPath, trackBg);
-
-        if (i < st.capturePeak.size()) {
-            float frac = normDB(st.capturePeak[i]);
-            int fillW = static_cast<int>(frac * barW);
-            if (fillW > 0) {
-                QPainterPath fillPath;
-                fillPath.addRoundedRect(QRectF(startX, yPos, fillW, barH), 1.5, 1.5);
-                p.fillPath(fillPath, appThemeColor(frac));
-            }
-        }
-        startX += barW + spacing;
-    }
-
-    startX += 16; // Section spacing
-
-    // Draw Playback Level Bars
-    for (size_t i = 0; i < effectivePb; ++i) {
-        QPainterPath trackPath;
-        trackPath.addRoundedRect(QRectF(startX, yPos, barW, barH), 1.5, 1.5);
-        p.fillPath(trackPath, trackBg);
-
-        if (i < st.playbackPeak.size()) {
-            float frac = normDB(st.playbackPeak[i]);
-            int fillW = static_cast<int>(frac * barW);
-            if (fillW > 0) {
-                QPainterPath fillPath;
-                fillPath.addRoundedRect(QRectF(startX, yPos, fillW, barH), 1.5, 1.5);
-                p.fillPath(fillPath, appThemeColor(frac));
-            }
-        }
-        startX += barW + spacing;
     }
 }

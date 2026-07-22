@@ -101,6 +101,7 @@ private:
     QAction* m_actThemeDark = nullptr;
 
     QMap<QString, QWidget*> m_pageCache;
+    QWidget* m_unavailableWidget = nullptr;
     QString m_lastActiveTag = "dashboard";
 
     void setupUi();

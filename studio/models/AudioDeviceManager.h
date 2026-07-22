@@ -38,6 +38,7 @@ public:
     double latencyMs() const;
 
     bool devicesAvailable() const;
+    bool isRustEngine() const;
 
     void setCaptureConfig(const DeviceConfig& config);
     void setPlaybackConfig(const DeviceConfig& config);

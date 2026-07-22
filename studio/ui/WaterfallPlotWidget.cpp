@@ -184,14 +184,21 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     if (m_timeCombo && m_timeCombo->parentWidget()) {
         topOffset = m_timeCombo->geometry().bottom() + 10;
     }
-    QRect plotRect = rect().adjusted(0, topOffset, 0, 0);
+    // Leave 1px margin so the border doesn't get cut off by widget edges
+    QRect plotRect = rect().adjusted(1, topOffset, -1, -1);
 
-    p.fillRect(plotRect, StyleTheme::cardBg());
+    // Rounded background
+    QPainterPath borderPath;
+    borderPath.addRoundedRect(plotRect, 8.0, 8.0);
+    p.fillPath(borderPath, StyleTheme::cardBg());
 
     if (m_isComputing) {
         p.setPen(StyleTheme::textSecondary());
         p.setFont(QFont("sans-serif", 12));
         p.drawText(plotRect, Qt::AlignCenter, "Computing CSD Waterfall STFT Slices…");
+        p.setPen(QPen(StyleTheme::border(), 1.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(plotRect, 8.0, 8.0);
         return;
     }
 
@@ -199,6 +206,9 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
         p.setPen(StyleTheme::textSecondary());
         p.setFont(QFont("sans-serif", 12));
         p.drawText(plotRect, Qt::AlignCenter, "No measurement data available to generate Waterfall.");
+        p.setPen(QPen(StyleTheme::border(), 1.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(plotRect, 8.0, 8.0);
         return;
     }
 
@@ -227,6 +237,8 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     double refDB = (refPeak > 0.0) ? 20.0 * std::log10(refPeak) : 0.0;
 
     p.save();
+    // Clip the slices drawing to the rounded rectangle
+    p.setClipPath(borderPath);
     p.translate(plotRect.topLeft());
 
     // Render back to front for isometric depth
@@ -274,7 +286,7 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
             fillPath.closeSubpath();
 
             QColor maskColor = StyleTheme::cardBg();
-            maskColor.setAlpha(240);
+            maskColor.setAlpha(242); // ~0.95 opacity
             p.fillPath(fillPath, maskColor);
 
             double hue = 0.6 - 0.5 * (1.0 - progress);
@@ -285,4 +297,9 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     }
 
     p.restore();
+
+    // Draw the rounded border overlay
+    p.setPen(QPen(StyleTheme::border(), 1.0));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(plotRect, 8.0, 8.0);
 }

@@ -1007,9 +1007,9 @@ void MainWindow::refreshSidebarItems() {
     // 1. Audio Section
     auto audioGroup = new QTreeWidgetItem(m_sidebarTree, {"Audio"});
     audioGroup->setExpanded(true);
-    auto devItem = new QTreeWidgetItem(audioGroup, {"Devices"});
+    auto devItem = new QTreeWidgetItem(audioGroup, {"🔊 Devices"});
     devItem->setData(0, Qt::UserRole, "devices");
-    auto dashItem = new QTreeWidgetItem(audioGroup, {"Dashboard"});
+    auto dashItem = new QTreeWidgetItem(audioGroup, {"🎛️ Dashboard"});
     dashItem->setData(0, Qt::UserRole, "dashboard");
 
     // 2. Monitoring Section
@@ -1019,7 +1019,7 @@ void MainWindow::refreshSidebarItems() {
     auto levelsItem = new QTreeWidgetItem(monGroup);
     levelsItem->setData(0, Qt::UserRole, "levels");
     auto levelsW = new SidebarToggleRowWidget(
-        m_sidebarTree, levelsItem, "Level Meters", m_settings->showLevelMetersInDashboard,
+        m_sidebarTree, levelsItem, "📊 Level Meters", m_settings->showLevelMetersInDashboard,
         [this](bool c) {
             m_settings->showLevelMetersInDashboard = c;
             m_settings->savePreferences();
@@ -1030,7 +1030,7 @@ void MainWindow::refreshSidebarItems() {
     auto specItem = new QTreeWidgetItem(monGroup);
     specItem->setData(0, Qt::UserRole, "spectrum");
     auto specW = new SidebarToggleRowWidget(
-        m_sidebarTree, specItem, "Spectrum", m_settings->showSpectrumInDashboard,
+        m_sidebarTree, specItem, "📈 Spectrum", m_settings->showSpectrumInDashboard,
         [this](bool c) {
             m_settings->showSpectrumInDashboard = c;
             m_settings->savePreferences();
@@ -1041,7 +1041,7 @@ void MainWindow::refreshSidebarItems() {
     auto spectroItem = new QTreeWidgetItem(monGroup);
     spectroItem->setData(0, Qt::UserRole, "spectroscope");
     auto spectroW = new SidebarToggleRowWidget(
-        m_sidebarTree, spectroItem, "Spectroscope", m_settings->showSpectrogramInDashboard,
+        m_sidebarTree, spectroItem, "🌌 Spectroscope", m_settings->showSpectrogramInDashboard,
         [this](bool c) {
             m_settings->showSpectrogramInDashboard = c;
             m_settings->savePreferences();
@@ -1052,7 +1052,7 @@ void MainWindow::refreshSidebarItems() {
     auto vecItem = new QTreeWidgetItem(monGroup);
     vecItem->setData(0, Qt::UserRole, "vectorscope");
     auto vecW = new SidebarToggleRowWidget(
-        m_sidebarTree, vecItem, "Vector Scope", m_settings->showVectorScopeInDashboard,
+        m_sidebarTree, vecItem, "🎯 Vector Scope", m_settings->showVectorScopeInDashboard,
         [this](bool c) {
             m_settings->showVectorScopeInDashboard = c;
             m_settings->savePreferences();
@@ -1063,7 +1063,7 @@ void MainWindow::refreshSidebarItems() {
     auto vuItem = new QTreeWidgetItem(monGroup);
     vuItem->setData(0, Qt::UserRole, "analogVU");
     auto vuW = new SidebarToggleRowWidget(
-        m_sidebarTree, vuItem, "Analog VU", m_settings->showAnalogVUInDashboard,
+        m_sidebarTree, vuItem, "📟 Analog VU", m_settings->showAnalogVUInDashboard,
         [this](bool c) {
             m_settings->showAnalogVUInDashboard = c;
             m_settings->savePreferences();
@@ -1071,7 +1071,7 @@ void MainWindow::refreshSidebarItems() {
         [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(vuItem, 0, vuW);
 
-    auto logsItem = new QTreeWidgetItem(monGroup, {"Console Logs"});
+    auto logsItem = new QTreeWidgetItem(monGroup, {"📝 Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
 
     // 3. Pipeline Section
@@ -1081,7 +1081,7 @@ void MainWindow::refreshSidebarItems() {
     auto resItem = new QTreeWidgetItem(pipeGroup);
     resItem->setData(0, Qt::UserRole, "resampler");
     auto resW = new SidebarToggleRowWidget(
-        m_sidebarTree, resItem, "Resampler", m_settings->resamplerEnabled,
+        m_sidebarTree, resItem, "🔄 Resampler", m_settings->resamplerEnabled,
         [this](bool c) {
             m_settings->resamplerEnabled = c;
             m_settings->savePreferences();
@@ -1128,7 +1128,7 @@ void MainWindow::refreshSidebarItems() {
             }
         }
 
-        QString stageTitle = rawName;
+        QString stageTitle = QString("%1 %2").arg(QString::fromStdString(stageTypeToIcon(stage.type))).arg(rawName);
         auto stageW = new SidebarToggleRowWidget(
             m_sidebarTree, sItem, stageTitle, stage.isEnabled,
             [this, stageId](bool c) {
@@ -1145,34 +1145,34 @@ void MainWindow::refreshSidebarItems() {
         m_sidebarTree->setItemWidget(sItem, 0, stageW);
     }
 
-    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"Add Stage…"});
+    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"➕ Add Stage…"});
     addStageItem->setData(0, Qt::UserRole, "add_stage");
 
     // 4. Convolution Section
     auto convGroup = new QTreeWidgetItem(m_sidebarTree, {"Convolution"});
     convGroup->setExpanded(true);
     for (const auto& conv : m_pipeline->convPresets) {
-        auto cItem = new QTreeWidgetItem(convGroup, {QString::fromStdString(conv.name)});
+        auto cItem = new QTreeWidgetItem(convGroup, {QString("🌊 %1").arg(QString::fromStdString(conv.name))});
         cItem->setData(0, Qt::UserRole, QString("conv_%1").arg(conv.id.toString()));
     }
-    auto impConvItem = new QTreeWidgetItem(convGroup, {"Import IR File(s)…"});
+    auto impConvItem = new QTreeWidgetItem(convGroup, {"📥 Import IR File(s)…"});
     impConvItem->setData(0, Qt::UserRole, "import_conv");
 
-    auto roomItem = new QTreeWidgetItem(convGroup, {"Room Correction"});
+    auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️ Room Correction"});
     roomItem->setData(0, Qt::UserRole, "room_correction");
 
     // 5. EQ Presets Section
     auto eqGroup = new QTreeWidgetItem(m_sidebarTree, {"EQ Presets"});
     eqGroup->setExpanded(true);
     for (const auto& eq : m_pipeline->eqPresets) {
-        auto eItem = new QTreeWidgetItem(eqGroup, {QString::fromStdString(eq.name)});
+        auto eItem = new QTreeWidgetItem(eqGroup, {QString("🎛️ %1").arg(QString::fromStdString(eq.name))});
         eItem->setData(0, Qt::UserRole, QString("eq_%1").arg(eq.id.toString()));
     }
-    auto addEqItem = new QTreeWidgetItem(eqGroup, {"Add"});
+    auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕ Add"});
     addEqItem->setData(0, Qt::UserRole, "add_eq");
-    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"Oratory"});
+    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧 Oratory"});
     oratoryItem->setData(0, Qt::UserRole, "oratory_eq");
-    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"AutoEQ"});
+    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🔍 AutoEQ"});
     autoEqItem->setData(0, Qt::UserRole, "auto_eq");
 
     m_sidebarTree->blockSignals(false);
@@ -1181,6 +1181,11 @@ void MainWindow::refreshSidebarItems() {
 void MainWindow::showCentralWidget(QWidget* widget) {
     if (!widget)
         return;
+    if (widget != m_unavailableWidget && m_unavailableWidget) {
+        m_centralStack->removeWidget(m_unavailableWidget);
+        m_unavailableWidget->deleteLater();
+        m_unavailableWidget = nullptr;
+    }
     if (m_centralStack->indexOf(widget) == -1) {
         m_centralStack->addWidget(widget);
     }
@@ -1371,14 +1376,12 @@ void MainWindow::onPipelineChanged() {
         tagStillValid = true;
     }
 
-    // 2. Destroy cached detail views EXCEPT active tag if still valid
+    // 2. Destroy ALL cached detail views of dynamic pipeline components to avoid stale indices or data
     QList<QString> keysToDestroy;
     for (auto it = m_pageCache.begin(); it != m_pageCache.end(); ++it) {
         QString k = it.key();
         if (k.startsWith("stage_") || k.startsWith("eq_") || k.startsWith("conv_")) {
-            if (!tagStillValid || k != m_lastActiveTag) {
-                keysToDestroy.append(k);
-            }
+            keysToDestroy.append(k);
         }
     }
     for (const auto& key : keysToDestroy) {
@@ -1397,18 +1400,22 @@ void MainWindow::onPipelineChanged() {
     if (tagStillValid) {
         handleNavigationTag(m_lastActiveTag);
     } else {
-        auto unavailable = new QWidget(this);
-        auto layout = new QVBoxLayout(unavailable);
-        auto lblTitle = new QLabel("Item Deleted", unavailable);
+        if (m_unavailableWidget) {
+            m_centralStack->removeWidget(m_unavailableWidget);
+            m_unavailableWidget->deleteLater();
+        }
+        m_unavailableWidget = new QWidget(this);
+        auto layout = new QVBoxLayout(m_unavailableWidget);
+        auto lblTitle = new QLabel("Item Deleted", m_unavailableWidget);
         lblTitle->setFont(QFont("-apple-system", 18, QFont::Bold));
         lblTitle->setAlignment(Qt::AlignCenter);
-        auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", unavailable);
+        auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", m_unavailableWidget);
         lblDesc->setStyleSheet("color: #8e8e93; font-size: 13px;");
         lblDesc->setAlignment(Qt::AlignCenter);
         layout->addStretch();
         layout->addWidget(lblTitle);
         layout->addWidget(lblDesc);
         layout->addStretch();
-        showCentralWidget(unavailable);
+        showCentralWidget(m_unavailableWidget);
     }
 }

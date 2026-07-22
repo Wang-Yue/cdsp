@@ -731,7 +731,7 @@ void EQPresetDetailView::updateBandChipsBar() {
 
         // Line 1: #Index Type
         auto titleLbl = new QLabel(
-            QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToShortName(b.type))), chip);
+            QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToString(b.type))), chip);
         titleLbl->setStyleSheet(
             QString("color: %1; font-weight: %2; font-size: 11px;").arg(textCol).arg(isSelected ? "bold" : "normal"));
         textVBox->addWidget(titleLbl);

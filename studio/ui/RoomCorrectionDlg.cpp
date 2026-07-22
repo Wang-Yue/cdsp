@@ -543,16 +543,62 @@ void RoomCorrectionDlg::populateAudioDevices() {
 
 void RoomCorrectionDlg::updateMicChannels() {
     m_micChannelCombo->clear();
-    m_micChannelCombo->addItem("Channel 1", 0);
-    m_micChannelCombo->addItem("Channel 2", 1);
+    int channels = 2; // Default fallback
+#ifdef QT_MULTIMEDIA_LIB
+    QString selectedName = m_micDeviceCombo->currentData().toString();
+    if (!selectedName.isEmpty()) {
+        for (const auto& dev : QMediaDevices::audioInputs()) {
+            if (dev.description() == selectedName) {
+                channels = dev.maximumChannelCount();
+                break;
+            }
+        }
+    } else {
+        auto dev = QMediaDevices::defaultAudioInput();
+        if (!dev.isNull()) {
+            channels = dev.maximumChannelCount();
+        }
+    }
+#endif
+    for (int i = 0; i < std::max(1, channels); ++i) {
+        m_micChannelCombo->addItem(QString("Channel %1").arg(i + 1), i);
+    }
 }
 
 void RoomCorrectionDlg::updateOutputChannels() {
     m_outputChannelCombo->clear();
     m_outputChannelCombo->addItem("All channels", -1);
-    m_outputChannelCombo->addItem("Channel 1 (Left)", 0);
-    m_outputChannelCombo->addItem("Channel 2 (Right)", 1);
-    m_outputChannelCombo->addItem("Channel 4 (LFE)", 3);
+    int channels = 2; // Default fallback
+#ifdef QT_MULTIMEDIA_LIB
+    QString selectedName = m_outputDeviceCombo->currentData().toString();
+    if (!selectedName.isEmpty()) {
+        for (const auto& dev : QMediaDevices::audioOutputs()) {
+            if (dev.description() == selectedName) {
+                channels = dev.maximumChannelCount();
+                break;
+            }
+        }
+    } else {
+        auto dev = QMediaDevices::defaultAudioOutput();
+        if (!dev.isNull()) {
+            channels = dev.maximumChannelCount();
+        }
+    }
+#endif
+    for (int i = 0; i < std::max(1, channels); ++i) {
+        QString label;
+        if (channels == 2) {
+            if (i == 0)
+                label = "Channel 1 (Left)";
+            else if (i == 1)
+                label = "Channel 2 (Right)";
+        } else if (channels >= 6 && i == 3) {
+            label = "Channel 4 (LFE)";
+        } else {
+            label = QString("Channel %1").arg(i + 1);
+        }
+        m_outputChannelCombo->addItem(label, i);
+    }
 }
 
 void RoomCorrectionDlg::refreshSessionUi() {

@@ -7,6 +7,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFrame>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -51,8 +52,10 @@ private:
     QComboBox* m_capFormatCombo = nullptr;
     QLabel* m_capFormatLabel = nullptr;
     QCheckBox* m_bypassDoPCheck = nullptr;
+    QFrame* m_capDopDivider = nullptr;
     QLabel* m_dopCutoffLabel = nullptr;
     QComboBox* m_dopCutoffCombo = nullptr;
+    QWidget* m_capDopCutoffRow = nullptr;
     QLabel* m_dopCutoffHint = nullptr;
 
     // Capture File (RawFile & WavFile)
@@ -112,9 +115,11 @@ private:
     QLineEdit* m_pbPulseLinkVolumeEdit = nullptr;
     QLineEdit* m_pbPulseLinkMuteEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
+    QFrame* m_pbDopDivider = nullptr;
     QCheckBox* m_outputDSDCheck = nullptr;
     QLabel* m_sdmFilterLabel = nullptr;
     QComboBox* m_sdmFilterCombo = nullptr;
+    QWidget* m_pbSdmFilterRow = nullptr;
     QLabel* m_pbDopHintLabel = nullptr;
 
     // Playback File

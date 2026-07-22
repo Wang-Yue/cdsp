@@ -117,13 +117,13 @@ void DashboardView::updateFaderUi() {
 
         if (muted) {
             row.muteBtn->setText("🔇");
-            row.muteBtn->setStyleSheet(
-                "background-color: transparent; color: #ff3b30; border: none; font-size: 16px; font-weight: bold; padding: 0px; margin: 0px;");
+            row.muteBtn->setStyleSheet("background-color: transparent; color: #ff3b30; border: none; font-size: 16px; "
+                                       "font-weight: bold; padding: 0px; margin: 0px;");
         } else {
             row.muteBtn->setText("🔊");
-            row.muteBtn->setStyleSheet(
-                QString("background-color: transparent; color: %1; border: none; font-size: 16px; padding: 0px; margin: 0px;")
-                    .arg(StyleTheme::textPrimary().name()));
+            row.muteBtn->setStyleSheet(QString("background-color: transparent; color: %1; border: none; font-size: "
+                                               "16px; padding: 0px; margin: 0px;")
+                                           .arg(StyleTheme::textPrimary().name()));
         }
     }
 }
@@ -201,9 +201,9 @@ void DashboardView::setupUi() {
     m_captureMeters = new LevelMeterView(m_levelMetersGroup);
     m_captureMeters->setLevelState(&m_monitoring->levelState);
     m_captureMeters->setIsCapture(true);
-    m_captureMeters->setFixedHeight(120);
     capCol->addWidget(capLbl);
     capCol->addWidget(m_captureMeters);
+    capCol->addStretch();
 
     // Playback column
     auto pbCol = new QVBoxLayout();
@@ -214,9 +214,9 @@ void DashboardView::setupUi() {
     m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
     m_playbackMeters->setLevelState(&m_monitoring->levelState);
     m_playbackMeters->setIsCapture(false);
-    m_playbackMeters->setFixedHeight(120);
     pbCol->addWidget(pbLbl);
     pbCol->addWidget(m_playbackMeters);
+    pbCol->addStretch();
 
     levelColumnsLayout->addLayout(capCol);
     levelColumnsLayout->addLayout(pbCol);
