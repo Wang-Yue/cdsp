@@ -236,7 +236,8 @@ void engine_shared_state_request_stop(engine_shared_state_t* state,
   } else {
     // LOSER branch: Stop has already been requested by another thread.
     // Ref: engine_state_management.md - Section 4: The CAS Race-Condition
-    // Safety Gate If a graceful EOF was previously requested, but a subsequent
+    // Safety Gate (and Section 4.1 for loop guards avoiding false alarms).
+    // If a graceful EOF was previously requested, but a subsequent
     // stop request occurs (e.g. user aborts, session teardown, or hardware
     // error during drain), force immediate INACTIVE state & queue shutdown to
     // unblock waiting threads and prevent deadlocks. If the new request is a

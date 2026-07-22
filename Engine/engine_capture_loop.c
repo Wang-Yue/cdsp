@@ -160,6 +160,11 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   }
   // If reading fails with an error, trigger an engine stop.
   if (err->type != BACKEND_ERROR_NONE) {
+    // Ref: engine_state_management.md - Section 4.1: Prevention of False-Alarm
+    // Shutdown Errors (Loop Guards)
+    if (engine_shared_state_should_stop(loop->shared)) {
+      return true;
+    }
     // Check if there is a pending rate change first (e.g. from service invalidation/format changes)
     double rate = 0.0;
     if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {

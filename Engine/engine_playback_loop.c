@@ -378,6 +378,12 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
+      // Ref: engine_state_management.md - Section 4.1: Prevention of False-Alarm
+      // Shutdown Errors (Loop Guards)
+      if (engine_shared_state_should_stop(loop->shared)) {
+        reached_eos = false;
+        break;
+      }
       // Check if there is a pending format change first
       double rate = 0.0;
       if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {

@@ -497,10 +497,18 @@ Without a gate, these threads would overwrite the stop reason and attempt to shu
 * **Subsequent Threads (Losers)**: Find `stop_once` is already `true`. They enter the `else` branch while holding `stop_reason_mutex` to safely inspect the published `stop_reason`.
   - If a graceful EOF (`STOP_REASON_DONE`) or default stop (`STOP_REASON_NONE`) was previously set, and any subsequent stop request occurs (e.g. user aborts, session teardown, or hardware error during drain), the loser branch forces an immediate `INACTIVE` state transition and queue shutdown to unblock waiting threads and prevent deadlocks on `pthread_join`.
   - If the new request is a hardware error (`reason.type != STOP_REASON_DONE && reason.type != STOP_REASON_NONE`), the loser branch also **overrides** the stop reason to preserve the error root cause.
-  - Routine stops (`STOP_REASON_NONE`) or duplicate EOFs (`STOP_REASON_DONE`) do not overwrite an existing `STOP_REASON_DONE` or error reason.
   - Otherwise, it releases the mutex without overwriting the stop reason or triggering duplicate queue shutdowns.
 
-
+### 4.1. Prevention of False-Alarm Shutdown Errors (Loop Guards)
+During a normal teardown, rate change transition, or manual stop, the active queues or device backends are closed/stopped. This causes the remaining iterations of the playback or capture loop threads to encounter expected read/write failures.
+To prevent these expected failures from calling `request_stop` and overriding the clean root-cause stop reason (e.g. `CAPTURE_FORMAT_CHANGE` or `NONE`) inside the CAS safety gate, both loops implement early-exit guards:
+```c
+if (engine_shared_state_should_stop(loop->shared)) {
+    reached_eos = false;
+    break;
+}
+```
+If `should_stop()` is already `true`, the threads exit their loops silently, bypassing the CAS safety gate entirely.
 
 ---
 
