@@ -290,7 +290,12 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     if (capture_backend_is_realtime(loop->capture)) {
       if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
         loop->captured_drop_counter++;
-        logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+        static uint64_t last_drop_log = 0;
+        uint64_t now = cdsp_time_now_ns() / 1000000;
+        if (now - last_drop_log > 1000) {
+          logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+          last_drop_log = now;
+        }
         loop->pending_chunk = chunk;
       } else {
         loop->pending_chunk = NULL;

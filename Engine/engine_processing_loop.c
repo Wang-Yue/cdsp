@@ -292,7 +292,12 @@ static bool processing_loop_enqueue_output(engine_processing_loop_t* loop,
     // drop.
     if (!engine_shared_state_enqueue_processed(loop->shared, chunk)) {
       loop->processed_drop_counter++;
-      logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
+      static uint64_t last_drop_log = 0;
+      uint64_t now = cdsp_time_now_ns() / 1000000;
+      if (now - last_drop_log > 1000) {
+        logger_warn(&g_logger, "Processed chunk dropped (playback queue full)");
+        last_drop_log = now;
+      }
       loop->pending_scratch = chunk;
     } else {
       loop->pending_scratch = NULL;
