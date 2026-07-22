@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "Audio/audio_buffers.h"
+#include "Engine/thread_priority.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
@@ -607,10 +608,17 @@ typedef struct {
   audio_chunk_t* current_chunk;
   size_t valid_frames;
   parallel_filter_chain_t* chains;
+  int rate;
 } dispatch_ctx_t;
 
 static void parallel_filter_worker(void* context, size_t idx) {
+  static _Thread_local bool is_promoted = false;
   dispatch_ctx_t* ctx = (dispatch_ctx_t*)context;
+  if (!is_promoted) {
+    set_realtime_thread_priority("Pipeline Worker", ctx->valid_frames,
+                                 ctx->rate);
+    is_promoted = true;
+  }
   parallel_filter_chain_t* chain = &ctx->chains[idx];
   if ((size_t)chain->channel >= audio_chunk_get_channels(ctx->current_chunk))
     return;
@@ -704,24 +712,34 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
 
         if (use_multithreading) {
 #if HAS_DISPATCH
-          dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains};
+          dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains,
+                                 pipeline->rate};
           dispatch_queue_t queue =
               dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
           dispatch_apply_f(step->chains_count, queue, &dctx,
                            parallel_filter_worker);
 #elif defined(USE_OPENMP)
-#pragma omp parallel for num_threads(step->chains_count)
-          for (size_t idx = 0; idx < step->chains_count; idx++) {
-            parallel_filter_chain_t* chain = &step->chains[idx];
-            if ((size_t)chain->channel >=
-                audio_chunk_get_channels(current_chunk))
-              continue;
-            mutable_waveform_t buf =
-                audio_chunk_get_channel(current_chunk, chain->channel);
-            if (!buf) continue;
-            for (size_t j = 0; j < chain->filters_count; j++) {
-              if (chain->filters[j] && valid_frames > 0) {
-                filter_process(chain->filters[j], buf, valid_frames);
+#pragma omp parallel num_threads(step->chains_count)
+          {
+            static _Thread_local bool is_promoted = false;
+            if (!is_promoted) {
+              set_realtime_thread_priority("Pipeline Worker", valid_frames,
+                                           pipeline->rate);
+              is_promoted = true;
+            }
+#pragma omp for
+            for (size_t idx = 0; idx < step->chains_count; idx++) {
+              parallel_filter_chain_t* chain = &step->chains[idx];
+              if ((size_t)chain->channel >=
+                  audio_chunk_get_channels(current_chunk))
+                continue;
+              mutable_waveform_t buf =
+                  audio_chunk_get_channel(current_chunk, chain->channel);
+              if (!buf) continue;
+              for (size_t j = 0; j < chain->filters_count; j++) {
+                if (chain->filters[j] && valid_frames > 0) {
+                  filter_process(chain->filters[j], buf, valid_frames);
+                }
               }
             }
           }

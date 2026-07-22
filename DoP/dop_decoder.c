@@ -23,6 +23,8 @@
 // across DSD64 / 128 / 256 at 44.1 / 48 kHz families are preserved.
 #include "dop_decoder.h"
 
+#include "Engine/thread_priority.h"
+
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
 #define HAS_DISPATCH 1
@@ -82,6 +84,7 @@ struct dop_decoder {
                              */
   bool use_multithreading; /**< True if multi-threaded parallelization should be
                               used. */
+  double sample_rate;      /**< Carrier sample rate in Hz. */
 };
 
 #include <math.h>
@@ -228,6 +231,7 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
     return NULL;
   }
   dec->channels = channels;
+  dec->sample_rate = sample_rate;
   dec->bypass_dop = bypass_dop;
   dec->use_multithreading = false;
 #if HAS_DISPATCH || defined(USE_OPENMP)
@@ -427,7 +431,13 @@ typedef struct {
 } dop_decoder_dispatch_ctx_t;
 
 static void dop_decoder_worker(void* context, size_t ch) {
+  static _Thread_local bool is_promoted = false;
   dop_decoder_dispatch_ctx_t* ctx = (dop_decoder_dispatch_ctx_t*)context;
+  if (!is_promoted) {
+    set_realtime_thread_priority("DoP Worker", ctx->valid_frames,
+                                 (size_t)ctx->decoder->sample_rate);
+    is_promoted = true;
+  }
   process_channel(&ctx->decoder->channel_states[ch],
                   audio_chunk_get_channel(ctx->chunk, ch), ctx->valid_frames,
                   ctx->decoder->ctables);
@@ -454,11 +464,20 @@ bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(decoder->channels, queue, &dctx, dop_decoder_worker);
 #elif defined(USE_OPENMP)
-#pragma omp parallel for num_threads(decoder->channels)
-    for (int ch = 0; ch < decoder->channels; ch++) {
-      process_channel(&decoder->channel_states[ch],
-                      audio_chunk_get_channel(chunk, ch), valid_frames,
-                      decoder->ctables);
+#pragma omp parallel num_threads(decoder->channels)
+    {
+      static _Thread_local bool is_promoted = false;
+      if (!is_promoted) {
+        set_realtime_thread_priority("DoP Worker", valid_frames,
+                                     (size_t)decoder->sample_rate);
+        is_promoted = true;
+      }
+#pragma omp for
+      for (int ch = 0; ch < decoder->channels; ch++) {
+        process_channel(&decoder->channel_states[ch],
+                        audio_chunk_get_channel(chunk, ch), valid_frames,
+                        decoder->ctables);
+      }
     }
 #endif
   } else {
