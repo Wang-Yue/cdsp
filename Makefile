@@ -36,8 +36,8 @@ else
 endif
 
 ifeq ($(IS_WINDOWS),1)
-    CC := clang
-    AR := llvm-ar
+    CC := cc
+    AR := ar
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 0
@@ -92,6 +92,10 @@ ifeq ($(IS_WINDOWS),1)
     endif
     ifeq ($(ENABLE_BLAS),1)
         LDFLAGS += -lopenblas
+    endif
+    ifeq ($(USE_LIBDISPATCH),1)
+        CFLAGS += -DUSE_LIBDISPATCH -DHAVE_MODE_T
+        LDFLAGS += -ldispatch -lBlocksRuntime
     endif
     LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid
 else ifeq ($(IS_DARWIN),1)
