@@ -98,7 +98,7 @@ static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
 #endif
 
 bool ws_handle_handshake(const char* request, socket_t client_fd) {
-  if (!request || client_fd < 0) return false;
+  if (!request || IS_INVALID_SOCKET(client_fd)) return false;
   if (strncmp(request, "GET ", 4) == 0 && strstr(request, "Upgrade: ")) {
     const char* key_ptr = strstr(request, "Sec-WebSocket-Key: ");
     if (!key_ptr) {
