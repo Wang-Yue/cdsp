@@ -384,8 +384,12 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
   }
 
   // Create large SPSC ring buffer (8 blocks headroom)
-  capture->ring = spsc_audio_ring_buffer_create(capture->chunk_size *
-                                                capture->channels * 64);
+  size_t capture_ring_frames = (size_t)capture->chunk_size * 64;
+  if (capture_ring_frames < 8192) {
+    capture_ring_frames = 8192;
+  }
+  capture->ring =
+      spsc_audio_ring_buffer_create(capture_ring_frames * capture->channels);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
   capture->decode_buf = (float*)calloc(capture->decode_buf_size, sizeof(float));
   capture->semaphore = cdsp_sem_create();
@@ -804,8 +808,12 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
     return false;
   }
 
-  playback->ring = spsc_audio_ring_buffer_create(playback->chunk_size *
-                                                 playback->channels * 64);
+  size_t playback_ring_frames = (size_t)playback->chunk_size * 64;
+  if (playback_ring_frames < 8192) {
+    playback_ring_frames = 8192;
+  }
+  playback->ring =
+      spsc_audio_ring_buffer_create(playback_ring_frames * playback->channels);
   playback->encode_buf_size = playback->chunk_size * playback->channels;
   playback->encode_buf =
       (float*)calloc(playback->encode_buf_size, sizeof(float));

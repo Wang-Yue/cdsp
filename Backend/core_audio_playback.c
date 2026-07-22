@@ -44,7 +44,7 @@ struct core_audio_playback {
   /// Per-channel SPSC ring buffer of `Float` samples. `write(chunk:)`
   /// is the producer; the render callback is the consumer.
   spsc_audio_ring_buffer_t** playback_rings;
-  int ring_buffer_size;
+  size_t ring_buffer_size;
 
   /// HAL device the unit is bound to. Captured from the resolved
   /// device lookup in `open()` so `close()` can release hog mode
@@ -428,6 +428,29 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
       playback->audio_unit, kAudioUnitProperty_MaximumFramesPerSlice,
       kAudioUnitScope_Global, 0, &max_frames, sizeof(max_frames));
 
+  size_t needed_ring_size = (size_t)max_frames * 8;
+  if (needed_ring_size > playback->ring_buffer_size) {
+    logger_info(&g_logger,
+                "Resizing playback ring buffers from %zu to %zu frames",
+                playback->ring_buffer_size, needed_ring_size);
+    for (int i = 0; i < playback->channels; i++) {
+      if (playback->playback_rings[i]) {
+        spsc_audio_ring_buffer_free(playback->playback_rings[i]);
+      }
+      playback->playback_rings[i] =
+          spsc_audio_ring_buffer_create(needed_ring_size);
+      if (!playback->playback_rings[i]) {
+        logger_error(&g_logger, "Failed to resize ring buffer %d", i);
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                             "Failed to allocate resized ring buffer");
+        }
+        goto cleanup;
+      }
+    }
+    playback->ring_buffer_size = needed_ring_size;
+  }
+
   status = AudioUnitInitialize(playback->audio_unit);
   if (status != noErr) {
     logger_error(&g_logger,
@@ -566,9 +589,8 @@ static bool core_audio_playback_prefill_silence(void* ctx, size_t frames,
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   (void)err;
   if (!playback || frames == 0) return true;
-  size_t to_write = frames < (size_t)playback->ring_buffer_size
-                        ? frames
-                        : (size_t)playback->ring_buffer_size;
+  size_t to_write =
+      frames < playback->ring_buffer_size ? frames : playback->ring_buffer_size;
   for (int ch = 0; ch < playback->channels; ch++) {
     spsc_audio_ring_buffer_write_silence(playback->playback_rings[ch],
                                          to_write);

@@ -554,7 +554,11 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
         "bit corruption");
   }
 
-  size_t ring_size = playback->chunk_size * 8;
+  size_t max_frames = playback->chunk_size;
+  if ((size_t)playback->buffer_frame_count > max_frames) {
+    max_frames = (size_t)playback->buffer_frame_count;
+  }
+  size_t ring_size = max_frames * 8;
   playback->ring_buffer =
       spsc_audio_ring_buffer_create(ring_size * playback->channels);
   if (!playback->ring_buffer) {
