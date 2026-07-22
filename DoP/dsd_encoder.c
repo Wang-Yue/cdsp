@@ -228,7 +228,7 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
   enc->dsd_bit_depth = dsd_bit_depth;
   enc->use_multithreading = false;
 #if HAS_DISPATCH || defined(USE_OPENMP)
-  if (multithreaded && channels > 2) {
+  if (multithreaded && channels >= 2) {
     enc->use_multithreading = true;
   }
 #endif
@@ -436,28 +436,14 @@ typedef struct {
   dsd_encoder_t* encoder;
   audio_chunk_t* chunk;
   size_t frames;
-  int num_pairs;
 } dsd_encoder_dispatch_ctx_t;
 
 static void dsd_encoder_worker(void* context, size_t task) {
   dsd_encoder_dispatch_ctx_t* ctx = (dsd_encoder_dispatch_ctx_t*)context;
-  int num_pairs = ctx->num_pairs;
-  int task_idx = (int)task;
-  if (task_idx < num_pairs) {
-    int ch = task_idx * 2;
-    encode_dual_channels(&ctx->encoder->channel_states[ch],
-                         &ctx->encoder->channel_states[ch + 1],
-                         audio_chunk_get_channel(ctx->chunk, ch),
-                         audio_chunk_get_channel(ctx->chunk, ch + 1),
-                         ctx->frames, ctx->encoder->coeffs, ctx->encoder->mode,
-                         ctx->encoder->dsd_bit_depth);
-  } else {
-    int ch = task_idx * 2;
-    encode_channel(&ctx->encoder->channel_states[ch],
-                   audio_chunk_get_channel(ctx->chunk, ch), ctx->frames,
-                   ctx->encoder->coeffs, ctx->encoder->mode,
-                   ctx->encoder->dsd_bit_depth);
-  }
+  encode_channel(&ctx->encoder->channel_states[task],
+                 audio_chunk_get_channel(ctx->chunk, task), ctx->frames,
+                 ctx->encoder->coeffs, ctx->encoder->mode,
+                 ctx->encoder->dsd_bit_depth);
 }
 #endif
 
@@ -468,10 +454,9 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
 
   if (encoder->use_multithreading) {
-    int num_pairs = chs / 2;
-    int total_tasks = num_pairs + (chs % 2);
+    int total_tasks = chs;
 #if HAS_DISPATCH
-    dsd_encoder_dispatch_ctx_t dctx = {encoder, chunk, n, num_pairs};
+    dsd_encoder_dispatch_ctx_t dctx = {encoder, chunk, n};
     dispatch_queue_t queue =
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
@@ -479,19 +464,9 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
 #elif defined(USE_OPENMP)
 #pragma omp parallel for num_threads(total_tasks)
     for (int task = 0; task < total_tasks; task++) {
-      if (task < num_pairs) {
-        int ch = task * 2;
-        encode_dual_channels(
-            &encoder->channel_states[ch], &encoder->channel_states[ch + 1],
-            audio_chunk_get_channel(chunk, ch),
-            audio_chunk_get_channel(chunk, ch + 1), n, encoder->coeffs,
-            encoder->mode, encoder->dsd_bit_depth);
-      } else {
-        int ch = task * 2;
-        encode_channel(&encoder->channel_states[ch],
-                       audio_chunk_get_channel(chunk, ch), n, encoder->coeffs,
-                       encoder->mode, encoder->dsd_bit_depth);
-      }
+      encode_channel(&encoder->channel_states[task],
+                     audio_chunk_get_channel(chunk, (size_t)task), n,
+                     encoder->coeffs, encoder->mode, encoder->dsd_bit_depth);
     }
     return;
 #endif
