@@ -508,7 +508,7 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           hr == AUDCLNT_E_RESOURCES_INVALIDATED || hr == 0x88890010 ||
           hr == 0x88890018) {
         double mix_rate = 0.0;
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 60; i++) {
           mix_rate = wasapi_device_get_current_mix_rate(capture->device,
                                                         !capture->loopback);
           if (mix_rate > 0.0) break;
@@ -625,7 +625,7 @@ static bool wasapi_capture_get_pending_rate_change(void* ctx,
                 capture->pending_rate, capture->sample_rate);
     double rate = capture->pending_rate;
     if (rate == 0.0) {
-      for (int i = 0; i < 10; i++) {
+      for (int i = 0; i < 60; i++) {
         rate = wasapi_device_get_current_mix_rate(capture->device,
                                                   !capture->loopback);
         logger_info(

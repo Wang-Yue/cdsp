@@ -184,7 +184,7 @@ static void* wasapi_playback_thread_func(void* arg) {
             hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
           double mix_rate = 0.0;
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < 60; i++) {
             mix_rate =
                 wasapi_device_get_current_mix_rate(playback->device, false);
             if (mix_rate > 0.0) break;
@@ -216,7 +216,7 @@ static void* wasapi_playback_thread_func(void* arg) {
           hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
           hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
         double mix_rate = 0.0;
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 60; i++) {
           mix_rate =
               wasapi_device_get_current_mix_rate(playback->device, false);
           if (mix_rate > 0.0) break;
@@ -718,7 +718,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING || hr == 0x88890010 ||
             hr == 0x88890018) {
           double mix_rate = 0.0;
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < 60; i++) {
             mix_rate =
                 wasapi_device_get_current_mix_rate(playback->device, false);
             if (mix_rate > 0.0) break;
@@ -900,7 +900,7 @@ static bool wasapi_playback_get_pending_rate_change(void* ctx,
                 playback->pending_rate, playback->sample_rate);
     double rate = playback->pending_rate;
     if (rate == 0.0) {
-      for (int i = 0; i < 10; i++) {
+      for (int i = 0; i < 60; i++) {
         rate = wasapi_device_get_current_mix_rate(playback->device, false);
         logger_info(&g_wasapi_logger,
                     "get_pending_rate_change: query attempt %d returned %f", i,
