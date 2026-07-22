@@ -23,6 +23,8 @@
 
 #include "dsd_encoder.h"
 
+#include "Engine/thread_priority.h"
+
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
 #define HAS_DISPATCH 1
@@ -82,6 +84,8 @@ struct dsd_encoder {
   float* coeffs;
   /** True if multi-threaded parallelization should be used. */
   bool use_multithreading;
+  /** Carrier sample rate in Hz. */
+  size_t sample_rate;
 };
 
 #include <math.h>
@@ -226,6 +230,7 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
   }
   enc->channels = channels;
   enc->dsd_bit_depth = dsd_bit_depth;
+  enc->sample_rate = sample_rate;
   enc->use_multithreading = false;
 #if HAS_DISPATCH || defined(USE_OPENMP)
   if (multithreaded && channels >= 2) {
@@ -439,7 +444,13 @@ typedef struct {
 } dsd_encoder_dispatch_ctx_t;
 
 static void dsd_encoder_worker(void* context, size_t task) {
+  static _Thread_local bool is_promoted = false;
   dsd_encoder_dispatch_ctx_t* ctx = (dsd_encoder_dispatch_ctx_t*)context;
+  if (!is_promoted) {
+    set_realtime_thread_priority("DSD Worker", ctx->frames,
+                                 ctx->encoder->sample_rate);
+    is_promoted = true;
+  }
   encode_channel(&ctx->encoder->channel_states[task],
                  audio_chunk_get_channel(ctx->chunk, task), ctx->frames,
                  ctx->encoder->coeffs, ctx->encoder->mode,
@@ -462,11 +473,19 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
     dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
     return;
 #elif defined(USE_OPENMP)
-#pragma omp parallel for num_threads(total_tasks)
-    for (int task = 0; task < total_tasks; task++) {
-      encode_channel(&encoder->channel_states[task],
-                     audio_chunk_get_channel(chunk, (size_t)task), n,
-                     encoder->coeffs, encoder->mode, encoder->dsd_bit_depth);
+#pragma omp parallel num_threads(total_tasks)
+    {
+      static _Thread_local bool is_promoted = false;
+      if (!is_promoted) {
+        set_realtime_thread_priority("DSD Worker", n, encoder->sample_rate);
+        is_promoted = true;
+      }
+#pragma omp for
+      for (int task = 0; task < total_tasks; task++) {
+        encode_channel(&encoder->channel_states[task],
+                       audio_chunk_get_channel(chunk, (size_t)task), n,
+                       encoder->coeffs, encoder->mode, encoder->dsd_bit_depth);
+      }
     }
     return;
 #endif

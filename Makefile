@@ -84,7 +84,7 @@ $(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filt
 LDFLAGS += -lm -lpthread
 ifeq ($(IS_WINDOWS),1)
     # Windows Setup
-    CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
+    CFLAGS += -march=native -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
     ifeq ($(ENABLE_FFTW),1)
         LDFLAGS += -L$(ROOT_DIR)/win_deps/lib -lfftw3 -lfftw3f
     else
