@@ -275,6 +275,37 @@ QWidget* RoomCorrectionDlg::createSidebar() {
             [this](int idx) { m_session.selectedOutputChannel = m_outputChannelCombo->itemData(idx).toInt(); });
     audioLayout->addWidget(m_outputChannelCombo);
 
+    audioLayout->addWidget(new QLabel("Sweep Freq Range & Duration", audioBox));
+    auto sweepForm = new QFormLayout();
+    sweepForm->setContentsMargins(0, 0, 0, 0);
+
+    m_sweepF1Spin = new QDoubleSpinBox(audioBox);
+    m_sweepF1Spin->setRange(10.0, 1000.0);
+    m_sweepF1Spin->setValue(m_session.sweepF1);
+    m_sweepF1Spin->setSuffix(" Hz");
+    connect(m_sweepF1Spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            [this](double val) { m_session.sweepF1 = val; });
+    sweepForm->addRow("Start Freq:", m_sweepF1Spin);
+
+    m_sweepF2Spin = new QDoubleSpinBox(audioBox);
+    m_sweepF2Spin->setRange(1000.0, 96000.0);
+    m_sweepF2Spin->setValue(m_session.sweepF2);
+    m_sweepF2Spin->setSuffix(" Hz");
+    connect(m_sweepF2Spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            [this](double val) { m_session.sweepF2 = val; });
+    sweepForm->addRow("End Freq:", m_sweepF2Spin);
+
+    m_sweepDurationSpin = new QDoubleSpinBox(audioBox);
+    m_sweepDurationSpin->setRange(0.1, 30.0);
+    m_sweepDurationSpin->setSingleStep(0.5);
+    m_sweepDurationSpin->setValue(m_session.sweepDurationSeconds);
+    m_sweepDurationSpin->setSuffix(" s");
+    connect(m_sweepDurationSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            [this](double val) { m_session.sweepDurationSeconds = val; });
+    sweepForm->addRow("Duration:", m_sweepDurationSpin);
+
+    audioLayout->addLayout(sweepForm);
+
     audioLayout->addWidget(new QLabel("Calibration File", audioBox));
     auto calRow = new QHBoxLayout();
     m_calPathLabel = new QLabel("None loaded", audioBox);
@@ -312,7 +343,8 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     targetForm->setContentsMargins(0, 0, 0, 0);
 
     m_targetPresetCombo = new QComboBox(targetBox);
-    m_targetPresetCombo->addItems({"Flat (0 dB)", "Brüel & Kjær", "Harman"});
+    m_targetPresetCombo->addItems({"Flat (0 dB)", "Brüel & Kjær", "Harman", "Tilt (-1 dB/oct)", "Bass Boost (+4 dB)"});
+    m_targetPresetCombo->setCurrentIndex(static_cast<int>(m_session.targetPreset));
     connect(m_targetPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.customTarget = std::nullopt;
         m_session.targetPreset = static_cast<TargetPreset>(idx);
@@ -765,6 +797,6 @@ void RoomCorrectionDlg::onGenerateFIR() {
 }
 
 void RoomCorrectionDlg::onComputeSubwoofer() {
-    SubwooferAssistDlg dlg(&m_session, this);
+    SubwooferAssistDlg dlg(&m_session, m_pipeline, this);
     dlg.exec();
 }

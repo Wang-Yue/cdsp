@@ -3,8 +3,11 @@
 #include "models/ConvCoefficientLoader.h"
 #include "ui/StyleTheme.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -13,10 +16,12 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QMimeData>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
 #include <QtConcurrent>
@@ -27,6 +32,7 @@ ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeli
     : QDialog(parent), m_pipeline(pipeline) {
     setWindowTitle("Import Impulse Responses");
     resize(480, 580);
+    setAcceptDrops(true);
     setupUi();
     connect(&m_watcher, &QFutureWatcher<ImportResult>::finished, this, &ConvolutionImportDlg::onImportFinished);
 }
@@ -35,6 +41,40 @@ ConvolutionImportDlg::~ConvolutionImportDlg() {
     if (m_watcher.isRunning()) {
         m_watcher.cancel();
         m_watcher.waitForFinished();
+    }
+}
+
+void ConvolutionImportDlg::dragEnterEvent(QDragEnterEvent* event) {
+    if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+    } else {
+        event->ignore();
+    }
+}
+
+void ConvolutionImportDlg::dropEvent(QDropEvent* event) {
+    const QMimeData* mimeData = event->mimeData();
+    if (!mimeData->hasUrls())
+        return;
+
+    QStringList files;
+    for (const QUrl& url : mimeData->urls()) {
+        if (url.isLocalFile()) {
+            QString path = url.toLocalFile();
+            QFileInfo fi(path);
+            if (fi.isFile()) {
+                QString ext = fi.suffix().toLower();
+                if (ext == "wav" || ext == "f64" || ext == "f32" || ext == "pcm" || ext == "txt" || ext == "data" ||
+                    ext == "flac" || ext == "s16" || ext == "s32") {
+                    files.append(path);
+                }
+            }
+        }
+    }
+
+    if (!files.isEmpty()) {
+        addImportFiles(files);
+        event->acceptProposedAction();
     }
 }
 
@@ -122,7 +162,8 @@ void ConvolutionImportDlg::setupUi() {
     emptyIcon->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     emptyLayout->addWidget(emptyIcon);
 
-    auto emptyText = new QLabel("No files selected. Click 'Add File(s)' to begin.", m_emptyStateWidget);
+    auto emptyText =
+        new QLabel("No files selected. Click 'Add File(s)' or drag & drop files to begin.", m_emptyStateWidget);
     emptyText->setAlignment(Qt::AlignCenter);
     emptyText->setStyleSheet(QString("color: %1; font-size: 13px;").arg(StyleTheme::textSecondary().name()));
     emptyLayout->addWidget(emptyText);
@@ -224,7 +265,7 @@ void ConvolutionImportDlg::updateItemsList() {
         for (size_t i = 0; i < m_items.size(); ++i) {
             auto card = new QWidget(this);
             card->setStyleSheet(QString("QWidget { background-color: %1; border: 1px solid %2; border-radius: 8px; }"
-                                        "QLabel, QComboBox, QSpinBox, QPushButton { border-radius: 4px; }")
+                                        "QLabel, QComboBox, QSpinBox, QCheckBox, QPushButton { border-radius: 4px; }")
                                     .arg(StyleTheme::cardBg().name())
                                     .arg(StyleTheme::border().name()));
 
@@ -298,12 +339,13 @@ void ConvolutionImportDlg::updateItemsList() {
             });
             grid->addWidget(fmtCombo, 1, 1);
 
+            int nextRow = 2;
             // WAV Channel (if WAV)
             if (m_items[i].format == "WAV") {
                 auto chLbl = new QLabel("WAV Channel", card);
                 chLbl->setStyleSheet(
                     QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
-                grid->addWidget(chLbl, 2, 0);
+                grid->addWidget(chLbl, nextRow, 0);
 
                 auto chSpin = new QSpinBox(card);
                 chSpin->setRange(0, 15);
@@ -312,8 +354,17 @@ void ConvolutionImportDlg::updateItemsList() {
                 chSpin->setFixedWidth(140);
                 connect(chSpin, QOverload<int>::of(&QSpinBox::valueChanged),
                         [this, i](int val) { m_items[i].channel = val; });
-                grid->addWidget(chSpin, 2, 1);
+                grid->addWidget(chSpin, nextRow, 1);
+                nextRow++;
             }
+
+            // Phase Invert Checkbox
+            auto phaseCheck = new QCheckBox("Invert Phase", card);
+            phaseCheck->setChecked(m_items[i].invertPhase);
+            phaseCheck->setStyleSheet(
+                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
+            connect(phaseCheck, &QCheckBox::toggled, [this, i](bool checked) { m_items[i].invertPhase = checked; });
+            grid->addWidget(phaseCheck, nextRow, 0, 1, 2);
 
             cardLayout->addLayout(grid);
             m_itemListLayout->addWidget(card);
@@ -329,10 +380,7 @@ void ConvolutionImportDlg::updateImportButtonState() {
     m_importBtn->setEnabled(!disabled);
 }
 
-void ConvolutionImportDlg::onAddFilesClicked() {
-    QStringList files = QFileDialog::getOpenFileNames(
-        this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt *.data);;All Files (*)");
-
+void ConvolutionImportDlg::addImportFiles(const QStringList& files) {
     static const std::vector<int> allRates = {768000, 705600, 384000, 352800, 192000, 176400, 96000, 88200,
                                               48000,  44100,  32000,  22050,  16000,  11025,  8000};
 
@@ -361,21 +409,35 @@ void ConvolutionImportDlg::onAddFilesClicked() {
                 item.format = "FLOAT64";
 
             for (int r : allRates) {
-                if (lower.contains(QString::number(r)) || lower.contains(QString("%1k").arg(r / 1000))) {
+                QString rateStr = QString::number(r);
+                QString kStr = QString("%1k").arg(r / 1000);
+                QString doubleKStr = QString("%1k").arg(static_cast<double>(r) / 1000.0, 0, 'g', 4);
+
+                if (lower.contains(rateStr) || lower.contains(kStr) || lower.contains(doubleKStr)) {
                     item.sampleRate = r;
                     break;
                 }
             }
         }
         m_items.push_back(item);
-
-        if (m_nameEdit->text().isEmpty()) {
-            QString base = fi.baseName();
-            base.remove(QRegularExpression("-\\d+Hz|_\\d+", QRegularExpression::CaseInsensitiveOption));
-            m_nameEdit->setText(base);
-        }
     }
+
+    if (m_nameEdit->text().trimmed().isEmpty() && !m_items.empty()) {
+        QFileInfo firstFi(m_items.front().filePath);
+        QString base = firstFi.completeBaseName();
+        base.remove(QRegularExpression("-\\d+Hz|_\\d+", QRegularExpression::CaseInsensitiveOption));
+        m_nameEdit->setText(base);
+    }
+
     updateItemsList();
+}
+
+void ConvolutionImportDlg::onAddFilesClicked() {
+    QStringList files = QFileDialog::getOpenFileNames(
+        this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt *.data *.flac);;All Files (*)");
+    if (!files.isEmpty()) {
+        addImportFiles(files);
+    }
 }
 
 void ConvolutionImportDlg::onImportClicked() {
@@ -412,6 +474,12 @@ void ConvolutionImportDlg::onImportClicked() {
                     res.errorMessage =
                         QString("File '%1' contains zero coefficients.").arg(QFileInfo(item.filePath).fileName());
                     break;
+                }
+
+                if (item.invertPhase) {
+                    for (double& val : coeffs) {
+                        val = -val;
+                    }
                 }
 
                 if (firstCoeffCount == 0) {
@@ -455,7 +523,7 @@ void ConvolutionImportDlg::onImportFinished() {
             kind = "Imported";
 
         ConvolutionPreset preset(name, res.paths, res.firstCoeffCount, kind);
-        m_pipeline->addConvPreset(preset);
+        m_pipeline->addConvolutionPreset(preset);
 
         accept();
     } else {

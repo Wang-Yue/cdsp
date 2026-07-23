@@ -155,10 +155,9 @@ void OratoryPresetPickerDlg::refreshDatabase() {
 
 void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
     m_listWidget->clear();
-    QString trimmed = text.trimmed();
 
     std::vector<size_t> matchedIndices;
-    if (trimmed.isEmpty()) {
+    if (text.isEmpty()) {
         size_t limit = std::min<size_t>(m_entries.size(), 50);
         for (size_t i = 0; i < limit; ++i) {
             matchedIndices.push_back(i);
@@ -166,7 +165,7 @@ void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
     } else {
         for (size_t i = 0; i < m_entries.size(); ++i) {
             QString name = QString::fromStdString(m_entries[i].name);
-            if (name.contains(trimmed, Qt::CaseInsensitive)) {
+            if (name.contains(text, Qt::CaseInsensitive)) {
                 matchedIndices.push_back(i);
             }
         }

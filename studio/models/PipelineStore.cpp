@@ -156,6 +156,7 @@ QUuid PipelineStore::addEQPreset(const std::string& name, double preamp,
     EQPreset preset(name, preamp, presetBands);
     eqPresets.push_back(preset);
     saveEQPresets();
+    emit pipelineChanged();
     return preset.id;
 }
 
@@ -163,6 +164,7 @@ QUuid PipelineStore::addEQPreset(const EQPreset& preset) {
     pushUndoSnapshot();
     eqPresets.push_back(preset);
     saveEQPresets();
+    emit pipelineChanged();
     return preset.id;
 }
 

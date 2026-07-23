@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
+#include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -76,11 +77,14 @@ private:
     QWidget* m_sidebarWidget;
     bool m_sidebarVisible = true;
 
-    // Audio Setup
+    // Audio Setup & Sweep Parameters
     QComboBox* m_micDeviceCombo;
     QComboBox* m_micChannelCombo;
     QComboBox* m_outputDeviceCombo;
     QComboBox* m_outputChannelCombo;
+    QDoubleSpinBox* m_sweepF1Spin;
+    QDoubleSpinBox* m_sweepF2Spin;
+    QDoubleSpinBox* m_sweepDurationSpin;
     QLabel* m_calPathLabel;
     QPushButton* m_loadCalBtn;
     QToolButton* m_clearCalBtn;

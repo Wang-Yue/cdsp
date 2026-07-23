@@ -15,12 +15,19 @@
 #include <string>
 #include <vector>
 
+class QDragEnterEvent;
+class QDropEvent;
+
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT
 
 public:
     ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent = nullptr);
     ~ConvolutionImportDlg() override;
+
+protected:
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
 private slots:
     void onAddFilesClicked();
@@ -36,6 +43,7 @@ private:
         int sampleRate = 48000;
         QString format = "WAV";
         int channel = 0;
+        bool invertPhase = false;
     };
 
     struct ImportResult {
@@ -62,6 +70,7 @@ private:
     QFutureWatcher<ImportResult> m_watcher;
 
     void setupUi();
+    void addImportFiles(const QStringList& files);
     bool hasDuplicateRates() const;
     void updateImportButtonState();
 };
