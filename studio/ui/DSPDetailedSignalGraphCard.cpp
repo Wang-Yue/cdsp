@@ -405,18 +405,24 @@ void DSPGraphCanvas::calculateGraphLayout() {
         m_blocksMap[b.id] = b;
     }
 
-    qreal totalWidth = xPos(totalLength) + m_canvasPadding * 2 + 100;
-    qreal totalHeight = (maxY - minY) + m_canvasPadding * 2 + m_titleHeaderHeight + 60;
+    qreal totalWidth = xPos(totalLength) + m_canvasPadding * 2 + 60;
+    qreal totalHeight = (maxY - minY) + m_canvasPadding * 2 + m_titleHeaderHeight + 40;
 
-    // Check custom position overrides to adjust canvas bounds if needed
+    // Check custom position overrides to adjust canvas bounds (matching SwiftUI dynamicCanvasSize)
     qreal originY = totalHeight / 2.0 + m_titleHeaderHeight / 2.0;
+    qreal maxCanvasX = totalWidth - m_canvasPadding - 60;
+    qreal maxCanvasY = totalHeight - m_canvasPadding - 40;
+
     for (const auto& b : m_blocks) {
         QPointF pos = getBlockPos(b, originY);
-        totalWidth = std::max(totalWidth, pos.x() + b.width / 2.0 + 80);
-        totalHeight = std::max(totalHeight, pos.y() + b.height / 2.0 + 60);
+        maxCanvasX = std::max(maxCanvasX, pos.x() + b.width / 2.0 + 60);
+        maxCanvasY = std::max(maxCanvasY, pos.y() + b.height / 2.0 + 40);
     }
 
-    setFixedSize(static_cast<int>(std::ceil(totalWidth)), static_cast<int>(std::ceil(totalHeight)));
+    qreal calculatedW = std::max(totalWidth, maxCanvasX + m_canvasPadding);
+    qreal calculatedH = std::max(totalHeight, maxCanvasY + m_canvasPadding);
+
+    setFixedSize(static_cast<int>(std::ceil(calculatedW)), static_cast<int>(std::ceil(calculatedH)));
     update();
 }
 
@@ -451,15 +457,15 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             qreal minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
             for (const auto& b : childBlocks) {
                 QPointF p = getBlockPos(b, originY);
-                minX = std::min(minX, p.x() - b.width / 2.0);
-                maxX = std::max(maxX, p.x() + b.width / 2.0);
-                minY = std::min(minY, p.y() - b.height / 2.0);
-                maxY = std::max(maxY, p.y() + b.height / 2.0);
+                minX = std::min(minX, p.x());
+                maxX = std::max(maxX, p.x());
+                minY = std::min(minY, p.y());
+                maxY = std::max(maxY, p.y());
             }
-            minX -= 15;
-            maxX += 15;
-            minY -= 12;
-            maxY += 12;
+            minX -= 38.0;
+            maxX += 38.0;
+            minY -= 18.0;
+            maxY += 18.0;
 
             boxCenterX = (minX + maxX) / 2.0;
             boxCenterY = (minY + maxY) / 2.0;
@@ -469,13 +475,14 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
 
         QRectF boxRect(boxCenterX - boxW / 2.0, boxCenterY - boxH / 2.0, boxW, boxH);
 
-        QPen boxPen(isDarkTheme ? QColor(255, 255, 255, 45) : QColor(0, 0, 0, 40), 1, Qt::DashLine);
+        QPen boxPen(isDarkTheme ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1, Qt::CustomDashLine);
+        boxPen.setDashPattern({4, 3});
         painter.setPen(boxPen);
-        painter.setBrush(isDarkTheme ? QColor(255, 255, 255, 6) : QColor(0, 0, 0, 6));
+        painter.setBrush(isDarkTheme ? QColor(255, 255, 255, 8) : QColor(0, 0, 0, 8));
         painter.drawRoundedRect(boxRect, 10, 10);
 
         // Stage Title Header above Box
-        painter.setFont(QFont("monospace", 10, QFont::Bold));
+        painter.setFont(QFont("monospace", 11, QFont::Bold));
         painter.setPen(StyleTheme::accent());
         painter.drawText(QRectF(boxRect.left() - 40, boxRect.top() - 22, boxW + 80, 20), Qt::AlignCenter, box.label);
     }
@@ -508,7 +515,7 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         path.moveTo(p0);
         path.cubicTo(ctrl1, ctrl2, p1);
 
-        painter.setPen(QPen(isDarkTheme ? QColor(255, 255, 255, 120) : QColor(0, 0, 0, 110), 1.2));
+        painter.setPen(QPen(QColor(140, 140, 140, 153), 1.2));
         painter.setBrush(Qt::NoBrush);
         painter.drawPath(path);
 
@@ -516,7 +523,7 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         QPolygonF capPolygon;
         capPolygon << p1 << QPointF(p1.x() - 6, p1.y() - 3.5) << QPointF(p1.x() - 6, p1.y() + 3.5);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(isDarkTheme ? QColor(255, 255, 255, 180) : QColor(0, 0, 0, 160));
+        painter.setBrush(QColor(140, 140, 140, 204));
         painter.drawPolygon(capPolygon);
 
         // Arrow text label
@@ -534,16 +541,16 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         QRectF bRect(pos.x() - b.width / 2.0, pos.y() - b.height / 2.0, b.width, b.height);
 
         if (b.isChannelPort) {
-            painter.setBrush(isDarkTheme ? QColor(0, 122, 255, 35) : QColor(0, 122, 255, 30));
-            painter.setPen(QPen(QColor(0, 122, 255, 80), 1));
+            painter.setBrush(QColor(0, 122, 255, 31));
+            painter.setPen(QPen(QColor(0, 122, 255, 77), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
             painter.setFont(QFont("monospace", 11, QFont::Bold));
             painter.setPen(QColor("#007aff"));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         } else if (!b.label.isEmpty()) {
-            painter.setBrush(StyleTheme::cardBg());
-            painter.setPen(QPen(isDarkTheme ? QColor(255, 255, 255, 65) : QColor(0, 0, 0, 65), 1));
+            painter.setBrush(isDarkTheme ? QColor(40, 40, 40) : QColor(255, 255, 255));
+            painter.setPen(QPen(isDarkTheme ? QColor(255, 255, 255, 64) : QColor(0, 0, 0, 64), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
             painter.setFont(QFont("monospace", 10, QFont::DemiBold));
@@ -605,7 +612,7 @@ void DSPGraphCanvas::mouseReleaseEvent(QMouseEvent* event) {
 
 DSPDetailedSignalGraphCard::DSPDetailedSignalGraphCard(std::shared_ptr<DSPEngineController> dspController,
                                                        QWidget* parent)
-    : QGroupBox("DSP Signal Processing Graph", parent), m_dspController(dspController) {
+    : QGroupBox("", parent), m_dspController(dspController) {
     setupUi();
 
     if (m_dspController) {
@@ -634,14 +641,15 @@ void DSPDetailedSignalGraphCard::setupUi() {
     titleVBox->setSpacing(2);
 
     auto topRow = new QHBoxLayout();
-    auto titleLbl = new QLabel("🔗 DSP Signal Processing Graph", this);
+    auto titleLbl = new QLabel("DSP Signal Processing Graph", this);
     titleLbl->setFont(QFont("System", 13, QFont::Bold));
     topRow->addWidget(titleLbl);
 
     m_resetLayoutBtn = new QPushButton("Reset Layout", this);
     m_resetLayoutBtn->setCursor(Qt::PointingHandCursor);
-    m_resetLayoutBtn->setStyleSheet("background: rgba(128, 128, 128, 0.15); color: auto; border: none; "
-                                    "border-radius: 12px; padding: 3px 8px; font-size: 10px; font-weight: bold;");
+    m_resetLayoutBtn->setStyleSheet("QPushButton { background: rgba(128, 128, 128, 0.12); color: auto; border: none; "
+                                    "border-radius: 10px; padding: 3px 8px; font-size: 10px; font-weight: bold; } "
+                                    "QPushButton:hover { background: rgba(128, 128, 128, 0.22); }");
     m_resetLayoutBtn->setVisible(false);
     topRow->addWidget(m_resetLayoutBtn);
     topRow->addStretch();
@@ -650,8 +658,11 @@ void DSPDetailedSignalGraphCard::setupUi() {
     headerBox->addLayout(titleVBox, 1);
 
     m_activeStagesBadge = new QLabel(this);
-    m_activeStagesBadge->setStyleSheet("background: rgba(0, 122, 255, 0.12); color: #007aff; border-radius: 10px; "
-                                       "padding: 3px 8px; font-size: 10px; font-weight: bold;");
+    bool isDarkTheme = StyleTheme::isDark();
+    m_activeStagesBadge->setStyleSheet(QString("background: %1; color: %2; border-radius: 10px; "
+                                               "padding: 3px 8px; font-size: 10px; font-weight: bold;")
+                                           .arg(isDarkTheme ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.06)")
+                                           .arg(isDarkTheme ? "#8e8e93" : "#6c6c70"));
     headerBox->addWidget(m_activeStagesBadge, 0, Qt::AlignVCenter);
 
     rootLayout->addLayout(headerBox);
@@ -688,6 +699,11 @@ void DSPDetailedSignalGraphCard::updateCard() {
 
     if (m_activeStagesBadge) {
         m_activeStagesBadge->setText(QString("%1 Active Stages").arg(activeCount));
+        bool isDarkTheme = StyleTheme::isDark();
+        m_activeStagesBadge->setStyleSheet(QString("background: %1; color: %2; border-radius: 10px; "
+                                                   "padding: 3px 8px; font-size: 10px; font-weight: bold;")
+                                               .arg(isDarkTheme ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.06)")
+                                               .arg(isDarkTheme ? "#8e8e93" : "#6c6c70"));
     }
 
     if (m_canvas) {

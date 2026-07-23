@@ -2,12 +2,90 @@
 
 #include "ui/StyleTheme.h"
 
-#include <QFileDialog>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFrame>
 #include <QGridLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
-#include <QMessageBox>
+#include <QLabel>
+#include <QPushButton>
+#include <QSlider>
+#include <QSpinBox>
+#include <QTabBar>
 #include <QVBoxLayout>
+
+namespace {
+
+QFrame* createPanelFrame(QWidget* parent) {
+    auto frame = new QFrame(parent);
+    bool isDark = StyleTheme::isDark();
+    QString bg = isDark ? "#1c1d24" : "#f2f2f7";
+    QString border = isDark ? "#2c2d3a" : "#d1d1d6";
+    frame->setStyleSheet(QString("QFrame { "
+                                 "   background-color: %1; "
+                                 "   border-top: 1px solid %2; "
+                                 "}")
+                             .arg(bg, border));
+    return frame;
+}
+
+QTabBar* createSegmentedPicker(const QStringList& items, QWidget* parent) {
+    auto tabBar = new QTabBar(parent);
+    for (const auto& item : items) {
+        tabBar->addTab(item);
+    }
+    tabBar->setDrawBase(false);
+    bool isDark = StyleTheme::isDark();
+    QString bg = isDark ? "#2c2c2e" : "#e5e5ea";
+    QString fg = isDark ? "#a0a5b5" : "#6c6c70";
+    QString selBg = isDark ? "#007af5" : "#007aff";
+    tabBar->setStyleSheet(QString("QTabBar::tab { "
+                                  "   background: %1; "
+                                  "   color: %2; "
+                                  "   padding: 4px 12px; "
+                                  "   border-radius: 6px; "
+                                  "   font-weight: 600; "
+                                  "   margin-right: 2px; "
+                                  "} "
+                                  "QTabBar::tab:selected { "
+                                  "   background: %3; "
+                                  "   color: #ffffff; "
+                                  "}")
+                              .arg(bg, fg, selBg));
+    return tabBar;
+}
+
+QLabel* createCaptionLabel(const QString& text, QWidget* parent) {
+    auto lbl = new QLabel(text, parent);
+    bool isDark = StyleTheme::isDark();
+    QString fg = isDark ? "#a0a5b5" : "#6c6c70";
+    lbl->setStyleSheet(QString("font-size: 11px; font-weight: 500; color: %1;").arg(fg));
+    return lbl;
+}
+
+QLabel* createHeaderTitle(const QString& text, QWidget* parent) {
+    auto lbl = new QLabel(text, parent);
+    lbl->setFont(QFont("sans-serif", 13, QFont::Bold));
+    return lbl;
+}
+
+QPushButton* createResetButton(QWidget* parent) {
+    auto btn = new QPushButton("Reset to Defaults", parent);
+    btn->setCursor(Qt::PointingHandCursor);
+    return btn;
+}
+
+QFrame* createDivider(QWidget* parent) {
+    auto divider = new QFrame(parent);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setFrameShadow(QFrame::Sunken);
+    bool isDark = StyleTheme::isDark();
+    divider->setStyleSheet(QString("background-color: %1; border: none; min-height: 1px; max-height: 1px;")
+                               .arg(isDark ? "#2c2d3a" : "#d1d1d6"));
+    return divider;
+}
+
+} // namespace
 
 // ==================== AnalogVUDetailView ====================
 
@@ -24,159 +102,131 @@ AnalogVUDetailView::AnalogVUDetailView(std::shared_ptr<MonitoringController> mon
 
 void AnalogVUDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    // Top Card: Header & Theme Selector
-    auto topCard = new QWidget(this);
-    auto topLayout = new QHBoxLayout(topCard);
-    topLayout->setContentsMargins(8, 8, 8, 8);
+    // VU Meter Display Container (padding 32)
+    auto vuContainer = new QWidget(this);
+    auto vuLayout = new QVBoxLayout(vuContainer);
+    vuLayout->setContentsMargins(32, 32, 32, 32);
 
-    auto titleLbl = new QLabel("Analog VU Meter", topCard);
-    titleLbl->setFont(QFont("sans-serif", 13, QFont::Bold));
-    topLayout->addWidget(titleLbl);
-    topLayout->addStretch();
-
-    topLayout->addWidget(new QLabel("Theme:", topCard));
-    m_themeCombo = new QComboBox(topCard);
-    m_themeCombo->addItems({"Vintage Amber", "Dark Stealth", "Warm Tube"});
-    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
-    connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_settings.theme = static_cast<VUTheme>(idx);
-        m_settings.save();
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    topLayout->addWidget(m_themeCombo);
-
-    mainLayout->addWidget(topCard);
-
-    // VU Meter Center Display
-    m_vuMeter = new AnalogVUMeterView(this);
+    m_vuMeter = new AnalogVUMeterView(vuContainer);
     if (m_monitoring)
         m_vuMeter->setLevelState(&m_monitoring->levelState);
     m_vuMeter->setVUSettings(m_settings);
-    mainLayout->addWidget(m_vuMeter, 1);
+    vuLayout->addWidget(m_vuMeter);
+
+    mainLayout->addWidget(vuContainer, 1);
+
+    // Divider
+    mainLayout->addWidget(createDivider(this));
 
     // Bottom Calibration & Lighting Controls Panel
-    auto calibGroup = new QGroupBox("VU Calibration & Lighting Panel", this);
-    auto calibLayout = new QVBoxLayout(calibGroup);
+    auto panelFrame = createPanelFrame(this);
+    auto panelLayout = new QVBoxLayout(panelFrame);
+    panelLayout->setContentsMargins(24, 20, 24, 24);
+    panelLayout->setSpacing(16);
 
     auto headerBox = new QHBoxLayout();
-    auto iconLbl = new QLabel("🎛 Calibration Adjustments", calibGroup);
-    iconLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
-    headerBox->addWidget(iconLbl);
+    headerBox->addWidget(createHeaderTitle("VU Calibration & Lighting", panelFrame));
     headerBox->addStretch();
 
-    auto resetBtn = new QPushButton("Reset to Defaults", calibGroup);
+    auto resetBtn = createResetButton(panelFrame);
     connect(resetBtn, &QPushButton::clicked, this, &AnalogVUDetailView::resetDefaults);
     headerBox->addWidget(resetBtn);
-    calibLayout->addLayout(headerBox);
+    panelLayout->addLayout(headerBox);
 
     auto grid = new QGridLayout();
+    grid->setHorizontalSpacing(32);
+    grid->setVerticalSpacing(16);
 
-    // Scale Radius (1.0 .. 1.5)
-    grid->addWidget(new QLabel("Scale Radius:", calibGroup), 0, 0);
-    m_radiusSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_radiusSlider->setRange(100, 150);
-    m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
-    m_radiusLbl = new QLabel(QString::number(m_settings.radiusScale, 'f', 2), calibGroup);
-    m_radiusLbl->setFixedWidth(40);
-    connect(m_radiusSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.radiusScale = val / 100.0;
-        m_settings.save();
-        m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_radiusSlider, 0, 1);
-    grid->addWidget(m_radiusLbl, 0, 2);
+    auto makeSliderCell = [this, panelFrame](const QString& title, QSlider*& slider, QLabel*& label, int minVal,
+                                             int maxVal, int curVal, int precision, auto onValueChanged) {
+        auto cellBox = new QVBoxLayout();
+        cellBox->setSpacing(4);
+        cellBox->addWidget(createCaptionLabel(title, panelFrame));
 
-    // Pivot Y (1.0 .. 2.0)
-    grid->addWidget(new QLabel("Pivot Position (Y):", calibGroup), 0, 3);
-    m_pivotYSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_pivotYSlider->setRange(100, 200);
-    m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
-    m_pivotYLbl = new QLabel(QString::number(m_settings.pivotY, 'f', 2), calibGroup);
-    m_pivotYLbl->setFixedWidth(40);
-    connect(m_pivotYSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.pivotY = val / 100.0;
-        m_settings.save();
-        m_pivotYLbl->setText(QString::number(m_settings.pivotY, 'f', 2));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_pivotYSlider, 0, 4);
-    grid->addWidget(m_pivotYLbl, 0, 5);
+        auto sliderRow = new QHBoxLayout();
+        sliderRow->setSpacing(8);
 
-    // Needle Extension (0 .. 60)
-    grid->addWidget(new QLabel("Needle Extension:", calibGroup), 1, 0);
-    m_needleExtSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_needleExtSlider->setRange(0, 60);
-    m_needleExtSlider->setValue(static_cast<int>(m_settings.needleExtension));
-    m_needleExtLbl = new QLabel(QString::number(m_settings.needleExtension, 'f', 1), calibGroup);
-    m_needleExtLbl->setFixedWidth(40);
-    connect(m_needleExtSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.needleExtension = val;
-        m_settings.save();
-        m_needleExtLbl->setText(QString::number(m_settings.needleExtension, 'f', 1));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_needleExtSlider, 1, 1);
-    grid->addWidget(m_needleExtLbl, 1, 2);
+        slider = new QSlider(Qt::Horizontal, panelFrame);
+        slider->setRange(minVal, maxVal);
+        slider->setValue(curVal);
 
-    // Ambient Glow (0.0 .. 1.0)
-    grid->addWidget(new QLabel("Ambient Glow:", calibGroup), 1, 3);
-    m_ambientGlowSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_ambientGlowSlider->setRange(0, 100);
-    m_ambientGlowSlider->setValue(static_cast<int>(m_settings.ambientGlow * 100));
-    m_ambientGlowLbl = new QLabel(QString::number(m_settings.ambientGlow, 'f', 2), calibGroup);
-    m_ambientGlowLbl->setFixedWidth(40);
-    connect(m_ambientGlowSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.ambientGlow = val / 100.0;
-        m_settings.save();
-        m_ambientGlowLbl->setText(QString::number(m_settings.ambientGlow, 'f', 2));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_ambientGlowSlider, 1, 4);
-    grid->addWidget(m_ambientGlowLbl, 1, 5);
+        label = new QLabel(QString::number(curVal / (precision == 1 ? 1.0 : 100.0), 'f', precision), panelFrame);
+        label->setFixedWidth(45);
+        label->setFont(QFont("monospace", 11));
 
-    // Focused Hot Spot (0.0 .. 1.0)
-    grid->addWidget(new QLabel("Focused Hot Spot:", calibGroup), 2, 0);
-    m_hotSpotSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_hotSpotSlider->setRange(0, 100);
-    m_hotSpotSlider->setValue(static_cast<int>(m_settings.hotSpotAlpha * 100));
-    m_hotSpotLbl = new QLabel(QString::number(m_settings.hotSpotAlpha, 'f', 2), calibGroup);
-    m_hotSpotLbl->setFixedWidth(40);
-    connect(m_hotSpotSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.hotSpotAlpha = val / 100.0;
-        m_settings.save();
-        m_hotSpotLbl->setText(QString::number(m_settings.hotSpotAlpha, 'f', 2));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_hotSpotSlider, 2, 1);
-    grid->addWidget(m_hotSpotLbl, 2, 2);
+        connect(slider, &QSlider::valueChanged, [this, label, precision, onValueChanged](int val) {
+            double value = precision == 1 ? val : (val / 100.0);
+            label->setText(QString::number(value, 'f', precision));
+            onValueChanged(value);
+            m_vuMeter->setVUSettings(m_settings);
+        });
 
-    // Overall Light Wash (0.0 .. 0.4)
-    grid->addWidget(new QLabel("Overall Light Wash:", calibGroup), 2, 3);
-    m_lightWashSlider = new QSlider(Qt::Horizontal, calibGroup);
-    m_lightWashSlider->setRange(0, 40);
-    m_lightWashSlider->setValue(static_cast<int>(m_settings.lightWash * 100));
-    m_lightWashLbl = new QLabel(QString::number(m_settings.lightWash, 'f', 2), calibGroup);
-    m_lightWashLbl->setFixedWidth(40);
-    connect(m_lightWashSlider, &QSlider::valueChanged, [this](int val) {
-        m_settings.lightWash = val / 100.0;
-        m_settings.save();
-        m_lightWashLbl->setText(QString::number(m_settings.lightWash, 'f', 2));
-        m_vuMeter->setVUSettings(m_settings);
-    });
-    grid->addWidget(m_lightWashSlider, 2, 4);
-    grid->addWidget(m_lightWashLbl, 2, 5);
+        sliderRow->addWidget(slider);
+        sliderRow->addWidget(label);
+        cellBox->addLayout(sliderRow);
+        return cellBox;
+    };
 
-    calibLayout->addLayout(grid);
-    mainLayout->addWidget(calibGroup);
+    // Row 0: Scale Radius (1.0 .. 1.5), Pivot Position (Y) (1.0 .. 2.0)
+    grid->addLayout(makeSliderCell("Scale Radius", m_radiusSlider, m_radiusLbl, 100, 150,
+                                   static_cast<int>(m_settings.radiusScale * 100), 2,
+                                   [this](double val) {
+                                       m_settings.radiusScale = val;
+                                       m_settings.save();
+                                   }),
+                    0, 0);
+
+    grid->addLayout(makeSliderCell("Pivot Position (Y)", m_pivotYSlider, m_pivotYLbl, 100, 200,
+                                   static_cast<int>(m_settings.pivotY * 100), 2,
+                                   [this](double val) {
+                                       m_settings.pivotY = val;
+                                       m_settings.save();
+                                   }),
+                    0, 1);
+
+    // Row 1: Needle Extension (0 .. 60), Ambient Glow (0.0 .. 1.0)
+    grid->addLayout(makeSliderCell("Needle Extension", m_needleExtSlider, m_needleExtLbl, 0, 60,
+                                   static_cast<int>(m_settings.needleExtension), 1,
+                                   [this](double val) {
+                                       m_settings.needleExtension = val;
+                                       m_settings.save();
+                                   }),
+                    1, 0);
+
+    grid->addLayout(makeSliderCell("Ambient Glow", m_ambientGlowSlider, m_ambientGlowLbl, 0, 100,
+                                   static_cast<int>(m_settings.ambientGlow * 100), 2,
+                                   [this](double val) {
+                                       m_settings.ambientGlow = val;
+                                       m_settings.save();
+                                   }),
+                    1, 1);
+
+    // Row 2: Focused Hot Spot (0.0 .. 1.0), Overall Light Wash (0.0 .. 0.4)
+    grid->addLayout(makeSliderCell("Focused Hot Spot", m_hotSpotSlider, m_hotSpotLbl, 0, 100,
+                                   static_cast<int>(m_settings.hotSpotAlpha * 100), 2,
+                                   [this](double val) {
+                                       m_settings.hotSpotAlpha = val;
+                                       m_settings.save();
+                                   }),
+                    2, 0);
+
+    grid->addLayout(makeSliderCell("Overall Light Wash", m_lightWashSlider, m_lightWashLbl, 0, 40,
+                                   static_cast<int>(m_settings.lightWash * 100), 2,
+                                   [this](double val) {
+                                       m_settings.lightWash = val;
+                                       m_settings.save();
+                                   }),
+                    2, 1);
+
+    panelLayout->addLayout(grid);
+    mainLayout->addWidget(panelFrame);
 }
 
 void AnalogVUDetailView::resetDefaults() {
     m_settings.reset();
-    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
     m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
     m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
     m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
@@ -194,7 +244,6 @@ void AnalogVUDetailView::resetDefaults() {
 
 void AnalogVUDetailView::refreshUi() {
     m_settings.load();
-    m_themeCombo->setCurrentIndex(static_cast<int>(m_settings.theme));
     m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
     m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
     m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
@@ -220,16 +269,28 @@ SpectrumDetailView::SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine,
 
 void SpectrumDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    m_spectrumView = new SpectrumView(m_engine, this);
-    mainLayout->addWidget(m_spectrumView, 1);
+    // Spectrum Display Container (padding 32)
+    auto spectrumContainer = new QWidget(this);
+    auto spectrumLayout = new QVBoxLayout(spectrumContainer);
+    spectrumLayout->setContentsMargins(32, 32, 32, 32);
 
-    auto panelGroup = new QGroupBox("Spectrum Settings Controls", this);
-    auto panelLayout = new QVBoxLayout(panelGroup);
+    m_spectrumView = new SpectrumView(m_engine, spectrumContainer);
+    spectrumLayout->addWidget(m_spectrumView);
+    mainLayout->addWidget(spectrumContainer, 1);
 
-    m_channelCombo = new QComboBox(panelGroup);
+    // Divider
+    mainLayout->addWidget(createDivider(this));
+
+    // Bottom Settings Panel
+    auto panelFrame = createPanelFrame(this);
+    auto panelLayout = new QVBoxLayout(panelFrame);
+    panelLayout->setContentsMargins(24, 20, 24, 24);
+    panelLayout->setSpacing(16);
+
+    m_channelCombo = new QComboBox(panelFrame);
 
     auto updateChannelCombo = [this]() {
         m_channelCombo->blockSignals(true);
@@ -255,133 +316,94 @@ void SpectrumDetailView::setupUi() {
     };
 
     auto headerBox = new QHBoxLayout();
-    headerBox->addWidget(new QLabel("🎛 Analyzer Configuration", panelGroup));
+    headerBox->addWidget(createHeaderTitle("Spectrum Settings", panelFrame));
     headerBox->addStretch();
-    auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
+    auto resetBtn = createResetButton(panelFrame);
     connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombo]() {
         m_engine->resetToDefaults();
-        m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
+        m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
         updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
-        m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->windowFunction));
-        m_smoothingCombo->setCurrentIndex(static_cast<int>(m_engine->smoothing));
-        m_decayCombo->setCurrentIndex(0);
         m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
-        m_rangeLbl->setText(QString("Freq Range: %1 - %2 Hz")
+        m_rangeLbl->setText(QString("Range: %1 - %2 Hz")
                                 .arg(static_cast<int>(m_engine->minFreq))
                                 .arg(static_cast<int>(m_engine->maxFreq)));
-        m_dbRangeSlider->setRange(m_engine->minDB, m_engine->maxDB);
-        m_dbRangeLbl->setText(QString("dB Range: %1 - %2 dB")
-                                  .arg(static_cast<int>(m_engine->minDB))
-                                  .arg(static_cast<int>(m_engine->maxDB)));
         m_spectrumView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
 
     auto rowLayout = new QHBoxLayout();
+    rowLayout->setSpacing(20);
 
-    rowLayout->addWidget(new QLabel("Source:", panelGroup));
-    m_sourceCombo = new QComboBox(panelGroup);
-    m_sourceCombo->addItems({"Capture", "Playback"});
-    m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
+    // Source (Segmented Picker)
+    auto sourceBox = new QVBoxLayout();
+    sourceBox->setSpacing(4);
+    sourceBox->addWidget(createCaptionLabel("Source", panelFrame));
+    m_sourceTabBar = createSegmentedPicker({"Capture", "Playback"}, panelFrame);
+    m_sourceTabBar->setFixedWidth(140);
+    m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
+    connect(m_sourceTabBar, &QTabBar::currentChanged, [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
         updateChannelCombo();
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
+        m_spectrumView->update();
     });
-    rowLayout->addWidget(m_sourceCombo);
+    sourceBox->addWidget(m_sourceTabBar);
+    rowLayout->addLayout(sourceBox);
 
-    rowLayout->addWidget(new QLabel("Channel:", panelGroup));
+    // Channel
+    auto channelBox = new QVBoxLayout();
+    channelBox->setSpacing(4);
+    channelBox->addWidget(createCaptionLabel("Channel", panelFrame));
+    m_channelCombo->setFixedWidth(120);
     updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (idx == 0)
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
+        m_spectrumView->update();
     });
-    rowLayout->addWidget(m_channelCombo);
+    channelBox->addWidget(m_channelCombo);
+    rowLayout->addLayout(channelBox);
 
-    rowLayout->addWidget(new QLabel("Bins:", panelGroup));
-    m_binsSpin = new QSpinBox(panelGroup);
+    // Bins
+    auto binsBox = new QVBoxLayout();
+    binsBox->setSpacing(4);
+    binsBox->addWidget(createCaptionLabel("Bins", panelFrame));
+    m_binsSpin = new QSpinBox(panelFrame);
     m_binsSpin->setRange(2, 100);
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
+    m_binsSpin->setFixedWidth(100);
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
+        m_spectrumView->update();
     });
-    rowLayout->addWidget(m_binsSpin);
+    binsBox->addWidget(m_binsSpin);
+    rowLayout->addLayout(binsBox);
 
-    rowLayout->addWidget(new QLabel("FFT Window:", panelGroup));
-    m_windowCombo = new QComboBox(panelGroup);
-    m_windowCombo->addItems({"Hann", "Hamming", "Blackman", "Flat Top", "Rectangular"});
-    m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->windowFunction));
-    connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_engine->windowFunction = static_cast<FFTWindowFunction>(idx);
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
-    });
-    rowLayout->addWidget(m_windowCombo);
+    // Freq Range
+    auto rangeBox = new QVBoxLayout();
+    rangeBox->setSpacing(4);
+    m_rangeLbl = createCaptionLabel(
+        QString("Range: %1 - %2 Hz").arg(static_cast<int>(m_engine->minFreq)).arg(static_cast<int>(m_engine->maxFreq)),
+        panelFrame);
+    rangeBox->addWidget(m_rangeLbl);
 
-    rowLayout->addWidget(new QLabel("Smoothing:", panelGroup));
-    m_smoothingCombo = new QComboBox(panelGroup);
-    m_smoothingCombo->addItems({"Off", "1/3 Octave", "1/6 Octave", "1/12 Octave", "1/24 Octave"});
-    m_smoothingCombo->setCurrentIndex(static_cast<int>(m_engine->smoothing));
-    connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_engine->smoothing = static_cast<OctaveSmoothing>(idx);
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
-    });
-    rowLayout->addWidget(m_smoothingCombo);
-
-    rowLayout->addWidget(new QLabel("Peak Decay:", panelGroup));
-    m_decayCombo = new QComboBox(panelGroup);
-    m_decayCombo->addItems({"Slow (0.95)", "Medium (0.90)", "Fast (0.80)", "Off"});
-    connect(m_decayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        static const float decayRates[] = {0.95f, 0.90f, 0.80f, 0.00f};
-        m_engine->peakHoldDecayRate = decayRates[idx];
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
-    });
-    rowLayout->addWidget(m_decayCombo);
-
-    auto rowLayout2 = new QHBoxLayout();
-
-    m_rangeLbl = new QLabel(QString("Freq Range: %1 - %2 Hz")
-                                .arg(static_cast<int>(m_engine->minFreq))
-                                .arg(static_cast<int>(m_engine->maxFreq)),
-                            panelGroup);
-    rowLayout2->addWidget(m_rangeLbl);
-
-    m_rangeSlider = new LogRangeSlider(panelGroup);
+    m_rangeSlider = new LogRangeSlider(panelFrame);
     m_rangeSlider->setRange(m_engine->minFreq, m_engine->maxFreq);
     connect(m_rangeSlider, &LogRangeSlider::rangeChanged, [this](double minF, double maxF) {
         m_engine->minFreq = minF;
         m_engine->maxFreq = maxF;
-        m_rangeLbl->setText(QString("Freq Range: %1 - %2 Hz").arg(static_cast<int>(minF)).arg(static_cast<int>(maxF)));
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
+        m_rangeLbl->setText(QString("Range: %1 - %2 Hz").arg(static_cast<int>(minF)).arg(static_cast<int>(maxF)));
+        m_spectrumView->update();
     });
-    rowLayout2->addWidget(m_rangeSlider, 1);
+    rangeBox->addWidget(m_rangeSlider);
+    rowLayout->addLayout(rangeBox, 1);
 
-    m_dbRangeLbl = new QLabel(
-        QString("dB Range: %1 - %2 dB").arg(static_cast<int>(m_engine->minDB)).arg(static_cast<int>(m_engine->maxDB)),
-        panelGroup);
-    rowLayout2->addWidget(m_dbRangeLbl);
-
-    m_dbRangeSlider = new LogRangeSlider(panelGroup);
-    m_dbRangeSlider->setLogarithmic(false);
-    m_dbRangeSlider->setMinMaxBounds(-120.0, 0.0);
-    m_dbRangeSlider->setRange(m_engine->minDB, m_engine->maxDB);
-    connect(m_dbRangeSlider, &LogRangeSlider::rangeChanged, [this](double minDb, double maxDb) {
-        m_engine->minDB = minDb;
-        m_engine->maxDB = maxDb;
-        m_dbRangeLbl->setText(
-            QString("dB Range: %1 - %2 dB").arg(static_cast<int>(minDb)).arg(static_cast<int>(maxDb)));
-        m_spectrumView->setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
-    });
-    rowLayout2->addWidget(m_dbRangeSlider, 1);
-
+    rowLayout->addStretch();
     panelLayout->addLayout(rowLayout);
-    panelLayout->addLayout(rowLayout2);
-    mainLayout->addWidget(panelGroup);
+    mainLayout->addWidget(panelFrame);
 }
 
 // ==================== SpectrogramDetailView ====================
@@ -394,16 +416,28 @@ SpectrogramDetailView::SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> 
 
 void SpectrogramDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    m_spectrogramView = new SpectrogramView(m_engine, this);
-    mainLayout->addWidget(m_spectrogramView, 1);
+    // Spectrogram Display Container (padding 32)
+    auto specContainer = new QWidget(this);
+    auto specLayout = new QVBoxLayout(specContainer);
+    specLayout->setContentsMargins(32, 32, 32, 32);
 
-    auto panelGroup = new QGroupBox("Spectroscope Settings Controls", this);
-    auto panelLayout = new QVBoxLayout(panelGroup);
+    m_spectrogramView = new SpectrogramView(m_engine, specContainer);
+    specLayout->addWidget(m_spectrogramView);
+    mainLayout->addWidget(specContainer, 1);
 
-    m_channelCombo = new QComboBox(panelGroup);
+    // Divider
+    mainLayout->addWidget(createDivider(this));
+
+    // Bottom Settings Panel
+    auto panelFrame = createPanelFrame(this);
+    auto panelLayout = new QVBoxLayout(panelFrame);
+    panelLayout->setContentsMargins(24, 20, 24, 24);
+    panelLayout->setSpacing(16);
+
+    m_channelCombo = new QComboBox(panelFrame);
 
     auto updateChannelCombo = [this]() {
         m_channelCombo->blockSignals(true);
@@ -429,95 +463,88 @@ void SpectrogramDetailView::setupUi() {
     };
 
     auto headerBox = new QHBoxLayout();
-    headerBox->addWidget(new QLabel("🎛 Spectrogram Configuration", panelGroup));
+    headerBox->addWidget(createHeaderTitle("Spectroscope Settings", panelFrame));
     headerBox->addStretch();
 
-    auto exportBtn = new QPushButton("Export Image…", panelGroup);
-    connect(exportBtn, &QPushButton::clicked, [this]() {
-        QString fileName = QFileDialog::getSaveFileName(this, "Export Spectrogram Image", "spectrogram.png",
-                                                        "PNG Images (*.png);;JPEG Images (*.jpg)");
-        if (!fileName.isEmpty()) {
-            QPixmap pixmap = m_spectrogramView->grab();
-            if (pixmap.save(fileName)) {
-                QMessageBox::information(this, "Export Successful", "Spectrogram image saved to: " + fileName);
-            } else {
-                QMessageBox::warning(this, "Export Failed", "Could not save image to specified path.");
-            }
-        }
-    });
-    headerBox->addWidget(exportBtn);
-
-    auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
+    auto resetBtn = createResetButton(panelFrame);
     connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombo]() {
         m_engine->resetToDefaults();
-        m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
+        m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
         updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
-        m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
-        m_paletteCombo->setCurrentIndex(static_cast<int>(m_engine->colorPalette));
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        m_modeTabBar->setCurrentIndex(m_engine->show3D ? 1 : 0);
+        m_spectrogramView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
 
     auto rowLayout = new QHBoxLayout();
+    rowLayout->setSpacing(20);
 
-    rowLayout->addWidget(new QLabel("Source:", panelGroup));
-    m_sourceCombo = new QComboBox(panelGroup);
-    m_sourceCombo->addItems({"Capture", "Playback"});
-    m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombo](int idx) {
+    // Source (Segmented Picker)
+    auto sourceBox = new QVBoxLayout();
+    sourceBox->setSpacing(4);
+    sourceBox->addWidget(createCaptionLabel("Source", panelFrame));
+    m_sourceTabBar = createSegmentedPicker({"Capture", "Playback"}, panelFrame);
+    m_sourceTabBar->setFixedWidth(140);
+    m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
+    connect(m_sourceTabBar, &QTabBar::currentChanged, [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
         updateChannelCombo();
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        m_spectrogramView->update();
     });
-    rowLayout->addWidget(m_sourceCombo);
+    sourceBox->addWidget(m_sourceTabBar);
+    rowLayout->addLayout(sourceBox);
 
-    rowLayout->addWidget(new QLabel("Channel:", panelGroup));
+    // Channel
+    auto channelBox = new QVBoxLayout();
+    channelBox->setSpacing(4);
+    channelBox->addWidget(createCaptionLabel("Channel", panelFrame));
+    m_channelCombo->setFixedWidth(120);
     updateChannelCombo();
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (idx == 0)
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        m_spectrogramView->update();
     });
-    rowLayout->addWidget(m_channelCombo);
+    channelBox->addWidget(m_channelCombo);
+    rowLayout->addLayout(channelBox);
 
-    rowLayout->addWidget(new QLabel("Bins:", panelGroup));
-    m_binsSpin = new QSpinBox(panelGroup);
+    // Bins
+    auto binsBox = new QVBoxLayout();
+    binsBox->setSpacing(4);
+    binsBox->addWidget(createCaptionLabel("Bins", panelFrame));
+    m_binsSpin = new QSpinBox(panelFrame);
     m_binsSpin->setRange(20, 500);
     m_binsSpin->setSingleStep(20);
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
+    m_binsSpin->setFixedWidth(120);
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        m_spectrogramView->update();
     });
-    rowLayout->addWidget(m_binsSpin);
+    binsBox->addWidget(m_binsSpin);
+    rowLayout->addLayout(binsBox);
 
-    rowLayout->addWidget(new QLabel("Display Mode:", panelGroup));
-    m_modeCombo = new QComboBox(panelGroup);
-    m_modeCombo->addItems({"2D Waterfall", "3D Landscape"});
-    m_modeCombo->setCurrentIndex(m_engine->show3D ? 1 : 0);
-    connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+    // Display Mode (Segmented Picker)
+    auto modeBox = new QVBoxLayout();
+    modeBox->setSpacing(4);
+    modeBox->addWidget(createCaptionLabel("Display Mode", panelFrame));
+    m_modeTabBar = createSegmentedPicker({"2D Waterfall", "3D Landscape"}, panelFrame);
+    m_modeTabBar->setFixedWidth(200);
+    m_modeTabBar->setCurrentIndex(m_engine->show3D ? 1 : 0);
+    connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->show3D = (idx == 1);
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        m_spectrogramView->update();
     });
-    rowLayout->addWidget(m_modeCombo);
-
-    rowLayout->addWidget(new QLabel("Color Map:", panelGroup));
-    m_paletteCombo = new QComboBox(panelGroup);
-    m_paletteCombo->addItems({"Classic", "Viridis", "Magma", "Plasma", "Inferno", "Jet"});
-    m_paletteCombo->setCurrentIndex(static_cast<int>(m_engine->colorPalette));
-    connect(m_paletteCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_engine->colorPalette = static_cast<ColorPalette>(idx);
-        m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
-    });
-    rowLayout->addWidget(m_paletteCombo);
+    modeBox->addWidget(m_modeTabBar);
+    rowLayout->addLayout(modeBox);
 
     rowLayout->addStretch();
     panelLayout->addLayout(rowLayout);
-    mainLayout->addWidget(panelGroup);
+    mainLayout->addWidget(panelFrame);
 }
 
 // ==================== VectorScopeDetailView ====================
@@ -530,133 +557,105 @@ VectorScopeDetailView::VectorScopeDetailView(std::shared_ptr<VectorScopeEngine> 
 
 void VectorScopeDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    m_vectorView = new VectorScopeView(m_engine, this);
-    mainLayout->addWidget(m_vectorView, 1);
+    // VectorScope Display Container (padding 32)
+    auto vecContainer = new QWidget(this);
+    auto vecLayout = new QVBoxLayout(vecContainer);
+    vecLayout->setContentsMargins(32, 32, 32, 32);
 
-    auto panelGroup = new QGroupBox("Vector Scope Settings Controls", this);
-    auto panelLayout = new QVBoxLayout(panelGroup);
+    m_vectorView = new VectorScopeView(m_engine, vecContainer);
+    vecLayout->addWidget(m_vectorView);
+    mainLayout->addWidget(vecContainer, 1);
 
-    m_channelLCombo = new QComboBox(panelGroup);
-    m_channelRCombo = new QComboBox(panelGroup);
+    // Divider
+    mainLayout->addWidget(createDivider(this));
 
-    auto updateChannelCombos = [this]() {
-        m_channelLCombo->blockSignals(true);
-        m_channelRCombo->blockSignals(true);
-        m_channelLCombo->clear();
-        m_channelRCombo->clear();
-        int count = 8;
-        if (m_devices) {
-            int ch = m_engine->isCapture ? m_devices->captureConfig.channels : m_devices->playbackConfig.channels;
-            if (ch > 0)
-                count = std::max(2, ch);
-        }
-        for (int i = 0; i < count; ++i) {
-            m_channelLCombo->addItem(QString("Ch %1 (L)").arg(i + 1));
-            m_channelRCombo->addItem(QString("Ch %1 (R)").arg(i + 1));
-        }
-        m_channelLCombo->setCurrentIndex(std::min(m_engine->channelL, m_channelLCombo->count() - 1));
-        m_channelRCombo->setCurrentIndex(std::min(m_engine->channelR, m_channelRCombo->count() - 1));
-        m_channelLCombo->blockSignals(false);
-        m_channelRCombo->blockSignals(false);
-    };
+    // Bottom Settings Panel
+    auto panelFrame = createPanelFrame(this);
+    auto panelLayout = new QVBoxLayout(panelFrame);
+    panelLayout->setContentsMargins(24, 20, 24, 24);
+    panelLayout->setSpacing(16);
 
     auto headerBox = new QHBoxLayout();
-    headerBox->addWidget(new QLabel("🎛 Stereo Phase Oscilloscope Configuration", panelGroup));
+    headerBox->addWidget(createHeaderTitle("Vector Scope Settings", panelFrame));
     headerBox->addStretch();
-    auto resetBtn = new QPushButton("Reset to Defaults", panelGroup);
-    connect(resetBtn, &QPushButton::clicked, [this, updateChannelCombos]() {
+
+    auto resetBtn = createResetButton(panelFrame);
+    connect(resetBtn, &QPushButton::clicked, [this]() {
         m_engine->resetToDefaults();
-        m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-        updateChannelCombos();
+        m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
         m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
-        m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
-        m_decayCombo->setCurrentIndex(1);
+        m_modeTabBar->setCurrentIndex(m_engine->showParticles ? 1 : 0);
         m_autoScaleCheck->setChecked(m_engine->autoScale);
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
+        m_vectorView->update();
     });
     headerBox->addWidget(resetBtn);
     panelLayout->addLayout(headerBox);
 
     auto rowLayout = new QHBoxLayout();
+    rowLayout->setSpacing(20);
 
-    rowLayout->addWidget(new QLabel("Source:", panelGroup));
-    m_sourceCombo = new QComboBox(panelGroup);
-    m_sourceCombo->addItems({"Capture", "Playback"});
-    m_sourceCombo->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-    connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, updateChannelCombos](int idx) {
+    // Source (Segmented Picker)
+    auto sourceBox = new QVBoxLayout();
+    sourceBox->setSpacing(4);
+    sourceBox->addWidget(createCaptionLabel("Source", panelFrame));
+    m_sourceTabBar = createSegmentedPicker({"Capture", "Playback"}, panelFrame);
+    m_sourceTabBar->setFixedWidth(140);
+    m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
+    connect(m_sourceTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->isCapture = (idx == 0);
-        updateChannelCombos();
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
+        m_vectorView->update();
     });
-    rowLayout->addWidget(m_sourceCombo);
+    sourceBox->addWidget(m_sourceTabBar);
+    rowLayout->addLayout(sourceBox);
 
-    rowLayout->addWidget(new QLabel("Channel L:", panelGroup));
-    rowLayout->addWidget(m_channelLCombo);
-    connect(m_channelLCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_engine->channelL = idx;
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
-    });
-
-    rowLayout->addWidget(new QLabel("Channel R:", panelGroup));
-    rowLayout->addWidget(m_channelRCombo);
-    connect(m_channelRCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        m_engine->channelR = idx;
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
-    });
-    updateChannelCombos();
-
-    rowLayout->addWidget(new QLabel("Frames:", panelGroup));
-    m_framesSpin = new QSpinBox(panelGroup);
+    // Frames
+    auto framesBox = new QVBoxLayout();
+    framesBox->setSpacing(4);
+    framesBox->addWidget(createCaptionLabel("Frames", panelFrame));
+    m_framesSpin = new QSpinBox(panelFrame);
     m_framesSpin->setRange(128, 4096);
     m_framesSpin->setSingleStep(128);
     m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
+    m_framesSpin->setFixedWidth(140);
     connect(m_framesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nFrames = static_cast<size_t>(val);
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
+        m_vectorView->update();
     });
-    rowLayout->addWidget(m_framesSpin);
+    framesBox->addWidget(m_framesSpin);
+    rowLayout->addLayout(framesBox);
 
-    rowLayout->addWidget(new QLabel("Display Mode:", panelGroup));
-    m_modeCombo = new QComboBox(panelGroup);
-    m_modeCombo->addItems({"Line", "Particles"});
-    m_modeCombo->setCurrentIndex(m_engine->showParticles ? 1 : 0);
-    connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+    // Display Mode (Segmented Picker)
+    auto modeBox = new QVBoxLayout();
+    modeBox->setSpacing(4);
+    modeBox->addWidget(createCaptionLabel("Display Mode", panelFrame));
+    m_modeTabBar = createSegmentedPicker({"Line", "Particles"}, panelFrame);
+    m_modeTabBar->setFixedWidth(160);
+    m_modeTabBar->setCurrentIndex(m_engine->showParticles ? 1 : 0);
+    connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->showParticles = (idx == 1);
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
+        m_vectorView->update();
     });
-    rowLayout->addWidget(m_modeCombo);
+    modeBox->addWidget(m_modeTabBar);
+    rowLayout->addLayout(modeBox);
 
-    rowLayout->addWidget(new QLabel("Trace Decay:", panelGroup));
-    m_decayCombo = new QComboBox(panelGroup);
-    m_decayCombo->addItems({"Fast (0.70)", "Medium (0.85)", "Slow (0.95)", "Infinite (0.99)"});
-    m_decayCombo->setCurrentIndex(1);
-    connect(m_decayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        static const float decayRates[] = {0.70f, 0.85f, 0.95f, 0.99f};
-        m_engine->traceDecayRate = decayRates[idx];
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
-    });
-    rowLayout->addWidget(m_decayCombo);
-
-    m_autoScaleCheck = new QCheckBox("Auto Scale", panelGroup);
+    // Auto Scale Toggle
+    auto autoScaleBox = new QVBoxLayout();
+    autoScaleBox->setSpacing(4);
+    autoScaleBox->addWidget(createCaptionLabel("Auto Scale", panelFrame));
+    m_autoScaleCheck = new QCheckBox(panelFrame);
+    m_autoScaleCheck->setFixedHeight(24);
     m_autoScaleCheck->setChecked(m_engine->autoScale);
     connect(m_autoScaleCheck, &QCheckBox::toggled, [this](bool chk) {
         m_engine->autoScale = chk;
-        m_vectorView->setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
-                                 m_engine->channelR, m_engine->traceDecayRate);
+        m_vectorView->update();
     });
-    rowLayout->addWidget(m_autoScaleCheck);
+    autoScaleBox->addWidget(m_autoScaleCheck);
+    rowLayout->addLayout(autoScaleBox);
 
     rowLayout->addStretch();
     panelLayout->addLayout(rowLayout);
-    mainLayout->addWidget(panelGroup);
+    mainLayout->addWidget(panelFrame);
 }

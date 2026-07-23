@@ -149,32 +149,36 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     phaseBounds(fr, unwrapped, minDeg, maxDeg);
     double spanDeg = maxDeg - minDeg;
 
-    // Draw Grid Lines (10 log frequency ticks matching SwiftUI & EQDiagramWidget)
-    for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
+    // Draw Grid Lines (Frequency ticks: 20, 100, 1000, 10000 Hz)
+    for (double f : {20.0, 100.0, 1000.0, 10000.0}) {
         double x = freqToX(f, w);
         painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
         painter.setPen(StyleTheme::textSecondary());
-        QString label = (f >= 1000.0) ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
-        painter.drawText(QRectF(x - 12, h - 18, 25, 14), Qt::AlignCenter, label);
+        painter.setFont(QFont("Monospace", 9));
+        QString label =
+            (f >= 1000.0) ? QString("%1k").arg(static_cast<int>(f / 1000.0)) : QString::number(static_cast<int>(f));
+        double labelX = std::max(4.0, std::min(w - 30.0, x - 12.0));
+        painter.drawText(QRectF(labelX, h - 18, 25, 14), Qt::AlignCenter, label);
     }
 
     double degStep = spanDeg > 2880 ? 1440 : (spanDeg > 1440 ? 720 : (spanDeg > 720 ? 360 : 90));
-    int startDeg = static_cast<int>(minDeg / degStep) * degStep;
-    int endDeg = static_cast<int>(maxDeg / degStep) * degStep;
+    int startDeg = static_cast<int>(std::floor(minDeg / degStep)) * static_cast<int>(degStep);
+    int endDeg = static_cast<int>(std::ceil(maxDeg / degStep)) * static_cast<int>(degStep);
 
     for (int deg = startDeg; deg <= endDeg; deg += static_cast<int>(degStep)) {
         double y = h * (1.0 - (static_cast<double>(deg) - minDeg) / spanDeg);
         if (y >= 0 && y <= h) {
-            painter.setPen(deg == 0 ? QPen(StyleTheme::axisLabelPenColor(), 1.0)
+            painter.setPen(deg == 0 ? QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0)
                                     : QPen(StyleTheme::gridPenColor(), 0.5));
             painter.drawLine(QPointF(0, y), QPointF(w, y));
             painter.setPen(StyleTheme::textSecondary());
+            painter.setFont(QFont("Monospace", 9));
             painter.drawText(QRectF(8, y - 12, 60, 14), Qt::AlignLeft | Qt::AlignVCenter, QString::number(deg) + "°");
         }
     }
 
-    // Measured Phase Path (Blue)
+    // Measured Phase Path (Blue Color.blue #007aff / QColor(0, 122, 255), width 1.2)
     QPainterPath measuredPath;
     bool started = false;
     size_t bins = fr.bins();
@@ -196,10 +200,10 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 150, 255), 1.5));
+    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
     painter.drawPath(measuredPath);
 
-    // Corrected Phase Path (Orange) if preset exists
+    // Corrected Phase Path (Orange Color.orange #ff9500 / QColor(255, 149, 0), width 1.6) if preset exists
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
         const auto& preset = m_session->correctionPreset.value();
         QPainterPath correctedPath;
@@ -225,7 +229,7 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
             }
         }
 
-        painter.setPen(QPen(QColor(255, 140, 0), 1.6));
+        painter.setPen(QPen(QColor(255, 149, 0), 1.6));
         painter.drawPath(correctedPath);
     }
 
@@ -235,13 +239,13 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     painter.fillRect(QRect(w - 315, 8, 180, legendHeight),
                      StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
     painter.setFont(QFont("Monospace", 9));
-    painter.setPen(QPen(QColor(0, 150, 255), 1.5));
+    painter.setPen(QPen(QColor(0, 122, 255), 1.5));
     painter.drawLine(w - 307, 18, w - 289, 18);
     painter.setPen(StyleTheme::textSecondary());
     painter.drawText(w - 283, 21, "Measured");
 
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
-        painter.setPen(QPen(QColor(255, 140, 0), 1.6));
+        painter.setPen(QPen(QColor(255, 149, 0), 1.6));
         painter.drawLine(w - 307, 34, w - 289, 34);
         painter.setPen(StyleTheme::textSecondary());
         painter.drawText(w - 283, 37, "Corrected (measured + EQ)");

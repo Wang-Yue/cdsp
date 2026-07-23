@@ -15,10 +15,15 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFrame>
+#include <QGridLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
+#include <QTabBar>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <memory>
 
@@ -37,7 +42,6 @@ private:
     AnalogVUMeterView* m_vuMeter;
     VUSettings m_settings;
 
-    QComboBox* m_themeCombo;
     QSlider* m_radiusSlider;
     QLabel* m_radiusLbl;
     QSlider* m_pivotYSlider;
@@ -66,16 +70,11 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     SpectrumView* m_spectrumView;
 
-    QComboBox* m_sourceCombo;
+    QTabBar* m_sourceTabBar;
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
-    QComboBox* m_windowCombo;
-    QComboBox* m_smoothingCombo;
-    QComboBox* m_decayCombo;
     LogRangeSlider* m_rangeSlider;
     QLabel* m_rangeLbl;
-    LogRangeSlider* m_dbRangeSlider;
-    QLabel* m_dbRangeLbl;
 
     void setupUi();
 };
@@ -92,14 +91,15 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     SpectrogramView* m_spectrogramView;
 
-    QComboBox* m_sourceCombo;
+    QTabBar* m_sourceTabBar;
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
-    QComboBox* m_modeCombo;
-    QComboBox* m_paletteCombo;
+    QTabBar* m_modeTabBar;
 
     void setupUi();
 };
+
+using SpectroscopeDetailView = SpectrogramDetailView;
 
 class VectorScopeDetailView : public QWidget {
     Q_OBJECT
@@ -113,12 +113,9 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     VectorScopeView* m_vectorView;
 
-    QComboBox* m_sourceCombo;
-    QComboBox* m_channelLCombo;
-    QComboBox* m_channelRCombo;
+    QTabBar* m_sourceTabBar;
     QSpinBox* m_framesSpin;
-    QComboBox* m_modeCombo;
-    QComboBox* m_decayCombo;
+    QTabBar* m_modeTabBar;
     QCheckBox* m_autoScaleCheck;
 
     void setupUi();

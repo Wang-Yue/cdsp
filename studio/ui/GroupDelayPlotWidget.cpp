@@ -67,9 +67,9 @@ double GroupDelayPlotWidget::autoScaleMs(const FrequencyResponse& fr, const std:
             inBand.push_back(std::abs(gd[k]));
         }
     }
-    if (inBand.empty())
-        return 5.0;
-
+    if (inBand.empty()) {
+        return 1.0;
+    }
     std::sort(inBand.begin(), inBand.end());
     double p95 = inBand[static_cast<size_t>(static_cast<double>(inBand.size()) * 0.95)];
     return std::max(p95 * 1000.0 * 1.2, 1.0);
@@ -96,8 +96,8 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     std::vector<double> gd = fr.groupDelay();
     double scaleMs = autoScaleMs(fr, gd);
 
-    // Center Line (0 ms)
-    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0));
+    // Grid lines - Center Line (0 ms)
+    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
     // Axis Labels
@@ -107,18 +107,19 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
     painter.drawText(QRectF(12, h - 20, 80, 16), Qt::AlignLeft, QString("-%1 ms").arg(scaleMs, 0, 'f', 1));
 
-    // Frequency Grid
-    std::vector<double> gridFreqs = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
-    for (double f : gridFreqs) {
+    // Frequency Grid Lines
+    for (double f : {20.0, 100.0, 1000.0, 10000.0}) {
         double x = freqToX(f, w);
         painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
         painter.setPen(StyleTheme::textSecondary());
-        painter.drawText(QRectF(x + 2, h - 18, 50, 15), Qt::AlignLeft | Qt::AlignBottom,
-                         f >= 1000 ? QString::number(f / 1000.0, 'g', 2) + "k" : QString::number(f));
+        QString label =
+            (f >= 1000.0) ? QString("%1k").arg(static_cast<int>(f / 1000.0)) : QString::number(static_cast<int>(f));
+        double labelX = std::max(4.0, std::min(w - 30.0, x - 12.0));
+        painter.drawText(QRectF(labelX, h - 18, 25, 14), Qt::AlignCenter, label);
     }
 
-    // Group Delay Curve
+    // Group Delay Curve (Color.blue #007aff / QColor(0, 122, 255), lineWidth 1.2)
     QPainterPath gdPath;
     bool started = false;
     size_t bins = fr.bins();
@@ -139,13 +140,13 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 180, 255), 1.4));
+    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
     painter.drawPath(gdPath);
 
     // Legend
     painter.fillRect(QRect(w - 280, 10, 140, 26),
                      StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
-    painter.setPen(QPen(QColor(0, 180, 255), 2));
+    painter.setPen(QPen(QColor(0, 122, 255), 1.5));
     painter.drawLine(w - 272, 23, w - 247, 23);
     painter.setPen(StyleTheme::textPrimary());
     painter.setFont(QFont("sans-serif", 9));

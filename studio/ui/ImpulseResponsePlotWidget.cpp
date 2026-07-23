@@ -83,21 +83,32 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
     peakAbs *= 1.05;
 
-    // Center horizontal line (y = 0)
-    painter.setPen(QPen(StyleTheme::gridPenColor(), 1.0));
+    // Zero line (y = 0 horizontal line at h / 2)
+    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
-    // Zero-time vertical line
+    // Zero-time vertical line (peak line t=0)
     double xPeak = w * static_cast<double>(static_cast<int>(zeroIdx) - lo) / static_cast<double>(hi - lo);
-    painter.setPen(QPen(StyleTheme::axisLabelPenColor(), 1.0, Qt::DashLine));
+    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
     painter.drawLine(QPointF(xPeak, 0), QPointF(xPeak, h));
+
+    // Normalized Amplitude Y axis [-1.0, +1.0] Labels
+    painter.setPen(StyleTheme::textSecondary());
+    painter.setFont(QFont("Monospace", 9));
+    painter.drawText(QRectF(12, 4, 60, 16), Qt::AlignLeft, "+1.0");
+    painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0.0");
+    painter.drawText(QRectF(12, h - 20, 60, 16), Qt::AlignLeft, "-1.0");
 
     // Draw IR curve
     QPainterPath irPath;
+    double yPeak = h * 0.5;
     for (int i = lo; i <= hi; ++i) {
         double x = w * static_cast<double>(i - lo) / static_cast<double>(hi - lo);
         double sampleVal = ir.samples[i];
         double y = h * (0.5 - 0.5 * (sampleVal / peakAbs));
+        if (i == static_cast<int>(zeroIdx)) {
+            yPeak = y;
+        }
         if (i == lo) {
             irPath.moveTo(x, y);
         } else {
@@ -105,8 +116,13 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 160, 255), 1.2));
+    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
     painter.drawPath(irPath);
+
+    // Peak Marker Dot at (xPeak, yPeak)
+    painter.setBrush(QColor(0, 122, 255));
+    painter.setPen(QPen(Qt::white, 1.0));
+    painter.drawEllipse(QPointF(xPeak, yPeak), 3.5, 3.5);
 
     // Time-axis Ticks (-50ms, -25ms, 0ms, +25ms, +50ms)
     std::vector<double> ticks = {-halfMs, -halfMs / 2.0, 0.0, halfMs / 2.0, halfMs};
@@ -123,10 +139,11 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
 
     // Legend
-    painter.fillRect(QRect(12, 10, 150, 26), StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
-    painter.setPen(QPen(QColor(0, 160, 255), 2));
-    painter.drawLine(20, 23, 45, 23);
+    painter.fillRect(QRect(w - 280, 10, 150, 26),
+                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
+    painter.setPen(QPen(QColor(0, 122, 255), 2));
+    painter.drawLine(w - 272, 23, w - 247, 23);
     painter.setPen(StyleTheme::textPrimary());
     painter.setFont(QFont("sans-serif", 9));
-    painter.drawText(53, 27, "Impulse Response");
+    painter.drawText(w - 239, 27, "Impulse Response");
 }
