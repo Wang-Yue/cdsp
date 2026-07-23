@@ -26,6 +26,7 @@ struct DeviceConfig {
     int deviceChannels = 2;
     int sampleRate = 48000;
     std::string format = "F32";
+    bool exclusive = false;
     bool bypassDoP = true;
     double dopCutoffHz = 20000.0;
     bool outputDoP = false;

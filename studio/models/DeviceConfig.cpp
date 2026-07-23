@@ -201,6 +201,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
+        cap.coreAudio.exclusive = exclusive;
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;
@@ -210,6 +211,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.wasapi.channels = channels;
         cap.wasapi.device = deviceName();
         cap.wasapi.format = format;
+        cap.wasapi.exclusive = exclusive;
         cap.wasapi.bypassDoP = bypassDoP;
         cap.wasapi.dopCutoffHz = dopCutoffHz;
         break;
@@ -228,6 +230,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.alsa.channels = channels;
         cap.alsa.device = deviceName();
         cap.alsa.format = format;
+        cap.alsa.exclusive = exclusive;
         break;
 #endif
 #if defined(ENABLE_PULSEAUDIO)
@@ -282,6 +285,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         pb.coreAudio.channels = channels;
         pb.coreAudio.device = deviceName();
+        pb.coreAudio.exclusive = exclusive;
         pb.coreAudio.outputDoP = outputDoP;
         pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
         break;
@@ -291,6 +295,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.wasapi.channels = channels;
         pb.wasapi.device = deviceName();
         pb.wasapi.format = format;
+        pb.wasapi.exclusive = exclusive;
         pb.wasapi.outputDoP = outputDoP;
         pb.wasapi.dsdEncoderFilter = dsdEncoderFilter;
         break;
@@ -310,6 +315,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
+        pb.alsa.exclusive = exclusive;
         pb.alsa.outputDSD = outputDSD;
         break;
 #endif
@@ -358,6 +364,7 @@ QJsonObject DeviceConfig::toJson() const {
     obj["deviceChannels"] = deviceChannels;
     obj["sampleRate"] = sampleRate;
     obj["format"] = QString::fromStdString(format);
+    obj["exclusive"] = exclusive;
     obj["bypassDoP"] = bypassDoP;
     obj["dopCutoffHz"] = dopCutoffHz;
     obj["outputDoP"] = outputDoP;
@@ -396,6 +403,8 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.sampleRate = json["sampleRate"].toInt();
     if (json.contains("format"))
         cfg.format = json["format"].toString().toStdString();
+    if (json.contains("exclusive"))
+        cfg.exclusive = json["exclusive"].toBool();
     if (json.contains("bypassDoP"))
         cfg.bypassDoP = json["bypassDoP"].toBool();
     if (json.contains("dopCutoffHz"))
@@ -445,9 +454,9 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
 bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
-           bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
-           outputDSD == other.outputDSD && dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename &&
-           fileFormat == other.fileFormat && isWav == other.isWav && useRf64 == other.useRf64 &&
+           exclusive == other.exclusive && bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz &&
+           outputDoP == other.outputDoP && outputDSD == other.outputDSD && dsdEncoderFilter == other.dsdEncoderFilter &&
+           filename == other.filename && fileFormat == other.fileFormat && isWav == other.isWav && useRf64 == other.useRf64 &&
            skipBytes == other.skipBytes && readBytes == other.readBytes && extraSamples == other.extraSamples &&
            generatorType == other.generatorType && generatorFreq == other.generatorFreq &&
            generatorLevel == other.generatorLevel && nodeName == other.nodeName &&

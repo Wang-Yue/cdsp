@@ -1468,6 +1468,7 @@ void DevicePickerView::refreshUi() {
     if (m_devices->captureConfig.backend == AudioBackendType::PulseAudio)
         isCapAlsa = true;
 #endif
+    m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive);
     m_capWasapiExclusiveCheck->setVisible(isCapWasapi);
     m_capWasapiLoopbackCheck->setVisible(isCapWasapi);
     m_capWasapiPollingCheck->setVisible(isCapWasapi);
@@ -1561,7 +1562,7 @@ void DevicePickerView::refreshUi() {
         m_pbFormatLabel->setText(QString::fromStdString(m_devices->playbackConfig.format));
     }
 
-    m_exclusiveModeCheck->setChecked(m_devices->exclusiveMode);
+    m_exclusiveModeCheck->setChecked(m_devices->playbackConfig.exclusive);
     bool isPbWasapi = false;
 #if defined(ENABLE_WASAPI)
     isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
@@ -1695,6 +1696,7 @@ void DevicePickerView::applySettings() {
         if (m_dopCutoffCombo->currentIndex() >= 0) {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
+        capCfg.exclusive = m_capWasapiExclusiveCheck->isChecked();
     } else if (capCfg.backend == AudioBackendType::RawFile) {
         capCfg.filename = m_capRawFilePathEdit->text().toStdString();
         capCfg.fileFormat = m_capRawFileFormatCombo->currentText().toStdString();
@@ -1743,6 +1745,7 @@ void DevicePickerView::applySettings() {
             pbCfg.format = m_pbFormatCombo->currentText().toStdString();
         }
 
+        pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
         pbCfg.outputDSD = m_outputDSDCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {

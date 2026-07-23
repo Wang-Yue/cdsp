@@ -152,10 +152,14 @@ elseif(WIN32)
     endif()
 endif()
 
-include(CheckIPOSupported)
-check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error)
-if(ipo_supported)
-    set_property(TARGET MonitorQt PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+# Option to enable LTO (Link-Time Optimization) - OFF by default for fast linking
+option(ENABLE_LTO "Enable Link-Time Optimization (LTO/IPO)" OFF)
+if(ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error)
+    if(ipo_supported)
+        set_property(TARGET MonitorQt PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
 endif()
 
 if(APPLE)
