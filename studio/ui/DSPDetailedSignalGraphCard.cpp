@@ -642,7 +642,7 @@ void DSPDetailedSignalGraphCard::setupUi() {
 
     auto topRow = new QHBoxLayout();
     auto titleLbl = new QLabel("DSP Signal Processing Graph", this);
-    titleLbl->setFont(QFont("System", 13, QFont::Bold));
+    titleLbl->setFont(QFont("", 13, QFont::Bold));
     topRow->addWidget(titleLbl);
 
     m_resetLayoutBtn = new QPushButton("Reset Layout", this);

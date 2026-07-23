@@ -119,6 +119,7 @@ private:
     QTimer m_pollTimer;
     double m_pollingRate = 10.0;
     ProcessingState m_currentStatus = ProcessingState::Inactive;
+    ProcessingStopReason m_lastStopReason;
 };
 
 #endif // MONITORING_CONTROLLER_H

@@ -180,9 +180,9 @@ void DashboardView::setupUi() {
 
     auto levelHeader = new QHBoxLayout();
     auto levelTitle = new QLabel("Levels", m_levelMetersGroup);
-    levelTitle->setFont(QFont("System", 13, QFont::Bold));
+    levelTitle->setFont(QFont("", 13, QFont::Bold));
     auto levelSub = new QLabel("RMS / Peak", m_levelMetersGroup);
-    levelSub->setFont(QFont("System", 11, QFont::Normal));
+    levelSub->setFont(QFont("", 11, QFont::Normal));
     levelSub->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     levelHeader->addWidget(levelTitle);
     levelHeader->addStretch();
@@ -196,7 +196,7 @@ void DashboardView::setupUi() {
     auto capCol = new QVBoxLayout();
     capCol->setSpacing(8);
     auto capLbl = new QLabel("Capture", m_levelMetersGroup);
-    capLbl->setFont(QFont("System", 12, QFont::Medium));
+    capLbl->setFont(QFont("", 12, QFont::Medium));
     capLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_captureMeters = new LevelMeterView(m_levelMetersGroup);
     m_captureMeters->setLevelState(&m_monitoring->levelState);
@@ -209,7 +209,7 @@ void DashboardView::setupUi() {
     auto pbCol = new QVBoxLayout();
     pbCol->setSpacing(8);
     auto pbLbl = new QLabel("Playback", m_levelMetersGroup);
-    pbLbl->setFont(QFont("System", 12, QFont::Medium));
+    pbLbl->setFont(QFont("", 12, QFont::Medium));
     pbLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
     m_playbackMeters->setLevelState(&m_monitoring->levelState);
@@ -230,7 +230,7 @@ void DashboardView::setupUi() {
     faderVLayout->setSpacing(16);
 
     auto faderTitle = new QLabel("Volume Faders", m_faderGroup);
-    faderTitle->setFont(QFont("System", 13, QFont::Bold));
+    faderTitle->setFont(QFont("", 13, QFont::Bold));
     faderVLayout->addWidget(faderTitle);
 
     auto faderRowsVLayout = new QVBoxLayout();
@@ -253,7 +253,7 @@ void DashboardView::setupUi() {
 
         auto nameLbl = new QLabel(info.name, m_faderGroup);
         nameLbl->setFixedWidth(80);
-        nameLbl->setFont(QFont("System", 12, QFont::Medium));
+        nameLbl->setFont(QFont("", 12, QFont::Medium));
 
         auto muteBtn = new QPushButton("🔊", m_faderGroup);
         muteBtn->setCheckable(true);
@@ -302,7 +302,7 @@ void DashboardView::setupUi() {
 
     auto vuHeaderBox = new QHBoxLayout();
     auto vuTitle = new QLabel("Analog VU", m_analogVUGroup);
-    vuTitle->setFont(QFont("System", 13, QFont::Bold));
+    vuTitle->setFont(QFont("", 13, QFont::Bold));
     vuHeaderBox->addWidget(vuTitle);
     vuHeaderBox->addStretch();
     m_vuThemeCombo = new QComboBox(m_analogVUGroup);
@@ -339,7 +339,7 @@ void DashboardView::setupUi() {
     auto specLayout = new QVBoxLayout(m_spectrumGroup);
     specLayout->setSpacing(12);
     auto specTitle = new QLabel("Spectrum", m_spectrumGroup);
-    specTitle->setFont(QFont("System", 13, QFont::Bold));
+    specTitle->setFont(QFont("", 13, QFont::Bold));
     specLayout->addWidget(specTitle);
     m_spectrumView = new SpectrumView(m_spectrumEngine, m_spectrumGroup);
     m_spectrumView->setFixedHeight(160);
@@ -352,7 +352,7 @@ void DashboardView::setupUi() {
     auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
     spectroLayout->setSpacing(12);
     auto spectroTitle = new QLabel("Spectroscope", m_spectrogramGroup);
-    spectroTitle->setFont(QFont("System", 13, QFont::Bold));
+    spectroTitle->setFont(QFont("", 13, QFont::Bold));
     spectroLayout->addWidget(spectroTitle);
     m_spectrogramView = new SpectrogramView(m_spectrogramEngine, m_spectrogramGroup);
     m_spectrogramView->setFixedHeight(480);
@@ -365,7 +365,7 @@ void DashboardView::setupUi() {
     auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
     vecLayout->setSpacing(12);
     auto vecTitle = new QLabel("Vector Scope", m_vectorScopeGroup);
-    vecTitle->setFont(QFont("System", 13, QFont::Bold));
+    vecTitle->setFont(QFont("", 13, QFont::Bold));
     vecLayout->addWidget(vecTitle);
     m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, m_vectorScopeGroup);
     m_vectorScopeView->setFixedHeight(700);

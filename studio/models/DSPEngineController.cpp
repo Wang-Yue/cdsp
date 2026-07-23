@@ -121,10 +121,11 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
         }
 #endif
 #if defined(ENABLE_WASAPI)
+        if (config.devices.capture.backend == AudioBackendType::WASAPI) {
+            config.devices.capture.wasapi.exclusive = m_devices->exclusiveMode;
+        }
         if (config.devices.playback.backend == AudioBackendType::WASAPI) {
-            if (m_devices->exclusiveMode) {
-                config.devices.playback.wasapi.exclusive = true;
-            }
+            config.devices.playback.wasapi.exclusive = m_devices->exclusiveMode;
         }
 #endif
 

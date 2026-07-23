@@ -57,7 +57,7 @@ void PipelineOverviewWidget::setupUi() {
 
     auto topTitleRow = new QHBoxLayout();
     m_headerTitle = new QLabel("Signal Chain", this);
-    m_headerTitle->setFont(QFont("System", 13, QFont::Bold));
+    m_headerTitle->setFont(QFont("", 13, QFont::Bold));
     topTitleRow->addWidget(m_headerTitle);
 
     m_warningBadge = new QLabel("Broken Chain", this);
@@ -605,7 +605,7 @@ void PipelineOverviewWidget::rebuildOverview() {
         auto titleVBox = new QVBoxLayout();
         titleVBox->setSpacing(1);
         auto titleLbl = new QLabel(title, card);
-        titleLbl->setFont(QFont("System", 12, QFont::Bold));
+        titleLbl->setFont(QFont("", 12, QFont::Bold));
         titleLbl->setStyleSheet(isWarning ? "color: #ff3b30;"
                                           : QString("color: %1;").arg(StyleTheme::textPrimary().name()));
         titleVBox->addWidget(titleLbl);
@@ -758,7 +758,7 @@ void PipelineOverviewWidget::rebuildOverview() {
 
                     QString stepTitle = stepTypeTitle(step.type);
                     auto titleLbl = new QLabel(stepTitle, stepWidget);
-                    titleLbl->setFont(QFont("System", 9, QFont::Bold));
+                    titleLbl->setFont(QFont("", 9, QFont::Bold));
                     stepHeader->addWidget(titleLbl, 1);
 
                     // Target channels tag
