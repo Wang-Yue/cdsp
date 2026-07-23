@@ -46,6 +46,11 @@ MonitoringController::MonitoringController(std::shared_ptr<CDSPEngine> engine,
             dspController->status = state;
             emit dspController->statusChanged(state);
         };
+        onStatusUpdated = [dspController](ProcessingState state, const ProcessingStopReason& stopReason) {
+            dspController->status = state;
+            dspController->lastStopReason = stopReason;
+            emit dspController->statusUpdated(state, stopReason);
+        };
         onRestartEngine = [dspController]() { dspController->startEngine(); };
     }
 }
@@ -247,6 +252,10 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
             if (m_vectorScopeEngine)
                 m_vectorScopeEngine->reset();
         }
+    }
+
+    if (onStatusUpdated) {
+        onStatusUpdated(state, stopReason);
     }
 
     switch (stopReason.type) {

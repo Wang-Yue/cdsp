@@ -89,6 +89,8 @@ public:
 
     /// Fired with the new ProcessingState whenever DSP engine reports a state change.
     std::function<void(ProcessingState)> onStatusChange;
+    /// Fired with ProcessingState and ProcessingStopReason when state or stop reason updates.
+    std::function<void(ProcessingState, const ProcessingStopReason&)> onStatusUpdated;
     /// Fired when a CaptureFormatChange or PlaybackFormatChange stop reason requires restarting the engine.
     std::function<void()> onRestartEngine;
 

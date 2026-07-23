@@ -8,7 +8,9 @@
 #include <QFutureWatcher>
 #include <QMediaDevices>
 #include <QObject>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 class AudioDeviceManager : public QObject {
@@ -58,6 +60,9 @@ private:
     std::shared_ptr<AudioSettings> m_settings;
     bool m_isInitializing = true;
     bool m_isValidating = false;
+
+    std::map<std::string, DeviceConfig> m_captureDeviceConfigs;
+    std::map<std::string, DeviceConfig> m_playbackDeviceConfigs;
 
     QFutureWatcher<void> m_devicesWatcher;
     QFutureWatcher<void> m_capabilitiesWatcher;

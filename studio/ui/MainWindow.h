@@ -97,6 +97,8 @@ private:
     QAction* m_actRoomCorrection = nullptr;
     QAction* m_actOratoryPreset = nullptr;
     QAction* m_actAutoEqPreset = nullptr;
+    QAction* m_actStartStop = nullptr;
+    QAction* m_actMute = nullptr;
     QAction* m_actThemeLight = nullptr;
     QAction* m_actThemeDark = nullptr;
 

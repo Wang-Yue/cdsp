@@ -109,6 +109,37 @@ void AudioDeviceManager::loadSavedConfigs() {
         if (doc.isObject())
             playbackConfig = DeviceConfig::fromJson(doc.object());
     }
+
+    if (s.contains("captureDeviceConfigs")) {
+        QByteArray data = s.value("captureDeviceConfigs").toByteArray();
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isObject()) {
+            QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                if (it.value().isObject()) {
+                    m_captureDeviceConfigs[it.key().toStdString()] = DeviceConfig::fromJson(it.value().toObject());
+                }
+            }
+        }
+    } else {
+        m_captureDeviceConfigs[captureConfig.deviceName().value_or("")] = captureConfig;
+    }
+
+    if (s.contains("playbackDeviceConfigs")) {
+        QByteArray data = s.value("playbackDeviceConfigs").toByteArray();
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isObject()) {
+            QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                if (it.value().isObject()) {
+                    m_playbackDeviceConfigs[it.key().toStdString()] = DeviceConfig::fromJson(it.value().toObject());
+                }
+            }
+        }
+    } else {
+        m_playbackDeviceConfigs[playbackConfig.deviceName().value_or("")] = playbackConfig;
+    }
+
     exclusiveMode = s.value("exclusiveMode", false).toBool();
 }
 
@@ -120,6 +151,18 @@ void AudioDeviceManager::saveConfigs() {
     QJsonDocument docPb(playbackConfig.toJson());
     s.setValue("playbackConfig", docPb.toJson(QJsonDocument::Compact));
 
+    QJsonObject capDictObj;
+    for (const auto& [name, cfg] : m_captureDeviceConfigs) {
+        capDictObj.insert(QString::fromStdString(name), cfg.toJson());
+    }
+    s.setValue("captureDeviceConfigs", QJsonDocument(capDictObj).toJson(QJsonDocument::Compact));
+
+    QJsonObject pbDictObj;
+    for (const auto& [name, cfg] : m_playbackDeviceConfigs) {
+        pbDictObj.insert(QString::fromStdString(name), cfg.toJson());
+    }
+    s.setValue("playbackDeviceConfigs", QJsonDocument(pbDictObj).toJson(QJsonDocument::Compact));
+
     s.setValue("exclusiveMode", exclusiveMode);
 }
 
@@ -129,6 +172,12 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     DeviceConfig enforced = config.enforced();
     bool devChanged =
         (enforced.deviceName() != captureConfig.deviceName() || enforced.backend != captureConfig.backend);
+
+    if (!devChanged) {
+        std::string name = enforced.deviceName().value_or("");
+        m_captureDeviceConfigs[name] = enforced;
+    }
+
     captureConfig = enforced;
     saveConfigs();
 
@@ -150,6 +199,12 @@ void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
     DeviceConfig enforced = config.enforced();
     bool devChanged =
         (enforced.deviceName() != playbackConfig.deviceName() || enforced.backend != playbackConfig.backend);
+
+    if (!devChanged) {
+        std::string name = enforced.deviceName().value_or("");
+        m_playbackDeviceConfigs[name] = enforced;
+    }
+
     playbackConfig = enforced;
     saveConfigs();
 
@@ -214,27 +269,35 @@ double AudioDeviceManager::latencyMs() const {
 }
 
 bool AudioDeviceManager::devicesAvailable() const {
-    if (auto name = captureConfig.deviceName()) {
-        bool found = false;
-        for (const auto& d : captureDevices) {
-            if (d.id == name.value()) {
-                found = true;
-                break;
+    if (isHardwareBackend(captureConfig.backend)) {
+        if (auto name = captureConfig.deviceName()) {
+            if (!name.value().empty()) {
+                bool found = false;
+                for (const auto& d : captureDevices) {
+                    if (d.id == name.value() || d.name == name.value()) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    return false;
             }
         }
-        if (!found)
-            return false;
     }
-    if (auto name = playbackConfig.deviceName()) {
-        bool found = false;
-        for (const auto& d : playbackDevices) {
-            if (d.id == name.value()) {
-                found = true;
-                break;
+    if (isHardwareBackend(playbackConfig.backend)) {
+        if (auto name = playbackConfig.deviceName()) {
+            if (!name.value().empty()) {
+                bool found = false;
+                for (const auto& d : playbackDevices) {
+                    if (d.id == name.value() || d.name == name.value()) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    return false;
             }
         }
-        if (!found)
-            return false;
     }
     return true;
 }
@@ -269,6 +332,49 @@ void AudioDeviceManager::fetchDevices() {
                 return;
             captureDevices = cap;
             playbackDevices = pb;
+
+            // Safe fallback logic: if configured hardware device is disconnected/unplugged, fallback to default
+            // hardware device ("")
+            if (isHardwareBackend(captureConfig.backend)) {
+                if (auto name = captureConfig.deviceName()) {
+                    if (!name.value().empty()) {
+                        bool found = false;
+                        for (const auto& d : cap) {
+                            if (d.id == name.value() || d.name == name.value()) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            qDebug() << "[AudioDeviceManager] Configured capture device"
+                                     << QString::fromStdString(name.value())
+                                     << "is disconnected/missing. Falling back to default input device.";
+                            captureConfig.setDeviceName("");
+                        }
+                    }
+                }
+            }
+
+            if (isHardwareBackend(playbackConfig.backend)) {
+                if (auto name = playbackConfig.deviceName()) {
+                    if (!name.value().empty()) {
+                        bool found = false;
+                        for (const auto& d : pb) {
+                            if (d.id == name.value() || d.name == name.value()) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            qDebug() << "[AudioDeviceManager] Configured playback device"
+                                     << QString::fromStdString(name.value())
+                                     << "is disconnected/missing. Falling back to default output device.";
+                            playbackConfig.setDeviceName("");
+                        }
+                    }
+                }
+            }
+
             refreshDeviceCapabilities();
             emit devicesRefreshed();
         });
@@ -310,24 +416,48 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                 if (version != m_capabilityRequestVersion)
                     return;
 
+                DeviceConfig newCapture = captureConfig;
+                DeviceConfig newPlayback = playbackConfig;
+
                 if (isCapHw) {
+                    std::string name = newCapture.deviceName().value_or("");
+                    auto it = m_captureDeviceConfigs.find(name);
+                    if (it != m_captureDeviceConfigs.end()) {
+                        DeviceConfig saved = it->second;
+                        saved.capabilities = newCapture.capabilities;
+                        saved.backend = newCapture.backend;
+                        newCapture = saved;
+                    }
                     if (capDesc.has_value()) {
-                        captureConfig.capabilities = capDesc.value();
+                        newCapture.capabilities = capDesc.value();
+                    } else {
+                        newCapture.capabilities = AudioDeviceDescriptor();
                     }
                 } else {
-                    captureConfig.capabilities = AudioDeviceDescriptor();
+                    newCapture.capabilities = AudioDeviceDescriptor();
                 }
 
                 if (isPbHw) {
+                    std::string name = newPlayback.deviceName().value_or("");
+                    auto it = m_playbackDeviceConfigs.find(name);
+                    if (it != m_playbackDeviceConfigs.end()) {
+                        DeviceConfig saved = it->second;
+                        saved.capabilities = newPlayback.capabilities;
+                        saved.backend = newPlayback.backend;
+                        newPlayback = saved;
+                    }
                     if (pbDesc.has_value()) {
-                        playbackConfig.capabilities = pbDesc.value();
+                        newPlayback.capabilities = pbDesc.value();
+                    } else {
+                        newPlayback.capabilities = AudioDeviceDescriptor();
                     }
                 } else {
-                    playbackConfig.capabilities = AudioDeviceDescriptor();
+                    newPlayback.capabilities = AudioDeviceDescriptor();
                 }
 
-                captureConfig = captureConfig.enforced();
-                playbackConfig = playbackConfig.enforced();
+                captureConfig = newCapture.enforced();
+                playbackConfig = newPlayback.enforced();
+
                 bool rateChanged = validateSampleRates();
                 if (!rateChanged) {
                     saveConfigs();

@@ -43,6 +43,15 @@ void DSPEngineController::setMonitoringController(std::shared_ptr<MonitoringCont
                 emit statusChanged(status);
             }
         };
+        m_monitoring->onStatusUpdated = [this](ProcessingState newStatus, const ProcessingStopReason& stopReason) {
+            bool stateChanged = (newStatus != status);
+            status = newStatus;
+            lastStopReason = stopReason;
+            if (stateChanged) {
+                emit statusChanged(status);
+            }
+            emit statusUpdated(status, stopReason);
+        };
         m_monitoring->onRestartEngine = [this]() { startEngine(); };
     }
 }
@@ -169,7 +178,9 @@ void DSPEngineController::stopEngine() {
         m_engine->stop();
     }
     status = ProcessingState::Inactive;
+    lastStopReason = ProcessingStopReason();
     emit statusChanged(status);
+    emit statusUpdated(status, lastStopReason);
     LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine stopped.");
 }
 
@@ -199,10 +210,14 @@ void DSPEngineController::applyConfigAsync() {
     std::string err;
     bool ok = m_engine->start(jsonStr, err);
     if (ok) {
+        lastErrorMessage.clear();
         emit configApplied();
         LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine configuration applied successfully.");
     } else {
         lastErrorMessage = err;
+        lastStopReason.type = StopReasonType::UnknownError;
+        lastStopReason.message = err;
+        emit statusUpdated(status, lastStopReason);
         LogManager::instance()->appendLog(LogLevel::Error, QString::fromStdString("Apply config failed: " + err));
     }
 }

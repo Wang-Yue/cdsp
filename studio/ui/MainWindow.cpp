@@ -20,14 +20,17 @@
 #include "ui/VectorScopeView.h"
 #include "ui/VisualizerDetailViews.h"
 
+#include <QAbstractButton>
 #include <QAbstractSpinBox>
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QDesktopServices>
+#include <QDoubleSpinBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -35,6 +38,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QTextEdit>
 #include <QToolBar>
@@ -45,6 +49,17 @@
 #include <cmath>
 
 namespace {
+bool isInputWidgetFocused() {
+    QWidget* focusW = QApplication::focusWidget();
+    for (QWidget* w = focusW; w; w = w->parentWidget()) {
+        if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QSpinBox*>(w) ||
+            qobject_cast<QDoubleSpinBox*>(w) || qobject_cast<QTextEdit*>(w) || qobject_cast<QPlainTextEdit*>(w) ||
+            qobject_cast<QComboBox*>(w) || qobject_cast<QAbstractButton*>(w)) {
+            return true;
+        }
+    }
+    return false;
+}
 class SidebarToggleRowWidget : public QWidget {
 public:
     SidebarToggleRowWidget(QTreeWidget* tree, QTreeWidgetItem* item, const QString& title, bool isChecked,
@@ -180,7 +195,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                         m_stopReasonBanner->setText(msg);
                         m_stopReasonBanner->show();
                     }
-                } else if (state == ProcessingState::Running && m_stopReasonBanner) {
+                } else if ((state == ProcessingState::Running || stopReason.type == StopReasonType::None ||
+                            stopReason.type == StopReasonType::Done) &&
+                           m_stopReasonBanner) {
                     m_stopReasonBanner->hide();
                 }
             });
@@ -450,6 +467,7 @@ void MainWindow::setupMenuBar() {
     auto viewMenu = bar->addMenu("&View");
     auto setupViewAct = [this, viewMenu](const QString& title, const QList<QKeySequence>& seqs, const QString& tag) {
         auto act = new QAction(title, this);
+        act->setMenuRole(QAction::NoRole);
         act->setShortcuts(seqs);
         connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
         viewMenu->addAction(act);
@@ -506,30 +524,29 @@ void MainWindow::setupMenuBar() {
 
     // 3. Audio Menu
     auto audioMenu = bar->addMenu("&Audio");
-    auto startStopAct = new QAction("Start/Stop Engine", this);
-    startStopAct->setShortcut(QKeySequence(Qt::Key_Space));
-    connect(startStopAct, &QAction::triggered, [this]() {
+    m_actStartStop = new QAction("Start/Stop Engine", this);
+    m_actStartStop->setShortcut(QKeySequence(Qt::Key_Space));
+    connect(m_actStartStop, &QAction::triggered, [this]() {
+        if (isInputWidgetFocused()) {
+            return;
+        }
         if (m_dspController->status == ProcessingState::Running) {
             m_dspController->stopEngine();
         } else {
             m_dspController->startEngine();
         }
     });
-    audioMenu->addAction(startStopAct);
+    audioMenu->addAction(m_actStartStop);
 
-    auto muteAct = new QAction("Toggle Mute", this);
-    muteAct->setShortcut(QKeySequence(Qt::Key_M));
-    connect(muteAct, &QAction::triggered, [this]() {
-        auto focusW = QApplication::focusWidget();
-        for (QWidget* w = focusW; w; w = w->parentWidget()) {
-            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
-                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
-                return;
-            }
+    m_actMute = new QAction("Toggle Mute", this);
+    m_actMute->setShortcut(QKeySequence(Qt::Key_M));
+    connect(m_actMute, &QAction::triggered, [this]() {
+        if (isInputWidgetFocused()) {
+            return;
         }
         toggleMute();
     });
-    audioMenu->addAction(muteAct);
+    audioMenu->addAction(m_actMute);
 
     // 4. Window Menu
     auto windowMenu = bar->addMenu("&Window");
@@ -587,7 +604,7 @@ void MainWindow::setupTrayIcon() {
 
     m_trayMenu->addSeparator();
 
-    m_trayMuteAction = m_trayMenu->addAction("Mute Audio");
+    m_trayMuteAction = m_trayMenu->addAction("🔇 Mute");
     m_trayMuteAction->setCheckable(true);
     connect(m_trayMuteAction, &QAction::triggered, this, &MainWindow::toggleMute);
 
@@ -610,7 +627,7 @@ void MainWindow::updateTrayMenu() {
 
     bool muted = m_settings->getMuted(Fader::Main);
     m_trayMuteAction->setChecked(muted);
-    m_trayMuteAction->setText(muted ? "🔊 Unmute Audio" : "🔇 Mute Audio");
+    m_trayMuteAction->setText(muted ? "🔊 Unmute" : "🔇 Mute");
 
     m_trayPresetSubMenu->clear();
 
@@ -659,6 +676,7 @@ void MainWindow::selectActiveEQPreset(const QUuid& presetId) {
         m_pipeline->stages.push_back(newStage);
     }
     m_pipeline->save();
+    emit m_pipeline->pipelineChanged();
     m_dspController->applyConfig();
     updateStatusBar();
     updateTrayMenu();
@@ -705,40 +723,10 @@ void MainWindow::setupShortcuts() {
         addAction(m_actOratoryPreset);
     if (m_actAutoEqPreset)
         addAction(m_actAutoEqPreset);
-
-    // Space: Start/Stop Engine (Pause/Resume)
-    auto actStartStop = new QAction(this);
-    actStartStop->setShortcut(QKeySequence("Space"));
-    connect(actStartStop, &QAction::triggered, [this]() {
-        auto focusW = QApplication::focusWidget();
-        for (QWidget* w = focusW; w; w = w->parentWidget()) {
-            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
-                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
-                return;
-            }
-        }
-        if (m_dspController->status == ProcessingState::Running) {
-            m_dspController->stopEngine();
-        } else {
-            m_dspController->startEngine();
-        }
-    });
-    addAction(actStartStop);
-
-    // M: Toggle Mute
-    auto actMute = new QAction(this);
-    actMute->setShortcut(QKeySequence(Qt::Key_M));
-    connect(actMute, &QAction::triggered, [this]() {
-        auto focusW = QApplication::focusWidget();
-        for (QWidget* w = focusW; w; w = w->parentWidget()) {
-            if (qobject_cast<QLineEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QTextEdit*>(w) ||
-                qobject_cast<QPlainTextEdit*>(w) || qobject_cast<QAbstractButton*>(w) || qobject_cast<QComboBox*>(w)) {
-                return;
-            }
-        }
-        toggleMute();
-    });
-    addAction(actMute);
+    if (m_actStartStop)
+        addAction(m_actStartStop);
+    if (m_actMute)
+        addAction(m_actMute);
 
     // Esc Key
     auto actEsc = new QAction(this);
@@ -791,7 +779,7 @@ void MainWindow::updateMuteDisplay() {
 
     if (m_trayMuteAction) {
         m_trayMuteAction->setChecked(muted);
-        m_trayMuteAction->setText(muted ? "🔊 Unmute Audio" : "🔇 Mute Audio");
+        m_trayMuteAction->setText(muted ? "🔊 Unmute" : "🔇 Mute");
     }
 }
 
@@ -815,7 +803,7 @@ void MainWindow::updateStatusBar() {
         statePropVal = "running";
         break;
     case ProcessingState::Starting:
-        stateStr = "⏳ Starting";
+        stateStr = "🟡 Starting";
         statePropVal = "warning";
         break;
     case ProcessingState::Paused:
@@ -832,7 +820,7 @@ void MainWindow::updateStatusBar() {
         statePropVal = "inactive";
         break;
     }
-    m_statusStateLabel->setText(QString("State: %1").arg(stateStr));
+    m_statusStateLabel->setText(stateStr);
     m_statusStateLabel->setProperty("state", statePropVal);
     m_statusStateLabel->style()->unpolish(m_statusStateLabel);
     m_statusStateLabel->style()->polish(m_statusStateLabel);
@@ -1384,6 +1372,7 @@ void MainWindow::onPipelineChanged() {
     // 3. Refresh sidebar items
     refreshSidebarItems();
     updateTrayMenu();
+    updateStatusBar();
 
     // 4. Retain current active view if valid; show placeholder if deleted
     if (tagStillValid) {
