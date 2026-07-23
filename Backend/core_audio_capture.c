@@ -40,6 +40,7 @@ struct core_audio_capture {
   size_t chunk_size;
   char sample_format[16];
   bool has_sample_format;
+  bool exclusive;
 
   AudioUnit audio_unit;
   /// Per-channel SPSC ring buffer of `Float` samples. Render callback
@@ -63,6 +64,7 @@ struct core_audio_capture {
   /// `close()` can dispose the rate-change listener without redoing
   /// the lookup (which would race a default-device change).
   AudioDeviceID opened_device_id;
+  bool did_acquire_hog_mode;
   /// Watches the device's nominal sample rate so the engine can
   /// surface `.captureFormatChange` when something else flips the
   /// device rate at runtime. `nil` until `open()` resolves a device.
@@ -301,6 +303,16 @@ static void core_audio_capture_close(void* ctx) {
     rate_change_watcher_free(capture->rate_watcher);
     capture->rate_watcher = NULL;
   }
+  if (capture->did_acquire_hog_mode && capture->opened_device_id != 0) {
+    pid_t hog_pid = -1;
+    AudioObjectPropertyAddress hog_addr = {
+        .mSelector = kAudioDevicePropertyHogMode,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    AudioObjectSetPropertyData(capture->opened_device_id, &hog_addr, 0, NULL,
+                               sizeof(pid_t), &hog_pid);
+    capture->did_acquire_hog_mode = false;
+  }
   if (capture->opened_device_id != 0) {
     AudioObjectPropertyAddress alive_addr = {
         .mSelector = kAudioDevicePropertyDeviceIsAlive,
@@ -389,16 +401,56 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
     goto cleanup;
   }
 
-  // Look up the Device ID based on device name.
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       capture->device_name[0] ? capture->device_name : NULL,
       CORE_AUDIO_SCOPE_INPUT);
+  if (dev_id == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         "CoreAudio capture device not found");
+    goto cleanup;
+  }
   capture->opened_device_id = dev_id;
   if (dev_id != 0 && capture->device_name[0]) {
     // Bind the AudioUnit to the discovered HAL Device ID.
     AudioUnitSetProperty(capture->audio_unit,
                          kAudioOutputUnitProperty_CurrentDevice,
                          kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
+  }
+  if (dev_id != 0) {
+    if (capture->exclusive) {
+      pid_t current_hog_pid = -1;
+      uint32_t hog_size = sizeof(pid_t);
+      AudioObjectPropertyAddress hog_addr = {
+          .mSelector = kAudioDevicePropertyHogMode,
+          .mScope = kAudioObjectPropertyScopeGlobal,
+          .mElement = kAudioObjectPropertyElementMain};
+      if (AudioObjectGetPropertyData(dev_id, &hog_addr, 0, NULL, &hog_size,
+                                     &current_hog_pid) == noErr) {
+        if (current_hog_pid != -1 && current_hog_pid != getpid()) {
+          logger_warn(&g_logger, "Capture device is currently hogged by PID %d",
+                      (int)current_hog_pid);
+        }
+      }
+      pid_t hog_pid = getpid();
+      if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
+                                     &hog_pid) == noErr) {
+        capture->did_acquire_hog_mode = true;
+        logger_info(&g_logger,
+                    "Acquired exclusive hog mode on capture device");
+      } else {
+        logger_warn(&g_logger,
+                    "Failed to acquire exclusive hog mode on capture device");
+      }
+    } else {
+      pid_t hog_pid = -1;
+      AudioObjectPropertyAddress hog_addr = {
+          .mSelector = kAudioDevicePropertyHogMode,
+          .mScope = kAudioObjectPropertyScopeGlobal,
+          .mElement = kAudioObjectPropertyElementMain};
+      AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
+                                     &hog_pid);
+    }
   }
   if (dev_id != 0) {
     bool physical_format_set = false;
@@ -717,6 +769,7 @@ static capture_backend_t* core_audio_capture_create(
   capture->channels = config_channels;
   capture->sample_rate = (double)sample_rate;
   capture->chunk_size = chunk_size;
+  capture->exclusive = config->cfg.coreaudio.exclusive;
 
   coreaudio_sample_format_t fmt = capture_device_config_get_format(config);
   if (fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {

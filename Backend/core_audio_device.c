@@ -154,7 +154,7 @@ AudioDeviceID core_audio_device_default_id(core_audio_scope_t scope) {
 /// `nil`. Returns `nil` if the named device can't be found.
 AudioDeviceID core_audio_device_id_for_name(const char* name,
                                             core_audio_scope_t scope) {
-  if (!name || name[0] == '\0') {
+  if (!name || name[0] == '\0' || strcmp(name, "default") == 0) {
     return core_audio_device_default_id(scope);
   }
   core_audio_device_info_t devices[128];

@@ -383,9 +383,12 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
     return false;
   }
 
-  // Create large SPSC ring buffer (8 blocks headroom)
-  capture->ring = spsc_audio_ring_buffer_create(capture->chunk_size *
-                                                capture->channels * 64);
+  size_t cap_min_frames = (size_t)ceil((double)capture->sample_rate * 0.025);
+  size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
+  if (cap_frames_needed < cap_min_frames) cap_frames_needed = cap_min_frames;
+  size_t cap_ring_size = cap_frames_needed * capture->channels;
+
+  capture->ring = spsc_audio_ring_buffer_create(cap_ring_size);
   capture->decode_buf_size = capture->chunk_size * capture->channels;
   capture->decode_buf = (float*)calloc(capture->decode_buf_size, sizeof(float));
   capture->semaphore = cdsp_sem_create();
@@ -804,8 +807,13 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
     return false;
   }
 
-  playback->ring = spsc_audio_ring_buffer_create(playback->chunk_size *
-                                                 playback->channels * 64);
+  size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
+  size_t pb_prefill_frames = (size_t)(3 * playback->chunk_size);
+  size_t pb_frames_needed = pb_prefill_frames + (size_t)(4 * playback->chunk_size);
+  if (pb_frames_needed < pb_min_frames) pb_frames_needed = pb_min_frames;
+  size_t pb_ring_size = pb_frames_needed * playback->channels;
+
+  playback->ring = spsc_audio_ring_buffer_create(pb_ring_size);
   playback->encode_buf_size = playback->chunk_size * playback->channels;
   playback->encode_buf =
       (float*)calloc(playback->encode_buf_size, sizeof(float));
@@ -878,7 +886,10 @@ static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
   // Wait until there is space in the SPSC ring buffer to prevent overwriting
   // oldest data. This blocks the writer thread (with a timeout) if the consumer
   // (PipeWire thread) is slower.
-  int retries = 2000;
+  int sleep_us = (int)((double)playback->chunk_size * 1000000.0 /
+                       (double)playback->sample_rate / 2.0);
+  if (sleep_us < 100) sleep_us = 100;
+  int retries = 8;
   while (!playback->stopped &&
          spsc_audio_ring_buffer_get_available_to_read(playback->ring) +
                  requested >
@@ -891,7 +902,7 @@ static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
       return false;
     }
-    cdsp_sleep_ms(1);
+    cdsp_sleep_us(sleep_us);
   }
   if (playback->stopped) {
     if (err) {

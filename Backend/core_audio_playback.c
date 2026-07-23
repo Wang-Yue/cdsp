@@ -137,6 +137,17 @@ static OSStatus playback_callback(void* inRefCon,
     return noErr;
   }
 
+  if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
+    for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
+      if (ioData->mBuffers[b].mData) {
+        memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
+      }
+    }
+    atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
+                              memory_order_relaxed);
+    return noErr;
+  }
+
   size_t frame_count = (size_t)inNumberFrames;
 
   if (playback->is_interleaved) {
@@ -321,6 +332,12 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       playback->device_name[0] ? playback->device_name : NULL,
       CORE_AUDIO_SCOPE_OUTPUT);
+  if (dev_id == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         "CoreAudio playback device not found");
+    goto cleanup;
+  }
   playback->opened_device_id = dev_id;
   if (dev_id != 0) {
     AudioUnitSetProperty(playback->audio_unit,
@@ -329,11 +346,20 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     // Attempt to acquire Hog Mode if exclusive access is requested.
     // Hog mode prevents other processes from using the device.
     if (playback->exclusive) {
-      pid_t hog_pid = getpid();
+      pid_t current_hog_pid = -1;
+      uint32_t hog_size = sizeof(pid_t);
       AudioObjectPropertyAddress hog_addr = {
           .mSelector = kAudioDevicePropertyHogMode,
           .mScope = kAudioObjectPropertyScopeGlobal,
           .mElement = kAudioObjectPropertyElementMain};
+      if (AudioObjectGetPropertyData(dev_id, &hog_addr, 0, NULL, &hog_size,
+                                     &current_hog_pid) == noErr) {
+        if (current_hog_pid != -1 && current_hog_pid != getpid()) {
+          logger_warn(&g_logger, "Device is currently hogged by PID %d",
+                      (int)current_hog_pid);
+        }
+      }
+      pid_t hog_pid = getpid();
       if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
                                      &hog_pid) == noErr) {
         playback->did_acquire_hog_mode = true;
@@ -343,6 +369,14 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
         logger_warn(&g_logger,
                     "Failed to acquire exclusive hog mode on playback device");
       }
+    } else {
+      pid_t hog_pid = -1;
+      AudioObjectPropertyAddress hog_addr = {
+          .mSelector = kAudioDevicePropertyHogMode,
+          .mScope = kAudioObjectPropertyScopeGlobal,
+          .mElement = kAudioObjectPropertyElementMain};
+      AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
+                                     &hog_pid);
     }
     // Set the device format.
     bool physical_format_set = false;

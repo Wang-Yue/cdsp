@@ -278,8 +278,9 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       snprintf(final_cap->cfg.coreaudio.device,
                sizeof(final_cap->cfg.coreaudio.device), "%s", temp.device);
       final_cap->cfg.coreaudio.has_device = temp.has_device;
-      final_cap->cfg.coreaudio.format = temp.format;
+      final_cap->cfg.coreaudio.format = temp.has_format ? temp.format : COREAUDIO_SAMPLE_FORMAT_INVALID;
       final_cap->cfg.coreaudio.has_format = temp.has_format;
+      final_cap->cfg.coreaudio.exclusive = temp.exclusive;
       break;
 #endif
 #if defined(ENABLE_ALSA)
@@ -287,7 +288,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.alsa.channels = temp.channels;
       snprintf(final_cap->cfg.alsa.device, sizeof(final_cap->cfg.alsa.device),
                "%s", temp.device);
-      final_cap->cfg.alsa.format = temp.alsa_format;
+      final_cap->cfg.alsa.format = temp.has_alsa_format ? temp.alsa_format : ALSA_SAMPLE_FORMAT_INVALID;
       final_cap->cfg.alsa.has_format = temp.has_alsa_format;
       final_cap->cfg.alsa.stop_on_inactive = temp.stop_on_inactive;
       final_cap->cfg.alsa.has_stop_on_inactive = temp.has_stop_on_inactive;
@@ -378,7 +379,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       snprintf(final_cap->cfg.wasapi.device,
                sizeof(final_cap->cfg.wasapi.device), "%s", temp.device);
       final_cap->cfg.wasapi.has_device = temp.has_device;
-      final_cap->cfg.wasapi.format = temp.wasapi_format;
+      final_cap->cfg.wasapi.format = temp.has_wasapi_format ? temp.wasapi_format : WASAPI_SAMPLE_FORMAT_INVALID;
       final_cap->cfg.wasapi.has_format = temp.has_wasapi_format;
       final_cap->cfg.wasapi.exclusive = temp.exclusive;
       final_cap->cfg.wasapi.has_exclusive = temp.has_exclusive;
@@ -393,7 +394,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.asio.channels = temp.channels;
       snprintf(final_cap->cfg.asio.device, sizeof(final_cap->cfg.asio.device),
                "%s", temp.device);
-      final_cap->cfg.asio.format = temp.asio_format;
+      final_cap->cfg.asio.format = temp.has_asio_format ? temp.asio_format : ASIO_SAMPLE_FORMAT_INVALID;
       final_cap->cfg.asio.has_format = temp.has_asio_format;
       break;
 #endif
@@ -596,7 +597,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       snprintf(final_play->cfg.coreaudio.device,
                sizeof(final_play->cfg.coreaudio.device), "%s", temp.device);
       final_play->cfg.coreaudio.has_device = temp.has_device;
-      final_play->cfg.coreaudio.format = temp.format;
+      final_play->cfg.coreaudio.format = temp.has_format ? temp.format : COREAUDIO_SAMPLE_FORMAT_INVALID;
       final_play->cfg.coreaudio.has_format = temp.has_format;
       final_play->cfg.coreaudio.exclusive = temp.exclusive;
       final_play->cfg.coreaudio.has_exclusive = temp.has_exclusive;
@@ -607,7 +608,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.alsa.channels = temp.channels;
       snprintf(final_play->cfg.alsa.device, sizeof(final_play->cfg.alsa.device),
                "%s", temp.device);
-      final_play->cfg.alsa.format = temp.alsa_format;
+      final_play->cfg.alsa.format = temp.has_alsa_format ? temp.alsa_format : ALSA_SAMPLE_FORMAT_INVALID;
       final_play->cfg.alsa.has_format = temp.has_alsa_format;
       final_play->cfg.alsa.output_dsd =
           temp.has_output_dsd ? temp.output_dsd : false;
@@ -668,7 +669,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       snprintf(final_play->cfg.wasapi.device,
                sizeof(final_play->cfg.wasapi.device), "%s", temp.device);
       final_play->cfg.wasapi.has_device = temp.has_device;
-      final_play->cfg.wasapi.format = temp.wasapi_format;
+      final_play->cfg.wasapi.format = temp.has_wasapi_format ? temp.wasapi_format : WASAPI_SAMPLE_FORMAT_INVALID;
       final_play->cfg.wasapi.has_format = temp.has_wasapi_format;
       final_play->cfg.wasapi.exclusive = temp.exclusive;
       final_play->cfg.wasapi.has_exclusive = temp.has_exclusive;
@@ -681,7 +682,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.asio.channels = temp.channels;
       snprintf(final_play->cfg.asio.device, sizeof(final_play->cfg.asio.device),
                "%s", temp.device);
-      final_play->cfg.asio.format = temp.asio_format;
+      final_play->cfg.asio.format = temp.has_asio_format ? temp.asio_format : ASIO_SAMPLE_FORMAT_INVALID;
       final_play->cfg.asio.has_format = temp.has_asio_format;
       final_play->cfg.asio.output_dsd =
           temp.has_output_dsd ? temp.output_dsd : false;

@@ -2,6 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include "wasapi_capabilities.h"
+#include "wasapi_device.h"
 
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
@@ -42,11 +43,6 @@ int wasapi_capabilities_available_device_names(bool is_capture,
   UINT count = 0;
   IMMDeviceCollection_GetCount(collection, &count);
   int matched = 0;
-
-  // Add default device first
-  if (matched < max_names) {
-    snprintf(out_names[matched++], 256, "default");
-  }
 
   for (UINT i = 0; i < count && matched < max_names; i++) {
     IMMDevice* dev = NULL;
@@ -115,9 +111,48 @@ bool wasapi_capabilities_default_device_name(bool is_capture, char* out_name,
 
 int wasapi_capabilities_channel_count(const char* device_name,
                                       bool is_capture) {
-  (void)device_name;
-  (void)is_capture;
-  return 2;  // Default fallback
+  HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+  bool com_initialized = SUCCEEDED(init_hr);
+
+  IMMDeviceEnumerator* enumerator = NULL;
+  IMMDevice* device = NULL;
+  IAudioClient* client = NULL;
+  WAVEFORMATEX* wfx = NULL;
+  int channels = 2;
+
+  HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+                                &IID_IMMDeviceEnumerator, (void**)&enumerator);
+  if (FAILED(hr)) goto cleanup;
+
+  device = wasapi_find_device_by_name(enumerator, device_name, is_capture);
+  if (!device) goto cleanup;
+
+  hr = IMMDevice_Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL,
+                          (void**)&client);
+  if (FAILED(hr)) goto cleanup;
+
+  hr = IAudioClient_GetMixFormat(client, &wfx);
+  if (SUCCEEDED(hr) && wfx) {
+    channels = wfx->nChannels;
+    CoTaskMemFree(wfx);
+  }
+
+cleanup:
+  SAFE_RELEASE(client);
+  SAFE_RELEASE(device);
+  SAFE_RELEASE(enumerator);
+  if (com_initialized) {
+    CoUninitialize();
+  }
+  return channels;
+}
+
+static bool wasapi_is_format_supported_exclusive_with_quirks(
+    IAudioClient* client, const WAVEFORMATEXTENSIBLE* wfx_ext) {
+  WAVEFORMATEX std_wfx = {0};
+  bool use_ext = false;
+  return wasapi_check_format_supported(client, AUDCLNT_SHAREMODE_EXCLUSIVE,
+                                       wfx_ext, &std_wfx, &use_ext);
 }
 
 audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
@@ -173,16 +208,33 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
     goto error_cleanup;
   }
 
-  snprintf(desc->name, sizeof(desc->name), "%s", device_name);
+  if (device_name && device_name[0] != '\0') {
+    snprintf(desc->name, sizeof(desc->name), "%s", device_name);
+  } else {
+    IPropertyStore* prop_store = NULL;
+    if (SUCCEEDED(IMMDevice_OpenPropertyStore(device, STGM_READ, &prop_store))) {
+      PROPVARIANT var;
+      PropVariantInit(&var);
+      if (SUCCEEDED(IPropertyStore_GetValue(prop_store, &PKEY_Device_FriendlyName, &var)) && var.vt == VT_LPWSTR) {
+        wcstombs(desc->name, var.pwszVal, sizeof(desc->name) - 1);
+        desc->name[sizeof(desc->name) - 1] = '\0';
+        PropVariantClear(&var);
+      }
+      SAFE_RELEASE(prop_store);
+    }
+    if (desc->name[0] == '\0') {
+      snprintf(desc->name, sizeof(desc->name), "default");
+    }
+  }
 
   // Define the set of channels, rates, and formats we want to probe.
-  // We use this trial-and-error approach because WASAPI does not provide
-  // a direct API to query all supported configurations.
-  const int PROBE_CHANNELS[] = {2, 8};
+  const int PROBE_CHANNELS[] = {1, 2, 4, 6, 8, 16, 32};
   const size_t PROBE_CHANNELS_COUNT =
       sizeof(PROBE_CHANNELS) / sizeof(PROBE_CHANNELS[0]);
 
-  const int PROBE_RATES[] = {44100, 48000, 88200, 96000, 192000};
+  const int PROBE_RATES[] = {
+      48000, 96000, 192000, 384000, 768000, 44100, 88200,  176400, 352800, 705600,
+      24000, 12000, 6000,   22050, 11025,  5512,  16000,  8000,   32000,  64000};
   const size_t PROBE_RATES_COUNT = sizeof(PROBE_RATES) / sizeof(PROBE_RATES[0]);
 
   const char* PROBE_FORMAT_NAMES[] = {"S16", "S24", "S32", "F32"};
@@ -192,15 +244,47 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   const size_t PROBE_FORMATS_COUNT =
       sizeof(PROBE_FORMATS) / sizeof(PROBE_FORMATS[0]);
 
-  desc->capability_sets_count = 1;
+  // Check if Shared mode format is available via GetMixFormat
+  WAVEFORMATEX* mix_wfx = NULL;
+  bool has_shared = false;
+  if (SUCCEEDED(IAudioClient_GetMixFormat(client, &mix_wfx)) && mix_wfx) {
+    has_shared = true;
+  }
+
+  size_t total_sets = has_shared ? 2 : 1;
+  desc->capability_sets_count = total_sets;
   desc->capability_sets =
-      (device_capability_set_t*)calloc(1, sizeof(device_capability_set_t));
+      (device_capability_set_t*)calloc(total_sets, sizeof(device_capability_set_t));
   if (!desc->capability_sets) {
+    if (mix_wfx) CoTaskMemFree(mix_wfx);
     free_audio_device_descriptor(desc);
     goto error_cleanup;
   }
 
-  device_capability_set_t* set = &desc->capability_sets[0];
+  size_t exclusive_set_idx = 0;
+  if (has_shared) {
+    device_capability_set_t* shared_set = &desc->capability_sets[0];
+    shared_set->capabilities_count = 1;
+    shared_set->capabilities = (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
+    if (shared_set->capabilities) {
+      shared_set->capabilities[0].channels = mix_wfx->nChannels;
+      shared_set->capabilities[0].samplerates_count = 1;
+      shared_set->capabilities[0].samplerates = (samplerate_capability_t*)calloc(1, sizeof(samplerate_capability_t));
+      if (shared_set->capabilities[0].samplerates) {
+        shared_set->capabilities[0].samplerates[0].samplerate = mix_wfx->nSamplesPerSec;
+        shared_set->capabilities[0].samplerates[0].formats_count = 1;
+        shared_set->capabilities[0].samplerates[0].formats = (char**)calloc(1, sizeof(char*));
+        if (shared_set->capabilities[0].samplerates[0].formats) {
+          shared_set->capabilities[0].samplerates[0].formats[0] = strdup("F32");
+        }
+      }
+    }
+    CoTaskMemFree(mix_wfx);
+    mix_wfx = NULL;
+    exclusive_set_idx = 1;
+  }
+
+  device_capability_set_t* set = &desc->capability_sets[exclusive_set_idx];
   set->capabilities = (channel_capability_t*)calloc(
       PROBE_CHANNELS_COUNT, sizeof(channel_capability_t));
   if (!set->capabilities) {
@@ -210,7 +294,7 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
 
   size_t valid_channels_count = 0;
 
-  // Probe each channel count.
+  // Probe each channel count for Exclusive mode
   for (size_t c_idx = 0; c_idx < PROBE_CHANNELS_COUNT; c_idx++) {
     int channels = PROBE_CHANNELS[c_idx];
     channel_capability_t* chan_cap = &set->capabilities[valid_channels_count];
@@ -242,31 +326,39 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
       for (size_t f_idx = 0; f_idx < PROBE_FORMATS_COUNT; f_idx++) {
         wasapi_sample_format_t fmt = PROBE_FORMATS[f_idx];
 
-        // Configure WAVEFORMATEXTENSIBLE for probing.
         WAVEFORMATEXTENSIBLE wfx = {0};
         wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
         wfx.Format.nChannels = channels;
         wfx.Format.nSamplesPerSec = rate;
-        wfx.Format.wBitsPerSample = (fmt == WASAPI_SAMPLE_FORMAT_S16) ? 16 : 32;
-        wfx.Format.nBlockAlign = (wfx.Format.wBitsPerSample / 8) * channels;
-        wfx.Format.nAvgBytesPerSec =
-            wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
         wfx.Format.cbSize = 22;
-        wfx.Samples.wValidBitsPerSample =
-            (fmt == WASAPI_SAMPLE_FORMAT_S24) ? 24 : wfx.Format.wBitsPerSample;
-        wfx.dwChannelMask =
-            (channels == 2) ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT) : 0;
+        wfx.dwChannelMask = wasapi_get_default_channel_mask(channels);
         wfx.SubFormat = (fmt == WASAPI_SAMPLE_FORMAT_F32)
                             ? KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
                             : KSDATAFORMAT_SUBTYPE_PCM;
 
-        WAVEFORMATEX* closest = NULL;
-        // Query WASAPI if the format is supported in shared mode.
-        hr = IAudioClient_IsFormatSupported(client, AUDCLNT_SHAREMODE_SHARED,
-                                            (WAVEFORMATEX*)&wfx, &closest);
-        if (closest) CoTaskMemFree(closest);
+        bool is_supported = false;
+        if (fmt == WASAPI_SAMPLE_FORMAT_S24) {
+          wfx.Format.wBitsPerSample = 24;
+          wfx.Samples.wValidBitsPerSample = 24;
+          wfx.Format.nBlockAlign = 3 * channels;
+          wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
+          is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+          if (!is_supported) {
+            wfx.Format.wBitsPerSample = 32;
+            wfx.Samples.wValidBitsPerSample = 24;
+            wfx.Format.nBlockAlign = 4 * channels;
+            wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
+            is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+          }
+        } else {
+          wfx.Format.wBitsPerSample = (fmt == WASAPI_SAMPLE_FORMAT_S16) ? 16 : 32;
+          wfx.Samples.wValidBitsPerSample = wfx.Format.wBitsPerSample;
+          wfx.Format.nBlockAlign = (wfx.Format.wBitsPerSample / 8) * channels;
+          wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
+          is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+        }
 
-        if (SUCCEEDED(hr)) {
+        if (is_supported) {
           rate_cap->formats[valid_formats_count++] =
               strdup(PROBE_FORMAT_NAMES[f_idx]);
         }
@@ -339,6 +431,15 @@ IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
     return NULL;
   }
 
+  if (device_name && device_name[0] == '{') {
+    wchar_t w_id[256] = {0};
+    mbstowcs(w_id, device_name, 255);
+    hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
+    if (SUCCEEDED(hr) && device) {
+      return device;
+    }
+  }
+
   IMMDeviceCollection* collection = NULL;
   hr = IMMDeviceEnumerator_EnumAudioEndpoints(enumerator,
                                               is_capture ? eCapture : eRender,
@@ -350,7 +451,7 @@ IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
   for (UINT i = 0; i < count; i++) {
     IMMDevice* dev = NULL;
     IMMDeviceCollection_Item(collection, i, &dev);
-    bool matched = false;
+    if (!dev) continue;
 
     IPropertyStore* properties = NULL;
     HRESULT hr_prop = IMMDevice_OpenPropertyStore(dev, STGM_READ, &properties);
@@ -363,35 +464,30 @@ IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
         char friendly_name[256] = {0};
         wcstombs(friendly_name, var.pwszVal, sizeof(friendly_name) - 1);
         friendly_name[sizeof(friendly_name) - 1] = '\0';
-        if (strstr(friendly_name, device_name) != NULL) {
-          matched = true;
+        if (strcmp(friendly_name, device_name) == 0) {
+          device = dev;
+          PropVariantClear(&var);
+          SAFE_RELEASE(properties);
+          break;
         }
         PropVariantClear(&var);
       }
       SAFE_RELEASE(properties);
     }
-
-    if (!matched) {
-      LPWSTR id = NULL;
-      IMMDevice_GetId(dev, &id);
-      if (id) {
-        char dev_id_char[256];
-        wcstombs(dev_id_char, id, sizeof(dev_id_char) - 1);
-        dev_id_char[sizeof(dev_id_char) - 1] = '\0';
-        if (strstr(dev_id_char, device_name) != NULL) {
-          matched = true;
-        }
-        CoTaskMemFree(id);
-      }
-    }
-
-    if (matched) {
-      device = dev;
-      break;
-    }
     IMMDevice_Release(dev);
   }
   IMMDeviceCollection_Release(collection);
+
+  // If friendly name lookup failed and device_name was not already tried as GUID
+  if (!device && device_name && device_name[0] != '{') {
+    wchar_t w_id[256] = {0};
+    mbstowcs(w_id, device_name, 255);
+    hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
+    if (SUCCEEDED(hr) && device) {
+      return device;
+    }
+  }
+
   return device;
 }
 

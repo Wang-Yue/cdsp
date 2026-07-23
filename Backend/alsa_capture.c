@@ -18,6 +18,7 @@ static const logger_t g_logger = {"dsp.backend.alsa"};
 struct alsa_capture {
   char device_name[256];
   int sample_rate;
+  int capture_samplerate;
   int channels;
   int chunk_size;
 
@@ -294,7 +295,7 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   int rc;
   // Open the ALSA PCM capture device
   rc = snd_pcm_open(&capture->pcm, capture->device_name, SND_PCM_STREAM_CAPTURE,
-                    0);
+                    SND_PCM_NONBLOCK);
   if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -324,8 +325,8 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   }
 
   // Probe supported formats, trying requested format first, then falling back
-  // to defaults. We prefer float, then S32, S24_3, S16.
-  snd_pcm_format_t formats[5];
+  // to defaults.
+  snd_pcm_format_t formats[6];
   size_t num_formats = 0;
   if (capture->has_format) {
     if (capture->requested_format == ALSA_SAMPLE_FORMAT_S16_LE) {
@@ -348,11 +349,13 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
       num_formats = 1;
     }
   } else {
-    formats[0] = SND_PCM_FORMAT_FLOAT_LE;
-    formats[1] = SND_PCM_FORMAT_S32_LE;
-    formats[2] = SND_PCM_FORMAT_S24_3LE;
+    formats[0] = SND_PCM_FORMAT_S32_LE;
+    formats[1] = SND_PCM_FORMAT_S24_3LE;
+    formats[2] = SND_PCM_FORMAT_S24_LE;
     formats[3] = SND_PCM_FORMAT_S16_LE;
-    num_formats = 4;
+    formats[4] = SND_PCM_FORMAT_FLOAT_LE;
+    formats[5] = SND_PCM_FORMAT_FLOAT64_LE;
+    num_formats = 6;
   }
 
   bool format_ok = false;
@@ -391,25 +394,24 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set period size (chunk size) near target
-  snd_pcm_uframes_t period_size = capture->chunk_size;
-  rc = snd_pcm_hw_params_set_period_size_near(capture->pcm, params,
-                                              &period_size, &dir);
-  if (rc < 0) {
+  double resampling_ratio = 1.0;
+  if (capture->capture_samplerate > 0 && capture->sample_rate > 0) {
+    resampling_ratio = (double)capture->sample_rate / (double)capture->capture_samplerate;
+  }
+
+  snd_pcm_uframes_t buffer_size = 0;
+  if (alsa_apply_buffer_size(capture->pcm, params, capture->chunk_size, resampling_ratio, &buffer_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
+                         "Failed to set ALSA buffer size");
     goto error_cleanup;
   }
 
-  // Set buffer size to 4x period size to avoid xruns
-  snd_pcm_uframes_t buffer_size = period_size * 4;
-  rc = snd_pcm_hw_params_set_buffer_size_near(capture->pcm, params,
-                                              &buffer_size);
-  if (rc < 0) {
+  snd_pcm_uframes_t period_size = 0;
+  if (alsa_apply_period_size(capture->pcm, params, buffer_size, &period_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
+                         "Failed to set ALSA period size");
     goto error_cleanup;
   }
 
@@ -427,9 +429,9 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   snd_pcm_sw_params_alloca(&sw_params);
   rc = snd_pcm_sw_params_current(capture->pcm, sw_params);
   if (rc >= 0) {
+    snd_pcm_uframes_t capture_avail_min = (snd_pcm_uframes_t)round((double)capture->chunk_size / resampling_ratio);
     snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
-    snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params,
-                                    capture->chunk_size);
+    snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params, capture_avail_min);
     rc = snd_pcm_sw_params(capture->pcm, sw_params);
     if (rc < 0) {
       logger_warn(&g_logger, "Failed to set ALSA software parameters: %s",
@@ -476,6 +478,10 @@ error_cleanup:
   if (capture->pcm) {
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
+  }
+  if (capture->interleaved_buf) {
+    free(capture->interleaved_buf);
+    capture->interleaved_buf = NULL;
   }
   pthread_mutex_unlock(&g_alsa_mutex);
   return false;
@@ -545,7 +551,11 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     // Attempt recovery on error (e.g., EPIPE for overrun) and retry read up to
     // 3 times
     for (int retry = 0; retry < 3 && rc < 0; retry++) {
-      rc = snd_pcm_recover(capture->pcm, rc, 0);
+      if (rc == -ESTRPIPE || snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
+        rc = alsa_recover_suspended_pcm(capture->pcm, "CAP");
+      } else {
+        rc = snd_pcm_recover(capture->pcm, rc, 0);
+      }
       if (rc < 0) {
         snd_pcm_prepare(capture->pcm);
       }
@@ -766,6 +776,7 @@ static capture_backend_t* alsa_capture_create(
            config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
 
   capture->sample_rate = sample_rate;
+  capture->capture_samplerate = sample_rate;
   capture->channels = config->cfg.alsa.channels;
   capture->chunk_size = chunk_size;
 

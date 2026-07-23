@@ -180,20 +180,12 @@ static void* wasapi_playback_thread_func(void* arg) {
     if (!playback->exclusive || playback->polling) {
       HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
       if (FAILED(hr)) {
-        if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+        if (playback->has_pending_rate_change ||
+            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
             hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
-          double mix_rate = 0.0;
-          for (int i = 0; i < 60; i++) {
-            mix_rate =
-                wasapi_device_get_current_mix_rate(playback->device, false);
-            if (mix_rate > 0.0) break;
-            cdsp_sleep_ms(50);
-          }
-          if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
-            playback->pending_rate = mix_rate;
-            playback->has_pending_rate_change = true;
-          }
+          playback->has_pending_rate_change = true;
+          break;
         }
         continue;
       }
@@ -212,20 +204,12 @@ static void* wasapi_playback_thread_func(void* arg) {
     HRESULT hr =
         IAudioRenderClient_GetBuffer(playback->render_client, to_write, &data);
     if (FAILED(hr)) {
-      if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+      if (playback->has_pending_rate_change ||
+          hr == AUDCLNT_E_DEVICE_INVALIDATED ||
           hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
           hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
-        double mix_rate = 0.0;
-        for (int i = 0; i < 60; i++) {
-          mix_rate =
-              wasapi_device_get_current_mix_rate(playback->device, false);
-          if (mix_rate > 0.0) break;
-          cdsp_sleep_ms(50);
-        }
-        if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
-          playback->pending_rate = mix_rate;
-          playback->has_pending_rate_change = true;
-        }
+        playback->has_pending_rate_change = true;
+        break;
       }
     }
     if (SUCCEEDED(hr) && data) {
@@ -241,9 +225,15 @@ static void* wasapi_playback_thread_func(void* arg) {
           (ring_avail < to_write) ? ring_avail : to_write;
 
       if (to_write * playback->channels > playback->transfer_buf_cap) {
-        playback->transfer_buf_cap = to_write * playback->channels;
-        playback->transfer_buf = (float*)realloc(
-            playback->transfer_buf, playback->transfer_buf_cap * sizeof(float));
+        size_t new_cap = to_write * playback->channels;
+        float* new_buf = (float*)realloc(playback->transfer_buf,
+                                         new_cap * sizeof(float));
+        if (!new_buf) {
+          IAudioRenderClient_ReleaseBuffer(playback->render_client, 0, 0);
+          continue;
+        }
+        playback->transfer_buf = new_buf;
+        playback->transfer_buf_cap = new_cap;
       }
 
       size_t consumed = spsc_audio_ring_buffer_consume(
@@ -327,9 +317,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   wfx.Format.nChannels = playback->channels;
   wfx.Format.nSamplesPerSec = playback->sample_rate;
   wfx.Format.cbSize = 22;
-  wfx.dwChannelMask = (playback->channels == 2)
-                          ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT)
-                          : 0;
+  wfx.dwChannelMask = wasapi_get_default_channel_mask(playback->channels);
 
   bool format_found = false;
   WAVEFORMATEX std_wfx = {0};
@@ -409,6 +397,90 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
           playback->valid_bits = 24;
           playback->is_float = false;
           format_found = true;
+        }
+      }
+    } else if (playback->format == WASAPI_SAMPLE_FORMAT_INVALID) {
+      static const wasapi_sample_format_t probe_formats[] = {
+          WASAPI_SAMPLE_FORMAT_S32, WASAPI_SAMPLE_FORMAT_S24,
+          WASAPI_SAMPLE_FORMAT_S16, WASAPI_SAMPLE_FORMAT_F32};
+      for (size_t i = 0; i < sizeof(probe_formats) / sizeof(probe_formats[0]);
+           i++) {
+        wasapi_sample_format_t fmt = probe_formats[i];
+        if (fmt == WASAPI_SAMPLE_FORMAT_S32) {
+          wfx.Format.wBitsPerSample = 32;
+          wfx.Format.nBlockAlign = 4 * playback->channels;
+          wfx.Format.nAvgBytesPerSec =
+              playback->sample_rate * wfx.Format.nBlockAlign;
+          wfx.Samples.wValidBitsPerSample = 32;
+          wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+          if (wasapi_check_format_supported(playback->client, mode, &wfx,
+                                            &std_wfx, &use_ext)) {
+            playback->bits_per_sample = 32;
+            playback->valid_bits = 32;
+            playback->is_float = false;
+            format_found = true;
+            break;
+          }
+        } else if (fmt == WASAPI_SAMPLE_FORMAT_S24) {
+          wfx.Format.wBitsPerSample = 24;
+          wfx.Format.nBlockAlign = 3 * playback->channels;
+          wfx.Format.nAvgBytesPerSec =
+              playback->sample_rate * wfx.Format.nBlockAlign;
+          wfx.Samples.wValidBitsPerSample = 24;
+          wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+          if (wasapi_check_format_supported(playback->client, mode, &wfx,
+                                            &std_wfx, &use_ext)) {
+            playback->bits_per_sample = 24;
+            playback->valid_bits = 24;
+            playback->is_float = false;
+            format_found = true;
+            break;
+          } else {
+            wfx.Format.wBitsPerSample = 32;
+            wfx.Format.nBlockAlign = 4 * playback->channels;
+            wfx.Format.nAvgBytesPerSec =
+                playback->sample_rate * wfx.Format.nBlockAlign;
+            wfx.Samples.wValidBitsPerSample = 24;
+            wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+            if (wasapi_check_format_supported(playback->client, mode, &wfx,
+                                              &std_wfx, &use_ext)) {
+              playback->bits_per_sample = 32;
+              playback->valid_bits = 24;
+              playback->is_float = false;
+              format_found = true;
+              break;
+            }
+          }
+        } else if (fmt == WASAPI_SAMPLE_FORMAT_S16) {
+          wfx.Format.wBitsPerSample = 16;
+          wfx.Format.nBlockAlign = 2 * playback->channels;
+          wfx.Format.nAvgBytesPerSec =
+              playback->sample_rate * wfx.Format.nBlockAlign;
+          wfx.Samples.wValidBitsPerSample = 16;
+          wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+          if (wasapi_check_format_supported(playback->client, mode, &wfx,
+                                            &std_wfx, &use_ext)) {
+            playback->bits_per_sample = 16;
+            playback->valid_bits = 16;
+            playback->is_float = false;
+            format_found = true;
+            break;
+          }
+        } else if (fmt == WASAPI_SAMPLE_FORMAT_F32) {
+          wfx.Format.wBitsPerSample = 32;
+          wfx.Format.nBlockAlign = 4 * playback->channels;
+          wfx.Format.nAvgBytesPerSec =
+              playback->sample_rate * wfx.Format.nBlockAlign;
+          wfx.Samples.wValidBitsPerSample = 32;
+          wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+          if (wasapi_check_format_supported(playback->client, mode, &wfx,
+                                            &std_wfx, &use_ext)) {
+            playback->bits_per_sample = 32;
+            playback->valid_bits = 32;
+            playback->is_float = true;
+            format_found = true;
+            break;
+          }
         }
       }
     }
@@ -706,6 +778,15 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       UINT32 padding = 0;
       HRESULT hr = IAudioClient_GetCurrentPadding(playback->client, &padding);
       if (FAILED(hr)) {
+        if (playback->has_pending_rate_change ||
+            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+            hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+            hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+          playback->has_pending_rate_change = true;
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+          return false;
+        }
         if (err)
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Failed to get padding");
@@ -731,21 +812,15 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
         frames_written += to_write;
       } else {
-        if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+        if (playback->has_pending_rate_change ||
+            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
             hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING ||
             hr == AUDCLNT_E_BUFFER_ERROR) {
-          double mix_rate = 0.0;
-          for (int i = 0; i < 60; i++) {
-            mix_rate =
-                wasapi_device_get_current_mix_rate(playback->device, false);
-            if (mix_rate > 0.0) break;
-            cdsp_sleep_ms(50);
-          }
-          if (mix_rate > 0.0 && mix_rate != (double)playback->sample_rate) {
-            playback->pending_rate = mix_rate;
-            playback->has_pending_rate_change = true;
-          }
+          playback->has_pending_rate_change = true;
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+          return false;
         }
         logger_error(&g_wasapi_logger,
                      "IAudioRenderClient_GetBuffer failed: hr=0x%08lX "
@@ -765,6 +840,15 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
     if (!playback->started && !playback->polling) {
       HRESULT hr = IAudioClient_Start(playback->client);
       if (FAILED(hr)) {
+        if (playback->has_pending_rate_change ||
+            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+            hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+            hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+          playback->has_pending_rate_change = true;
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+          return false;
+        }
         if (err) {
           char msg[256];
           snprintf(msg, sizeof(msg),
@@ -795,7 +879,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       for (size_t f = 0; f < remaining_frames; f++) {
         for (int c = 0; c < playback->channels; c++) {
           playback->write_buf[f * playback->channels + c] =
-              (float)audio_chunk_get_channel(chunk, c)[frames_written + f];
+              audio_chunk_get_channel(chunk, c)[frames_written + f];
         }
       }
 
@@ -857,7 +941,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
     for (size_t f = 0; f < total_frames; f++) {
       for (int c = 0; c < playback->channels; c++) {
         playback->write_buf[f * playback->channels + c] =
-            (float)audio_chunk_get_channel(chunk, c)[f];
+            audio_chunk_get_channel(chunk, c)[f];
       }
     }
 
@@ -866,7 +950,15 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
     DWORD start_time = GetTickCount();
 
     while (written < requested) {
-      if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+      if (playback->has_pending_rate_change ||
+          !atomic_load_explicit(&playback->thread_running, memory_order_acquire) ||
+          atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+        if (playback->has_pending_rate_change) {
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+          }
+          return false;
+        }
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Playback stream stopped");
@@ -982,11 +1074,8 @@ static bool wasapi_playback_get_pending_rate_change(void* ctx,
                 playback->pending_rate, playback->sample_rate);
     double rate = playback->pending_rate;
     if (rate == 0.0) {
-      for (int i = 0; i < 60; i++) {
+      for (int i = 0; i < 100; i++) {
         rate = wasapi_device_get_current_mix_rate(playback->device, false);
-        logger_info(&g_wasapi_logger,
-                    "get_pending_rate_change: query attempt %d returned %f", i,
-                    rate);
         if (rate > 0.0) break;
         cdsp_sleep_ms(50);
       }
@@ -994,7 +1083,7 @@ static bool wasapi_playback_get_pending_rate_change(void* ctx,
     playback->has_pending_rate_change = false;
     logger_info(&g_wasapi_logger,
                 "get_pending_rate_change evaluated final rate=%f", rate);
-    if (rate > 0.0 && rate != (double)playback->sample_rate) {
+    if (rate > 0.0) {
       if (out_rate) {
         *out_rate = rate;
       }

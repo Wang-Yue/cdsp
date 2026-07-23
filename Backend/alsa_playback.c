@@ -52,7 +52,7 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   }
   int rc;
   rc = snd_pcm_open(&playback->pcm, playback->device_name,
-                    SND_PCM_STREAM_PLAYBACK, 0);
+                    SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
   if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -121,11 +121,13 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
       num_formats = 1;
     }
   } else {
-    formats[0] = SND_PCM_FORMAT_FLOAT_LE;
-    formats[1] = SND_PCM_FORMAT_S32_LE;
-    formats[2] = SND_PCM_FORMAT_S24_3LE;
+    formats[0] = SND_PCM_FORMAT_S32_LE;
+    formats[1] = SND_PCM_FORMAT_S24_3LE;
+    formats[2] = SND_PCM_FORMAT_S24_LE;
     formats[3] = SND_PCM_FORMAT_S16_LE;
-    num_formats = 4;
+    formats[4] = SND_PCM_FORMAT_FLOAT_LE;
+    formats[5] = SND_PCM_FORMAT_FLOAT64_LE;
+    num_formats = 6;
   }
   bool format_ok = false;
   for (size_t i = 0; i < num_formats; i++) {
@@ -162,23 +164,19 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  snd_pcm_uframes_t period_size = playback->chunk_size;
-  rc = snd_pcm_hw_params_set_period_size_near(playback->pcm, params,
-                                              &period_size, &dir);
-  if (rc < 0) {
+  snd_pcm_uframes_t buffer_size = 0;
+  if (alsa_apply_buffer_size(playback->pcm, params, playback->chunk_size, 1.0, &buffer_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
+                         "Failed to set ALSA buffer size");
     goto error_cleanup;
   }
 
-  snd_pcm_uframes_t buffer_size = period_size * 4;
-  rc = snd_pcm_hw_params_set_buffer_size_near(playback->pcm, params,
-                                              &buffer_size);
-  if (rc < 0) {
+  snd_pcm_uframes_t period_size = 0;
+  if (alsa_apply_period_size(playback->pcm, params, buffer_size, &period_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
+                         "Failed to set ALSA period size");
     goto error_cleanup;
   }
 
@@ -470,7 +468,11 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
   snd_pcm_sframes_t rc =
       snd_pcm_writei(playback->pcm, playback->interleaved_buf, frames_to_write);
   if (rc < 0) {
-    rc = snd_pcm_recover(playback->pcm, rc, 0);
+    if (rc == -ESTRPIPE || snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
+      rc = alsa_recover_suspended_pcm(playback->pcm, "PB");
+    } else {
+      rc = snd_pcm_recover(playback->pcm, rc, 0);
+    }
     if (rc >= 0) {
       rc = snd_pcm_writei(playback->pcm, playback->interleaved_buf,
                           frames_to_write);

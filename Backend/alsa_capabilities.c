@@ -55,6 +55,9 @@ int alsa_capabilities_available_device_names(bool is_capture,
 audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
+  if (!device_name || device_name[0] == '\0') {
+    device_name = "default";
+  }
   pthread_mutex_lock(&g_alsa_mutex);
   audio_device_descriptor_t* desc =
       (audio_device_descriptor_t*)calloc(1, sizeof(audio_device_descriptor_t));
@@ -163,11 +166,7 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
         size_t fmt_idx = 0;
 
         for (size_t f = 0; f < test_formats_count; f++) {
-          // Reset params and constrain channel -> rate -> format
-          snd_pcm_hw_params_any(pcm, params);
-          snd_pcm_hw_params_set_channels(pcm, params, ch);
-          snd_pcm_hw_params_set_rate(pcm, params, test_rate, 0);
-          if (snd_pcm_hw_params_set_format(pcm, params, test_formats[f]) >= 0) {
+          if (snd_pcm_hw_params_test_format(pcm, params, test_formats[f]) == 0) {
             // Deduplicate format names (just in case)
             bool duplicate = false;
             for (size_t d = 0; d < fmt_idx; d++) {

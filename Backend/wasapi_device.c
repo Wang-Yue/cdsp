@@ -54,8 +54,7 @@ static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
   CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
   logger_debug(&g_wasapi_logger, "session_OnSessionDisconnected called, reason=%d",
               (int)DisconnectReason);
-  if (DisconnectReason == DisconnectReasonFormatChanged ||
-      DisconnectReason == DisconnectReasonServerShutdown) {
+  if (DisconnectReason == DisconnectReasonFormatChanged) {
     if (self->callback) {
       self->callback(self->parent, 0.0);
     }
@@ -103,8 +102,18 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
   }
 
   memcpy(final_wfx, mix_wfx, full_size);
-  final_wfx->nSamplesPerSec = target_sample_rate;
-  final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
+  if (target_sample_rate > 0 && target_sample_rate != (int)mix_wfx->nSamplesPerSec) {
+    final_wfx->nSamplesPerSec = target_sample_rate;
+    final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
+    WAVEFORMATEX* closest = NULL;
+    HRESULT sup_hr = IAudioClient_IsFormatSupported(client, AUDCLNT_SHAREMODE_SHARED, final_wfx, &closest);
+    if (closest) CoTaskMemFree(closest);
+    if (FAILED(sup_hr) || sup_hr == S_FALSE) {
+      /* Shared mode target rate not supported by audio engine; revert to OS mix format rate */
+      final_wfx->nSamplesPerSec = mix_wfx->nSamplesPerSec;
+      final_wfx->nAvgBytesPerSec = mix_wfx->nAvgBytesPerSec;
+    }
+  }
 
   *out_bits_per_sample = final_wfx->wBitsPerSample;
   if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
@@ -242,6 +251,26 @@ bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
   }
 
   return false;
+}
+
+DWORD wasapi_get_default_channel_mask(int channels) {
+  switch (channels) {
+    case 1:
+      return SPEAKER_FRONT_CENTER;
+    case 2:
+      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT;
+    case 4:
+      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
+    case 6:
+      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
+             SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
+    case 8:
+      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
+             SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT |
+             SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT;
+    default:
+      return 0;
+  }
 }
 
 #endif // ENABLE_WASAPI

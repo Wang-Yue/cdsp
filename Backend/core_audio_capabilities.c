@@ -17,16 +17,33 @@
 ///
 /// Public so room-correction tooling can pre-render an FIR per
 /// rate, then pick the matching one at engine-config time.
-const int CORE_AUDIO_STANDARD_RATES[15] = {
-    8000,  11025,  16000,  22050,  32000,  44100,  48000, 88200,
-    96000, 176400, 192000, 352800, 384000, 705600, 768000};
-const size_t CORE_AUDIO_STANDARD_RATES_COUNT = 15;
+const int CORE_AUDIO_STANDARD_RATES[17] = {
+    5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
+    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
+const size_t CORE_AUDIO_STANDARD_RATES_COUNT = 17;
+
+static int cmp_int(const void* a, const void* b) {
+  int ia = *(const int*)a;
+  int ib = *(const int*)b;
+  return (ia > ib) - (ia < ib);
+}
+
+static int cmp_str(const void* a, const void* b) {
+  return strcmp((const char*)a, (const char*)b);
+}
 
 // MARK: Device enumeration
-//
-// Thin wrappers over `CoreAudioDevice` so the UI doesn't need to
-// touch HAL types. Anything beyond a name lives in the capability
-// descriptor (`describe`) below.
+
+bool core_audio_capabilities_default_device_name(bool is_capture, char* out_name,
+                                             size_t max_len) {
+  core_audio_scope_t scope =
+      is_capture ? CORE_AUDIO_SCOPE_INPUT : CORE_AUDIO_SCOPE_OUTPUT;
+  AudioDeviceID default_id = core_audio_device_default_id(scope);
+  if (default_id == kAudioObjectUnknown) {
+    return false;
+  }
+  return core_audio_device_name(default_id, out_name, max_len);
+}
 
 /// Names of all devices visible to the system in the requested
 /// direction. Empty when no devices match (no mics connected, no
@@ -253,6 +270,9 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
     }
   }
 
+  // Sort unique channel counts ascending
+  qsort(unique_ch, unique_ch_cnt, sizeof(int), cmp_int);
+
   device_capability_set_t* set = &desc->capability_sets[0];
   set->capabilities = (channel_capability_t*)calloc(
       unique_ch_cnt, sizeof(channel_capability_t));
@@ -283,6 +303,9 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
         }
       }
     }
+
+    // Sort unique sample rates ascending
+    qsort(unique_rate, unique_rate_cnt, sizeof(int), cmp_int);
 
     ch_cap->samplerates = (samplerate_capability_t*)calloc(
         unique_rate_cnt, sizeof(samplerate_capability_t));
@@ -315,6 +338,9 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
           }
         }
       }
+
+      // Sort unique format strings ascending
+      qsort(unique_fmt, unique_fmt_cnt, sizeof(unique_fmt[0]), cmp_str);
 
       rate_cap->formats = (char**)calloc(unique_fmt_cnt, sizeof(char*));
       if (!rate_cap->formats) {

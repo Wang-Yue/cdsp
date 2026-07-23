@@ -99,6 +99,17 @@ bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
                                    WAVEFORMATEX* out_std_wfx,
                                    bool* out_use_ext);
 
+/**
+ * @brief Returns the standard Windows speaker channel bitmask for a given channel count.
+ *
+ * Maps channel counts (1, 2, 4, 6, 8) to standard Windows SPEAKER_FRONT_*, SPEAKER_BACK_*,
+ * SPEAKER_LOW_FREQUENCY, and SPEAKER_SIDE_* channel masks.
+ *
+ * @param channels Number of audio channels.
+ * @return DWORD Bitmask representing speaker positions, or 0 if unmapped.
+ */
+DWORD wasapi_get_default_channel_mask(int channels);
+
 #endif // ENABLE_WASAPI
 
 #endif // CLIB_BACKEND_WASAPI_DEVICE_H

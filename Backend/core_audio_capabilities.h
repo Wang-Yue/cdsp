@@ -28,12 +28,23 @@
  * This array contains standard rates within that range to avoid cluttering the
  * UI. Public so room-correction tooling can pre-render FIR filters per rate.
  */
-extern const int CORE_AUDIO_STANDARD_RATES[15];
+extern const int CORE_AUDIO_STANDARD_RATES[17];
 
 /**
  * @brief Number of elements in CORE_AUDIO_STANDARD_RATES.
  */
 extern const size_t CORE_AUDIO_STANDARD_RATES_COUNT;
+
+/**
+ * @brief Get the name of the default CoreAudio device for capture or playback.
+ *
+ * @param is_capture True to get default capture device, false for playback.
+ * @param out_name Buffer to store the default device name.
+ * @param max_len Maximum length of out_name buffer.
+ * @return true if default device name was successfully retrieved, false otherwise.
+ */
+bool core_audio_capabilities_default_device_name(bool is_capture, char* out_name,
+                                             size_t max_len);
 
 /**
  * @brief Get the names of all available devices in the requested direction.
