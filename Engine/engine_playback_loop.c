@@ -311,6 +311,11 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
+  loop->pitch_supported =
+      (loop->capture &&
+       capture_backend_pitch_control_supported(loop->capture)) ||
+      (loop->playback &&
+       playback_backend_pitch_control_supported(loop->playback));
   log_rate_adjust_mode(loop);
 
   double last_speed = 1.0;
@@ -378,8 +383,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
-      // Ref: engine_state_management.md - Section 4.1: Prevention of False-Alarm
-      // Shutdown Errors (Loop Guards)
+      // Ref: engine_state_management.md - Section 4.1: Prevention of
+      // False-Alarm Shutdown Errors (Loop Guards)
       if (engine_shared_state_should_stop(loop->shared)) {
         reached_eos = false;
         break;
