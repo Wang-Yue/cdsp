@@ -27,6 +27,8 @@ struct alsa_playback {
   void* interleaved_buf;
   size_t interleaved_buf_size;
 
+  snd_hctl_t* hctl;
+  snd_hctl_elem_t* hctl_pitch_elem;
   snd_mixer_t* mixer;
   snd_mixer_elem_t* pitch_elem;
   pthread_mutex_t mixer_mutex;
@@ -165,7 +167,8 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   }
 
   snd_pcm_uframes_t buffer_size = 0;
-  if (alsa_apply_buffer_size(playback->pcm, params, playback->chunk_size, 1.0, &buffer_size) < 0) {
+  if (alsa_apply_buffer_size(playback->pcm, params, playback->chunk_size, 1.0,
+                             &buffer_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA buffer size");
@@ -173,7 +176,8 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   }
 
   snd_pcm_uframes_t period_size = 0;
-  if (alsa_apply_period_size(playback->pcm, params, buffer_size, &period_size) < 0) {
+  if (alsa_apply_period_size(playback->pcm, params, buffer_size, &period_size) <
+      0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA period size");
@@ -246,6 +250,31 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     int card = snd_pcm_info_get_card(pcm_info);
     if (card >= 0) {
       snprintf(ctl_name, sizeof(ctl_name), "hw:%d", card);
+
+      snd_hctl_t* hctl = NULL;
+      if (snd_hctl_open(&hctl, ctl_name, 0) >= 0 && snd_hctl_load(hctl) >= 0) {
+        pthread_mutex_lock(&playback->mixer_mutex);
+        playback->hctl = hctl;
+
+        int dev_idx = snd_pcm_info_get_device(pcm_info);
+        int subdev_idx = snd_pcm_info_get_subdevice(pcm_info);
+
+        snd_ctl_elem_id_t* id;
+        snd_ctl_elem_id_alloca(&id);
+        snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_PCM);
+        snd_ctl_elem_id_set_device(id, dev_idx >= 0 ? dev_idx : 0);
+        snd_ctl_elem_id_set_subdevice(id, subdev_idx >= 0 ? subdev_idx : 0);
+        snd_ctl_elem_id_set_name(id, "Playback Pitch 1000000");
+
+        playback->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
+        if (playback->hctl_pitch_elem) {
+          logger_info(
+              &g_logger,
+              "Found playback gadget pitch control: Playback Pitch 1000000");
+        }
+        pthread_mutex_unlock(&playback->mixer_mutex);
+      }
+
       snd_mixer_t* mixer = NULL;
       if (snd_mixer_open(&mixer, 0) >= 0) {
         if (snd_mixer_attach(mixer, ctl_name) >= 0 &&
@@ -468,7 +497,8 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
   snd_pcm_sframes_t rc =
       snd_pcm_writei(playback->pcm, playback->interleaved_buf, frames_to_write);
   if (rc < 0) {
-    if (rc == -ESTRPIPE || snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
+    if (rc == -ESTRPIPE ||
+        snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
       rc = alsa_recover_suspended_pcm(playback->pcm, "PB");
     } else {
       rc = snd_pcm_recover(playback->pcm, rc, 0);
@@ -509,6 +539,11 @@ static void alsa_playback_close(void* ctx) {
     playback->interleaved_buf = NULL;
   }
   pthread_mutex_lock(&playback->mixer_mutex);
+  if (playback->hctl) {
+    snd_hctl_close(playback->hctl);
+    playback->hctl = NULL;
+  }
+  playback->hctl_pitch_elem = NULL;
   if (playback->mixer) {
     snd_mixer_close(playback->mixer);
     playback->mixer = NULL;
@@ -639,7 +674,7 @@ static bool alsa_playback_pitch_control_supported(void* ctx) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return false;
   pthread_mutex_lock(&playback->mixer_mutex);
-  bool res = playback->pitch_elem != NULL;
+  bool res = playback->hctl_pitch_elem != NULL || playback->pitch_elem != NULL;
   pthread_mutex_unlock(&playback->mixer_mutex);
   return res;
 }
@@ -654,15 +689,19 @@ static void alsa_playback_set_pitch(void* ctx, double multiplier) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
   pthread_mutex_lock(&playback->mixer_mutex);
-  if (!playback->pitch_elem) {
-    pthread_mutex_unlock(&playback->mixer_mutex);
-    return;
-  }
-  long value = (long)round(1000000.0 / multiplier);
-  if (snd_mixer_selem_has_playback_volume(playback->pitch_elem)) {
-    snd_mixer_selem_set_playback_volume_all(playback->pitch_elem, value);
-  } else if (snd_mixer_selem_has_capture_volume(playback->pitch_elem)) {
-    snd_mixer_selem_set_capture_volume_all(playback->pitch_elem, value);
+  if (playback->hctl_pitch_elem) {
+    long value = (long)round(multiplier * 1000000.0);
+    snd_ctl_elem_value_t* elem_val;
+    snd_ctl_elem_value_alloca(&elem_val);
+    snd_ctl_elem_value_set_integer(elem_val, 0, value);
+    snd_hctl_elem_write(playback->hctl_pitch_elem, elem_val);
+  } else if (playback->pitch_elem) {
+    long value = (long)round(multiplier * 1000000.0);
+    if (snd_mixer_selem_has_playback_volume(playback->pitch_elem)) {
+      snd_mixer_selem_set_playback_volume_all(playback->pitch_elem, value);
+    } else if (snd_mixer_selem_has_capture_volume(playback->pitch_elem)) {
+      snd_mixer_selem_set_capture_volume_all(playback->pitch_elem, value);
+    }
   }
   pthread_mutex_unlock(&playback->mixer_mutex);
 }

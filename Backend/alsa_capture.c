@@ -30,6 +30,9 @@ struct alsa_capture {
 
   processing_parameters_t* params;
   snd_ctl_t* ctl;
+  snd_hctl_t* hctl;
+  snd_hctl_elem_t* hctl_pitch_elem;
+  bool pitch_is_loopback;
   snd_mixer_t* mixer;
   snd_mixer_elem_t* vol_elem;
   snd_mixer_elem_t* mute_elem;
@@ -204,12 +207,38 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
                                           capture->last_synced_mute);
         }
       }
-      // Find pitch element
-      {
-        snd_mixer_selem_id_t* sid;
-        snd_mixer_selem_id_alloca(&sid);
-        snd_mixer_selem_id_set_name(sid, "Capture Pitch 1000000");
-        capture->pitch_elem = snd_mixer_find_selem(mixer, sid);
+      // Open high-level control interface (HCtl) to search for PCM pitch
+      // controls matching CamillaDSP (alsa_backend/device.rs:L789 &
+      // alsa_backend/utils.rs:L758)
+      snd_hctl_t* hctl = NULL;
+      if (snd_hctl_open(&hctl, ctl_name, 0) >= 0 && snd_hctl_load(hctl) >= 0) {
+        capture->hctl = hctl;
+        int dev_idx = snd_pcm_info_get_device(info);
+        int subdev_idx = snd_pcm_info_get_subdevice(info);
+
+        snd_ctl_elem_id_t* id;
+        snd_ctl_elem_id_alloca(&id);
+        snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_PCM);
+        snd_ctl_elem_id_set_device(id, dev_idx >= 0 ? dev_idx : 0);
+        snd_ctl_elem_id_set_subdevice(id, subdev_idx >= 0 ? subdev_idx : 0);
+
+        snd_ctl_elem_id_set_name(id, "PCM Rate Shift 100000");
+        capture->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
+        if (capture->hctl_pitch_elem) {
+          capture->pitch_is_loopback = true;
+          logger_info(
+              &g_logger,
+              "Found capture loopback pitch control: PCM Rate Shift 100000");
+        } else {
+          snd_ctl_elem_id_set_name(id, "Capture Pitch 1000000");
+          capture->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
+          if (capture->hctl_pitch_elem) {
+            capture->pitch_is_loopback = false;
+            logger_info(
+                &g_logger,
+                "Found capture gadget pitch control: Capture Pitch 1000000");
+          }
+        }
       }
     } else {
       snd_mixer_close(mixer);
@@ -396,11 +425,13 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
 
   double resampling_ratio = 1.0;
   if (capture->capture_samplerate > 0 && capture->sample_rate > 0) {
-    resampling_ratio = (double)capture->sample_rate / (double)capture->capture_samplerate;
+    resampling_ratio =
+        (double)capture->sample_rate / (double)capture->capture_samplerate;
   }
 
   snd_pcm_uframes_t buffer_size = 0;
-  if (alsa_apply_buffer_size(capture->pcm, params, capture->chunk_size, resampling_ratio, &buffer_size) < 0) {
+  if (alsa_apply_buffer_size(capture->pcm, params, capture->chunk_size,
+                             resampling_ratio, &buffer_size) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA buffer size");
@@ -408,7 +439,8 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   }
 
   snd_pcm_uframes_t period_size = 0;
-  if (alsa_apply_period_size(capture->pcm, params, buffer_size, &period_size) < 0) {
+  if (alsa_apply_period_size(capture->pcm, params, buffer_size, &period_size) <
+      0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA period size");
@@ -429,7 +461,8 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   snd_pcm_sw_params_alloca(&sw_params);
   rc = snd_pcm_sw_params_current(capture->pcm, sw_params);
   if (rc >= 0) {
-    snd_pcm_uframes_t capture_avail_min = (snd_pcm_uframes_t)round((double)capture->chunk_size / resampling_ratio);
+    snd_pcm_uframes_t capture_avail_min = (snd_pcm_uframes_t)round(
+        (double)capture->chunk_size / resampling_ratio);
     snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
     snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params, capture_avail_min);
     rc = snd_pcm_sw_params(capture->pcm, sw_params);
@@ -551,7 +584,8 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     // Attempt recovery on error (e.g., EPIPE for overrun) and retry read up to
     // 3 times
     for (int retry = 0; retry < 3 && rc < 0; retry++) {
-      if (rc == -ESTRPIPE || snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
+      if (rc == -ESTRPIPE ||
+          snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
         rc = alsa_recover_suspended_pcm(capture->pcm, "CAP");
       } else {
         rc = snd_pcm_recover(capture->pcm, rc, 0);
@@ -647,6 +681,11 @@ static void alsa_capture_close(void* ctx) {
     snd_ctl_close(capture->ctl);
     capture->ctl = NULL;
   }
+  if (capture->hctl) {
+    snd_hctl_close(capture->hctl);
+    capture->hctl = NULL;
+  }
+  capture->hctl_pitch_elem = NULL;
   if (capture->mixer) {
     snd_mixer_close(capture->mixer);
     capture->mixer = NULL;
@@ -684,7 +723,7 @@ static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
 static bool alsa_capture_pitch_control_supported(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return false;
-  return capture->pitch_elem != NULL;
+  return capture->hctl_pitch_elem != NULL || capture->pitch_elem != NULL;
 }
 
 /**
@@ -697,15 +736,30 @@ static void alsa_capture_set_pitch(void* ctx, double multiplier) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   pthread_mutex_lock(&capture->mixer_mutex);
-  if (!capture->pitch_elem) {
-    pthread_mutex_unlock(&capture->mixer_mutex);
-    return;
-  }
-  long value = (long)round(multiplier * 1000000.0);
-  if (snd_mixer_selem_has_playback_volume(capture->pitch_elem)) {
-    snd_mixer_selem_set_playback_volume_all(capture->pitch_elem, value);
-  } else if (snd_mixer_selem_has_capture_volume(capture->pitch_elem)) {
-    snd_mixer_selem_set_capture_volume_all(capture->pitch_elem, value);
+  if (capture->hctl_pitch_elem) {
+    long value = 0;
+    if (capture->pitch_is_loopback) {
+      value = (long)round(100000.0 / multiplier);
+    } else {
+      value = (long)round(multiplier * 1000000.0);
+    }
+    snd_ctl_elem_value_t* elem_val;
+    snd_ctl_elem_value_alloca(&elem_val);
+    snd_ctl_elem_value_set_integer(elem_val, 0, value);
+    snd_hctl_elem_write(capture->hctl_pitch_elem, elem_val);
+  } else if (capture->pitch_elem) {
+    const char* elem_name = snd_mixer_selem_get_name(capture->pitch_elem);
+    long value = 0;
+    if (elem_name && strstr(elem_name, "PCM Rate Shift")) {
+      value = (long)round(100000.0 / multiplier);
+    } else {
+      value = (long)round(multiplier * 1000000.0);
+    }
+    if (snd_mixer_selem_has_playback_volume(capture->pitch_elem)) {
+      snd_mixer_selem_set_playback_volume_all(capture->pitch_elem, value);
+    } else if (snd_mixer_selem_has_capture_volume(capture->pitch_elem)) {
+      snd_mixer_selem_set_capture_volume_all(capture->pitch_elem, value);
+    }
   }
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
