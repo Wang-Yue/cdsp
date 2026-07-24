@@ -230,7 +230,6 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.alsa.channels = channels;
         cap.alsa.device = deviceName();
         cap.alsa.format = format;
-        cap.alsa.exclusive = exclusive;
         break;
 #endif
 #if defined(ENABLE_PULSEAUDIO)
@@ -315,7 +314,6 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
-        pb.alsa.exclusive = exclusive;
         pb.alsa.outputDSD = outputDSD;
         break;
 #endif
@@ -456,10 +454,10 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            exclusive == other.exclusive && bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz &&
            outputDoP == other.outputDoP && outputDSD == other.outputDSD && dsdEncoderFilter == other.dsdEncoderFilter &&
-           filename == other.filename && fileFormat == other.fileFormat && isWav == other.isWav && useRf64 == other.useRf64 &&
-           skipBytes == other.skipBytes && readBytes == other.readBytes && extraSamples == other.extraSamples &&
-           generatorType == other.generatorType && generatorFreq == other.generatorFreq &&
-           generatorLevel == other.generatorLevel && nodeName == other.nodeName &&
-           nodeDescription == other.nodeDescription && nodeGroupName == other.nodeGroupName &&
-           autoconnectTo == other.autoconnectTo;
+           filename == other.filename && fileFormat == other.fileFormat && isWav == other.isWav &&
+           useRf64 == other.useRf64 && skipBytes == other.skipBytes && readBytes == other.readBytes &&
+           extraSamples == other.extraSamples && generatorType == other.generatorType &&
+           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel &&
+           nodeName == other.nodeName && nodeDescription == other.nodeDescription &&
+           nodeGroupName == other.nodeGroupName && autoconnectTo == other.autoconnectTo;
 }
