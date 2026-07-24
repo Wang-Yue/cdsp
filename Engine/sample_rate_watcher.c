@@ -14,6 +14,7 @@ struct sample_rate_watcher {
   size_t captured_frames;
   uint64_t last_reset_ns;
   int deviation_count;
+  double last_measured_rate;
 };
 
 sample_rate_watcher_t* sample_rate_watcher_create(double target_rate,
@@ -28,6 +29,7 @@ sample_rate_watcher_t* sample_rate_watcher_create(double target_rate,
   watcher->captured_frames = 0;
   watcher->last_reset_ns = 0;
   watcher->deviation_count = 0;
+  watcher->last_measured_rate = target_rate;
   return watcher;
 }
 
@@ -55,6 +57,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
   }
 
   double measured_rate = (double)watcher->captured_frames / elapsed;
+  watcher->last_measured_rate = measured_rate;
   watcher->captured_frames = 0;
   watcher->last_reset_ns = now;
 
@@ -86,4 +89,11 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
 bool sample_rate_watcher_get_stop_on_rate_change(
     const sample_rate_watcher_t* watcher) {
   return watcher ? watcher->stop_on_rate_change : false;
+}
+
+double sample_rate_watcher_get_last_measured_rate(
+    const sample_rate_watcher_t* watcher) {
+  if (!watcher) return 0.0;
+  return watcher->last_measured_rate > 0.0 ? watcher->last_measured_rate
+                                           : watcher->target_rate;
 }

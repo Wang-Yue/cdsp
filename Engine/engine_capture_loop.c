@@ -165,12 +165,14 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
     if (engine_shared_state_should_stop(loop->shared)) {
       return true;
     }
-    // Check if there is a pending rate change first (e.g. from service invalidation/format changes)
+    // Check if there is a pending rate change first (e.g. from service
+    // invalidation/format changes)
     double rate = 0.0;
     if (capture_backend_get_pending_rate_change(loop->capture, &rate)) {
       if (fabs(rate - (double)loop->samplerate) >= 0.5) {
         logger_warn(&g_logger,
-                    "Capture device rate changed to %f Hz during read error; stopping engine",
+                    "Capture device rate changed to %f Hz during read error; "
+                    "stopping engine",
                     rate);
         processing_stop_reason_t reason = {
             .type = STOP_REASON_CAPTURE_FORMAT_CHANGE,
@@ -253,6 +255,13 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     }
   }
 
+  if (loop->processing_params && loop->rate_watcher) {
+    double current_measured =
+        sample_rate_watcher_get_last_measured_rate(loop->rate_watcher);
+    processing_parameters_set_measured_capture_rate(loop->processing_params,
+                                                    current_measured);
+  }
+
   // DoP (DSD over PCM) Decoding:
   // If DoP decoding is active, process the PCM chunk to detect DSD marker
   // flags and decode them back to raw DSD samples in-place. Decoding is done
@@ -278,6 +287,9 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                    (desired == PROCESSING_STATE_PAUSED));
     capture_backend_set_is_paused(loop->capture,
                                   (desired == PROCESSING_STATE_PAUSED));
+    if (desired == PROCESSING_STATE_PAUSED && loop->processing_params) {
+      processing_parameters_bump_pause_count(loop->processing_params);
+    }
   }
 
   // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue

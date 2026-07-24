@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "CamillaDSP"
 version = "5.0.0"
-source = "git+https://github.com/HEnquist/camilladsp.git?rev=69897c828f6ae873db26d9f88511d5c7a6bb802c#69897c828f6ae873db26d9f88511d5c7a6bb802c"
+source = "git+https://github.com/HEnquist/camilladsp.git?rev=60b6eeff80d937be5f4e0c9bf2d3be4469da4e09#60b6eeff80d937be5f4e0c9bf2d3be4469da4e09"
 dependencies = [
  "alsa",
  "alsa-sys",

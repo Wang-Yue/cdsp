@@ -260,4 +260,152 @@ TEST(VolumeLimit) {
   processing_parameters_free(proc_params);
 }
 
+TEST(VolumeChangeDuringPauseIsNotRamped) {
+  processing_parameters_t* proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
+                                                    FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = 2.0,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  double chunk[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk, 4);
+
+  processing_parameters_bump_pause_count(proc_params);
+  processing_parameters_bump_pause_count(proc_params);
+  processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
+                                                    FADER_MAIN);
+
+  double resumed[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, resumed, 4);
+  double expected = double_from_db(-20.0);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(expected, resumed[i], 1e-6);
+  }
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
+TEST(VolumeRampsAgainAfterResuming) {
+  processing_parameters_t* proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
+                                                    FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = 2.0,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  double chunk[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk, 4);
+
+  processing_parameters_bump_pause_count(proc_params);
+  double resumed[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, resumed, 4);
+
+  processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
+                                                    FADER_MAIN);
+  double chunk1[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk1, 4);
+  ASSERT_TRUE(chunk1[0] > chunk1[3]);
+  ASSERT_TRUE(chunk1[3] > double_from_db(-20.0) + 1e-6);
+
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
+TEST(MuteDuringPauseIsNotRamped) {
+  processing_parameters_t* proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
+                                                    FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = 2.0,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  double chunk[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk, 4);
+
+  processing_parameters_bump_pause_count(proc_params);
+  processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
+
+  double resumed[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, resumed, 4);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(0.0, resumed[i], 1e-10);
+  }
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
+TEST(VolumeRampsWithTinyChunksize) {
+  size_t chunk_size = 4;
+  int sample_rate = 44100;
+  double ramp_time_ms = 1000.0 * (double)chunk_size / (double)sample_rate * 2.0;
+
+  processing_parameters_t* proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, 0.0,
+                                                    FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = ramp_time_ms,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, sample_rate, chunk_size, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  double chunk0[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk0, 4);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(1.0, chunk0[i], 1e-10);
+  }
+
+  processing_parameters_set_target_volume_for_fader(proc_params, -20.0,
+                                                    FADER_MAIN);
+
+  double chunk1[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk1, 4);
+  ASSERT_TRUE(chunk1[0] > chunk1[3]);
+  double gain0 = double_from_db(0.0);
+  double gain_m20 = double_from_db(-20.0);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_TRUE(chunk1[i] <= gain0 + 1e-6);
+    ASSERT_TRUE(chunk1[i] >= gain_m20 - 1e-6);
+  }
+
+  double chunk2[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk2, 4);
+  ASSERT_TRUE(chunk2[3] < chunk1[3]);
+
+  double chunk3[] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk3, 4);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(gain_m20, chunk3[i], 1e-6);
+  }
+
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
 TEST_MAIN()

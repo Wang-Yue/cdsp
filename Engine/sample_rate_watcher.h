@@ -45,4 +45,10 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t* watcher, size_t frames,
 bool sample_rate_watcher_get_stop_on_rate_change(
     const sample_rate_watcher_t* watcher);
 
+/**
+ * @brief Gets the last measured sample rate in Hz.
+ */
+double sample_rate_watcher_get_last_measured_rate(
+    const sample_rate_watcher_t* watcher);
+
 #endif  // CLIB_ENGINE_SAMPLE_RATE_WATCHER_H

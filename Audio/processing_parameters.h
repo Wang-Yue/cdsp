@@ -193,14 +193,34 @@ void processing_parameters_set_target_volume_for_fader(
     processing_parameters_t* params, double value, fader_t fader);
 
 /**
- * @brief Gets the timestamp when the target volume was last set for a fader.
- *
+ * @brief Records that audio flow was interrupted (capture paused or stalled).
  * @param params Pointer to the processing parameters.
- * @param fader The fader to query.
- * @return Timestamp in nanoseconds (epoch).
  */
-uint64_t processing_parameters_get_target_volume_set_at_for_fader(
-    const processing_parameters_t* params, fader_t fader);
+void processing_parameters_bump_pause_count(processing_parameters_t* params);
+
+/**
+ * @brief Gets the current count of audio flow interruptions.
+ * @param params Pointer to the processing parameters.
+ * @return Cumulative pause count.
+ */
+uint64_t processing_parameters_get_pause_count(
+    const processing_parameters_t* params);
+
+/**
+ * @brief Gets the measured capture sample rate.
+ * @param params Pointer to the processing parameters.
+ * @return Measured sample rate in Hz.
+ */
+double processing_parameters_get_measured_capture_rate(
+    const processing_parameters_t* params);
+
+/**
+ * @brief Sets the measured capture sample rate.
+ * @param params Pointer to the processing parameters.
+ * @param rate Measured sample rate in Hz.
+ */
+void processing_parameters_set_measured_capture_rate(
+    processing_parameters_t* params, double rate);
 
 /**
  * @brief Gets the current volume for a specific fader.

@@ -8,7 +8,7 @@ struct volume_filter {
   double volume_limit;
   size_t chunk_size;
   int ramptime_in_chunks;
-  uint64_t stale_ramp_threshold_ns;
+  uint64_t last_pause_count;
   double current_volume;
   double target_volume;
   double target_linear_gain;
@@ -140,7 +140,8 @@ static void* volume_filter_create(const char* name,
 
   filter->ramptime_in_chunks = (int)round(
       ramp_time_ms / (1000.0 * (double)chunk_size / (double)sample_rate));
-  filter->stale_ramp_threshold_ns = 1500000000ULL; // 1.5 seconds flat
+  filter->last_pause_count =
+      proc_params ? processing_parameters_get_pause_count(proc_params) : 0ULL;
   // Pre-allocate array
   filter->current_ramp_gains =
       (double*)calloc(chunk_size > 0 ? chunk_size : 1, sizeof(double));
@@ -185,19 +186,14 @@ void volume_filter_prepare_chunk(volume_filter_t* filter) {
   double target_vol =
       shared_vol < filter->volume_limit ? shared_vol : filter->volume_limit;
 
+  uint64_t pause_count =
+      processing_parameters_get_pause_count(filter->processing_parameters);
+  bool resumed_after_pause = (pause_count != filter->last_pause_count);
+  filter->last_pause_count = pause_count;
+
   if (fabs(target_vol - filter->target_volume) > 0.01 ||
       filter->mute != shared_mute) {
-    uint64_t set_at = processing_parameters_get_target_volume_set_at_for_fader(
-        filter->processing_parameters, filter->fader);
-    uint64_t now = cdsp_time_now_ns();
-    // Determine if the volume change request is stale.
-    // If the request is stale (e.g. after a long pause or block), we skip the
-    // ramp to prevent volume changes from lagging behind user interaction.
-    bool ramp_is_stale =
-        (now > set_at) ? ((now - set_at) > filter->stale_ramp_threshold_ns)
-                       : false;
-
-    if (filter->ramptime_in_chunks > 0 && !ramp_is_stale) {
+    if (filter->ramptime_in_chunks > 0 && !resumed_after_pause) {
       filter->ramp_start = filter->current_volume;
       filter->ramp_step = 1;
     } else {
@@ -280,6 +276,7 @@ static void volume_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   dest->target_linear_gain = src->target_linear_gain;
   dest->mute = src->mute;
   dest->ramp_start = src->ramp_start;
+  dest->last_pause_count = src->last_pause_count;
 
   if (src->ramp_step > 0 && src->ramptime_in_chunks > 0 &&
       dest->ramptime_in_chunks > 0) {
