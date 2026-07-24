@@ -280,7 +280,6 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
       final_cap->cfg.coreaudio.has_device = temp.has_device;
       final_cap->cfg.coreaudio.format = temp.has_format ? temp.format : COREAUDIO_SAMPLE_FORMAT_INVALID;
       final_cap->cfg.coreaudio.has_format = temp.has_format;
-      final_cap->cfg.coreaudio.exclusive = temp.exclusive;
       break;
 #endif
 #if defined(ENABLE_ALSA)

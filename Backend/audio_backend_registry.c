@@ -17,6 +17,9 @@
 #if defined(ENABLE_ASIO)
 #include "asio_capabilities.h"
 #endif
+#include "Logging/app_logger.h"
+
+static const logger_t g_logger = {"dsp.backend.registry"};
 
 int audio_backend_registry_get_available_devices(const char* backend,
                                                  bool input,
@@ -88,9 +91,50 @@ int audio_backend_registry_get_available_devices(const char* backend,
   return 0;
 }
 
+static void log_device_capabilities_result(const char* backend, const char* device,
+                                            bool is_capture,
+                                            const audio_device_descriptor_t* desc) {
+  if (!desc) {
+    logger_warn(&g_logger,
+                "Query device capabilities failed: backend=%s, device=%s, capture=%d",
+                backend ? backend : "(null)", device ? device : "(null)", is_capture);
+    return;
+  }
+
+  logger_info(&g_logger,
+              "Device capabilities discovered: backend=%s, device='%s', capture=%d, sets_count=%zu",
+              backend, desc->name, is_capture, desc->capability_sets_count);
+
+  for (size_t s = 0; s < desc->capability_sets_count; s++) {
+    const device_capability_set_t* set = &desc->capability_sets[s];
+    logger_info(&g_logger,
+                "  Capability Set [%zu]: %zu channel config(s)",
+                s, set->capabilities_count);
+
+    for (size_t c = 0; c < set->capabilities_count; c++) {
+      const channel_capability_t* ch = &set->capabilities[c];
+      for (size_t r = 0; r < ch->samplerates_count; r++) {
+        const samplerate_capability_t* sr = &ch->samplerates[r];
+        char fmt_buf[256] = {0};
+        size_t pos = 0;
+        for (size_t f = 0; f < sr->formats_count; f++) {
+          pos += (size_t)snprintf(fmt_buf + pos, sizeof(fmt_buf) - pos,
+                                  "%s%s", (f == 0 ? "" : ", "), sr->formats[f]);
+        }
+        logger_info(&g_logger,
+                    "    - Channels: %d, SampleRate: %d Hz, Formats: [%s]",
+                    ch->channels, sr->samplerate, fmt_buf);
+      }
+    }
+  }
+}
+
 audio_device_descriptor_t* audio_backend_registry_get_device_capabilities(
     const char* backend, const char* device, bool is_capture,
     device_error_t* err) {
+  logger_info(&g_logger,
+              "Querying device capabilities: backend=%s, device=%s, capture=%d",
+              backend ? backend : "(null)", device ? device : "(null)", is_capture);
   if (!backend || !device) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,
@@ -98,46 +142,46 @@ audio_device_descriptor_t* audio_backend_registry_get_device_capabilities(
     }
     return NULL;
   }
+  audio_device_descriptor_t* desc = NULL;
   if (strcasecmp(backend, "coreaudio") == 0) {
 #if defined(ENABLE_COREAUDIO)
-    return core_audio_capabilities_describe(device, is_capture, err);
+    desc = core_audio_capabilities_describe(device, is_capture, err);
 #else
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,
                         "CoreAudio backend not compiled");
     }
-    return NULL;
 #endif
   } else if (strcasecmp(backend, "alsa") == 0) {
 #if defined(ENABLE_ALSA)
-    return alsa_capabilities_describe(device, is_capture, err);
+    desc = alsa_capabilities_describe(device, is_capture, err);
 #else
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER, "ALSA backend not compiled");
     }
-    return NULL;
 #endif
   } else if (strcasecmp(backend, "wasapi") == 0) {
 #if defined(ENABLE_WASAPI)
-    return wasapi_capabilities_describe(device, is_capture, err);
+    desc = wasapi_capabilities_describe(device, is_capture, err);
 #else
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER, "WASAPI backend not compiled");
     }
-    return NULL;
 #endif
   } else if (strcasecmp(backend, "asio") == 0) {
 #if defined(ENABLE_ASIO)
-    return asio_capabilities_describe(device, is_capture, err);
+    desc = asio_capabilities_describe(device, is_capture, err);
 #else
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER, "ASIO backend not compiled");
     }
-    return NULL;
 #endif
+  } else {
+    if (err) {
+      device_error_init(err, DEVICE_ERROR_OTHER, "Unsupported backend");
+    }
   }
-  if (err) {
-    device_error_init(err, DEVICE_ERROR_OTHER, "Unsupported backend");
-  }
-  return NULL;
+
+  log_device_capabilities_result(backend, device, is_capture, desc);
+  return desc;
 }
