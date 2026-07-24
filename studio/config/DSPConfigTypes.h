@@ -300,6 +300,7 @@ struct CoreAudioCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
     std::optional<std::string> format;
+    std::optional<bool> exclusive;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
     std::vector<std::string> channelLabels;
@@ -307,8 +308,8 @@ struct CoreAudioCaptureConfig {
     static CoreAudioCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const CoreAudioCaptureConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format && bypassDoP == o.bypassDoP &&
-               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+        return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
+               bypassDoP == o.bypassDoP && dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
     }
     bool operator!=(const CoreAudioCaptureConfig& o) const { return !(*this == o); }
 };
