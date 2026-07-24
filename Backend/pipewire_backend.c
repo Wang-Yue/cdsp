@@ -71,6 +71,7 @@ struct pipewire_playback {
   size_t encode_buf_size;
   _Atomic bool paused;
   bool stopped;
+  bool running;
 
   double pending_rate;
   bool has_pending_rate;
@@ -162,24 +163,37 @@ static void on_playback_process(void* data) {
   if (!b) return;
 
   struct spa_buffer* buf = b->buffer;
+  if (buf->n_datas == 0) {
+    pw_stream_queue_buffer(p->stream, b);
+    return;
+  }
+
   float* dst = (float*)buf->datas[0].data;
 
   if (dst) {
+    size_t stride = sizeof(float) * p->channels;
     size_t max_bytes = buf->datas[0].maxsize;
-    size_t frame_size = sizeof(float) * p->channels;
-    size_t max_frames = max_bytes / frame_size;
+    size_t requested_bytes = buf->datas[0].chunk->size;
 
-    size_t requested = max_frames * p->channels;
-    size_t consumed = spsc_audio_ring_buffer_consume(p->ring, dst, requested);
+    size_t fallback_bytes = p->chunk_size * stride;
+    size_t callback_bytes =
+        (requested_bytes == 0 || requested_bytes > max_bytes)
+            ? (fallback_bytes < max_bytes ? fallback_bytes : max_bytes)
+            : requested_bytes;
+    callback_bytes -= (callback_bytes % stride);
 
-    if (consumed < requested) {
-      // Fill remaining with silence
-      memset(dst + consumed, 0, (requested - consumed) * sizeof(float));
+    size_t requested_samples = callback_bytes / sizeof(float);
+    size_t consumed_samples =
+        spsc_audio_ring_buffer_consume(p->ring, dst, requested_samples);
+
+    if (consumed_samples < requested_samples) {
+      memset(dst + consumed_samples, 0,
+             (requested_samples - consumed_samples) * sizeof(float));
     }
 
     buf->datas[0].chunk->offset = 0;
-    buf->datas[0].chunk->size = max_frames * frame_size;
-    buf->datas[0].chunk->stride = frame_size;
+    buf->datas[0].chunk->size = (uint32_t)callback_bytes;
+    buf->datas[0].chunk->stride = (int32_t)stride;
   }
 
   pw_stream_queue_buffer(p->stream, b);
@@ -809,7 +823,8 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
 
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
   size_t pb_prefill_frames = (size_t)(3 * playback->chunk_size);
-  size_t pb_frames_needed = pb_prefill_frames + (size_t)(4 * playback->chunk_size);
+  size_t pb_frames_needed =
+      pb_prefill_frames + (size_t)(4 * playback->chunk_size);
   if (pb_frames_needed < pb_min_frames) pb_frames_needed = pb_min_frames;
   size_t pb_ring_size = pb_frames_needed * playback->channels;
 
@@ -886,34 +901,44 @@ static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
   // Wait until there is space in the SPSC ring buffer to prevent overwriting
   // oldest data. This blocks the writer thread (with a timeout) if the consumer
   // (PipeWire thread) is slower.
+  // Wait for enough space in the ring buffer before pushing.
+  // This is essential when the capture side is not rate-limited
+  // (e.g. signal generator): without this wait the data would
+  // arrive far faster than the playback callback can drain it
+  // and most of it would be dropped. The sleep duration is
+  // based on the time it takes to play back one chunksize.
   int sleep_us = (int)((double)playback->chunk_size * 1000000.0 /
                        (double)playback->sample_rate / 2.0);
   if (sleep_us < 100) sleep_us = 100;
-  int retries = 8;
-  while (!playback->stopped &&
-         spsc_audio_ring_buffer_get_available_to_read(playback->ring) +
-                 requested >
-             spsc_audio_ring_buffer_get_capacity(playback->ring)) {
-    if (retries-- <= 0) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "PipeWire ring buffer write timeout (PipeWire "
-                           "thread not consuming samples)");
-      }
-      return false;
+  int max_retries = 8;
+  for (int i = 0; i < max_retries; i++) {
+    if (spsc_audio_ring_buffer_get_available_to_write(playback->ring) >=
+        requested) {
+      break;
     }
     cdsp_sleep_us(sleep_us);
   }
-  if (playback->stopped) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Playback stream stopped");
-    }
-    return false;
+
+  size_t avail_to_write =
+      spsc_audio_ring_buffer_get_available_to_write(playback->ring);
+  size_t to_write = requested < avail_to_write ? requested : avail_to_write;
+  if (to_write > 0) {
+    spsc_audio_ring_buffer_write(playback->ring, playback->encode_buf, to_write,
+                                 1);
   }
 
-  spsc_audio_ring_buffer_write(playback->ring, playback->encode_buf, requested,
-                               1);
+  if (to_write < requested) {
+    logger_trace(&g_logger, "Playback ring buffer full, dropped %zu bytes",
+                 (requested - to_write) * sizeof(float));
+    if (playback->running) {
+      logger_warn(&g_logger, "Playback ring buffer full, dropping audio data");
+      playback->running = false;
+    }
+  } else if (!playback->running) {
+    playback->running = true;
+    logger_debug(&g_logger, "PipeWire playback running");
+  }
+
   return true;
 }
 
