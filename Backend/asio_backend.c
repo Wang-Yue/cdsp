@@ -1986,11 +1986,14 @@ static bool asio_playback_prefill_silence(void* ctx, size_t frames,
   if (!playback || !playback->ring_buffer) return false;
 
   playback->target_level = (int)frames;
-  size_t silence_samples = frames * playback->channels;
+  size_t total_prefill_frames = frames + (size_t)playback->actual_buffer_size;
+  size_t silence_samples = total_prefill_frames * playback->channels;
   spsc_audio_ring_buffer_write_silence(playback->ring_buffer, silence_samples);
   logger_info(&g_logger,
-              "ASIO playback prefilled %zu frames of silence to ring buffer",
-              frames);
+              "ASIO playback prefilled %zu frames of silence (target=%d, "
+              "buffer=%ld) to ring buffer",
+              total_prefill_frames, playback->target_level,
+              playback->actual_buffer_size);
   return true;
 }
 
