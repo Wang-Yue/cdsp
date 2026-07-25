@@ -115,6 +115,7 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
           pi->ramp_trigger_limit) {
     pi->ramp_start = level;
     pi->ramp_step = 0;
+    pi->accumulated = 0.0;
   }
   if (pi->ramp_step == 0) {
     pi->ramp_start = level;
