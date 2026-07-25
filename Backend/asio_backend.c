@@ -146,8 +146,8 @@ struct IASIO {
 };
 
 static bool init_asio_device(const char* device_name, double sample_rate,
-                             asio_sample_format_t requested_format,
-                             bool is_dsd, bool is_input, IASIO** out_iasio,
+                             asio_sample_format_t requested_format, bool is_dsd,
+                             bool is_input, IASIO** out_iasio,
                              long* out_buf_size, backend_error_t* err);
 
 // Internal structures
@@ -205,6 +205,7 @@ struct asio_playback {
   double pending_rate;
   bool has_pending_rate_change;
   _Atomic uint64_t last_callback_time_ms;
+  int target_level;
 };
 
 // Global active backend references
@@ -391,7 +392,8 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
         (ASIOChannelInfo*)calloc(total_ch, sizeof(ASIOChannelInfo));
     g_asio_shared.combined_channels = total_ch;
 
-    /* Playback channels FIRST, Capture channels SECOND (matching CamillaDSP line 670) */
+    /* Playback channels FIRST, Capture channels SECOND (matching CamillaDSP
+     * line 670) */
     memcpy(g_asio_shared.combined_buffer_infos,
            g_asio_shared.playback_buffer_infos, pb_ch * sizeof(ASIOBufferInfo));
     memcpy(g_asio_shared.combined_channel_infos,
@@ -451,8 +453,10 @@ static bool register_and_wait_asio(bool is_input, const char* driver_name,
     WakeAllConditionVariable(&g_asio_shared.cond);
   } else {
     /* Wait for the other side to complete buffer creation and stream start */
-    while (!g_asio_shared.stream_started && g_asio_shared.setup_error[0] == '\0') {
-      if (!SleepConditionVariableSRW(&g_asio_shared.cond, &g_asio_shared.lock, 5000, 0)) {
+    while (!g_asio_shared.stream_started &&
+           g_asio_shared.setup_error[0] == '\0') {
+      if (!SleepConditionVariableSRW(&g_asio_shared.cond, &g_asio_shared.lock,
+                                     5000, 0)) {
         snprintf(g_asio_shared.setup_error, sizeof(g_asio_shared.setup_error),
                  "Timeout waiting for full-duplex ASIO stream start");
         break;
@@ -551,8 +555,7 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
       RegQueryValueExA(hk_driver, "description", NULL, NULL, (LPBYTE)desc_str,
                        &desc_size);
 
-      bool match = is_default ||
-                   strcasecmp(subkey_name, driver_name) == 0 ||
+      bool match = is_default || strcasecmp(subkey_name, driver_name) == 0 ||
                    (desc_str[0] && strcasecmp(desc_str, driver_name) == 0) ||
                    strstr(subkey_name, driver_name) != NULL ||
                    (desc_str[0] && strstr(desc_str, driver_name) != NULL);
@@ -591,18 +594,22 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
  * @param err Pointer to backend_error_t to receive error details.
  * @return true if successful, false otherwise.
  */
-static void dummy_asio_buffer_switch(long doubleBufferIndex, ASIOBool directProcess) {
+static void dummy_asio_buffer_switch(long doubleBufferIndex,
+                                     ASIOBool directProcess) {
   (void)doubleBufferIndex;
   (void)directProcess;
 }
 
-static void* dummy_asio_buffer_switch_time_info(void* params, long doubleBufferIndex, ASIOBool directProcess) {
+static void* dummy_asio_buffer_switch_time_info(void* params,
+                                                long doubleBufferIndex,
+                                                ASIOBool directProcess) {
   (void)doubleBufferIndex;
   (void)directProcess;
   return params;
 }
 
-static long dummy_asio_message(long selector, long value, void* message, double* opt) {
+static long dummy_asio_message(long selector, long value, void* message,
+                               double* opt) {
   (void)message;
   (void)opt;
   switch (selector) {
@@ -759,8 +766,8 @@ static bool force_sample_rate_with_dummy_cycle(const char* driver_name,
 }
 
 static bool init_asio_device(const char* device_name, double sample_rate,
-                             asio_sample_format_t requested_format,
-                             bool is_dsd, bool is_input, IASIO** out_iasio,
+                             asio_sample_format_t requested_format, bool is_dsd,
+                             bool is_input, IASIO** out_iasio,
                              long* out_buf_size, backend_error_t* err) {
   CLSID clsid;
   if (!find_asio_driver_clsid(device_name, &clsid)) {
@@ -799,45 +806,60 @@ static bool init_asio_device(const char* device_name, double sample_rate,
     ch_info.channel = 0;
     iasio->lpVtbl->getChannelInfo(iasio, &ch_info);
   }
-    if (ch_info.type == ASIOSTInt16MSB || ch_info.type == ASIOSTInt24MSB ||
-        ch_info.type == ASIOSTInt32MSB || ch_info.type == ASIOSTFloat32MSB ||
-        ch_info.type == ASIOSTFloat64MSB || ch_info.type == ASIOSTInt32MSB16 ||
-        ch_info.type == ASIOSTInt32MSB18 || ch_info.type == ASIOSTInt32MSB20 ||
-        ch_info.type == ASIOSTInt32MSB24) {
-      logger_error(&g_logger, "ASIO device uses unsupported Big-Endian (MSB) sample format: %d", (int)ch_info.type);
-      SAFE_RELEASE(iasio);
-      *out_iasio = NULL;
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "ASIO device uses unsupported Big-Endian (MSB) sample format");
-      }
-      return false;
+  if (ch_info.type == ASIOSTInt16MSB || ch_info.type == ASIOSTInt24MSB ||
+      ch_info.type == ASIOSTInt32MSB || ch_info.type == ASIOSTFloat32MSB ||
+      ch_info.type == ASIOSTFloat64MSB || ch_info.type == ASIOSTInt32MSB16 ||
+      ch_info.type == ASIOSTInt32MSB18 || ch_info.type == ASIOSTInt32MSB20 ||
+      ch_info.type == ASIOSTInt32MSB24) {
+    logger_error(
+        &g_logger,
+        "ASIO device uses unsupported Big-Endian (MSB) sample format: %d",
+        (int)ch_info.type);
+    SAFE_RELEASE(iasio);
+    *out_iasio = NULL;
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "ASIO device uses unsupported Big-Endian (MSB) sample format");
     }
+    return false;
+  }
 
-    asio_sample_format_t native_format = ASIO_SAMPLE_FORMAT_INVALID;
-    if (ch_info.type == ASIOSTInt16LSB) native_format = ASIO_SAMPLE_FORMAT_S16_LE;
-    else if (ch_info.type == ASIOSTInt24LSB) native_format = ASIO_SAMPLE_FORMAT_S24_3_LE;
-    else if (ch_info.type == ASIOSTInt32LSB || ch_info.type == ASIOSTInt32LSB16 ||
-             ch_info.type == ASIOSTInt32LSB18 || ch_info.type == ASIOSTInt32LSB20) native_format = ASIO_SAMPLE_FORMAT_S32_LE;
-    else if (ch_info.type == ASIOSTInt32LSB24) native_format = ASIO_SAMPLE_FORMAT_S24_4_LE;
-    else if (ch_info.type == ASIOSTFloat32LSB) native_format = ASIO_SAMPLE_FORMAT_F32_LE;
-    else if (ch_info.type == ASIOSTFloat64LSB) native_format = ASIO_SAMPLE_FORMAT_F64_LE;
+  asio_sample_format_t native_format = ASIO_SAMPLE_FORMAT_INVALID;
+  if (ch_info.type == ASIOSTInt16LSB)
+    native_format = ASIO_SAMPLE_FORMAT_S16_LE;
+  else if (ch_info.type == ASIOSTInt24LSB)
+    native_format = ASIO_SAMPLE_FORMAT_S24_3_LE;
+  else if (ch_info.type == ASIOSTInt32LSB || ch_info.type == ASIOSTInt32LSB16 ||
+           ch_info.type == ASIOSTInt32LSB18 || ch_info.type == ASIOSTInt32LSB20)
+    native_format = ASIO_SAMPLE_FORMAT_S32_LE;
+  else if (ch_info.type == ASIOSTInt32LSB24)
+    native_format = ASIO_SAMPLE_FORMAT_S24_4_LE;
+  else if (ch_info.type == ASIOSTFloat32LSB)
+    native_format = ASIO_SAMPLE_FORMAT_F32_LE;
+  else if (ch_info.type == ASIOSTFloat64LSB)
+    native_format = ASIO_SAMPLE_FORMAT_F64_LE;
 
-    if (requested_format == ASIO_SAMPLE_FORMAT_INVALID) {
-      logger_info(&g_logger, "ASIO format auto-detected from device: %d", (int)native_format);
-    } else if (native_format != ASIO_SAMPLE_FORMAT_INVALID &&
-               requested_format != native_format && !is_dsd) {
-      logger_error(&g_logger, "ASIO configured format %d does not match device native format %d. ASIO drivers do not convert sample formats.", (int)requested_format, (int)native_format);
-      SAFE_RELEASE(iasio);
-      *out_iasio = NULL;
-      if (err) {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                 "ASIO configured format does not match device native format. ASIO drivers do not convert sample formats.");
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-      }
-      return false;
+  if (requested_format == ASIO_SAMPLE_FORMAT_INVALID) {
+    logger_info(&g_logger, "ASIO format auto-detected from device: %d",
+                (int)native_format);
+  } else if (native_format != ASIO_SAMPLE_FORMAT_INVALID &&
+             requested_format != native_format && !is_dsd) {
+    logger_error(&g_logger,
+                 "ASIO configured format %d does not match device native "
+                 "format %d. ASIO drivers do not convert sample formats.",
+                 (int)requested_format, (int)native_format);
+    SAFE_RELEASE(iasio);
+    *out_iasio = NULL;
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "ASIO configured format does not match device native format. "
+               "ASIO drivers do not convert sample formats.");
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
+    return false;
+  }
 
   if (is_dsd) {
     ASIOIoFormat dsd_format = {0};
@@ -856,12 +878,14 @@ static bool init_asio_device(const char* device_name, double sample_rate,
   }
 
   if (iasio->lpVtbl->canSampleRate(iasio, sample_rate) != 0) {
-    logger_error(&g_logger, "ASIO device does not support sample rate %.0f Hz", sample_rate);
+    logger_error(&g_logger, "ASIO device does not support sample rate %.0f Hz",
+                 sample_rate);
     SAFE_RELEASE(iasio);
     *out_iasio = NULL;
     if (err) {
       char msg[256];
-      snprintf(msg, sizeof(msg), "ASIO device does not support sample rate %.0f Hz", sample_rate);
+      snprintf(msg, sizeof(msg),
+               "ASIO device does not support sample rate %.0f Hz", sample_rate);
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     return false;
@@ -1234,8 +1258,8 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
     }
   } else {
     if (!init_asio_device(capture->device, capture->sample_rate,
-                          capture->format, false, true,
-                          &capture->iasio, &capture->actual_buffer_size, err)) {
+                          capture->format, false, true, &capture->iasio,
+                          &capture->actual_buffer_size, err)) {
       goto error_cleanup;
     }
 
@@ -1256,13 +1280,19 @@ static bool asio_capture_open_internal(void* ctx, backend_error_t* err) {
 
     if (capture->format == ASIO_SAMPLE_FORMAT_INVALID && total_channels > 0) {
       ASIOSampleType st = capture->channel_infos[0].type;
-      if (st == ASIOSTInt16LSB) capture->format = ASIO_SAMPLE_FORMAT_S16_LE;
-      else if (st == ASIOSTInt24LSB) capture->format = ASIO_SAMPLE_FORMAT_S24_3_LE;
+      if (st == ASIOSTInt16LSB)
+        capture->format = ASIO_SAMPLE_FORMAT_S16_LE;
+      else if (st == ASIOSTInt24LSB)
+        capture->format = ASIO_SAMPLE_FORMAT_S24_3_LE;
       else if (st == ASIOSTInt32LSB || st == ASIOSTInt32LSB16 ||
-               st == ASIOSTInt32LSB18 || st == ASIOSTInt32LSB20) capture->format = ASIO_SAMPLE_FORMAT_S32_LE;
-      else if (st == ASIOSTInt32LSB24) capture->format = ASIO_SAMPLE_FORMAT_S24_4_LE;
-      else if (st == ASIOSTFloat32LSB) capture->format = ASIO_SAMPLE_FORMAT_F32_LE;
-      else if (st == ASIOSTFloat64LSB) capture->format = ASIO_SAMPLE_FORMAT_F64_LE;
+               st == ASIOSTInt32LSB18 || st == ASIOSTInt32LSB20)
+        capture->format = ASIO_SAMPLE_FORMAT_S32_LE;
+      else if (st == ASIOSTInt32LSB24)
+        capture->format = ASIO_SAMPLE_FORMAT_S24_4_LE;
+      else if (st == ASIOSTFloat32LSB)
+        capture->format = ASIO_SAMPLE_FORMAT_F32_LE;
+      else if (st == ASIOSTFloat64LSB)
+        capture->format = ASIO_SAMPLE_FORMAT_F64_LE;
     }
 
     ASIOError create_buf_res = capture->iasio->lpVtbl->createBuffers(
@@ -1629,8 +1659,7 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
       goto error_cleanup;
     }
   } else {
-    if (!init_asio_device(playback->device, rate_to_set,
-                          playback->format,
+    if (!init_asio_device(playback->device, rate_to_set, playback->format,
                           playback->output_dsd, false, &playback->iasio,
                           &playback->actual_buffer_size, err)) {
       goto error_cleanup;
@@ -1665,16 +1694,24 @@ static bool asio_playback_open_internal(void* ctx, backend_error_t* err) {
                   playback->channel_infos[idx].name);
     }
 
-    if (!playback->output_dsd && playback->format == ASIO_SAMPLE_FORMAT_INVALID && playback->channels > 0) {
+    if (!playback->output_dsd &&
+        playback->format == ASIO_SAMPLE_FORMAT_INVALID &&
+        playback->channels > 0) {
       int idx = num_in;
       ASIOSampleType st = playback->channel_infos[idx].type;
-      if (st == ASIOSTInt16LSB) playback->format = ASIO_SAMPLE_FORMAT_S16_LE;
-      else if (st == ASIOSTInt24LSB) playback->format = ASIO_SAMPLE_FORMAT_S24_3_LE;
+      if (st == ASIOSTInt16LSB)
+        playback->format = ASIO_SAMPLE_FORMAT_S16_LE;
+      else if (st == ASIOSTInt24LSB)
+        playback->format = ASIO_SAMPLE_FORMAT_S24_3_LE;
       else if (st == ASIOSTInt32LSB || st == ASIOSTInt32LSB16 ||
-               st == ASIOSTInt32LSB18 || st == ASIOSTInt32LSB20) playback->format = ASIO_SAMPLE_FORMAT_S32_LE;
-      else if (st == ASIOSTInt32LSB24) playback->format = ASIO_SAMPLE_FORMAT_S24_4_LE;
-      else if (st == ASIOSTFloat32LSB) playback->format = ASIO_SAMPLE_FORMAT_F32_LE;
-      else if (st == ASIOSTFloat64LSB) playback->format = ASIO_SAMPLE_FORMAT_F64_LE;
+               st == ASIOSTInt32LSB18 || st == ASIOSTInt32LSB20)
+        playback->format = ASIO_SAMPLE_FORMAT_S32_LE;
+      else if (st == ASIOSTInt32LSB24)
+        playback->format = ASIO_SAMPLE_FORMAT_S24_4_LE;
+      else if (st == ASIOSTFloat32LSB)
+        playback->format = ASIO_SAMPLE_FORMAT_F32_LE;
+      else if (st == ASIOSTFloat64LSB)
+        playback->format = ASIO_SAMPLE_FORMAT_F64_LE;
     }
 
     ASIOError create_buf_res = playback->iasio->lpVtbl->createBuffers(
@@ -1942,6 +1979,21 @@ static playback_backend_t* asio_playback_create(
   return backend;
 }
 
+static bool asio_playback_prefill_silence(void* ctx, size_t frames,
+                                          backend_error_t* err) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  (void)err;
+  if (!playback || !playback->ring_buffer) return false;
+
+  playback->target_level = (int)frames;
+  size_t silence_samples = frames * playback->channels;
+  spsc_audio_ring_buffer_write_silence(playback->ring_buffer, silence_samples);
+  logger_info(&g_logger,
+              "ASIO playback prefilled %zu frames of silence to ring buffer",
+              frames);
+  return true;
+}
+
 const playback_backend_vtable_t g_asio_playback_vtable = {
     .create = asio_playback_create,
     .open = asio_playback_open_internal,
@@ -1949,7 +2001,7 @@ const playback_backend_vtable_t g_asio_playback_vtable = {
     .close = asio_playback_close_internal,
     .get_buffer_level = asio_playback_get_buffer_level,
     .get_pending_rate_change = asio_playback_get_pending_rate_change,
-    .prefill_silence = NULL,
+    .prefill_silence = asio_playback_prefill_silence,
     .get_is_paused = NULL,
     .set_is_paused = NULL,
     .pitch_control_supported = NULL,

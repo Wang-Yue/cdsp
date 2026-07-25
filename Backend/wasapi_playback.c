@@ -51,7 +51,8 @@ struct wasapi_playback {
   UINT32 buffer_frame_count;
   _Atomic bool paused;
   cdsp_sem_t semaphore;
-  bool started;
+  _Atomic bool started;
+  int target_level;
 
   spsc_audio_ring_buffer_t* ring_buffer;
   pthread_t thread;
@@ -161,6 +162,49 @@ static void* wasapi_playback_thread_func(void* arg) {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 #endif
 
+  if (!playback->polling) {
+    int waited_ms = 0;
+    size_t chunk_size_samples = playback->chunk_size * playback->channels;
+    while (
+        atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
+      size_t avail =
+          spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
+      if (avail >= chunk_size_samples) {
+        break;
+      }
+      cdsp_sleep_ms(10);
+      waited_ms += 10;
+      if (waited_ms >= 1000) {
+        logger_warn(&g_wasapi_logger,
+                    "Timed out waiting for playback data at startup");
+        break;
+      }
+    }
+
+    int target = playback->target_level > 0 ? playback->target_level
+                                            : playback->chunk_size;
+    int remainder = target - (int)playback->buffer_frame_count;
+    if (remainder > 0) {
+      spsc_audio_ring_buffer_write_silence(playback->ring_buffer,
+                                           remainder * playback->channels);
+      logger_info(
+          &g_wasapi_logger,
+          "WASAPI playback thread pre-filled %d silence frames to ring buffer",
+          remainder);
+    }
+
+    HRESULT hr = IAudioClient_Start(playback->client);
+    if (SUCCEEDED(hr)) {
+      atomic_store_explicit(&playback->started, true, memory_order_release);
+      logger_info(&g_wasapi_logger,
+                  "WASAPI playback client started by render thread");
+    } else {
+      logger_error(&g_wasapi_logger,
+                   "Failed to start IAudioClient in render thread: hr=0x%08lX",
+                   (unsigned long)hr);
+    }
+  }
+
   while (
       atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
     if (!cdsp_sem_timedwait(playback->semaphore, 1000)) {
@@ -226,8 +270,8 @@ static void* wasapi_playback_thread_func(void* arg) {
 
       if (to_write * playback->channels > playback->transfer_buf_cap) {
         size_t new_cap = to_write * playback->channels;
-        float* new_buf = (float*)realloc(playback->transfer_buf,
-                                         new_cap * sizeof(float));
+        float* new_buf =
+            (float*)realloc(playback->transfer_buf, new_cap * sizeof(float));
         if (!new_buf) {
           IAudioRenderClient_ReleaseBuffer(playback->render_client, 0, 0);
           continue;
@@ -614,7 +658,8 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   }
 
   playback->paused = false;
-  playback->started = false;
+  atomic_init(&playback->started, false);
+  playback->target_level = 0;
   atomic_init(&playback->stopped, false);
 
   logger_info(
@@ -741,7 +786,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
 
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
 
-  if (playback->polling || !playback->started) {
+  if (playback->polling) {
     size_t direct_write_limit = playback->buffer_frame_count;
     if (playback->polling) {
       if (total_frames > playback->buffer_frame_count) {
@@ -784,7 +829,8 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
           playback->has_pending_rate_change = true;
           if (err)
-            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Format change pending");
           return false;
         }
         if (err)
@@ -819,7 +865,8 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
             hr == AUDCLNT_E_BUFFER_ERROR) {
           playback->has_pending_rate_change = true;
           if (err)
-            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Format change pending");
           return false;
         }
         logger_error(&g_wasapi_logger,
@@ -837,7 +884,8 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
     }
 
-    if (!playback->started && !playback->polling) {
+    if (playback->polling &&
+        !atomic_load_explicit(&playback->started, memory_order_acquire)) {
       HRESULT hr = IAudioClient_Start(playback->client);
       if (FAILED(hr)) {
         if (playback->has_pending_rate_change ||
@@ -846,7 +894,8 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
             hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
           playback->has_pending_rate_change = true;
           if (err)
-            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Format change pending");
           return false;
         }
         if (err) {
@@ -858,7 +907,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         }
         return false;
       }
-      playback->started = true;
+      atomic_store_explicit(&playback->started, true, memory_order_release);
     }
 
     if (!playback->polling && frames_written < total_frames) {
@@ -951,11 +1000,13 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
 
     while (written < requested) {
       if (playback->has_pending_rate_change ||
-          !atomic_load_explicit(&playback->thread_running, memory_order_acquire) ||
+          !atomic_load_explicit(&playback->thread_running,
+                                memory_order_acquire) ||
           atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
         if (playback->has_pending_rate_change) {
           if (err) {
-            backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Format change pending");
           }
           return false;
         }
@@ -1038,7 +1089,7 @@ static void wasapi_playback_close(void* ctx) {
   SAFE_RELEASE(playback->mm_device);
   SAFE_RELEASE(playback->enumerator);
 
-  playback->started = false;
+  atomic_store_explicit(&playback->started, false, memory_order_release);
 
   if (playback->com_initialized) {
     CoUninitialize();
@@ -1100,7 +1151,10 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   (void)frames;
   if (!playback) return false;
-  if (playback->polling || !playback->started) {
+  playback->target_level = (int)frames;
+
+  if (playback->polling ||
+      !atomic_load_explicit(&playback->started, memory_order_acquire)) {
     if (!playback->render_client) return false;
     BYTE* data = NULL;
     UINT32 prefill_frames = playback->buffer_frame_count;
@@ -1112,7 +1166,8 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
                  (playback->bits_per_sample / 8));
       IAudioRenderClient_ReleaseBuffer(playback->render_client, prefill_frames,
                                        0);
-      if (!playback->started) {
+      if (playback->polling &&
+          !atomic_load_explicit(&playback->started, memory_order_acquire)) {
         hr = IAudioClient_Start(playback->client);
         if (FAILED(hr)) {
           if (err) {
@@ -1124,7 +1179,7 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
           }
           return false;
         }
-        playback->started = true;
+        atomic_store_explicit(&playback->started, true, memory_order_release);
       }
       return true;
     }
@@ -1139,7 +1194,8 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
         playback->ring_buffer,
         playback->buffer_frame_count * playback->channels);
 
-    if (!playback->started) {
+    if (playback->polling &&
+        !atomic_load_explicit(&playback->started, memory_order_acquire)) {
       HRESULT hr = IAudioClient_Start(playback->client);
       if (FAILED(hr)) {
         if (err) {
@@ -1151,7 +1207,7 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
         }
         return false;
       }
-      playback->started = true;
+      atomic_store_explicit(&playback->started, true, memory_order_release);
     }
     return true;
   }
