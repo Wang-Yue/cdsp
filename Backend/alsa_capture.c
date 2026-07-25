@@ -550,59 +550,165 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     frames = capture->chunk_size;
   }
 
-  // Wait for capture device to be ready to prevent infinite block in
-  // snd_pcm_readi.
-  int timeout_ms = (int)((double)frames * 1000.0 / capture->sample_rate * 2.0);
-  if (timeout_ms < 100) timeout_ms = 100;
-
-  int err_wait = snd_pcm_wait(capture->pcm, timeout_ms);
-  if (err_wait == 0) {
-    // Timeout (device stalled).
-    capture->was_stalled = true;
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_NONE,
-                         "Capture device wait timeout (device stalled)");
-    }
-    return false;
-  } else if (err_wait < 0) {
-    // Error! Attempt recovery.
-    snd_pcm_recover(capture->pcm, err_wait, 0);
-  }
-
-  // If we recovered from a stall, drop stale hardware buffer data and prepare
-  // PCM.
-  if (capture->was_stalled) {
-    snd_pcm_drop(capture->pcm);
+  snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
+  if (capture_state == SND_PCM_STATE_XRUN) {
+    logger_warn(&g_logger, "Prepare capture device");
     snd_pcm_prepare(capture->pcm);
-    capture->was_stalled = false;
+  } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
+    alsa_recover_suspended_pcm(capture->pcm, "Capture");
+    if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+      snd_pcm_start(capture->pcm);
+    }
+  } else if ((int)capture_state < 0) {
+    logger_error(
+        &g_logger,
+        "Alsa snd_pcm_state() of capture device returned an unexpected error: %d",
+        (int)capture_state);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         snd_strerror((int)capture_state));
+    return false;
+  } else if (capture_state != SND_PCM_STATE_RUNNING) {
+    logger_debug(&g_logger, "Starting capture from state: %d",
+                 (int)capture_state);
+    snd_pcm_start(capture->pcm);
   }
 
-  // Read interleaved frames from ALSA
-  snd_pcm_sframes_t rc =
-      snd_pcm_readi(capture->pcm, capture->interleaved_buf, frames);
-  if (rc < 0) {
-    // Attempt recovery on error (e.g., EPIPE for overrun) and retry read up to
-    // 3 times
-    for (int retry = 0; retry < 3 && rc < 0; retry++) {
-      if (rc == -ESTRPIPE ||
-          snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
-        rc = alsa_recover_suspended_pcm(capture->pcm, "CAP");
+  size_t sample_bytes = 4;
+  if (capture->format == SND_PCM_FORMAT_S16_LE)
+    sample_bytes = 2;
+  else if (capture->format == SND_PCM_FORMAT_S24_3LE)
+    sample_bytes = 3;
+  else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE)
+    sample_bytes = 8;
+  size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
+
+  size_t millis_per_chunk = 1000 * frames / (size_t)capture->sample_rate;
+
+  char* buffer = (char*)capture->interleaved_buf;
+  size_t buffer_len_bytes = frames * bytes_per_frame;
+
+  for (;;) {
+    uint32_t timeout_millis = (uint32_t)(8 * millis_per_chunk);
+    if (timeout_millis < 20) {
+      timeout_millis = 20;
+    }
+    logger_trace(&g_logger, "Capture pcmdevice.wait with timeout %u ms",
+                 timeout_millis);
+    uint32_t remaining_timeout_millis = timeout_millis;
+    while (true) {
+      uint32_t poll_slice_millis =
+          remaining_timeout_millis < 20 ? remaining_timeout_millis : 20;
+      int err_wait = snd_pcm_wait(capture->pcm, (int)poll_slice_millis);
+      if (err_wait == 0) {
+        if (remaining_timeout_millis <= poll_slice_millis) {
+          logger_trace(
+              &g_logger,
+              "Wait timed out, capture device takes too long to capture frames");
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Capture device wait timeout");
+          }
+          return false;
+        }
+        remaining_timeout_millis -= poll_slice_millis;
+        continue;
+      } else if (err_wait > 0) {
+        break;
+      } else if (err_wait < 0) {
+        if (err_wait == -EPIPE) {
+          logger_warn(&g_logger,
+                      "Capture: wait overrun, trying to recover. Error: %s",
+                      snd_strerror(err_wait));
+          logger_trace(&g_logger, "snd_pcm_prepare");
+          snd_pcm_prepare(capture->pcm);
+          break;
+        } else if (err_wait == -ESTRPIPE ||
+                   snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
+          logger_warn(
+              &g_logger,
+              "Capture: wait interrupted by suspend, trying to recover. Error: "
+              "%s",
+              snd_strerror(err_wait));
+          alsa_recover_suspended_pcm(capture->pcm, "Capture");
+          if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+            snd_pcm_start(capture->pcm);
+          }
+          break;
+        } else {
+          logger_warn(
+              &g_logger,
+              "Capture: device failed while waiting for available frames, "
+              "error: %s",
+              snd_strerror(err_wait));
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                               snd_strerror(err_wait));
+          return false;
+        }
+      }
+    }
+
+    size_t frames_req = buffer_len_bytes / bytes_per_frame;
+    snd_pcm_sframes_t rc = snd_pcm_readi(capture->pcm, buffer, frames_req);
+    if (rc > 0) {
+      size_t frames_read = (size_t)rc;
+      if (frames_read == frames_req) {
+        logger_trace(&g_logger, "Capture read %zu frames as requested",
+                     frames_read);
+        break;
       } else {
-        rc = snd_pcm_recover(capture->pcm, rc, 0);
+        logger_warn(&g_logger,
+                    "Capture read %zu frames instead of the requested %zu",
+                    frames_read, frames_req);
+        buffer += frames_read * bytes_per_frame;
+        buffer_len_bytes -= frames_read * bytes_per_frame;
+        continue;
       }
-      if (rc < 0) {
+    } else {
+      int err_read = (int)rc;
+      if (err_read == -EIO) {
+        logger_warn(&g_logger, "Capture: read failed with error: %s",
+                    snd_strerror(err_read));
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             snd_strerror(err_read));
+        return false;
+      } else if (err_read == 0 || err_read == -EAGAIN) {
+        logger_trace(&g_logger,
+                     "Capture: encountered EAGAIN error on read, trying again");
+        continue;
+      } else if (err_read == -EPIPE) {
+        logger_warn(&g_logger,
+                    "Capture: read overrun, trying to recover. Error: %s",
+                    snd_strerror(err_read));
+        logger_trace(&g_logger, "snd_pcm_prepare");
         snd_pcm_prepare(capture->pcm);
+        continue;
+      } else if (err_read == -ESTRPIPE ||
+                 snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
+        logger_warn(
+            &g_logger,
+            "Capture: read interrupted by suspend, trying to recover. Error: "
+            "%s",
+            snd_strerror(err_read));
+        alsa_recover_suspended_pcm(capture->pcm, "Capture");
+        if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+          snd_pcm_start(capture->pcm);
+        }
+        continue;
+      } else {
+        logger_warn(&g_logger, "Capture failed, error: %s",
+                    snd_strerror(err_read));
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             snd_strerror(err_read));
+        return false;
       }
-      rc = snd_pcm_readi(capture->pcm, capture->interleaved_buf, frames);
-    }
-    if (rc < 0) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR, snd_strerror(rc));
-      return false;
     }
   }
 
-  size_t read_frames = rc;
+  size_t read_frames = frames;
   audio_chunk_set_valid_frames(chunk, read_frames);
 
   // Convert and de-interleave samples to the output audio chunk.
