@@ -281,9 +281,14 @@ bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
 bool engine_shared_state_enqueue_processed(engine_shared_state_t* state,
                                            audio_chunk_t* chunk) {
   if (!state) return false;
-  bool ok = audio_sync_queue_enqueue(state->processed_queue, chunk);
-  if (ok && chunk) {
+  if (chunk) {
     atomic_fetch_add_explicit(&state->processed_queued_frames,
+                              audio_chunk_get_valid_frames(chunk),
+                              memory_order_relaxed);
+  }
+  bool ok = audio_sync_queue_enqueue(state->processed_queue, chunk);
+  if (!ok && chunk) {
+    atomic_fetch_sub_explicit(&state->processed_queued_frames,
                               audio_chunk_get_valid_frames(chunk),
                               memory_order_relaxed);
   }

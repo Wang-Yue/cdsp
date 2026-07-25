@@ -181,9 +181,13 @@ static void* wasapi_playback_thread_func(void* arg) {
       }
     }
 
+    size_t current_avail_samples =
+        spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
+    int current_avail_frames =
+        (int)(current_avail_samples / playback->channels);
     int target = playback->target_level > 0 ? playback->target_level
                                             : playback->chunk_size;
-    int remainder = target - (int)playback->buffer_frame_count;
+    int remainder = target - current_avail_frames;
     if (remainder > 0) {
       spsc_audio_ring_buffer_write_silence(playback->ring_buffer,
                                            remainder * playback->channels);
