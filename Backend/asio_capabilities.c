@@ -342,6 +342,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   }
 
   device_capability_set_t* set = &desc->capability_sets[0];
+  snprintf(set->mode, sizeof(set->mode), "Unified");
   set->capabilities_count = 1;
   set->capabilities =
       (channel_capability_t*)calloc(1, sizeof(channel_capability_t));

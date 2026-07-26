@@ -99,8 +99,8 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
       cdsp_device_capability_set_t* pub_set = &pub->capability_sets[i];
       const device_capability_set_t* int_set = &desc->capability_sets[i];
 
-      // Populate default mode string (internal set does not track it in C port)
-      strcpy(pub_set->mode, "Unified");
+      snprintf(pub_set->mode, sizeof(pub_set->mode), "%s",
+               int_set->mode[0] != '\0' ? int_set->mode : "Unified");
 
       pub_set->capabilities_count = int_set->capabilities_count;
       if (int_set->capabilities_count > 0 && int_set->capabilities) {

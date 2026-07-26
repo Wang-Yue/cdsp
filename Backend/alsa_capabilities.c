@@ -113,6 +113,7 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
   if (!desc->capability_sets) goto error_cleanup;
 
   device_capability_set_t* set = &desc->capability_sets[0];
+  snprintf(set->mode, sizeof(set->mode), "Unified");
   // Probe channel sizes by testing constraints.
   // We allocate space for every channel count from min to max.
   size_t cap_idx = 0;

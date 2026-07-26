@@ -264,6 +264,7 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   size_t exclusive_set_idx = 0;
   if (has_shared) {
     device_capability_set_t* shared_set = &desc->capability_sets[0];
+    snprintf(shared_set->mode, sizeof(shared_set->mode), "Shared");
     shared_set->capabilities_count = 1;
     shared_set->capabilities = (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
     if (shared_set->capabilities) {
@@ -285,6 +286,7 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   }
 
   device_capability_set_t* set = &desc->capability_sets[exclusive_set_idx];
+  snprintf(set->mode, sizeof(set->mode), "Exclusive");
   set->capabilities = (channel_capability_t*)calloc(
       PROBE_CHANNELS_COUNT, sizeof(channel_capability_t));
   if (!set->capabilities) {

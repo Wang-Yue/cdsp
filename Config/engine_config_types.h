@@ -204,6 +204,7 @@ typedef struct {
  * @brief Device capability set.
  */
 typedef struct {
+  char mode[64];                      /**< Access mode (e.g. "Unified", "Shared", "Exclusive"). */
   channel_capability_t* capabilities; /**< Array of channel capabilities. */
   size_t capabilities_count;          /**< Number of channel capabilities. */
 } device_capability_set_t;

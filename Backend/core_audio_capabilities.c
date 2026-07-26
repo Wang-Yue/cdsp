@@ -274,11 +274,16 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
   qsort(unique_ch, unique_ch_cnt, sizeof(int), cmp_int);
 
   device_capability_set_t* set = &desc->capability_sets[0];
-  set->capabilities = (channel_capability_t*)calloc(
-      unique_ch_cnt, sizeof(channel_capability_t));
-  if (!set->capabilities) {
-    free_audio_device_descriptor(desc);
-    return NULL;
+  snprintf(set->mode, sizeof(set->mode), "Unified");
+  if (unique_ch_cnt > 0) {
+    set->capabilities = (channel_capability_t*)calloc(
+        unique_ch_cnt, sizeof(channel_capability_t));
+    if (!set->capabilities) {
+      free_audio_device_descriptor(desc);
+      return NULL;
+    }
+  } else {
+    set->capabilities = NULL;
   }
   set->capabilities_count = unique_ch_cnt;
 
