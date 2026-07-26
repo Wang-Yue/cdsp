@@ -75,11 +75,10 @@ cJSON* create_state_event_value(cdsp_processing_state_t state,
 
 static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
   cJSON* root = cJSON_CreateObject();
-  cJSON* inner = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, cmd, inner);
-  cJSON_AddStringToObject(inner, "result", "Ok");
+  cJSON_AddStringToObject(root, "reply", cmd);
+  cJSON_AddStringToObject(root, "result", "Ok");
   if (value_json) {
-    cJSON_AddItemToObject(inner, "value", value_json);
+    cJSON_AddItemToObject(root, "value", value_json);
   }
   char* str = cJSON_PrintUnformatted(root);
   if (str) {
@@ -90,14 +89,12 @@ static void reply_ok(const char* cmd, cJSON* value_json, dyn_string_t* ds) {
 }
 
 static void reply_error(const char* cmd, const char* error_name,
-                        cJSON* error_value, dyn_string_t* ds) {
+                        const char* message, dyn_string_t* ds) {
   cJSON* root = cJSON_CreateObject();
-  cJSON* inner = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, cmd, inner);
-  if (error_value) {
-    cJSON_AddItemToObject(inner, "result", error_value);
-  } else {
-    cJSON_AddStringToObject(inner, "result", error_name);
+  cJSON_AddStringToObject(root, "reply", cmd);
+  cJSON_AddStringToObject(root, "result", error_name ? error_name : "ProcessingError");
+  if (message && message[0] != '\0') {
+    cJSON_AddStringToObject(root, "message", message);
   }
   char* str = cJSON_PrintUnformatted(root);
   if (str) {
@@ -109,9 +106,8 @@ static void reply_error(const char* cmd, const char* error_name,
 
 static void reply_invalid(const char* error_message, dyn_string_t* ds) {
   cJSON* root = cJSON_CreateObject();
-  cJSON* inner = cJSON_CreateObject();
-  cJSON_AddItemToObject(root, "Invalid", inner);
-  cJSON_AddStringToObject(inner, "error", error_message);
+  cJSON_AddStringToObject(root, "reply", "Invalid");
+  cJSON_AddStringToObject(root, "error", error_message ? error_message : "Invalid JSON");
   char* str = cJSON_PrintUnformatted(root);
   if (str) {
     dyn_string_printf(ds, "%s", str);
@@ -120,26 +116,33 @@ static void reply_invalid(const char* error_message, dyn_string_t* ds) {
   cJSON_Delete(root);
 }
 
-static bool parse_value_with_optional_limits(cJSON* node, double* out_delta,
-                                             double* out_min, double* out_max) {
-  if (!node) return false;
-  if (cJSON_IsNumber(node)) {
-    *out_delta = node->valuedouble;
-    return true;
+static bool parse_adjust_volume_args(cJSON* root, double* out_value,
+                                      double* out_min, double* out_max) {
+  if (!root || !cJSON_IsObject(root)) return false;
+  cJSON* val_node = cJSON_GetObjectItemCaseSensitive(root, "value");
+  if (!val_node || !cJSON_IsNumber(val_node)) return false;
+  *out_value = val_node->valuedouble;
+  *out_min = -150.0;
+  *out_max = 50.0;
+  cJSON* min_node = cJSON_GetObjectItemCaseSensitive(root, "min");
+  if (min_node && cJSON_IsNumber(min_node)) {
+    *out_min = min_node->valuedouble;
   }
-  if (cJSON_IsArray(node) && cJSON_GetArraySize(node) >= 3) {
-    cJSON* d = cJSON_GetArrayItem(node, 0);
-    cJSON* mn = cJSON_GetArrayItem(node, 1);
-    cJSON* mx = cJSON_GetArrayItem(node, 2);
-    if (d && mn && mx && cJSON_IsNumber(d) && cJSON_IsNumber(mn) &&
-        cJSON_IsNumber(mx)) {
-      *out_delta = d->valuedouble;
-      *out_min = mn->valuedouble;
-      *out_max = mx->valuedouble;
-      return true;
-    }
+  cJSON* max_node = cJSON_GetObjectItemCaseSensitive(root, "max");
+  if (max_node && cJSON_IsNumber(max_node)) {
+    *out_max = max_node->valuedouble;
   }
-  return false;
+  return true;
+}
+
+static bool parse_adjust_fader_volume_args(cJSON* root, int* out_fader,
+                                            double* out_value, double* out_min,
+                                            double* out_max) {
+  if (!root || !cJSON_IsObject(root)) return false;
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  if (!fader_node || !cJSON_IsNumber(fader_node)) return false;
+  *out_fader = fader_node->valueint;
+  return parse_adjust_volume_args(root, out_value, out_min, out_max);
 }
 
 typedef enum {
@@ -462,12 +465,12 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
 }
 
 static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
-                                  const char* cmd_name, cJSON* arg,
+                                  const char* cmd_name, cJSON* root,
                                   dyn_string_t* ds) {
   (void)client_idx;
-  double vol = 0.0;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
-    vol = arg->valuedouble;
+    double vol = arg->valuedouble;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -478,18 +481,15 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse volume");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "Could not parse volume", ds);
   }
 }
 
 static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
-                                const char* cmd_name, cJSON* arg,
+                                const char* cmd_name, cJSON* root,
                                 dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   ws_state_update_t status;
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
@@ -502,12 +502,12 @@ static void handle_cmd_get_mute(websocket_server_t* server, int client_idx,
 }
 
 static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
-                                const char* cmd_name, cJSON* arg,
+                                const char* cmd_name, cJSON* root,
                                 dyn_string_t* ds) {
   (void)client_idx;
-  bool mute = false;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsBool(arg)) {
-    mute = cJSON_IsTrue(arg);
+    bool mute = cJSON_IsTrue(arg);
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -518,17 +518,15 @@ static void handle_cmd_set_mute(websocket_server_t* server, int client_idx,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "Could not parse mute");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "Could not parse mute", ds);
   }
 }
 
 static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
-                                   const char* cmd_name, cJSON* arg,
+                                   const char* cmd_name, cJSON* root,
                                    dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   ws_state_update_t status;
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
@@ -542,10 +540,10 @@ static void handle_cmd_toggle_mute(websocket_server_t* server, int client_idx,
 }
 
 static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
-                                  const char* cmd_name, cJSON* arg,
+                                  const char* cmd_name, cJSON* root,
                                   dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   ws_state_update_t status;
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
@@ -567,10 +565,11 @@ static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
 
 static void handle_cmd_get_fader_volume(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  if (arg && cJSON_IsNumber(arg)) {
-    int idx = arg->valueint;
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  if (fader_node && cJSON_IsNumber(fader_node)) {
+    int idx = fader_node->valueint;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -588,31 +587,20 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse fader index");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "Could not parse fader index", ds);
   }
 }
 
 static void handle_cmd_set_fader_volume(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  int idx = -1;
-  double vol = 0.0;
-  bool ok = false;
-  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
-    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-    cJSON* vol_node = cJSON_GetArrayItem(arg, 1);
-    if (idx_node && vol_node && cJSON_IsNumber(idx_node) &&
-        cJSON_IsNumber(vol_node)) {
-      idx = idx_node->valueint;
-      vol = vol_node->valuedouble;
-      ok = true;
-    }
-  }
-  if (ok) {
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  cJSON* vol_node = cJSON_GetObjectItemCaseSensitive(root, "value");
+  if (fader_node && vol_node && cJSON_IsNumber(fader_node) &&
+      cJSON_IsNumber(vol_node)) {
+    int idx = fader_node->valueint;
+    double vol = vol_node->valuedouble;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -628,32 +616,22 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse fader index/volume array");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse fader index or volume value", ds);
   }
 }
 
 static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
                                                  int client_idx,
                                                  const char* cmd_name,
-                                                 cJSON* arg, dyn_string_t* ds) {
+                                                 cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  int idx = -1;
-  double vol = 0.0;
-  bool ok = false;
-  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
-    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-    cJSON* vol_node = cJSON_GetArrayItem(arg, 1);
-    if (idx_node && vol_node && cJSON_IsNumber(idx_node) &&
-        cJSON_IsNumber(vol_node)) {
-      idx = idx_node->valueint;
-      vol = vol_node->valuedouble;
-      ok = true;
-    }
-  }
-  if (ok) {
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  cJSON* vol_node = cJSON_GetObjectItemCaseSensitive(root, "value");
+  if (fader_node && vol_node && cJSON_IsNumber(fader_node) &&
+      cJSON_IsNumber(vol_node)) {
+    int idx = fader_node->valueint;
+    double vol = vol_node->valuedouble;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -669,20 +647,18 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(
-        err, "InvalidRequestError",
-        "Could not parse fader index/external volume array");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse fader index or external volume value", ds);
   }
 }
 
 static void handle_cmd_get_fader_mute(websocket_server_t* server,
                                       int client_idx, const char* cmd_name,
-                                      cJSON* arg, dyn_string_t* ds) {
+                                      cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  if (arg && cJSON_IsNumber(arg)) {
-    int idx = arg->valueint;
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  if (fader_node && cJSON_IsNumber(fader_node)) {
+    int idx = fader_node->valueint;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -700,31 +676,20 @@ static void handle_cmd_get_fader_mute(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse fader index");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "Could not parse fader index", ds);
   }
 }
 
 static void handle_cmd_set_fader_mute(websocket_server_t* server,
                                       int client_idx, const char* cmd_name,
-                                      cJSON* arg, dyn_string_t* ds) {
+                                      cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  int idx = -1;
-  bool mute = false;
-  bool ok = false;
-  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
-    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-    cJSON* mute_node = cJSON_GetArrayItem(arg, 1);
-    if (idx_node && mute_node && cJSON_IsNumber(idx_node) &&
-        cJSON_IsBool(mute_node)) {
-      idx = idx_node->valueint;
-      mute = cJSON_IsTrue(mute_node);
-      ok = true;
-    }
-  }
-  if (ok) {
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  cJSON* mute_node = cJSON_GetObjectItemCaseSensitive(root, "value");
+  if (fader_node && mute_node && cJSON_IsNumber(fader_node) &&
+      cJSON_IsBool(mute_node)) {
+    int idx = fader_node->valueint;
+    bool mute = cJSON_IsTrue(mute_node);
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -739,19 +704,18 @@ static void handle_cmd_set_fader_mute(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse fader index/mute array");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse fader index or mute value", ds);
   }
 }
 
 static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
                                          int client_idx, const char* cmd_name,
-                                         cJSON* arg, dyn_string_t* ds) {
+                                         cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  if (arg && cJSON_IsNumber(arg)) {
-    int idx = arg->valueint;
+  cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
+  if (fader_node && cJSON_IsNumber(fader_node)) {
+    int idx = fader_node->valueint;
     ws_state_update_t status;
     if (server && server->engine &&
         ws_engine_get_status(server->engine, &status) &&
@@ -770,50 +734,35 @@ static void handle_cmd_toggle_fader_mute(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse fader index");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "Could not parse fader index", ds);
   }
 }
 
 static void handle_cmd_adjust_volume(websocket_server_t* server, int client_idx,
-                                     const char* cmd_name, cJSON* arg,
+                                     const char* cmd_name, cJSON* root,
                                      dyn_string_t* ds) {
   (void)client_idx;
   double delta = 0.0;
   double min_vol = -150.0;
   double max_vol = 50.0;
-  if (parse_value_with_optional_limits(arg, &delta, &min_vol, &max_vol)) {
+  if (parse_adjust_volume_args(root, &delta, &min_vol, &max_vol)) {
     server_handle_adjust_volume_fader(server, CDSP_FADER_MAIN, delta, min_vol,
                                       max_vol, ds, cmd_name);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse AdjustVolume argument");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse AdjustVolume argument", ds);
   }
 }
 
 static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
   int idx = -1;
   double delta = 0.0;
   double min_vol = -150.0;
   double max_vol = 50.0;
-  bool ok = false;
-  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) == 2) {
-    cJSON* idx_node = cJSON_GetArrayItem(arg, 0);
-    cJSON* val_limits = cJSON_GetArrayItem(arg, 1);
-    if (idx_node && cJSON_IsNumber(idx_node)) {
-      idx = idx_node->valueint;
-      ok = parse_value_with_optional_limits(val_limits, &delta, &min_vol,
-                                            &max_vol);
-    }
-  }
-  if (ok) {
+  if (parse_adjust_fader_volume_args(root, &idx, &delta, &min_vol, &max_vol)) {
     if (idx >= 0 && idx < CDSP_FADER_COUNT) {
       server_handle_adjust_volume_fader(server, (cdsp_fader_t)idx, delta,
                                         min_vol, max_vol, ds, cmd_name);
@@ -821,17 +770,15 @@ static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
       reply_error(cmd_name, "InvalidFaderError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse AdjustFaderVolume array");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse AdjustFaderVolume argument", ds);
   }
 }
 
 static void handle_cmd_subscribe_state(websocket_server_t* server,
                                        int client_idx, const char* cmd_name,
-                                       cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
+                                       cJSON* root, dyn_string_t* ds) {
+  (void)root;
   if (server) {
     pthread_mutex_lock(&server->sessions_mutex);
     server->client_sessions[client_idx].state_subscribed = true;
@@ -842,10 +789,11 @@ static void handle_cmd_subscribe_state(websocket_server_t* server,
 
 static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   double max_rate = 0.0;
   double attack = 0.0;
   double release = 0.0;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsObject(arg)) {
     cJSON* item;
     item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
@@ -856,11 +804,8 @@ static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
     if (item && cJSON_IsNumber(item)) release = item->valuedouble;
   }
   if (attack < 0.0 || attack > 60000.0 || release < 0.0 || release > 60000.0) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(
-        err, "InvalidValueError",
-        "attack and release must be between 0 and 60000 ms");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "attack and release must be between 0 and 60000 ms", ds);
   } else {
     if (server) {
       pthread_mutex_lock(&server->sessions_mutex);
@@ -877,9 +822,10 @@ static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
 
 static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
                                                int client_idx,
-                                               const char* cmd_name, cJSON* arg,
+                                               const char* cmd_name, cJSON* root,
                                                dyn_string_t* ds) {
   char side[16] = "";
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     strncpy(side, arg->valuestring, sizeof(side) - 1);
   }
@@ -895,16 +841,14 @@ static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "side must be playback, capture, or both");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "side must be playback, capture, or both", ds);
   }
 }
 
 static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
                                           int client_idx, const char* cmd_name,
-                                          cJSON* arg, dyn_string_t* ds) {
+                                          cJSON* root, dyn_string_t* ds) {
   bool is_capture = true;
   uint32_t channel = (uint32_t)-1;
   double min_freq = 20.0;
@@ -912,20 +856,17 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   uint32_t n_bins = 1024;
   double max_rate = 0.0;
 
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (!arg || !cJSON_IsObject(arg)) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Arguments must be a JSON object");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Arguments must be a JSON object", ds);
     return;
   }
 
   cJSON* item_side = cJSON_GetObjectItemCaseSensitive(arg, "side");
   if (!item_side || !cJSON_IsString(item_side)) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Missing or invalid 'side' parameter");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Missing or invalid 'side' parameter", ds);
     return;
   }
   if (strcmp(item_side->valuestring, "capture") == 0) {
@@ -933,10 +874,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   } else if (strcmp(item_side->valuestring, "playback") == 0) {
     is_capture = false;
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "side must be 'capture' or 'playback'");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "side must be 'capture' or 'playback'", ds);
     return;
   }
 
@@ -944,18 +883,14 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   if (item_chan && !cJSON_IsNull(item_chan)) {
     if (cJSON_IsNumber(item_chan)) {
       if (item_chan->valueint < 0) {
-        cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "InvalidValueError",
-                                "channel must be non-negative");
-        reply_error(cmd_name, NULL, err, ds);
+        reply_error(cmd_name, "InvalidValueError",
+                    "channel must be non-negative", ds);
         return;
       }
       channel = (uint32_t)item_chan->valueint;
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidValueError",
-                              "channel must be an integer or null");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidValueError",
+                  "channel must be an integer or null", ds);
       return;
     }
   }
@@ -965,10 +900,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
     min_freq = item_min->valuedouble;
   }
   if (min_freq <= 0.0) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "min_freq must be greater than 0");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "min_freq must be greater than 0", ds);
     return;
   }
 
@@ -977,10 +910,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
     max_freq = item_max->valuedouble;
   }
   if (max_freq <= min_freq) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "max_freq must be greater than min_freq");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "max_freq must be greater than min_freq", ds);
     return;
   }
 
@@ -989,10 +920,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
     n_bins = (uint32_t)item_bins->valueint;
   }
   if (n_bins < 2) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "n_bins must be at least 2");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "n_bins must be at least 2", ds);
     return;
   }
 
@@ -1018,8 +947,8 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
 static void handle_cmd_stop_subscription(websocket_server_t* server,
                                          int client_idx, const char* cmd_name,
-                                         cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
+                                         cJSON* root, dyn_string_t* ds) {
+  (void)root;
   if (server) {
     pthread_mutex_lock(&server->sessions_mutex);
     bool active =
@@ -1036,25 +965,21 @@ static void handle_cmd_stop_subscription(websocket_server_t* server,
       reply_ok(cmd_name, NULL, ds);
     } else {
       pthread_mutex_unlock(&server->sessions_mutex);
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidRequestError",
-                              "No active subscription");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidRequestError",
+                  "No active subscription", ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "No active subscription");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "No active subscription", ds);
   }
 }
 
 static void handle_cmd_get_config_file_path(websocket_server_t* server,
                                             int client_idx,
-                                            const char* cmd_name, cJSON* arg,
+                                            const char* cmd_name, cJSON* root,
                                             dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char* path = (server && server->engine)
                    ? cdsp_get_config_file_path(server->engine)
                    : NULL;
@@ -1068,9 +993,9 @@ static void handle_cmd_get_config_file_path(websocket_server_t* server,
 
 static void handle_cmd_get_previous_config(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char* prev = NULL;
   if (server && server->engine) {
     cdsp_get_previous_config_yaml(server->engine, &prev);
@@ -1085,9 +1010,9 @@ static void handle_cmd_get_previous_config(websocket_server_t* server,
 
 static void handle_cmd_get_state_file_path(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   const char* path = (server && server->engine)
                          ? cdsp_get_state_file_path(server->engine)
                          : NULL;
@@ -1100,10 +1025,10 @@ static void handle_cmd_get_state_file_path(websocket_server_t* server,
 
 static void handle_cmd_get_state_file_updated(websocket_server_t* server,
                                               int client_idx,
-                                              const char* cmd_name, cJSON* arg,
+                                              const char* cmd_name, cJSON* root,
                                               dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   bool updated = (server && server->engine)
                      ? cdsp_get_state_file_updated(server->engine)
                      : true;
@@ -1111,10 +1036,10 @@ static void handle_cmd_get_state_file_updated(websocket_server_t* server,
 }
 
 static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
-                                  const char* cmd_name, cJSON* arg,
+                                  const char* cmd_name, cJSON* root,
                                   dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char* config_str = NULL;
   bool ok = false;
   if (server && server->engine) {
@@ -1128,17 +1053,15 @@ static void handle_cmd_get_config(websocket_server_t* server, int client_idx,
     reply_ok(cmd_name, cJSON_CreateString(config_str), ds);
     free(config_str);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError", "No active config");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError", "No active config", ds);
   }
 }
 
 static void handle_cmd_get_config_title(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char* title =
       (server && server->engine) ? cdsp_get_config_title(server->engine) : NULL;
   if (title) {
@@ -1151,10 +1074,10 @@ static void handle_cmd_get_config_title(websocket_server_t* server,
 
 static void handle_cmd_get_config_description(websocket_server_t* server,
                                               int client_idx,
-                                              const char* cmd_name, cJSON* arg,
+                                              const char* cmd_name, cJSON* root,
                                               dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char* desc = (server && server->engine)
                    ? cdsp_get_config_description(server->engine)
                    : NULL;
@@ -1167,27 +1090,24 @@ static void handle_cmd_get_config_description(websocket_server_t* server,
 }
 
 static void handle_cmd_reload(websocket_server_t* server, int client_idx,
-                              const char* cmd_name, cJSON* arg,
+                              const char* cmd_name, cJSON* root,
                               dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   cdsp_backend_error_t err = {0};
   if (server && server->engine && cdsp_reload_config(server->engine, &err)) {
     reply_ok(cmd_name, NULL, ds);
   } else {
-    cJSON* err_obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(
-        err_obj, get_websocket_error_key(err.type),
-        err.message[0] ? err.message : "Failed to reload config");
-    reply_error(cmd_name, NULL, err_obj, ds);
+    reply_error(cmd_name, get_websocket_error_key(err.type),
+                err.message[0] ? err.message : "Failed to reload config", ds);
   }
 }
 
 static void handle_cmd_stop(websocket_server_t* server, int client_idx,
-                            const char* cmd_name, cJSON* arg,
+                            const char* cmd_name, cJSON* root,
                             dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   if (server && server->engine) {
     cdsp_stop(server->engine);
   }
@@ -1195,10 +1115,10 @@ static void handle_cmd_stop(websocket_server_t* server, int client_idx,
 }
 
 static void handle_cmd_exit(websocket_server_t* server, int client_idx,
-                            const char* cmd_name, cJSON* arg,
+                            const char* cmd_name, cJSON* root,
                             dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   if (server && server->engine) {
     cdsp_stop(server->engine);
   }
@@ -1207,9 +1127,10 @@ static void handle_cmd_exit(websocket_server_t* server, int client_idx,
 
 static void handle_cmd_set_config_file_path(websocket_server_t* server,
                                             int client_idx,
-                                            const char* cmd_name, cJSON* arg,
+                                            const char* cmd_name, cJSON* root,
                                             dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* path = arg->valuestring;
     if (server && server->engine) {
@@ -1217,17 +1138,16 @@ static void handle_cmd_set_config_file_path(websocket_server_t* server,
     }
     reply_ok(cmd_name, NULL, ds);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse Config File Path");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse Config File Path", ds);
   }
 }
 
 static void handle_cmd_set_config_json(websocket_server_t* server,
                                        int client_idx, const char* cmd_name,
-                                       cJSON* arg, dyn_string_t* ds) {
+                                       cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* new_json = arg->valuestring;
     cdsp_backend_error_t err = {0};
@@ -1236,23 +1156,20 @@ static void handle_cmd_set_config_json(websocket_server_t* server,
     if (ok) {
       reply_ok(cmd_name, NULL, ds);
     } else {
-      cJSON* err_obj = cJSON_CreateObject();
-      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                              err.message);
-      reply_error(cmd_name, NULL, err_obj, ds);
+      reply_error(cmd_name, get_websocket_error_key(err.type),
+                  err.message, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse Config JSON");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse Config JSON", ds);
   }
 }
 
 static void handle_cmd_set_config_yaml(websocket_server_t* server,
                                        int client_idx, const char* cmd_name,
-                                       cJSON* arg, dyn_string_t* ds) {
+                                       cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* new_yaml = arg->valuestring;
     cdsp_backend_error_t err = {0};
@@ -1261,23 +1178,20 @@ static void handle_cmd_set_config_yaml(websocket_server_t* server,
     if (ok) {
       reply_ok(cmd_name, NULL, ds);
     } else {
-      cJSON* err_obj = cJSON_CreateObject();
-      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                              err.message);
-      reply_error(cmd_name, NULL, err_obj, ds);
+      reply_error(cmd_name, get_websocket_error_key(err.type),
+                  err.message, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse Config YAML");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse Config YAML", ds);
   }
 }
 
 static void handle_cmd_get_config_value(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* pointer = arg->valuestring;
     char* val = (server && server->engine)
@@ -1292,26 +1206,23 @@ static void handle_cmd_get_config_value(websocket_server_t* server,
       }
       free(val);
     } else {
-      cJSON* err = cJSON_CreateObject();
       char msg[256];
       snprintf(msg, sizeof(msg), "Path not found: %s", pointer);
-      cJSON_AddStringToObject(err, "InvalidRequestError", msg);
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidRequestError", msg, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse pointer");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse pointer", ds);
   }
 }
 
 static void handle_cmd_set_config_value(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
   char pointer[256] = "";
   char* val_json = NULL;
+  cJSON* arg = root;
   if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
     cJSON* p_node = cJSON_GetArrayItem(arg, 0);
     cJSON* v_node = cJSON_GetArrayItem(arg, 1);
@@ -1338,24 +1249,21 @@ static void handle_cmd_set_config_value(websocket_server_t* server,
     if (ok) {
       reply_ok(cmd_name, NULL, ds);
     } else {
-      cJSON* err_obj = cJSON_CreateObject();
-      cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                              err.message[0] ? err.message : "Path not found");
-      reply_error(cmd_name, NULL, err_obj, ds);
+      reply_error(cmd_name, get_websocket_error_key(err.type),
+                  err.message[0] ? err.message : "Path not found", ds);
     }
     free(val_json);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse SetConfigValue command");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse SetConfigValue command", ds);
   }
 }
 
 static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
-                                    const char* cmd_name, cJSON* arg,
+                                    const char* cmd_name, cJSON* root,
                                     dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsObject(arg)) {
     char* patch_str = cJSON_PrintUnformatted(arg);
     if (patch_str) {
@@ -1365,31 +1273,26 @@ static void handle_cmd_patch_config(websocket_server_t* server, int client_idx,
       if (ok) {
         reply_ok(cmd_name, NULL, ds);
       } else {
-        cJSON* err_obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(err_obj, get_websocket_error_key(err.type),
-                                err.message[0] ? err.message : "Invalid patch");
-        reply_error(cmd_name, NULL, err_obj, ds);
+        reply_error(cmd_name, get_websocket_error_key(err.type),
+                    err.message[0] ? err.message : "Invalid patch", ds);
       }
       free(patch_str);
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidRequestError",
-                              "Could not format patch JSON");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidRequestError",
+                  "Could not format patch JSON", ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse PatchConfig command");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse PatchConfig command", ds);
   }
 }
 
 static void handle_cmd_read_config_json(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)server;
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* config_json = arg->valuestring;
     char* result = NULL;
@@ -1398,27 +1301,24 @@ static void handle_cmd_read_config_json(websocket_server_t* server,
         err_type == CDSP_CONFIG_ERR_NONE) {
       reply_ok(cmd_name, cJSON_CreateString(result ? result : config_json), ds);
     } else {
-      cJSON* err = cJSON_CreateObject();
       const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
                                 ? "ConfigReadError"
                                 : "ConfigValidationError";
-      cJSON_AddStringToObject(err, err_key, result ? result : "Invalid config");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, err_key, result ? result : "Invalid config", ds);
     }
     if (result) free(result);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse input config JSON");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse input config JSON", ds);
   }
 }
 
 static void handle_cmd_read_config_yaml(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)server;
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* config_yaml = arg->valuestring;
     char* result = NULL;
@@ -1427,27 +1327,24 @@ static void handle_cmd_read_config_yaml(websocket_server_t* server,
         err_type == CDSP_CONFIG_ERR_NONE) {
       reply_ok(cmd_name, cJSON_CreateString(result ? result : config_yaml), ds);
     } else {
-      cJSON* err = cJSON_CreateObject();
       const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
                                 ? "ConfigReadError"
                                 : "ConfigValidationError";
-      cJSON_AddStringToObject(err, err_key, result ? result : "Invalid config");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, err_key, result ? result : "Invalid config", ds);
     }
     if (result) free(result);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse input config YAML");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse input config YAML", ds);
   }
 }
 
 static void handle_cmd_read_config_file(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)server;
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* path = arg->valuestring;
     char* result = NULL;
@@ -1456,27 +1353,23 @@ static void handle_cmd_read_config_file(websocket_server_t* server,
         err_type == CDSP_CONFIG_ERR_NONE) {
       reply_ok(cmd_name, cJSON_CreateString(result), ds);
     } else {
-      cJSON* err = cJSON_CreateObject();
       const char* err_key = (err_type == CDSP_CONFIG_ERR_PARSE)
                                 ? "ConfigReadError"
                                 : "ConfigValidationError";
-      cJSON_AddStringToObject(err, err_key,
-                              result ? result : "Invalid config file");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, err_key,
+                  result ? result : "Invalid config file", ds);
     }
     if (result) free(result);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse input config file path");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse input config file path", ds);
   }
 }
 
-static void handle_get_signal_single_helper(websocket_server_t* server,
-                                            const char* cmd_name,
-                                            bool is_capture, bool is_rms,
-                                            dyn_string_t* ds) {
+static void handle_get_signal_single(websocket_server_t* server,
+                                     const char* cmd_name,
+                                     bool is_capture, bool is_rms,
+                                     dyn_string_t* ds) {
   cdsp_vu_levels_t vu = {0};
   if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
     double* arr = NULL;
@@ -1495,47 +1388,13 @@ static void handle_get_signal_single_helper(websocket_server_t* server,
   }
 }
 
-static void handle_cmd_get_capture_signal_rms(websocket_server_t* server,
-                                              int client_idx,
-                                              const char* cmd_name, cJSON* arg,
-                                              dyn_string_t* ds) {
-  (void)client_idx;
-  (void)arg;
-  handle_get_signal_single_helper(server, cmd_name, true, true, ds);
-}
 
-static void handle_cmd_get_capture_signal_peak(websocket_server_t* server,
-                                               int client_idx,
-                                               const char* cmd_name, cJSON* arg,
-                                               dyn_string_t* ds) {
-  (void)client_idx;
-  (void)arg;
-  handle_get_signal_single_helper(server, cmd_name, true, false, ds);
-}
 
-static void handle_cmd_get_playback_signal_rms(websocket_server_t* server,
-                                               int client_idx,
-                                               const char* cmd_name, cJSON* arg,
-                                               dyn_string_t* ds) {
-  (void)client_idx;
-  (void)arg;
-  handle_get_signal_single_helper(server, cmd_name, false, true, ds);
-}
-
-static void handle_cmd_get_playback_signal_peak(websocket_server_t* server,
-                                                int client_idx,
-                                                const char* cmd_name,
-                                                cJSON* arg, dyn_string_t* ds) {
-  (void)client_idx;
-  (void)arg;
-  handle_get_signal_single_helper(server, cmd_name, false, false, ds);
-}
-
-static void handle_get_signal_since_last_helper(websocket_server_t* server,
-                                                int client_idx,
-                                                const char* cmd_name,
-                                                bool is_capture, bool is_rms,
-                                                dyn_string_t* ds) {
+static void handle_get_signal_since_last(websocket_server_t* server,
+                                         int client_idx,
+                                         const char* cmd_name,
+                                         bool is_capture, bool is_rms,
+                                         dyn_string_t* ds) {
   ws_state_update_t status;
   if (server && server->engine &&
       ws_engine_get_status(server->engine, &status) &&
@@ -1580,43 +1439,14 @@ static void handle_get_signal_since_last_helper(websocket_server_t* server,
   }
 }
 
-static void handle_cmd_get_capture_signal_rms_since_last(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
-  handle_get_signal_since_last_helper(server, client_idx, cmd_name, true, true,
-                                      ds);
-}
 
-static void handle_cmd_get_capture_signal_peak_since_last(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
-  handle_get_signal_since_last_helper(server, client_idx, cmd_name, true, false,
-                                      ds);
-}
 
-static void handle_cmd_get_playback_signal_rms_since_last(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
-  handle_get_signal_since_last_helper(server, client_idx, cmd_name, false, true,
-                                      ds);
-}
-
-static void handle_cmd_get_playback_signal_peak_since_last(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)arg;
-  handle_get_signal_since_last_helper(server, client_idx, cmd_name, false,
-                                      false, ds);
-}
-
-static void handle_get_signal_since_helper(websocket_server_t* server,
-                                           const char* cmd_name, cJSON* arg,
-                                           bool is_capture, bool is_rms,
-                                           dyn_string_t* ds) {
+static void handle_get_signal_since(websocket_server_t* server,
+                                    const char* cmd_name, cJSON* root,
+                                    bool is_capture, bool is_rms,
+                                    dyn_string_t* ds) {
   double secs = 0;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
     secs = arg->valuedouble;
     ws_state_update_t status;
@@ -1646,46 +1476,14 @@ static void handle_get_signal_since_helper(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse seconds");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse seconds", ds);
   }
 }
 
-static void handle_cmd_get_capture_signal_rms_since(websocket_server_t* server,
-                                                    int client_idx,
-                                                    const char* cmd_name,
-                                                    cJSON* arg,
-                                                    dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_signal_since_helper(server, cmd_name, arg, true, true, ds);
-}
 
-static void handle_cmd_get_capture_signal_peak_since(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_signal_since_helper(server, cmd_name, arg, true, false, ds);
-}
 
-static void handle_cmd_get_playback_signal_rms_since(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_signal_since_helper(server, cmd_name, arg, false, true, ds);
-}
 
-static void handle_cmd_get_playback_signal_peak_since(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_signal_since_helper(server, cmd_name, arg, false, false, ds);
-}
 
 static void handle_cmd_get_signal_levels(websocket_server_t* server,
                                          int client_idx, const char* cmd_name,
@@ -1824,10 +1622,8 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
       reply_error(cmd_name, "ProcessingNotRunningError", NULL, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse seconds");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse seconds", ds);
   }
 }
 
@@ -1948,19 +1744,15 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   uint32_t n_bins = 1024;
 
   if (!arg || !cJSON_IsObject(arg)) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Arguments must be a JSON object");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Arguments must be a JSON object", ds);
     return;
   }
 
   cJSON* item_side = cJSON_GetObjectItemCaseSensitive(arg, "side");
   if (!item_side || !cJSON_IsString(item_side)) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Missing or invalid 'side' parameter");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Missing or invalid 'side' parameter", ds);
     return;
   }
   if (strcmp(item_side->valuestring, "capture") == 0) {
@@ -1968,10 +1760,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   } else if (strcmp(item_side->valuestring, "playback") == 0) {
     is_capture = false;
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "side must be 'capture' or 'playback'");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "side must be 'capture' or 'playback'", ds);
     return;
   }
 
@@ -1979,18 +1769,14 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   if (item_chan && !cJSON_IsNull(item_chan)) {
     if (cJSON_IsNumber(item_chan)) {
       if (item_chan->valueint < 0) {
-        cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "InvalidValueError",
-                                "channel must be non-negative");
-        reply_error(cmd_name, NULL, err, ds);
+        reply_error(cmd_name, "InvalidValueError",
+                    "channel must be non-negative", ds);
         return;
       }
       channel = (uint32_t)item_chan->valueint;
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidValueError",
-                              "channel must be an integer or null");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidValueError",
+                  "channel must be an integer or null", ds);
       return;
     }
   }
@@ -2000,10 +1786,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     min_freq = item_min->valuedouble;
   }
   if (min_freq <= 0.0) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "min_freq must be greater than 0");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "min_freq must be greater than 0", ds);
     return;
   }
 
@@ -2012,10 +1796,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     max_freq = item_max->valuedouble;
   }
   if (max_freq <= min_freq) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidValueError",
-                            "max_freq must be greater than min_freq");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidValueError",
+                "max_freq must be greater than min_freq", ds);
     return;
   }
 
@@ -2024,10 +1806,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     n_bins = (uint32_t)item_bins->valueint;
   }
   if (n_bins < 2) {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "n_bins must be at least 2");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "n_bins must be at least 2", ds);
     return;
   }
 
@@ -2048,16 +1828,15 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     }
     cdsp_free_spectrum(&spec);
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "DeviceError", "Failed to compute spectrum");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "DeviceError", "Failed to compute spectrum", ds);
   }
 }
 
-static void handle_get_available_devices_helper(websocket_server_t* server,
-                                                const char* cmd_name,
-                                                cJSON* arg, bool is_capture,
-                                                dyn_string_t* ds) {
+static void handle_get_available_devices(websocket_server_t* server,
+                                         const char* cmd_name,
+                                         cJSON* root, bool is_capture,
+                                         dyn_string_t* ds) {
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
     const char* backend = arg->valuestring;
     cdsp_device_info_t* devs = NULL;
@@ -2079,37 +1858,22 @@ static void handle_get_available_devices_helper(websocket_server_t* server,
       reply_ok(cmd_name, cJSON_CreateArray(), ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse backend");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse backend", ds);
   }
 }
 
-static void handle_cmd_get_available_capture_devices(websocket_server_t* server,
-                                                     int client_idx,
-                                                     const char* cmd_name,
-                                                     cJSON* arg,
-                                                     dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_available_devices_helper(server, cmd_name, arg, true, ds);
-}
 
-static void handle_cmd_get_available_playback_devices(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_available_devices_helper(server, cmd_name, arg, false, ds);
-}
 
-static void handle_get_device_capabilities_helper(websocket_server_t* server,
-                                                  const char* cmd_name,
-                                                  cJSON* arg, bool is_capture,
-                                                  dyn_string_t* ds) {
+static void handle_get_device_capabilities(websocket_server_t* server,
+                                           const char* cmd_name,
+                                           cJSON* root, bool is_capture,
+                                           dyn_string_t* ds) {
   (void)server;
   char backend[128] = "";
   char device[256] = "";
   bool ok = false;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
     cJSON* b_node = cJSON_GetArrayItem(arg, 0);
     cJSON* d_node = cJSON_GetArrayItem(arg, 1);
@@ -2136,53 +1900,35 @@ static void handle_get_device_capabilities_helper(websocket_server_t* server,
           reply_error(cmd_name, "UnknownError", NULL, ds);
         }
       } else {
-        cJSON* err = cJSON_CreateObject();
-        cJSON_AddStringToObject(err, "DeviceError", "Out of memory");
-        reply_error(cmd_name, NULL, err, ds);
+        reply_error(cmd_name, "DeviceError", "Out of memory", ds);
       }
       cdsp_free_device_capabilities(desc);
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, get_websocket_device_error_key(d_err.type),
-                              d_err.message);
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, get_websocket_device_error_key(d_err.type),
+                  d_err.message, ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse backend/device array");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse backend/device array", ds);
   }
 }
 
-static void handle_cmd_get_capture_device_capabilities(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_device_capabilities_helper(server, cmd_name, arg, true, ds);
-}
 
-static void handle_cmd_get_playback_device_capabilities(
-    websocket_server_t* server, int client_idx, const char* cmd_name,
-    cJSON* arg, dyn_string_t* ds) {
-  (void)client_idx;
-  handle_get_device_capabilities_helper(server, cmd_name, arg, false, ds);
-}
 
 static void handle_cmd_get_version(websocket_server_t* server, int client_idx,
-                                   const char* cmd_name, cJSON* arg,
+                                   const char* cmd_name, cJSON* root,
                                    dyn_string_t* ds) {
   (void)server;
   (void)client_idx;
-  (void)arg;
+  (void)root;
   reply_ok(cmd_name, cJSON_CreateString("2.0.0"), ds);
 }
 
 static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
-                                 const char* cmd_name, cJSON* arg,
+                                 const char* cmd_name, cJSON* root,
                                  dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   cdsp_processing_state_t state = CDSP_PROCESSING_STATE_INACTIVE;
   if (server && server->engine) {
     ws_state_update_t status;
@@ -2196,9 +1942,9 @@ static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
 
 static void handle_cmd_get_stop_reason(websocket_server_t* server,
                                        int client_idx, const char* cmd_name,
-                                       cJSON* arg, dyn_string_t* ds) {
+                                       cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   cJSON* val = NULL;
   if (server && server->engine) {
     ws_state_update_t status = {0};
@@ -2214,9 +1960,9 @@ static void handle_cmd_get_stop_reason(websocket_server_t* server,
 
 static void handle_cmd_get_capture_rate(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   ws_state_update_t status = {0};
   bool has_status =
       server && server->engine && ws_engine_get_status(server->engine, &status);
@@ -2229,9 +1975,9 @@ static void handle_cmd_get_capture_rate(websocket_server_t* server,
 
 static void handle_cmd_get_rate_adjust(websocket_server_t* server,
                                        int client_idx, const char* cmd_name,
-                                       cJSON* arg, dyn_string_t* ds) {
+                                       cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   double rate = 1.0;
   if (server && server->engine) {
     cdsp_get_processing_status(server->engine, &rate, NULL, NULL, NULL, NULL);
@@ -2241,9 +1987,9 @@ static void handle_cmd_get_rate_adjust(websocket_server_t* server,
 
 static void handle_cmd_get_buffer_level(websocket_server_t* server,
                                         int client_idx, const char* cmd_name,
-                                        cJSON* arg, dyn_string_t* ds) {
+                                        cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   double lvl = 0.0;
   if (server && server->engine) {
     cdsp_get_processing_status(server->engine, NULL, &lvl, NULL, NULL, NULL);
@@ -2253,9 +1999,9 @@ static void handle_cmd_get_buffer_level(websocket_server_t* server,
 
 static void handle_cmd_get_clipped_samples(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   uint64_t clips = 0;
   if (server && server->engine) {
     cdsp_get_processing_status(server->engine, NULL, NULL, &clips, NULL, NULL);
@@ -2265,10 +2011,10 @@ static void handle_cmd_get_clipped_samples(websocket_server_t* server,
 
 static void handle_cmd_reset_clipped_samples(websocket_server_t* server,
                                              int client_idx,
-                                             const char* cmd_name, cJSON* arg,
+                                             const char* cmd_name, cJSON* root,
                                              dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   if (server && server->engine) {
     cdsp_reset_clipped_samples(server->engine);
   }
@@ -2277,9 +2023,9 @@ static void handle_cmd_reset_clipped_samples(websocket_server_t* server,
 
 static void handle_cmd_get_processing_load(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   double load = 0.0;
   if (server && server->engine) {
     cdsp_get_processing_status(server->engine, NULL, NULL, NULL, &load, NULL);
@@ -2289,9 +2035,9 @@ static void handle_cmd_get_processing_load(websocket_server_t* server,
 
 static void handle_cmd_get_resampler_load(websocket_server_t* server,
                                           int client_idx, const char* cmd_name,
-                                          cJSON* arg, dyn_string_t* ds) {
+                                          cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   double load = 0.0;
   if (server && server->engine) {
     cdsp_get_processing_status(server->engine, NULL, NULL, NULL, NULL, &load);
@@ -2302,11 +2048,11 @@ static void handle_cmd_get_resampler_load(websocket_server_t* server,
 static void handle_cmd_get_supported_device_types(websocket_server_t* server,
                                                   int client_idx,
                                                   const char* cmd_name,
-                                                  cJSON* arg,
+                                                  cJSON* root,
                                                   dyn_string_t* ds) {
   (void)server;
   (void)client_idx;
-  (void)arg;
+  (void)root;
   char** play_types = NULL;
   size_t play_count = 0;
   char** cap_types = NULL;
@@ -2341,32 +2087,29 @@ static void handle_cmd_get_supported_device_types(websocket_server_t* server,
 
 static void handle_cmd_get_update_interval(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
-  (void)arg;
+  (void)root;
   int interval = server ? (int)server->update_interval : 100;
   reply_ok(cmd_name, cJSON_CreateNumber(interval), ds);
 }
 
 static void handle_cmd_set_update_interval(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
-                                           cJSON* arg, dyn_string_t* ds) {
+                                           cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
     double val = arg->valuedouble;
     if (val >= 0.0) {
       if (server) server->update_interval = (uint32_t)val;
       reply_ok(cmd_name, NULL, ds);
     } else {
-      cJSON* err = cJSON_CreateObject();
-      cJSON_AddStringToObject(err, "InvalidValueError", "Value must be >= 0");
-      reply_error(cmd_name, NULL, err, ds);
+      reply_error(cmd_name, "InvalidValueError", "Value must be >= 0", ds);
     }
   } else {
-    cJSON* err = cJSON_CreateObject();
-    cJSON_AddStringToObject(err, "InvalidRequestError",
-                            "Could not parse SetUpdateInterval argument");
-    reply_error(cmd_name, NULL, err, ds);
+    reply_error(cmd_name, "InvalidRequestError",
+                "Could not parse SetUpdateInterval argument", ds);
   }
 }
 
@@ -2382,274 +2125,267 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
     return;
   }
 
-  pthread_mutex_lock(&server->sessions_mutex);
-
-  char cmd_name[128] = "";
-  cJSON* arg = NULL;
-
-  if (cJSON_IsString(root)) {
-    strncpy(cmd_name, root->valuestring, sizeof(cmd_name) - 1);
-  } else if (cJSON_IsObject(root)) {
-    cJSON* child = root->child;
-    if (child && child->string) {
-      strncpy(cmd_name, child->string, sizeof(cmd_name) - 1);
-      arg = child;
-    }
+  if (!cJSON_IsObject(root)) {
+    reply_invalid("Command must be a JSON object", ds);
+    cJSON_Delete(root);
+    return;
   }
 
+  cJSON* cmd_node = cJSON_GetObjectItemCaseSensitive(root, "command");
+  if (!cmd_node || !cJSON_IsString(cmd_node) || !cmd_node->valuestring) {
+    reply_invalid("Missing or invalid 'command' field", ds);
+    cJSON_Delete(root);
+    return;
+  }
+
+  char cmd_name[128] = "";
+  strncpy(cmd_name, cmd_node->valuestring, sizeof(cmd_name) - 1);
   const char* simple = cmd_name;
+
+  pthread_mutex_lock(&server->sessions_mutex);
 
   websocket_command_t cmd_type = lookup_command(simple);
   switch (cmd_type) {
     case WS_CMD_GET_VERSION:
-      handle_cmd_get_version(server, client_idx, simple, arg, ds);
+      handle_cmd_get_version(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_STATE:
-      handle_cmd_get_state(server, client_idx, simple, arg, ds);
+      handle_cmd_get_state(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_STOP_REASON:
-      handle_cmd_get_stop_reason(server, client_idx, simple, arg, ds);
+      handle_cmd_get_stop_reason(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CAPTURE_RATE:
-      handle_cmd_get_capture_rate(server, client_idx, simple, arg, ds);
+      handle_cmd_get_capture_rate(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_RATE_ADJUST:
-      handle_cmd_get_rate_adjust(server, client_idx, simple, arg, ds);
+      handle_cmd_get_rate_adjust(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_BUFFER_LEVEL:
-      handle_cmd_get_buffer_level(server, client_idx, simple, arg, ds);
+      handle_cmd_get_buffer_level(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CLIPPED_SAMPLES:
-      handle_cmd_get_clipped_samples(server, client_idx, simple, arg, ds);
+      handle_cmd_get_clipped_samples(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_RESET_CLIPPED_SAMPLES:
-      handle_cmd_reset_clipped_samples(server, client_idx, simple, arg, ds);
+      handle_cmd_reset_clipped_samples(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_PROCESSING_LOAD:
-      handle_cmd_get_processing_load(server, client_idx, simple, arg, ds);
+      handle_cmd_get_processing_load(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_RESAMPLER_LOAD:
-      handle_cmd_get_resampler_load(server, client_idx, simple, arg, ds);
+      handle_cmd_get_resampler_load(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_SUPPORTED_DEVICE_TYPES:
-      handle_cmd_get_supported_device_types(server, client_idx, simple, arg,
+      handle_cmd_get_supported_device_types(server, client_idx, simple, root,
                                             ds);
       break;
     case WS_CMD_GET_UPDATE_INTERVAL:
-      handle_cmd_get_update_interval(server, client_idx, simple, arg, ds);
+      handle_cmd_get_update_interval(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_UPDATE_INTERVAL:
-      handle_cmd_set_update_interval(server, client_idx, simple, arg, ds);
+      handle_cmd_set_update_interval(server, client_idx, simple, root, ds);
       break;
 
     case WS_CMD_GET_VOLUME:
-      handle_cmd_get_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_get_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_VOLUME:
-      handle_cmd_set_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_set_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_MUTE:
-      handle_cmd_get_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_get_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_MUTE:
-      handle_cmd_set_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_set_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_TOGGLE_MUTE:
-      handle_cmd_toggle_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_toggle_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_FADERS:
-      handle_cmd_get_faders(server, client_idx, simple, arg, ds);
+      handle_cmd_get_faders(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_FADER_VOLUME:
-      handle_cmd_get_fader_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_get_fader_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_FADER_VOLUME:
-      handle_cmd_set_fader_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_set_fader_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_FADER_EXTERNAL_VOLUME:
-      handle_cmd_set_fader_external_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_set_fader_external_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_FADER_MUTE:
-      handle_cmd_get_fader_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_get_fader_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_FADER_MUTE:
-      handle_cmd_set_fader_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_set_fader_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_TOGGLE_FADER_MUTE:
-      handle_cmd_toggle_fader_mute(server, client_idx, simple, arg, ds);
+      handle_cmd_toggle_fader_mute(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_ADJUST_VOLUME:
-      handle_cmd_adjust_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_adjust_volume(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_ADJUST_FADER_VOLUME:
-      handle_cmd_adjust_fader_volume(server, client_idx, simple, arg, ds);
+      handle_cmd_adjust_fader_volume(server, client_idx, simple, root, ds);
       break;
 
     case WS_CMD_GET_SPECTRUM:
-      handle_cmd_get_spectrum(server, client_idx, simple, arg, ds);
+      handle_cmd_get_spectrum(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_AVAILABLE_CAPTURE_DEVICES:
-      handle_cmd_get_available_capture_devices(server, client_idx, simple, arg,
-                                               ds);
+      handle_get_available_devices(server, simple, root, true, ds);
       break;
     case WS_CMD_GET_AVAILABLE_PLAYBACK_DEVICES:
-      handle_cmd_get_available_playback_devices(server, client_idx, simple, arg,
-                                                ds);
+      handle_get_available_devices(server, simple, root, false, ds);
       break;
     case WS_CMD_GET_CAPTURE_DEVICE_CAPABILITIES:
-      handle_cmd_get_capture_device_capabilities(server, client_idx, simple,
-                                                 arg, ds);
+      handle_get_device_capabilities(server, simple, root, true, ds);
       break;
     case WS_CMD_GET_PLAYBACK_DEVICE_CAPABILITIES:
-      handle_cmd_get_playback_device_capabilities(server, client_idx, simple,
-                                                  arg, ds);
+      handle_get_device_capabilities(server, simple, root, false, ds);
       break;
 
     case WS_CMD_GET_CAPTURE_SIGNAL_RMS:
-      handle_cmd_get_capture_signal_rms(server, client_idx, simple, arg, ds);
+      handle_get_signal_single(server, simple, true, true, ds);
       break;
     case WS_CMD_GET_CAPTURE_SIGNAL_PEAK:
-      handle_cmd_get_capture_signal_peak(server, client_idx, simple, arg, ds);
+      handle_get_signal_single(server, simple, true, false, ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_RMS:
-      handle_cmd_get_playback_signal_rms(server, client_idx, simple, arg, ds);
+      handle_get_signal_single(server, simple, false, true, ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK:
-      handle_cmd_get_playback_signal_peak(server, client_idx, simple, arg, ds);
+      handle_get_signal_single(server, simple, false, false, ds);
       break;
     case WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE_LAST:
-      handle_cmd_get_capture_signal_rms_since_last(server, client_idx, simple,
-                                                   arg, ds);
+      handle_get_signal_since_last(server, client_idx, simple, true, true, ds);
       break;
     case WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE_LAST:
-      handle_cmd_get_capture_signal_peak_since_last(server, client_idx, simple,
-                                                    arg, ds);
+      handle_get_signal_since_last(server, client_idx, simple, true, false,
+                                    ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE_LAST:
-      handle_cmd_get_playback_signal_rms_since_last(server, client_idx, simple,
-                                                    arg, ds);
+      handle_get_signal_since_last(server, client_idx, simple, false, true,
+                                    ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE_LAST:
-      handle_cmd_get_playback_signal_peak_since_last(server, client_idx, simple,
-                                                     arg, ds);
+      handle_get_signal_since_last(server, client_idx, simple, false, false,
+                                    ds);
       break;
     case WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE:
-      handle_cmd_get_capture_signal_rms_since(server, client_idx, simple, arg,
-                                              ds);
+      handle_get_signal_since(server, simple, root, true, true, ds);
       break;
     case WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE:
-      handle_cmd_get_capture_signal_peak_since(server, client_idx, simple, arg,
-                                               ds);
+      handle_get_signal_since(server, simple, root, true, false, ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE:
-      handle_cmd_get_playback_signal_rms_since(server, client_idx, simple, arg,
-                                               ds);
+      handle_get_signal_since(server, simple, root, false, true, ds);
       break;
     case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE:
-      handle_cmd_get_playback_signal_peak_since(server, client_idx, simple, arg,
-                                                ds);
+      handle_get_signal_since(server, simple, root, false, false, ds);
       break;
     case WS_CMD_GET_SIGNAL_LEVELS:
-      handle_cmd_get_signal_levels(server, client_idx, simple, arg, ds);
+      handle_cmd_get_signal_levels(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_SIGNAL_LEVELS_SINCE_LAST:
-      handle_cmd_get_signal_levels_since_last(server, client_idx, simple, arg,
+      handle_cmd_get_signal_levels_since_last(server, client_idx, simple, root,
                                               ds);
       break;
     case WS_CMD_GET_SIGNAL_LEVELS_SINCE:
-      handle_cmd_get_signal_levels_since(server, client_idx, simple, arg, ds);
+      handle_cmd_get_signal_levels_since(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_SIGNAL_PEAKS_SINCE_START:
-      handle_cmd_get_signal_peaks_since_start(server, client_idx, simple, arg,
+      handle_cmd_get_signal_peaks_since_start(server, client_idx, simple, root,
                                               ds);
       break;
     case WS_CMD_RESET_SIGNAL_PEAKS_SINCE_START:
-      handle_cmd_reset_signal_peaks_since_start(server, client_idx, simple, arg,
+      handle_cmd_reset_signal_peaks_since_start(server, client_idx, simple, root,
                                                 ds);
       break;
     case WS_CMD_GET_CHANNEL_LABELS:
-      handle_cmd_get_channel_labels(server, client_idx, simple, arg, ds);
+      handle_cmd_get_channel_labels(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_SIGNAL_RANGE:
-      handle_cmd_get_signal_range(server, client_idx, simple, arg, ds);
+      handle_cmd_get_signal_range(server, client_idx, simple, root, ds);
       break;
 
     case WS_CMD_GET_CONFIG_FILE_PATH:
-      handle_cmd_get_config_file_path(server, client_idx, simple, arg, ds);
+      handle_cmd_get_config_file_path(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_PREVIOUS_CONFIG:
-      handle_cmd_get_previous_config(server, client_idx, simple, arg, ds);
+      handle_cmd_get_previous_config(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_STATE_FILE_PATH:
-      handle_cmd_get_state_file_path(server, client_idx, simple, arg, ds);
+      handle_cmd_get_state_file_path(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_STATE_FILE_UPDATED:
-      handle_cmd_get_state_file_updated(server, client_idx, simple, arg, ds);
+      handle_cmd_get_state_file_updated(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CONFIG:
     case WS_CMD_GET_CONFIG_JSON:
-      handle_cmd_get_config(server, client_idx, simple, arg, ds);
+      handle_cmd_get_config(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CONFIG_TITLE:
-      handle_cmd_get_config_title(server, client_idx, simple, arg, ds);
+      handle_cmd_get_config_title(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CONFIG_DESCRIPTION:
-      handle_cmd_get_config_description(server, client_idx, simple, arg, ds);
+      handle_cmd_get_config_description(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_RELOAD:
-      handle_cmd_reload(server, client_idx, simple, arg, ds);
+      handle_cmd_reload(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_STOP:
-      handle_cmd_stop(server, client_idx, simple, arg, ds);
+      handle_cmd_stop(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_EXIT:
-      handle_cmd_exit(server, client_idx, simple, arg, ds);
+      handle_cmd_exit(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_CONFIG_FILE_PATH:
-      handle_cmd_set_config_file_path(server, client_idx, simple, arg, ds);
+      handle_cmd_set_config_file_path(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_CONFIG:
-      handle_cmd_set_config_yaml(server, client_idx, simple, arg, ds);
+      handle_cmd_set_config_yaml(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_CONFIG_JSON:
-      handle_cmd_set_config_json(server, client_idx, simple, arg, ds);
+      handle_cmd_set_config_json(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_GET_CONFIG_VALUE:
-      handle_cmd_get_config_value(server, client_idx, simple, arg, ds);
+      handle_cmd_get_config_value(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SET_CONFIG_VALUE:
-      handle_cmd_set_config_value(server, client_idx, simple, arg, ds);
+      handle_cmd_set_config_value(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_PATCH_CONFIG:
-      handle_cmd_patch_config(server, client_idx, simple, arg, ds);
+      handle_cmd_patch_config(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_READ_CONFIG:
     case WS_CMD_VALIDATE_CONFIG:
-      handle_cmd_read_config_yaml(server, client_idx, simple, arg, ds);
+      handle_cmd_read_config_yaml(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_READ_CONFIG_JSON:
     case WS_CMD_VALIDATE_CONFIG_JSON:
-      handle_cmd_read_config_json(server, client_idx, simple, arg, ds);
+      handle_cmd_read_config_json(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_READ_CONFIG_FILE:
     case WS_CMD_VALIDATE_CONFIG_FILE:
-      handle_cmd_read_config_file(server, client_idx, simple, arg, ds);
+      handle_cmd_read_config_file(server, client_idx, simple, root, ds);
       break;
 
     case WS_CMD_SUBSCRIBE_STATE:
-      handle_cmd_subscribe_state(server, client_idx, simple, arg, ds);
+      handle_cmd_subscribe_state(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SUBSCRIBE_VU_LEVELS:
-      handle_cmd_subscribe_vu_levels(server, client_idx, simple, arg, ds);
+      handle_cmd_subscribe_vu_levels(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SUBSCRIBE_SIGNAL_LEVELS:
-      handle_cmd_subscribe_signal_levels(server, client_idx, simple, arg, ds);
+      handle_cmd_subscribe_signal_levels(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_SUBSCRIBE_SPECTRUM:
-      handle_cmd_subscribe_spectrum(server, client_idx, simple, arg, ds);
+      handle_cmd_subscribe_spectrum(server, client_idx, simple, root, ds);
       break;
     case WS_CMD_STOP_SUBSCRIPTION:
-      handle_cmd_stop_subscription(server, client_idx, simple, arg, ds);
+      handle_cmd_stop_subscription(server, client_idx, simple, root, ds);
       break;
 
     default: {

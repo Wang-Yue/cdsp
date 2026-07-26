@@ -420,11 +420,10 @@ static void* server_thread_func(void* arg) {
             strcmp(last_state[i], state_str) != 0) {
           strncpy(last_state[i], state_str, sizeof(last_state[i]) - 1);
           cJSON* root = cJSON_CreateObject();
-          cJSON* inner = cJSON_CreateObject();
-          cJSON_AddItemToObject(root, "StateEvent", inner);
-          cJSON_AddStringToObject(inner, "result", "Ok");
+          cJSON_AddStringToObject(root, "reply", "StateEvent");
+          cJSON_AddStringToObject(root, "result", "Ok");
           cJSON_AddItemToObject(
-              inner, "value",
+              root, "value",
               create_state_event_value(status.state, &status.stop_reason));
           QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
           cJSON_Delete(root);
@@ -546,11 +545,10 @@ static void* server_thread_func(void* arg) {
             }
 
             cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "VuLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON_AddStringToObject(root, "reply", "VuLevelsEvent");
+            cJSON_AddStringToObject(root, "result", "Ok");
             cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddItemToObject(root, "value", val_value);
             cJSON_AddItemToObject(
                 val_value, "playback_rms",
                 cJSON_CreateDoubleArray(session->vu_pb_rms, (int)pb_channels));
@@ -577,11 +575,10 @@ static void* server_thread_func(void* arg) {
 
           if (send_pb && pb_channels > 0) {
             cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON_AddStringToObject(root, "reply", "SignalLevelsEvent");
+            cJSON_AddStringToObject(root, "result", "Ok");
             cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddItemToObject(root, "value", val_value);
             cJSON_AddStringToObject(val_value, "side", "playback");
             cJSON_AddItemToObject(
                 val_value, "rms",
@@ -594,11 +591,10 @@ static void* server_thread_func(void* arg) {
           }
           if (send_cap && cap_channels > 0) {
             cJSON* root = cJSON_CreateObject();
-            cJSON* val = cJSON_CreateObject();
-            cJSON_AddItemToObject(root, "SignalLevelsEvent", val);
-            cJSON_AddStringToObject(val, "result", "Ok");
+            cJSON_AddStringToObject(root, "reply", "SignalLevelsEvent");
+            cJSON_AddStringToObject(root, "result", "Ok");
             cJSON* val_value = cJSON_CreateObject();
-            cJSON_AddItemToObject(val, "value", val_value);
+            cJSON_AddItemToObject(root, "value", val_value);
             cJSON_AddStringToObject(val_value, "side", "capture");
             cJSON_AddItemToObject(
                 val_value, "rms",
@@ -631,10 +627,9 @@ static void* server_thread_func(void* arg) {
                                              session->spectrum_n_bins, &spec);
             if (spec_ok) {
               cJSON* root = cJSON_CreateObject();
-              cJSON* val = cJSON_CreateObject();
-              cJSON_AddItemToObject(root, "SpectrumEvent", val);
-              cJSON_AddStringToObject(val, "result", "Ok");
-              cJSON_AddItemToObject(val, "value", serialize_spectrum(&spec));
+              cJSON_AddStringToObject(root, "reply", "SpectrumEvent");
+              cJSON_AddStringToObject(root, "result", "Ok");
+              cJSON_AddItemToObject(root, "value", serialize_spectrum(&spec));
               QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
               cdsp_free_spectrum(&spec);
