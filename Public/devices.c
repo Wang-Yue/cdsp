@@ -30,8 +30,7 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
       return false;
     }
     for (int i = 0; i < count; i++) {
-      strncpy(list[i].identifier, devs[i].name,
-              sizeof(list[i].identifier) - 1);
+      strncpy(list[i].identifier, devs[i].name, sizeof(list[i].identifier) - 1);
       list[i].identifier[sizeof(list[i].identifier) - 1] = '\0';
       strncpy(list[i].name, devs[i].name, sizeof(list[i].name) - 1);
       list[i].name[sizeof(list[i].name) - 1] = '\0';

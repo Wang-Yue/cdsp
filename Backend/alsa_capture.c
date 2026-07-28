@@ -560,10 +560,10 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       snd_pcm_start(capture->pcm);
     }
   } else if ((int)capture_state < 0) {
-    logger_error(
-        &g_logger,
-        "Alsa snd_pcm_state() of capture device returned an unexpected error: %d",
-        (int)capture_state);
+    logger_error(&g_logger,
+                 "Alsa snd_pcm_state() of capture device returned an "
+                 "unexpected error: %d",
+                 (int)capture_state);
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          snd_strerror((int)capture_state));
@@ -602,9 +602,9 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       int err_wait = snd_pcm_wait(capture->pcm, (int)poll_slice_millis);
       if (err_wait == 0) {
         if (remaining_timeout_millis <= poll_slice_millis) {
-          logger_trace(
-              &g_logger,
-              "Wait timed out, capture device takes too long to capture frames");
+          logger_trace(&g_logger,
+                       "Wait timed out, capture device takes too long to "
+                       "capture frames");
           if (err) {
             backend_error_init(err, BACKEND_ERROR_NONE,
                                "Capture device wait timeout");

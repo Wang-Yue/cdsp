@@ -8,11 +8,12 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include <windows.h>
-#include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <audiopolicy.h>
+#include <mmdeviceapi.h>
 #include <stdbool.h>
+#include <windows.h>
+
 #include "Logging/app_logger.h"
 
 extern const logger_t g_wasapi_logger;
@@ -27,7 +28,8 @@ typedef void (*wasapi_format_change_callback_t)(void* parent, double new_rate);
 
 /**
  * @struct CDSPAudioSessionEvents
- * @brief Custom COM implementation of IAudioSessionEvents for session notifications.
+ * @brief Custom COM implementation of IAudioSessionEvents for session
+ * notifications.
  */
 typedef struct {
   IAudioSessionEventsVtbl* lpVtbl;
@@ -43,23 +45,27 @@ typedef struct {
  * @param callback Callback function triggered on format change event.
  * @return Pointer to IAudioSessionEvents interface.
  */
-IAudioSessionEvents* wasapi_session_events_create(void* parent, wasapi_format_change_callback_t callback);
+IAudioSessionEvents* wasapi_session_events_create(
+    void* parent, wasapi_format_change_callback_t callback);
 
 /**
  * @brief Sets up the wave format structure for WASAPI shared-mode streams.
  *
  * @param client Pointer to the active IAudioClient.
  * @param target_sample_rate The target sample rate configured by the user.
- * @param out_final_wfx Output pointer to receive the allocated WAVEFORMATEX structure.
- * @param out_bits_per_sample Output pointer to receive the bits per sample value.
- * @param out_valid_bits Output pointer to receive the valid bits per sample value.
- * @param out_is_float Output pointer to receive whether the format is floating-point.
+ * @param out_final_wfx Output pointer to receive the allocated WAVEFORMATEX
+ * structure.
+ * @param out_bits_per_sample Output pointer to receive the bits per sample
+ * value.
+ * @param out_valid_bits Output pointer to receive the valid bits per sample
+ * value.
+ * @param out_is_float Output pointer to receive whether the format is
+ * floating-point.
  * @return true if format setup succeeded, false otherwise.
  */
 bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
                                 WAVEFORMATEX** out_final_wfx,
-                                int* out_bits_per_sample,
-                                int* out_valid_bits,
+                                int* out_bits_per_sample, int* out_valid_bits,
                                 bool* out_is_float);
 
 /**
@@ -69,14 +75,17 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
  * @param is_capture True if capture device, false if playback.
  * @return The current mix format sample rate, or 0.0 on failure.
  */
-double wasapi_device_get_current_mix_rate(const char* device_name, bool is_capture);
+double wasapi_device_get_current_mix_rate(const char* device_name,
+                                          bool is_capture);
 
 /**
- * @brief Calculates the closest hardware period aligned to a given frame/byte boundary.
+ * @brief Calculates the closest hardware period aligned to a given frame/byte
+ * boundary.
  *
  * @param client Pointer to the active IAudioClient.
  * @param desired_period The desired periodicity/buffer duration in 100ns units.
- * @param align_bytes Optional byte alignment constraint (e.g. 128 bytes). Pass 0 for no alignment constraint.
+ * @param align_bytes Optional byte alignment constraint (e.g. 128 bytes). Pass
+ * 0 for no alignment constraint.
  * @param wfx The extensible wave format descriptor of the stream.
  * @return The aligned period in 100ns units.
  */
@@ -85,14 +94,18 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
     const WAVEFORMATEXTENSIBLE* wfx);
 
 /**
- * @brief Checks if a format is supported by the device, falling back to standard WAVEFORMATEX for stereo if needed.
+ * @brief Checks if a format is supported by the device, falling back to
+ * standard WAVEFORMATEX for stereo if needed.
  *
  * @param client Pointer to the active IAudioClient.
  * @param mode Sharing mode (shared/exclusive).
  * @param ext_wfx The extensible wave format descriptor to test.
- * @param out_std_wfx Output pointer to standard WAVEFORMATEX initialized if fallback succeeded.
- * @param out_use_ext Output pointer set to true if extensible format should be used, false if standard fallback should be used.
- * @return true if format is supported (either directly or via fallback), false otherwise.
+ * @param out_std_wfx Output pointer to standard WAVEFORMATEX initialized if
+ * fallback succeeded.
+ * @param out_use_ext Output pointer set to true if extensible format should be
+ * used, false if standard fallback should be used.
+ * @return true if format is supported (either directly or via fallback), false
+ * otherwise.
  */
 bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
                                    const WAVEFORMATEXTENSIBLE* ext_wfx,
@@ -100,16 +113,17 @@ bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
                                    bool* out_use_ext);
 
 /**
- * @brief Returns the standard Windows speaker channel bitmask for a given channel count.
+ * @brief Returns the standard Windows speaker channel bitmask for a given
+ * channel count.
  *
- * Maps channel counts (1, 2, 4, 6, 8) to standard Windows SPEAKER_FRONT_*, SPEAKER_BACK_*,
- * SPEAKER_LOW_FREQUENCY, and SPEAKER_SIDE_* channel masks.
+ * Maps channel counts (1, 2, 4, 6, 8) to standard Windows SPEAKER_FRONT_*,
+ * SPEAKER_BACK_*, SPEAKER_LOW_FREQUENCY, and SPEAKER_SIDE_* channel masks.
  *
  * @param channels Number of audio channels.
  * @return DWORD Bitmask representing speaker positions, or 0 if unmapped.
  */
 DWORD wasapi_get_default_channel_mask(int channels);
 
-#endif // ENABLE_WASAPI
+#endif  // ENABLE_WASAPI
 
-#endif // CLIB_BACKEND_WASAPI_DEVICE_H
+#endif  // CLIB_BACKEND_WASAPI_DEVICE_H

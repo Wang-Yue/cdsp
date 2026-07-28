@@ -17,6 +17,6 @@ typedef struct wasapi_capture wasapi_capture_t;
  */
 extern const capture_backend_vtable_t g_wasapi_capture_vtable;
 
-#endif // ENABLE_WASAPI
+#endif  // ENABLE_WASAPI
 
-#endif // CLIB_BACKEND_WASAPI_CAPTURE_H
+#endif  // CLIB_BACKEND_WASAPI_CAPTURE_H

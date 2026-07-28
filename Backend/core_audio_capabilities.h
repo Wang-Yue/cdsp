@@ -41,10 +41,12 @@ extern const size_t CORE_AUDIO_STANDARD_RATES_COUNT;
  * @param is_capture True to get default capture device, false for playback.
  * @param out_name Buffer to store the default device name.
  * @param max_len Maximum length of out_name buffer.
- * @return true if default device name was successfully retrieved, false otherwise.
+ * @return true if default device name was successfully retrieved, false
+ * otherwise.
  */
-bool core_audio_capabilities_default_device_name(bool is_capture, char* out_name,
-                                             size_t max_len);
+bool core_audio_capabilities_default_device_name(bool is_capture,
+                                                 char* out_name,
+                                                 size_t max_len);
 
 /**
  * @brief Get the names of all available devices in the requested direction.

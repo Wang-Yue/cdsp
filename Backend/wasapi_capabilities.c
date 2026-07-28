@@ -2,7 +2,6 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include "wasapi_capabilities.h"
-#include "wasapi_device.h"
 
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
@@ -14,6 +13,7 @@
 #include <windows.h>
 
 #include "Logging/app_logger.h"
+#include "wasapi_device.h"
 
 #define SAFE_RELEASE(punk)         \
   if ((punk) != NULL) {            \
@@ -212,10 +212,13 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
     snprintf(desc->name, sizeof(desc->name), "%s", device_name);
   } else {
     IPropertyStore* prop_store = NULL;
-    if (SUCCEEDED(IMMDevice_OpenPropertyStore(device, STGM_READ, &prop_store))) {
+    if (SUCCEEDED(
+            IMMDevice_OpenPropertyStore(device, STGM_READ, &prop_store))) {
       PROPVARIANT var;
       PropVariantInit(&var);
-      if (SUCCEEDED(IPropertyStore_GetValue(prop_store, &PKEY_Device_FriendlyName, &var)) && var.vt == VT_LPWSTR) {
+      if (SUCCEEDED(IPropertyStore_GetValue(prop_store,
+                                            &PKEY_Device_FriendlyName, &var)) &&
+          var.vt == VT_LPWSTR) {
         wcstombs(desc->name, var.pwszVal, sizeof(desc->name) - 1);
         desc->name[sizeof(desc->name) - 1] = '\0';
         PropVariantClear(&var);
@@ -232,9 +235,10 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   const size_t PROBE_CHANNELS_COUNT =
       sizeof(PROBE_CHANNELS) / sizeof(PROBE_CHANNELS[0]);
 
-  const int PROBE_RATES[] = {
-      48000, 96000, 192000, 384000, 768000, 44100, 88200,  176400, 352800, 705600,
-      24000, 12000, 6000,   22050, 11025,  5512,  16000,  8000,   32000,  64000};
+  const int PROBE_RATES[] = {48000, 96000, 192000, 384000, 768000,
+                             44100, 88200, 176400, 352800, 705600,
+                             24000, 12000, 6000,   22050,  11025,
+                             5512,  16000, 8000,   32000,  64000};
   const size_t PROBE_RATES_COUNT = sizeof(PROBE_RATES) / sizeof(PROBE_RATES[0]);
 
   const char* PROBE_FORMAT_NAMES[] = {"S16", "S24", "S32", "F32"};
@@ -253,8 +257,8 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
 
   size_t total_sets = has_shared ? 2 : 1;
   desc->capability_sets_count = total_sets;
-  desc->capability_sets =
-      (device_capability_set_t*)calloc(total_sets, sizeof(device_capability_set_t));
+  desc->capability_sets = (device_capability_set_t*)calloc(
+      total_sets, sizeof(device_capability_set_t));
   if (!desc->capability_sets) {
     if (mix_wfx) CoTaskMemFree(mix_wfx);
     free_audio_device_descriptor(desc);
@@ -266,15 +270,19 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
     device_capability_set_t* shared_set = &desc->capability_sets[0];
     snprintf(shared_set->mode, sizeof(shared_set->mode), "Shared");
     shared_set->capabilities_count = 1;
-    shared_set->capabilities = (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
+    shared_set->capabilities =
+        (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
     if (shared_set->capabilities) {
       shared_set->capabilities[0].channels = mix_wfx->nChannels;
       shared_set->capabilities[0].samplerates_count = 1;
-      shared_set->capabilities[0].samplerates = (samplerate_capability_t*)calloc(1, sizeof(samplerate_capability_t));
+      shared_set->capabilities[0].samplerates =
+          (samplerate_capability_t*)calloc(1, sizeof(samplerate_capability_t));
       if (shared_set->capabilities[0].samplerates) {
-        shared_set->capabilities[0].samplerates[0].samplerate = mix_wfx->nSamplesPerSec;
+        shared_set->capabilities[0].samplerates[0].samplerate =
+            mix_wfx->nSamplesPerSec;
         shared_set->capabilities[0].samplerates[0].formats_count = 1;
-        shared_set->capabilities[0].samplerates[0].formats = (char**)calloc(1, sizeof(char*));
+        shared_set->capabilities[0].samplerates[0].formats =
+            (char**)calloc(1, sizeof(char*));
         if (shared_set->capabilities[0].samplerates[0].formats) {
           shared_set->capabilities[0].samplerates[0].formats[0] = strdup("F32");
         }
@@ -344,20 +352,24 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
           wfx.Samples.wValidBitsPerSample = 24;
           wfx.Format.nBlockAlign = 3 * channels;
           wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
-          is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+          is_supported =
+              wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
           if (!is_supported) {
             wfx.Format.wBitsPerSample = 32;
             wfx.Samples.wValidBitsPerSample = 24;
             wfx.Format.nBlockAlign = 4 * channels;
             wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
-            is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+            is_supported =
+                wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
           }
         } else {
-          wfx.Format.wBitsPerSample = (fmt == WASAPI_SAMPLE_FORMAT_S16) ? 16 : 32;
+          wfx.Format.wBitsPerSample =
+              (fmt == WASAPI_SAMPLE_FORMAT_S16) ? 16 : 32;
           wfx.Samples.wValidBitsPerSample = wfx.Format.wBitsPerSample;
           wfx.Format.nBlockAlign = (wfx.Format.wBitsPerSample / 8) * channels;
           wfx.Format.nAvgBytesPerSec = rate * wfx.Format.nBlockAlign;
-          is_supported = wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
+          is_supported =
+              wasapi_is_format_supported_exclusive_with_quirks(client, &wfx);
         }
 
         if (is_supported) {
@@ -480,7 +492,8 @@ IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
   }
   IMMDeviceCollection_Release(collection);
 
-  // If friendly name lookup failed and device_name was not already tried as GUID
+  // If friendly name lookup failed and device_name was not already tried as
+  // GUID
   if (!device && device_name && device_name[0] != '{') {
     wchar_t w_id[256] = {0};
     mbstowcs(w_id, device_name, 255);

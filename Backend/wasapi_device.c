@@ -5,14 +5,16 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include <initguid.h>
 #include "wasapi_device.h"
-#include "wasapi_capture.h"
-#include "wasapi_playback.h"
-#include "wasapi_capabilities.h"
+
+#include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
+
 #include "Utils/cdsp_time.h"
+#include "wasapi_capabilities.h"
+#include "wasapi_capture.h"
+#include "wasapi_playback.h"
 
 const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
 
@@ -42,18 +44,59 @@ static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents* This) {
   return rc;
 }
 
-static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) { (void)This; (void)NewDisplayName; (void)EventContext; return S_OK; }
-static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) { (void)This; (void)NewIconPath; (void)EventContext; return S_OK; }
-static HRESULT STDMETHODCALLTYPE session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume, BOOL NewMute, LPCGUID EventContext) { (void)This; (void)NewVolume; (void)NewMute; (void)EventContext; return S_OK; }
-static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(IAudioSessionEvents* This, DWORD ChannelCount, float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) { (void)This; (void)ChannelCount; (void)NewChannelVolumeArray; (void)ChangedChannel; (void)EventContext; return S_OK; }
-static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) { (void)This; (void)NewGroupingParam; (void)EventContext; return S_OK; }
-static HRESULT STDMETHODCALLTYPE session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) { (void)This; (void)NewState; return S_OK; }
+static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(
+    IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) {
+  (void)This;
+  (void)NewDisplayName;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(
+    IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) {
+  (void)This;
+  (void)NewIconPath;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE
+session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume,
+                              BOOL NewMute, LPCGUID EventContext) {
+  (void)This;
+  (void)NewVolume;
+  (void)NewMute;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(
+    IAudioSessionEvents* This, DWORD ChannelCount,
+    float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) {
+  (void)This;
+  (void)ChannelCount;
+  (void)NewChannelVolumeArray;
+  (void)ChangedChannel;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(
+    IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) {
+  (void)This;
+  (void)NewGroupingParam;
+  (void)EventContext;
+  return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE
+session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
+  (void)This;
+  (void)NewState;
+  return S_OK;
+}
 
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
     IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
   CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
-  logger_debug(&g_wasapi_logger, "session_OnSessionDisconnected called, reason=%d",
-              (int)DisconnectReason);
+  logger_debug(&g_wasapi_logger,
+               "session_OnSessionDisconnected called, reason=%d",
+               (int)DisconnectReason);
   if (DisconnectReason == DisconnectReasonFormatChanged) {
     if (self->callback) {
       self->callback(self->parent, 0.0);
@@ -74,7 +117,8 @@ static IAudioSessionEventsVtbl g_session_events_vtbl = {
     session_OnStateChanged,
     session_OnSessionDisconnected};
 
-IAudioSessionEvents* wasapi_session_events_create(void* parent, wasapi_format_change_callback_t callback) {
+IAudioSessionEvents* wasapi_session_events_create(
+    void* parent, wasapi_format_change_callback_t callback) {
   CDSPAudioSessionEvents* events =
       (CDSPAudioSessionEvents*)calloc(1, sizeof(CDSPAudioSessionEvents));
   if (!events) return NULL;
@@ -87,8 +131,7 @@ IAudioSessionEvents* wasapi_session_events_create(void* parent, wasapi_format_ch
 
 bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
                                 WAVEFORMATEX** out_final_wfx,
-                                int* out_bits_per_sample,
-                                int* out_valid_bits,
+                                int* out_bits_per_sample, int* out_valid_bits,
                                 bool* out_is_float) {
   WAVEFORMATEX* mix_wfx = NULL;
   HRESULT hr = IAudioClient_GetMixFormat(client, &mix_wfx);
@@ -102,14 +145,18 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
   }
 
   memcpy(final_wfx, mix_wfx, full_size);
-  if (target_sample_rate > 0 && target_sample_rate != (int)mix_wfx->nSamplesPerSec) {
+  if (target_sample_rate > 0 &&
+      target_sample_rate != (int)mix_wfx->nSamplesPerSec) {
     final_wfx->nSamplesPerSec = target_sample_rate;
-    final_wfx->nAvgBytesPerSec = final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
+    final_wfx->nAvgBytesPerSec =
+        final_wfx->nSamplesPerSec * final_wfx->nBlockAlign;
     WAVEFORMATEX* closest = NULL;
-    HRESULT sup_hr = IAudioClient_IsFormatSupported(client, AUDCLNT_SHAREMODE_SHARED, final_wfx, &closest);
+    HRESULT sup_hr = IAudioClient_IsFormatSupported(
+        client, AUDCLNT_SHAREMODE_SHARED, final_wfx, &closest);
     if (closest) CoTaskMemFree(closest);
     if (FAILED(sup_hr) || sup_hr == S_FALSE) {
-      /* Shared mode target rate not supported by audio engine; revert to OS mix format rate */
+      /* Shared mode target rate not supported by audio engine; revert to OS mix
+       * format rate */
       final_wfx->nSamplesPerSec = mix_wfx->nSamplesPerSec;
       final_wfx->nAvgBytesPerSec = mix_wfx->nAvgBytesPerSec;
     }
@@ -119,7 +166,8 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
   if (final_wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
     WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)final_wfx;
     *out_valid_bits = ext->Samples.wValidBitsPerSample;
-    *out_is_float = IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+    *out_is_float =
+        IsEqualGUID(&ext->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
   } else {
     *out_valid_bits = final_wfx->wBitsPerSample;
     *out_is_float = (final_wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
@@ -130,7 +178,8 @@ bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
   return true;
 }
 
-double wasapi_device_get_current_mix_rate(const char* device_name, bool is_capture) {
+double wasapi_device_get_current_mix_rate(const char* device_name,
+                                          bool is_capture) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
 
@@ -142,31 +191,37 @@ double wasapi_device_get_current_mix_rate(const char* device_name, bool is_captu
     return 0.0;
   }
 
-  logger_trace(&g_wasapi_logger, "wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
-              device_name[0] != '\0' ? device_name : "default", (int)is_capture);
-  
+  logger_trace(
+      &g_wasapi_logger,
+      "wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
+      device_name[0] != '\0' ? device_name : "default", (int)is_capture);
+
   double rate = 0.0;
   for (int i = 0; i < 40; i++) {
-    IMMDevice* mm_device = wasapi_find_device_by_name(enumerator, device_name, is_capture);
+    IMMDevice* mm_device =
+        wasapi_find_device_by_name(enumerator, device_name, is_capture);
     if (mm_device) {
       IAudioClient* client = NULL;
-      hr = mm_device->lpVtbl->Activate(mm_device, &IID_IAudioClient,
-                                       CLSCTX_ALL, NULL, (void**)&client);
+      hr = mm_device->lpVtbl->Activate(mm_device, &IID_IAudioClient, CLSCTX_ALL,
+                                       NULL, (void**)&client);
       if (SUCCEEDED(hr) && client) {
         WAVEFORMATEX* wfx = NULL;
         hr = IAudioClient_GetMixFormat(client, &wfx);
         if (SUCCEEDED(hr) && wfx) {
           rate = (double)wfx->nSamplesPerSec;
-          logger_trace(&g_wasapi_logger, "GetMixFormat succeeded, rate=%f", rate);
+          logger_trace(&g_wasapi_logger, "GetMixFormat succeeded, rate=%f",
+                       rate);
           CoTaskMemFree(wfx);
           client->lpVtbl->Release(client);
           mm_device->lpVtbl->Release(mm_device);
           break;
         }
-        logger_trace(&g_wasapi_logger, "GetMixFormat failed: hr=0x%08lX", (unsigned long)hr);
+        logger_trace(&g_wasapi_logger, "GetMixFormat failed: hr=0x%08lX",
+                     (unsigned long)hr);
         client->lpVtbl->Release(client);
       } else {
-        logger_trace(&g_wasapi_logger, "Activate failed: hr=0x%08lX", (unsigned long)hr);
+        logger_trace(&g_wasapi_logger, "Activate failed: hr=0x%08lX",
+                     (unsigned long)hr);
       }
       mm_device->lpVtbl->Release(mm_device);
     } else {
@@ -183,16 +238,16 @@ double wasapi_device_get_current_mix_rate(const char* device_name, bool is_captu
 REFERENCE_TIME wasapi_calculate_aligned_period_near(
     IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
     const WAVEFORMATEXTENSIBLE* wfx) {
-  
   REFERENCE_TIME def_period = 0, min_period = 0;
   HRESULT hr = IAudioClient_GetDevicePeriod(client, &def_period, &min_period);
   if (FAILED(hr)) {
     return desired_period;
   }
-  
-  REFERENCE_TIME adjusted_desired_period = desired_period > min_period ? desired_period : min_period;
+
+  REFERENCE_TIME adjusted_desired_period =
+      desired_period > min_period ? desired_period : min_period;
   uint32_t frame_bytes = wfx->Format.nBlockAlign;
-  
+
   uint32_t period_alignment_bytes = frame_bytes;
   if (align_bytes > 0) {
     uint32_t a = frame_bytes, b = align_bytes;
@@ -203,18 +258,23 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
     }
     period_alignment_bytes = (frame_bytes * align_bytes) / a;
   }
-  
+
   int64_t samplerate = wfx->Format.nSamplesPerSec;
-  int64_t period_alignment_frames = (int64_t)period_alignment_bytes / frame_bytes;
-  int64_t desired_period_frames = (adjusted_desired_period * samplerate + 5000000) / 10000000;
+  int64_t period_alignment_frames =
+      (int64_t)period_alignment_bytes / frame_bytes;
+  int64_t desired_period_frames =
+      (adjusted_desired_period * samplerate + 5000000) / 10000000;
   int64_t min_period_frames = (min_period * samplerate + 9999999) / 10000000;
-  
+
   int64_t nbr_segments = desired_period_frames / period_alignment_frames;
   if (nbr_segments * period_alignment_frames < min_period_frames) {
     nbr_segments++;
   }
-  
-  REFERENCE_TIME aligned_period = (REFERENCE_TIME)((period_alignment_frames * nbr_segments * 10000000 + (samplerate / 2)) / samplerate);
+
+  REFERENCE_TIME aligned_period =
+      (REFERENCE_TIME)((period_alignment_frames * nbr_segments * 10000000 +
+                        (samplerate / 2)) /
+                       samplerate);
   return aligned_period;
 }
 
@@ -222,7 +282,8 @@ bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
                                    const WAVEFORMATEXTENSIBLE* ext_wfx,
                                    WAVEFORMATEX* out_std_wfx,
                                    bool* out_use_ext) {
-  HRESULT hr = IAudioClient_IsFormatSupported(client, mode, (const WAVEFORMATEX*)ext_wfx, NULL);
+  HRESULT hr = IAudioClient_IsFormatSupported(
+      client, mode, (const WAVEFORMATEX*)ext_wfx, NULL);
   if (SUCCEEDED(hr)) {
     *out_use_ext = true;
     return true;
@@ -260,7 +321,8 @@ DWORD wasapi_get_default_channel_mask(int channels) {
     case 2:
       return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT;
     case 4:
-      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
+      return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
+             SPEAKER_BACK_RIGHT;
     case 6:
       return SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
              SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
@@ -273,4 +335,4 @@ DWORD wasapi_get_default_channel_mask(int channels) {
   }
 }
 
-#endif // ENABLE_WASAPI
+#endif  // ENABLE_WASAPI

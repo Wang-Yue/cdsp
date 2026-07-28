@@ -541,8 +541,8 @@ TEST(test_websocket_handle_command_direct) {
   websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
 
   char resp[4096];
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetVersion\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetVersion\"}",
+                                  resp, sizeof(resp));
   cJSON* root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root, "reply")->valuestring);
@@ -559,11 +559,12 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_STR_EQ("Inactive", cJSON_GetObjectItem(root, "value")->valuestring);
   cJSON_Delete(root);
 
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfigFilePath\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetConfigFilePath\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetConfigFilePath", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("GetConfigFilePath",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   ASSERT_STR_EQ("/tmp/config.json",
                 cJSON_GetObjectItem(root, "value")->valuestring);
@@ -573,10 +574,13 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(mock_params != NULL);
 
   websocket_server_handle_command(
-      server, 0, "{\"command\":\"SetFaderExternalVolume\",\"fader\":0,\"value\":-6.0}", resp, sizeof(resp));
+      server, 0,
+      "{\"command\":\"SetFaderExternalVolume\",\"fader\":0,\"value\":-6.0}",
+      resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SetFaderExternalVolume", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("SetFaderExternalVolume",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
 
@@ -591,11 +595,12 @@ TEST(test_websocket_handle_command_direct) {
   mock_active_config = strdup(
       "{\"devices\":{\"playback\":{\"labels\":[\"Left\",\"Right\"]},"
       "\"capture\":{\"labels\":[\"Mic\"]}}}");
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetChannelLabels\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetChannelLabels", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("GetChannelLabels",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON* val = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(val != NULL);
@@ -613,11 +618,12 @@ TEST(test_websocket_handle_command_direct) {
   mock_active_config = NULL;
 
   // Test SubscribeVuLevels (simple)
-  websocket_server_handle_command(server, 0, "{\"command\":\"SubscribeVuLevels\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SubscribeVuLevels\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SubscribeVuLevels", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("SubscribeVuLevels",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
   ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
@@ -627,13 +633,15 @@ TEST(test_websocket_handle_command_direct) {
 
   // Test SubscribeVuLevels (with arguments)
   websocket_server_set_client_vu_subscribed(server, 0, false);
-  websocket_server_handle_command(server, 0,
-                                  "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0,"
-                                  "\"attack\":10.0,\"release\":100.0}}",
-                                  resp, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0,"
+      "\"attack\":10.0,\"release\":100.0}}",
+      resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SubscribeVuLevels", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("SubscribeVuLevels",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
   ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
@@ -670,37 +678,49 @@ TEST(test_websocket_error_translation) {
   // 1. Test ConfigValidationError translation
   simulated_error_type = AUDIO_BACKEND_ERR_CONFIG_PARSE;
   simulated_error_message = "Failed to parse JSON";
-  websocket_server_handle_command(server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
+      sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SetConfigJson", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("ConfigValidationError", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("Failed to parse JSON", cJSON_GetObjectItem(root, "message")->valuestring);
+  ASSERT_STR_EQ("SetConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigValidationError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("Failed to parse JSON",
+                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
   // 2. Test DeviceNotFoundError translation
   simulated_error_type = AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND;
   simulated_error_message = "hw:0 not found";
-  websocket_server_handle_command(server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
+      sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SetConfigJson", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceNotFoundError", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 not found", cJSON_GetObjectItem(root, "message")->valuestring);
+  ASSERT_STR_EQ("SetConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("DeviceNotFoundError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("hw:0 not found",
+                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
   // 3. Test DeviceBusyError translation
   simulated_error_type = AUDIO_BACKEND_ERR_DEVICE_BUSY;
   simulated_error_message = "hw:0 in use";
-  websocket_server_handle_command(server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetConfigJson\",\"value\":\"{}\"}", resp,
+      sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SetConfigJson", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceBusyError", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 in use", cJSON_GetObjectItem(root, "message")->valuestring);
+  ASSERT_STR_EQ("SetConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("DeviceBusyError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("hw:0 in use",
+                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
   // 4. Test capabilities DeviceNotFoundError translation
@@ -708,25 +728,34 @@ TEST(test_websocket_error_translation) {
   simulated_cap_error_type = DEVICE_ERROR_NOT_FOUND;
   simulated_cap_error_message = "hw:0 not found";
   websocket_server_handle_command(
-      server, 0, "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", \"hw:0\"]}",
+      server, 0,
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
+      "\"hw:0\"]}",
       resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetCaptureDeviceCapabilities", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceNotFoundError", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 not found", cJSON_GetObjectItem(root, "message")->valuestring);
+  ASSERT_STR_EQ("GetCaptureDeviceCapabilities",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("DeviceNotFoundError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("hw:0 not found",
+                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
   // 5. Test capabilities DeviceBusyError translation
   simulated_cap_error_type = DEVICE_ERROR_BUSY;
   simulated_cap_error_message = "hw:0 busy";
   websocket_server_handle_command(
-      server, 0, "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", \"hw:0\"]}",
+      server, 0,
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
+      "\"hw:0\"]}",
       resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetCaptureDeviceCapabilities", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceBusyError", cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("GetCaptureDeviceCapabilities",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("DeviceBusyError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
   ASSERT_STR_EQ("hw:0 busy", cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
@@ -734,13 +763,18 @@ TEST(test_websocket_error_translation) {
   simulated_cap_error_type = DEVICE_ERROR_OTHER;
   simulated_cap_error_message = "hw:0 bad driver";
   websocket_server_handle_command(
-      server, 0, "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", \"hw:0\"]}",
+      server, 0,
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
+      "\"hw:0\"]}",
       resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetCaptureDeviceCapabilities", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceError", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 bad driver", cJSON_GetObjectItem(root, "message")->valuestring);
+  ASSERT_STR_EQ("GetCaptureDeviceCapabilities",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("DeviceError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ("hw:0 bad driver",
+                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
   simulate_cap_error = false;
@@ -829,11 +863,12 @@ TEST(test_websocket_format_alignments) {
   cJSON* value;
 
   // 1. GetConfigJson value format (should be a JSON string, not parsed object)
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfigJson\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfigJson\"}",
+                                  resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetConfigJson", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("GetConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   value = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(value != NULL);
@@ -845,8 +880,8 @@ TEST(test_websocket_format_alignments) {
   cJSON_Delete(root);
 
   // 1b. GetConfig value format (should be a YAML string)
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfig\"}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfig\"}",
+                                  resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("GetConfig", cJSON_GetObjectItem(root, "reply")->valuestring);
@@ -863,12 +898,13 @@ TEST(test_websocket_format_alignments) {
       "\\\"capture\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2},"
       "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2}}}";
   char read_cmd[1024];
-  snprintf(read_cmd, sizeof(read_cmd), "{\"command\":\"ReadConfigJson\",\"value\":\"%s\"}",
-           valid_cfg);
+  snprintf(read_cmd, sizeof(read_cmd),
+           "{\"command\":\"ReadConfigJson\",\"value\":\"%s\"}", valid_cfg);
   websocket_server_handle_command(server, 0, read_cmd, resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("ReadConfigJson", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ReadConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   value = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(value != NULL);
@@ -883,11 +919,13 @@ TEST(test_websocket_format_alignments) {
 
   // 3. GetFaderVolume value format (should be [idx, vol] array)
   mock_params = processing_parameters_create(2, 2);
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetFaderVolume\",\"fader\":0}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetFaderVolume\",\"fader\":0}", resp,
+      sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetFaderVolume", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("GetFaderVolume",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   value = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(value != NULL);
@@ -898,11 +936,13 @@ TEST(test_websocket_format_alignments) {
   cJSON_Delete(root);
 
   // 4. GetFaderMute value format (should be [idx, mute] array)
-  websocket_server_handle_command(server, 0, "{\"command\":\"GetFaderMute\",\"fader\":0}", resp,
-                                  sizeof(resp));
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"GetFaderMute\",\"fader\":0}",
+                                  resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetFaderMute", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("GetFaderMute",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   value = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(value != NULL);
@@ -912,13 +952,17 @@ TEST(test_websocket_format_alignments) {
   ASSERT_FALSE(cJSON_IsTrue(cJSON_GetArrayItem(value, 1)));
   cJSON_Delete(root);
 
-  // 5. AdjustFaderVolume with optional limits: {"command":"AdjustFaderVolume","fader":0,"value":2.5,"min":-30.0,"max":10.0}
+  // 5. AdjustFaderVolume with optional limits:
+  // {"command":"AdjustFaderVolume","fader":0,"value":2.5,"min":-30.0,"max":10.0}
   websocket_server_handle_command(
-      server, 0, "{\"command\":\"AdjustFaderVolume\",\"fader\":0,\"value\":2.5,\"min\":-30.0,\"max\":10.0}", resp,
-      sizeof(resp));
+      server, 0,
+      "{\"command\":\"AdjustFaderVolume\",\"fader\":0,\"value\":2.5,\"min\":-"
+      "30.0,\"max\":10.0}",
+      resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("AdjustFaderVolume", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("AdjustFaderVolume",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   value = cJSON_GetObjectItem(root, "value");
   ASSERT_TRUE(value != NULL);
@@ -935,7 +979,8 @@ TEST(test_websocket_format_alignments) {
       "format: S16LE\\n  playback:\\n    type: File\\n    channels: 2\\n    "
       "filename: \\\"/dev/null\\\"\\n    format: S16LE\\n";
   char yaml_cmd[1024];
-  snprintf(yaml_cmd, sizeof(yaml_cmd), "{\"command\":\"SetConfig\",\"value\":\"%s\"}", valid_yaml);
+  snprintf(yaml_cmd, sizeof(yaml_cmd),
+           "{\"command\":\"SetConfig\",\"value\":\"%s\"}", valid_yaml);
   websocket_server_handle_command(server, 0, yaml_cmd, resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
@@ -943,7 +988,8 @@ TEST(test_websocket_format_alignments) {
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
 
-  snprintf(yaml_cmd, sizeof(yaml_cmd), "{\"command\":\"ReadConfig\",\"value\":\"%s\"}", valid_yaml);
+  snprintf(yaml_cmd, sizeof(yaml_cmd),
+           "{\"command\":\"ReadConfig\",\"value\":\"%s\"}", valid_yaml);
   websocket_server_handle_command(server, 0, yaml_cmd, resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);

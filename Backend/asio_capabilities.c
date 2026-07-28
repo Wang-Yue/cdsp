@@ -111,14 +111,18 @@ struct IASIO {
  * @param out_clsid Pointer to a CLSID structure to receive the result.
  * @return true if the CLSID was successfully found, false otherwise.
  */
-static bool asio_check_drv_path(const char* clsid_str, char* out_dll_path, size_t max_path) {
+static bool asio_check_drv_path(const char* clsid_str, char* out_dll_path,
+                                size_t max_path) {
   char clsid_key[384];
-  snprintf(clsid_key, sizeof(clsid_key), "clsid\\%s\\InprocServer32", clsid_str);
+  snprintf(clsid_key, sizeof(clsid_key), "clsid\\%s\\InprocServer32",
+           clsid_str);
   HKEY hkpath;
-  if (RegOpenKeyExA(HKEY_CLASSES_ROOT, clsid_key, 0, KEY_READ, &hkpath) == ERROR_SUCCESS) {
+  if (RegOpenKeyExA(HKEY_CLASSES_ROOT, clsid_key, 0, KEY_READ, &hkpath) ==
+      ERROR_SUCCESS) {
     DWORD datatype = REG_SZ;
     DWORD datasize = (DWORD)max_path;
-    LONG cr = RegQueryValueExA(hkpath, NULL, 0, &datatype, (LPBYTE)out_dll_path, &datasize);
+    LONG cr = RegQueryValueExA(hkpath, NULL, 0, &datatype, (LPBYTE)out_dll_path,
+                               &datasize);
     RegCloseKey(hkpath);
     if (cr == ERROR_SUCCESS) {
       if (GetFileAttributesA(out_dll_path) != INVALID_FILE_ATTRIBUTES) {
@@ -252,9 +256,11 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   if (device_name && device_name[0] != '\0') {
     snprintf(target_dev_name, sizeof(target_dev_name), "%s", device_name);
   } else {
-    if (!asio_capabilities_default_device_name(is_capture, target_dev_name, sizeof(target_dev_name))) {
+    if (!asio_capabilities_default_device_name(is_capture, target_dev_name,
+                                               sizeof(target_dev_name))) {
       if (err) {
-        device_error_init(err, DEVICE_ERROR_NOT_FOUND, "No ASIO driver available");
+        device_error_init(err, DEVICE_ERROR_NOT_FOUND,
+                          "No ASIO driver available");
       }
       goto error_cleanup;
     }
@@ -354,7 +360,8 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   channel_capability_t* cap = &set->capabilities[0];
   cap->channels = (int)target_channels;
 
-  // Probe supported sample rates from a predefined list matching CamillaDSP STANDARD_RATES.
+  // Probe supported sample rates from a predefined list matching CamillaDSP
+  // STANDARD_RATES.
   const double PROBE_RATES[] = {
       5512.0,   8000.0,   11025.0,  16000.0,  22050.0, 32000.0,
       44100.0,  48000.0,  64000.0,  88200.0,  96000.0, 176400.0,
@@ -416,8 +423,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   for (size_t r = 0; r < PROBE_RATES_COUNT; r++) {
     double rate = PROBE_RATES[r];
     if (iasio->lpVtbl->canSampleRate(iasio, rate) == 0) {  // ASE_OK is 0
-      samplerate_capability_t* rate_cap =
-          &cap->samplerates[valid_rates_count];
+      samplerate_capability_t* rate_cap = &cap->samplerates[valid_rates_count];
       rate_cap->samplerate = (int)rate;
       rate_cap->formats = (char**)calloc(1, sizeof(char*));
       if (!rate_cap->formats) {

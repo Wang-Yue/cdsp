@@ -17,6 +17,6 @@ typedef struct wasapi_playback wasapi_playback_t;
  */
 extern const playback_backend_vtable_t g_wasapi_playback_vtable;
 
-#endif // ENABLE_WASAPI
+#endif  // ENABLE_WASAPI
 
-#endif // CLIB_BACKEND_WASAPI_PLAYBACK_H
+#endif  // CLIB_BACKEND_WASAPI_PLAYBACK_H

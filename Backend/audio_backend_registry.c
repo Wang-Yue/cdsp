@@ -91,25 +91,26 @@ int audio_backend_registry_get_available_devices(const char* backend,
   return 0;
 }
 
-static void log_device_capabilities_result(const char* backend, const char* device,
-                                            bool is_capture,
-                                            const audio_device_descriptor_t* desc) {
+static void log_device_capabilities_result(
+    const char* backend, const char* device, bool is_capture,
+    const audio_device_descriptor_t* desc) {
   if (!desc) {
-    logger_warn(&g_logger,
-                "Query device capabilities failed: backend=%s, device=%s, capture=%d",
-                backend ? backend : "(null)", device ? device : "(null)", is_capture);
+    logger_warn(
+        &g_logger,
+        "Query device capabilities failed: backend=%s, device=%s, capture=%d",
+        backend ? backend : "(null)", device ? device : "(null)", is_capture);
     return;
   }
 
   logger_info(&g_logger,
-              "Device capabilities discovered: backend=%s, device='%s', capture=%d, sets_count=%zu",
+              "Device capabilities discovered: backend=%s, device='%s', "
+              "capture=%d, sets_count=%zu",
               backend, desc->name, is_capture, desc->capability_sets_count);
 
   for (size_t s = 0; s < desc->capability_sets_count; s++) {
     const device_capability_set_t* set = &desc->capability_sets[s];
-    logger_info(&g_logger,
-                "  Capability Set [%zu]: %zu channel config(s)",
-                s, set->capabilities_count);
+    logger_info(&g_logger, "  Capability Set [%zu]: %zu channel config(s)", s,
+                set->capabilities_count);
 
     for (size_t c = 0; c < set->capabilities_count; c++) {
       const channel_capability_t* ch = &set->capabilities[c];
@@ -118,8 +119,8 @@ static void log_device_capabilities_result(const char* backend, const char* devi
         char fmt_buf[256] = {0};
         size_t pos = 0;
         for (size_t f = 0; f < sr->formats_count; f++) {
-          pos += (size_t)snprintf(fmt_buf + pos, sizeof(fmt_buf) - pos,
-                                  "%s%s", (f == 0 ? "" : ", "), sr->formats[f]);
+          pos += (size_t)snprintf(fmt_buf + pos, sizeof(fmt_buf) - pos, "%s%s",
+                                  (f == 0 ? "" : ", "), sr->formats[f]);
         }
         logger_info(&g_logger,
                     "    - Channels: %d, SampleRate: %d Hz, Formats: [%s]",
@@ -134,7 +135,8 @@ audio_device_descriptor_t* audio_backend_registry_get_device_capabilities(
     device_error_t* err) {
   logger_info(&g_logger,
               "Querying device capabilities: backend=%s, device=%s, capture=%d",
-              backend ? backend : "(null)", device ? device : "(null)", is_capture);
+              backend ? backend : "(null)", device ? device : "(null)",
+              is_capture);
   if (!backend || !device) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,

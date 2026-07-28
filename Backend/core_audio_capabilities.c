@@ -34,8 +34,9 @@ static int cmp_str(const void* a, const void* b) {
 
 // MARK: Device enumeration
 
-bool core_audio_capabilities_default_device_name(bool is_capture, char* out_name,
-                                             size_t max_len) {
+bool core_audio_capabilities_default_device_name(bool is_capture,
+                                                 char* out_name,
+                                                 size_t max_len) {
   core_audio_scope_t scope =
       is_capture ? CORE_AUDIO_SCOPE_INPUT : CORE_AUDIO_SCOPE_OUTPUT;
   AudioDeviceID default_id = core_audio_device_default_id(scope);

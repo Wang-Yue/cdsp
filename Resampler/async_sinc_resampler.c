@@ -935,6 +935,6 @@ static void* async_sinc_resampler_create_from_profile(
 
   return async_sinc_resampler_create_impl(
       channels, input_rate, output_rate, sinc_len, oversampling_factor,
-      interpolation, window, 0.0, false, chunk_size, max_relative_ratio,
-      fixed, err);
+      interpolation, window, 0.0, false, chunk_size, max_relative_ratio, fixed,
+      err);
 }

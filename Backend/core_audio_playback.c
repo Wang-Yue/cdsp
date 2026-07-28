@@ -376,7 +376,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
           .mScope = kAudioObjectPropertyScopeGlobal,
           .mElement = kAudioObjectPropertyElementMain};
       AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
-                                     &hog_pid);
+                                 &hog_pid);
     }
     // Set the device format.
     bool physical_format_set = false;

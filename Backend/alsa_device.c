@@ -1,8 +1,6 @@
 #if defined(ENABLE_ALSA)
 #include "alsa_device.h"
 
-#include <pthread.h>
-
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -15,9 +13,8 @@ static const logger_t g_alsa_dev_logger = {"dsp.backend.alsa"};
 pthread_mutex_t g_alsa_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static snd_pcm_uframes_t calculate_buffer_size(size_t chunksize, double ratio,
-                                                snd_pcm_uframes_t min_period) {
-  double frames_needed =
-      3.0 * (double)chunksize / (ratio > 0.0 ? ratio : 1.0);
+                                               snd_pcm_uframes_t min_period) {
+  double frames_needed = 3.0 * (double)chunksize / (ratio > 0.0 ? ratio : 1.0);
   if (frames_needed < 4.0 * (double)min_period) {
     frames_needed = 4.0 * (double)min_period;
   }
@@ -26,8 +23,7 @@ static snd_pcm_uframes_t calculate_buffer_size(size_t chunksize, double ratio,
 
 static snd_pcm_uframes_t calculate_buffer_size_alt(
     size_t chunksize, double ratio, snd_pcm_uframes_t min_period) {
-  double frames_needed =
-      3.0 * (double)chunksize / (ratio > 0.0 ? ratio : 1.0);
+  double frames_needed = 3.0 * (double)chunksize / (ratio > 0.0 ? ratio : 1.0);
   if (frames_needed < 4.0 * (double)min_period) {
     frames_needed = 4.0 * (double)min_period;
   }
@@ -35,7 +31,8 @@ static snd_pcm_uframes_t calculate_buffer_size_alt(
 }
 
 /**
- * @brief Calculates and applies a power-of-two buffer size to an ALSA hardware parameters container.
+ * @brief Calculates and applies a power-of-two buffer size to an ALSA hardware
+ * parameters container.
  *
  * @param pcm Pointer to the ALSA PCM handle.
  * @param hwp Pointer to the ALSA hardware parameters container.
@@ -71,7 +68,8 @@ int alsa_apply_buffer_size(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp,
 }
 
 /**
- * @brief Calculates and applies a period size to an ALSA hardware parameters container.
+ * @brief Calculates and applies a period size to an ALSA hardware parameters
+ * container.
  *
  * @param pcm Pointer to the ALSA PCM handle.
  * @param hwp Pointer to the ALSA hardware parameters container.
@@ -104,10 +102,12 @@ int alsa_apply_period_size(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp,
 }
 
 /**
- * @brief Recovers an ALSA PCM handle from a suspended state (SND_PCM_STATE_SUSPENDED / ESTRPIPE).
+ * @brief Recovers an ALSA PCM handle from a suspended state
+ * (SND_PCM_STATE_SUSPENDED / ESTRPIPE).
  *
  * @param pcm Pointer to the ALSA PCM handle.
- * @param direction String label ("PB" for playback, "CAP" for capture) used for logging.
+ * @param direction String label ("PB" for playback, "CAP" for capture) used for
+ * logging.
  * @return 0 on success, or a negative ALSA error code on failure.
  */
 int alsa_recover_suspended_pcm(snd_pcm_t* pcm, const char* direction) {

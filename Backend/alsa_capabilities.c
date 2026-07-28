@@ -167,7 +167,8 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
         size_t fmt_idx = 0;
 
         for (size_t f = 0; f < test_formats_count; f++) {
-          if (snd_pcm_hw_params_test_format(pcm, params, test_formats[f]) == 0) {
+          if (snd_pcm_hw_params_test_format(pcm, params, test_formats[f]) ==
+              0) {
             // Deduplicate format names (just in case)
             bool duplicate = false;
             for (size_t d = 0; d < fmt_idx; d++) {

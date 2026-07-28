@@ -38,7 +38,8 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
           clean_temp[i] = '/';
         }
       }
-      (snprintf)(win_format, sizeof(win_format), "%s/%s", clean_temp, format + 5);
+      (snprintf)(win_format, sizeof(win_format), "%s/%s", clean_temp,
+                 format + 5);
     } else {
       (snprintf)(win_format, sizeof(win_format), "./%s", format + 5);
     }
