@@ -103,6 +103,32 @@ static void delay_filter_free(void* instance) {
 }
 
 /**
+ * @brief Computes equivalent sample delay count given a delay duration, unit,
+ * and sample rate.
+ *
+ * @param delay The delay value.
+ * @param unit The delay time/distance unit.
+ * @param sample_rate The audio sample rate in Hz.
+ * @return The delay in samples.
+ */
+double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
+  switch (unit) {
+    case DELAY_UNIT_MS:
+      return delay / 1000.0 * (double)sample_rate;
+    case DELAY_UNIT_US:
+      return delay / 1000000.0 * (double)sample_rate;
+    case DELAY_UNIT_S:
+      return delay * (double)sample_rate;
+    case DELAY_UNIT_SAMPLES:
+      return delay;
+    case DELAY_UNIT_MM:
+      // Compute delay using speed of sound in air (approx. 343 m/s)
+      return delay / 1000.0 * (double)sample_rate / 343.0;
+  }
+  return 0.0;
+}
+
+/**
  * @brief Validates delay filter parameters.
  *
  * @param config Pointer to the filter configuration to validate.
@@ -110,11 +136,8 @@ static void delay_filter_free(void* instance) {
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-#include <math.h>
-
 static int delay_config_validate(const filter_config_t* config, int sample_rate,
                                  config_error_t* err) {
-  (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DELAY) return -1;
   const delay_config_t* params = &config->parameters.delay;
   if (!params) return 0;
@@ -122,6 +145,17 @@ static int delay_config_validate(const filter_config_t* config, int sample_rate,
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Delay cannot be negative");
+    }
+    return -1;
+  }
+
+  double delay_samples =
+      compute_delay_samples(params->delay, params->delay_unit, sample_rate);
+  if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 ||
+      delay_samples > 100000000.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Invalid delay value %f", params->delay);
     }
     return -1;
   }
@@ -169,14 +203,6 @@ static void* delay_filter_create(const char* name,
   bool subsample = params ? params->subsample : false;
 
   double delay_samples = compute_delay_samples(delay, unit, sample_rate);
-  if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 ||
-      delay_samples > 100000000.0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Invalid delay value %f (%d) for filter '%s'", delay, unit,
-                     filter->name);
-    delay_filter_free(filter);
-    return NULL;
-  }
 
   int integer_delay = 0;
   biquad_config_t bq_params = {0};
@@ -262,23 +288,6 @@ double delay_filter_process_single(delay_filter_t* filter, double sample) {
     out = biquad_filter_process_single(filter->biquad, out);
   }
   return out;
-}
-
-double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
-  switch (unit) {
-    case DELAY_UNIT_MS:
-      return delay / 1000.0 * (double)sample_rate;
-    case DELAY_UNIT_US:
-      return delay / 1000000.0 * (double)sample_rate;
-    case DELAY_UNIT_S:
-      return delay * (double)sample_rate;
-    case DELAY_UNIT_SAMPLES:
-      return delay;
-    case DELAY_UNIT_MM:
-      // Compute delay using speed of sound in air (approx. 343 m/s)
-      return delay / 1000.0 * (double)sample_rate / 343.0;
-  }
-  return 0.0;
 }
 
 static void delay_filter_transfer_state(void* dest_ptr, const void* src_ptr) {

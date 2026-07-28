@@ -17,6 +17,7 @@
 #include "Audio/audio_chunk.h"
 #include "Config/processor_config_types.h"
 #include "compressor_processor.h"
+#include "lookahead_limiter_processor.h"
 #include "noise_gate_processor.h"
 #include "race_processor.h"
 
@@ -24,9 +25,10 @@
  * @brief Enumeration of concrete processor implementation types.
  */
 typedef enum {
-  PROCESSOR_IMPL_COMPRESSOR = 0,  ///< Dynamic range compressor processor.
-  PROCESSOR_IMPL_NOISE_GATE,      ///< Noise gate processor.
-  PROCESSOR_IMPL_RACE             ///< RACE cross-talk cancellation processor.
+  PROCESSOR_IMPL_COMPRESSOR = 0,    ///< Dynamic range compressor processor.
+  PROCESSOR_IMPL_NOISE_GATE,        ///< Noise gate processor.
+  PROCESSOR_IMPL_RACE,              ///< RACE cross-talk cancellation processor.
+  PROCESSOR_IMPL_LOOKAHEAD_LIMITER  ///< Lookahead Limiter processor.
 } processor_impl_type_t;
 
 /**
@@ -34,7 +36,8 @@ typedef enum {
  * @brief Virtual method table for audio processor implementations.
  */
 typedef struct processor_vtable {
-  int (*validate)(const processor_config_t* config, config_error_t* err);
+  int (*validate)(const processor_config_t* config, int sample_rate,
+                  config_error_t* err);
   void* (*create)(const char* name, const processor_config_t* config,
                   int sample_rate, size_t chunk_size, config_error_t* err);
   void (*process)(void* impl, audio_chunk_t* chunk);
@@ -103,10 +106,11 @@ void dsp_processor_free(dsp_processor_t* proc);
  * @brief Validates a processor configuration.
  *
  * @param proc Pointer to the processor configuration to validate.
+ * @param sample_rate Audio sample rate in Hz.
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
-int processor_config_validate(const processor_config_t* proc,
+int processor_config_validate(const processor_config_t* proc, int sample_rate,
                               config_error_t* err);
 
 #endif  // CLIB_PROCESSORS_PROCESSOR_H

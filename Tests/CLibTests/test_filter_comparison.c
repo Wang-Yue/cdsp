@@ -28,6 +28,7 @@
 #include "Mixer/mixer.h"
 #include "Processors/compressor_processor.h"
 #include "Processors/noise_gate_processor.h"
+#include "Processors/lookahead_limiter_processor.h"
 #include "Processors/processor.h"
 #include "Processors/race_processor.h"
 #include "Utils/double_helpers.h"
@@ -1616,6 +1617,111 @@ TEST(RACE_Vs_RustReference) {
 
   audio_chunk_free(chunk);
   dsp_processor_free(race);
+  free(input0);
+  free(input1);
+  free(ref0);
+  free(ref1);
+}
+
+TEST(LookaheadLimiterProcessor_Vs_RustReference) {
+  const char* label = "lookahead-proc-compare";
+  double* input0 = (double*)malloc(NBR_FRAMES * sizeof(double));
+  double* input1 = (double*)malloc(NBR_FRAMES * sizeof(double));
+  make_test_signal(input0, NBR_FRAMES);
+  for (size_t i = 0; i < NBR_FRAMES; i++) {
+    input1[i] = input0[i] * 0.5;
+  }
+
+  char in_path0[256], in_path1[256], ref_path0[256], ref_path1[256];
+  snprintf(in_path0, sizeof(in_path0), "/tmp/cdsp_limproc_%s_in0.raw", label);
+  snprintf(in_path1, sizeof(in_path1), "/tmp/cdsp_limproc_%s_in1.raw", label);
+  snprintf(ref_path0, sizeof(ref_path0), "/tmp/cdsp_limproc_%s_ref0.raw", label);
+  snprintf(ref_path1, sizeof(ref_path1), "/tmp/cdsp_limproc_%s_ref1.raw", label);
+
+  write_raw(input0, NBR_FRAMES, in_path0);
+  write_raw(input1, NBR_FRAMES, in_path1);
+
+  double limit = -1.0;
+  double attack = 4.0;
+  double release = 20.0;
+  char lim_s[64], att_s[64], rel_s[64], sr_s[64], cs_s[64];
+  snprintf(lim_s, sizeof(lim_s), "%.17g", limit);
+  snprintf(att_s, sizeof(att_s), "%.17g", attack);
+  snprintf(rel_s, sizeof(rel_s), "%.17g", release);
+  snprintf(sr_s, sizeof(sr_s), "%d", SAMPLE_RATE);
+  snprintf(cs_s, sizeof(cs_s), "%d", CHUNK_SIZE);
+
+  if (!RUN_HARNESS("lookahead_limiter_proc", "2", "0,1", "0,1", lim_s, att_s,
+                   rel_s, "samples", "1", sr_s, cs_s, in_path0, in_path1,
+                   ref_path0, ref_path1)) {
+    free(input0);
+    free(input1);
+    return;
+  }
+
+  size_t ref_count0 = 0, ref_count1 = 0;
+  double* ref0 = read_raw(ref_path0, &ref_count0);
+  double* ref1 = read_raw(ref_path1, &ref_count1);
+  ASSERT_TRUE(ref0 != NULL && ref1 != NULL);
+  ASSERT_EQ(NBR_FRAMES, ref_count0);
+  ASSERT_EQ(NBR_FRAMES, ref_count1);
+
+  lookahead_limiter_processor_config_t params = {0};
+  params.channels = 2;
+  params.limit = limit;
+  params.attack = attack;
+  params.attack_unit = TIME_UNIT_SAMPLES;
+  params.release = release;
+  params.release_unit = TIME_UNIT_SAMPLES;
+  params.delay_processed_only = true;
+
+  // Monitor channels: [0, 1]
+  params.monitor_channels = (int*)malloc(2 * sizeof(int));
+  params.monitor_channels[0] = 0;
+  params.monitor_channels[1] = 1;
+  params.monitor_channels_count = 2;
+
+  // Process channels: [0, 1]
+  params.process_channels = (int*)malloc(2 * sizeof(int));
+  params.process_channels[0] = 0;
+  params.process_channels[1] = 1;
+  params.process_channels_count = 2;
+
+  processor_config_t config = {
+      .type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER,
+      .parameters.lookahead_limiter = params,
+  };
+
+  dsp_processor_t* limiter = dsp_processor_create(
+      "lookahead_limiter_proc", &config, SAMPLE_RATE, NBR_FRAMES, NULL);
+  ASSERT_TRUE(limiter != NULL);
+
+  audio_chunk_t* chunk = audio_chunk_create(NBR_FRAMES, 2);
+  double* ch0 = audio_chunk_get_channel(chunk, 0);
+  double* ch1 = audio_chunk_get_channel(chunk, 1);
+  memcpy(ch0, input0, NBR_FRAMES * sizeof(double));
+  memcpy(ch1, input1, NBR_FRAMES * sizeof(double));
+  audio_chunk_set_valid_frames(chunk, NBR_FRAMES);
+
+  dsp_processor_process(limiter, chunk);
+
+  ASSERT_EQ(ref_count0, audio_chunk_get_valid_frames(chunk));
+  double max_abs_diff0 = 0.0, max_abs_diff1 = 0.0;
+  for (size_t i = 0; i < ref_count0; i++) {
+    double d0 = fabs(ch0[i] - ref0[i]);
+    if (d0 > max_abs_diff0) max_abs_diff0 = d0;
+    double d1 = fabs(ch1[i] - ref1[i]);
+    if (d1 > max_abs_diff1) max_abs_diff1 = d1;
+  }
+  printf("[lookahead_limiter_proc] maxAbsDiff ch0=%.3e ch1=%.3e\n",
+         max_abs_diff0, max_abs_diff1);
+  ASSERT_TRUE(max_abs_diff0 < 1e-12);
+  ASSERT_TRUE(max_abs_diff1 < 1e-12);
+
+  audio_chunk_free(chunk);
+  dsp_processor_free(limiter);
+  free(params.monitor_channels);
+  free(params.process_channels);
   free(input0);
   free(input1);
   free(ref0);

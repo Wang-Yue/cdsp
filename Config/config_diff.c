@@ -445,6 +445,37 @@ static bool processor_config_equal(const processor_config_t* a,
         return false;
       return true;
 
+    case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+      if (a->parameters.lookahead_limiter.channels !=
+          b->parameters.lookahead_limiter.channels)
+        return false;
+      if (!int_arrays_equal(
+              a->parameters.lookahead_limiter.monitor_channels,
+              a->parameters.lookahead_limiter.monitor_channels_count,
+              b->parameters.lookahead_limiter.monitor_channels,
+              b->parameters.lookahead_limiter.monitor_channels_count))
+        return false;
+      if (!int_arrays_equal(
+              a->parameters.lookahead_limiter.process_channels,
+              a->parameters.lookahead_limiter.process_channels_count,
+              b->parameters.lookahead_limiter.process_channels,
+              b->parameters.lookahead_limiter.process_channels_count))
+        return false;
+      if (a->parameters.lookahead_limiter.limit !=
+              b->parameters.lookahead_limiter.limit ||
+          a->parameters.lookahead_limiter.attack !=
+              b->parameters.lookahead_limiter.attack ||
+          a->parameters.lookahead_limiter.attack_unit !=
+              b->parameters.lookahead_limiter.attack_unit ||
+          a->parameters.lookahead_limiter.release !=
+              b->parameters.lookahead_limiter.release ||
+          a->parameters.lookahead_limiter.release_unit !=
+              b->parameters.lookahead_limiter.release_unit ||
+          a->parameters.lookahead_limiter.delay_processed_only !=
+              b->parameters.lookahead_limiter.delay_processed_only)
+        return false;
+      return true;
+
     default:
       return false;
   }

@@ -1,27 +1,48 @@
 #include "lookahead_limiter.h"
 
-#include "delay.h"
-#include "filter.h"
-
-struct lookahead_limiter_filter {
-  char name[64];
-  double limit;
-  int attack_samples;
-  double release_coeff;
-  double* lookahead_data;
-  size_t lookahead_capacity;
-  size_t lookahead_read_index;
-  size_t lookahead_write_index;
-  double release_gain;
-  double* output_buffer;
-  size_t output_buffer_capacity;
-};
-
-typedef struct lookahead_limiter_filter lookahead_limiter_filter_t;
-
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "delay.h"
+#include "filter.h"
+
+/* =========================================================================
+ * Core Lookahead Gain Implementation Structure & Helpers
+ * ========================================================================= */
+
+typedef struct lookahead_gain {
+  double limit;
+  int attack_samples;
+  double release_coeff;
+  double* history;
+  size_t history_capacity;
+  size_t history_read_idx;
+  size_t history_write_idx;
+  double release_gain;
+  double* gain;
+  size_t gain_capacity;
+  size_t gain_len;
+} lookahead_gain_t;
+
+static inline double lookahead_window_get(const lookahead_gain_t* lg,
+                                          size_t index,
+                                          const double* detection) {
+  if (index < (size_t)lg->attack_samples) {
+    size_t lookahead_start = lg->history_capacity - lg->attack_samples;
+    size_t real_idx =
+        (lg->history_read_idx + lookahead_start + index) % lg->history_capacity;
+    return lg->history[real_idx];
+  } else {
+    return detection[index - lg->attack_samples];
+  }
+}
+
+static inline void history_push(lookahead_gain_t* lg, double sample) {
+  lg->history[lg->history_write_idx] = sample;
+  lg->history_write_idx = (lg->history_write_idx + 1) % lg->history_capacity;
+  lg->history_read_idx = (lg->history_read_idx + 1) % lg->history_capacity;
+}
 
 static double compute_time_samples(double value, time_unit_t unit,
                                    int sample_rate) {
@@ -38,15 +59,6 @@ static double compute_time_samples(double value, time_unit_t unit,
   return 0.0;
 }
 
-/**
- * @brief Parses parameters and computes internal filter settings.
- *
- * @param params User-provided filter parameters.
- * @param sample_rate The sample rate.
- * @param out_limit Output pointer for the computed linear gain limit.
- * @param out_attack_samples Output pointer for attack time in samples.
- * @param out_release_coeff Output pointer for exponential release coefficient.
- */
 static void configure(const lookahead_limiter_config_t* params, int sample_rate,
                       double* out_limit, int* out_attack_samples,
                       double* out_release_coeff) {
@@ -67,49 +79,66 @@ static void configure(const lookahead_limiter_config_t* params, int sample_rate,
   }
 }
 
-/**
- * @brief Pushes a sample into the lookahead circular buffer, overwriting the
- * oldest sample.
- *
- * @param filter The limiter filter instance.
- * @param sample The input sample value.
- */
-static inline void push_overwrite(lookahead_limiter_filter_t* filter,
-                                  double sample) {
-  filter->lookahead_data[filter->lookahead_write_index] = sample;
-  filter->lookahead_write_index =
-      (filter->lookahead_write_index + 1) % filter->lookahead_capacity;
-  filter->lookahead_read_index =
-      (filter->lookahead_read_index + 1) % filter->lookahead_capacity;
+static void calculate_envelope(lookahead_gain_t* lg, const double* detection,
+                               size_t len) {
+  if (len > lg->gain_capacity) {
+    double* new_gain = (double*)realloc(lg->gain, len * sizeof(double));
+    if (new_gain) {
+      lg->gain = new_gain;
+      lg->gain_capacity = len;
+    } else {
+      len = lg->gain_capacity;
+    }
+  }
+
+  double peak = 1.0;
+  int samples_since_peak = lg->attack_samples + 1;
+
+  for (int i = (int)(lg->attack_samples + len) - 1; i >= 0; i--) {
+    double input_sample = lookahead_window_get(lg, i, detection);
+    double amplitude = fabs(input_sample);
+
+    double gain = amplitude > lg->limit ? (lg->limit / amplitude) : 1.0;
+
+    double ramp_gain = 1.0;
+    if (samples_since_peak <= lg->attack_samples) {
+      double ramp = (double)(lg->attack_samples - samples_since_peak) /
+                    (double)(lg->attack_samples > 1 ? lg->attack_samples : 1);
+      ramp_gain = 1.0 - (ramp * (1.0 - peak));
+      samples_since_peak++;
+    }
+
+    if (gain < ramp_gain) {
+      peak = gain;
+      samples_since_peak = 1;
+    } else {
+      gain = ramp_gain;
+    }
+
+    if (i < (int)len) {
+      lg->gain[i] = gain;
+    }
+  }
+
+  for (size_t i = 0; i < len; i++) {
+    if (lg->release_gain <= 1e-12 || !isfinite(lg->release_gain)) {
+      lg->release_gain = 1e-12;
+    }
+    lg->release_gain = pow(lg->release_gain, lg->release_coeff);
+    if (lg->release_gain > 1.0) lg->release_gain = 1.0;
+
+    if (lg->gain[i] < lg->release_gain) {
+      lg->release_gain = lg->gain[i];
+    } else {
+      lg->gain[i] = lg->release_gain;
+    }
+  }
+  lg->gain_len = len;
 }
 
-/**
- * @brief Retrieves a sample from the circular lookahead buffer at an offset
- * from read index.
- *
- * @param filter The limiter filter instance.
- * @param idx Offset relative to the current read index.
- * @return The sample value.
- */
-static inline double get_occupied(lookahead_limiter_filter_t* filter,
-                                  size_t idx) {
-  size_t real_idx =
-      (filter->lookahead_read_index + idx) % filter->lookahead_capacity;
-  return filter->lookahead_data[real_idx];
-}
-
-/**
- * @brief Free the lookahead limiter filter instance.
- *
- * @param filter Pointer to the lookahead limiter filter instance to free.
- */
-static void lookahead_limiter_filter_free(void* instance) {
-  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)instance;
-  if (!filter) return;
-  if (filter->lookahead_data) free(filter->lookahead_data);
-  if (filter->output_buffer) free(filter->output_buffer);
-  free(filter);
-}
+/* =========================================================================
+ * Common VTable Operations (shared by both Lookahead Gain and Limiter)
+ * ========================================================================= */
 
 /**
  * @brief Validates lookahead limiter filter parameters.
@@ -126,6 +155,14 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
   const lookahead_limiter_config_t* params =
       &config->parameters.lookahead_limiter;
   if (!params) return 0;
+
+  if (!isfinite(params->limit)) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Limit must be a finite decibel value.");
+    }
+    return -1;
+  }
 
   if (params->attack < 0.0) {
     if (err) {
@@ -158,246 +195,191 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
 }
 
 /**
- * @brief Create a lookahead limiter filter.
+ * @brief Create and initialize a lookahead gain instance.
  *
- * @param name The name of the filter.
- * @param config Pointer to the filter configuration.
- * @param sample_rate The sample rate in Hz.
- * @param chunk_size The processing chunk size.
- * @param proc_params Processing parameters.
- * @param err Optional pointer to receive configuration error detail on failure.
- * @return Pointer to the allocated lookahead_limiter_filter_t, or NULL on
- * failure.
+ * @param name Unique name for the filter (unused).
+ * @param config Configuration specifying filter type and parameters.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param chunk_size Block processing chunk size in samples.
+ * @param proc_params Processing parameters (unused).
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return Pointer to newly allocated lookahead_gain_t wrapper on success, or
+ * NULL.
  */
-static void* lookahead_limiter_filter_create(
-    const char* name, const filter_config_t* config, int sample_rate,
-    size_t chunk_size, processing_parameters_t* proc_params,
-    config_error_t* err) {
+static void* lookahead_gain_create_common(const char* name,
+                                          const filter_config_t* config,
+                                          int sample_rate, size_t chunk_size,
+                                          processing_parameters_t* proc_params,
+                                          config_error_t* err) {
+  (void)name;
   (void)proc_params;
   if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER) return NULL;
   const lookahead_limiter_config_t* params =
       &config->parameters.lookahead_limiter;
   if (lookahead_limiter_config_validate(config, sample_rate, err) != 0)
     return NULL;
-  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)calloc(
-      1, sizeof(lookahead_limiter_filter_t));
-  if (!filter) return NULL;
-  if (name) {
-    strncpy(filter->name, name, sizeof(filter->name) - 1);
-    filter->name[sizeof(filter->name) - 1] = '\0';
-  } else {
-    strcpy(filter->name, "lookahead_limiter");
-  }
 
   double limit;
   int attack_samples;
   double release_coeff;
   configure(params, sample_rate, &limit, &attack_samples, &release_coeff);
 
-  if (limit <= 0.0 || !isfinite(limit) || attack_samples < 0) {
-    lookahead_limiter_filter_free(filter);
-    return NULL;
-  }
+  lookahead_gain_t* lg = (lookahead_gain_t*)calloc(1, sizeof(lookahead_gain_t));
+  if (!lg) return NULL;
 
-  size_t lookahead_len =
+  size_t history_len =
       (size_t)sample_rate > chunk_size ? (size_t)sample_rate : chunk_size;
 
-  if ((size_t)attack_samples >= lookahead_len) {
-    lookahead_limiter_filter_free(filter);
-    return NULL;
-  }
+  lg->limit = limit;
+  lg->attack_samples = attack_samples;
+  lg->release_coeff = release_coeff;
+  lg->release_gain = 1.0;
+  lg->history_capacity = history_len;
+  lg->history = (double*)calloc(history_len, sizeof(double));
+  lg->history_read_idx = 0;
+  lg->history_write_idx = 0;
 
-  filter->limit = limit;
-  filter->attack_samples = attack_samples;
-  filter->release_coeff = release_coeff;
-  filter->release_gain = 1.0;
-  filter->lookahead_capacity = lookahead_len;
-  filter->lookahead_data = (double*)calloc(lookahead_len, sizeof(double));
-  if (!filter->lookahead_data) {
-    lookahead_limiter_filter_free(filter);
-    return NULL;
-  }
-  filter->lookahead_read_index = 0;
-  filter->lookahead_write_index = 0;
-
-  // Pre-allocated output buffer to avoid heap allocation on the hot path
   size_t out_cap = chunk_size > 8192 ? chunk_size : 8192;
-  filter->output_buffer_capacity = out_cap;
-  filter->output_buffer = (double*)calloc(out_cap, sizeof(double));
-  if (!filter->output_buffer) {
-    lookahead_limiter_filter_free(filter);
+  lg->gain_capacity = out_cap;
+  lg->gain = (double*)calloc(out_cap, sizeof(double));
+
+  if (!lg->history || !lg->gain) {
+    if (lg->history) free(lg->history);
+    if (lg->gain) free(lg->gain);
+    free(lg);
     return NULL;
   }
 
-  return filter;
+  return lg;
 }
 
 /**
- * @brief Processes a slice of the waveform.
+ * @brief Free lookahead gain resources.
  *
- * This function implements a two-pass lookahead limiter algorithm:
- * 1. A backward pass that scans future samples (including the lookahead delay
- * buffer) and calculates the required gain reduction to prevent clipping,
- * applying a linear ramp-down (attack) leading up to any peak.
- * 2. A forward pass that applies an exponential release to the gain reduction
- * envelope.
- * 3. Finally, it applies the computed gain envelope to the delayed input
- * samples.
- *
- * @param filter The limiter filter instance.
- * @param waveform The current block of audio samples to process.
- * @param len The length of the slice (must be <= output_buffer_capacity).
+ * @param instance Pointer to the lookahead gain instance to free.
  */
-static void process_slice(lookahead_limiter_filter_t* filter,
-                          mutable_waveform_t waveform, size_t len) {
-  // The oldest sample in the lookahead buffer (delay line) starts at this
-  // offset relative to the capacity.
-  size_t lookahead_start = filter->lookahead_capacity - filter->attack_samples;
-  double peak = 1.0;
-  int samples_since_peak = filter->attack_samples + 1;
-
-  // Backward pass: Scan from the future (end of the new waveform block)
-  // to the past (oldest samples in the delay line).
-  // This calculates the necessary gain reduction to smoothly anticipate peaks.
-  for (int i = (int)(filter->attack_samples + len) - 1; i >= 0; i--) {
-    double input_sample;
-    if (i < filter->attack_samples) {
-      // Access samples in the lookahead delay line (older inputs).
-      input_sample = get_occupied(filter, lookahead_start + i);
-    } else {
-      // Access new input samples from the current block.
-      input_sample = waveform[i - filter->attack_samples];
-    }
-
-    double amplitude = fabs(input_sample);
-    // If the sample exceeds the limit, compute the required attenuation factor.
-    double gain = amplitude > filter->limit ? (filter->limit / amplitude) : 1.0;
-
-    // Smoothly ramp down the gain leading up to a peak (going backward, this
-    // looks like ramping up to 1.0 from the peak).
-    double ramp_gain = 1.0;
-    if (samples_since_peak <= filter->attack_samples) {
-      double ramp =
-          (double)(filter->attack_samples - samples_since_peak) /
-          (double)(filter->attack_samples > 1 ? filter->attack_samples : 1);
-      ramp_gain = 1.0 - (ramp * (1.0 - peak));
-      samples_since_peak++;
-    }
-
-    // If the current sample requires more attenuation than the ramp,
-    // establish a new peak.
-    if (gain < ramp_gain) {
-      peak = gain;
-      samples_since_peak = 1;
-    } else {
-      gain = ramp_gain;
-    }
-
-    // We only output gain values for the current block (length len).
-    if (i < (int)len) {
-      filter->output_buffer[i] = gain;
-    }
-  }
-
-  // Forward pass: Apply exponential release to the gain envelope.
-  for (size_t i = 0; i < len; i++) {
-    // Release gain exponentially towards 1.0 using pow() in the log/dB domain.
-    if (filter->release_gain <= 1e-12 || !isfinite(filter->release_gain)) {
-      filter->release_gain = 1e-12;
-    }
-    filter->release_gain = pow(filter->release_gain, filter->release_coeff);
-    if (filter->release_gain > 1.0) filter->release_gain = 1.0;
-
-    if (filter->output_buffer[i] < filter->release_gain) {
-      // Instantaneous gain reduction if the peak requires it.
-      filter->release_gain = filter->output_buffer[i];
-    } else {
-      // Apply the slower release gain.
-      filter->output_buffer[i] = filter->release_gain;
-    }
-  }
-
-  // Apply gain reduction: Multiply the delayed input samples by the computed
-  // gain.
-  for (size_t i = 0; i < len; i++) {
-    double input_sample;
-    if (i < (size_t)filter->attack_samples) {
-      input_sample = get_occupied(filter, lookahead_start + i);
-    } else {
-      input_sample = waveform[i - filter->attack_samples];
-    }
-    filter->output_buffer[i] *= input_sample;
-  }
-
-  // Update lookahead buffer and Output:
-  // Push the current raw input into the lookahead delay buffer,
-  // and write the computed limited samples to the output waveform.
-  for (size_t i = 0; i < len; i++) {
-    push_overwrite(filter, waveform[i]);
-    waveform[i] = filter->output_buffer[i];
-  }
+static void lookahead_gain_free_common(void* instance) {
+  lookahead_gain_t* lg = (lookahead_gain_t*)instance;
+  if (!lg) return;
+  if (lg->history) free(lg->history);
+  if (lg->gain) free(lg->gain);
+  free(lg);
 }
 
 /**
- * @brief Process a waveform buffer in-place by applying lookahead limiting.
+ * @brief Transfers running envelope states and circular history buffers from
+ * src to dest.
  *
- * @param filter Pointer to the lookahead limiter filter instance.
- * @param waveform The waveform data to process.
- * @param count The number of samples to process.
+ * @param dest_ptr Pointer to destination lookahead gain instance.
+ * @param src_ptr Pointer to source lookahead gain instance.
  */
-static void lookahead_limiter_filter_process(void* instance,
-                                             mutable_waveform_t waveform,
-                                             size_t count) {
-  lookahead_limiter_filter_t* filter = (lookahead_limiter_filter_t*)instance;
-  if (!filter || !waveform || count == 0) return;
-  size_t processed = 0;
-  while (processed < count) {
-    size_t slice = count - processed;
-    if (slice > filter->output_buffer_capacity) {
-      slice = filter->output_buffer_capacity;
-    }
-    process_slice(filter, waveform + processed, slice);
-    processed += slice;
-  }
-}
-
-static void lookahead_limiter_filter_transfer_state(void* dest_ptr,
-                                                    const void* src_ptr) {
-  lookahead_limiter_filter_t* dest = (lookahead_limiter_filter_t*)dest_ptr;
-  const lookahead_limiter_filter_t* src =
-      (const lookahead_limiter_filter_t*)src_ptr;
+static void lookahead_gain_transfer_state_common(void* dest_ptr,
+                                                 const void* src_ptr) {
+  lookahead_gain_t* dest = (lookahead_gain_t*)dest_ptr;
+  const lookahead_gain_t* src = (const lookahead_gain_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
   dest->release_gain = src->release_gain;
 
-  if (dest->lookahead_data && dest->lookahead_capacity > 0 &&
-      src->lookahead_data && src->lookahead_capacity > 0) {
-    size_t dest_cap = dest->lookahead_capacity;
-    size_t src_cap = src->lookahead_capacity;
+  if (dest->history && dest->history_capacity > 0 && src->history &&
+      src->history_capacity > 0) {
+    size_t dest_cap = dest->history_capacity;
+    size_t src_cap = src->history_capacity;
     size_t copy_len = dest_cap < src_cap ? dest_cap : src_cap;
 
-    memset(dest->lookahead_data, 0, dest_cap * sizeof(double));
+    memset(dest->history, 0, dest_cap * sizeof(double));
 
-    size_t src_start_idx = src->lookahead_write_index;
+    size_t src_start_idx = src->history_write_idx;
     if (src_cap > copy_len) {
-      src_start_idx =
-          (src->lookahead_write_index + src_cap - copy_len) % src_cap;
+      src_start_idx = (src->history_write_idx + src_cap - copy_len) % src_cap;
     }
     size_t dest_start_idx = dest_cap - copy_len;
 
     for (size_t i = 0; i < copy_len; i++) {
       size_t src_idx = (src_start_idx + i) % src_cap;
       size_t dest_idx = dest_start_idx + i;
-      dest->lookahead_data[dest_idx] = src->lookahead_data[src_idx];
+      dest->history[dest_idx] = src->history[src_idx];
     }
-    dest->lookahead_read_index = 0;
-    dest->lookahead_write_index = 0;
+    dest->history_read_idx = 0;
+    dest->history_write_idx = 0;
   }
+}
+
+/* =========================================================================
+ * VTable 1: Lookahead Gain (Envelope Tracker)
+ * ========================================================================= */
+
+/**
+ * @brief Compute lookahead gain envelope for peak detection signal in-place.
+ *
+ * @param instance Pointer to lookahead gain instance.
+ * @param waveform Array containing peak detection samples, overwritten with
+ * computed envelope.
+ * @param count Length of peak detection array.
+ */
+static void lookahead_gain_process_envelope(void* instance,
+                                            mutable_waveform_t waveform,
+                                            size_t count) {
+  lookahead_gain_t* lg = (lookahead_gain_t*)instance;
+  if (!lg || !waveform || count == 0) return;
+
+  calculate_envelope(lg, waveform, count);
+
+  for (size_t i = 0; i < count; i++) {
+    history_push(lg, waveform[i]);
+  }
+
+  memcpy(waveform, lg->gain, count * sizeof(double));
+}
+
+const filter_vtable_t g_lookahead_gain_vtable = {
+    .validate = lookahead_limiter_config_validate,
+    .create = lookahead_gain_create_common,
+    .process = lookahead_gain_process_envelope,
+    .transfer_state = lookahead_gain_transfer_state_common,
+    .free = lookahead_gain_free_common};
+
+/* =========================================================================
+ * VTable 2: Lookahead Limiter (Full In-Place Waveform Limiter)
+ * ========================================================================= */
+
+/**
+ * @brief Perform in-place audio limiting of a single channel.
+ *
+ * @param instance Pointer to lookahead gain instance.
+ * @param waveform Array containing audio samples to limit in-place.
+ * @param count Length of waveform array.
+ */
+static void lookahead_limiter_process_waveform(void* instance,
+                                               mutable_waveform_t waveform,
+                                               size_t count) {
+  lookahead_gain_t* lg = (lookahead_gain_t*)instance;
+  if (!lg || !waveform || count == 0) return;
+
+  calculate_envelope(lg, waveform, count);
+
+  size_t lookahead_start = lg->history_capacity - lg->attack_samples;
+  for (size_t i = 0; i < count; i++) {
+    double input_sample;
+    if (i < (size_t)lg->attack_samples) {
+      input_sample = lg->history[(lg->history_read_idx + lookahead_start + i) %
+                                 lg->history_capacity];
+    } else {
+      input_sample = waveform[i - lg->attack_samples];
+    }
+    lg->gain[i] *= input_sample;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    history_push(lg, waveform[i]);
+  }
+
+  memcpy(waveform, lg->gain, count * sizeof(double));
 }
 
 const filter_vtable_t g_lookahead_limiter_vtable = {
     .validate = lookahead_limiter_config_validate,
-    .create = lookahead_limiter_filter_create,
-    .process = lookahead_limiter_filter_process,
-    .transfer_state = lookahead_limiter_filter_transfer_state,
-    .free = lookahead_limiter_filter_free};
+    .create = lookahead_gain_create_common,
+    .process = lookahead_limiter_process_waveform,
+    .transfer_state = lookahead_gain_transfer_state_common,
+    .free = lookahead_gain_free_common};

@@ -70,7 +70,8 @@ static const char* noise_gate_processor_get_name(const void* impl) {
  * @return 0 on success, -1 on failure.
  */
 static int noise_gate_config_validate(const processor_config_t* config,
-                                      config_error_t* err) {
+                                      int sample_rate, config_error_t* err) {
+  (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_NOISE_GATE) return -1;
   const noise_gate_config_t* p = &config->parameters.noise_gate;
   if (p->channels <= 0) {
@@ -153,7 +154,7 @@ static void* noise_gate_processor_create(const char* name,
                                          config_error_t* err) {
   if (!config || config->type != PROCESSOR_TYPE_NOISE_GATE) return NULL;
   const noise_gate_config_t* params = &config->parameters.noise_gate;
-  if (noise_gate_config_validate(config, err) != 0) return NULL;
+  if (noise_gate_config_validate(config, sample_rate, err) != 0) return NULL;
   if (sample_rate <= 0 || chunk_size == 0) return NULL;
 
   noise_gate_processor_t* processor =

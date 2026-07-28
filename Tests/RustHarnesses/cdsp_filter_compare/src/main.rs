@@ -540,6 +540,82 @@ fn main() {
             write_f64(out_ch0, &output0);
             write_f64(out_ch1, &output1);
         }
+        "lookahead_limiter_proc" => {
+            assert!(args.len() == 16, "lookahead_limiter_proc needs 14 trailing args");
+            let channels: usize = args[2].parse().unwrap();
+            let monitor_str = &args[3];
+            let process_str = &args[4];
+            let limit: f64 = args[5].parse().unwrap();
+            let attack: f64 = args[6].parse().unwrap();
+            let release: f64 = args[7].parse().unwrap();
+            let unit_str = &args[8];
+            let delay_processed_only: bool = args[9] == "1";
+            let samplerate: usize = args[10].parse().unwrap();
+            let chunk_size: usize = args[11].parse().unwrap();
+            let in_ch0 = &args[12];
+            let in_ch1 = &args[13];
+            let out_ch0 = &args[14];
+            let out_ch1 = &args[15];
+
+            let monitor_channels = if monitor_str == "none" {
+                None
+            } else {
+                Some(monitor_str.split(',').map(|s| s.parse().unwrap()).collect())
+            };
+
+            let process_channels = if process_str == "none" {
+                None
+            } else {
+                Some(process_str.split(',').map(|s| s.parse().unwrap()).collect())
+            };
+
+            let unit = match unit_str.as_str() {
+                "ms" => camillalib::config::TimeUnit::Milliseconds,
+                "us" => camillalib::config::TimeUnit::Microseconds,
+                "s" => camillalib::config::TimeUnit::Seconds,
+                "samples" => camillalib::config::TimeUnit::Samples,
+                _ => panic!("invalid unit"),
+            };
+
+            let params = camillalib::config::LookaheadLimiterProcessorParameters {
+                channels,
+                monitor_channels,
+                process_channels,
+                limit,
+                attack,
+                attack_unit: unit,
+                release,
+                release_unit: unit,
+                delay_processed_only: Some(delay_processed_only),
+            };
+
+            let mut processor = camillalib::processors::lookahead_limiter::LookaheadLimiter::from_config(
+                "test", params, samplerate, chunk_size,
+            );
+
+            let input0 = read_f64(in_ch0);
+            let input1 = read_f64(in_ch1);
+            assert!(
+                input0.len() == input1.len(),
+                "input channel lengths must match"
+            );
+
+            let mut output0 = Vec::with_capacity(input0.len());
+            let mut output1 = Vec::with_capacity(input1.len());
+
+            for (chunk0, chunk1) in input0.chunks(chunk_size).zip(input1.chunks(chunk_size)) {
+                let waveforms = vec![chunk0.to_vec(), chunk1.to_vec()];
+                let mut audio_chunk =
+                    AudioChunk::new(waveforms, 1.0, -1.0, chunk0.len(), chunk0.len());
+                processor
+                    .process_chunk(&mut audio_chunk)
+                    .expect("process_chunk");
+                output0.extend_from_slice(&audio_chunk.waveforms[0]);
+                output1.extend_from_slice(&audio_chunk.waveforms[1]);
+            }
+            write_f64(out_ch0, &output0);
+            write_f64(out_ch1, &output1);
+        }
         other => {
             eprintln!("unknown mode: {other}");
             std::process::exit(2);

@@ -70,7 +70,8 @@ static const char* race_processor_get_name(const void* impl) {
  * @return 0 on success, -1 on failure.
  */
 static int race_config_validate(const processor_config_t* config,
-                                config_error_t* err) {
+                                int sample_rate, config_error_t* err) {
+  (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_RACE) return -1;
   const race_config_t* p = &config->parameters.race;
   if (p->channels <= 0) {
@@ -140,7 +141,7 @@ static void* race_processor_create(const char* name,
   (void)chunk_size;
   if (!config || config->type != PROCESSOR_TYPE_RACE) return NULL;
   const race_config_t* params = &config->parameters.race;
-  if (race_config_validate(config, err) != 0) return NULL;
+  if (race_config_validate(config, sample_rate, err) != 0) return NULL;
   if (sample_rate <= 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE sample_rate must be positive");

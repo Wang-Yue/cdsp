@@ -26,6 +26,8 @@ static const processor_vtable_t* processor_vtable_from_type(
       return &g_noise_gate_vtable;
     case PROCESSOR_TYPE_RACE:
       return &g_race_vtable;
+    case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+      return &g_lookahead_limiter_processor_vtable;
     default:
       return NULL;
   }
@@ -40,6 +42,8 @@ static processor_impl_type_t processor_impl_type_from_config(
       return PROCESSOR_IMPL_NOISE_GATE;
     case PROCESSOR_TYPE_RACE:
       return PROCESSOR_IMPL_RACE;
+    case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+      return PROCESSOR_IMPL_LOOKAHEAD_LIMITER;
     case PROCESSOR_TYPE_INVALID:
       break;
   }
@@ -80,7 +84,7 @@ dsp_processor_t* dsp_processor_create(const char* name,
                                       const processor_config_t* config,
                                       int sample_rate, size_t chunk_size,
                                       config_error_t* err) {
-  if (processor_config_validate(config, err) != 0) return NULL;
+  if (processor_config_validate(config, sample_rate, err) != 0) return NULL;
   const processor_vtable_t* vtable = processor_vtable_from_type(config->type);
   if (!vtable) {
     logger_error(&g_logger, "Unknown processor type %s for '%s'",
@@ -108,12 +112,12 @@ dsp_processor_t* dsp_processor_create(const char* name,
   return proc;
 }
 
-int processor_config_validate(const processor_config_t* proc,
+int processor_config_validate(const processor_config_t* proc, int sample_rate,
                               config_error_t* err) {
   if (!proc) return 0;
   const processor_vtable_t* vtable = processor_vtable_from_type(proc->type);
   if (vtable && vtable->validate) {
-    return vtable->validate(proc, err);
+    return vtable->validate(proc, sample_rate, err);
   }
   return 0;
 }

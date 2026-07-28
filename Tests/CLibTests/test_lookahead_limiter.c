@@ -1,8 +1,10 @@
 #include <math.h>
 
+#include "Audio/audio_chunk.h"
 #include "Filters/clipper.h"
 #include "Filters/filter.h"
 #include "Filters/lookahead_limiter.h"
+#include "Processors/processor.h"
 #include "test_support.h"
 
 static bool is_close(double left, double right, double maxdiff) {
@@ -89,6 +91,65 @@ TEST(test_lookahead_limiter_same_as_limiter) {
 
   g_lookahead_limiter_vtable.free(filter_lookahead);
   g_clipper_vtable.free(filter_clipper);
+}
+
+TEST(test_lookahead_limiter_zero_attack_matches_compressor) {
+  double release_samples = 4.0;
+  int samplerate = 48000;
+
+  double limiter_input[] = {2.0, 1.0, 1.0, 1.0, 1.0};
+  size_t chunksize = 5;
+
+  lookahead_limiter_config_t params_limiter = {
+      .limit = 0.0,
+      .attack = 0.0,
+      .attack_unit = TIME_UNIT_SAMPLES,
+      .release = release_samples,
+      .release_unit = TIME_UNIT_SAMPLES};
+  filter_config_t cfg_limiter = {
+      .type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+      .parameters.lookahead_limiter = params_limiter};
+  void* limiter = g_lookahead_limiter_vtable.create(
+      "limiter", &cfg_limiter, samplerate, chunksize, NULL, NULL);
+  ASSERT_TRUE(limiter != NULL);
+
+  compressor_config_t params_compressor = {
+      .channels = 1,
+      .monitor_channels = NULL,
+      .monitor_channels_count = 0,
+      .process_channels = NULL,
+      .process_channels_count = 0,
+      .attack = 0.0,
+      .attack_unit = TIME_UNIT_S,
+      .release = release_samples / (double)samplerate,
+      .release_unit = TIME_UNIT_S,
+      .threshold = 0.0,
+      .factor = 1e20,
+      .makeup_gain = 0.0,
+      .has_makeup_gain = false,
+      .soft_clip = false,
+      .has_clip_limit = false};
+  processor_config_t cfg_compressor = {
+      .type = PROCESSOR_TYPE_COMPRESSOR,
+      .parameters.compressor = params_compressor};
+  dsp_processor_t* compressor = dsp_processor_create(
+      "compressor", &cfg_compressor, samplerate, chunksize, NULL);
+  ASSERT_TRUE(compressor != NULL);
+
+  audio_chunk_t* compressor_chunk = audio_chunk_create(chunksize, 1);
+  ASSERT_TRUE(compressor_chunk != NULL);
+  double* comp_buf = audio_chunk_get_channel(compressor_chunk, 0);
+  memcpy(comp_buf, limiter_input, chunksize * sizeof(double));
+  audio_chunk_set_valid_frames(compressor_chunk, chunksize);
+
+  g_lookahead_limiter_vtable.process(limiter, limiter_input, chunksize);
+  dsp_processor_process(compressor, compressor_chunk);
+
+  ASSERT_TRUE(compare_waveforms(limiter_input, comp_buf, chunksize, 1e-6));
+
+  audio_chunk_free(compressor_chunk);
+  dsp_processor_free(compressor);
+  g_lookahead_limiter_vtable.free(limiter);
 }
 
 TEST(test_lookahead_limiter_zero_release) {

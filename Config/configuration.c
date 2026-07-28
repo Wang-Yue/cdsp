@@ -183,8 +183,9 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
   for (size_t i = 0; i < config->processors_count; i++) {
     config_error_t sub_err;
     config_error_init(&sub_err);
-    if (processor_config_validate(&config->processors[i].processor, &sub_err) !=
-        0) {
+    if (processor_config_validate(&config->processors[i].processor,
+                                  (int)config->devices.samplerate,
+                                  &sub_err) != 0) {
       config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR, "Processor '%s': %s",
                        config->processors[i].name, sub_err.message);
       return -1;

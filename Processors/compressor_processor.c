@@ -82,7 +82,8 @@ static const char* compressor_processor_get_name(const void* impl) {
  * @return 0 on success, -1 on failure.
  */
 static int compressor_config_validate(const processor_config_t* config,
-                                      config_error_t* err) {
+                                      int sample_rate, config_error_t* err) {
+  (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR) return -1;
   const compressor_config_t* p = &config->parameters.compressor;
   if (p->channels <= 0) {
@@ -90,9 +91,9 @@ static int compressor_config_validate(const processor_config_t* config,
                      "Compressor: channels must be > 0, got %d", p->channels);
     return -1;
   }
-  if (p->attack <= 0.0) {
+  if (p->attack < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: attack must be > 0, got %g", p->attack);
+                     "Compressor: attack must be >= 0, got %g", p->attack);
     return -1;
   }
   if (p->release <= 0.0) {
@@ -171,7 +172,7 @@ static void* compressor_processor_create(const char* name,
                                          config_error_t* err) {
   if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR) return NULL;
   const compressor_config_t* params = &config->parameters.compressor;
-  if (compressor_config_validate(config, err) != 0) return NULL;
+  if (compressor_config_validate(config, sample_rate, err) != 0) return NULL;
   if (sample_rate <= 0 || chunk_size == 0) return NULL;
 
   compressor_processor_t* processor =

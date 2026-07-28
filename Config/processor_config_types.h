@@ -23,8 +23,9 @@ typedef enum {
   PROCESSOR_TYPE_INVALID = -1,   /**< Invalid/Unknown processor type. */
   PROCESSOR_TYPE_COMPRESSOR = 0, /**< Compressor processor. */
   PROCESSOR_TYPE_NOISE_GATE,     /**< Noise gate processor. */
-  PROCESSOR_TYPE_RACE /**< RACE (Receiver Active Crosstalk Cancellation)
+  PROCESSOR_TYPE_RACE, /**< RACE (Receiver Active Crosstalk Cancellation)
                          processor. */
+  PROCESSOR_TYPE_LOOKAHEAD_LIMITER /**< Lookahead limiter processor. */
 } processor_type_t;
 
 /**
@@ -99,6 +100,23 @@ typedef struct {
 } race_config_t;
 
 /**
+ * @brief Parameters for the Lookahead Limiter processor.
+ */
+typedef struct {
+  int channels;                  /**< Number of channels. */
+  int* monitor_channels;         /**< Array of monitor channels. */
+  size_t monitor_channels_count; /**< Number of monitor channels. */
+  int* process_channels;         /**< Array of channels to process. */
+  size_t process_channels_count; /**< Number of process channels. */
+  double limit;                  /**< Limit value in dB. */
+  double attack;                 /**< Attack time. */
+  time_unit_t attack_unit;       /**< Unit of attack time. */
+  double release;                /**< Release time. */
+  time_unit_t release_unit;      /**< Unit of release time. */
+  bool delay_processed_only;     /**< Only delay processed channels. */
+} lookahead_limiter_processor_config_t;
+
+/**
  * @brief Configuration for a processor, containing its type and parameters.
  */
 typedef struct {
@@ -107,7 +125,9 @@ typedef struct {
     compressor_config_t compressor; /**< Compressor parameters. */
     noise_gate_config_t noise_gate; /**< Noise gate parameters. */
     race_config_t race;             /**< RACE parameters. */
-  } parameters;                     /**< Union of processor parameters. */
+    lookahead_limiter_processor_config_t
+        lookahead_limiter; /**< Lookahead Limiter parameters. */
+  } parameters;            /**< Union of processor parameters. */
 } processor_config_t;
 
 #endif  // CLIB_CONFIG_PROCESSOR_CONFIG_TYPES_H

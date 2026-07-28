@@ -11,6 +11,8 @@ const char* processor_type_to_string(processor_type_t type) {
       return "NoiseGate";
     case PROCESSOR_TYPE_RACE:
       return "RACE";
+    case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+      return "LookaheadLimiter";
     default:
       return "Compressor";
   }
@@ -21,5 +23,7 @@ processor_type_t processor_type_from_string(const char* str) {
   if (strcmp(str, "Compressor") == 0) return PROCESSOR_TYPE_COMPRESSOR;
   if (strcmp(str, "NoiseGate") == 0) return PROCESSOR_TYPE_NOISE_GATE;
   if (strcmp(str, "RACE") == 0) return PROCESSOR_TYPE_RACE;
+  if (strcmp(str, "LookaheadLimiter") == 0)
+    return PROCESSOR_TYPE_LOOKAHEAD_LIMITER;
   return PROCESSOR_TYPE_INVALID;
 }

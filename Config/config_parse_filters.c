@@ -641,6 +641,73 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           }
           break;
         }
+        case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: {
+          lookahead_limiter_processor_config_t* lp =
+              &p_conf->parameters.lookahead_limiter;
+          parse_json_int(params, "channels", &lp->channels);
+          parse_json_double(params, "limit",
+                            &lp->limit);  // Default double is fine
+          parse_json_double(params, "attack", &lp->attack);
+          parse_json_double(params, "release", &lp->release);
+          lp->delay_processed_only = false;
+          parse_json_bool(params, "delay_processed_only",
+                          &lp->delay_processed_only);
+
+          char a_unit_buf[64], r_unit_buf[64];
+          if (parse_json_str(params, "attack_unit", a_unit_buf,
+                             sizeof(a_unit_buf))) {
+            if (strcmp(a_unit_buf, "us") == 0)
+              lp->attack_unit = TIME_UNIT_US;
+            else if (strcmp(a_unit_buf, "ms") == 0)
+              lp->attack_unit = TIME_UNIT_MS;
+            else if (strcmp(a_unit_buf, "s") == 0)
+              lp->attack_unit = TIME_UNIT_S;
+            else if (strcmp(a_unit_buf, "samples") == 0)
+              lp->attack_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid attack_unit '%s'",
+                               np->name, a_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'attack_unit'",
+                             np->name);
+            return -1;
+          }
+
+          if (parse_json_str(params, "release_unit", r_unit_buf,
+                             sizeof(r_unit_buf))) {
+            if (strcmp(r_unit_buf, "us") == 0)
+              lp->release_unit = TIME_UNIT_US;
+            else if (strcmp(r_unit_buf, "ms") == 0)
+              lp->release_unit = TIME_UNIT_MS;
+            else if (strcmp(r_unit_buf, "s") == 0)
+              lp->release_unit = TIME_UNIT_S;
+            else if (strcmp(r_unit_buf, "samples") == 0)
+              lp->release_unit = TIME_UNIT_SAMPLES;
+            else {
+              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                               "Processor '%s': invalid release_unit '%s'",
+                               np->name, r_unit_buf);
+              return -1;
+            }
+          } else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': missing required 'release_unit'",
+                             np->name);
+            return -1;
+          }
+
+          lp->monitor_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+              &lp->monitor_channels_count);
+          lp->process_channels = parse_int_array(
+              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+              &lp->process_channels_count);
+          break;
+        }
         default:
           break;
       }
