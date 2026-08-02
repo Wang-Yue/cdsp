@@ -939,6 +939,9 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
           case PROCESSOR_TYPE_RACE:
             expected_channels = proc->parameters.race.channels;
             break;
+          case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+            expected_channels = proc->parameters.lookahead_limiter.channels;
+            break;
           case PROCESSOR_TYPE_INVALID:
             break;
         }
