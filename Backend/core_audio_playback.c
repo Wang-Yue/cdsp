@@ -369,14 +369,6 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
         logger_warn(&g_logger,
                     "Failed to acquire exclusive hog mode on playback device");
       }
-    } else {
-      pid_t hog_pid = -1;
-      AudioObjectPropertyAddress hog_addr = {
-          .mSelector = kAudioDevicePropertyHogMode,
-          .mScope = kAudioObjectPropertyScopeGlobal,
-          .mElement = kAudioObjectPropertyElementMain};
-      AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
-                                 &hog_pid);
     }
     // Set the device format.
     bool physical_format_set = false;
