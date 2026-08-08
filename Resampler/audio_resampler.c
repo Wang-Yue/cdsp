@@ -139,6 +139,18 @@ size_t resampler_get_channels(const resampler_t* resampler) {
              : 0;
 }
 
+size_t resampler_get_output_delay(const resampler_t* resampler) {
+  return (resampler && resampler->vtable && resampler->vtable->get_output_delay)
+             ? resampler->vtable->get_output_delay(resampler->impl)
+             : 0;
+}
+
+void resampler_reset(resampler_t* resampler) {
+  if (resampler && resampler->vtable && resampler->vtable->reset) {
+    resampler->vtable->reset(resampler->impl);
+  }
+}
+
 void resampler_free(resampler_t* resampler) {
   if (resampler) {
     if (resampler->vtable && resampler->vtable->free) {

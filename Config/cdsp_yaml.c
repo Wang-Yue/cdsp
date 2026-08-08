@@ -369,14 +369,27 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
         cJSON_AddItemToArray(top->node, new_obj);
         PUSH_STACK(new_obj, indent + 2, false);
       } else {
-        char* colon = strchr(item_val, ':');
-        char* first_q = strpbrk(item_val, "\"'");
-        if (colon && (!first_q || colon < first_q)) {
+        char* colon = NULL;
+        if (item_val[0] == '"' || item_val[0] == '\'') {
+          char q = item_val[0];
+          char* end_q = strchr(item_val + 1, q);
+          if (end_q) {
+            colon = strchr(end_q + 1, ':');
+          }
+        } else {
+          colon = strchr(item_val, ':');
+        }
+        if (colon) {
           cJSON* new_obj = cJSON_CreateObject();
           CHECK_OOM(new_obj);
           cJSON_AddItemToArray(top->node, new_obj);
           *colon = '\0';
           char* key = trim_str(item_val);
+          if ((key[0] == '"' || key[0] == '\'') &&
+              key[strlen(key) - 1] == key[0] && strlen(key) >= 2) {
+            key[strlen(key) - 1] = '\0';
+            key++;
+          }
           char* val = trim_str(colon + 1);
           if (*val == '\0') {
             cJSON* child = cJSON_CreateObject();

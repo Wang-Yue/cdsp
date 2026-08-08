@@ -641,6 +641,28 @@ static void* async_poly_resampler_create(const resampler_config_t* config,
   }
 }
 
+static size_t async_poly_resampler_get_output_delay(const void* impl) {
+  const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
+  return resampler ? (resampler->interpolator_len / 2) : 0;
+}
+
+static void async_poly_resampler_reset(void* impl) {
+  async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
+  if (!resampler) return;
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    double* buf = audio_buffers_get_channel(resampler->input_buffer, ch);
+    if (buf) {
+      memset(buf, 0,
+             (2 * resampler->interpolator_len + resampler->max_input_frames) *
+                 sizeof(double));
+    }
+  }
+  resampler->current_buffer_fill = 2 * resampler->interpolator_len;
+  resampler->last_index = -((double)resampler->interpolator_len / 2.0);
+  resampler->resample_ratio = resampler->base_ratio;
+  resampler->target_ratio = resampler->base_ratio;
+}
+
 const resampler_vtable_t g_async_poly_resampler_vtable = {
     .validate = async_poly_resampler_config_validate,
     .create = async_poly_resampler_create,
@@ -652,6 +674,8 @@ const resampler_vtable_t g_async_poly_resampler_vtable = {
     .get_input_frames_next = async_poly_resampler_get_input_frames_next,
     .get_output_frames_next = async_poly_resampler_get_output_frames_next,
     .get_channels = async_poly_resampler_get_channels,
+    .get_output_delay = async_poly_resampler_get_output_delay,
+    .reset = async_poly_resampler_reset,
     .free = async_poly_resampler_free};
 
 static void* async_poly_resampler_create_from_profile(

@@ -185,4 +185,38 @@ TEST(YamlConverter_KeyArrayParsing) {
   cJSON_Delete(json);
 }
 
+TEST(YamlConverter_QuotedKeyListItems) {
+  const char* yaml_raw =
+      "pipeline:\n"
+      "  - \"type\": Filter\n"
+      "    \"channel\": 0\n"
+      "    \"names\":\n"
+      "      - \"filter1:with_colon\"\n"
+      "      - 'filter2'\n";
+
+  char* err = NULL;
+  cJSON* json = cdsp_yaml_to_json(yaml_raw, &err);
+  ASSERT_TRUE(json != NULL);
+  ASSERT_TRUE(err == NULL);
+
+  cJSON* pipe = cJSON_GetObjectItem(json, "pipeline");
+  ASSERT_TRUE(pipe != NULL && cJSON_IsArray(pipe));
+
+  cJSON* step = cJSON_GetArrayItem(pipe, 0);
+  ASSERT_TRUE(step != NULL && cJSON_IsObject(step));
+
+  cJSON* type_node = cJSON_GetObjectItem(step, "type");
+  ASSERT_TRUE(type_node != NULL && cJSON_IsString(type_node));
+  ASSERT_STR_EQ("Filter", type_node->valuestring);
+
+  cJSON* names = cJSON_GetObjectItem(step, "names");
+  ASSERT_TRUE(names != NULL && cJSON_IsArray(names));
+  ASSERT_EQ(2, cJSON_GetArraySize(names));
+  ASSERT_STR_EQ("filter1:with_colon",
+                cJSON_GetArrayItem(names, 0)->valuestring);
+  ASSERT_STR_EQ("filter2", cJSON_GetArrayItem(names, 1)->valuestring);
+
+  cJSON_Delete(json);
+}
+
 TEST_MAIN()

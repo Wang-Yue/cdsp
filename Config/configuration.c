@@ -150,9 +150,9 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
   }
 
   if (config->devices.has_adjust_interval_s &&
-      config->devices.adjust_interval_s < 0.1) {
+      config->devices.adjust_interval_s <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "adjust_interval_s must be at least 0.1 seconds");
+                     "adjust_interval_s must be positive and > 0");
     return -1;
   }
 
@@ -262,6 +262,12 @@ void dsp_config_free(dsp_config_t* config) {
                  .processor.parameters.noise_gate.monitor_channels);
         free(config->processors[i]
                  .processor.parameters.noise_gate.process_channels);
+      } else if (config->processors[i].processor.type ==
+                 PROCESSOR_TYPE_LOOKAHEAD_LIMITER) {
+        free(config->processors[i]
+                 .processor.parameters.lookahead_limiter.monitor_channels);
+        free(config->processors[i]
+                 .processor.parameters.lookahead_limiter.process_channels);
       }
     }
     free(config->processors);

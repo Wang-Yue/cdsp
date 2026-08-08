@@ -27,8 +27,8 @@
 #include "Filters/volume.h"
 #include "Mixer/mixer.h"
 #include "Processors/compressor_processor.h"
-#include "Processors/noise_gate_processor.h"
 #include "Processors/lookahead_limiter_processor.h"
+#include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
 #include "Processors/race_processor.h"
 #include "Utils/double_helpers.h"
@@ -1635,8 +1635,10 @@ TEST(LookaheadLimiterProcessor_Vs_RustReference) {
   char in_path0[256], in_path1[256], ref_path0[256], ref_path1[256];
   snprintf(in_path0, sizeof(in_path0), "/tmp/cdsp_limproc_%s_in0.raw", label);
   snprintf(in_path1, sizeof(in_path1), "/tmp/cdsp_limproc_%s_in1.raw", label);
-  snprintf(ref_path0, sizeof(ref_path0), "/tmp/cdsp_limproc_%s_ref0.raw", label);
-  snprintf(ref_path1, sizeof(ref_path1), "/tmp/cdsp_limproc_%s_ref1.raw", label);
+  snprintf(ref_path0, sizeof(ref_path0), "/tmp/cdsp_limproc_%s_ref0.raw",
+           label);
+  snprintf(ref_path1, sizeof(ref_path1), "/tmp/cdsp_limproc_%s_ref1.raw",
+           label);
 
   write_raw(input0, NBR_FRAMES, in_path0);
   write_raw(input1, NBR_FRAMES, in_path1);

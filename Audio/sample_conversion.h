@@ -176,6 +176,9 @@ static inline int32_t pcm_sample_encode_s24(double val) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24(int32_t val24) {
+  if (val24 & 0x00800000) {
+    val24 |= (int32_t)0xFF000000;
+  }
   return (double)val24 / 8388608.0;
 }
 

@@ -97,6 +97,7 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
       double elapsed =
           (double)(cdsp_time_now_ns() - last_capture_time) / 1000000000.0;
       double timeout_sec = 0.5;
+      pthread_mutex_lock((pthread_mutex_t*)&core->config_mutex);
       if (core->current_config) {
         size_t sr = core->current_config->devices.has_capture_samplerate
                         ? core->current_config->devices.capture_samplerate
@@ -109,6 +110,7 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
           }
         }
       }
+      pthread_mutex_unlock((pthread_mutex_t*)&core->config_mutex);
       if (elapsed > timeout_sec) {
         engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
         logger_warn(&g_logger,

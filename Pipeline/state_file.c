@@ -95,7 +95,8 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
       if (strncmp(trimmed, "config_path:", 12) == 0) {
         char* val = trimmed + 12;
         while (*val == ' ' || *val == '\t') val++;
-        if (strcmp(val, "null") != 0 && val[0] != '\0') {
+        if (strcmp(val, "null") != 0 && strcmp(val, "~") != 0 &&
+            val[0] != '\0') {
           // strip quotes if any
           if (val[0] == '"' || val[0] == '\'') {
             size_t vlen = strlen(val);

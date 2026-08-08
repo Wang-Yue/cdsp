@@ -556,7 +556,8 @@ static resampler_error_t async_sinc_resampler_process(
       resampler->needed_input_size > resampler->max_input_frames) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
-  if (audio_chunk_get_channels(output) != resampler->channels) {
+  if (audio_chunk_get_channels(input) != resampler->channels ||
+      audio_chunk_get_channels(output) != resampler->channels) {
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   size_t output_frames = resampler->needed_output_size;
@@ -882,6 +883,28 @@ static void* async_sinc_resampler_create(const resampler_config_t* config,
   }
 }
 
+static size_t async_sinc_resampler_get_output_delay(const void* impl) {
+  const async_sinc_resampler_t* resampler = (const async_sinc_resampler_t*)impl;
+  return resampler ? (resampler->sinc_len / 2) : 0;
+}
+
+static void async_sinc_resampler_reset(void* impl) {
+  async_sinc_resampler_t* resampler = (async_sinc_resampler_t*)impl;
+  if (!resampler) return;
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    double* buf = audio_buffers_get_channel(resampler->input_buffer, ch);
+    if (buf) {
+      memset(buf, 0,
+             (2 * resampler->sinc_len + resampler->max_input_frames) *
+                 sizeof(double));
+    }
+  }
+  resampler->current_buffer_fill = 2 * resampler->sinc_len;
+  resampler->last_index = -((double)resampler->sinc_len - 1.0);
+  resampler->resample_ratio = resampler->base_ratio;
+  resampler->target_ratio = resampler->base_ratio;
+}
+
 const resampler_vtable_t g_async_sinc_resampler_vtable = {
     .validate = async_sinc_resampler_config_validate,
     .create = async_sinc_resampler_create,
@@ -893,6 +916,8 @@ const resampler_vtable_t g_async_sinc_resampler_vtable = {
     .get_input_frames_next = async_sinc_resampler_get_input_frames_next,
     .get_output_frames_next = async_sinc_resampler_get_output_frames_next,
     .get_channels = async_sinc_resampler_get_channels,
+    .get_output_delay = async_sinc_resampler_get_output_delay,
+    .reset = async_sinc_resampler_reset,
     .free = async_sinc_resampler_free};
 
 static void* async_sinc_resampler_create_from_profile(

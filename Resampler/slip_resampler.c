@@ -307,6 +307,20 @@ static size_t slip_resampler_get_channels(const void* impl_ptr) {
   return impl ? impl->channels : 0;
 }
 
+static size_t slip_resampler_get_output_delay(const void* impl_ptr) {
+  (void)impl_ptr;
+  return 0;
+}
+
+static void slip_resampler_reset(void* impl_ptr) {
+  slip_resampler_t* impl = (slip_resampler_t*)impl_ptr;
+  if (!impl) return;
+  impl->drift_acc = 0.0;
+  impl->correction = 0;
+  impl->resample_ratio = 1.0;
+  slip_resampler_replan(impl);
+}
+
 const resampler_vtable_t g_slip_resampler_vtable = {
     .validate = slip_resampler_validate,
     .create = slip_resampler_create,
@@ -318,5 +332,7 @@ const resampler_vtable_t g_slip_resampler_vtable = {
     .get_input_frames_next = slip_resampler_get_input_frames_next,
     .get_output_frames_next = slip_resampler_get_output_frames_next,
     .get_channels = slip_resampler_get_channels,
+    .get_output_delay = slip_resampler_get_output_delay,
+    .reset = slip_resampler_reset,
     .free = slip_resampler_free,
 };

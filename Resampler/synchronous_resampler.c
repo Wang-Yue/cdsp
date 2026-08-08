@@ -540,6 +540,25 @@ static void* synchronous_resampler_create(const resampler_config_t* config,
                                            chunk_size, err);
 }
 
+static size_t synchronous_resampler_get_output_delay(const void* impl) {
+  const synchronous_resampler_t* resampler =
+      (const synchronous_resampler_t*)impl;
+  return resampler ? resampler->sub_fft_out : 0;
+}
+
+static void synchronous_resampler_reset(void* impl) {
+  synchronous_resampler_t* resampler = (synchronous_resampler_t*)impl;
+  if (!resampler) return;
+  if (resampler->carries) {
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      if (resampler->carries[ch]) {
+        memset(resampler->carries[ch], 0,
+               resampler->sub_fft_out * sizeof(double));
+      }
+    }
+  }
+}
+
 const resampler_vtable_t g_synchronous_resampler_vtable = {
     .validate = synchronous_resampler_config_validate,
     .create = synchronous_resampler_create,
@@ -551,4 +570,6 @@ const resampler_vtable_t g_synchronous_resampler_vtable = {
     .get_input_frames_next = synchronous_resampler_get_input_frames_next,
     .get_output_frames_next = synchronous_resampler_get_output_frames_next,
     .get_channels = synchronous_resampler_get_channels,
+    .get_output_delay = synchronous_resampler_get_output_delay,
+    .reset = synchronous_resampler_reset,
     .free = synchronous_resampler_free};

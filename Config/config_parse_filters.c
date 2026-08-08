@@ -251,7 +251,7 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               bcp->type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS;
             else if (strcmp(item->valuestring, "Tilt") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_TILT;
-            else if (strcmp(item->valuestring, "FivePointPEQ") == 0)
+            else if (strcmp(item->valuestring, "FivePointPeq") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ;
             else if (strcmp(item->valuestring, "GraphicEqualizer") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;

@@ -59,11 +59,10 @@ struct mixed_radix_fft {
   /// the output, and we skip the final memcpy that the older "internal
   /// scratch + copy out" pattern needed.
   ///
-  /// Only valid for the duration of one `execute` invocation. Aliasing
-  /// `realIn` and `realOut` is unsupported (the permute pass would
-  /// overwrite input bytes mid-pass).
   double* work_re;
   double* work_im;
+  double* scratch_re;
+  double* scratch_im;
 };
 
 /**
@@ -697,8 +696,12 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
     }
     fft->permutation[i] = rev;
   }
-  // No internal work buffer: `execute` re-points `workRe`/`workIm`
-  // at the caller's output for the duration of the call.
+  fft->scratch_re = (double*)malloc(n * sizeof(double));
+  fft->scratch_im = (double*)malloc(n * sizeof(double));
+  if (!fft->scratch_re || !fft->scratch_im) {
+    mixed_radix_fft_free(fft);
+    return NULL;
+  }
 
   return fft;
 }
@@ -707,6 +710,18 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
                              waveform_t imag_in, mutable_waveform_t real_out,
                              mutable_waveform_t imag_out, bool inverse) {
   if (!fft) return;
+  const double* src_re = real_in;
+  const double* src_im = imag_in;
+
+  if (real_in == real_out && fft->scratch_re) {
+    memcpy(fft->scratch_re, real_in, fft->n * sizeof(double));
+    src_re = fft->scratch_re;
+  }
+  if (imag_in == imag_out && fft->scratch_im) {
+    memcpy(fft->scratch_im, imag_in, fft->n * sizeof(double));
+    src_im = fft->scratch_im;
+  }
+
   double* work_re = real_out;
   double* work_im = imag_out;
 
@@ -714,14 +729,14 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
   if (inverse) {
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
-      work_re[p] = real_in[i];
-      work_im[p] = -imag_in[i];
+      work_re[p] = src_re[i];
+      work_im[p] = -src_im[i];
     }
   } else {
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
-      work_re[p] = real_in[i];
-      work_im[p] = imag_in[i];
+      work_re[p] = src_re[i];
+      work_im[p] = src_im[i];
     }
   }
 
@@ -782,5 +797,7 @@ void mixed_radix_fft_free(mixed_radix_fft_t* fft) {
   }
   if (fft->factors) free(fft->factors);
   if (fft->permutation) free(fft->permutation);
+  if (fft->scratch_re) free(fft->scratch_re);
+  if (fft->scratch_im) free(fft->scratch_im);
   free(fft);
 }

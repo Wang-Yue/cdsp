@@ -184,29 +184,43 @@ static void replace_tokens_in_json_node(cJSON* node, int samplerate,
   }
 }
 
-static void resolve_relative_paths_in_json_node(cJSON* node,
-                                                const char* config_dir,
-                                                int depth) {
-  if (!node || !config_dir || config_dir[0] == '\0' || depth > 20) return;
+#ifdef _WIN32
+#include <io.h>
+#define F_OK 0
+#define access _access
+#else
+#include <unistd.h>
+#endif
 
-  if (cJSON_IsString(node) && node->valuestring && node->string &&
-      strcmp(node->string, "filename") == 0) {
-    const char* str = node->valuestring;
-    if (str[0] != '\0' && str[0] != '/' &&
-        !(strlen(str) >= 2 && str[1] == ':')) {
-      char resolved[1024];
-      size_t dir_len = strlen(config_dir);
-      bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/');
-      snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
-               needs_slash ? "/" : "", str);
-      cJSON_SetValuestring(node, resolved);
+static void resolve_relative_paths_in_filters(cJSON* filters_obj,
+                                              const char* config_dir) {
+  if (!filters_obj || !config_dir || config_dir[0] == '\0') return;
+  cJSON* filter = filters_obj->child;
+  while (filter) {
+    cJSON* type_item = cJSON_GetObjectItemCaseSensitive(filter, "type");
+    if (type_item && cJSON_IsString(type_item) &&
+        (strcasecmp(type_item->valuestring, "Conv") == 0 ||
+         strcasecmp(type_item->valuestring, "Convolution") == 0)) {
+      cJSON* params = cJSON_GetObjectItemCaseSensitive(filter, "parameters");
+      if (params && cJSON_IsObject(params)) {
+        cJSON* fn_node = cJSON_GetObjectItemCaseSensitive(params, "filename");
+        if (fn_node && cJSON_IsString(fn_node) && fn_node->valuestring) {
+          const char* str = fn_node->valuestring;
+          if (str[0] != '\0' && str[0] != '/' &&
+              !(strlen(str) >= 2 && str[1] == ':')) {
+            char resolved[1024];
+            size_t dir_len = strlen(config_dir);
+            bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/');
+            snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
+                     needs_slash ? "/" : "", str);
+            if (access(resolved, F_OK) == 0) {
+              cJSON_SetValuestring(fn_node, resolved);
+            }
+          }
+        }
+      }
     }
-  }
-
-  cJSON* child = node->child;
-  while (child) {
-    resolve_relative_paths_in_json_node(child, config_dir, depth + 1);
-    child = child->next;
+    filter = filter->next;
   }
 }
 
@@ -245,7 +259,10 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
   }
 
   if (config_dir && config_dir[0] != '\0') {
-    resolve_relative_paths_in_json_node(root, config_dir, 0);
+    cJSON* filters_obj = cJSON_GetObjectItemCaseSensitive(root, "filters");
+    if (filters_obj) {
+      resolve_relative_paths_in_filters(filters_obj, config_dir);
+    }
   }
 
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");

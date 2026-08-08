@@ -154,8 +154,8 @@ static int delay_config_validate(const filter_config_t* config, int sample_rate,
   if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 ||
       delay_samples > 100000000.0) {
     if (err) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Invalid delay value %f", params->delay);
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Invalid delay value %f",
+                       params->delay);
     }
     return -1;
   }

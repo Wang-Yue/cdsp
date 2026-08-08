@@ -77,7 +77,7 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
     analyzer->window_sum = sum;
   }
 
-  analyzer->out_capacity = 1024;
+  analyzer->out_capacity = 4096;
   analyzer->plan.frequencies =
       (float*)calloc(analyzer->out_capacity, sizeof(float));
   analyzer->plan.ranges =

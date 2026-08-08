@@ -276,6 +276,12 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
+  for (int c = 0; c < playback->channels; c++) {
+    if (playback->playback_rings[c]) {
+      spsc_audio_ring_buffer_drain(playback->playback_rings[c]);
+    }
+  }
+
   AudioComponentDescription desc = {
       .componentType = kAudioUnitType_Output,
       .componentSubType = kAudioUnitSubType_HALOutput,

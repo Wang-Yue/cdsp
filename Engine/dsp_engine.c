@@ -332,9 +332,7 @@ static int dsp_engine_get_capture_rate(void* ctx) {
           : NULL;
   double measured =
       params ? processing_parameters_get_measured_capture_rate(params) : 0.0;
-  const dsp_config_t* cfg = dsp_session_get_config(impl->session.active);
-  int rate = (measured > 0.0) ? (int)(measured + 0.5)
-                              : (cfg ? cfg->devices.samplerate : 0);
+  int rate = (measured > 0.0) ? (int)(measured + 0.5) : 0;
   pthread_mutex_unlock(&impl->state_mutex);
   return rate;
 }

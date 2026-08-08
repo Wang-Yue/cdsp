@@ -190,6 +190,43 @@ TEST(InverseDirection) {
   }
 }
 
+TEST(MixedRadixInPlace) {
+  size_t sizes[] = {3, 5, 6, 7, 8, 12, 14, 21, 64, 105, 1029};
+  for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+    size_t n = sizes[i];
+    double* in_re = (double*)malloc(n * sizeof(double));
+    double* in_im = (double*)malloc(n * sizeof(double));
+    double* oop_re = (double*)malloc(n * sizeof(double));
+    double* oop_im = (double*)malloc(n * sizeof(double));
+    double* ip_re = (double*)malloc(n * sizeof(double));
+    double* ip_im = (double*)malloc(n * sizeof(double));
+
+    random_complex(in_re, in_im, n, (uint64_t)n * 0x85EBCA6B);
+    memcpy(ip_re, in_re, n * sizeof(double));
+    memcpy(ip_im, in_im, n * sizeof(double));
+
+    mixed_radix_fft_t* fft = mixed_radix_fft_create(n);
+    ASSERT_TRUE(fft != NULL);
+
+    // Out-of-place execution
+    mixed_radix_fft_execute(fft, in_re, in_im, oop_re, oop_im, false);
+
+    // In-place execution (real_in == real_out && imag_in == imag_out)
+    mixed_radix_fft_execute(fft, ip_re, ip_im, ip_re, ip_im, false);
+
+    double diff = max_abs_diff(oop_re, oop_im, ip_re, ip_im, n);
+    ASSERT_TRUE(diff < 1e-12);
+
+    mixed_radix_fft_free(fft);
+    free(in_re);
+    free(in_im);
+    free(oop_re);
+    free(oop_im);
+    free(ip_re);
+    free(ip_im);
+  }
+}
+
 TEST(UnsupportedFactorsReturnNil) {
   size_t sizes[] = {11, 13, 17, 22, 33, 121};
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {

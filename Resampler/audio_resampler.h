@@ -51,6 +51,8 @@ typedef struct resampler_vtable {
   size_t (*get_input_frames_next)(const void* impl);
   size_t (*get_output_frames_next)(const void* impl);
   size_t (*get_channels)(const void* impl);
+  size_t (*get_output_delay)(const void* impl);
+  void (*reset)(void* impl);
   void (*free)(void* impl);
 } resampler_vtable_t;
 
@@ -174,6 +176,21 @@ size_t resampler_get_output_frames_next(const resampler_t* resampler);
  * @return The number of audio channels.
  */
 size_t resampler_get_channels(const resampler_t* resampler);
+
+/**
+ * @brief Gets the latency / group delay introduced by the resampler filter.
+ *
+ * @param resampler The resampler instance.
+ * @return The filter delay in output frames.
+ */
+size_t resampler_get_output_delay(const resampler_t* resampler);
+
+/**
+ * @brief Resets the internal history and filter states of the resampler.
+ *
+ * @param resampler The resampler instance.
+ */
+void resampler_reset(resampler_t* resampler);
 
 /**
  * @brief Frees the resampler instance and its resources.
