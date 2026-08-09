@@ -2778,13 +2778,13 @@ TEST(DSPEngineE2E_FileFile_Realtime_TT) {
 
 struct stop_thread_args {
   dsp_engine_t* engine;
-  volatile bool done;
+  _Atomic bool done;
 };
 
 static void* stop_thread_func(void* arg) {
   struct stop_thread_args* args = (struct stop_thread_args*)arg;
   cdsp_stop(args->engine);
-  args->done = true;
+  atomic_store_explicit(&args->done, true, memory_order_release);
   return NULL;
 }
 
@@ -2865,16 +2865,16 @@ TEST(DSPEngineE2E_DeadlockGuard) {
   pthread_create(&stop_thread, NULL, stop_thread_func, &stop_args);
 
   for (int i = 0; i < 200; i++) {
-    if (stop_args.done) {
+    if (atomic_load_explicit(&stop_args.done, memory_order_acquire)) {
       break;
     }
     cdsp_sleep_ms(10);  // 10ms
   }
 
   // Assert that the stop thread completed within 2.0 seconds (no deadlock)
-  ASSERT_TRUE(stop_args.done);
+  ASSERT_TRUE(atomic_load_explicit(&stop_args.done, memory_order_acquire));
 
-  if (stop_args.done) {
+  if (atomic_load_explicit(&stop_args.done, memory_order_acquire)) {
     pthread_join(stop_thread, NULL);
   } else {
     pthread_detach(stop_thread);
@@ -2887,7 +2887,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
 }
 
 extern _Atomic bool g_generator_mock_hang;
-extern volatile int g_pipeline_swaps_count;
+extern _Atomic int g_pipeline_swaps_count;
 
 // Real-world scenario simulated:
 // Physical audio hardware driver crash/lockup (synchronous lockup inside
@@ -2980,7 +2980,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
 // pipeline swap apply immediately without waiting for the audio signal to
 // resume.
 TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
-  g_pipeline_swaps_count = 0;
+  atomic_store_explicit(&g_pipeline_swaps_count, 0, memory_order_relaxed);
 
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/paused_reload_out_%d.raw",
@@ -3084,7 +3084,8 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   // Wait up to 3000ms for pipeline swap to occur
   bool swapped = false;
   for (int i = 0; i < 300; i++) {
-    if (g_pipeline_swaps_count >= 1) {
+    if (atomic_load_explicit(&g_pipeline_swaps_count, memory_order_acquire) >=
+        1) {
       swapped = true;
       break;
     }

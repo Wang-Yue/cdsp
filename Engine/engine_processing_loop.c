@@ -30,7 +30,8 @@
 #include "Utils/cdsp_time.h"
 
 #ifdef CDSP_TEST
-volatile int g_pipeline_swaps_count = 0;
+#include <stdatomic.h>
+_Atomic int g_pipeline_swaps_count = 0;
 #endif
 
 struct pending_update {
@@ -207,7 +208,7 @@ static void processing_loop_check_pipeline_swap(
     }
     loop->active_pipeline = next_pipeline;
 #ifdef CDSP_TEST
-    g_pipeline_swaps_count++;
+    atomic_fetch_add_explicit(&g_pipeline_swaps_count, 1, memory_order_release);
 #endif
   }
 }

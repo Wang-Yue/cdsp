@@ -442,6 +442,7 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     engine_shared_state_shutdown_captured_queue(loop->shared);
   }
   if (loop->capture) {
+    capture_backend_stop(loop->capture);
     capture_backend_close(loop->capture);
   }
   if (loop->captured_drop_counter > 0) {

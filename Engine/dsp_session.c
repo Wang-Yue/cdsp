@@ -164,17 +164,7 @@ processing_stop_reason_t dsp_session_stop_and_free(
     final_reason = engine_shared_state_get_stop_reason(core->shared);
   }
 
-  // Ref: engine_state_management.md - Section 1.7.2 Rule 3 & Section 3.6 Step 3
-  // Stop backends immediately to abort any blocking OS kernel driver read/write
-  // operations in worker threads BEFORE invoking pthread_join().
-  if (core->capture) {
-    capture_backend_stop(core->capture);
-  }
-  if (core->playback) {
-    playback_backend_stop(core->playback);
-  }
-
-  // Wait for all audio threads to finish.
+  // Wait for all audio worker threads to finish and close their backends.
   if (core->threads_created) {
     pthread_join(core->capture_thread, NULL);
     pthread_join(core->processing_thread, NULL);
@@ -190,12 +180,10 @@ processing_stop_reason_t dsp_session_stop_and_free(
   }
 
   if (core->capture) {
-    capture_backend_close(core->capture);
     capture_backend_free(core->capture);
     core->capture = NULL;
   }
   if (core->playback) {
-    playback_backend_close(core->playback);
     playback_backend_free(core->playback);
     core->playback = NULL;
   }

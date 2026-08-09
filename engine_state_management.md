@@ -146,7 +146,7 @@ When adding or modifying components in the engine, follow these strict memory sa
 
 1. **Never Nullify Without Freeing**: When replacing pointers (e.g. `active_json`, `previous_json`, `current_config`), always free the existing object before overwriting or transfer ownership explicitly to a destructor queue.
 2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
-3. **Stop Backend Devices Before Thread Joining**: `dsp_session_stop_and_free()` must invoke `capture_backend_stop()` and `playback_backend_stop()` to interrupt and unblock any synchronous OS kernel driver read/write syscalls **before** calling `pthread_join()`. All worker threads (`capture_thread`, `processing_thread`, `playback_thread`) must be joined before freeing backends, pipelines, resamplers, or `engine_shared_state_t`.
+3. **Worker Thread Backend Ownership & Teardown**: Audio backends are strictly owned and operated by their respective worker threads (`capture_thread` and `playback_thread`). `dsp_session_stop_and_free()` signals stop via `engine_shared_state_request_stop()`. Upon observing the stop signal, worker threads invoke `stop()` and `close()` on their own backend before exiting. `dsp_session_stop_and_free()` joins all worker threads via `pthread_join()` before freeing backend contexts, pipelines, resamplers, or `engine_shared_state_t`.
 4. **Deferred Garbage Collection for Audio Threads**: Never call `free()` inside audio loop threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`). Defer object destruction (such as swapped pipelines) to single atomic retired pipeline slots (`retired_pipeline`) for main-thread cleanup.
 5. **Un-Enqueued Chunk Buffer Retention on Real-Time Drops**: When an audio loop thread (`EngineCaptureLoop` or `EngineProcessingLoop`) encounters a full SPSC queue in real-time mode (`enqueue` returns `false`), it must store the un-enqueued chunk pointer in a `pending_chunk` / `pending_scratch` variable and reuse it on the next loop iteration. It must **never** advance `round_robin_chunk_pool_next()`, preventing pool index wrap-around from retrieving and overwriting active chunk buffers currently sitting in the SPSC queue.
 
@@ -454,9 +454,10 @@ sequenceDiagram
    - The threads check `engine_shared_state_should_stop()`, which returns `true` (since state is `INACTIVE`).
    - In non-realtime mode, if a worker thread is waiting in a retry loop on a full queue when `should_stop()` returns `true`, it sets an abort flag to break out of the outer chunk-dequeuing loop immediately rather than continuing to process remaining items in `captured_queue`.
    - All loops break and threads terminate immediately.
-3. **Controller Teardown & Non-Blocking Hardware Abort**:
-   - Prior to joining worker threads, `dsp_session_stop_and_free()` invokes `capture_backend_stop()` and `playback_backend_stop()` to interrupt and unblock any synchronous OS kernel driver read/write syscalls.
-   - It then joins all terminated threads via `pthread_join()` and frees session allocations safely.
+3. **Controller Teardown & Worker Thread Joining**:
+   - `dsp_session_stop_and_free()` signals stop via `engine_shared_state_request_stop()`.
+   - Each worker thread breaks from its processing loop, invokes `stop()` and `close()` on its own backend, and terminates cleanly.
+   - `dsp_session_stop_and_free()` then joins all terminated threads via `pthread_join()` and frees session allocations safely.
 
 ---
 

@@ -72,7 +72,7 @@ struct core_audio_capture {
   /// successfully selected it. Read by the rate-adjust loop to
   /// decide whether to route corrections to `setPitch(_:)` (the
   /// bit-perfect path) or to fall back to the resampler ratio.
-  bool pitch_control_active;
+  _Atomic bool pitch_control_active;
   _Atomic bool is_device_alive;
 
   /// Float scratch used by `read(frames:)` to copy samples out of the
@@ -528,8 +528,10 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
     capture->rate_watcher =
         rate_change_watcher_create(dev_id, capture->sample_rate);
   }
-  capture->pitch_control_active =
-      (dev_id != 0 && core_audio_device_select_adjustable_clock_source(dev_id));
+  atomic_store_explicit(
+      &capture->pitch_control_active,
+      (dev_id != 0 && core_audio_device_select_adjustable_clock_source(dev_id)),
+      memory_order_release);
 
   return true;
 
@@ -598,13 +600,17 @@ static bool core_audio_capture_get_pending_rate_change(void* ctx,
 /// Check if clock-pitch control is supported on the capture device.
 static bool core_audio_capture_pitch_control_supported(void* ctx) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
-  return capture ? capture->pitch_control_active : false;
+  return capture ? atomic_load_explicit(&capture->pitch_control_active,
+                                        memory_order_acquire)
+                 : false;
 }
 
 /// Apply a clock-pitch correction to the capture device.
 static void core_audio_capture_set_pitch(void* ctx, double multiplier) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
-  if (!capture || !capture->pitch_control_active ||
+  if (!capture ||
+      !atomic_load_explicit(&capture->pitch_control_active,
+                            memory_order_acquire) ||
       capture->opened_device_id == 0)
     return;
   core_audio_device_set_pitch(capture->opened_device_id, multiplier);
