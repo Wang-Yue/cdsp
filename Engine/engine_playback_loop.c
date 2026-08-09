@@ -39,16 +39,18 @@ static const logger_t g_logger = {"dsp.playback"};
 
 struct engine_playback_loop {
   engine_shared_state_t* shared;
-  capture_backend_t* capture;
   playback_backend_t* playback;
   processing_parameters_t* processing_params;
-  dsd_encoder_t* dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
+  bool capture_pitch_supported;
+  bool playback_pitch_supported;
   bool pitch_supported;
   bool rate_adjust_enabled;
   double adjust_period;
   int target_level;
+  dsd_mode_t dsd_mode;
+  size_t dsd_bit_depth;
   bool has_last_observed_playback_pending_rate;
   double last_observed_playback_pending_rate;
 };
@@ -73,16 +75,16 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
   bool changed = fabs(speed - *last_speed) > 0.000001;
   if (changed) {
     *last_speed = speed;
-    if (loop->capture &&
-        capture_backend_pitch_control_supported(loop->capture)) {
-      capture_backend_set_pitch(loop->capture, speed);
-    } else if (loop->playback &&
-               playback_backend_pitch_control_supported(loop->playback)) {
+    if (loop->capture_pitch_supported && loop->shared) {
+      engine_shared_state_set_capture_pitch(loop->shared, speed);
+    } else if (loop->playback_pitch_supported && loop->playback) {
       playback_backend_set_pitch(loop->playback, 1.0 / speed);
     } else if (loop->shared) {
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
-    const char* method_str = loop->pitch_supported ? "pitch" : "resampler";
+    const char* method_str = loop->capture_pitch_supported    ? "capture pitch"
+                             : loop->playback_pitch_supported ? "playback pitch"
+                                                              : "resampler";
     logger_debug(&g_logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
                  average, loop->target_level, speed, method_str);
   } else {
@@ -99,7 +101,9 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
 static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
   if (loop->rate_adjust_enabled) {
     const char* method_str =
-        loop->pitch_supported ? "capture clock pitch" : "resampler ratio";
+        loop->capture_pitch_supported    ? "capture clock pitch"
+        : loop->playback_pitch_supported ? "playback clock pitch"
+                                         : "resampler ratio";
     logger_info(
         &g_logger,
         "Rate adjustment enabled (period=%fs, target_level=%d, method=%s)",
@@ -119,20 +123,21 @@ engine_playback_loop_t* engine_playback_loop_create(
       (engine_playback_loop_t*)calloc(1, sizeof(engine_playback_loop_t));
   if (!loop) return NULL;
   loop->shared = config->shared;
-  loop->capture = config->capture;
   loop->playback = config->playback;
   loop->processing_params = config->processing_params;
-  loop->dsd_encoder = config->dsd_encoder;
   loop->pipeline_rate = config->pipeline_rate;
   loop->chunk_size = config->chunk_size;
+  loop->capture_pitch_supported = config->capture_pitch_supported;
+  loop->playback_pitch_supported =
+      config->playback &&
+      playback_backend_pitch_control_supported(config->playback);
   loop->pitch_supported =
-      (config->capture &&
-       capture_backend_pitch_control_supported(config->capture)) ||
-      (config->playback &&
-       playback_backend_pitch_control_supported(config->playback));
+      loop->capture_pitch_supported || loop->playback_pitch_supported;
   loop->rate_adjust_enabled = config->rate_adjust_enabled;
   loop->adjust_period = config->adjust_period;
   loop->target_level = config->target_level;
+  loop->dsd_mode = config->dsd_mode;
+  loop->dsd_bit_depth = config->dsd_bit_depth;
   return loop;
 }
 
@@ -283,12 +288,14 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   // enabled, we match its target level; otherwise, we pre-fill chunk_size.
   size_t prefill_frames =
       loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
-  if (loop->dsd_encoder && dsd_encoder_is_enabled(loop->dsd_encoder)) {
+  if (loop->dsd_mode != DSD_MODE_PCM) {
     size_t channels =
         processing_parameters_get_playback_channels(loop->processing_params);
     audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
     if (prefill_chunk) {
-      dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);
+      audio_chunk_set_valid_frames(prefill_chunk, prefill_frames);
+      dsd_fill_silence_pattern(prefill_chunk, loop->dsd_mode,
+                               loop->dsd_bit_depth);
       playback_backend_write(loop->playback, prefill_chunk, &berr);
       audio_chunk_free(prefill_chunk);
     }
@@ -311,11 +318,6 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
 
   set_realtime_thread_priority("Playback", loop->chunk_size,
                                loop->pipeline_rate);
-  loop->pitch_supported =
-      (loop->capture &&
-       capture_backend_pitch_control_supported(loop->capture)) ||
-      (loop->playback &&
-       playback_backend_pitch_control_supported(loop->playback));
   log_rate_adjust_mode(loop);
 
   double last_speed = 1.0;
@@ -344,19 +346,25 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
       break;
     }
 
+    bool should_pause = (engine_shared_state_get_state(loop->shared) ==
+                         PROCESSING_STATE_PAUSED);
     bool is_paused = playback_backend_get_is_paused(loop->playback);
-    if (was_paused && !is_paused) {
-      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
-      // Resume Flow Step 3: Reset PI rate controller stopwatch and averager
-      // when auto-resuming from pause to prevent resampler ratio and pitch
-      // speed glitches caused by wall-clock time accumulation.
-      if (loop->rate_adjust_enabled) {
-        averager_restart(&averager);
-        stopwatch_restart(&stopwatch);
+    if (should_pause != is_paused) {
+      playback_backend_set_is_paused(loop->playback, should_pause);
+      if (was_paused && !should_pause) {
+        // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+        // Resume Flow Step 3: Reset PI rate controller stopwatch and averager
+        // when auto-resuming from pause to prevent resampler ratio and pitch
+        // speed glitches caused by wall-clock time accumulation.
+        if (loop->rate_adjust_enabled) {
+          averager_restart(&averager);
+          stopwatch_restart(&stopwatch);
+        }
+        logger_info(&g_logger,
+                    "Playback auto-resumed from pause; reset rate adjust timer "
+                    "and averager");
       }
-      logger_info(&g_logger,
-                  "Playback auto-resumed from pause; reset rate adjust timer "
-                  "and averager");
+      is_paused = should_pause;
     }
     was_paused = is_paused;
 

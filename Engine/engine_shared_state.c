@@ -67,6 +67,11 @@ struct engine_shared_state {
   _Atomic double resampler_ratio;
 
   /**
+   * @brief Capture device pitch speed multiplier (≈ 1.0).
+   */
+  _Atomic double capture_pitch;
+
+  /**
    * @brief Single atomic pointer for swapped-out retired pipeline structure.
    */
   _Atomic(pipeline_t*) retired_pipeline;
@@ -130,6 +135,20 @@ void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
   }
 }
 
+double engine_shared_state_get_capture_pitch(
+    const engine_shared_state_t* state) {
+  return state
+             ? atomic_load_explicit(&state->capture_pitch, memory_order_relaxed)
+             : 1.0;
+}
+
+void engine_shared_state_set_capture_pitch(engine_shared_state_t* state,
+                                           double pitch) {
+  if (state) {
+    atomic_store_explicit(&state->capture_pitch, pitch, memory_order_relaxed);
+  }
+}
+
 pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
                                                 pipeline_t* pipeline) {
   if (!state || !pipeline) return NULL;
@@ -165,6 +184,7 @@ engine_shared_state_t* engine_shared_state_create(
   state->processed_queue = audio_sync_queue_create(
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->resampler_ratio, 1.0);
+  atomic_init(&state->capture_pitch, 1.0);
   atomic_init(&state->retired_pipeline, NULL);
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));

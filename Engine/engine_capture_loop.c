@@ -28,7 +28,6 @@
 struct engine_capture_loop {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
-  playback_backend_t* playback;
   processing_parameters_t* processing_params;
   dop_decoder_t* dop_decoder;
 
@@ -44,6 +43,9 @@ struct engine_capture_loop {
   sample_rate_watcher_t* rate_watcher;
   uint64_t captured_drop_counter;
   uint64_t last_paused_tick_ns;
+
+  bool pitch_supported;
+  double last_applied_pitch;
 };
 #include <stdlib.h>
 
@@ -63,7 +65,6 @@ engine_capture_loop_t* engine_capture_loop_create(
 
   loop->shared = config->shared;
   loop->capture = config->capture;
-  loop->playback = config->playback;
   loop->processing_params = config->processing_params;
   loop->dop_decoder = config->dop_decoder;
   loop->chunk_pool = config->chunk_pool;
@@ -89,6 +90,10 @@ engine_capture_loop_t* engine_capture_loop_create(
   loop->pending_chunk = NULL;
   loop->captured_drop_counter = 0;
   loop->last_paused_tick_ns = 0;
+  loop->pitch_supported =
+      config->capture ? capture_backend_pitch_control_supported(config->capture)
+                      : false;
+  loop->last_applied_pitch = 1.0;
 
   return loop;
 }
@@ -277,14 +282,12 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
 
   // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
   // Flow Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state and
-  // toggle capture/playback hardware backends is_paused status accordingly.
+  // toggle capture hardware backend is_paused status accordingly.
   processing_state_t desired =
       silence_counter_update(loop->silence_counter, loudest_peak);
   processing_state_t current = engine_shared_state_get_state(loop->shared);
   if (desired != current) {
     engine_shared_state_set_state(loop->shared, desired);
-    playback_backend_set_is_paused(loop->playback,
-                                   (desired == PROCESSING_STATE_PAUSED));
     capture_backend_set_is_paused(loop->capture,
                                   (desired == PROCESSING_STATE_PAUSED));
     if (desired == PROCESSING_STATE_PAUSED && loop->processing_params) {
@@ -340,6 +343,18 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
 
 bool engine_capture_loop_step(engine_capture_loop_t* loop) {
   if (!loop) return true;
+
+  // Clock pitch adjustment check:
+  // If the capture backend supports hardware clock pitch tuning, sync to
+  // the shared speed ratio published by the playback rate controller.
+  if (loop->pitch_supported && loop->shared) {
+    double desired_pitch = engine_shared_state_get_capture_pitch(loop->shared);
+    if (fabs(desired_pitch - loop->last_applied_pitch) > 0.000001) {
+      loop->last_applied_pitch = desired_pitch;
+      capture_backend_set_pitch(loop->capture, desired_pitch);
+    }
+  }
+
   // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
   // Fetch a chunk buffer from the pre-allocated round-robin pool,
   // or reuse an un-enqueued chunk if the previous enqueue was dropped due to

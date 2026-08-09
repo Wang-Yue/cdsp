@@ -3490,7 +3490,6 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   engine_capture_loop_config_t loop_cfg = {
       .shared = shared,
       .capture = cap_backend,
-      .playback = NULL,
       .processing_params = NULL,
       .dop_decoder = NULL,
       .chunk_pool = pool,
@@ -3768,10 +3767,8 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
 
   engine_playback_loop_config_t loop_cfg = {
       .shared = shared,
-      .capture = NULL,
       .playback = pb,
       .processing_params = params,
-      .dsd_encoder = NULL,
       .chunk_size = 64,
       .pipeline_rate = 48000,
       .target_level = 0,

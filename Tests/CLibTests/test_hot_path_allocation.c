@@ -48,11 +48,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || \
-    defined(__SANITIZE_MEMORY__) || \
-    (defined(__has_feature) && (__has_feature(address_sanitizer) || \
-                                __has_feature(thread_sanitizer) ||  \
-                                __has_feature(memory_sanitizer)))
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) ||         \
+    defined(__SANITIZE_MEMORY__) ||                                          \
+    (defined(__has_feature) &&                                               \
+     (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+      __has_feature(memory_sanitizer)))
 #define CDSP_SANITIZER_ACTIVE 1
 #else
 #define CDSP_SANITIZER_ACTIVE 0
@@ -1509,7 +1509,6 @@ TEST(EngineCaptureLoop_AllocationFree) {
   engine_capture_loop_config_t cap_loop_cfg = {
       .shared = shared,
       .capture = capture,
-      .playback = NULL,
       .processing_params = NULL,
       .dop_decoder = NULL,
       .chunk_pool = chunk_pool,
@@ -1614,10 +1613,8 @@ TEST(EnginePlaybackLoop_AllocationFree) {
 
   engine_playback_loop_config_t play_loop_cfg = {
       .shared = shared,
-      .capture = NULL,
       .playback = playback,
       .processing_params = NULL,
-      .dsd_encoder = NULL,
       .pipeline_rate = 48000,
       .chunk_size = 1024,
       .rate_adjust_enabled = false,

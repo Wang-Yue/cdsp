@@ -283,7 +283,6 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   engine_capture_loop_config_t cap_cfg = {
       .shared = core->shared,
       .capture = core->capture,
-      .playback = core->playback,
       .processing_params = core->processing_params,
       .dop_decoder = core->dop_decoder,
       .chunk_pool = core->capture_chunk_pool,
@@ -335,17 +334,40 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                          ? config->devices.target_level
                          : (int)playback_chunk_size;
 
+  dsd_mode_t dsd_mode = DSD_MODE_PCM;
+  bool is_dsd = false;
+#if defined(ENABLE_ALSA)
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
+    is_dsd = config->devices.playback.cfg.alsa.output_dsd;
+  }
+#endif
+#if defined(ENABLE_ASIO)
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
+    is_dsd = config->devices.playback.cfg.asio.output_dsd;
+  }
+#endif
+  if (is_dsd) {
+    dsd_mode = DSD_MODE_NATIVE;
+  } else if (config->devices.playback.output_dop) {
+    dsd_mode = DSD_MODE_DOP;
+  }
+  size_t dsd_bit_depth =
+      playback_device_config_calculate_carrier_bits(&config->devices.playback);
+
   engine_playback_loop_config_t play_cfg = {
       .shared = core->shared,
-      .capture = core->capture,
       .playback = core->playback,
       .processing_params = core->processing_params,
-      .dsd_encoder = core->dsd_encoder,
       .pipeline_rate = pipeline_rate,
       .chunk_size = playback_chunk_size,
+      .capture_pitch_supported =
+          core->capture ? capture_backend_pitch_control_supported(core->capture)
+                        : false,
       .rate_adjust_enabled = rate_adjust_enabled,
       .adjust_period = adjust_period,
       .target_level = target_level,
+      .dsd_mode = dsd_mode,
+      .dsd_bit_depth = dsd_bit_depth,
   };
   core->playback_loop = engine_playback_loop_create(&play_cfg);
 

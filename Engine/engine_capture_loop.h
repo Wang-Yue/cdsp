@@ -52,7 +52,6 @@ typedef struct engine_capture_loop engine_capture_loop_t;
 typedef struct {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
-  playback_backend_t* playback;
   processing_parameters_t* processing_params;
   dop_decoder_t* dop_decoder;
   round_robin_chunk_pool_t* chunk_pool;

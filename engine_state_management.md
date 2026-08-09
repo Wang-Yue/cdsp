@@ -28,6 +28,7 @@ Defined in [engine_shared_state.c](Engine/engine_shared_state.c). This struct is
 | `processed_queue` | `audio_sync_queue_t*` | Sync queue from Processing -> Playback. | Lock-free SPSC + OS semaphore. |
 | `retired_pipeline` | `_Atomic(pipeline_t*)` | Atomic pointer holding the swapped-out retired DSP pipeline during hot-reloads for off-thread main cleanup. | Lock-free atomic operations (`acq_rel` exchange). |
 | `resampler_ratio` | `_Atomic double` | Relative resampler target speed ratio for dynamic clock drift correction. | Lock-free atomic reads and writes (`relaxed` ordering). |
+| `capture_pitch` | `_Atomic double` | Capture device hardware clock pitch multiplier for rate adjust tuning. | Lock-free atomic reads and writes (`relaxed` ordering). |
 | `last_capture_time_ns` | `_Atomic uint64_t` | Telemetry timestamp of the last successfully captured chunk in nanoseconds. Checked by the external watchdog to detect driver freezes. | Lock-free atomic reads and writes (`relaxed` ordering). |
 
 ---
@@ -77,6 +78,7 @@ Atomic variables in the engine are strictly restricted to fields that are either
 | `stop_once` (`_Atomic bool`) | `engine_shared_state_t` | **Writers/Readers**: Any thread requesting a session stop (Capture, Processing, Playback, or Main controller thread). | Serves as a single-execution latch (`atomic_compare_exchange_strong_explicit`). Executed under `stop_reason_mutex` to atomically publish `stop_reason` and initiate teardown without publication window races. |
 | `last_capture_time_ns` (`_Atomic uint64_t`) | `engine_shared_state_t` | **Writer**: Capture thread (every captured chunk read).<br>**Reader**: Main thread (`cdsp_engine_poll` external watchdog check). | Written by the Capture thread on every audio chunk. Relaxed atomic load/store allows the main thread to poll hardware stall status without locking the Capture thread. |
 | `resampler_ratio` (`_Atomic double`) | `engine_shared_state_t` | **Writer**: Playback thread (rate-adjust controller).<br>**Reader**: Processing thread (`processing_loop_resample`). | Both Playback and Processing threads are real-time audio loops. Atomic double allows lock-free propagation of clock drift correction between threads without mutex locks. |
+| `capture_pitch` (`_Atomic double`) | `engine_shared_state_t` | **Writer**: Playback thread (rate-adjust controller).<br>**Reader**: Capture thread (`engine_capture_loop_step`). | When capture clock tuning is enabled, playback rate controller publishes clock pitch adjustments to this atomic variable, allowing the capture thread to apply `capture_backend_set_pitch` without cross-thread handle access. |
 | `processed_queued_frames` (`_Atomic size_t`) | `engine_shared_state_t` | **Writers**: Processing thread (`engine_shared_state_enqueue_processed`), Playback thread (`engine_shared_state_dequeue_processed_blocking`).<br>**Reader**: Playback thread (`playback_loop_update_rate_adjust`). | Tracks the exact number of frames in the queue. Avoids unsafe concurrent queue traversal or dereferencing. Keeps the playback loop decoupled from the resampler and capture sample rate configurations. |
 | `next_pipeline` (`_Atomic(pipeline_t*)`) | `engine_processing_loop_t` | **Writer**: Main thread (`dsp_session_reload_config`).<br>**Reader**: Processing thread (`processing_loop_check_pipeline_swap`). | Checked by the Processing thread on every chunk and 0-frame tick. Atomic exchange allows non-blocking DSP filter pipeline hot-reloads without locking the Processing thread. |
 | `is_shutdown` (`_Atomic bool`) | `audio_sync_queue_t` | **Writer**: Producer thread (Capture/Processing calling `shutdown`).<br>**Reader**: Consumer thread (Processing/Playback calling `dequeue_blocking`). | Checked inside the audio thread blocking dequeue loop to detect queue shutdown cleanly without acquiring mutex locks on the SPSC queue path. |
@@ -146,7 +148,11 @@ When adding or modifying components in the engine, follow these strict memory sa
 
 1. **Never Nullify Without Freeing**: When replacing pointers (e.g. `active_json`, `previous_json`, `current_config`), always free the existing object before overwriting or transfer ownership explicitly to a destructor queue.
 2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
-3. **Worker Thread Backend Ownership & Teardown**: Audio backends are strictly owned and operated by their respective worker threads (`capture_thread` and `playback_thread`). `dsp_session_stop_and_free()` signals stop via `engine_shared_state_request_stop()`. Upon observing the stop signal, worker threads invoke `stop()` and `close()` on their own backend before exiting. `dsp_session_stop_and_free()` joins all worker threads via `pthread_join()` before freeing backend contexts, pipelines, resamplers, or `engine_shared_state_t`.
+3. **Worker Thread Single-Thread Backend & Codec Ownership**: Audio backends and codecs are strictly owned and operated by their respective single worker thread:
+   - `capture_backend_t` and `dop_decoder_t` are owned and accessed **exclusively** by `EngineCaptureLoop`.
+   - `playback_backend_t` is owned and accessed **exclusively** by `EnginePlaybackLoop`.
+   - `resampler_t`, `pipeline_t`, and `dsd_encoder_t` are owned and accessed **exclusively** by `EngineProcessingLoop`.
+   Cross-thread adjustments (such as rate control speed adjustments or silence auto-pause states) are communicated strictly through lock-free atomics in `engine_shared_state_t` (`resampler_ratio`, `capture_pitch`, `state_raw`), never by sharing backend or codec pointers across threads. `dsp_session_stop_and_free()` signals stop via `engine_shared_state_request_stop()`. Upon observing the stop signal, worker threads invoke `stop()` and `close()` on their own backend before exiting. `dsp_session_stop_and_free()` joins all worker threads via `pthread_join()` before freeing backend contexts, pipelines, resamplers, or `engine_shared_state_t`.
 4. **Deferred Garbage Collection for Audio Threads**: Never call `free()` inside audio loop threads (`EngineCaptureLoop`, `EngineProcessingLoop`, `EnginePlaybackLoop`). Defer object destruction (such as swapped pipelines) to single atomic retired pipeline slots (`retired_pipeline`) for main-thread cleanup.
 5. **Un-Enqueued Chunk Buffer Retention on Real-Time Drops**: When an audio loop thread (`EngineCaptureLoop` or `EngineProcessingLoop`) encounters a full SPSC queue in real-time mode (`enqueue` returns `false`), it must store the un-enqueued chunk pointer in a `pending_chunk` / `pending_scratch` variable and reuse it on the next loop iteration. It must **never** advance `round_robin_chunk_pool_next()`, preventing pool index wrap-around from retrieving and overwriting active chunk buffers currently sitting in the SPSC queue.
 
@@ -295,20 +301,23 @@ sequenceDiagram
     autonumber
     participant C as Capture Thread
     participant S as Shared State
-    participant B as Backend Devices
     participant K as Playback Thread
 
     Note over C: Peak levels fall below silence_threshold_db
     Note over C: silence_timeout_seconds elapses
     C->>S: set_state(PAUSED)
-    C->>B: Set playback & capture backends is_paused = true
-    Note over C: Enqueueing of captured chunks stops
+    C->>C: Set capture backend is_paused = true
+    Note over C: Enqueueing of captured chunks stops<br/>(Periodically pushes 0-frame ticks)
+    Note over K: Observes PAUSED state / 0-frame tick
+    K->>K: Set playback backend is_paused = true
     Note over K: processed_queue becomes empty<br/>Blocks on processed semaphore
 
     Note over C: New audio signal arrives (peak > threshold)
     C->>S: set_state(RUNNING)
-    C->>B: Set playback & capture backends is_paused = false
+    C->>C: Set capture backend is_paused = false
     C->>S: Enqueueing of captured chunks resumes
+    Note over K: Dequeues active audio chunk & observes RUNNING
+    K->>K: Set playback backend is_paused = false (Resets rate timer)
     Note over K: Awakens and writes audio to DAC again
 ```
 
@@ -316,8 +325,9 @@ sequenceDiagram
    - The capture loop monitors the peak levels of each chunk across all capture backends (real-time hardware/live streams and non-realtime File/Generator streams).
    - If the level stays below the threshold for longer than the timeout, the silence counter updates and triggers a state transition to `PROCESSING_STATE_PAUSED`.
 2. **Auto-Pause Transition**:
-   - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
-   - It pauses both capture and playback backends (Note: playback backends suspend DAC rendering or file output; capture backends continue reading frames so the capture loop can continuously evaluate peak levels for auto-resume. Real-time hardware/simulated backends yield CPU with a sleep during `is_paused` to match hardware sample-rate pacing, while non-realtime File/Generator backends proceed with 0ms sleep to evaluate levels at maximum disk/CPU throughput without blocking).
+   - The capture thread updates the state to `PROCESSING_STATE_PAUSED` and pauses its own capture backend via `capture_backend_set_is_paused(loop->capture, true)`.
+   - The playback thread observes `PROCESSING_STATE_PAUSED` on its next iteration (or upon receiving 0-frame control ticks) and pauses its own playback backend via `playback_backend_set_is_paused(loop->playback, true)`.
+   - (Note: playback backends suspend DAC rendering or file output; capture backends continue reading frames so the capture loop can continuously evaluate peak levels for auto-resume. Real-time hardware/simulated backends yield CPU with a sleep during `is_paused` to match hardware sample-rate pacing, while non-realtime File/Generator backends proceed with 0ms sleep to evaluate levels at maximum disk/CPU throughput without blocking).
    - **Pause Counter Increment**: When entering `PROCESSING_STATE_PAUSED` or when audio flow is interrupted, the capture thread calls `processing_parameters_bump_pause_count()`. Volume filters (`VolumeFilter`) compare this atomic counter against their `last_pause_count`. Any volume or mute changes made while paused are applied directly on resume without ramping (avoiding stale volume level fade-ins), while changes made while audio is actively flowing continue to ramp smoothly.
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms.
@@ -325,9 +335,10 @@ sequenceDiagram
    - The playback thread blocks on `processed_queue` and drops 0-frame chunks immediately to bypass hardware writes and rate controllers.
 3. **Signal Auto-Resume**:
    - When a loud chunk is read (above the threshold), the silence counter resets.
-   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING`.
-   - Both backends are unpaused, and chunk pushing resumes, waking up the downstream threads.
-   - **Rate Controller Reset on Resume**: Upon detecting the backend transition from paused to unpaused, the playback thread resets both the PI rate controller `stopwatch` timer and sample `averager` (`stopwatch_restart` and `averager_restart`). This prevents wall-clock time accumulated during silence from triggering an immediate rate adjustment with stale pre-pause samples, eliminating resampler ratio and pitch speed glitches upon auto-resuming.
+   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING` and sets `capture_backend_set_is_paused(loop->capture, false)`.
+   - Active audio chunk pushing resumes, waking up downstream threads.
+   - The playback thread observes the transition to unpaused, sets `playback_backend_set_is_paused(loop->playback, false)`, and resumes writing audio chunks to the DAC.
+   - **Rate Controller Reset on Resume**: Upon detecting the transition from paused to unpaused, the playback thread resets both the PI rate controller `stopwatch` timer and sample `averager` (`stopwatch_restart` and `averager_restart`). This prevents wall-clock time accumulated during silence from triggering an immediate rate adjustment with stale pre-pause samples, eliminating resampler ratio and pitch speed glitches upon auto-resuming.
 
 ---
 

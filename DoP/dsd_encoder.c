@@ -522,35 +522,36 @@ bool dsd_encoder_is_enabled(const dsd_encoder_t* encoder) {
   return encoder ? encoder->enabled : false;
 }
 
-void dsd_encoder_fill_silence(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
-  if (!encoder || !encoder->enabled || !chunk) return;
+void dsd_fill_silence_pattern(audio_chunk_t* chunk, dsd_mode_t mode,
+                              size_t dsd_bit_depth) {
+  if (!chunk || mode == DSD_MODE_PCM) return;
   size_t n = audio_chunk_get_valid_frames(chunk);
-  if (n == 0 || (int)audio_chunk_get_channels(chunk) != encoder->channels)
-    return;
+  size_t channels = audio_chunk_get_channels(chunk);
+  if (n == 0 || channels == 0) return;
 
-  if (encoder->mode == DSD_MODE_NATIVE) {
+  if (mode == DSD_MODE_NATIVE) {
     double sample_val = 0.0;
-    if (encoder->dsd_bit_depth == 8) {
+    if (dsd_bit_depth == 8) {
       sample_val = pcm_sample_decode_dsd_u8(0x69);
-    } else if (encoder->dsd_bit_depth == 16) {
+    } else if (dsd_bit_depth == 16) {
       sample_val = pcm_sample_decode_s16((int16_t)0x6969);
-    } else if (encoder->dsd_bit_depth == 32) {
+    } else if (dsd_bit_depth == 32) {
       uint32_t silence_word = 0x69696969;
       sample_val = pcm_sample_decode_dsd_u32(silence_word);
     }
 
-    for (int ch = 0; ch < encoder->channels; ch++) {
+    for (size_t ch = 0; ch < channels; ch++) {
       mutable_waveform_t dst = audio_chunk_get_channel(chunk, ch);
       if (!dst) continue;
       for (size_t t = 0; t < n; t++) {
         dst[t] = sample_val;
       }
     }
-  } else if (encoder->mode == DSD_MODE_DOP) {
-    for (int ch = 0; ch < encoder->channels; ch++) {
+  } else if (mode == DSD_MODE_DOP) {
+    for (size_t ch = 0; ch < channels; ch++) {
       mutable_waveform_t dst = audio_chunk_get_channel(chunk, ch);
       if (!dst) continue;
-      uint8_t marker = encoder->channel_states[ch].marker;
+      uint8_t marker = 0x05;
       for (size_t t = 0; t < n; t++) {
         uint32_t val24 = ((uint32_t)marker << 16) | 0x6969;
         int32_t int_val =
@@ -558,7 +559,6 @@ void dsd_encoder_fill_silence(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
         dst[t] = pcm_sample_decode_s24(int_val);
         marker = (marker == 0x05) ? 0xFA : 0x05;
       }
-      encoder->channel_states[ch].marker = marker;
     }
   }
 }

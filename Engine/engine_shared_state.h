@@ -112,6 +112,22 @@ double engine_shared_state_get_resampler_ratio(
 void engine_shared_state_set_resampler_ratio(engine_shared_state_t* state,
                                              double ratio);
 
+/**
+ * @brief Gets the current capture device pitch speed multiplier.
+ * @param state Pointer to the shared state instance.
+ * @return The current capture pitch multiplier (e.g. 1.0).
+ */
+double engine_shared_state_get_capture_pitch(
+    const engine_shared_state_t* state);
+
+/**
+ * @brief Sets the capture device pitch speed multiplier.
+ * @param state Pointer to the shared state instance.
+ * @param pitch The new capture pitch multiplier to apply.
+ */
+void engine_shared_state_set_capture_pitch(engine_shared_state_t* state,
+                                           double pitch);
+
 typedef struct pipeline_s pipeline_t;
 
 /**
