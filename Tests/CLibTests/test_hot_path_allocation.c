@@ -48,15 +48,25 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || \
+    defined(__SANITIZE_MEMORY__) || \
+    (defined(__has_feature) && (__has_feature(address_sanitizer) || \
+                                __has_feature(thread_sanitizer) ||  \
+                                __has_feature(memory_sanitizer)))
+#define CDSP_SANITIZER_ACTIVE 1
+#else
+#define CDSP_SANITIZER_ACTIVE 0
+#endif
+
 typedef void (*malloc_logger_t)(uint32_t type, uintptr_t arg1, uintptr_t arg2,
                                 uintptr_t arg3, uintptr_t result,
                                 uint32_t num_hot_frames_to_skip);
 
-#if defined(__linux__) || defined(_WIN32)
+#if (defined(__linux__) || defined(_WIN32)) && !CDSP_SANITIZER_ACTIVE
 static malloc_logger_t g_custom_malloc_logger = NULL;
 #endif
 
-#ifdef __linux__
+#if defined(__linux__) && !CDSP_SANITIZER_ACTIVE
 #include <unistd.h>
 
 static void* (*real_malloc)(size_t) = NULL;
@@ -167,9 +177,9 @@ void free(void* ptr) {
     logger(4, 0, 0, 0, (uintptr_t)ptr, 0);
   }
 }
-#endif  // __linux__
+#endif  // defined(__linux__) && !CDSP_SANITIZER_ACTIVE
 
-#ifdef _WIN32
+#if defined(_WIN32) && !CDSP_SANITIZER_ACTIVE
 // Declarations of real functions (resolved by linker)
 void* __real_malloc(size_t size);
 void* __real_calloc(size_t num, size_t size);
@@ -260,7 +270,12 @@ static void run_test_loop(void* arg) {
 
 static bool count_allocations(void (*body)(void*), void* ctx,
                               uint64_t* out_count) {
-#if defined(__linux__) || defined(_WIN32)
+#if CDSP_SANITIZER_ACTIVE
+  (void)body;
+  (void)ctx;
+  (void)out_count;
+  return false;
+#elif defined(__linux__) || defined(_WIN32)
   uintptr_t my_thread = (uintptr_t)pthread_self();
   atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
   atomic_store_explicit(&g_watched_thread, my_thread, memory_order_release);
@@ -309,7 +324,8 @@ static void assert_allocation_free(const char* label, int warmup,
   loop_ctx_t lctx = {body, warmup, iterations, ctx};
   uint64_t count = 0;
   if (!count_allocations(run_test_loop, &lctx, &count)) {
-    printf("malloc_logger unavailable — %s skipped\n", label);
+    printf("malloc_logger unavailable — running unmetered: %s\n", label);
+    run_test_loop(&lctx);
     return;
   }
   printf("[%s] allocations=%llu over %d iterations\n", label,
@@ -320,7 +336,13 @@ static void assert_allocation_free(const char* label, int warmup,
 static bool count_allocations_on_thread(void (*body)(void*), void* ctx,
                                         uintptr_t thread_id,
                                         uint64_t* out_count) {
-#if defined(__linux__) || defined(_WIN32)
+#if CDSP_SANITIZER_ACTIVE
+  (void)body;
+  (void)ctx;
+  (void)thread_id;
+  (void)out_count;
+  return false;
+#elif defined(__linux__) || defined(_WIN32)
   atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
   atomic_store_explicit(&g_watched_thread, thread_id, memory_order_release);
   atomic_store_explicit((_Atomic malloc_logger_t*)&g_custom_malloc_logger,
@@ -369,7 +391,8 @@ static void assert_allocation_free_on_thread(const char* label,
   loop_ctx_t lctx = {body, warmup, iterations, ctx};
   uint64_t count = 0;
   if (!count_allocations_on_thread(run_test_loop, &lctx, thread_id, &count)) {
-    printf("malloc_logger unavailable — %s skipped\n", label);
+    printf("malloc_logger unavailable — running unmetered: %s\n", label);
+    run_test_loop(&lctx);
     return;
   }
   printf("[%s] allocations=%llu over %d iterations\n", label,

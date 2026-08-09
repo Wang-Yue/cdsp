@@ -292,7 +292,8 @@ callgraph-audit:
 test: test-rust-build $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
-SAN_BASE_CFLAGS := $(filter-out -O3 -flto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O1 -g -fno-omit-frame-pointer
+SAN_BASE_CFLAGS := $(filter-out -O3 -flto -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
+export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:second_deadlock_stack=1
 
 # NOTE: On macOS (Apple Silicon ARM64), Apple Clang (/usr/bin/clang) has a known dynamic runtime
 # initializer deadlock/crash bug in libclang_rt.asan_osx_dynamic.dylib and libclang_rt.tsan_osx_dynamic.dylib.

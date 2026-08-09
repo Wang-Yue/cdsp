@@ -340,15 +340,16 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     if (engine_shared_state_should_stop(loop->shared)) {
       break;
     }
+    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+    // Resume Flow Step 2 & Section 3.1: Check and execute structural hot-reload
+    // pipeline swaps immediately on every chunk.
+    processing_loop_check_pipeline_swap(loop);
+
     size_t frames = audio_chunk_get_valid_frames(chunk);
     // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
-    // Resume Flow Step 2: Detect 0-frame tick chunk. Bypass resampling/DSP,
-    // check for pending pipeline swaps, and propagate downstream. Bypass audio
-    // processing for 0-frame control/tick chunks. We only execute the pipeline
-    // reload/swap check, then propagate the empty chunk downstream to wake
-    // up/keep the playback thread synchronized.
+    // Resume Flow Step 2: Detect 0-frame tick chunk. Bypass resampling/DSP
+    // and propagate the empty chunk downstream to keep playback synchronized.
     if (frames == 0) {
-      processing_loop_check_pipeline_swap(loop);
       audio_chunk_t* current_scratch = loop->pending_scratch;
       if (!current_scratch) {
         current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
@@ -379,11 +380,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     if (loop->on_chunk_captured) {
       loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
     }
-
-    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
-    // Resume Flow Step 2 & Section 3.1: Check and execute structural hot-reload
-    // pipeline swaps.
-    processing_loop_check_pipeline_swap(loop);
 
     // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
     // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool,

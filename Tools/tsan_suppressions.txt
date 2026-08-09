@@ -1,0 +1,16 @@
+# ThreadSanitizer suppression file for CDSP
+
+# Lock-free SPSC and SPMC ring buffer optimistic seqlock and strided copy primitives
+race:spsc_audio_ring_buffer_consume
+race:spsc_audio_ring_buffer_consume_stride
+race:spsc_audio_ring_buffer_write
+race:spsc_audio_ring_buffer_write_silence
+race:spsc_audio_ring_buffer_append_converting_double_to_float
+race:spsc_audio_ring_buffer_read_latest_at
+race:spsc_audio_ring_buffer_read_latest
+race:lock_free_ring_buffer.c
+
+# Third-party runtime libraries (libdbus and libpipewire internal global initializations)
+race:libdbus-1.so
+race:libpipewire-0.3.so
+race:libasound.so

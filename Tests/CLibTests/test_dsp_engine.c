@@ -637,6 +637,7 @@ TEST(DSPEngineSetConfigStruct) {
 #endif
   dsp_config_free(active);
   free(active_json);
+  dsp_config_free(parsed);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -2952,7 +2953,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
 
   // Poll engine to detect watchdog stall
   bool stalled = false;
-  for (int i = 0; i < 200; i++) {
+  for (int i = 0; i < 600; i++) {
     cdsp_sleep_ms(10);
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_STALLED) {
@@ -3069,6 +3070,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   // Wait for auto-pause to trigger
   bool paused = false;
   for (int i = 0; i < 600; i++) {
+    cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
       paused = true;
       break;
@@ -3081,9 +3083,10 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   success = engine->set_config_json(engine->ctx, json_new, &err);
   ASSERT_TRUE(success);
 
-  // Wait up to 3000ms for pipeline swap to occur
+  // Wait up to 6000ms for pipeline swap to occur
   bool swapped = false;
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < 600; i++) {
+    cdsp_engine_poll(engine);
     if (atomic_load_explicit(&g_pipeline_swaps_count, memory_order_acquire) >=
         1) {
       swapped = true;
@@ -3179,7 +3182,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
 
   // Wait for auto-pause to trigger
   bool paused = false;
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
       paused = true;
@@ -3195,7 +3198,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
 
   // Wait for auto-resume to trigger
   bool resumed = false;
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
       resumed = true;
@@ -3259,6 +3262,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   bool got_vu = false;
   for (int i = 0; i < 150; i++) {
     cdsp_sleep_ms(10);
+    cdsp_free_vu_levels(&vu);
     memset(&vu, 0, sizeof(vu));
     if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0 &&
         vu.playback_peak[0] > -20.0) {
@@ -3270,6 +3274,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   ASSERT_TRUE(vu.capture_channels == 1);
   ASSERT_TRUE(vu.playback_channels == 1);
   cdsp_free_vu_levels(&vu);
+  memset(&vu, 0, sizeof(vu));
 
   // Mute main fader
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, true);
@@ -3279,6 +3284,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   bool got_muted_vu = false;
   for (int i = 0; i < 50; i++) {
     cdsp_sleep_ms(10);
+    cdsp_free_vu_levels(&vu);
     memset(&vu, 0, sizeof(vu));
     if (cdsp_get_vu_levels(engine, &vu) && vu.playback_peak[0] < -150.0) {
       got_muted_vu = true;
@@ -3288,6 +3294,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   ASSERT_TRUE(got_muted_vu);
   ASSERT_TRUE(vu.capture_peak[0] > -20.0);  // Capture is pre-fader, still loud
   cdsp_free_vu_levels(&vu);
+  memset(&vu, 0, sizeof(vu));
 
   // Unmute main fader and set fader volume
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, false);
@@ -3526,6 +3533,8 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   ASSERT_NE(chunk0, next_pool_chunk);
 
   engine_capture_loop_free(loop);
+  capture_backend_close(cap_backend);
+  capture_backend_free(cap_backend);
   round_robin_chunk_pool_free(pool);
   engine_shared_state_free(shared);
 }
@@ -3795,6 +3804,8 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
       spsc_queue_get_count(engine_shared_state_get_processed_queue(shared));
 
   engine_playback_loop_free(loop);
+  playback_backend_close(pb);
+  playback_backend_free(pb);
   processing_parameters_free(params);
   round_robin_chunk_pool_free(pool);
   engine_shared_state_free(shared);

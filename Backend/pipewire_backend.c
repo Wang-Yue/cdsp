@@ -16,8 +16,19 @@
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
+#include <pthread.h>
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
+
+static pthread_once_t g_pw_init_once = PTHREAD_ONCE_INIT;
+
+static void do_pw_init(void) {
+  pw_init(NULL, NULL);
+}
+
+static void ensure_pw_init(void) {
+  pthread_once(&g_pw_init_once, do_pw_init);
+}
 
 struct pipewire_capture {
   char device[256];
@@ -289,7 +300,7 @@ static void pipewire_capture_close(void* ctx) {
 static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
   pipewire_capture_t* capture = (pipewire_capture_t*)ctx;
   if (!capture) return false;
-  pw_init(NULL, NULL);
+  ensure_pw_init();
 
   capture->loop = pw_thread_loop_new("CDSP-Capture-Loop", NULL);
   if (!capture->loop) {
@@ -712,7 +723,7 @@ static void pipewire_playback_close(void* ctx) {
 static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
   pipewire_playback_t* playback = (pipewire_playback_t*)ctx;
   if (!playback) return false;
-  pw_init(NULL, NULL);
+  ensure_pw_init();
 
   playback->loop = pw_thread_loop_new("CDSP-Playback-Loop", NULL);
   if (!playback->loop) {
