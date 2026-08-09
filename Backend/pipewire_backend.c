@@ -6,6 +6,7 @@
 #include <pipewire/stream.h>
 #include <spa/param/audio/format-utils.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>

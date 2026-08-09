@@ -2,6 +2,9 @@
 #include "alsa_playback.h"
 
 #include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"

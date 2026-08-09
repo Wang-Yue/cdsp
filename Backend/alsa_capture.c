@@ -4,6 +4,7 @@
 #include <alloca.h>
 #include <alsa/asoundlib.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
