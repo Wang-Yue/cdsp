@@ -140,6 +140,36 @@ static bool capture_loop_check_format_change(engine_capture_loop_t* loop) {
 }
 
 /**
+ * @brief Checks if a periodic 0-frame control tick is due while in PAUSED state
+ * and enqueues it downstream to wake up the processing loop for pending
+ * pipeline swaps.
+ */
+static void capture_loop_send_paused_tick_if_due(engine_capture_loop_t* loop) {
+  if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
+    return;
+  }
+  sample_rate_watcher_reset(loop->rate_watcher);
+
+  // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
+  // Flow Step 2: Periodic 0-Frame Ticks are enqueued downstream every 200ms
+  // during pause to wake up processing loop for pending pipeline swaps.
+  uint64_t now = cdsp_time_now_ns();
+  if (now - loop->last_paused_tick_ns >= 200000000ULL) {  // 200ms
+    audio_chunk_t* tick_chunk = loop->pending_chunk;
+    if (!tick_chunk) {
+      tick_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+    }
+    audio_chunk_set_valid_frames(tick_chunk, 0);
+    if (engine_shared_state_enqueue_captured(loop->shared, tick_chunk)) {
+      loop->last_paused_tick_ns = now;
+      loop->pending_chunk = NULL;
+    } else {
+      loop->pending_chunk = tick_chunk;
+    }
+  }
+}
+
+/**
  * @brief Handles the condition where reading from the capture backend produced
  * no audio data. Handles EOF, backend errors, paused state, and watchdog stall
  * monitoring.
@@ -198,9 +228,11 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   }
 
   // If the engine is in a PAUSED state (no active input signal), reset the
-  // watchdog timer to avoid triggering stall warnings while waiting for signal.
+  // watchdog timer to avoid triggering stall warnings while waiting for signal,
+  // and send a 0-frame tick if the 200ms periodic interval has elapsed.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
     engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
+    capture_loop_send_paused_tick_if_due(loop);
     capture_backend_wait(loop->capture, 20);
     return false;
   }
@@ -210,6 +242,50 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
   // priority.
   capture_backend_wait(loop->capture, 20);
   return false;
+}
+
+/**
+ * @brief Enqueues an active audio chunk to the captured queue in RUNNING state.
+ */
+static void capture_loop_enqueue_running_chunk(engine_capture_loop_t* loop,
+                                               audio_chunk_t* chunk) {
+  if (capture_backend_is_realtime(loop->capture)) {
+    if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+      loop->captured_drop_counter++;
+      static uint64_t last_drop_log = 0;
+      uint64_t now = cdsp_time_now_ns() / 1000000;
+      if (now - last_drop_log > 1000) {
+        logger_warn(&g_logger, "Captured chunk dropped (queue full)");
+        last_drop_log = now;
+      }
+      loop->pending_chunk = chunk;
+    } else {
+      loop->pending_chunk = NULL;
+    }
+  } else {
+    while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
+      if (engine_shared_state_should_stop(loop->shared)) {
+        break;
+      }
+      engine_shared_state_set_last_capture_time(loop->shared,
+                                                cdsp_time_now_ns());
+      cdsp_sleep_ms(1);
+    }
+    loop->pending_chunk = NULL;
+  }
+}
+
+/**
+ * @brief Synchronizes hardware clock pitch multiplier if supported.
+ */
+static void capture_loop_update_pitch(engine_capture_loop_t* loop) {
+  if (loop->pitch_supported && loop->shared) {
+    double desired_pitch = engine_shared_state_get_capture_pitch(loop->shared);
+    if (fabs(desired_pitch - loop->last_applied_pitch) > 0.000001) {
+      loop->last_applied_pitch = desired_pitch;
+      capture_backend_set_pitch(loop->capture, desired_pitch);
+    }
+  }
 }
 
 /**
@@ -295,48 +371,12 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     }
   }
 
-  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
-  // Drops) & Section 1.7.2 (Rule 5) Enqueue Captured Chunk: Push the chunk
-  // pointer into the bounded lock-free SPSC queue.
-  // - Physical/Real-time hardware capture: if queue is full, incoming signal is
-  // lost anyway.
-  //   Increment drop counter and retain un-enqueued chunk in
-  //   loop->pending_chunk to avoid round-robin pool index wrap-around from
-  //   overwriting active in-flight queued buffers.
-  // - Non-real-time capture (File/Generator): sleep with nanosleep while
-  // waiting for queue space
-  //   so no samples are missed and CPU isn't consumed by spin loops.
-  if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
-    if (capture_backend_is_realtime(loop->capture)) {
-      if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        loop->captured_drop_counter++;
-        static uint64_t last_drop_log = 0;
-        uint64_t now = cdsp_time_now_ns() / 1000000;
-        if (now - last_drop_log > 1000) {
-          logger_warn(&g_logger, "Captured chunk dropped (queue full)");
-          last_drop_log = now;
-        }
-        loop->pending_chunk = chunk;
-      } else {
-        loop->pending_chunk = NULL;
-      }
-    } else {
-      while (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
-        if (engine_shared_state_should_stop(loop->shared)) {
-          break;
-        }
-        cdsp_sleep_ms(1);
-      }
-      loop->pending_chunk = NULL;
-    }
+  // Enqueue chunk based on engine processing state
+  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
+    loop->pending_chunk = chunk;
+    capture_loop_send_paused_tick_if_due(loop);
   } else {
-    // Ref: engine_state_management.md - Section 3.3 (Silence Auto-Pause &
-    // Resume Flow) While PAUSED, enqueue 0-frame control tick chunks so
-    // processing_thread can unblock, process pending pipeline swaps, and
-    // maintain state synchronization.
-    loop->pending_chunk = NULL;
-    audio_chunk_set_valid_frames(chunk, 0);
-    engine_shared_state_enqueue_captured(loop->shared, chunk);
+    capture_loop_enqueue_running_chunk(loop, chunk);
   }
   return false;
 }
@@ -344,16 +384,8 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
 bool engine_capture_loop_step(engine_capture_loop_t* loop) {
   if (!loop) return true;
 
-  // Clock pitch adjustment check:
-  // If the capture backend supports hardware clock pitch tuning, sync to
-  // the shared speed ratio published by the playback rate controller.
-  if (loop->pitch_supported && loop->shared) {
-    double desired_pitch = engine_shared_state_get_capture_pitch(loop->shared);
-    if (fabs(desired_pitch - loop->last_applied_pitch) > 0.000001) {
-      loop->last_applied_pitch = desired_pitch;
-      capture_backend_set_pitch(loop->capture, desired_pitch);
-    }
-  }
+  // 1. Clock pitch adjustment check
+  capture_loop_update_pitch(loop);
 
   // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
   // Fetch a chunk buffer from the pre-allocated round-robin pool,
@@ -416,28 +448,6 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
   while (1) {
     if (engine_shared_state_should_stop(loop->shared)) {
       break;
-    }
-
-    if (engine_shared_state_get_state(loop->shared) ==
-        PROCESSING_STATE_PAUSED) {
-      sample_rate_watcher_reset(loop->rate_watcher);
-
-      // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
-      // Resume Flow Step 2: Periodic 0-Frame Ticks are enqueued downstream
-      // every 200ms during pause to wake up processing loop for pending
-      // pipeline swaps. This wakes up the processing loop thread from its
-      // blocking dequeue wait, allowing configuration hot-reloads and parameter
-      // updates (e.g. volume/mute) to execute and apply immediately instead of
-      // being delayed indefinitely until audio signal resumes. Waking up at 5Hz
-      // (200ms) consumes negligible CPU.
-      uint64_t now = cdsp_time_now_ns();
-      if (now - loop->last_paused_tick_ns > 200000000ULL) {  // 200ms
-        loop->last_paused_tick_ns = now;
-        audio_chunk_t* empty_chunk =
-            round_robin_chunk_pool_next(loop->chunk_pool);
-        audio_chunk_set_valid_frames(empty_chunk, 0);
-        engine_shared_state_enqueue_captured(loop->shared, empty_chunk);
-      }
     }
 
     // 1. Hardware Sample-Rate Change Check

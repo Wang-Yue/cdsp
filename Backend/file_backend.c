@@ -1169,7 +1169,7 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
   file_playback_t* playback = (file_playback_t*)ctx;
   if (!playback) return false;
 #ifdef CDSP_TEST
-  if (playback->stopped) {
+  if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Playback stopped");
     }
@@ -1351,7 +1351,7 @@ static void file_playback_stop(void* ctx) {
 #ifdef CDSP_TEST
   file_playback_t* playback = (file_playback_t*)ctx;
   if (playback) {
-    playback->stopped = true;
+    atomic_store_explicit(&playback->stopped, true, memory_order_release);
   }
 #else
   (void)ctx;
@@ -1403,6 +1403,9 @@ static playback_backend_t* file_playback_create(
   file_playback_t* playback =
       (file_playback_t*)calloc(1, sizeof(file_playback_t));
   if (!playback) return NULL;
+#ifdef CDSP_TEST
+  atomic_init(&playback->stopped, false);
+#endif
 
   if (config->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
     playback->is_stdout = true;

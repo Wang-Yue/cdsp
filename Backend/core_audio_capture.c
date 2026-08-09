@@ -81,7 +81,7 @@ struct core_audio_capture {
   /// doesn't churn the heap.
   float* read_scratch;
   cdsp_sem_t semaphore;
-  bool stopped;
+  _Atomic bool stopped;
   _Atomic uint32_t active_callbacks;
 };
 
@@ -132,7 +132,8 @@ static OSStatus capture_callback(void* inRefCon,
 
   atomic_fetch_add_explicit(&capture->active_callbacks, 1,
                             memory_order_relaxed);
-  if (capture->stopped || !capture->prealloc_buffer_list ||
+  if (atomic_load_explicit(&capture->stopped, memory_order_relaxed) ||
+      !capture->prealloc_buffer_list ||
       !capture->prealloc_channel_data_pointers || !capture->audio_unit) {
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_relaxed);
@@ -292,6 +293,7 @@ static bool allocate_render_buffers(core_audio_capture_t* capture) {
 static void core_audio_capture_close(void* ctx) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return;
+  atomic_store_explicit(&capture->stopped, true, memory_order_release);
   if (!capture->audio_unit && capture->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio capture device");
   if (capture->semaphore) {
@@ -514,6 +516,7 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
     goto cleanup;
   }
 
+  atomic_store_explicit(&capture->stopped, false, memory_order_release);
   status = AudioOutputUnitStart(capture->audio_unit);
   if (status != noErr) {
     if (err)
@@ -626,7 +629,8 @@ static void core_audio_capture_set_pitch(void* ctx, double multiplier) {
 static bool core_audio_capture_wait(void* ctx, uint32_t timeout_ms) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture || !capture->semaphore) return false;
-  if (capture->stopped) return false;
+  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+    return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
@@ -649,7 +653,7 @@ static void core_audio_capture_set_is_paused(void* ctx, bool paused) {
 static void core_audio_capture_stop(void* ctx) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
   if (!capture) return;
-  capture->stopped = true;
+  atomic_store_explicit(&capture->stopped, true, memory_order_release);
   if (capture->audio_unit) {
     AudioOutputUnitStop(capture->audio_unit);
   }
@@ -757,6 +761,7 @@ static capture_backend_t* core_audio_capture_create(
     }
   }
   atomic_init(&capture->is_device_alive, true);
+  atomic_init(&capture->stopped, false);
 
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       capture->device_name[0] ? capture->device_name : NULL,

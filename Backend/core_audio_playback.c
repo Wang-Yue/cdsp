@@ -221,6 +221,7 @@ static void core_audio_playback_set_pitch(void* ctx, double multiplier) {
 static void core_audio_playback_close(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
+  atomic_store_explicit(&playback->stopped, true, memory_order_release);
   if (!playback->audio_unit && playback->opened_device_id == 0) return;
   logger_info(&g_logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
@@ -470,6 +471,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     goto cleanup;
   }
 
+  atomic_store_explicit(&playback->stopped, false, memory_order_release);
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
     logger_error(&g_logger, "Failed to start output AudioUnit: status=%d",

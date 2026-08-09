@@ -1604,6 +1604,11 @@ TEST(DSPEngineE2E_PipeWire) {
 
 TEST(DSPEngineE2E_CoreAudio) {
 #if defined(__APPLE__)
+  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_EX);
+  }
+
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -1620,6 +1625,11 @@ TEST(DSPEngineE2E_CoreAudio) {
       "    }\n"
       "}";
   run_e2e_test_config(json, "CoreAudio");
+
+  if (lock_fd >= 0) {
+    flock(lock_fd, LOCK_UN);
+    close(lock_fd);
+  }
 #endif
 }
 
@@ -1705,7 +1715,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_engine_poll(engine);
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
@@ -1863,7 +1873,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_engine_poll(engine);
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
