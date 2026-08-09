@@ -885,7 +885,9 @@ static void* async_sinc_resampler_create(const resampler_config_t* config,
 
 static size_t async_sinc_resampler_get_output_delay(const void* impl) {
   const async_sinc_resampler_t* resampler = (const async_sinc_resampler_t*)impl;
-  return resampler ? (resampler->sinc_len / 2) : 0;
+  return resampler ? (size_t)((double)resampler->sinc_len *
+                              resampler->resample_ratio / 2.0)
+                   : 0;
 }
 
 static void async_sinc_resampler_reset(void* impl) {

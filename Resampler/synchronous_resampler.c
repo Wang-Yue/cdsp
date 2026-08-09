@@ -543,7 +543,7 @@ static void* synchronous_resampler_create(const resampler_config_t* config,
 static size_t synchronous_resampler_get_output_delay(const void* impl) {
   const synchronous_resampler_t* resampler =
       (const synchronous_resampler_t*)impl;
-  return resampler ? resampler->sub_fft_out : 0;
+  return resampler ? (resampler->sub_fft_out / 2) : 0;
 }
 
 static void synchronous_resampler_reset(void* impl) {

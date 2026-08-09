@@ -161,8 +161,9 @@ static void emit_yaml_node(const cJSON* item, int indent, buf_t* b,
     emit_string_scalar(b, item->valuestring);
   } else if (cJSON_IsNumber(item)) {
     char num_buf[64];
-    if (item->valuedouble == (double)item->valueint) {
-      snprintf(num_buf, sizeof(num_buf), "%d", item->valueint);
+    int64_t int_val = (int64_t)item->valuedouble;
+    if (item->valuedouble == (double)int_val) {
+      snprintf(num_buf, sizeof(num_buf), "%lld", (long long)int_val);
     } else {
       snprintf(num_buf, sizeof(num_buf), "%.15g", item->valuedouble);
     }
@@ -244,6 +245,25 @@ static cJSON* parse_scalar_val(const char* str) {
   }
 
   return cJSON_CreateString(str);
+}
+
+static char* find_unquoted_colon(char* str) {
+  if (!str) return NULL;
+  char in_quote = '\0';
+  for (char* p = str; *p; p++) {
+    if (in_quote) {
+      if (*p == in_quote) {
+        in_quote = '\0';
+      }
+    } else {
+      if (*p == '"' || *p == '\'') {
+        in_quote = *p;
+      } else if (*p == ':') {
+        return p;
+      }
+    }
+  }
+  return NULL;
 }
 
 typedef struct {
@@ -369,16 +389,7 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
         cJSON_AddItemToArray(top->node, new_obj);
         PUSH_STACK(new_obj, indent + 2, false);
       } else {
-        char* colon = NULL;
-        if (item_val[0] == '"' || item_val[0] == '\'') {
-          char q = item_val[0];
-          char* end_q = strchr(item_val + 1, q);
-          if (end_q) {
-            colon = strchr(end_q + 1, ':');
-          }
-        } else {
-          colon = strchr(item_val, ':');
-        }
+        char* colon = find_unquoted_colon(item_val);
         if (colon) {
           cJSON* new_obj = cJSON_CreateObject();
           CHECK_OOM(new_obj);
@@ -410,12 +421,12 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
         }
       }
     } else {
-      char* colon = strchr(content, ':');
+      char* colon = find_unquoted_colon(content);
       if (colon) {
         *colon = '\0';
         char* key = trim_str(content);
         if ((key[0] == '"' || key[0] == '\'') &&
-            key[strlen(key) - 1] == key[0]) {
+            key[strlen(key) - 1] == key[0] && strlen(key) >= 2) {
           key[strlen(key) - 1] = '\0';
           key++;
         }

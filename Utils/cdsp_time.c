@@ -12,12 +12,8 @@ static inline uint64_t cdsp_time_now_ns_internal(void) {
 #if defined(__APPLE__)
   return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #elif defined(_WIN32)
-  static LARGE_INTEGER freq;
-  static BOOL has_freq = FALSE;
-  if (!has_freq) {
-    QueryPerformanceFrequency(&freq);
-    has_freq = TRUE;
-  }
+  LARGE_INTEGER freq;
+  QueryPerformanceFrequency(&freq);
   LARGE_INTEGER counter;
   QueryPerformanceCounter(&counter);
   uint64_t seconds = (uint64_t)(counter.QuadPart / freq.QuadPart);

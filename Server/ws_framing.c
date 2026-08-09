@@ -1,5 +1,6 @@
 #include "ws_framing.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -57,6 +58,29 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
   return true;
 }
 
+static bool send_all(socket_t fd, const char* data, size_t len) {
+  size_t total_sent = 0;
+  while (total_sent < len) {
+    int to_send = (len - total_sent > 65536) ? 65536 : (int)(len - total_sent);
+    int sent = send(fd, data + total_sent, to_send, 0);
+    if (sent <= 0) {
+#ifdef _WIN32
+      int err = WSAGetLastError();
+      if (err == WSAEWOULDBLOCK || err == WSAEINTR) {
+        continue;
+      }
+#else
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        continue;
+      }
+#endif
+      return false;
+    }
+    total_sent += (size_t)sent;
+  }
+  return true;
+}
+
 void ws_send_frame(socket_t fd, const char* response) {
   if (IS_INVALID_SOCKET(fd) || !response) return;
   size_t resp_len = strlen(response);
@@ -79,7 +103,7 @@ void ws_send_frame(socket_t fd, const char* response) {
   }
   if (header_len + resp_len <= sizeof(frame)) {
     memcpy(&frame[header_len], response, resp_len);
-    send(fd, frame, (int)(header_len + resp_len), 0);
+    send_all(fd, frame, header_len + resp_len);
   } else {
     char* dyn_frame = (char*)malloc(header_len + resp_len);
     if (dyn_frame) {
@@ -87,7 +111,7 @@ void ws_send_frame(socket_t fd, const char* response) {
       dyn_frame[1] = frame[1];
       memcpy(&dyn_frame[2], &frame[2], header_len - 2);
       memcpy(&dyn_frame[header_len], response, resp_len);
-      send(fd, dyn_frame, (int)(header_len + resp_len), 0);
+      send_all(fd, dyn_frame, header_len + resp_len);
       free(dyn_frame);
     }
   }

@@ -97,17 +97,41 @@ static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
 }
 #endif
 
+#ifdef _WIN32
+#define cdsp_strncasecmp _strnicmp
+#else
+#include <strings.h>
+#define cdsp_strncasecmp strncasecmp
+#endif
+
+static const char* find_header_case_insensitive(const char* request,
+                                                const char* header_name) {
+  if (!request || !header_name) return NULL;
+  size_t header_len = strlen(header_name);
+  const char* p = request;
+  while (*p) {
+    if (cdsp_strncasecmp(p, header_name, header_len) == 0) {
+      return p;
+    }
+    p++;
+  }
+  return NULL;
+}
+
 bool ws_handle_handshake(const char* request, socket_t client_fd) {
   if (!request || IS_INVALID_SOCKET(client_fd)) return false;
-  if (strncmp(request, "GET ", 4) == 0 && strstr(request, "Upgrade: ")) {
-    const char* key_ptr = strstr(request, "Sec-WebSocket-Key: ");
+  if (strncmp(request, "GET ", 4) == 0 &&
+      find_header_case_insensitive(request, "Upgrade:")) {
+    const char* key_ptr =
+        find_header_case_insensitive(request, "Sec-WebSocket-Key:");
     if (!key_ptr) {
       const char* bad_request =
           "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
       send(client_fd, bad_request, (int)strlen(bad_request), 0);
       return false;
     }
-    key_ptr += 19;
+    key_ptr += strlen("Sec-WebSocket-Key:");
+    while (*key_ptr == ' ' || *key_ptr == '\t') key_ptr++;
     char key[64];
     int k = 0;
     while (*key_ptr && *key_ptr != '\r' && *key_ptr != '\n' && k < 63) {

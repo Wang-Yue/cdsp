@@ -515,7 +515,8 @@ TEST(test_websocket_commands) {
   ASSERT_TRUE(root1 != NULL);
   ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root1, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root1, "result")->valuestring);
-  ASSERT_STR_EQ("2.0.0", cJSON_GetObjectItem(root1, "value")->valuestring);
+  ASSERT_STR_EQ(cdsp_get_version(),
+                cJSON_GetObjectItem(root1, "value")->valuestring);
   cJSON_Delete(root1);
 
   // Send GetState command
@@ -547,7 +548,8 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("2.0.0", cJSON_GetObjectItem(root, "value")->valuestring);
+  ASSERT_STR_EQ(cdsp_get_version(),
+                cJSON_GetObjectItem(root, "value")->valuestring);
   cJSON_Delete(root);
 
   websocket_server_handle_command(server, 0, "{\"command\":\"GetState\"}", resp,

@@ -643,7 +643,9 @@ static void* async_poly_resampler_create(const resampler_config_t* config,
 
 static size_t async_poly_resampler_get_output_delay(const void* impl) {
   const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
-  return resampler ? (resampler->interpolator_len / 2) : 0;
+  return resampler ? (size_t)((double)resampler->interpolator_len *
+                              resampler->resample_ratio / 2.0)
+                   : 0;
 }
 
 static void async_poly_resampler_reset(void* impl) {

@@ -739,6 +739,12 @@ dsp_engine_t* dsp_engine_create(void) {
       (dsp_engine_impl_t*)calloc(1, sizeof(dsp_engine_impl_t));
   if (!impl) return NULL;
 
+  pthread_mutex_init(&impl->state_mutex, NULL);
+  impl->session.last_stop_reason.type = STOP_REASON_NONE;
+  impl->config.active_json = NULL;
+  impl->config.previous_json = NULL;
+  atomic_init(&impl->config.in_progress, false);
+
   impl->buffers.spectrum = spectrum_analyzer_create();
   impl->buffers.capture = audio_history_buffer_create();
   impl->buffers.playback = audio_history_buffer_create();
@@ -749,12 +755,6 @@ dsp_engine_t* dsp_engine_create(void) {
     dsp_engine_free_impl(impl);
     return NULL;
   }
-
-  impl->session.last_stop_reason.type = STOP_REASON_NONE;
-  pthread_mutex_init(&impl->state_mutex, NULL);
-  impl->config.active_json = NULL;
-  impl->config.previous_json = NULL;
-  atomic_init(&impl->config.in_progress, false);
 
   impl->iface.ctx = impl;
   impl->iface.free = dsp_engine_free_impl;

@@ -1911,7 +1911,7 @@ static void handle_cmd_get_version(websocket_server_t* server, int client_idx,
   (void)server;
   (void)client_idx;
   (void)root;
-  reply_ok(cmd_name, cJSON_CreateString("2.0.0"), ds);
+  reply_ok(cmd_name, cJSON_CreateString(cdsp_get_version()), ds);
 }
 
 static void handle_cmd_get_state(websocket_server_t* server, int client_idx,
