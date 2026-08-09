@@ -39,6 +39,9 @@
 
 static const logger_t g_logger = {"dsp.engine.state"};
 
+// Ref: engine_state_management.md - Section 1.1: Inter-Thread Level
+// (engine_shared_state_t) & Section 1.5: Atomic Variables & Accessing Threads
+// Justification
 struct engine_shared_state {
   /**
    * @brief Bounded sync queue from the capture thread to the processing thread.
@@ -52,7 +55,7 @@ struct engine_shared_state {
   audio_sync_queue_t* processed_queue;
 
   /**
-   * @brief The reason the engine stopped.
+   * @brief The reason the engine stopped (protected by stop_reason_mutex).
    */
   processing_stop_reason_t stop_reason;
 
@@ -77,7 +80,7 @@ struct engine_shared_state {
   _Atomic(pipeline_t*) retired_pipeline;
 
   /**
-   * @brief Raw atomic state representation.
+   * @brief Raw atomic state representation (processing_state_t).
    */
   _Atomic uint8_t state_raw;
 
@@ -149,6 +152,9 @@ void engine_shared_state_set_capture_pitch(engine_shared_state_t* state,
   }
 }
 
+// Ref: engine_state_management.md - Section 1.7.2 (Rule 4: Deferred Garbage
+// Collection for Audio Threads) & Section 1.1: Atomic pipeline pointer holding
+// swapped-out DSP pipeline during hot-reloads.
 pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
                                                 pipeline_t* pipeline) {
   if (!state || !pipeline) return NULL;
@@ -156,6 +162,8 @@ pipeline_t* engine_shared_state_retire_pipeline(engine_shared_state_t* state,
                                   memory_order_acq_rel);
 }
 
+// Ref: engine_state_management.md - Section 1.7.1: Garbage Collection
+// off-thread by main controller thread during poll / set_config.
 pipeline_t* engine_shared_state_collect_retired_pipeline(
     engine_shared_state_t* state) {
   if (!state) return NULL;
@@ -163,6 +171,9 @@ pipeline_t* engine_shared_state_collect_retired_pipeline(
                                   memory_order_acquire);
 }
 
+// Ref: engine_state_management.md - Section 1.6: Mutex Isolation
+// stop_reason_mutex is a Level 2 leaf lock protecting the 264-byte stop_reason
+// struct against concurrent read/write publication races.
 processing_stop_reason_t engine_shared_state_get_stop_reason(
     const engine_shared_state_t* state) {
   processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
@@ -200,6 +211,9 @@ engine_shared_state_t* engine_shared_state_create(
   return state;
 }
 
+// Ref: engine_state_management.md - Section 1.7.1: Ownership & Resource
+// Lifecycle Guidelines Drain Before Free & Garbage Drain. Frees sync queues,
+// uncollected retired pipelines, and destroys stop_reason_mutex.
 void engine_shared_state_free(engine_shared_state_t* state) {
   if (!state) return;
   audio_sync_queue_free(state->captured_queue);
@@ -298,6 +312,9 @@ bool engine_shared_state_enqueue_captured(engine_shared_state_t* state,
   return audio_sync_queue_enqueue(state->captured_queue, chunk);
 }
 
+// Ref: engine_state_management.md - Section 1.5: Atomic Variables
+// (processed_queued_frames) Tracks the exact number of frames in the queue for
+// rate-adjust telemetry without cross-thread lock acquisition.
 bool engine_shared_state_enqueue_processed(engine_shared_state_t* state,
                                            audio_chunk_t* chunk) {
   if (!state) return false;
@@ -322,6 +339,8 @@ audio_chunk_t* engine_shared_state_dequeue_captured_blocking(
       state->captured_queue);
 }
 
+// Ref: engine_state_management.md - Section 1.5: Atomic Variables
+// (processed_queued_frames)
 audio_chunk_t* engine_shared_state_dequeue_processed_blocking(
     engine_shared_state_t* state) {
   if (!state) return NULL;
@@ -345,6 +364,9 @@ processing_state_t engine_shared_state_get_state(
   return processing_state_from_raw_byte(raw);
 }
 
+// Ref: engine_state_management.md - Section 2.1: Terminal State Guard Invariant
+// Once stop_once is true, any transition to RUNNING/PAUSED/STALLED is ignored;
+// only transitions to INACTIVE are permitted.
 void engine_shared_state_set_state(engine_shared_state_t* state,
                                    processing_state_t new_state) {
   if (!state) return;
@@ -371,6 +393,9 @@ void engine_shared_state_set_state(engine_shared_state_t* state,
   }
 }
 
+// Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
+// Step 1 Capture thread updates telemetry timestamp in nanoseconds on every
+// chunk read.
 void engine_shared_state_set_last_capture_time(engine_shared_state_t* state,
                                                uint64_t ns) {
   if (state) {

@@ -148,6 +148,11 @@ processing_stop_reason_t dsp_session_get_stop_reason(
   return (processing_stop_reason_t){.type = STOP_REASON_NONE};
 }
 
+// Ref: engine_state_management.md - Section 1.7.1: Single Entry Point
+// Destructor & Section 3.6: Immediate Abort Teardown Step 3: Controller
+// Teardown & Worker Thread Joining. Ref: engine_state_management.md -
+// Section 1.7.2: Rule 2 (Set Pointers to NULL Post-Free) & Rule 3 (Worker
+// Thread Single-Thread Backend Ownership).
 processing_stop_reason_t dsp_session_stop_and_free(
     dsp_session_t* core, processing_stop_reason_t reason) {
   processing_stop_reason_t final_reason = {.type = STOP_REASON_NONE};
@@ -264,6 +269,8 @@ processing_stop_reason_t dsp_session_stop_and_free(
 /// verifying that `newConfig.devices == currentConfig.devices` —
 /// the `DSPEngine` actor does this comparison and falls back to a
 /// full teardown when they differ.
+/// Ref: engine_state_management.md - Section 1.7.1 (Pipeline Hot-Reload
+/// Transfer) & Section 3.1 (Step 1: Configuration Change Decision Tree).
 bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
                                audio_backend_error_t* err) {
   if (!core || !new_config) {
@@ -358,6 +365,9 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
   return true;
 }
 
+// Ref: engine_state_management.md - Section 1.7.1: Garbage Collection
+// off-thread (Garbage Drain) & Section 1.7.2 (Rule 4: Deferred Garbage
+// Collection for Audio Threads).
 void dsp_session_collect_garbage(dsp_session_t* core) {
   if (!core || !core->shared) return;
 

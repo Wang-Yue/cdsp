@@ -11,6 +11,9 @@
  * used, allowing the loops to read/write fields without coordinating locks.
  *
  * @section concurrency_model Concurrency model
+ * Ref: engine_state_management.md - Section 1.1: Inter-Thread Level
+ * (`engine_shared_state_t`) & Section 1.5: Atomic Variables & Accessing Threads
+ * Justification
  * - `captured_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
  * capture, consumer = processing.
  * - `processed_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =
@@ -24,10 +27,10 @@
  * Read uses acquire ordering; write uses release ordering. When the state
  * transitions to `PROCESSING_STATE_INACTIVE`, it serves as the signal that the
  * engine should stop.
- * - `stop_reason`: Protected by `stop_reason_mutex` against concurrent
- * read/write data races (isolated from hot-path processing loops).
- * - `stop_once`: CAS-guarded "first caller wins" stop flag, ensuring stop logic
- * is executed only once.
+ * - `stop_reason`: Protected by `stop_reason_mutex` (Section 1.6) against
+ * concurrent read/write data races (isolated from hot-path processing loops).
+ * - `stop_once`: CAS-guarded "first caller wins" stop flag (Section 4),
+ * ensuring stop logic is executed only once.
  *
  * @section semaphores Semaphores
  * Semaphores are encapsulated inside `audio_sync_queue_t` for kernel-level

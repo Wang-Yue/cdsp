@@ -385,6 +385,11 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   // engine_shared_state_create) and will transition to RUNNING once they
   // successfully open their backends. Wrap `pthread_create` construction so
   // each spawn shares the same QoS and lifecycle.
+  //
+  // Ref: engine_state_management.md - Section 1.7.1 (Strict Join Guard):
+  // If thread creation fails mid-way, manually stop and join already-created
+  // threads before returning false, ensuring no uninitialized handles are
+  // joined.
   int ret;
   ret = pthread_create(&core->capture_thread, NULL, capture_thread_func,
                        core->capture_loop);

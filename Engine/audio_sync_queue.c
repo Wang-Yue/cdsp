@@ -57,6 +57,9 @@ bool audio_sync_queue_enqueue(audio_sync_queue_t* queue, void* item) {
   return ok;
 }
 
+// Ref: engine_state_management.md - Section 1.5: Atomic Variables (is_shutdown)
+// & Section 3.6: Immediate Abort Teardown Step 2: Unblocking worker threads via
+// queue shutdown.
 void audio_sync_queue_shutdown(audio_sync_queue_t* queue) {
   if (queue) {
     atomic_store_explicit(&queue->is_shutdown, true, memory_order_release);
@@ -64,6 +67,9 @@ void audio_sync_queue_shutdown(audio_sync_queue_t* queue) {
   }
 }
 
+// Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops (SPSC
+// Queue + OS Semaphore) & Section 3.5: Graceful EOF Teardown (Queue Drain Steps
+// 2-3).
 void* audio_sync_queue_dequeue_blocking(audio_sync_queue_t* queue) {
   if (!queue || !queue->queue || !queue->semaphore) return NULL;
 

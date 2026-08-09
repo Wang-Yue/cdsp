@@ -152,7 +152,19 @@ static void capture_loop_send_paused_tick_if_due(engine_capture_loop_t* loop) {
 
   // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
   // Flow Step 2: Periodic 0-Frame Ticks are enqueued downstream every 200ms
-  // during pause to wake up processing loop for pending pipeline swaps.
+  // during pause to wake up processing loop for pending pipeline swaps. This
+  // wakes up the processing loop thread from its blocking dequeue wait,
+  // allowing configuration hot-reloads and parameter updates (e.g. volume/mute)
+  // to execute and apply immediately instead of being delayed indefinitely
+  // until audio signal resumes. Waking up at 5Hz (200ms) consumes negligible
+  // CPU.
+  //
+  // Ref: engine_state_management.md - Section 3.3 (Buffer Retention):
+  // While in PAUSED state, read chunks are retained in loop->pending_chunk
+  // rather than repeatedly requesting fresh chunks from
+  // round_robin_chunk_pool_next(). This guarantees that the pre-allocated
+  // round-robin chunk pool does not advance and wrap around, protecting
+  // in-flight queued buffers from concurrent data race overwrites.
   uint64_t now = cdsp_time_now_ns();
   if (now - loop->last_paused_tick_ns >= 200000000ULL) {  // 200ms
     audio_chunk_t* tick_chunk = loop->pending_chunk;
@@ -249,6 +261,17 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t* loop,
  */
 static void capture_loop_enqueue_running_chunk(engine_capture_loop_t* loop,
                                                audio_chunk_t* chunk) {
+  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
+  // Drops) & Section 1.7.2 (Rule 5) Enqueue Captured Chunk: Push the chunk
+  // pointer into the bounded lock-free SPSC queue.
+  // - Physical/Real-time hardware capture: if queue is full, incoming signal is
+  //   lost anyway. Increment drop counter and retain un-enqueued chunk in
+  //   loop->pending_chunk to avoid round-robin pool index wrap-around from
+  //   overwriting active in-flight queued buffers.
+  // - Non-real-time capture (File/Generator): sleep with nanosleep while
+  // waiting
+  //   for queue space so no samples are missed and CPU isn't consumed by spin
+  //   loops.
   if (capture_backend_is_realtime(loop->capture)) {
     if (!engine_shared_state_enqueue_captured(loop->shared, chunk)) {
       loop->captured_drop_counter++;
@@ -279,6 +302,9 @@ static void capture_loop_enqueue_running_chunk(engine_capture_loop_t* loop,
  * @brief Synchronizes hardware clock pitch multiplier if supported.
  */
 static void capture_loop_update_pitch(engine_capture_loop_t* loop) {
+  // Clock pitch adjustment check:
+  // If the capture backend supports hardware clock pitch tuning, sync to
+  // the shared speed ratio published by the playback rate controller.
   if (loop->pitch_supported && loop->shared) {
     double desired_pitch = engine_shared_state_get_capture_pitch(loop->shared);
     if (fabs(desired_pitch - loop->last_applied_pitch) > 0.000001) {
@@ -371,7 +397,15 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
     }
   }
 
-  // Enqueue chunk based on engine processing state
+  // Ref: engine_state_management.md - Section 3.3 (Silence Auto-Pause & Resume
+  // Flow) Enqueue chunk based on engine processing state:
+  // - While PAUSED, retain the chunk in loop->pending_chunk (so the round-robin
+  // chunk
+  //   pool does not advance/wrap around) and emit 0-frame control ticks every
+  //   200ms so processing_thread can unblock and process pending pipeline
+  //   swaps.
+  // - While RUNNING, push active audio chunks to captured_queue for downstream
+  // processing.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
     loop->pending_chunk = chunk;
     capture_loop_send_paused_tick_if_due(loop);
@@ -384,7 +418,9 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
 bool engine_capture_loop_step(engine_capture_loop_t* loop) {
   if (!loop) return true;
 
-  // 1. Clock pitch adjustment check
+  // 1. Clock pitch adjustment check:
+  // If the capture backend supports hardware clock pitch tuning, sync to
+  // the shared speed ratio published by the playback rate controller.
   capture_loop_update_pitch(loop);
 
   // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)

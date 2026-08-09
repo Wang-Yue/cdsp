@@ -15,11 +15,13 @@
 #include "engine_playback_loop.h"
 #include "engine_processing_loop.h"
 
+// Ref: engine_state_management.md - Section 1.2: Session Level (dsp_session_t)
+// & Section 1.7.1: Lifecycle & Ownership Contract Matrix
 struct dsp_session {
   // MARK: - Configuration
   /** Current configuration. */
   dsp_config_t* current_config;
-  /** Mutex protecting configuration access. */
+  /** Mutex protecting configuration access (Level 2 leaf lock, Section 1.6). */
   pthread_mutex_t config_mutex;
   /** Processing parameters derived from configuration. */
   processing_parameters_t* processing_params;
