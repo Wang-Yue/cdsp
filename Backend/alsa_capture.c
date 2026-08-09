@@ -830,7 +830,10 @@ static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
 static bool alsa_capture_pitch_control_supported(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return false;
-  return capture->hctl_pitch_elem != NULL || capture->pitch_elem != NULL;
+  pthread_mutex_lock(&capture->mixer_mutex);
+  bool res = capture->hctl_pitch_elem != NULL || capture->pitch_elem != NULL;
+  pthread_mutex_unlock(&capture->mixer_mutex);
+  return res;
 }
 
 /**

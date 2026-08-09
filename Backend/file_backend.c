@@ -679,6 +679,10 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
     }
     return false;
   }
+  if (capture->raw_buf) {
+    free(capture->raw_buf);
+    capture->raw_buf = NULL;
+  }
   capture->raw_buf_capacity =
       capture->chunk_size * capture->channels * sample_size * 4;
   capture->raw_buf =
@@ -1098,6 +1102,10 @@ static bool file_playback_open(void* ctx, backend_error_t* err) {
       playback->f = NULL;
     }
     return false;
+  }
+  if (playback->raw_buf) {
+    free(playback->raw_buf);
+    playback->raw_buf = NULL;
   }
   playback->raw_buf_capacity =
       playback->chunk_size * playback->channels * sample_size * 4;

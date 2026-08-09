@@ -88,7 +88,7 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   // Select format: If a specific format was requested, attempt to use only
   // that. Otherwise, probe format support in order of preference: float32 ->
   // int32 -> int24 (3 bytes) -> int16.
-  snd_pcm_format_t formats[5];
+  snd_pcm_format_t formats[6];
   size_t num_formats = 0;
   if (playback->has_format) {
     if (playback->requested_format == ALSA_SAMPLE_FORMAT_S16_LE) {
