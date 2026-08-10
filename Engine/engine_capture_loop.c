@@ -445,6 +445,7 @@ bool engine_capture_loop_step(engine_capture_loop_t* loop) {
   bool got_data =
       capture_backend_read(loop->capture, loop->chunk_size, chunk, &err);
   if (!got_data) {
+    loop->pending_chunk = chunk;
     return capture_loop_handle_no_data(loop, &err);
   }
 
