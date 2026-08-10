@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Public/cdsp_export.h"
+#include "cdsp_export.h"
 
 #ifdef __cplusplus
 extern "C" {

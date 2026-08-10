@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "Public/cdsp_export.h"
-#include "Public/cdsp_pub_types.h"
+#include "cdsp_export.h"
+#include "cdsp_pub_types.h"
 
 #ifdef __cplusplus
 extern "C" {
