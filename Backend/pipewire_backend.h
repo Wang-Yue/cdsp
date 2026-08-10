@@ -8,7 +8,7 @@
 
 #if defined(ENABLE_PIPEWIRE)
 
-#include "audio_backend.h"
+#include "Backend/audio_backend.h"
 
 /**
  * @brief Opaque structure representing the PipeWire capture backend.

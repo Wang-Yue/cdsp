@@ -5,7 +5,7 @@
 
 #include "FFT/arbitrary_complex_fft.h"
 
-#include <stdlib.h>
+#include "Utils/double_helpers.h"
 
 void arbitrary_complex_fft_execute(arbitrary_complex_fft_t* fft,
                                    waveform_t real_in, waveform_t imag_in,

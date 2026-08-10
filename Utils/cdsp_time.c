@@ -4,8 +4,6 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#else
-#include <unistd.h>
 #endif
 
 static inline uint64_t cdsp_time_now_ns_internal(void) {

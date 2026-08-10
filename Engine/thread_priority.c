@@ -1,4 +1,4 @@
-#include "thread_priority.h"
+#include "Engine/thread_priority.h"
 
 #include "Logging/app_logger.h"
 
@@ -10,7 +10,6 @@ static const logger_t g_logger = {"dsp.threadpriority"};
 #include <mach/mach_time.h>
 #endif
 #include <pthread.h>
-#include <stdio.h>
 
 /// Bind the *calling* thread to a Mach time-constraint scheduling policy
 /// tailored to the given audio buffer parameters.
@@ -107,18 +106,21 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
 }
 #elif defined(__linux__)
 #if !defined(NO_DBUS) && !defined(DISABLE_DBUS)
+#include <dbus/dbus-protocol.h>
+#include <dbus/dbus-shared.h>
 #include <dbus/dbus.h>
+
 #define CDSP_HAS_DBUS 1
 #endif
 #include <sched.h>
+#include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(CDSP_HAS_DBUS) && !defined(CDSP_TEST)
 typedef struct {
   long thread_id;
   pthread_t pthread_id;
@@ -131,7 +133,6 @@ typedef struct {
   RtPriorityThreadInfoInternal thread_info;
 } RtPriorityHandleInternal;
 
-#if defined(CDSP_HAS_DBUS)
 static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
                                int64_t* out_val, DBusError* err) {
   DBusMessage* msg = dbus_message_new_method_call(
@@ -461,6 +462,7 @@ fallback:
 #elif defined(_WIN32)
 #include <windows.h>
 
+#ifndef CDSP_TEST
 typedef HANDLE(WINAPI* AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
 typedef BOOL(WINAPI* AvRevertMmThreadCharacteristicsFn)(HANDLE);
 
@@ -486,6 +488,7 @@ static void win32_avrt_cleanup(void* val) {
 static void win32_avrt_init_key(void) {
   pthread_key_create(&g_win32_avrt_key, win32_avrt_cleanup);
 }
+#endif
 
 void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                                   size_t sample_rate) {

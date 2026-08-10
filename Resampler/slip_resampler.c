@@ -1,8 +1,14 @@
-#include "slip_resampler.h"
+#include "Resampler/slip_resampler.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
+#include "Resampler/resampler_error.h"
 
 #define MAX_CROSSFADE_LEN 128
 

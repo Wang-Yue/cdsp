@@ -1,20 +1,23 @@
-#include "filter.h"
+#include "Filters/filter.h"
 
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/processing_parameters.h"
+#include "Config/filter_config_types.h"
+#include "Filters/biquad.h"
+#include "Filters/biquad_combo.h"
+#include "Filters/clipper.h"
+#include "Filters/convolution.h"
+#include "Filters/delay.h"
+#include "Filters/diffeq.h"
+#include "Filters/dither.h"
+#include "Filters/gain.h"
+#include "Filters/lookahead_limiter.h"
+#include "Filters/loudness.h"
+#include "Filters/volume.h"
 #include "Logging/app_logger.h"
-#include "biquad.h"
-#include "biquad_combo.h"
-#include "clipper.h"
-#include "convolution.h"
-#include "delay.h"
-#include "diffeq.h"
-#include "dither.h"
-#include "gain.h"
-#include "lookahead_limiter.h"
-#include "loudness.h"
-#include "volume.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.filter"};
 

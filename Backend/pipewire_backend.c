@@ -1,34 +1,49 @@
+#include "Backend/pipewire_backend.h"
+
 #if defined(ENABLE_PIPEWIRE)
 
-#include "pipewire_backend.h"
-
+#include <math.h>
+#include <pipewire/context.h>
+#include <pipewire/core.h>
+#include <pipewire/keys.h>
 #include <pipewire/pipewire.h>
+#include <pipewire/port.h>
+#include <pipewire/properties.h>
 #include <pipewire/stream.h>
+#include <pipewire/thread-loop.h>
+#include <pthread.h>
+#include <spa/buffer/buffer.h>
 #include <spa/param/audio/format-utils.h>
+#include <spa/param/audio/format.h>
+#include <spa/param/audio/raw-utils.h>
+#include <spa/param/audio/raw.h>
+#include <spa/param/format.h>
+#include <spa/param/param.h>
+#include <spa/pod/builder.h>
+#include <spa/pod/pod.h>
 #include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
+#include "Audio/audio_chunk.h"
 #include "Audio/sample_conversion.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include <pthread.h>
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
 
 static pthread_once_t g_pw_init_once = PTHREAD_ONCE_INIT;
 
-static void do_pw_init(void) {
-  pw_init(NULL, NULL);
-}
+static void do_pw_init(void) { pw_init(NULL, NULL); }
 
-static void ensure_pw_init(void) {
-  pthread_once(&g_pw_init_once, do_pw_init);
-}
+static void ensure_pw_init(void) { pthread_once(&g_pw_init_once, do_pw_init); }
 
 struct pipewire_capture {
   char device[256];

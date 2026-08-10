@@ -1,7 +1,8 @@
+#include "Backend/asio_backend.h"
+
 #if defined(ENABLE_ASIO)
 
 #define WIN32_LEAN_AND_MEAN
-#include "asio_backend.h"
 
 #include <initguid.h>
 #include <math.h>

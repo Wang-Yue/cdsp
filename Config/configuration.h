@@ -15,11 +15,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config_error.h"
-#include "engine_config_types.h"
-#include "filter_config_types.h"
-#include "mixer_config_types.h"
-#include "processor_config_types.h"
+#include "Config/config_error.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/processor_config_types.h"
 
 /**
  * @brief Type of pipeline step.

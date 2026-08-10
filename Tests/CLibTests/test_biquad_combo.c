@@ -1,3 +1,8 @@
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "Config/filter_config_types.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/filter.h"
 #include "test_support.h"

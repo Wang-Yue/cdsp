@@ -1,21 +1,7 @@
-#include "filter_config_types.h"
+#include "Config/filter_config_types.h"
 
-#include <math.h>
-#include <stdio.h>
 #include <string.h>
 #include <strings.h>
-
-#include "Filters/biquad.h"
-#include "Filters/biquad_combo.h"
-#include "Filters/clipper.h"
-#include "Filters/convolution.h"
-#include "Filters/delay.h"
-#include "Filters/diffeq.h"
-#include "Filters/dither.h"
-#include "Filters/gain.h"
-#include "Filters/lookahead_limiter.h"
-#include "Filters/loudness.h"
-#include "Filters/volume.h"
 
 // Standalone filter configuration types.
 

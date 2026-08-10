@@ -1,10 +1,10 @@
-#include "ws_framing.h"
+#include "Server/ws_framing.h"
 
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "websocket_server_internal.h"
+#include "Server/websocket_server_internal.h"
 
 #ifdef _WIN32
 #include <winsock2.h>

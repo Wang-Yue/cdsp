@@ -3,10 +3,14 @@
 #define _GNU_SOURCE
 #endif
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
 #include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "test_support.h"
 
 TEST(PipeWirePlaybackBasic) {

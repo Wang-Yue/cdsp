@@ -7,6 +7,7 @@
  */
 
 struct resampler_vtable;
+
 extern const struct resampler_vtable g_async_poly_resampler_vtable;
 
 #endif  // CLIB_RESAMPLER_ASYNC_POLY_RESAMPLER_H

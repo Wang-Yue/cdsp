@@ -1,7 +1,7 @@
 // Errors raised by AudioResampler implementations during construction
 // and the per-chunk process(...) call.
 
-#include "resampler_error.h"
+#include "Resampler/resampler_error.h"
 
 /// Returns a description string for the given resampler error.
 const char* resampler_error_description(resampler_error_t err) {

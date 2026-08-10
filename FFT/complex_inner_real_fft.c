@@ -17,7 +17,10 @@
 #include "FFT/complex_inner_real_fft.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
+
+#include "Utils/double_helpers.h"
 
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>

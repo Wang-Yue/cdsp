@@ -10,9 +10,11 @@
 #ifndef CLIB_CONFIG_CONFIG_DIFF_H
 #define CLIB_CONFIG_CONFIG_DIFF_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
-#include "configuration.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
 
 /**
  * @enum config_change_type_t

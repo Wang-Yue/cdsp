@@ -1,10 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
+#include "Public/cdsp_pub_types.h"
 #include "Public/general.h"
-#include "Public/signal_levels.h"
-#include "Public/state.h"
 #include "Public/volume.h"
 #include "test_support.h"
 

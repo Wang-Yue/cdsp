@@ -11,6 +11,9 @@
 
 #include "Pipeline/config_loader.h"
 
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+
 /// Parse a DSP configuration from JSON and run full validation.
 int config_loader_parse(const char* json, dsp_config_t** out_config,
                         config_error_t* err) {

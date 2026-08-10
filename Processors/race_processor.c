@@ -18,13 +18,17 @@
  *   4. Store new feedback samples and update output waveforms in place.
  */
 
-#include "race_processor.h"
+#include "Processors/race_processor.h"
 
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/delay.h"
 #include "Filters/filter.h"
 #include "Filters/gain.h"
 #include "Logging/app_logger.h"
-#include "processor.h"
+#include "Processors/processor.h"
 
 static const logger_t g_logger = {"race_processor"};
 
@@ -59,6 +63,7 @@ static const char* race_processor_get_name(const void* impl) {
 }
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 

@@ -8,12 +8,17 @@
  * cross-talk cancellation).
  */
 
-#include "processor.h"
+#include "Processors/processor.h"
 
 #include <stdlib.h>
-#include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/processor_config_types.h"
 #include "Logging/app_logger.h"
+#include "Processors/compressor_processor.h"
+#include "Processors/lookahead_limiter_processor.h"
+#include "Processors/noise_gate_processor.h"
+#include "Processors/race_processor.h"
 
 static const logger_t g_logger = {"dsp.processor"};
 

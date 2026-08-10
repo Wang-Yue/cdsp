@@ -11,8 +11,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "Engine/cdsp_sem.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include "cdsp_sem.h"
 
 /**
  * @struct audio_sync_queue

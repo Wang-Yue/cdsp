@@ -26,6 +26,7 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate);
 double delay_filter_process_single(delay_filter_t* filter, double sample);
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_delay_vtable;
 
 #endif  // CLIB_FILTERS_DELAY_H

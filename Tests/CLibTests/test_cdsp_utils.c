@@ -1,10 +1,8 @@
-#include <math.h>
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include "Utils/cdsp_time.h"
 #include "Utils/double_helpers.h"
-#include "Utils/float_helpers.h"
 #include "test_support.h"
 
 TEST(CdspTimeMonotonicProgression) {

@@ -33,9 +33,9 @@
 #include "Audio/processing_parameters.h"
 #include "Config/configuration.h"
 #include "DoP/dsd_encoder.h"
+#include "Engine/engine_shared_state.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
-#include "engine_shared_state.h"
 
 /**
  * @brief Opaque structure representing the processing loop.

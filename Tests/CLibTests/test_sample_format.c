@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "Config/engine_config_types.h"
 #include "test_support.h"
 

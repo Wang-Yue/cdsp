@@ -2,7 +2,7 @@
 // Provides runtime control API compatible with the CamillaDSP monitor control
 // protocol
 
-#include "websocket_server.h"
+#include "Server/websocket_server.h"
 
 #include <math.h>
 #include <pthread.h>
@@ -11,24 +11,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "Config/cJSON.h"
 #include "Logging/app_logger.h"
-#include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
 #include "Public/spectrum.h"
+#include "Server/websocket_server_internal.h"
+#include "Server/ws_framing.h"
+#include "Server/ws_handshake.h"
+#include "Server/ws_rpc_dispatcher.h"
 #include "Utils/cdsp_time.h"
-#include "websocket_server_internal.h"
-#include "ws_framing.h"
-#include "ws_handshake.h"
-#include "ws_rpc_dispatcher.h"
 
 static const logger_t server_logger = {"dsp.server.websocket"};
 
 #ifdef _WIN32
 #include <ws2tcpip.h>
+
 #define CLOSE_SOCKET(s) closesocket(s)
 #define INVALID_SOCKET_VAL INVALID_SOCKET
 #define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
@@ -42,6 +41,7 @@ static const logger_t server_logger = {"dsp.server.websocket"};
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #define CLOSE_SOCKET(s) close(s)
 #define INVALID_SOCKET_VAL (-1)
 #define IS_INVALID_SOCKET(s) ((s) < 0)

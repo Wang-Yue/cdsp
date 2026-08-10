@@ -6,9 +6,9 @@
  * @brief Sub-parser for pipeline section configuration.
  */
 
-#include "cJSON.h"
-#include "config_error.h"
-#include "configuration.h"
+#include "Config/cJSON.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
 
 /**
  * @brief Parses the pipeline steps from the JSON configuration array.

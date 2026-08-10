@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config_error.h"
+#include "Config/config_error.h"
 
 #ifndef FADER_T_DEFINED
 #define FADER_T_DEFINED

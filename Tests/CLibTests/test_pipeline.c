@@ -1,10 +1,19 @@
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/pipeline.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI

@@ -25,9 +25,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "FFT/arbitrary_complex_fft.h"
+#include "FFT/real_fft.h"
 #include "Utils/double_helpers.h"
-#include "arbitrary_complex_fft.h"
-#include "real_fft.h"
 
 #if defined(ENABLE_ACCELERATE)
 /**

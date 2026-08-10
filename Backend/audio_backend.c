@@ -3,33 +3,36 @@
 // `ProcessingState` and `ProcessingStopReason` — used by both the
 // engine internals and the public actor — live in `Engine/DSPEngine.swift`.
 
-#include "audio_backend.h"
+#include "Backend/audio_backend.h"
+
 #if defined(ENABLE_COREAUDIO)
-#include "core_audio_capture.h"
-#include "core_audio_playback.h"
+#include "Backend/core_audio_capture.h"
+#include "Backend/core_audio_playback.h"
 #endif
 #if defined(ENABLE_ALSA)
-#include "alsa_capture.h"
-#include "alsa_playback.h"
+#include "Backend/alsa_capture.h"
+#include "Backend/alsa_playback.h"
 #endif
 #if defined(ENABLE_PIPEWIRE)
-#include "pipewire_backend.h"
+#include "Backend/pipewire_backend.h"
 #endif
 #if defined(ENABLE_ASIO)
-#include "asio_backend.h"
+#include "Backend/asio_backend.h"
 #endif
 #if defined(ENABLE_WASAPI)
-#include "wasapi_capture.h"
-#include "wasapi_playback.h"
+#include "Backend/wasapi_capture.h"
+#include "Backend/wasapi_playback.h"
 #endif
 
 #include <stdlib.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.backend"};
-#include "file_backend.h"
-#include "generator_capture.h"
+#include "Backend/file_backend.h"
+#include "Backend/generator_capture.h"
 
 static const capture_backend_vtable_t* get_capture_vtable(
     audio_backend_type_t type) {

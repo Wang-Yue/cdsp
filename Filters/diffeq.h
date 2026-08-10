@@ -7,6 +7,7 @@
  */
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_diffeq_vtable;
 
 #endif  // CLIB_FILTERS_DIFFEQ_H

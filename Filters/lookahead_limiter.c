@@ -1,11 +1,14 @@
-#include "lookahead_limiter.h"
+#include "Filters/lookahead_limiter.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "delay.h"
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 /* =========================================================================
  * Core Lookahead Gain Implementation Structure & Helpers

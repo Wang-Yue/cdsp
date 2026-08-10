@@ -41,6 +41,7 @@
  */
 
 struct processor_vtable;
+
 extern const struct processor_vtable g_compressor_vtable;
 
 #endif  // CLIB_PROCESSORS_COMPRESSOR_PROCESSOR_H

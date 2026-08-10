@@ -10,8 +10,9 @@
 
 #ifdef _WIN32
 #include <io.h>
-#else
+#elif defined(__APPLE__)
 #include <fcntl.h>
+#else
 #include <unistd.h>
 #endif
 

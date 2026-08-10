@@ -2,9 +2,11 @@
 #define CDSP_PUBLIC_PROCESSING_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#include "cdsp_pub_types.h"
+#include "Public/cdsp_export.h"
+#include "Public/cdsp_pub_types.h"
 
 #ifdef __cplusplus
 extern "C" {

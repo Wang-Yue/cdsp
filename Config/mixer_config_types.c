@@ -1,8 +1,4 @@
-#include "mixer_config_types.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "Config/mixer_config_types.h"
 
 // Standalone mixer configuration types.
 

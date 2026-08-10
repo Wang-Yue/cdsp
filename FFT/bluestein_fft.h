@@ -39,8 +39,8 @@
 #include <stddef.h>
 
 #include "Config/config_error.h"
+#include "FFT/arbitrary_complex_fft.h"
 #include "Utils/double_helpers.h"
-#include "arbitrary_complex_fft.h"
 
 #if defined(ENABLE_ACCELERATE)
 /**

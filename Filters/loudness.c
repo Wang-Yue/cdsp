@@ -1,7 +1,11 @@
-#include "loudness.h"
+#include "Filters/loudness.h"
 
-#include "biquad.h"
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/biquad.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct loudness_filter {
   char name[64];
@@ -18,6 +22,7 @@ struct loudness_filter {
 typedef struct loudness_filter loudness_filter_t;
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 

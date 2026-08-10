@@ -35,6 +35,7 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
 #include "Config/mixer_config_types.h"
 #include "Utils/double_helpers.h"
 

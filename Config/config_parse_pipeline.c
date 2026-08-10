@@ -1,13 +1,12 @@
-#include "config_parse_pipeline.h"
+#include "Config/config_parse_pipeline.h"
 
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "Logging/app_logger.h"
-#include "cJSON.h"
-#include "config_parser_internal.h"
-#include "configuration.h"
+#include "Config/cJSON.h"
+#include "Config/config_parser_internal.h"
+#include "Config/configuration.h"
 
 int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
                           config_error_t* err) {

@@ -1,6 +1,10 @@
-#include "dither.h"
+#include "Filters/dither.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 typedef struct noise_shaper noise_shaper_t;
 
@@ -24,6 +28,7 @@ struct dither_filter {
 typedef struct dither_filter dither_filter_t;
 
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 

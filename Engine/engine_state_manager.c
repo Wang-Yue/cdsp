@@ -1,10 +1,11 @@
-#include "engine_state_manager.h"
+#include "Engine/engine_state_manager.h"
 
 #include <pthread.h>
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/processing_parameters.h"
 #include "Pipeline/state_file.h"
 
 // Ref: engine_state_management.md - Section 1.4: State Persistence Level

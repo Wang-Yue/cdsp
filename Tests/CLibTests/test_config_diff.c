@@ -3,10 +3,11 @@
 #define _GNU_SOURCE
 #endif
 #endif
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "Config/config_diff.h"
+#include "Config/config_error.h"
 #include "Config/configuration.h"
 #include "test_support.h"
 

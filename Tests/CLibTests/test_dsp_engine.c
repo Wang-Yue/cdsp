@@ -1,31 +1,44 @@
-#include <fcntl.h>
 #include <pthread.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <time.h>
 #include <unistd.h>
 
 #if defined(ENABLE_ALSA)
 #include <alsa/asoundlib.h>
 #endif
 
-#if defined(ENABLE_PIPEWIRE)
-#include <pipewire/pipewire.h>
+#if defined(ENABLE_COREAUDIO)
+#include <CoreAudio/CoreAudio.h>
+#endif
+
+#if defined(__linux__)
+#include <sys/types.h>
+#endif
+
+#if defined(__APPLE__) || defined(__linux__)
+#include <fcntl.h>
 #endif
 
 #include "Audio/audio_chunk.h"
-#include "Backend/file_backend.h"
-#include "Backend/generator_capture.h"
+#include "Audio/processing_parameters.h"
+#include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
 #include "Engine/dsp_engine.h"
-#include "Engine/dsp_session.h"
 #include "Engine/engine_capture_loop.h"
 #include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
-#include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/pipeline.h"
+#include "Public/cdsp_pub_types.h"
 #include "Public/config.h"
 #include "Public/devices.h"
 #include "Public/general.h"
@@ -33,6 +46,7 @@
 #include "Public/signal_levels.h"
 #include "Public/volume.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"
 
 static void run_e2e_test_config(const char* json, const char* backend_name) {
@@ -1072,8 +1086,6 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
 }
 
 #if defined(ENABLE_COREAUDIO)
-#include <sys/file.h>
-
 #include "Backend/core_audio_device.h"
 #endif
 

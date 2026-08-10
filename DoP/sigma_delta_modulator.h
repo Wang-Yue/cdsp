@@ -6,6 +6,7 @@
 #ifndef CLIB_DOP_SIGMA_DELTA_MODULATOR_H
 #define CLIB_DOP_SIGMA_DELTA_MODULATOR_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "Config/engine_config_types.h"

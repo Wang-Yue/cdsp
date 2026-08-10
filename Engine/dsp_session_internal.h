@@ -10,10 +10,10 @@
 #include <pthread.h>
 
 #include "DoP/dsd_encoder.h"
-#include "dsp_session.h"
-#include "engine_capture_loop.h"
-#include "engine_playback_loop.h"
-#include "engine_processing_loop.h"
+#include "Engine/dsp_session.h"
+#include "Engine/engine_capture_loop.h"
+#include "Engine/engine_playback_loop.h"
+#include "Engine/engine_processing_loop.h"
 
 // Ref: engine_state_management.md - Section 1.2: Session Level (dsp_session_t)
 // & Section 1.7.1: Lifecycle & Ownership Contract Matrix

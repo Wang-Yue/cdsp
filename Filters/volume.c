@@ -1,6 +1,10 @@
-#include "volume.h"
+#include "Filters/volume.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct volume_filter {
   char name[64];
@@ -22,10 +26,10 @@ struct volume_filter {
 typedef struct volume_filter volume_filter_t;
 
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "Utils/cdsp_time.h"
 
 /**
  * @brief Pre-calculates the gain values for the current step of a volume ramp.

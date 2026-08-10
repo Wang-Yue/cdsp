@@ -1,0 +1,1602 @@
+[
+  {
+    "symbol": [
+      "strcasecmp",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "strncasecmp",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "bcmp",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "bcopy",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "bzero",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "ffs",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_strings.*>",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<sys/_types/_strings.h>",
+      "private",
+      "<strings.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_string\\.h>",
+      "private",
+      "<string.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<sys/_types/_string.h>",
+      "private",
+      "<string.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_yield",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_param",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_setscheduler",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_getscheduler",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_get_priority_max",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sched_get_priority_min",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "SCHED_FIFO",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "SCHED_RR",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "SCHED_OTHER",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*sched.*>",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\"pthread/sched\\.h\"",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<pthread/sched\\.h>",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<bits/sched.h>",
+      "private",
+      "<sched.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_ctype.*>",
+      "private",
+      "<ctype.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_stdio.*>",
+      "private",
+      "<stdio.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_stdlib.*>",
+      "private",
+      "<stdlib.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_math.*>",
+      "private",
+      "<math.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*_time.*>",
+      "private",
+      "<time.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*stdint.*>",
+      "private",
+      "<stdint.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*inttypes.*>",
+      "private",
+      "<inttypes.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*stddef.*>",
+      "private",
+      "<stddef.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*float.*>",
+      "private",
+      "<float.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*limits.*>",
+      "private",
+      "<limits.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<sys/_types/.*>",
+      "private",
+      "<stdint.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<machine/.*>",
+      "private",
+      "<stdint.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<arm/.*>",
+      "private",
+      "<stdint.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<sys/unistd.h>",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<bits/unistd.*>",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<.*pthread.*>",
+      "private",
+      "<pthread.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\"pthread/.*\"",
+      "private",
+      "<pthread.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "usleep",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sleep",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "getpid",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "ssize_t",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "read",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "write",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "close",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "pipe",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "isatty",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "sysconf",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "access",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "unlink",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "getcwd",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "STDIN_FILENO",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "STDOUT_FILENO",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "STDERR_FILENO",
+      "private",
+      "<unistd.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "<MacTypes.h>",
+      "private",
+      "<CoreFoundation/CoreFoundation.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*MacTypes.*\"",
+      "private",
+      "<CoreFoundation/CoreFoundation.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*CoreFoundation\\.framework/Headers/.*\"",
+      "private",
+      "<CoreFoundation/CoreFoundation.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*AudioToolbox\\.framework/Headers/.*\"",
+      "private",
+      "<AudioToolbox/AudioToolbox.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*CoreAudio\\.framework/Headers/.*\"",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*CoreAudioTypes\\.framework/Headers/.*\"",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*vecLib\\.framework/Headers/.*\"",
+      "private",
+      "<Accelerate/Accelerate.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@\".*Accelerate\\.framework/Headers/.*\"",
+      "private",
+      "<Accelerate/Accelerate.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/arm/.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/machine/.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/task_info.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/thread_act.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/thread_policy.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/message.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/mach_port.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/mach_init.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "@<mach/kern_return.*>",
+      "private",
+      "<mach/mach.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "mach_timebase_info",
+      "private",
+      "<mach/mach_time.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "mach_timebase_info_data_t",
+      "private",
+      "<mach/mach_time.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "OSStatus",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "noErr",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "UInt32",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "Float32",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "Float64",
+      "private",
+      "<CoreAudio/CoreAudio.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "vDSP_.*",
+      "private",
+      "<Accelerate/Accelerate.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "catlas_.*",
+      "private",
+      "<Accelerate/Accelerate.h>",
+      "public"
+    ]
+  },
+  {
+    "symbol": [
+      "cblas_.*",
+      "private",
+      "<Accelerate/Accelerate.h>",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"alsa_capabilities.h\"",
+      "private",
+      "\"Backend/alsa_capabilities.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"alsa_capture.h\"",
+      "private",
+      "\"Backend/alsa_capture.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"alsa_device.h\"",
+      "private",
+      "\"Backend/alsa_device.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"alsa_playback.h\"",
+      "private",
+      "\"Backend/alsa_playback.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"app_logger.h\"",
+      "private",
+      "\"Logging/app_logger.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"arbitrary_complex_fft.h\"",
+      "private",
+      "\"FFT/arbitrary_complex_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"asio_backend.h\"",
+      "private",
+      "\"Backend/asio_backend.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"asio_capabilities.h\"",
+      "private",
+      "\"Backend/asio_capabilities.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"async_poly_resampler.h\"",
+      "private",
+      "\"Resampler/async_poly_resampler.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"async_sinc_resampler.h\"",
+      "private",
+      "\"Resampler/async_sinc_resampler.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_backend.h\"",
+      "private",
+      "\"Backend/audio_backend.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_backend_factory.h\"",
+      "private",
+      "\"Backend/audio_backend_factory.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_backend_registry.h\"",
+      "private",
+      "\"Backend/audio_backend_registry.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_buffers.h\"",
+      "private",
+      "\"Audio/audio_buffers.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_chunk.h\"",
+      "private",
+      "\"Audio/audio_chunk.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_history_buffer.h\"",
+      "private",
+      "\"Audio/audio_history_buffer.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_resampler.h\"",
+      "private",
+      "\"Resampler/audio_resampler.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"audio_sync_queue.h\"",
+      "private",
+      "\"Engine/audio_sync_queue.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"backend_error.h\"",
+      "private",
+      "\"Backend/backend_error.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"biquad.h\"",
+      "private",
+      "\"Filters/biquad.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"biquad_combo.h\"",
+      "private",
+      "\"Filters/biquad_combo.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"bluestein_fft.h\"",
+      "private",
+      "\"FFT/bluestein_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cJSON.h\"",
+      "private",
+      "\"Config/cJSON.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_export.h\"",
+      "private",
+      "\"Public/cdsp_export.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_path.h\"",
+      "private",
+      "\"Utils/cdsp_path.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_pub_types.h\"",
+      "private",
+      "\"Public/cdsp_pub_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_sem.h\"",
+      "private",
+      "\"Engine/cdsp_sem.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_time.h\"",
+      "private",
+      "\"Utils/cdsp_time.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"cdsp_yaml.h\"",
+      "private",
+      "\"Config/cdsp_yaml.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"clipper.h\"",
+      "private",
+      "\"Filters/clipper.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"complex_inner_real_fft.h\"",
+      "private",
+      "\"FFT/complex_inner_real_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"compressor_processor.h\"",
+      "private",
+      "\"Processors/compressor_processor.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config.h\"",
+      "private",
+      "\"Public/config.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_diff.h\"",
+      "private",
+      "\"Config/config_diff.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_error.h\"",
+      "private",
+      "\"Config/config_error.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_loader.h\"",
+      "private",
+      "\"Pipeline/config_loader.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_parse_devices.h\"",
+      "private",
+      "\"Config/config_parse_devices.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_parse_filters.h\"",
+      "private",
+      "\"Config/config_parse_filters.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_parse_mixers.h\"",
+      "private",
+      "\"Config/config_parse_mixers.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_parse_pipeline.h\"",
+      "private",
+      "\"Config/config_parse_pipeline.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"config_parser_internal.h\"",
+      "private",
+      "\"Config/config_parser_internal.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"configuration.h\"",
+      "private",
+      "\"Config/configuration.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"convolution.h\"",
+      "private",
+      "\"Filters/convolution.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"core_audio_capabilities.h\"",
+      "private",
+      "\"Backend/core_audio_capabilities.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"core_audio_capture.h\"",
+      "private",
+      "\"Backend/core_audio_capture.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"core_audio_device.h\"",
+      "private",
+      "\"Backend/core_audio_device.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"core_audio_playback.h\"",
+      "private",
+      "\"Backend/core_audio_playback.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"delay.h\"",
+      "private",
+      "\"Filters/delay.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"devices.h\"",
+      "private",
+      "\"Public/devices.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"diffeq.h\"",
+      "private",
+      "\"Filters/diffeq.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dither.h\"",
+      "private",
+      "\"Filters/dither.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dop_decoder.h\"",
+      "private",
+      "\"DoP/dop_decoder.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"double_helpers.h\"",
+      "private",
+      "\"Utils/double_helpers.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dsd_encoder.h\"",
+      "private",
+      "\"DoP/dsd_encoder.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dsp_engine.h\"",
+      "private",
+      "\"Engine/dsp_engine.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dsp_session.h\"",
+      "private",
+      "\"Engine/dsp_session.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"dsp_session_internal.h\"",
+      "private",
+      "\"Engine/dsp_session_internal.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_capture_loop.h\"",
+      "private",
+      "\"Engine/engine_capture_loop.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_config_types.h\"",
+      "private",
+      "\"Config/engine_config_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_playback_loop.h\"",
+      "private",
+      "\"Engine/engine_playback_loop.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_processing_loop.h\"",
+      "private",
+      "\"Engine/engine_processing_loop.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_session_builder.h\"",
+      "private",
+      "\"Engine/engine_session_builder.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_shared_state.h\"",
+      "private",
+      "\"Engine/engine_shared_state.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"engine_state_manager.h\"",
+      "private",
+      "\"Engine/engine_state_manager.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"file_backend.h\"",
+      "private",
+      "\"Backend/file_backend.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"filter.h\"",
+      "private",
+      "\"Filters/filter.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"filter_config_types.h\"",
+      "private",
+      "\"Config/filter_config_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"filter_error.h\"",
+      "private",
+      "\"Filters/filter_error.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"float_helpers.h\"",
+      "private",
+      "\"Utils/float_helpers.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"gain.h\"",
+      "private",
+      "\"Filters/gain.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"general.h\"",
+      "private",
+      "\"Public/general.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"generator_capture.h\"",
+      "private",
+      "\"Backend/generator_capture.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"lock_free_ring_buffer.h\"",
+      "private",
+      "\"Utils/lock_free_ring_buffer.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"log_level.h\"",
+      "private",
+      "\"Config/log_level.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"lookahead_limiter.h\"",
+      "private",
+      "\"Filters/lookahead_limiter.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"lookahead_limiter_processor.h\"",
+      "private",
+      "\"Processors/lookahead_limiter_processor.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"loudness.h\"",
+      "private",
+      "\"Filters/loudness.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"mixed_radix_fft.h\"",
+      "private",
+      "\"FFT/mixed_radix_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"mixer.h\"",
+      "private",
+      "\"Mixer/mixer.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"mixer_config_types.h\"",
+      "private",
+      "\"Config/mixer_config_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"noise_gate_processor.h\"",
+      "private",
+      "\"Processors/noise_gate_processor.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"pipeline.h\"",
+      "private",
+      "\"Pipeline/pipeline.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"pipewire_backend.h\"",
+      "private",
+      "\"Backend/pipewire_backend.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"processing.h\"",
+      "private",
+      "\"Public/processing.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"processing_parameters.h\"",
+      "private",
+      "\"Audio/processing_parameters.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"processor.h\"",
+      "private",
+      "\"Processors/processor.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"processor_config_types.h\"",
+      "private",
+      "\"Config/processor_config_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"race_processor.h\"",
+      "private",
+      "\"Processors/race_processor.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"rate_controller.h\"",
+      "private",
+      "\"Engine/rate_controller.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"real_fft.h\"",
+      "private",
+      "\"FFT/real_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"resampler_config_types.h\"",
+      "private",
+      "\"Config/resampler_config_types.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"resampler_error.h\"",
+      "private",
+      "\"Resampler/resampler_error.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"sample_conversion.h\"",
+      "private",
+      "\"Audio/sample_conversion.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"sample_rate_watcher.h\"",
+      "private",
+      "\"Engine/sample_rate_watcher.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"sigma_delta_modulator.h\"",
+      "private",
+      "\"DoP/sigma_delta_modulator.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"signal_levels.h\"",
+      "private",
+      "\"Public/signal_levels.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"silence_counter.h\"",
+      "private",
+      "\"Audio/silence_counter.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"sinc_dot_product.h\"",
+      "private",
+      "\"Resampler/sinc_dot_product.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"sinc_window_function.h\"",
+      "private",
+      "\"Resampler/sinc_window_function.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"slip_resampler.h\"",
+      "private",
+      "\"Resampler/slip_resampler.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"spectrum.h\"",
+      "private",
+      "\"Public/spectrum.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"spectrum_analyzer.h\"",
+      "private",
+      "\"Audio/spectrum_analyzer.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"state.h\"",
+      "private",
+      "\"Public/state.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"state_file.h\"",
+      "private",
+      "\"Pipeline/state_file.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"synchronous_resampler.h\"",
+      "private",
+      "\"Resampler/synchronous_resampler.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"thread_priority.h\"",
+      "private",
+      "\"Engine/thread_priority.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"vdsp_complex_dft.h\"",
+      "private",
+      "\"FFT/vdsp_complex_dft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"vdsp_real_fft.h\"",
+      "private",
+      "\"FFT/vdsp_real_fft.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"wasapi_capabilities.h\"",
+      "private",
+      "\"Backend/wasapi_capabilities.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"wasapi_capture.h\"",
+      "private",
+      "\"Backend/wasapi_capture.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"wasapi_device.h\"",
+      "private",
+      "\"Backend/wasapi_device.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"wasapi_playback.h\"",
+      "private",
+      "\"Backend/wasapi_playback.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"websocket_server.h\"",
+      "private",
+      "\"Server/websocket_server.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"websocket_server_internal.h\"",
+      "private",
+      "\"Server/websocket_server_internal.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"ws_framing.h\"",
+      "private",
+      "\"Server/ws_framing.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"ws_handshake.h\"",
+      "private",
+      "\"Server/ws_handshake.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
+      "\"ws_rpc_dispatcher.h\"",
+      "private",
+      "\"Server/ws_rpc_dispatcher.h\"",
+      "public"
+    ]
+  }
+]

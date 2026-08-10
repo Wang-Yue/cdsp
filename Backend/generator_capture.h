@@ -6,7 +6,7 @@
 #ifndef CLIB_BACKEND_GENERATOR_CAPTURE_H
 #define CLIB_BACKEND_GENERATOR_CAPTURE_H
 
-#include "audio_backend.h"
+#include "Backend/audio_backend.h"
 
 /**
  * @brief Opaque structure representing the generator capture backend.

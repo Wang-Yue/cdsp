@@ -17,6 +17,7 @@ typedef struct gain_filter gain_filter_t;
 double gain_filter_process_single(gain_filter_t* filter, double sample);
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_gain_vtable;
 
 #endif  // CLIB_FILTERS_GAIN_H

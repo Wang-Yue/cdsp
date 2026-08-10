@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config/log_level.h"
 #include "Engine/cdsp_sem.h"
 
 struct app_logger_s {

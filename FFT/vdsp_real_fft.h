@@ -14,8 +14,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "FFT/real_fft.h"
 #include "Utils/double_helpers.h"
-#include "real_fft.h"
 
 #if defined(ENABLE_ACCELERATE)
 /**

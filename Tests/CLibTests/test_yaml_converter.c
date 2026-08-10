@@ -1,9 +1,10 @@
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "Config/cJSON.h"
 #include "Config/cdsp_yaml.h"
+#include "Public/cdsp_pub_types.h"
 #include "Public/config.h"
 #include "Public/general.h"
 #include "test_support.h"

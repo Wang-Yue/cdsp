@@ -7,16 +7,21 @@
 // Memory: every internal buffer is sized at init based on `chunkSize` and
 // `maxRelativeRatio`. There is **no** dynamic allocation on the hot path.
 
-#include "async_sinc_resampler.h"
+#include "Resampler/async_sinc_resampler.h"
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <strings.h>
 
+#include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
 #include "Logging/app_logger.h"
-#include "audio_resampler.h"
-#include "resampler_error.h"
-#include "sinc_dot_product.h"
+#include "Resampler/audio_resampler.h"
+#include "Resampler/resampler_error.h"
+#include "Resampler/sinc_dot_product.h"
 
 static const logger_t g_logger = {"dsp.resampler.async_sinc"};
 
@@ -40,7 +45,7 @@ static sinc_interpolation_type_t sinc_interpolation_type_from_string(
 
 typedef struct async_sinc_resampler async_sinc_resampler_t;
 
-#include "sinc_window_function.h"
+#include "Resampler/sinc_window_function.h"
 
 static void* async_sinc_resampler_create_impl(
     size_t channels, size_t input_rate, size_t output_rate, size_t sinc_len,
@@ -94,7 +99,6 @@ struct async_sinc_resampler {
 
 #include <math.h>
 #include <stdlib.h>
-#include <string.h>
 
 static inline size_t calculate_input_size(
     size_t chunk_size, double resample_ratio, double target_ratio,

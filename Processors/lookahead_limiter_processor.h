@@ -7,6 +7,7 @@
  */
 
 struct processor_vtable;
+
 extern const struct processor_vtable g_lookahead_limiter_processor_vtable;
 
 #endif  // CLIB_PROCESSORS_LOOKAHEAD_LIMITER_PROCESSOR_H

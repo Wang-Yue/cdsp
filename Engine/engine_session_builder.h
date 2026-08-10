@@ -1,6 +1,9 @@
 #ifndef CDSP_ENGINE_SESSION_BUILDER_H
 #define CDSP_ENGINE_SESSION_BUILDER_H
 
+#include "Audio/audio_chunk.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
 #include "Engine/dsp_session.h"
 
 /**

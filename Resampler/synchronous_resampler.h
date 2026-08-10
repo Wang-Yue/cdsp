@@ -84,6 +84,7 @@
  */
 
 struct resampler_vtable;
+
 extern const struct resampler_vtable g_synchronous_resampler_vtable;
 
 #endif  // CLIB_RESAMPLER_SYNCHRONOUS_RESAMPLER_H

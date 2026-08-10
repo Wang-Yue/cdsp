@@ -1,10 +1,11 @@
 #include "Audio/spectrum_analyzer.h"
 
 #include <math.h>
+#include <stdbool.h>
 
+#include "Audio/audio_history_buffer.h"
 #include "FFT/real_fft.h"
 #include "Utils/float_helpers.h"
-#include "Utils/lock_free_ring_buffer.h"
 
 typedef struct {
   int low_k;
@@ -41,7 +42,6 @@ struct spectrum_analyzer {
   size_t out_capacity;
 };
 #include <stdlib.h>
-#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

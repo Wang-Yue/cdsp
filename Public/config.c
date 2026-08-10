@@ -7,9 +7,12 @@
 
 #include "Config/cJSON.h"
 #include "Config/cdsp_yaml.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "Pipeline/config_loader.h"
+#include "Public/cdsp_pub_types.h"
 #include "Utils/cdsp_path.h"
 
 // Static utility to read file into string

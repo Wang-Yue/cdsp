@@ -1,8 +1,9 @@
-#include "audio_backend_factory.h"
+#include "Backend/audio_backend_factory.h"
 
 #include <stdio.h>
-#include <string.h>
 
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.backend.factory"};

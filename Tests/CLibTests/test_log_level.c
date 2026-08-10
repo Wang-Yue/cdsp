@@ -1,6 +1,5 @@
+#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "Config/log_level.h"
 #include "test_support.h"

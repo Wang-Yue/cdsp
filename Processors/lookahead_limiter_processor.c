@@ -1,16 +1,20 @@
-#include "lookahead_limiter_processor.h"
+#include "Processors/lookahead_limiter_processor.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/delay.h"
 #include "Filters/filter.h"
 #include "Filters/lookahead_limiter.h"
 #include "Logging/app_logger.h"
-#include "Utils/double_helpers.h"
-#include "processor.h"
+#include "Processors/processor.h"
 
 static const logger_t g_logger = {"lookahead_limiter_processor"};
 

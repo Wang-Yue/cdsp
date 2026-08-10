@@ -9,6 +9,7 @@
 #include "Config/filter_config_types.h"
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_clipper_vtable;
 
 #endif  // CLIB_FILTERS_CLIPPER_H

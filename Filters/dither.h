@@ -7,6 +7,7 @@
  */
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_dither_vtable;
 
 #endif  // CLIB_FILTERS_DITHER_H

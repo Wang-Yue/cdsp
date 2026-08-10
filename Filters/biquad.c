@@ -1,6 +1,10 @@
-#include "biquad.h"
+#include "Filters/biquad.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
@@ -49,6 +53,7 @@ struct biquad_filter {
 typedef struct biquad_filter biquad_filter_t;
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 

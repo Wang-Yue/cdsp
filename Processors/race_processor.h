@@ -51,6 +51,7 @@
  */
 
 struct processor_vtable;
+
 extern const struct processor_vtable g_race_vtable;
 
 #endif  // CLIB_PROCESSORS_RACE_PROCESSOR_H

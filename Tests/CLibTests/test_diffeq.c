@@ -1,5 +1,9 @@
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
 #include "Filters/diffeq.h"
 #include "Filters/filter.h"
 #include "test_support.h"

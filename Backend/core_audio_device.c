@@ -4,17 +4,16 @@
 // `AudioObjectGetPropertyData` and friends in one place so the two
 // backends don't carry near-identical copies of every enumeration helper.
 
-#include "core_audio_device.h"
+#include "Backend/core_audio_device.h"
 
-#include "Utils/cdsp_time.h"
 #if defined(ENABLE_COREAUDIO)
 #include <CoreFoundation/CoreFoundation.h>
 #include <math.h>
 #include <stdatomic.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+
+#include "Utils/cdsp_time.h"
 
 // MARK: - Enumeration
 

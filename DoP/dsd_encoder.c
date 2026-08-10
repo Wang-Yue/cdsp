@@ -21,12 +21,16 @@
 // the polyphase coefficient table is shared across channels and built
 // once at init.
 
-#include "dsd_encoder.h"
+#include "DoP/dsd_encoder.h"
 
-#include "Engine/thread_priority.h"
+#include "Audio/audio_chunk.h"
+#include "Config/engine_config_types.h"
 
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+
+#include "Engine/thread_priority.h"
+
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0
@@ -36,15 +40,13 @@
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.dsd.encoder"};
-#include "sigma_delta_modulator.h"
+#include "DoP/sigma_delta_modulator.h"
 #if defined(ENABLE_BLAS)
 #include <cblas.h>
 #elif defined(ENABLE_ACCELERATE)
-#include <Accelerate/Accelerate.h>
 #endif
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 /**
  * @brief State for a single DSD encoder channel.
@@ -89,17 +91,11 @@ struct dsd_encoder {
 };
 
 #include <math.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "Utils/double_helpers.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
-#endif
-
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
 #endif
 
 #define DSD_ENC_REAL_TAPS 511
@@ -236,7 +232,10 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
   if (multithreaded && channels >= 2) {
     enc->use_multithreading = true;
   }
+#else
+  (void)multithreaded;
 #endif
+
   enc->coeffs = build_coeffs(sample_rate, dsd_bit_depth, cutoff_hz);
   if (!enc->coeffs) {
     logger_error(&g_logger,
@@ -465,15 +464,17 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
 
   if (encoder->use_multithreading) {
-    int total_tasks = chs;
 #if HAS_DISPATCH
+    int total_tasks = chs;
     dsd_encoder_dispatch_ctx_t dctx = {encoder, chunk, n};
     dispatch_queue_t queue =
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
     return;
 #elif defined(USE_OPENMP)
+    int total_tasks = chs;
 #pragma omp parallel num_threads(total_tasks)
+
     {
       static _Thread_local bool is_promoted = false;
       if (!is_promoted) {

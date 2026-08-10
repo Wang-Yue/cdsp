@@ -1,3 +1,6 @@
+#include <stdbool.h>
+
+#include "Config/log_level.h"
 #include "Logging/app_logger.h"
 #include "test_support.h"
 

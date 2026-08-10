@@ -1,18 +1,25 @@
 #include "Engine/dsp_engine.h"
 
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
+#include "Audio/audio_chunk.h"
 #include "Audio/audio_history_buffer.h"
+#include "Audio/processing_parameters.h"
+#include "Audio/spectrum_analyzer.h"
 #include "Backend/audio_backend_registry.h"
 #include "Config/config_diff.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/log_level.h"
 #include "Engine/dsp_session.h"
 #include "Engine/engine_state_manager.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/config_loader.h"
-#include "Pipeline/state_file.h"
 
 // Ref: engine_state_management.md - Section 1.3: Controller Level
 // (dsp_engine_t) & Section 1.6: Mutex Isolation (state_mutex as Level 1

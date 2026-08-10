@@ -2,8 +2,14 @@
 // vector scope.
 #include "Audio/audio_history_buffer.h"
 
+#include <stdint.h>
 #include <stdlib.h>
+#ifdef ENABLE_ACCELERATE
+#include <Accelerate/Accelerate.h>
+#endif
 
+#include "Audio/audio_chunk.h"
+#include "Utils/double_helpers.h"
 #include "Utils/lock_free_ring_buffer.h"
 
 struct audio_history_buffer {
@@ -15,11 +21,6 @@ size_t audio_history_buffer_get_channels(
     const audio_history_buffer_t* history) {
   return history ? history->channels : 0;
 }
-#include <string.h>
-
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 
 audio_history_buffer_t* audio_history_buffer_create(void) {
   audio_history_buffer_t* history =

@@ -1,8 +1,9 @@
-#include "sigma_delta_modulator.h"
+#include "DoP/sigma_delta_modulator.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "Config/engine_config_types.h"
 
 typedef struct {
   float a[8];

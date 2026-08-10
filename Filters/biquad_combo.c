@@ -1,9 +1,14 @@
-#include "biquad_combo.h"
+#include "Filters/biquad_combo.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 
-#include "biquad.h"
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/biquad.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct biquad_combo_filter {
   char name[64];

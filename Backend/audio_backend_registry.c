@@ -1,21 +1,21 @@
-#include "audio_backend_registry.h"
+#include "Backend/audio_backend_registry.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
+#include "Config/engine_config_types.h"
+
 #if defined(ENABLE_COREAUDIO)
-#include "core_audio_capabilities.h"
+#include "Backend/core_audio_capabilities.h"
 #endif
 #if defined(ENABLE_ALSA)
-#include "alsa_capabilities.h"
+#include "Backend/alsa_capabilities.h"
 #endif
 #if defined(ENABLE_WASAPI)
-#include "wasapi_capabilities.h"
+#include "Backend/wasapi_capabilities.h"
 #endif
 #if defined(ENABLE_ASIO)
-#include "asio_capabilities.h"
+#include "Backend/asio_capabilities.h"
 #endif
 
 int audio_backend_registry_get_available_devices(const char* backend,

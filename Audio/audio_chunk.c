@@ -1,10 +1,16 @@
 // Non-interleaved float buffers, one vector per channel.
-#include "audio_chunk.h"
+#include "Audio/audio_chunk.h"
 
+#ifdef ENABLE_ACCELERATE
+#include <Accelerate/Accelerate.h>
+#endif
 #include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/audio_buffers.h"
 #include "Utils/double_helpers.h"
 
 struct audio_chunk {

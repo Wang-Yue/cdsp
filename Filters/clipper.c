@@ -1,6 +1,10 @@
-#include "clipper.h"
+#include "Filters/clipper.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct clipper_filter {
   char name[64];
@@ -11,6 +15,7 @@ struct clipper_filter {
 typedef struct clipper_filter clipper_filter_t;
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 

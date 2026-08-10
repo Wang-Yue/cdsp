@@ -33,15 +33,30 @@
 #include <windows.h>
 #endif
 
-#include <stdio.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Backend/audio_backend.h"
 #include "Config/config_diff.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+#include "DoP/dop_decoder.h"
+#include "DoP/dsd_encoder.h"
 #include "Engine/dsp_session_internal.h"
+#include "Engine/engine_capture_loop.h"
+#include "Engine/engine_playback_loop.h"
+#include "Engine/engine_processing_loop.h"
 #include "Engine/engine_session_builder.h"
+#include "Engine/engine_shared_state.h"
 #include "Logging/app_logger.h"
+#include "Pipeline/pipeline.h"
+#include "Resampler/audio_resampler.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.session"};
 

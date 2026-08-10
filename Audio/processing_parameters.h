@@ -15,6 +15,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "Audio/audio_chunk.h"
 #include "Utils/double_helpers.h"

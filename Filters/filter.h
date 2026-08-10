@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
 #include "Config/filter_config_types.h"
 #include "Utils/double_helpers.h"
 

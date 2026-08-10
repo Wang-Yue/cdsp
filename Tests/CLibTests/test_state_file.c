@@ -1,5 +1,5 @@
+#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
 #include "Pipeline/state_file.h"

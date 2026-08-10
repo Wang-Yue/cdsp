@@ -32,6 +32,9 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "Utils/double_helpers.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

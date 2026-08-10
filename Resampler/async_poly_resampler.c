@@ -10,14 +10,19 @@
 // Memory: every internal buffer is sized at init based on `chunkSize` and
 // `maxRelativeRatio`. There is **no** dynamic allocation on the hot path.
 
-#include "async_poly_resampler.h"
+#include "Resampler/async_poly_resampler.h"
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <strings.h>
 
+#include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"
-#include "audio_resampler.h"
-#include "resampler_error.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
+#include "Resampler/audio_resampler.h"
+#include "Resampler/resampler_error.h"
 
 typedef enum {
   POLY_INTERPOLATION_LINEAR = 0,
@@ -88,7 +93,6 @@ struct async_poly_resampler {
 
 #include <math.h>
 #include <stdlib.h>
-#include <string.h>
 
 static inline size_t calculate_input_size(
     size_t chunk_size, double resample_ratio, double target_ratio,

@@ -9,6 +9,8 @@
 #include <Accelerate/Accelerate.h>
 #include <stdlib.h>
 
+#include "Utils/double_helpers.h"
+
 struct vdsp_complex_dft {
   arbitrary_complex_fft_t base;
   vDSP_DFT_SetupD setup_forward;

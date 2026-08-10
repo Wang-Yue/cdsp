@@ -1,6 +1,10 @@
-#include "diffeq.h"
+#include "Filters/diffeq.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct diffeq_filter {
   char name[64];

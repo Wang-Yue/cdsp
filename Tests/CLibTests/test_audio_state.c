@@ -1,4 +1,6 @@
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"

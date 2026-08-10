@@ -1,14 +1,14 @@
-#include "config_parse_mixers.h"
+#include "Config/config_parse_mixers.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
-#include "Logging/app_logger.h"
-#include "cJSON.h"
-#include "config_parser_internal.h"
-#include "configuration.h"
+#include "Config/cJSON.h"
+#include "Config/config_parser_internal.h"
+#include "Config/configuration.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
 
 int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                         config_error_t* err) {

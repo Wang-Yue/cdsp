@@ -1,9 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "Backend/audio_backend_registry.h"
 #include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "test_support.h"
 
 TEST(BackendErrorInitializationAndDescription) {

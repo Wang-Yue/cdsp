@@ -24,16 +24,23 @@
 //     `adjustPeriod` (~10 s default), so its formatting cost is
 //     negligible per chunk.
 
-#include "engine_playback_loop.h"
+#include "Engine/engine_playback_loop.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "DoP/dsd_encoder.h"
+#include "Engine/rate_controller.h"
+#include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
-#include "thread_priority.h"
 
 static const logger_t g_logger = {"dsp.playback"};
 

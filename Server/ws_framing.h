@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "websocket_server_internal.h"
+#include "Server/websocket_server_internal.h"
 
 /**
  * @brief Parses a WebSocket frame from a buffer.

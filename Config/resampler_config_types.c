@@ -1,7 +1,8 @@
-#include "resampler_config_types.h"
+#include "Config/resampler_config_types.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 // Standalone resampler configuration types.
 
@@ -43,8 +44,6 @@ const char* resampler_profile_to_string(resampler_profile_t profile) {
       return "Balanced";
   }
 }
-
-#include <strings.h>
 
 resampler_profile_t resampler_profile_from_string(const char* str) {
   if (!str) return RESAMPLER_PROFILE_BALANCED;

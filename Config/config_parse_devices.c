@@ -1,15 +1,15 @@
-#include "config_parse_devices.h"
+#include "Config/config_parse_devices.h"
 
-#include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
-#include "Logging/app_logger.h"
-#include "cJSON.h"
-#include "config_parser_internal.h"
-#include "configuration.h"
+#include "Config/cJSON.h"
+#include "Config/config_parser_internal.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/resampler_config_types.h"
 
 static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (!cJSON_IsObject(res_obj)) return;

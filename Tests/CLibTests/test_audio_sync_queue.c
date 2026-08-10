@@ -1,8 +1,8 @@
+#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "Engine/audio_sync_queue.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"
 
 TEST(AudioSyncQueueBasicEnqueueDequeue) {

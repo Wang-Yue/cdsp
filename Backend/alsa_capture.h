@@ -12,7 +12,7 @@
 
 #if defined(ENABLE_ALSA)
 
-#include "audio_backend.h"
+#include "Backend/audio_backend.h"
 
 /**
  * @brief Opaque structure representing the ALSA capture backend instance.

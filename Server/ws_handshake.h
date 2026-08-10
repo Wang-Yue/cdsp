@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "websocket_server_internal.h"
+#include "Server/websocket_server_internal.h"
 
 /**
  * @brief Checks if a request is a WebSocket upgrade request and handles it.

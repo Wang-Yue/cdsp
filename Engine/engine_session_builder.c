@@ -1,10 +1,12 @@
-#include "engine_session_builder.h"
+#include "Engine/engine_session_builder.h"
 
 #ifdef _WIN32
 #include <mmsystem.h>
 #include <windows.h>
 #endif
 
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,17 +15,19 @@
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Backend/audio_backend_factory.h"
-#include "Config/config_diff.h"
+#include "Config/config_error.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dsd_encoder.h"
+#include "Engine/dsp_session.h"
+#include "Engine/dsp_session_internal.h"
+#include "Engine/engine_capture_loop.h"
+#include "Engine/engine_playback_loop.h"
+#include "Engine/engine_processing_loop.h"
+#include "Engine/engine_shared_state.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
-#include "dsp_session_internal.h"
-#include "engine_capture_loop.h"
-#include "engine_playback_loop.h"
-#include "engine_processing_loop.h"
-#include "engine_shared_state.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.session.builder"};
 

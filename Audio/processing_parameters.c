@@ -4,10 +4,12 @@
 // bool`) — no mutexes or locks.
 #include "Audio/processing_parameters.h"
 
+#include <stdatomic.h>
 #include <stdlib.h>
-#include <string.h>
 
-#include "Utils/cdsp_time.h"
+#include "Audio/audio_chunk.h"
+#include "Utils/double_helpers.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 struct processing_parameters {
   /** Target volume (dB) for fader 0-4. UI thread writes; audio thread reads. */

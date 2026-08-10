@@ -10,11 +10,14 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "Audio/spectrum_analyzer.h"
 #include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
 #include "Config/log_level.h"
 
 /**

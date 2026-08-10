@@ -1,17 +1,20 @@
-#include "generator_capture.h"
+#include "Backend/generator_capture.h"
 
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
+#include "Audio/audio_chunk.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.generator"};
-#include <stdatomic.h>
 
 #ifdef CDSP_TEST
+#include <stdatomic.h>
 _Atomic bool g_generator_mock_hang = false;
 #endif
 

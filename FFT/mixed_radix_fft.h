@@ -38,8 +38,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "FFT/arbitrary_complex_fft.h"
 #include "Utils/double_helpers.h"
-#include "arbitrary_complex_fft.h"
 
 /**
  * @struct mixed_radix_fft

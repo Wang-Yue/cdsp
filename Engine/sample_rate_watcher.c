@@ -1,5 +1,6 @@
-#include "sample_rate_watcher.h"
+#include "Engine/sample_rate_watcher.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 #include "Logging/app_logger.h"

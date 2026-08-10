@@ -1,7 +1,8 @@
+#include "Backend/wasapi_capabilities.h"
+
 #if defined(ENABLE_WASAPI)
 
 #define WIN32_LEAN_AND_MEAN
-#include "wasapi_capabilities.h"
 
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
@@ -12,8 +13,8 @@
 #include <string.h>
 #include <windows.h>
 
+#include "Backend/wasapi_device.h"
 #include "Logging/app_logger.h"
-#include "wasapi_device.h"
 
 #define SAFE_RELEASE(punk)         \
   if ((punk) != NULL) {            \

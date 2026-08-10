@@ -1,6 +1,10 @@
 #include <math.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/clipper.h"
 #include "Filters/filter.h"
 #include "Filters/lookahead_limiter.h"

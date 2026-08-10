@@ -4,18 +4,19 @@
 //   * AsyncSincResampler   — Asynchronous windowed-sinc resampler.
 //   * AsyncPolyResampler   — Asynchronous polynomial resampler.
 
-#include "audio_resampler.h"
+#include "Resampler/audio_resampler.h"
 
+#include "Audio/audio_chunk.h"
+#include "Config/resampler_config_types.h"
 #include "Logging/app_logger.h"
-#include "async_poly_resampler.h"
-#include "async_sinc_resampler.h"
-#include "slip_resampler.h"
-#include "synchronous_resampler.h"
+#include "Resampler/async_poly_resampler.h"
+#include "Resampler/async_sinc_resampler.h"
+#include "Resampler/slip_resampler.h"
+#include "Resampler/synchronous_resampler.h"
 
 static const logger_t g_logger = {"dsp.resampler"};
 
 #include <stdlib.h>
-#include <string.h>
 
 static const resampler_vtable_t* resampler_vtable_from_type(
     resampler_type_t type) {

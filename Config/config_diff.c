@@ -1,4 +1,12 @@
-#include "config_diff.h"
+#include "Config/config_diff.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/processor_config_types.h"
+#include "Config/resampler_config_types.h"
 
 struct config_change {
   config_change_type_t type;
@@ -9,9 +17,6 @@ struct config_change {
   char** processors;
   size_t processors_count;
 };
-
-#include <stdlib.h>
-#include <string.h>
 
 static bool safe_streq(const char* s1, const char* s2) {
   if (s1 == s2) return true;

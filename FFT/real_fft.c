@@ -1,9 +1,10 @@
 #include "FFT/real_fft.h"
 
 #include <stdlib.h>
-#include <string.h>
 
+#include "Config/config_error.h"
 #include "Logging/app_logger.h"
+#include "Utils/double_helpers.h"
 
 __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
@@ -77,6 +78,7 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
 //   - https://www.dsprelated.com/showarticle/4.php (Real FFT from complex FFT)
 //   - https://en.wikipedia.org/wiki/Fast_Fourier_transform#Real-input_FFTs
 
+#include "FFT/arbitrary_complex_fft.h"
 #include "FFT/bluestein_fft.h"
 #include "FFT/complex_inner_real_fft.h"
 #include "FFT/mixed_radix_fft.h"
@@ -187,8 +189,9 @@ real_fftf_t* real_fftf_create(size_t length) {
 
 #elif defined(ENABLE_FFTW)
 
-#include <complex.h>
+#include <complex.h>  // IWYU pragma: keep
 #include <fftw3.h>
+#include <string.h>
 
 struct fftw_real_fft_ctx {
   real_fft_backend_t base;

@@ -1,10 +1,13 @@
 // Heap-allocated, contiguous per-channel audio storage.
 //
 // Replaces nested array/pointer-to-pointer ("array of arrays") chunk storage.
-#include "audio_buffers.h"
+#include "Audio/audio_buffers.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "Utils/double_helpers.h"
 
 struct audio_buffers {
   size_t channels;

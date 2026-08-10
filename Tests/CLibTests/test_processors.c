@@ -1,12 +1,13 @@
 #include <math.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/filter.h"
 #include "Filters/lookahead_limiter.h"
-#include "Processors/compressor_processor.h"
-#include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
-#include "Processors/race_processor.h"
 #include "test_support.h"
 
 static bool is_close(double left, double right, double maxdiff) {

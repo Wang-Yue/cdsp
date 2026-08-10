@@ -1,6 +1,9 @@
-#include "audio_sync_queue.h"
+#include "Engine/audio_sync_queue.h"
 
+#include <stdatomic.h>
 #include <stdlib.h>
+
+#include "Utils/lock_free_ring_buffer.h"
 
 struct audio_sync_queue {
   spsc_queue_t* queue;

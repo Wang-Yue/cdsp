@@ -19,13 +19,17 @@
  *   5. Optionally applies post-compression limiter filter.
  */
 
-#include "compressor_processor.h"
+#include "Processors/compressor_processor.h"
 
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/clipper.h"
 #include "Filters/filter.h"
 #include "Logging/app_logger.h"
+#include "Processors/processor.h"
 #include "Utils/double_helpers.h"
-#include "processor.h"
 
 static const logger_t g_logger = {"compressor_processor"};
 
@@ -67,12 +71,9 @@ static const char* compressor_processor_get_name(const void* impl) {
 }
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 
 /**
  * @brief Validates dynamic range compressor processor parameters.

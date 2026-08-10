@@ -16,8 +16,9 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
 #include "Config/resampler_config_types.h"
-#include "resampler_error.h"
+#include "Resampler/resampler_error.h"
 
 /**
  * @brief Identifiers for the underlying resampler implementations.

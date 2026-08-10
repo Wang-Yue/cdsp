@@ -1,6 +1,5 @@
-#include "processor_config_types.h"
+#include "Config/processor_config_types.h"
 
-#include <stdio.h>
 #include <string.h>
 
 const char* processor_type_to_string(processor_type_t type) {

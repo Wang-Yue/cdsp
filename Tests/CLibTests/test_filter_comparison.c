@@ -7,12 +7,18 @@
 #endif
 #endif
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/clipper.h"
@@ -26,12 +32,7 @@
 #include "Filters/loudness.h"
 #include "Filters/volume.h"
 #include "Mixer/mixer.h"
-#include "Processors/compressor_processor.h"
-#include "Processors/lookahead_limiter_processor.h"
-#include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
-#include "Processors/race_processor.h"
-#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI

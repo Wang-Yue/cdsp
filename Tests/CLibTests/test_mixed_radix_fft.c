@@ -1,6 +1,9 @@
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "FFT/mixed_radix_fft.h"
 #include "test_support.h"

@@ -28,14 +28,19 @@
 // queued items, and the consumer drains until empty before waiting
 // again.
 
-#include "engine_shared_state.h"
+#include "Engine/engine_shared_state.h"
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/engine_config_types.h"
+#include "Engine/audio_sync_queue.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.engine.state"};
 

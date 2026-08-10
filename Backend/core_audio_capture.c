@@ -12,24 +12,29 @@
 //     preallocated in `open()` and reused for the lifetime of the unit;
 //     the render callback only fills the existing struct.
 
-#include "core_audio_capture.h"
+#include "Backend/core_audio_capture.h"
+
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
 #endif
-#include <dispatch/dispatch.h>
-#include <stdatomic.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
+#include "Audio/audio_chunk.h"
+#include "Backend/backend_error.h"
+#include "Backend/core_audio_device.h"
+#include "Config/engine_config_types.h"
 #include "Engine/cdsp_sem.h"
 #include "Logging/app_logger.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include "core_audio_device.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 

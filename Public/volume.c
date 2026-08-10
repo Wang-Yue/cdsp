@@ -1,6 +1,8 @@
 #include "Public/volume.h"
 
+#include "Config/filter_config_types.h"
 #include "Engine/dsp_engine.h"
+#include "Public/cdsp_pub_types.h"
 
 float cdsp_get_volume(const dsp_engine_t* engine) {
   return engine && engine->get_fader_volume

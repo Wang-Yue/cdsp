@@ -4,7 +4,9 @@
 #include <string.h>
 
 #include "Config/cJSON.h"
+#include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
+#include "Public/cdsp_pub_types.h"
 
 bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   if (!engine || !out_vu || !engine->get_vu_levels) return false;

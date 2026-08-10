@@ -1,7 +1,14 @@
 #include <math.h>
-#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
 #include "Mixer/mixer.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 static audio_chunk_t* make_constant_chunk(size_t frames, size_t channels,

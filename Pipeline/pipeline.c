@@ -1,11 +1,18 @@
 #include "Pipeline/pipeline.h"
 
-#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "Audio/audio_buffers.h"
-#include "Engine/thread_priority.h"
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
@@ -32,6 +39,9 @@ const char* pipeline_error_description(pipeline_error_t err) {
 
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+
+#include "Engine/thread_priority.h"
+
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0

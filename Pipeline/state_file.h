@@ -12,6 +12,7 @@
 #include <stdbool.h>
 
 struct dsp_state_s;
+
 /**
  * @brief Opaque structure representing the DSP state.
  */

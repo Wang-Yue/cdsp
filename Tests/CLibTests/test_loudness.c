@@ -1,12 +1,11 @@
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
 #include "Config/filter_config_types.h"
 #include "Filters/filter.h"
-#include "Filters/loudness.h"
 #include "test_support.h"
 
 TEST(LoudnessFilterBasic) {

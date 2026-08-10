@@ -10,8 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config_error.h"
-#include "resampler_config_types.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
 
 /**
  * @brief Engine processing state.

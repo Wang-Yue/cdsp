@@ -29,6 +29,7 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
 const char* biquad_filter_get_name(const biquad_filter_t* filter);
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_biquad_vtable;
 
 #endif  // CLIB_FILTERS_BIQUAD_H

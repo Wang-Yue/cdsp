@@ -31,7 +31,7 @@
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "DoP/dop_decoder.h"
-#include "engine_shared_state.h"
+#include "Engine/engine_shared_state.h"
 
 /**
  * @brief Opaque structure representing the capture loop.

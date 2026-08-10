@@ -8,6 +8,7 @@
  */
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_biquad_combo_vtable;
 
 #endif  // CLIB_FILTERS_BIQUAD_COMBO_H

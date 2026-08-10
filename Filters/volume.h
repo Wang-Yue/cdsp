@@ -23,6 +23,7 @@ void volume_filter_prepare_chunk(volume_filter_t* filter);
 void volume_filter_advance_ramp(volume_filter_t* filter);
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_volume_vtable;
 
 #endif  // CLIB_FILTERS_VOLUME_H

@@ -13,8 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config_error.h"
-#include "filter_config_types.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
 
 /**
  * @brief Supported processor types.

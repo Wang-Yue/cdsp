@@ -1,11 +1,11 @@
+#include "Backend/wasapi_capture.h"
+
 /**
  * @file wasapi_capture.c
  * @brief WASAPI capture backend implementation.
  */
 
 #if defined(ENABLE_WASAPI)
-
-#include "wasapi_capture.h"
 
 #include <windef.h>
 #include <windows.h>
@@ -21,10 +21,10 @@
 #include <string.h>
 
 #include "Audio/sample_conversion.h"
+#include "Backend/wasapi_capabilities.h"
+#include "Backend/wasapi_device.h"
 #include "Engine/cdsp_sem.h"
 #include "Utils/cdsp_time.h"
-#include "wasapi_capabilities.h"
-#include "wasapi_device.h"
 
 struct wasapi_capture {
   char device[256];

@@ -15,11 +15,12 @@
 #include <stddef.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
 #include "Config/processor_config_types.h"
-#include "compressor_processor.h"
-#include "lookahead_limiter_processor.h"
-#include "noise_gate_processor.h"
-#include "race_processor.h"
+#include "Processors/compressor_processor.h"
+#include "Processors/lookahead_limiter_processor.h"
+#include "Processors/noise_gate_processor.h"
+#include "Processors/race_processor.h"
 
 /**
  * @brief Enumeration of concrete processor implementation types.

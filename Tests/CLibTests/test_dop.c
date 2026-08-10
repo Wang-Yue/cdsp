@@ -1,9 +1,15 @@
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "Audio/audio_chunk.h"
 #include "Audio/sample_conversion.h"
 #include "Config/engine_config_types.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dsd_encoder.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI

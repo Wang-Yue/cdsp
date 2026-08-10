@@ -31,6 +31,7 @@
  */
 
 struct processor_vtable;
+
 extern const struct processor_vtable g_noise_gate_vtable;
 
 #endif  // CLIB_PROCESSORS_NOISE_GATE_PROCESSOR_H

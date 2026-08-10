@@ -36,6 +36,7 @@ typedef enum {
 const char* pipeline_error_description(pipeline_error_t err);
 
 struct pipeline_s;
+
 /**
  * @brief Opaque structure representing the audio processing pipeline.
  */

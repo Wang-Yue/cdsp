@@ -1,10 +1,9 @@
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <unistd.h>
 
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
 #include <objbase.h>
@@ -19,7 +18,6 @@
 #include "Public/volume.h"
 #include "Server/websocket_server.h"
 #include "Utils/cdsp_time.h"
-#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.main"};
 

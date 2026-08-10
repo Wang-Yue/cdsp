@@ -39,8 +39,8 @@
  */
 
 #include "Audio/audio_chunk.h"
+#include "Engine/audio_sync_queue.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include "audio_sync_queue.h"
 
 /**
  * @brief Yields the current thread's CPU execution slice.
@@ -52,12 +52,14 @@
  */
 #if defined(__APPLE__) || defined(__linux__)
 #include <sched.h>
+
 static inline void engine_yield(void) { sched_yield(); }
 #elif defined(_WIN32)
 static inline void engine_yield(void) { SwitchToThread(); }
 #endif
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "Config/engine_config_types.h"

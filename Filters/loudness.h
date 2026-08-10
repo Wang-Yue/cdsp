@@ -9,6 +9,7 @@
 #include "Config/filter_config_types.h"
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_loudness_vtable;
 
 #endif  // CLIB_FILTERS_LOUDNESS_H

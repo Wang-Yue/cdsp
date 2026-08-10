@@ -2,15 +2,17 @@
 #include "Audio/silence_counter.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
+
+#include "Config/engine_config_types.h"
+#include "Logging/app_logger.h"
 
 struct silence_counter {
   size_t limit_chunks;
   double threshold_db;
   size_t silent_chunks;
 };
-
-#include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.silence_counter"};
 

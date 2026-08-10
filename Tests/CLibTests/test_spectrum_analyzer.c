@@ -9,6 +9,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/audio_history_buffer.h"
 #include "Audio/spectrum_analyzer.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 static audio_chunk_t* sine_chunk(double freq, int samplerate, size_t frames,

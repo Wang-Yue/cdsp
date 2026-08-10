@@ -17,13 +17,20 @@
 //   * No `Date()` / `gettimeofday`. The watchdog uses
 //     `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)` (vDSO read on
 //     Darwin — no syscall).
-#include "engine_capture_loop.h"
+#include "Engine/engine_capture_loop.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
 #include "Audio/silence_counter.h"
-#include "sample_rate_watcher.h"
+#include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
+#include "DoP/dop_decoder.h"
+#include "Engine/sample_rate_watcher.h"
 
 struct engine_capture_loop {
   engine_shared_state_t* shared;
@@ -49,9 +56,9 @@ struct engine_capture_loop {
 };
 #include <stdlib.h>
 
+#include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
-#include "thread_priority.h"
 
 static const logger_t g_logger = {"dsp.capture"};
 

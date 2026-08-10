@@ -1,8 +1,7 @@
 #include <math.h>
-#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "FFT/bluestein_fft.h"
 #include "FFT/real_fft.h"
 #include "test_support.h"
 
@@ -11,6 +10,11 @@
 #endif
 
 #if defined(ENABLE_ACCELERATE)
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "FFT/bluestein_fft.h"
+
 typedef struct {
   uint64_t state;
 } simple_splitmix_t;

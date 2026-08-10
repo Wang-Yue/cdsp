@@ -340,5 +340,49 @@ endif
 format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
 
+# Cross-platform IWYU tool discovery (Linux & macOS)
+PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
+NPROCS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+IWYU_TOOL ?= $(shell \
+	which iwyu_tool 2>/dev/null || \
+	which iwyu_tool.py 2>/dev/null || \
+	find /usr/bin /usr/local/bin /opt/homebrew/bin /usr/share/include-what-you-use $(shell brew --prefix include-what-you-use 2>/dev/null) /usr/lib/llvm*/bin -name "iwyu_tool*" 2>/dev/null | head -n 1)
+
+FIX_INCLUDES ?= $(shell \
+	which fix_includes.py 2>/dev/null || \
+	which fix_includes 2>/dev/null || \
+	find /usr/bin /usr/local/bin /opt/homebrew/bin /usr/share/include-what-you-use $(shell brew --prefix include-what-you-use 2>/dev/null) /usr/lib/llvm*/bin -name "fix_include*" 2>/dev/null | head -n 1)
+
+RUN_IWYU_TOOL := $(if $(filter %.py,$(IWYU_TOOL)),$(PYTHON) $(IWYU_TOOL),$(IWYU_TOOL))
+RUN_FIX_INCLUDES := $(if $(filter %.py,$(FIX_INCLUDES)),$(PYTHON) $(FIX_INCLUDES),$(FIX_INCLUDES))
+
+iwyu:
+	@if [ -z "$(IWYU_TOOL)" ]; then \
+		echo "❌ Error: iwyu_tool not found. Install via 'sudo apt install iwyu' (Linux) or 'brew install include-what-you-use' (macOS)."; \
+		exit 1; \
+	fi
+	@echo "🔍 Generating compilation database (-j$(NPROCS))..."
+	@$(MAKE) clean
+	@bear -- $(MAKE) -j$(NPROCS) all cli $(UNIT_TEST_BINS)
+	@echo "🔍 Running Include-What-You-Use analysis (-j$(NPROCS))..."
+	@$(RUN_IWYU_TOOL) -j $(NPROCS) -p compile_commands.json -- -Xiwyu --mapping_file=$(ROOT_DIR)/Tools/iwyu.imp -Xiwyu --no_fwd_decls || true
+
+iwyu-fix:
+	@if [ -z "$(IWYU_TOOL)" ] || [ -z "$(FIX_INCLUDES)" ]; then \
+		echo "❌ Error: iwyu_tool or fix_includes.py not found. Install via 'sudo apt install iwyu' (Linux) or 'brew install include-what-you-use' (macOS)."; \
+		exit 1; \
+	fi
+	@echo "🔧 Generating compilation database (-j$(NPROCS))..."
+	@mkdir -p $(ROOT_DIR)/.build
+	@$(MAKE) clean
+	@bear -- $(MAKE) -j$(NPROCS) all cli $(UNIT_TEST_BINS)
+	@echo "🔧 Running Include-What-You-Use analysis (-j$(NPROCS))..."
+	@$(RUN_IWYU_TOOL) -j $(NPROCS) -p compile_commands.json -- -Xiwyu --mapping_file=$(ROOT_DIR)/Tools/iwyu.imp -Xiwyu --no_fwd_decls > $(ROOT_DIR)/.build/iwyu.log 2>&1 || true
+	@$(RUN_FIX_INCLUDES) --nocomments --safe_headers --ignore_re "cJSON" < $(ROOT_DIR)/.build/iwyu.log
+
 clean:
 	rm -rf $(OBJ_DIR) $(TEST_OBJ_DIR) $(LIB_TARGET) $(TEST_LIB_TARGET) $(ROOT_DIR)/Tests/CLibTests/bin $(SRC_ROOT)/bin
+
+
+

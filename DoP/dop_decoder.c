@@ -21,12 +21,15 @@
 // conditional add. Filter shape, tap count, and cutoff are unchanged from
 // the previous design, so the SINAD numbers the existing tests pin down
 // across DSD64 / 128 / 256 at 44.1 / 48 kHz families are preserved.
-#include "dop_decoder.h"
+#include "DoP/dop_decoder.h"
 
-#include "Engine/thread_priority.h"
+#include "Audio/audio_chunk.h"
 
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+
+#include "Engine/thread_priority.h"
+
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0
@@ -87,9 +90,6 @@ struct dop_decoder {
   double sample_rate;      /**< Carrier sample rate in Hz. */
 };
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "Utils/double_helpers.h"
@@ -238,7 +238,10 @@ dop_decoder_t* dop_decoder_create(int channels, double sample_rate,
   if (multithreaded && channels > 2) {
     dec->use_multithreading = true;
   }
+#else
+  (void)multithreaded;
 #endif
+
   dec->channel_states = (dop_decoder_channel_state_t*)calloc(
       channels, sizeof(dop_decoder_channel_state_t));
   if (!dec->channel_states) {

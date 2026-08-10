@@ -1,8 +1,12 @@
-#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 
+#include "Audio/processing_parameters.h"
+#include "Config/filter_config_types.h"
 #include "Filters/filter.h"
 #include "Filters/gain.h"
 #include "Filters/volume.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 TEST(GainInvert) {

@@ -1,13 +1,13 @@
-#include "ws_rpc_dispatcher.h"
+#include "Server/ws_rpc_dispatcher.h"
 
-#include <math.h>
-#include <stdarg.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "Config/cJSON.h"
-#include "Logging/app_logger.h"
 #include "Public/cdsp_pub_types.h"
 #include "Public/config.h"
 #include "Public/devices.h"
@@ -16,7 +16,7 @@
 #include "Public/signal_levels.h"
 #include "Public/spectrum.h"
 #include "Public/volume.h"
-#include "websocket_server_internal.h"
+#include "Server/websocket_server_internal.h"
 
 static inline bool ws_engine_get_status(dsp_engine_t* engine,
                                         ws_state_update_t* out_status) {

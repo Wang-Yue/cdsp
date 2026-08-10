@@ -77,13 +77,15 @@
 // `init`. `process(input:into:)` does no heap allocation and writes
 // directly into the caller's pre-allocated `output` chunk.
 
-#include "synchronous_resampler.h"
+#include "Resampler/synchronous_resampler.h"
 
 #include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/resampler_config_types.h"
 #include "FFT/real_fft.h"
-#include "audio_resampler.h"
-#include "resampler_error.h"
-#include "sinc_window_function.h"
+#include "Resampler/audio_resampler.h"
+#include "Resampler/resampler_error.h"
+#include "Resampler/sinc_window_function.h"
 
 typedef struct synchronous_resampler synchronous_resampler_t;
 

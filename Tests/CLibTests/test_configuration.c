@@ -3,10 +3,17 @@
 #define _GNU_SOURCE
 #endif
 #endif
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config/config_error.h"
 #include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/resampler_config_types.h"
 #include "Mixer/mixer.h"
 #include "test_support.h"
 

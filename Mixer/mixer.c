@@ -22,10 +22,15 @@
  */
 #include "Mixer/mixer.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
 #include "Logging/app_logger.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.mixer"};
 

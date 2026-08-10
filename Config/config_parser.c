@@ -4,20 +4,21 @@
  * sub-parsers.
  */
 
-#include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
+#include "Config/cJSON.h"
+#include "Config/config_error.h"
 #include "Config/config_parse_devices.h"
 #include "Config/config_parse_filters.h"
 #include "Config/config_parse_mixers.h"
 #include "Config/config_parse_pipeline.h"
 #include "Config/config_parser_internal.h"
+#include "Config/configuration.h"
 #include "Logging/app_logger.h"
-#include "cJSON.h"
-#include "configuration.h"
 
 static const logger_t g_logger = {"dsp.config.parser"};
 
@@ -186,6 +187,7 @@ static void replace_tokens_in_json_node(cJSON* node, int samplerate,
 
 #ifdef _WIN32
 #include <io.h>
+
 #define F_OK 0
 #define access _access
 #else

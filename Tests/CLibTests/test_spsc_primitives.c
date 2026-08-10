@@ -2,6 +2,10 @@
 #include <pthread.h>
 #include <sched.h>
 #include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"

@@ -9,9 +9,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "Backend/backend_error.h"
+#include "Backend/core_audio_device.h"
 #include "Config/engine_config_types.h"
-#include "backend_error.h"
-#include "core_audio_device.h"
 
 /**
  * @file core_audio_capabilities.h

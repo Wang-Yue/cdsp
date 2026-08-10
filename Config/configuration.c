@@ -1,9 +1,11 @@
-#include "configuration.h"
+#include "Config/configuration.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config/resampler_config_types.h"
 #include "Filters/filter.h"
 #include "Mixer/mixer.h"
 #include "Pipeline/pipeline.h"

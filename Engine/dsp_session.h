@@ -39,7 +39,8 @@
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Config/configuration.h"
-#include "engine_shared_state.h"
+#include "Config/engine_config_types.h"
+#include "Engine/engine_shared_state.h"
 
 /**
  * @brief Opaque structure representing the active DSP session.

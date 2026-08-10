@@ -30,15 +30,10 @@
 // from which `Kp = 2ζωn / Fs` and `Ki = ωn² / Fs`. Picking `ωn` and
 // `ζ` directly is a more honest way to tune than groping for raw
 // gains, so the convenience initializer takes that route.
-#include "rate_controller.h"
+#include "Engine/rate_controller.h"
 
 #include <math.h>
 #include <stdlib.h>
-#include <time.h>
-
-#ifdef __APPLE__
-#include <mach/mach_time.h>
-#endif
 
 // MARK: - PI rate controller
 

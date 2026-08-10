@@ -1,8 +1,7 @@
-#include "config_error.h"
+#include "Config/config_error.h"
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 
 /// Errors raised while parsing or validating a `DSPConfiguration`.
 void config_error_init(config_error_t* err) {

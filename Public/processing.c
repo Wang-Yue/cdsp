@@ -2,8 +2,11 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
+#include "Public/cdsp_pub_types.h"
 
 cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
   if (engine && engine->get_status) {

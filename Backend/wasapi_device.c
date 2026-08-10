@@ -1,3 +1,5 @@
+#include "Backend/wasapi_device.h"
+
 /**
  * @file wasapi_device.c
  * @brief Common WASAPI device helper functions and COM event listeners.
@@ -5,16 +7,14 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include "wasapi_device.h"
-
 #include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
 
+#include "Backend/wasapi_capabilities.h"
+#include "Backend/wasapi_capture.h"
+#include "Backend/wasapi_playback.h"
 #include "Utils/cdsp_time.h"
-#include "wasapi_capabilities.h"
-#include "wasapi_capture.h"
-#include "wasapi_playback.h"
 
 const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
 

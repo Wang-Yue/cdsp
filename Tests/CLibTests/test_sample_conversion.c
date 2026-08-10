@@ -1,3 +1,7 @@
+#include <math.h>
+#include <stdint.h>
+#include <string.h>
+
 #include "Audio/sample_conversion.h"
 #include "test_support.h"
 

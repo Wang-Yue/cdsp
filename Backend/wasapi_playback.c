@@ -1,11 +1,11 @@
+#include "Backend/wasapi_playback.h"
+
 /**
  * @file wasapi_playback.c
  * @brief WASAPI playback backend implementation.
  */
 
 #if defined(ENABLE_WASAPI)
-
-#include "wasapi_playback.h"
 
 #include <windef.h>
 #include <windows.h>
@@ -22,11 +22,11 @@
 #include <string.h>
 
 #include "Audio/sample_conversion.h"
+#include "Backend/wasapi_capabilities.h"
+#include "Backend/wasapi_device.h"
 #include "Engine/cdsp_sem.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include "wasapi_capabilities.h"
-#include "wasapi_device.h"
 
 struct wasapi_playback {
   char device[256];

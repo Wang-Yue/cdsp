@@ -15,10 +15,15 @@
  * vDSP_vmulD or scalar loop.
  */
 
-#include "noise_gate_processor.h"
+#include "Processors/noise_gate_processor.h"
 
+#include "Audio/audio_chunk.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 #include "Logging/app_logger.h"
-#include "processor.h"
+#include "Processors/processor.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"noise_gate_processor"};
 
@@ -55,12 +60,9 @@ static const char* noise_gate_processor_get_name(const void* impl) {
 }
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 
 /**
  * @brief Validates noise gate processor parameters.

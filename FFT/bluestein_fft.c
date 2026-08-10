@@ -34,7 +34,11 @@
 
 #include <Accelerate/Accelerate.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
+
+#include "Config/config_error.h"
+#include "Utils/double_helpers.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

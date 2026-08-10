@@ -1,10 +1,11 @@
-#include "ws_handshake.h"
+#include "Server/ws_handshake.h"
 
+#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
-#include "websocket_server_internal.h"
+#include "Server/websocket_server_internal.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -15,7 +16,7 @@
 #ifdef __APPLE__
 #include <CommonCrypto/CommonDigest.h>
 #else
-#include <stdint.h>
+
 #define CC_SHA1_DIGEST_LENGTH 20
 typedef uint32_t CC_LONG;
 
@@ -100,7 +101,6 @@ static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
 #ifdef _WIN32
 #define cdsp_strncasecmp _strnicmp
 #else
-#include <strings.h>
 #define cdsp_strncasecmp strncasecmp
 #endif
 

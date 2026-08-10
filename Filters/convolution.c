@@ -1,9 +1,13 @@
-#include "convolution.h"
+#include "Filters/convolution.h"
 
+#include "Audio/processing_parameters.h"
 #include "Audio/sample_conversion.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
 #include "FFT/real_fft.h"
+#include "Filters/filter.h"
 #include "Utils/cdsp_path.h"
-#include "filter.h"
+#include "Utils/double_helpers.h"
 
 struct convolution_filter {
   char name[64];
@@ -29,7 +33,8 @@ typedef struct convolution_filter convolution_filter_t;
 
 typedef double double4 __attribute__((vector_size(32), aligned(8)));
 
-#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

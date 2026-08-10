@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
 #define CLOSE_SOCKET(s) closesocket(s)
 #define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
 typedef SOCKET socket_t;
@@ -10,26 +11,32 @@ typedef SOCKET socket_t;
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #define CLOSE_SOCKET(s) close(s)
 #define IS_INVALID_SOCKET(s) ((s) < 0)
 typedef int socket_t;
 #endif
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "Config/engine_config_types.h"
 #include "Utils/cdsp_time.h"
+
 #define sleep_ms(ms) cdsp_sleep_ms(ms)
 
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/cJSON.h"
-#include "Engine/dsp_engine.h"
+#include "Engine/dsp_engine.h"  // IWYU pragma: keep
 #include "Public/cdsp_pub_types.h"
-#include "Public/config.h"
+#include "Public/config.h"  // IWYU pragma: keep
 #include "Public/devices.h"
 #include "Public/general.h"
 #include "Public/processing.h"
-#include "Public/signal_levels.h"
+#include "Public/signal_levels.h"  // IWYU pragma: keep
 #include "Public/spectrum.h"
 #include "Public/volume.h"
 #include "Server/websocket_server.h"

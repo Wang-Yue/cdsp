@@ -1,7 +1,7 @@
 // Window functions + cutoff calculation for the windowed-sinc
 // resampler kernel.
 
-#include "sinc_window_function.h"
+#include "Resampler/sinc_window_function.h"
 
 #include <math.h>
 #include <stdint.h>

@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "cJSON.h"
+#include "Config/cJSON.h"
 
 /**
  * @brief Parses an array of string labels from a cJSON array.

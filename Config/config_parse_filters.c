@@ -1,15 +1,15 @@
-#include "config_parse_filters.h"
+#include "Config/config_parse_filters.h"
 
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
-#include "Logging/app_logger.h"
-#include "cJSON.h"
-#include "config_parser_internal.h"
-#include "configuration.h"
-#include "filter_config_types.h"
+#include "Config/cJSON.h"
+#include "Config/config_parser_internal.h"
+#include "Config/configuration.h"
+#include "Config/filter_config_types.h"
+#include "Config/processor_config_types.h"
 
 int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                          config_error_t* err) {

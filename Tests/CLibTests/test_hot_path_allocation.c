@@ -4,14 +4,22 @@
 #include <math.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
+#include "Config/processor_config_types.h"
+#include "Config/resampler_config_types.h"
 #include "DoP/dop_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "Engine/cdsp_sem.h"
@@ -34,14 +42,11 @@
 #include "Logging/app_logger.h"
 #include "Mixer/mixer.h"
 #include "Pipeline/pipeline.h"
-#include "Processors/compressor_processor.h"
-#include "Processors/noise_gate_processor.h"
 #include "Processors/processor.h"
-#include "Resampler/async_poly_resampler.h"
-#include "Resampler/async_sinc_resampler.h"
 #include "Resampler/audio_resampler.h"
-#include "Resampler/synchronous_resampler.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/double_helpers.h"
+#include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"
 
 #ifndef M_PI

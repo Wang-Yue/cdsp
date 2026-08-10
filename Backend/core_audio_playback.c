@@ -11,7 +11,8 @@
 //   - the render callback writes directly into the AudioBufferList
 //     provided by CoreAudio, consuming from the pre-allocated SPSC rings.
 
-#include "core_audio_playback.h"
+#include "Backend/core_audio_playback.h"
+
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
@@ -19,15 +20,20 @@
 #include <Accelerate/Accelerate.h>
 #endif
 #include <stdatomic.h>
-#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
+#include "Audio/audio_chunk.h"
+#include "Backend/backend_error.h"
+#include "Backend/core_audio_device.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
-#include "core_audio_device.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 

@@ -3,7 +3,7 @@
 #define _GNU_SOURCE
 #endif
 #endif
-#include <math.h>
+#include <stddef.h>
 
 #include "Engine/rate_controller.h"
 #include "Utils/cdsp_time.h"

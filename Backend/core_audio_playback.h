@@ -19,7 +19,7 @@
 
 #if defined(ENABLE_COREAUDIO)
 
-#include "audio_backend.h"
+#include "Backend/audio_backend.h"
 
 /**
  * @brief Opaque structure representing the CoreAudio playback backend.

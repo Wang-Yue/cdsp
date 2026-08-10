@@ -1,5 +1,8 @@
+#include <stddef.h>
+
 #include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 TEST(allocates_zeroed_storage) {

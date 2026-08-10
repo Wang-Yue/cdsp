@@ -22,6 +22,7 @@
  */
 
 struct filter_vtable;
+
 extern const struct filter_vtable g_convolution_vtable;
 
 #endif  // CLIB_FILTERS_CONVOLUTION_H

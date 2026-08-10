@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Utils/double_helpers.h"
+
 struct vdsp_real_fft {
   real_fft_backend_t base;
   size_t half_n;

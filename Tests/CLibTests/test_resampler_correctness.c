@@ -4,10 +4,15 @@
 #endif
 #endif
 #include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "Audio/audio_chunk.h"
+#include "Config/resampler_config_types.h"
 #include "Resampler/audio_resampler.h"
+#include "Resampler/resampler_error.h"
 #include "test_support.h"
 
 static void make_sine(double* out, size_t n, int rate, double freq) {

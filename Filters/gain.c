@@ -1,6 +1,10 @@
-#include "gain.h"
+#include "Filters/gain.h"
 
-#include "filter.h"
+#include "Audio/processing_parameters.h"
+#include "Config/config_error.h"
+#include "Config/filter_config_types.h"
+#include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 
 struct gain_filter {
   char name[64];
@@ -12,7 +16,6 @@ typedef struct gain_filter gain_filter_t;
 
 #include <stdlib.h>
 #include <string.h>
-
 /**
  * @brief Validates gain filter parameters.
  *
@@ -22,6 +25,7 @@ typedef struct gain_filter gain_filter_t;
  * @return 0 on success, -1 on failure.
  */
 #include <math.h>
+#include <stdbool.h>
 
 static int gain_config_validate(const filter_config_t* config, int sample_rate,
                                 config_error_t* err) {

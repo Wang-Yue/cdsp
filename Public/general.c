@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config/log_level.h"
 #include "Engine/dsp_engine.h"
 #include "Logging/app_logger.h"
 

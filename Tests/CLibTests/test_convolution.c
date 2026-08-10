@@ -4,7 +4,9 @@
 #endif
 #endif
 #include <math.h>
+#include <string.h>
 
+#include "Config/filter_config_types.h"
 #include "Filters/convolution.h"
 #include "Filters/filter.h"
 #include "test_support.h"

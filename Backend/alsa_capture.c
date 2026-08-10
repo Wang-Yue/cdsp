@@ -1,18 +1,23 @@
-#if defined(ENABLE_ALSA)
-#include "alsa_capture.h"
+#include "Backend/alsa_capture.h"
 
-#include <alloca.h>
+#if defined(ENABLE_ALSA)
 #include <alsa/asoundlib.h>
+#include <errno.h>
 #include <math.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
+#include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Audio/sample_conversion.h"
+#include "Backend/alsa_device.h"
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
-#include "alsa_device.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
 

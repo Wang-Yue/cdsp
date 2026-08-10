@@ -30,6 +30,7 @@
 #define CLIB_DOP_DSD_ENCODER_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "Audio/audio_chunk.h"
 #include "Config/engine_config_types.h"

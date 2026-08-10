@@ -1,11 +1,17 @@
 // Device capability discovery for CoreAudio.
 
-#include "core_audio_capabilities.h"
+#include "Backend/core_audio_capabilities.h"
+
 #if defined(ENABLE_COREAUDIO)
+#include <CoreAudio/CoreAudio.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "Backend/core_audio_device.h"
+#include "Config/engine_config_types.h"
 
 // MARK: - Discovery
 

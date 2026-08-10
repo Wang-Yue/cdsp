@@ -20,17 +20,27 @@
 //     and wakeups; the resampler ratio is an atomic Double.
 //   * The thread sets a real-time scheduling policy on entry so the
 //     OS prefers it over background work.
-#include "engine_processing_loop.h"
+#include "Engine/engine_processing_loop.h"
 
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "Audio/audio_chunk.h"
+#include "Audio/processing_parameters.h"
+#include "Config/configuration.h"
+#include "Config/engine_config_types.h"
+#include "DoP/dsd_encoder.h"
+#include "Pipeline/pipeline.h"
+#include "Resampler/audio_resampler.h"
 #include "Resampler/resampler_error.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/double_helpers.h"
 
 #ifdef CDSP_TEST
 #include <stdatomic.h>
+
 _Atomic int g_pipeline_swaps_count = 0;
 #endif
 
@@ -65,15 +75,10 @@ struct engine_processing_loop {
   uint64_t processed_drop_counter;
 };
 
-#include <string.h>
-#include <time.h>
-
+#include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
-#include "thread_priority.h"
 
 static const logger_t g_logger = {"dsp.processing"};
-
-#include "Utils/cdsp_time.h"
 
 engine_processing_loop_t* engine_processing_loop_create(
     const engine_processing_loop_config_t* config) {
