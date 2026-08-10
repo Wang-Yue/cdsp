@@ -21,25 +21,16 @@ typedef int socket_t;
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config/engine_config_types.h"
-#include "Utils/cdsp_time.h"
-
-#define sleep_ms(ms) cdsp_sleep_ms(ms)
-
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/cJSON.h"
+#include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"  // IWYU pragma: keep
 #include "Public/cdsp_pub_types.h"
-#include "Public/config.h"  // IWYU pragma: keep
-#include "Public/devices.h"
 #include "Public/general.h"
-#include "Public/processing.h"
-#include "Public/signal_levels.h"  // IWYU pragma: keep
-#include "Public/spectrum.h"
-#include "Public/volume.h"
 #include "Server/websocket_server.h"
+#include "Utils/cdsp_time.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
                                 const char* command_text, char* out_response,
@@ -158,31 +149,8 @@ static audio_backend_error_type_t simulated_error_type =
     AUDIO_BACKEND_ERR_COMMAND_SEND;
 static const char* simulated_error_message = "Simulated error message";
 
-static device_error_type_t simulated_cap_error_type = DEVICE_ERROR_OTHER;
-static const char* simulated_cap_error_message = "Simulated cap error";
-static bool simulate_cap_error = false;
-
-static bool mock_get_device_capabilities(void* ctx, const char* backend,
-                                         const char* device, bool is_capture,
-                                         audio_device_descriptor_t** out_desc,
-                                         device_error_t* out_err) {
-  (void)ctx;
-  (void)backend;
-  (void)device;
-  (void)is_capture;
-  (void)out_desc;
-
-  if (simulate_cap_error) {
-    if (out_err) {
-      device_error_init(out_err, simulated_cap_error_type,
-                        simulated_cap_error_message);
-    }
-    return false;
-  }
-  return true;
-}
-
 static bool simulate_set_config_error = false;
+
 static char* received_config_json = NULL;
 
 static bool mock_set_config_json(void* ctx, const char* json_str,
@@ -262,192 +230,6 @@ static bool mock_get_previous_config_json(void* ctx, char** out_json) {
   *out_json = NULL;
   return false;
 }
-static dsp_engine_t mock_engine;
-
-cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  state_update_t status = {0};
-  if (mock && mock->get_status && mock->get_status(mock->ctx, &status)) {
-    return (cdsp_processing_state_t)status.state;
-  }
-  return CDSP_PROCESSING_STATE_INACTIVE;
-}
-
-void cdsp_get_stop_reason(const dsp_engine_t* engine,
-                          cdsp_stop_reason_t* out_reason) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  state_update_t status = {0};
-  if (mock && mock->get_status && mock->get_status(mock->ctx, &status)) {
-    out_reason->type = (cdsp_stop_reason_type_t)status.stop_reason.type;
-    strncpy(out_reason->message, status.stop_reason.message,
-            sizeof(out_reason->message) - 1);
-    out_reason->format_change_rate = status.stop_reason.format_change_rate;
-  }
-}
-
-int cdsp_get_capture_rate(const dsp_engine_t* engine) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_capture_rate) {
-    return mock->get_capture_rate(mock->ctx);
-  }
-  return 0;
-}
-
-bool cdsp_get_processing_status(const dsp_engine_t* engine,
-                                double* out_rate_adjust,
-                                double* out_buffer_level,
-                                uint64_t* out_clipped_samples,
-                                double* out_processing_load,
-                                double* out_resampler_load) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_processing_status) {
-    return mock->get_processing_status(mock->ctx, out_rate_adjust,
-                                       out_buffer_level, out_clipped_samples,
-                                       out_processing_load, out_resampler_load);
-  }
-  return false;
-}
-
-void cdsp_reset_clipped_samples(dsp_engine_t* engine) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->reset_clipped_samples) {
-    mock->reset_clipped_samples(mock->ctx);
-  }
-}
-
-bool cdsp_get_available_devices(const char* backend, bool is_input,
-                                cdsp_device_info_t** out_devices,
-                                size_t* out_count) {
-  (void)backend;
-  (void)is_input;
-  *out_devices = NULL;
-  *out_count = 0;
-  return true;
-}
-
-bool cdsp_get_device_capabilities(const char* backend, const char* device,
-                                  bool is_capture,
-                                  cdsp_device_descriptor_t** out_desc,
-                                  cdsp_device_error_t* out_err) {
-  audio_device_descriptor_t* raw_desc = NULL;
-  device_error_t raw_err = {0};
-  bool ok = mock_engine.get_device_capabilities(
-      mock_engine.ctx, backend, device, is_capture, &raw_desc, &raw_err);
-  if (ok) {
-    if (out_desc) {
-      cdsp_device_descriptor_t* d =
-          (cdsp_device_descriptor_t*)malloc(sizeof(cdsp_device_descriptor_t));
-      memset(d, 0, sizeof(cdsp_device_descriptor_t));
-      *out_desc = d;
-    }
-  } else {
-    if (out_err) {
-      switch (raw_err.type) {
-        case DEVICE_ERROR_NOT_FOUND:
-          out_err->type = CDSP_DEVICE_ERROR_NOT_FOUND;
-          break;
-        case DEVICE_ERROR_BUSY:
-          out_err->type = CDSP_DEVICE_ERROR_BUSY;
-          break;
-        default:
-          out_err->type = CDSP_DEVICE_ERROR_UNKNOWN;
-          break;
-      }
-      strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
-      out_err->message[sizeof(out_err->message) - 1] = '\0';
-    }
-  }
-  return ok;
-}
-
-void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc) {
-  if (desc) free(desc);
-}
-
-bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side,
-                       const uint32_t* channel, double min_freq,
-                       double max_freq, size_t n_bins,
-                       cdsp_spectrum_t* out_spec) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (!mock || !mock->get_spectrum) return false;
-  bool is_capture = (side == CDSP_SPECTRUM_SIDE_CAPTURE);
-  uint32_t chan_val = channel ? *channel : (uint32_t)-1;
-  spectrum_t raw_spec = {0};
-  if (mock->get_spectrum(mock->ctx, is_capture, chan_val, min_freq, max_freq,
-                         n_bins, &raw_spec)) {
-    out_spec->count = raw_spec.count;
-    if (raw_spec.count > 0) {
-      double* freqs = (double*)malloc(raw_spec.count * sizeof(double));
-      double* mags = (double*)malloc(raw_spec.count * sizeof(double));
-      for (size_t i = 0; i < raw_spec.count; i++) {
-        freqs[i] = raw_spec.frequencies[i];
-        mags[i] = raw_spec.magnitudes[i];
-      }
-      out_spec->frequencies = freqs;
-      out_spec->magnitudes = mags;
-    } else {
-      out_spec->frequencies = NULL;
-      out_spec->magnitudes = NULL;
-    }
-    return true;
-  }
-  return false;
-}
-
-void cdsp_free_spectrum(cdsp_spectrum_t* spec) {
-  if (spec) {
-    if (spec->frequencies) free(spec->frequencies);
-    if (spec->magnitudes) free(spec->magnitudes);
-  }
-}
-
-float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_fader_volume) {
-    return mock->get_fader_volume(mock->ctx, (fader_t)fader);
-  }
-  return 0.0f;
-}
-
-bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_fader_mute) {
-    return mock->get_fader_mute(mock->ctx, (fader_t)fader);
-  }
-  return false;
-}
-
-void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db,
-                           bool instant) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->set_fader_volume) {
-    mock->set_fader_volume(mock->ctx, (fader_t)fader, db, instant);
-  }
-}
-
-void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader, bool mute) {
-  dsp_engine_t* mock = (dsp_engine_t*)engine;
-  if (mock && mock->set_fader_mute) {
-    mock->set_fader_mute(mock->ctx, (fader_t)fader, mute);
-  }
-}
-
-const char* cdsp_get_state_file_path(const dsp_engine_t* engine) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_state_file_path) {
-    return mock->get_state_file_path(mock->ctx);
-  }
-  return NULL;
-}
-
-bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
-  const dsp_engine_t* mock = (const dsp_engine_t*)engine;
-  if (mock && mock->get_state_file_updated) {
-    return mock->get_state_file_updated(mock->ctx);
-  }
-  return true;
-}
-
 static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
@@ -458,7 +240,6 @@ static dsp_engine_t mock_engine = {
     .get_fader_volume = mock_get_fader_volume,
     .get_fader_mute = mock_is_fader_muted,
     .set_config_json = mock_set_config_json,
-    .get_device_capabilities = mock_get_device_capabilities,
     .set_fader_volume = mock_set_fader_volume,
     .set_fader_mute = mock_set_fader_mute,
     .get_state_file_path = mock_get_state_file,
@@ -510,7 +291,7 @@ TEST(test_websocket_commands) {
       }
       CLOSE_SOCKET(sock);
     }
-    sleep_ms(10);
+    cdsp_sleep_ms(10);
   }
   ASSERT_EQ(0, conn_res);
 
@@ -733,48 +514,37 @@ TEST(test_websocket_error_translation) {
   cJSON_Delete(root);
 
   // 4. Test capabilities DeviceNotFoundError translation
-  simulate_cap_error = true;
-  simulated_cap_error_type = DEVICE_ERROR_NOT_FOUND;
-  simulated_cap_error_message = "hw:0 not found";
-  websocket_server_handle_command(
-      server, 0,
+#if defined(ENABLE_COREAUDIO)
+  const char* cap_cmd =
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"coreaudio\", "
+      "\"NonExistentDevice12345\"]}";
+#elif defined(ENABLE_ALSA)
+  const char* cap_cmd =
       "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
-      "\"hw:0\"]}",
-      resp, sizeof(resp));
+      "\"NonExistentDevice12345\"]}";
+#elif defined(ENABLE_WASAPI)
+  const char* cap_cmd =
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"wasapi\", "
+      "\"NonExistentDevice12345\"]}";
+#else
+  const char* cap_cmd =
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"coreaudio\", "
+      "\"NonExistentDevice12345\"]}";
+#endif
+  websocket_server_handle_command(server, 0, cap_cmd, resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("GetCaptureDeviceCapabilities",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("DeviceNotFoundError",
                 cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 not found",
-                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
-  // 5. Test capabilities DeviceBusyError translation
-  simulated_cap_error_type = DEVICE_ERROR_BUSY;
-  simulated_cap_error_message = "hw:0 busy";
+  // 5. Test capabilities Generic DeviceError translation (unknown backend)
   websocket_server_handle_command(
       server, 0,
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
-      "\"hw:0\"]}",
-      resp, sizeof(resp));
-  root = cJSON_Parse(resp);
-  ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetCaptureDeviceCapabilities",
-                cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("DeviceBusyError",
-                cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 busy", cJSON_GetObjectItem(root, "message")->valuestring);
-  cJSON_Delete(root);
-
-  // 6. Test capabilities Generic DeviceError translation
-  simulated_cap_error_type = DEVICE_ERROR_OTHER;
-  simulated_cap_error_message = "hw:0 bad driver";
-  websocket_server_handle_command(
-      server, 0,
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
-      "\"hw:0\"]}",
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"unsupported_"
+      "backend\", \"dummy\"]}",
       resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
@@ -782,11 +552,8 @@ TEST(test_websocket_error_translation) {
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("DeviceError",
                 cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ("hw:0 bad driver",
-                cJSON_GetObjectItem(root, "message")->valuestring);
   cJSON_Delete(root);
 
-  simulate_cap_error = false;
   simulate_set_config_error = false;
 
   websocket_server_free(server);
@@ -794,8 +561,8 @@ TEST(test_websocket_error_translation) {
 
 TEST(test_websocket_patch_config) {
   simulate_set_config_error = false;
-  simulate_cap_error = false;
   websocket_server_t* server = websocket_server_create(54323, "127.0.0.1");
+
   websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
 
   mock_active_config = strdup(

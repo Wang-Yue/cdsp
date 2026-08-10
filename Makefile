@@ -228,9 +228,9 @@ $(TEST_LIB_TARGET): $(TEST_OBJS)
 BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
 
-UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_websocket_server.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
+UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
 UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner
-UNIT_TEST_BINS := $(UNIT_TEST_RUNNER) $(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server
+UNIT_TEST_BINS := $(UNIT_TEST_RUNNER)
 
 # Build benchmark binaries linked against main library (without clock_mock)
 $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(LIB_TARGET)
@@ -238,7 +238,7 @@ $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
 
 # Build combined unit test runner binary
-$(UNIT_TEST_RUNNER): $(UNIT_TEST_SRCS) $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c $(TEST_LIB_TARGET)
+$(UNIT_TEST_RUNNER): $(UNIT_TEST_SRCS) $(SERVER_SRCS) $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
 ifeq ($(IS_WINDOWS),1)
 	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,free -o $@
@@ -246,9 +246,6 @@ else
 	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -o $@
 endif
 
-$(ROOT_DIR)/Tests/CLibTests/bin/test_websocket_server: $(ROOT_DIR)/Tests/CLibTests/test_websocket_server.c $(SERVER_SRCS) $(TEST_LIB_TARGET)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST $^ $(LDFLAGS) -o $@
 
 
 RUST_HARNESS_DIR := $(ROOT_DIR)/Tests/RustHarnesses
@@ -298,8 +295,8 @@ export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:seco
 # NOTE: On macOS (Apple Silicon ARM64), Apple Clang (/usr/bin/clang) has a known dynamic runtime
 # initializer deadlock/crash bug in libclang_rt.asan_osx_dynamic.dylib and libclang_rt.tsan_osx_dynamic.dylib.
 # Do NOT use Xcode Apple Clang for sanitizer runs. Use Homebrew LLVM Clang instead:
-#   CC=/opt/homebrew/opt/llvm/bin/clang make test-asan
-#   CC=/opt/homebrew/opt/llvm/bin/clang make test-tsan
+#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-asan
+#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-tsan
 
 .PHONY: test-asan test-tsan
 test-asan:
