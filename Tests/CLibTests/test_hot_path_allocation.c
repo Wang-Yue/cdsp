@@ -232,6 +232,7 @@ void __wrap_free(void* ptr) {
 }
 #endif  // _WIN32
 
+#if !CDSP_SANITIZER_ACTIVE
 static _Atomic uint64_t g_alloc_counter = 0;
 static _Atomic uintptr_t g_watched_thread = 0;
 static malloc_logger_t g_prev_logger = NULL;
@@ -256,6 +257,7 @@ static void my_malloc_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2,
     g_prev_logger(type, arg1, arg2, arg3, result, num_hot_frames_to_skip);
   }
 }
+#endif  // !CDSP_SANITIZER_ACTIVE
 
 typedef void (*test_iter_func_t)(int iter, void* ctx);
 
