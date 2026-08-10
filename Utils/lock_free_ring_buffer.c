@@ -404,9 +404,8 @@ bool spsc_audio_ring_buffer_read_latest_at(const spsc_audio_ring_buffer_t* ring,
              (count - first_chunk) * sizeof(float));
     }
 
-    atomic_thread_fence(memory_order_acquire);
     uint64_t seq_after =
-        atomic_load_explicit(&ring->write_seq, memory_order_relaxed);
+        atomic_load_explicit(&ring->write_seq, memory_order_acquire);
     if (seq_after == seq_before) {
       return true;
     }
