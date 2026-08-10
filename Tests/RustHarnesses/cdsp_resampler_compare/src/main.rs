@@ -86,7 +86,7 @@ fn make_resampler(
             window,
         };
         Box::new(
-            Async::<f64>::new_sinc(ratio, 1.1, &params, chunk_size, 1, FixedAsync::Output).unwrap(),
+            Async::<f64>::new_sinc(ratio, 1.1, &params, chunk_size, 1, FixedAsync::Input).unwrap(),
         )
     }
 
