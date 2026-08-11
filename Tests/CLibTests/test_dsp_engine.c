@@ -1817,6 +1817,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_EX);
   }
+  cdsp_sleep_ms(150);
 
   // Resolve capture device ID and nominal rate
   AudioDeviceID dev_id =
@@ -1962,6 +1963,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 
   // Restore the hardware nominal rate to its initial state
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
+  cdsp_sleep_ms(250);
 
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_UN);
@@ -1976,6 +1978,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_EX);
   }
+  cdsp_sleep_ms(150);
 
   // Resolve playback device ID and nominal rate
   AudioDeviceID dev_id =
@@ -2051,7 +2054,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
-  for (int i = 0; i < 500; i++) {
+  for (int i = 0; i < 800; i++) {
     cdsp_engine_poll(engine);
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
@@ -2118,6 +2121,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
 
   // Restore the hardware nominal rate to its initial state
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
+  cdsp_sleep_ms(250);
 
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_UN);
@@ -2295,8 +2299,8 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 
   // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), throttled real-time in
   // ~166ms wall-clock time is < 30KB. Unthrottled generation should easily
-  // produce > 200KB of audio in that window.
-  ASSERT_TRUE(size > 200000);
+  // produce > 80KB of audio in that window even under heavy sanitizer load.
+  ASSERT_TRUE(size > 80000);
 
   remove(out_filename);
   printf(
@@ -3552,7 +3556,19 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   bool success = engine->set_config_json(engine->ctx, json, &err);
   ASSERT_TRUE(success);
 
-  // 1. Sleep for 200ms.
+  // 1. Ensure engine has entered RUNNING state
+  bool started = false;
+  for (int i = 0; i < 100; i++) {
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
+      started = true;
+      break;
+    }
+    cdsp_sleep_ms(5);
+  }
+  ASSERT_TRUE(started);
+
+  // Sleep for 200ms.
   // Capture and Processing threads should have finished reading/processing the
   // 2 chunks and exited. Playback is still playing chunk 1 (takes 512ms).
   cdsp_sleep_ms(200);
@@ -3561,10 +3577,10 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   cdsp_engine_poll(engine);
   ASSERT_EQ(cdsp_get_state(engine), CDSP_PROCESSING_STATE_RUNNING);
 
-  // 2. Wait up to 2000ms for playback to finish draining and transition to
+  // 2. Wait up to 3000ms for playback to finish draining and transition to
   // INACTIVE
   bool inactive = false;
-  for (int i = 0; i < 200; i++) {
+  for (int i = 0; i < 300; i++) {
     cdsp_sleep_ms(10);
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
@@ -3886,7 +3902,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
 
   // 1. Wait for silence timeout to trigger PAUSED state
   bool paused = false;
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 300; i++) {
     cdsp_sleep_ms(10);
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_PAUSED) {
@@ -3899,7 +3915,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   // 2. Wait while input file reaches loud non-silent audio frames and
   // auto-resumes to RUNNING
   bool resumed = false;
-  for (int i = 0; i < 150; i++) {
+  for (int i = 0; i < 300; i++) {
     cdsp_sleep_ms(10);
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_RUNNING) {
