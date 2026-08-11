@@ -2,7 +2,42 @@
 // thread.
 #include "Utils/lock_free_ring_buffer.h"
 
+#if defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include <stdlib.h>
+#include <string.h>
+
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
+
+static inline void* cdsp_aligned_alloc(size_t alignment, size_t size) {
+#if defined(_WIN32)
+  return _aligned_malloc(size, alignment);
+#elif defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+  void* ptr = NULL;
+  if (posix_memalign(&ptr, alignment, size) != 0) {
+    return NULL;
+  }
+  return ptr;
+#else
+  size_t rounded_size = (size + alignment - 1) & ~(alignment - 1);
+  return aligned_alloc(alignment, rounded_size);
+#endif
+}
+
+static inline void cdsp_aligned_free(void* ptr) {
+  if (!ptr) return;
+#if defined(_WIN32)
+  _aligned_free(ptr);
+#else
+  free(ptr);
+#endif
+}
 
 struct spsc_audio_ring_buffer {
   size_t capacity;
@@ -95,21 +130,24 @@ spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
   size_t cap = spsc_audio_ring_buffer_round_up_to_power_of_two(
       minimum_capacity < 2 ? 2 : minimum_capacity);
   spsc_audio_ring_buffer_t* ring =
-      (spsc_audio_ring_buffer_t*)calloc(1, sizeof(spsc_audio_ring_buffer_t));
+      (spsc_audio_ring_buffer_t*)cdsp_aligned_alloc(
+          64, sizeof(spsc_audio_ring_buffer_t));
   if (!ring) {
     logger_error(&g_logger,
                  "Memory allocation failed for spsc_audio_ring_buffer_t");
     return NULL;
   }
+  memset(ring, 0, sizeof(spsc_audio_ring_buffer_t));
   ring->capacity = cap;
   ring->mask = cap - 1;
-  ring->storage = (float*)calloc(cap, sizeof(float));
+  ring->storage = (float*)cdsp_aligned_alloc(64, cap * sizeof(float));
   if (!ring->storage) {
     logger_error(&g_logger,
                  "Failed to allocate storage buffer for capacity=%zu", cap);
-    free(ring);
+    cdsp_aligned_free(ring);
     return NULL;
   }
+  memset(ring->storage, 0, cap * sizeof(float));
   atomic_init(&ring->write_index, 0);
   atomic_init(&ring->read_index, 0);
   atomic_init(&ring->write_seq, 0);
@@ -129,8 +167,8 @@ void spsc_audio_ring_buffer_set_overwrite_on_overflow(
 
 void spsc_audio_ring_buffer_free(spsc_audio_ring_buffer_t* ring) {
   if (!ring) return;
-  free(ring->storage);
-  free(ring);
+  cdsp_aligned_free(ring->storage);
+  cdsp_aligned_free(ring);
 }
 
 void spsc_audio_ring_buffer_write(spsc_audio_ring_buffer_t* ring,
@@ -439,15 +477,18 @@ bool spsc_audio_ring_buffer_read_latest(const spsc_audio_ring_buffer_t* ring,
 spsc_queue_t* spsc_queue_create(size_t minimum_capacity) {
   size_t cap = spsc_audio_ring_buffer_round_up_to_power_of_two(
       minimum_capacity < 2 ? 2 : minimum_capacity);
-  spsc_queue_t* queue = (spsc_queue_t*)calloc(1, sizeof(spsc_queue_t));
+  spsc_queue_t* queue =
+      (spsc_queue_t*)cdsp_aligned_alloc(64, sizeof(spsc_queue_t));
   if (!queue) return NULL;
+  memset(queue, 0, sizeof(spsc_queue_t));
   queue->capacity = cap;
   queue->mask = cap - 1;
-  queue->storage = (void**)calloc(cap, sizeof(void*));
+  queue->storage = (void**)cdsp_aligned_alloc(64, cap * sizeof(void*));
   if (!queue->storage) {
-    free(queue);
+    cdsp_aligned_free(queue);
     return NULL;
   }
+  memset(queue->storage, 0, cap * sizeof(void*));
   atomic_init(&queue->write_index, 0);
   atomic_init(&queue->read_index, 0);
   return queue;
@@ -456,8 +497,8 @@ spsc_queue_t* spsc_queue_create(size_t minimum_capacity) {
 void spsc_queue_free(spsc_queue_t* queue) {
   if (!queue) return;
   // Clearing each slot to NULL; deinitialize then deallocate the raw storage.
-  free(queue->storage);
-  free(queue);
+  cdsp_aligned_free(queue->storage);
+  cdsp_aligned_free(queue);
 }
 
 bool spsc_queue_enqueue(spsc_queue_t* queue, void* value) {
