@@ -197,6 +197,38 @@ static void* wasapi_playback_thread_func(void* arg) {
           remainder);
     }
 
+    if (playback->exclusive && !playback->polling) {
+      UINT32 prefill_frames = playback->buffer_frame_count;
+      BYTE* prefill_data = NULL;
+      HRESULT hr_pre = IAudioRenderClient_GetBuffer(
+          playback->render_client, prefill_frames, &prefill_data);
+      if (SUCCEEDED(hr_pre) && prefill_data) {
+        size_t r_avail = spsc_audio_ring_buffer_get_available_to_read(
+                             playback->ring_buffer) /
+                         playback->channels;
+        size_t to_read = (r_avail < prefill_frames) ? r_avail : prefill_frames;
+        size_t consumed = spsc_audio_ring_buffer_consume(
+            playback->ring_buffer, playback->transfer_buf,
+            to_read * playback->channels);
+        size_t consumed_frames = consumed / playback->channels;
+        encode_float_samples_to_wasapi(
+            prefill_data, playback->transfer_buf, consumed_frames,
+            playback->channels, playback->bits_per_sample, playback->valid_bits,
+            playback->is_float);
+        if (consumed_frames < prefill_frames) {
+          size_t silent_frames = prefill_frames - consumed_frames;
+          BYTE* silence_start =
+              prefill_data + consumed_frames * playback->channels *
+                                 (playback->bits_per_sample / 8);
+          memset(silence_start, 0,
+                 silent_frames * playback->channels *
+                     (playback->bits_per_sample / 8));
+        }
+        IAudioRenderClient_ReleaseBuffer(playback->render_client,
+                                         prefill_frames, 0);
+      }
+    }
+
     HRESULT hr = IAudioClient_Start(playback->client);
     if (SUCCEEDED(hr)) {
       atomic_store_explicit(&playback->started, true, memory_order_release);
@@ -791,31 +823,10 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
 
   if (playback->polling) {
-    size_t direct_write_limit = playback->buffer_frame_count;
-    if (playback->polling) {
-      if (total_frames > playback->buffer_frame_count) {
-        logger_error(&g_wasapi_logger,
-                     "Input chunk size %zu exceeds WASAPI buffer capacity %u",
-                     total_frames, playback->buffer_frame_count);
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                             "Input chunk size exceeds WASAPI buffer capacity");
-        }
-        return false;
-      }
-      direct_write_limit = total_frames;
-    } else {
-      // Event-driven exclusive mode prefill:
-      // Limit direct write to the hardware buffer capacity.
-      if (direct_write_limit > total_frames) {
-        direct_write_limit = total_frames;
-      }
-    }
-
     size_t frames_written = 0;
     DWORD start_time = GetTickCount();
 
-    while (frames_written < direct_write_limit) {
+    while (frames_written < total_frames) {
       if (GetTickCount() - start_time > 3000) {
         if (err) {
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -844,9 +855,11 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
 
       UINT32 available_frames = playback->buffer_frame_count - padding;
-      UINT32 to_write = (UINT32)(direct_write_limit - frames_written);
+      UINT32 remaining = (UINT32)(total_frames - frames_written);
+      UINT32 to_write =
+          (available_frames < remaining) ? available_frames : remaining;
 
-      if (available_frames < to_write) {
+      if (to_write == 0) {
         cdsp_sleep_ms(1);
         continue;
       }
@@ -861,6 +874,31 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
                                  playback->valid_bits, playback->is_float);
         IAudioRenderClient_ReleaseBuffer(playback->render_client, to_write, 0);
         frames_written += to_write;
+
+        if (!atomic_load_explicit(&playback->started, memory_order_acquire)) {
+          hr = IAudioClient_Start(playback->client);
+          if (FAILED(hr)) {
+            if (playback->has_pending_rate_change ||
+                hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+                hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+                hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
+              playback->has_pending_rate_change = true;
+              if (err)
+                backend_error_init(err, BACKEND_ERROR_NONE,
+                                   "Format change pending");
+              return false;
+            }
+            if (err) {
+              char msg[256];
+              snprintf(msg, sizeof(msg),
+                       "Failed to start IAudioClient in write: hr=0x%08lX",
+                       (unsigned long)hr);
+              backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+            }
+            return false;
+          }
+          atomic_store_explicit(&playback->started, true, memory_order_release);
+        }
       } else {
         if (playback->has_pending_rate_change ||
             hr == AUDCLNT_E_DEVICE_INVALIDATED ||
@@ -887,96 +925,7 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
         return false;
       }
     }
-
-    if (playback->polling &&
-        !atomic_load_explicit(&playback->started, memory_order_acquire)) {
-      HRESULT hr = IAudioClient_Start(playback->client);
-      if (FAILED(hr)) {
-        if (playback->has_pending_rate_change ||
-            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
-            hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
-            hr == AUDCLNT_E_SERVICE_NOT_RUNNING) {
-          playback->has_pending_rate_change = true;
-          if (err)
-            backend_error_init(err, BACKEND_ERROR_NONE,
-                               "Format change pending");
-          return false;
-        }
-        if (err) {
-          char msg[256];
-          snprintf(msg, sizeof(msg),
-                   "Failed to start IAudioClient in write: hr=0x%08lX",
-                   (unsigned long)hr);
-          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
-        }
-        return false;
-      }
-      atomic_store_explicit(&playback->started, true, memory_order_release);
-    }
-
-    if (!playback->polling && frames_written < total_frames) {
-      size_t remaining_frames = total_frames - frames_written;
-      if (remaining_frames * playback->channels > playback->write_buf_cap) {
-        playback->write_buf_cap = remaining_frames * playback->channels;
-        playback->write_buf = (float*)realloc(
-            playback->write_buf, playback->write_buf_cap * sizeof(float));
-        if (!playback->write_buf) {
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                               "Failed to allocate write buffer");
-          }
-          return false;
-        }
-      }
-
-      for (size_t f = 0; f < remaining_frames; f++) {
-        for (int c = 0; c < playback->channels; c++) {
-          playback->write_buf[f * playback->channels + c] =
-              audio_chunk_get_channel(chunk, c)[frames_written + f];
-        }
-      }
-
-      size_t written = 0;
-      size_t requested = remaining_frames * playback->channels;
-      start_time = GetTickCount();
-
-      while (written < requested) {
-        if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                               "Playback stream stopped");
-          }
-          return false;
-        }
-        if (GetTickCount() - start_time > 3000) {
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                               "WASAPI write timeout (ring buffer full)");
-          }
-          return false;
-        }
-
-        size_t available_space =
-            spsc_audio_ring_buffer_get_capacity(playback->ring_buffer) -
-            spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
-        size_t to_write = requested - written;
-        if (to_write > available_space) to_write = available_space;
-
-        if (to_write > 0) {
-          spsc_audio_ring_buffer_write(playback->ring_buffer,
-                                       playback->write_buf + written, to_write,
-                                       1);
-          written += to_write;
-          start_time = GetTickCount();
-        } else {
-          cdsp_sleep_ms(1);
-          if (!atomic_load_explicit(&playback->thread_running,
-                                    memory_order_acquire)) {
-            return false;
-          }
-        }
-      }
-    }
+    return true;
   } else {
     if (total_frames * playback->channels > playback->write_buf_cap) {
       playback->write_buf_cap = total_frames * playback->channels;
@@ -1104,9 +1053,9 @@ static void wasapi_playback_close(void* ctx) {
 static size_t wasapi_playback_get_buffer_level(void* ctx) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback || !playback->client) return 0;
-  UINT32 padding = 0;
-  IAudioClient_GetCurrentPadding(playback->client, &padding);
   if (playback->polling) {
+    UINT32 padding = 0;
+    IAudioClient_GetCurrentPadding(playback->client, &padding);
     return padding;
   }
   size_t ring_frames = 0;
@@ -1115,7 +1064,7 @@ static size_t wasapi_playback_get_buffer_level(void* ctx) {
         spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) /
         playback->channels;
   }
-  return padding + ring_frames;
+  return ring_frames;
 }
 
 static bool wasapi_playback_get_pending_rate_change(void* ctx,

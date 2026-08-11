@@ -642,6 +642,31 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           frames_read += to_copy;
         }
         IAudioCaptureClient_ReleaseBuffer(capture->capture_client, num_frames);
+      } else {
+        if (capture->has_pending_rate_change ||
+            hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+            hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+            hr == AUDCLNT_E_SERVICE_NOT_RUNNING ||
+            hr == AUDCLNT_E_BUFFER_ERROR) {
+          capture->has_pending_rate_change = true;
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Format change pending");
+          return false;
+        }
+        if (FAILED(hr)) {
+          logger_error(&g_wasapi_logger,
+                       "IAudioCaptureClient_GetBuffer failed: hr=0x%08lX",
+                       (unsigned long)hr);
+          if (err) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "IAudioCaptureClient_GetBuffer failed: hr=0x%08lX",
+                     (unsigned long)hr);
+            backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
+          }
+          return false;
+        }
       }
     } else {
       if (capture->polling) {
