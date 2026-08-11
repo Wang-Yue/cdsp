@@ -13,12 +13,45 @@ else
     SRC_ROOT := .
 endif
 
+# Parallel jobs and tools discovery
+NPROCS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
+
 ifeq ($(origin CC),default)
     CC := clang
 endif
 CC ?= clang
 AR ?= ar
-CFLAGS ?= -O3 -flto=auto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
+
+# Detect if compiler is Clang (Apple Clang or LLVM Clang)
+IS_CLANG := $(shell $(CC) --version 2>/dev/null | grep -iq clang && echo 1 || echo 0)
+
+# Multithreaded LTO Configuration (LTO=thin default for Clang, LTO=full, LTO=auto, or ENABLE_LTO=0)
+ENABLE_LTO ?= 1
+ifeq ($(ENABLE_LTO),1)
+    ifeq ($(IS_CLANG),1)
+        LTO ?= thin
+        ifeq ($(LTO),full)
+            # Full/Monolithic LTO (single-threaded / high memory)
+            LTO_CFLAGS  := -flto=full
+            LTO_LDFLAGS := -flto=full
+        else
+            # ThinLTO (concurrent cross-module optimizations across all CPU cores)
+            LTO_CFLAGS  := -flto=thin
+            LTO_LDFLAGS := -flto=thin
+        endif
+    else
+        LTO ?= auto
+        # GCC: -flto=auto uses parallel code generation via make jobserver or detected cores
+        LTO_CFLAGS  := -flto=$(LTO)
+        LTO_LDFLAGS := -flto=$(LTO)
+    endif
+else
+    LTO_CFLAGS  :=
+    LTO_LDFLAGS :=
+endif
+
+CFLAGS ?= -O3 $(LTO_CFLAGS) -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
 UNAME_S := $(shell uname -s)
 
 ifeq ($(IS_WINDOWS),1)
@@ -53,7 +86,6 @@ ifeq ($(IS_WINDOWS),1)
     CLI_BIN_EXT := .exe
 else ifeq ($(IS_DARWIN),1)
     CFLAGS += -mcpu=native
-    LDFLAGS += -flto
     ENABLE_COREAUDIO ?= 1
     ENABLE_ACCELERATE ?= 1
     ENABLE_ALSA ?= 0
@@ -82,9 +114,30 @@ endif
 # Map Flags to CFLAGS preprocessor definitions
 $(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filter 1,$(ENABLE_$(f))),$(eval CFLAGS += -DENABLE_$(f))))
 
+# Multithreaded Linker Selection: auto (default), mold, lld, gold, default
+LINKER ?= auto
+ifeq ($(LINKER),mold)
+    LDFLAGS += -fuse-ld=mold
+else ifeq ($(LINKER),lld)
+    LDFLAGS += -fuse-ld=lld
+else ifeq ($(LINKER),gold)
+    LDFLAGS += -fuse-ld=gold -Wl,--threads -Wl,--thread-count=$(NPROCS)
+else ifeq ($(LINKER),auto)
+    ifeq ($(IS_LINUX),1)
+        ifeq ($(shell which mold 2>/dev/null && echo 1 || echo 0),1)
+            LDFLAGS += -fuse-ld=mold
+        else ifeq ($(shell which ld.lld 2>/dev/null || which lld 2>/dev/null && echo 1 || echo 0),1)
+            LDFLAGS += -fuse-ld=lld
+        endif
+    else ifeq ($(IS_WINDOWS),1)
+        ifeq ($(shell which ld.lld 2>/dev/null || which lld-link 2>/dev/null && echo 1 || echo 0),1)
+            LDFLAGS += -fuse-ld=lld
+        endif
+    endif
+endif
 
 # Map Flags to link options (LDFLAGS)
-LDFLAGS += -lm -lpthread
+LDFLAGS += $(LTO_LDFLAGS) -lm -lpthread
 ifeq ($(IS_WINDOWS),1)
     # Windows Setup
     CFLAGS += -march=native -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
@@ -292,10 +345,7 @@ callgraph-audit:
 test: test-rust-build $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
-PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
-NPROCS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-
-SAN_BASE_CFLAGS := $(filter-out -O3 -flto -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
+SAN_BASE_CFLAGS := $(filter-out -O3 -flto% -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
 export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:second_deadlock_stack=1
 export LSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/lsan_suppressions.txt
 
@@ -402,9 +452,6 @@ format:
 	find $(ROOT_DIR) \( -name "*.c" -o -name "*.h" \) -not -path "*/.build/*" -not -path "*/Tests/RustHarnesses/*" | xargs clang-format -i
 
 # Cross-platform IWYU tool discovery (Linux & macOS)
-PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
-NPROCS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-
 IWYU_TOOL ?= $(shell \
 	which iwyu_tool 2>/dev/null || \
 	which iwyu_tool.py 2>/dev/null || \
