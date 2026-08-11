@@ -516,7 +516,7 @@ static void* dither_filter_create(const char* name,
   uint32_t hash = 5381;
   if (name) {
     for (const char* p = name; *p; p++) {
-      hash = ((hash << 5) + hash) + (uint8_t)*p;
+      hash = (hash * 33u) + (uint8_t)*p;
     }
   }
   // Add uniqueness (e.g., memory address of instance) to prevent channel

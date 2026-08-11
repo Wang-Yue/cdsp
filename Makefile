@@ -291,14 +291,16 @@ test: test-rust-build $(UNIT_TEST_BINS)
 
 SAN_BASE_CFLAGS := $(filter-out -O3 -flto -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
 export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:second_deadlock_stack=1
+export LSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/lsan_suppressions.txt
 
 # NOTE: On macOS (Apple Silicon ARM64), Apple Clang (/usr/bin/clang) has a known dynamic runtime
 # initializer deadlock/crash bug in libclang_rt.asan_osx_dynamic.dylib and libclang_rt.tsan_osx_dynamic.dylib.
 # Do NOT use Xcode Apple Clang for sanitizer runs. Use Homebrew LLVM Clang instead:
 #   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-asan
 #   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-tsan
+#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-lsan
 
-.PHONY: test-asan test-tsan
+.PHONY: test-asan test-tsan test-ubsan test-intsan test-msan test-lsan test-cfi
 test-asan:
 	@echo "\n🩺 Running Unit Tests under AddressSanitizer & UndefinedBehaviorSanitizer...\n"
 	$(MAKE) clean
@@ -308,6 +310,36 @@ test-tsan:
 	@echo "\n🩺 Running Unit Tests under ThreadSanitizer...\n"
 	$(MAKE) clean
 	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(LDFLAGS) -fsanitize=thread"
+
+test-ubsan:
+	@echo "\n🩺 Running Unit Tests under UndefinedBehaviorSanitizer...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=undefined -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=undefined"
+
+test-intsan:
+	@echo "\n🩺 Running Unit Tests under IntegerSanitizer (signed overflow, shift bounds, divide-by-zero)...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero"
+
+test-msan:
+ifeq ($(IS_DARWIN),1)
+	@echo "❌ MemorySanitizer (-fsanitize=memory) is not supported on macOS (Darwin). It is supported on Linux (x86_64/aarch64) and FreeBSD."
+	@exit 1
+else
+	@echo "\n🩺 Running Unit Tests under MemorySanitizer (uninitialized memory reads)...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(LDFLAGS) -fsanitize=memory"
+endif
+
+test-lsan:
+	@echo "\n🩺 Running Unit Tests under LeakSanitizer (memory leaks)...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=leak" LDFLAGS="$(LDFLAGS) -fsanitize=leak"
+
+test-cfi:
+	@echo "\n🩺 Running Unit Tests under Control Flow Integrity (indirect call protection)...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -flto -fvisibility=hidden -fsanitize=cfi" LDFLAGS="$(LDFLAGS) -flto -fsanitize=cfi"
 
 run-test-runner:
 	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"

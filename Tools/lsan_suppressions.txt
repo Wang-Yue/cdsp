@@ -1,0 +1,18 @@
+# LeakSanitizer suppression file for CDSP
+
+# macOS system libc floating-point formatting cache (__Balloc_D2A / __dtoa in snprintf)
+leak:__Balloc_D2A
+leak:__d2b_D2A
+leak:__dtoa
+leak:__rv_alloc_D2A
+leak:libsystem_c.dylib
+
+# macOS CoreAudio / AudioToolbox system thread TLS and driver caches
+leak:CoreAudio
+leak:AudioToolbox
+leak:libdispatch.dylib
+
+# Linux system runtime libraries
+leak:libdbus-1
+leak:libpipewire
+leak:libasound
