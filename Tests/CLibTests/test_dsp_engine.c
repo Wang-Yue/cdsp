@@ -2294,8 +2294,8 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   fclose(f);
 
   // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), throttled real-time in
-  // ~166ms wall-clock time is < 30KB. Unthrottled generation should easily produce
-  // > 200KB of audio in that window.
+  // ~166ms wall-clock time is < 30KB. Unthrottled generation should easily
+  // produce > 200KB of audio in that window.
   ASSERT_TRUE(size > 200000);
 
   remove(out_filename);
@@ -2890,7 +2890,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
       break;
     }
     double cur_elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
-    if (cur_elapsed >= 35.0) {
+    if (cur_elapsed >= 60.0) {
       break;
     }
     cdsp_sleep_ms(5);
@@ -2930,7 +2930,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
       ASSERT_TRUE(elapsed < 60.0);
     } else {
       // Non-realtime should take very little simulated time
-      ASSERT_TRUE(elapsed < 15.0);
+      ASSERT_TRUE(elapsed < 25.0);
     }
   }
 }

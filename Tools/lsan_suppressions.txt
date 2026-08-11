@@ -11,6 +11,8 @@ leak:libsystem_c.dylib
 leak:CoreAudio
 leak:AudioToolbox
 leak:libdispatch.dylib
+leak:dispatch_apply
+leak:dispatch_apply_f
 
 # Linux system runtime libraries
 leak:libdbus-1

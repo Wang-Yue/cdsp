@@ -296,33 +296,42 @@ SAN_BASE_CFLAGS := $(filter-out -O3 -flto -fno-math-errno -funroll-loops -fvisib
 export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:second_deadlock_stack=1
 export LSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/lsan_suppressions.txt
 
-# NOTE: On macOS (Apple Silicon ARM64), Apple Clang (/usr/bin/clang) has a known dynamic runtime
-# initializer deadlock/crash bug in libclang_rt.asan_osx_dynamic.dylib and libclang_rt.tsan_osx_dynamic.dylib.
-# Do NOT use Xcode Apple Clang for sanitizer runs. Use Homebrew LLVM Clang instead:
-#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-asan
-#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-tsan
-#   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar make test-lsan
+# Compiler discovery for sanitizers on macOS (Homebrew LLVM avoids Apple Clang runtime bugs and supports all sanitizers)
+ifeq ($(IS_DARWIN),1)
+    HOMEBREW_LLVM_CLANG := $(shell [ -x /opt/homebrew/opt/llvm/bin/clang ] && echo /opt/homebrew/opt/llvm/bin/clang || ([ -x /usr/local/opt/llvm/bin/clang ] && echo /usr/local/opt/llvm/bin/clang || echo ""))
+    HOMEBREW_LLVM_AR := $(shell [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ] && echo /opt/homebrew/opt/llvm/bin/llvm-ar || ([ -x /usr/local/opt/llvm/bin/llvm-ar ] && echo /usr/local/opt/llvm/bin/llvm-ar || echo ""))
+    ifneq ($(HOMEBREW_LLVM_CLANG),)
+        SAN_CC ?= $(HOMEBREW_LLVM_CLANG)
+        SAN_AR ?= $(HOMEBREW_LLVM_AR)
+    else
+        SAN_CC ?= $(CC)
+        SAN_AR ?= $(AR)
+    endif
+else
+    SAN_CC ?= $(CC)
+    SAN_AR ?= $(AR)
+endif
 
-.PHONY: test-asan test-tsan test-ubsan test-intsan test-msan test-lsan test-cfi
+.PHONY: test-asan test-tsan test-ubsan test-intsan test-msan test-lsan test-cfi test-sanitizers
 test-asan:
 	@echo "\n🩺 Running Unit Tests under AddressSanitizer & UndefinedBehaviorSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address,undefined" LDFLAGS="$(LDFLAGS) -fsanitize=address,undefined"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address,undefined" LDFLAGS="$(LDFLAGS) -fsanitize=address,undefined"
 
 test-tsan:
 	@echo "\n🩺 Running Unit Tests under ThreadSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(LDFLAGS) -fsanitize=thread"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(LDFLAGS) -fsanitize=thread"
 
 test-ubsan:
 	@echo "\n🩺 Running Unit Tests under UndefinedBehaviorSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=undefined -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=undefined"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=undefined -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=undefined"
 
 test-intsan:
 	@echo "\n🩺 Running Unit Tests under IntegerSanitizer (signed overflow, shift bounds, divide-by-zero)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero"
 
 test-msan:
 ifeq ($(IS_DARWIN),1)
@@ -331,18 +340,35 @@ ifeq ($(IS_DARWIN),1)
 else
 	@echo "\n🩺 Running Unit Tests under MemorySanitizer (uninitialized memory reads)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(filter-out -DENABLE_ALSA -DENABLE_PIPEWIRE,$(SAN_BASE_CFLAGS)) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(filter-out -lasound -lpipewire-0.3,$(LDFLAGS)) -fsanitize=memory" ENABLE_ALSA=0 ENABLE_PIPEWIRE=0 ENABLE_DBUS=0
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(filter-out -DENABLE_ALSA -DENABLE_PIPEWIRE,$(SAN_BASE_CFLAGS)) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(filter-out -lasound -lpipewire-0.3,$(LDFLAGS)) -fsanitize=memory" ENABLE_ALSA=0 ENABLE_PIPEWIRE=0 ENABLE_DBUS=0
 endif
 
 test-lsan:
+ifeq ($(IS_DARWIN),1)
+	@echo "\n🩺 Running Unit Tests under LeakSanitizer (via AddressSanitizer with leak detection on macOS)...\n"
+	$(MAKE) clean
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address" LDFLAGS="$(LDFLAGS) -fsanitize=address" ASAN_OPTIONS="detect_leaks=1 $(ASAN_OPTIONS)"
+else
 	@echo "\n🩺 Running Unit Tests under LeakSanitizer (memory leaks)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=leak" LDFLAGS="$(LDFLAGS) -fsanitize=leak"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=leak" LDFLAGS="$(LDFLAGS) -fsanitize=leak"
+endif
 
 test-cfi:
 	@echo "\n🩺 Running Unit Tests under Control Flow Integrity (indirect call protection)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -flto -fvisibility=hidden -fsanitize=cfi" LDFLAGS="$(LDFLAGS) -flto -fsanitize=cfi"
+	+$(MAKE) -j test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -flto -fvisibility=hidden -fsanitize=cfi" LDFLAGS="$(LDFLAGS) -flto -fsanitize=cfi"
+
+test-sanitizers:
+	@echo "\n🧪 Running all supported sanitizer test suites...\n"
+	$(MAKE) test-asan
+	$(MAKE) test-tsan
+	$(MAKE) test-ubsan
+	$(MAKE) test-lsan
+ifeq ($(IS_DARWIN),0)
+	$(MAKE) test-msan
+endif
+	@echo "\n✅ All sanitizer test passes passed!"
 
 run-test-runner:
 	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"
