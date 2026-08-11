@@ -346,6 +346,7 @@ test: test-rust-build $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
 SAN_BASE_CFLAGS := $(filter-out -O3 -flto% -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
+SAN_BASE_LDFLAGS := $(filter-out -flto%,$(LDFLAGS))
 export TSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/tsan_suppressions.txt:second_deadlock_stack=1
 export LSAN_OPTIONS ?= suppressions=$(ROOT_DIR)/Tools/lsan_suppressions.txt
 
@@ -369,22 +370,22 @@ endif
 test-asan:
 	@echo "\n🩺 Running Unit Tests under AddressSanitizer & UndefinedBehaviorSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address,undefined" LDFLAGS="$(LDFLAGS) -fsanitize=address,undefined"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address,undefined" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=address,undefined"
 
 test-tsan:
 	@echo "\n🩺 Running Unit Tests under ThreadSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(LDFLAGS) -fsanitize=thread"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=thread" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=thread"
 
 test-ubsan:
 	@echo "\n🩺 Running Unit Tests under UndefinedBehaviorSanitizer...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=undefined -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=undefined"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=undefined -fno-sanitize-recover=all" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=undefined"
 
 test-intsan:
 	@echo "\n🩺 Running Unit Tests under IntegerSanitizer (signed overflow, shift bounds, divide-by-zero)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all" LDFLAGS="$(LDFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero"
 
 test-msan:
 ifeq ($(IS_DARWIN),1)
@@ -393,24 +394,24 @@ ifeq ($(IS_DARWIN),1)
 else
 	@echo "\n🩺 Running Unit Tests under MemorySanitizer (uninitialized memory reads)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(filter-out -DENABLE_ALSA -DENABLE_PIPEWIRE,$(SAN_BASE_CFLAGS)) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(filter-out -lasound -lpipewire-0.3,$(LDFLAGS)) -fsanitize=memory" ENABLE_ALSA=0 ENABLE_PIPEWIRE=0 ENABLE_DBUS=0
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(filter-out -DENABLE_ALSA -DENABLE_PIPEWIRE,$(SAN_BASE_CFLAGS)) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(filter-out -lasound -lpipewire-0.3,$(SAN_BASE_LDFLAGS)) -fsanitize=memory" ENABLE_ALSA=0 ENABLE_PIPEWIRE=0 ENABLE_DBUS=0
 endif
 
 test-lsan:
 ifeq ($(IS_DARWIN),1)
 	@echo "\n🩺 Running Unit Tests under LeakSanitizer (via AddressSanitizer with leak detection on macOS)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address" LDFLAGS="$(LDFLAGS) -fsanitize=address" ASAN_OPTIONS="detect_leaks=1 $(ASAN_OPTIONS)"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=address" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=address" ASAN_OPTIONS="detect_leaks=1 $(ASAN_OPTIONS)"
 else
 	@echo "\n🩺 Running Unit Tests under LeakSanitizer (memory leaks)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=leak" LDFLAGS="$(LDFLAGS) -fsanitize=leak"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=leak" LDFLAGS="$(SAN_BASE_LDFLAGS) -fsanitize=leak"
 endif
 
 test-cfi:
 	@echo "\n🩺 Running Unit Tests under Control Flow Integrity (indirect call protection)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -flto -fvisibility=hidden -fsanitize=cfi" LDFLAGS="$(LDFLAGS) -flto -fsanitize=cfi"
+	+$(MAKE) -j$(NPROCS) test CC="$(SAN_CC)" AR="$(SAN_AR)" CFLAGS="$(SAN_BASE_CFLAGS) -flto -fvisibility=hidden -fsanitize=cfi" LDFLAGS="$(SAN_BASE_LDFLAGS) -flto -fsanitize=cfi"
 
 test-sanitizers:
 	@echo "\n🧪 Running all supported sanitizer test suites...\n"
