@@ -261,6 +261,9 @@ static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
 
     cdsp_sleep_ms(10);
   }
+  // Allow time for final hardware buffer period to render through DAC across
+  // backends
+  cdsp_sleep_ms(20);
   logger_info(&g_logger, "Playback hardware buffer drained");
 }
 
