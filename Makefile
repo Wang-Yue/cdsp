@@ -13,6 +13,9 @@ else
     SRC_ROOT := .
 endif
 
+ifeq ($(origin CC),default)
+    CC := clang
+endif
 CC ?= clang
 AR ?= ar
 CFLAGS ?= -O3 -flto=auto -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
@@ -328,7 +331,7 @@ ifeq ($(IS_DARWIN),1)
 else
 	@echo "\n🩺 Running Unit Tests under MemorySanitizer (uninitialized memory reads)...\n"
 	$(MAKE) clean
-	+$(MAKE) -j test CFLAGS="$(SAN_BASE_CFLAGS) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(LDFLAGS) -fsanitize=memory"
+	+$(MAKE) -j test CFLAGS="$(filter-out -DENABLE_ALSA -DENABLE_PIPEWIRE,$(SAN_BASE_CFLAGS)) -fsanitize=memory -fsanitize-memory-track-origins=2" LDFLAGS="$(filter-out -lasound -lpipewire-0.3,$(LDFLAGS)) -fsanitize=memory" ENABLE_ALSA=0 ENABLE_PIPEWIRE=0 ENABLE_DBUS=0
 endif
 
 test-lsan:

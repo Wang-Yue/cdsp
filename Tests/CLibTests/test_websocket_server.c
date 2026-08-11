@@ -526,11 +526,8 @@ TEST(test_websocket_error_translation) {
   const char* cap_cmd =
       "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"wasapi\", "
       "\"NonExistentDevice12345\"]}";
-#else
-  const char* cap_cmd =
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"coreaudio\", "
-      "\"NonExistentDevice12345\"]}";
 #endif
+#if defined(ENABLE_COREAUDIO) || defined(ENABLE_ALSA) || defined(ENABLE_WASAPI)
   websocket_server_handle_command(server, 0, cap_cmd, resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
@@ -539,6 +536,7 @@ TEST(test_websocket_error_translation) {
   ASSERT_STR_EQ("DeviceNotFoundError",
                 cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
+#endif
 
   // 5. Test capabilities Generic DeviceError translation (unknown backend)
   websocket_server_handle_command(

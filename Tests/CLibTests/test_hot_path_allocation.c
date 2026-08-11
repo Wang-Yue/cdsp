@@ -54,10 +54,12 @@
 #endif
 
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) ||         \
-    defined(__SANITIZE_MEMORY__) ||                                          \
+    defined(__SANITIZE_MEMORY__) || defined(__SANITIZE_LEAK__) ||            \
     (defined(__has_feature) &&                                               \
      (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
-      __has_feature(memory_sanitizer)))
+      __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||   \
+      __has_feature(cfi) || __has_feature(control_flow_integrity) ||         \
+      __has_feature(undefined_behavior_sanitizer)))
 #define CDSP_SANITIZER_ACTIVE 1
 #else
 #define CDSP_SANITIZER_ACTIVE 0
@@ -94,6 +96,7 @@ static void* bootstrap_malloc(size_t size) {
   bootstrap_offset += aligned_size;
   return ptr;
 }
+__attribute__((no_sanitize("cfi")))
 static void init_real_allocators(void) {
   if (real_malloc) return;
   if (in_bootstrap) return;
@@ -110,6 +113,7 @@ static void init_real_allocators(void) {
   }
 }
 
+__attribute__((no_sanitize("cfi")))
 void* malloc(size_t size) {
   if (!real_malloc) {
     init_real_allocators();
@@ -124,6 +128,7 @@ void* malloc(size_t size) {
   return ptr;
 }
 
+__attribute__((no_sanitize("cfi")))
 void* calloc(size_t num, size_t size) {
   size_t total = num * size;
   if (!real_calloc) {
@@ -143,6 +148,7 @@ void* calloc(size_t num, size_t size) {
   return ptr;
 }
 
+__attribute__((no_sanitize("cfi")))
 void* realloc(void* ptr, size_t size) {
   if (ptr >= (void*)bootstrap_buffer &&
       ptr < (void*)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
@@ -164,6 +170,7 @@ void* realloc(void* ptr, size_t size) {
   return new_ptr;
 }
 
+__attribute__((no_sanitize("cfi")))
 void free(void* ptr) {
   if (!ptr) return;
   if (ptr >= (void*)bootstrap_buffer &&

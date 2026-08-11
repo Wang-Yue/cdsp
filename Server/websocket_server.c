@@ -288,13 +288,15 @@ static void* server_thread_func(void* arg) {
 
   while (atomic_load_explicit(&server->running, memory_order_acquire)) {
     struct pollfd fds[33];
+    memset(fds, 0, sizeof(fds));
+    int polled_clients = num_clients;
     fds[0].fd = server->server_fd;
     fds[0].events = POLLIN;
-    for (int i = 0; i < num_clients; i++) {
+    for (int i = 0; i < polled_clients; i++) {
       fds[i + 1].fd = client_fds[i];
       fds[i + 1].events = POLLIN;
     }
-    int ret = poll_sockets(fds, num_clients + 1, 50);
+    int ret = poll_sockets(fds, polled_clients + 1, 50);
 
     pthread_mutex_lock(&server->sessions_mutex);
 
@@ -674,7 +676,7 @@ static void* server_thread_func(void* arg) {
           CLOSE_SOCKET(cfd);
         }
       }
-      for (int i = 0; i < num_clients; i++) {
+      for (int i = 0; i < polled_clients; i++) {
         if (fds[i + 1].revents & (POLLIN | POLLERR | POLLHUP)) {
           char buf[4096];
           int n = recv(client_fds[i], buf, sizeof(buf) - 1, 0);
@@ -683,6 +685,7 @@ static void* server_thread_func(void* arg) {
             logger_info(&server_logger, "Client disconnected on slot %d", i);
             remove_client_session(server, fds, client_fds, last_state,
                                   &num_clients, i);
+            polled_clients--;
             i--;
           } else {
             buf[n] = '\0';

@@ -16,3 +16,6 @@ leak:libdispatch.dylib
 leak:libdbus-1
 leak:libpipewire
 leak:libasound
+leak:dl_open_worker_begin
+leak:_dl_map_object_deps
+leak:_dl_open

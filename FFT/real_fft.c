@@ -5,6 +5,7 @@
 #include "Config/config_error.h"
 #include "Logging/app_logger.h"
 #include "Utils/double_helpers.h"
+#include "Utils/msan_compat.h"
 
 __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
@@ -220,6 +221,7 @@ static void fftw_real_fft_forward(void* ctx, waveform_t real_in,
   struct fftw_real_fft_ctx* fft = (struct fftw_real_fft_ctx*)ctx;
   memcpy(fft->in_real, real_in, fft->length * sizeof(double));
   fftw_execute(fft->plan_forward);
+  CDSP_MSAN_UNPOISON(fft->out_complex, fft->spectrum_length * sizeof(fftw_complex));
   for (size_t i = 0; i < fft->spectrum_length; i++) {
     spec_re[i] = __real__(fft->out_complex[i]);
     spec_im[i] = __imag__(fft->out_complex[i]);
@@ -246,6 +248,7 @@ static void fftw_real_fft_inverse(void* ctx, waveform_t spec_re,
     __imag__(fft->out_complex[i]) = spec_im[i];
   }
   fftw_execute(fft->plan_inverse);
+  CDSP_MSAN_UNPOISON(fft->in_real, fft->length * sizeof(double));
   memcpy(real_out, fft->in_real, fft->length * sizeof(double));
 }
 
@@ -335,6 +338,7 @@ static void fftwf_real_fft_forward(void* ctx, const float* real_in,
   struct fftwf_real_fft_ctx* fft = (struct fftwf_real_fft_ctx*)ctx;
   memcpy(fft->in_real, real_in, fft->length * sizeof(float));
   fftwf_execute(fft->plan_forward);
+  CDSP_MSAN_UNPOISON(fft->out_complex, fft->spectrum_length * sizeof(fftwf_complex));
   for (size_t i = 0; i < fft->spectrum_length; i++) {
     spec_re[i] = __real__(fft->out_complex[i]);
     spec_im[i] = __imag__(fft->out_complex[i]);
@@ -349,6 +353,7 @@ static void fftwf_real_fft_inverse(void* ctx, const float* spec_re,
     __imag__(fft->out_complex[i]) = spec_im[i];
   }
   fftwf_execute(fft->plan_inverse);
+  CDSP_MSAN_UNPOISON(fft->in_real, fft->length * sizeof(float));
   memcpy(real_out, fft->in_real, fft->length * sizeof(float));
 }
 

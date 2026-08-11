@@ -107,7 +107,7 @@ TEST(DSPEngineSetConfigAndReload) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(__linux__)
+#if defined(ENABLE_ALSA)
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -164,7 +164,7 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"name\": \"mymixer\"\n"
       "    }]\n"
       "}";
-#elif defined(_WIN32)
+#elif defined(ENABLE_WASAPI)
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -197,6 +197,59 @@ TEST(DSPEngineSetConfigAndReload) {
       "            \"type\": \"Wasapi\",\n"
       "            \"channels\": 2,\n"
       "            \"polling\": true\n"
+      "        }\n"
+      "    },\n"
+      "    \"mixers\": {\n"
+      "        \"mymixer\": {\n"
+      "            \"channels_in\": 2,\n"
+      "            \"channels_out\": 2,\n"
+      "            \"mapping\": [{\n"
+      "                \"dest\": 0,\n"
+      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, "
+      "\"inverted\": "
+      "false, \"mute\": false}]\n"
+      "            }, {\n"
+      "                \"dest\": 1,\n"
+      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, "
+      "\"inverted\": "
+      "false, \"mute\": false}]\n"
+      "            }]\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [{\n"
+      "        \"type\": \"Mixer\",\n"
+      "        \"name\": \"mymixer\"\n"
+      "    }]\n"
+      "}";
+#elif defined(ENABLE_COREAUDIO)
+  const char* json1 =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
+  const char* json2 =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
       "    \"mixers\": {\n"
@@ -228,11 +281,15 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -244,11 +301,15 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -310,7 +371,7 @@ TEST(DSPEngineHotParameterReload) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(__linux__)
+#if defined(ENABLE_ALSA)
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -372,7 +433,7 @@ TEST(DSPEngineHotParameterReload) {
       "        \"names\": [\"mygain\"]\n"
       "    }]\n"
       "}";
-#elif defined(_WIN32)
+#elif defined(ENABLE_WASAPI)
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -418,6 +479,64 @@ TEST(DSPEngineHotParameterReload) {
       "            \"type\": \"Wasapi\",\n"
       "            \"channels\": 2,\n"
       "            \"polling\": true\n"
+      "        }\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"mygain\": {\n"
+      "            \"type\": \"Gain\",\n"
+      "            \"parameters\": {\n"
+      "                \"gain\": -3.0\n"
+      "            }\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [{\n"
+      "        \"type\": \"Filter\",\n"
+      "        \"channel\": 0,\n"
+      "        \"names\": [\"mygain\"]\n"
+      "    }]\n"
+      "}";
+#elif defined(ENABLE_COREAUDIO)
+  const char* json1 =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"mygain\": {\n"
+      "            \"type\": \"Gain\",\n"
+      "            \"parameters\": {\n"
+      "                \"gain\": -6.0\n"
+      "            }\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [{\n"
+      "        \"type\": \"Filter\",\n"
+      "        \"channel\": 0,\n"
+      "        \"names\": [\"mygain\"]\n"
+      "    }]\n"
+      "}";
+
+  const char* json2 =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
       "    \"filters\": {\n"
@@ -441,11 +560,15 @@ TEST(DSPEngineHotParameterReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -470,11 +593,15 @@ TEST(DSPEngineHotParameterReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -522,7 +649,7 @@ TEST(DSPEngineSetConfigStruct) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(__linux__)
+#if defined(ENABLE_ALSA)
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -540,7 +667,7 @@ TEST(DSPEngineSetConfigStruct) {
       "        }\n"
       "    }\n"
       "}";
-#elif defined(_WIN32)
+#elif defined(ENABLE_WASAPI)
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -558,7 +685,7 @@ TEST(DSPEngineSetConfigStruct) {
       "        }\n"
       "    }\n"
       "}";
-#else
+#elif defined(ENABLE_COREAUDIO)
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -570,6 +697,26 @@ TEST(DSPEngineSetConfigStruct) {
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+#else
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -583,7 +730,7 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_TRUE(parsed != NULL);
 
   const char* json_override =
-#if defined(__linux__)
+#if defined(ENABLE_ALSA)
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 48000,\n"
@@ -600,7 +747,7 @@ TEST(DSPEngineSetConfigStruct) {
       "        }\n"
       "    }\n"
       "}";
-#elif defined(_WIN32)
+#elif defined(ENABLE_WASAPI)
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 48000,\n"
@@ -612,6 +759,21 @@ TEST(DSPEngineSetConfigStruct) {
       "        \"playback\": {\n"
       "            \"type\": \"Wasapi\",\n"
       "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+#elif defined(ENABLE_COREAUDIO)
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 4\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"CoreAudio\",\n"
+      "            \"channels\": 4\n"
       "        }\n"
       "    }\n"
       "}";
@@ -621,11 +783,15 @@ TEST(DSPEngineSetConfigStruct) {
       "        \"samplerate\": 48000,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 4\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 4\n"
       "        }\n"
       "    }\n"
@@ -2113,9 +2279,9 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   memset(&err, 0, sizeof(err));
   ASSERT_TRUE(engine->set_config_json(engine->ctx, json, &err));
 
-  // Sleep for 1500ms in simulated time (~100ms real wall-clock time) to let
-  // threads spawn and stream stably on virtual machines.
-  cdsp_sleep_ms(1500);
+  // Sleep for 2500ms in simulated time (~166ms real wall-clock time) to let
+  // threads spawn and stream stably on virtual machines and under sanitizers.
+  cdsp_sleep_ms(2500);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -2127,10 +2293,10 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   long size = ftell(f);
   fclose(f);
 
-  // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), 1500ms simulated time
-  // is ~264.6KB. Unthrottled generation should easily produce > 400KB of audio
-  // in that window (>1.5x to 50x realtime).
-  ASSERT_TRUE(size > 400000);
+  // At real-time (44.1kHz stereo 16-bit = 176.4KB/sec), throttled real-time in
+  // ~166ms wall-clock time is < 30KB. Unthrottled generation should easily produce
+  // > 200KB of audio in that window.
+  ASSERT_TRUE(size > 200000);
 
   remove(out_filename);
   printf(

@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) && defined(ENABLE_PIPEWIRE)
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
