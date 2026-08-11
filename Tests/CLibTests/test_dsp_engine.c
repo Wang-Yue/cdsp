@@ -3601,7 +3601,6 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
       .pipeline_rate = 48000,
       .resampler = NULL,
       .pipeline = pipe,
-      .dsd_encoder = NULL,
       .resampler_scratch = NULL,
       .pipeline_scratch = NULL,
       .scratch_pool = pool,

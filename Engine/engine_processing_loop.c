@@ -31,7 +31,6 @@
 #include "Audio/processing_parameters.h"
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
-#include "DoP/dsd_encoder.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
 #include "Resampler/resampler_error.h"
@@ -60,7 +59,6 @@ struct engine_processing_loop {
   size_t pipeline_rate;
   resampler_t* resampler;
   pipeline_t* active_pipeline;
-  dsd_encoder_t* dsd_encoder;
   _Atomic(pipeline_t*) next_pipeline;
   audio_chunk_t* resampler_scratch;
   audio_chunk_t* pipeline_scratch;
@@ -92,7 +90,6 @@ engine_processing_loop_t* engine_processing_loop_create(
   loop->pipeline_rate = config->pipeline_rate;
   loop->resampler = config->resampler;
   loop->active_pipeline = config->pipeline;
-  loop->dsd_encoder = config->dsd_encoder;
   loop->resampler_scratch = config->resampler_scratch;
   loop->pipeline_scratch = config->pipeline_scratch;
   loop->scratch_pool = config->scratch_pool;
@@ -424,14 +421,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
     }
 
-    // 8. Encode PCM to DSD (DoP / Native DSD) in place if enabled
-    if (loop->dsd_encoder) {
-      dsd_encoder_encode(loop->dsd_encoder, chunk);
-    }
-
     // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
     // Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort Teardown)
-    // 9. Enqueue the processed chunk to the playback queue.
+    // 8. Enqueue the processed chunk to the playback queue.
     if (!processing_loop_enqueue_output(loop, chunk)) {
       break;
     }

@@ -48,6 +48,7 @@ struct engine_playback_loop {
   engine_shared_state_t* shared;
   playback_backend_t* playback;
   processing_parameters_t* processing_params;
+  dsd_encoder_t* dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
   bool capture_pitch_supported;
@@ -56,8 +57,6 @@ struct engine_playback_loop {
   bool rate_adjust_enabled;
   double adjust_period;
   int target_level;
-  dsd_mode_t dsd_mode;
-  size_t dsd_bit_depth;
   bool has_last_observed_playback_pending_rate;
   double last_observed_playback_pending_rate;
 };
@@ -132,6 +131,7 @@ engine_playback_loop_t* engine_playback_loop_create(
   loop->shared = config->shared;
   loop->playback = config->playback;
   loop->processing_params = config->processing_params;
+  loop->dsd_encoder = config->dsd_encoder;
   loop->pipeline_rate = config->pipeline_rate;
   loop->chunk_size = config->chunk_size;
   loop->capture_pitch_supported = config->capture_pitch_supported;
@@ -143,8 +143,6 @@ engine_playback_loop_t* engine_playback_loop_create(
   loop->rate_adjust_enabled = config->rate_adjust_enabled;
   loop->adjust_period = config->adjust_period;
   loop->target_level = config->target_level;
-  loop->dsd_mode = config->dsd_mode;
-  loop->dsd_bit_depth = config->dsd_bit_depth;
   return loop;
 }
 
@@ -295,14 +293,12 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   // enabled, we match its target level; otherwise, we pre-fill chunk_size.
   size_t prefill_frames =
       loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
-  if (loop->dsd_mode != DSD_MODE_PCM) {
+  if (loop->dsd_encoder && dsd_encoder_is_enabled(loop->dsd_encoder)) {
     size_t channels =
         processing_parameters_get_playback_channels(loop->processing_params);
     audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
     if (prefill_chunk) {
-      audio_chunk_set_valid_frames(prefill_chunk, prefill_frames);
-      dsd_fill_silence_pattern(prefill_chunk, loop->dsd_mode,
-                               loop->dsd_bit_depth);
+      dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);
       playback_backend_write(loop->playback, prefill_chunk, &berr);
       audio_chunk_free(prefill_chunk);
     }
@@ -393,7 +389,12 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     playback_loop_update_rate_adjust(loop, rate_controller, &averager,
                                      &stopwatch, &last_speed);
 
-    // 3. Write PCM chunk to physical audio output backend
+    // 3. Encode PCM to DSD (DoP / Native DSD) in place if enabled
+    if (loop->dsd_encoder) {
+      dsd_encoder_encode(loop->dsd_encoder, chunk);
+    }
+
+    // 4. Write chunk to physical audio output backend
     backend_error_t err;
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
