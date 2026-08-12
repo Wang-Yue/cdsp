@@ -322,8 +322,9 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     return;
   }
 
-  set_realtime_thread_priority("Playback", loop->chunk_size,
-                               loop->pipeline_rate);
+  realtime_thread_handle_t* rt_handle =
+      promote_current_thread_to_realtime("Playback", loop->chunk_size,
+                                         loop->pipeline_rate);
   log_rate_adjust_mode(loop);
 
   double last_speed = 1.0;
@@ -454,6 +455,10 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     logger_info(&g_logger,
                 "Skipping playback hardware buffer drain (eos=%d, paused=%d)",
                 reached_eos, is_paused);
+  }
+
+  if (rt_handle) {
+    demote_current_thread_from_realtime(rt_handle);
   }
 
   if (rate_controller) pi_rate_controller_free(rate_controller);

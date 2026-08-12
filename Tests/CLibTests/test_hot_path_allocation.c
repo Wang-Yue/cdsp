@@ -1468,7 +1468,7 @@ TEST(EngineProcessingLoop_AllocationFree) {
   // prior to entering the steady-state audio loop, one-time lazy allocations
   // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
   // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
-  // set_realtime_thread_priority). Once the startup sequence finishes,
+  // promote_current_thread_to_realtime). Once the startup sequence finishes,
   // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EngineProcessingLoop", tid, 2, 20,
                                    processing_loop_iter, &ctx);
@@ -1553,7 +1553,7 @@ TEST(EngineCaptureLoop_AllocationFree) {
   // prior to entering the steady-state audio loop, one-time lazy allocations
   // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
   // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
-  // set_realtime_thread_priority). Once the startup sequence finishes,
+  // promote_current_thread_to_realtime). Once the startup sequence finishes,
   // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EngineCaptureLoop", tid, 2, 20,
                                    capture_loop_iter, &ctx);
@@ -1655,7 +1655,7 @@ TEST(EnginePlaybackLoop_AllocationFree) {
   // prior to entering the steady-state audio loop, one-time lazy allocations
   // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
   // buffers on fopen/write). 2) OS kernel/Mach thread QoS class state setup
-  // (via set_realtime_thread_priority). Once the startup sequence finishes,
+  // (via promote_current_thread_to_realtime). Once the startup sequence finishes,
   // steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EnginePlaybackLoop", tid, 2, 20,
                                    playback_loop_iter, &ctx);

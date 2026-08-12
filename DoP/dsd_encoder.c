@@ -29,8 +29,6 @@
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
 
-#include "Engine/thread_priority.h"
-
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0
@@ -443,13 +441,7 @@ typedef struct {
 } dsd_encoder_dispatch_ctx_t;
 
 static void dsd_encoder_worker(void* context, size_t task) {
-  static _Thread_local bool is_promoted = false;
   dsd_encoder_dispatch_ctx_t* ctx = (dsd_encoder_dispatch_ctx_t*)context;
-  if (!is_promoted) {
-    set_realtime_thread_priority("DSD Worker", ctx->frames,
-                                 ctx->encoder->sample_rate);
-    is_promoted = true;
-  }
   encode_channel(&ctx->encoder->channel_states[task],
                  audio_chunk_get_channel(ctx->chunk, task), ctx->frames,
                  ctx->encoder->coeffs, ctx->encoder->mode,
@@ -476,11 +468,6 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
 #pragma omp parallel num_threads(total_tasks)
 
     {
-      static _Thread_local bool is_promoted = false;
-      if (!is_promoted) {
-        set_realtime_thread_priority("DSD Worker", n, encoder->sample_rate);
-        is_promoted = true;
-      }
 #pragma omp for
       for (int task = 0; task < total_tasks; task++) {
         encode_channel(&encoder->channel_states[task],

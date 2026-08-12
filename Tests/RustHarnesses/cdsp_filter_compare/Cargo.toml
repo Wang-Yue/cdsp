@@ -9,7 +9,7 @@ publish = false
 # harness stays reproducible. Cargo resolves the package by its `name`
 # (CamillaDSP) but exposes the lib target as `camillalib` per the upstream
 # Cargo.toml. Bump the rev when filters are re-validated against a newer cut.
-CamillaDSP = { git = "https://github.com/HEnquist/camilladsp.git", rev = "99e1b3e7259c8d2c5d78c348a5ba86d34bb9d9dd" }
+CamillaDSP = { git = "https://github.com/HEnquist/camilladsp.git", rev = "024afdfe146cf9efb7ed036431fcdedda27d5efd" }
 serde_json = "1.0"
 
 [[bin]]

@@ -28,8 +28,6 @@
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
 
-#include "Engine/thread_priority.h"
-
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0
@@ -434,13 +432,7 @@ typedef struct {
 } dop_decoder_dispatch_ctx_t;
 
 static void dop_decoder_worker(void* context, size_t ch) {
-  static _Thread_local bool is_promoted = false;
   dop_decoder_dispatch_ctx_t* ctx = (dop_decoder_dispatch_ctx_t*)context;
-  if (!is_promoted) {
-    set_realtime_thread_priority("DoP Worker", ctx->valid_frames,
-                                 (size_t)ctx->decoder->sample_rate);
-    is_promoted = true;
-  }
   process_channel(&ctx->decoder->channel_states[ch],
                   audio_chunk_get_channel(ctx->chunk, ch), ctx->valid_frames,
                   ctx->decoder->ctables);
@@ -469,12 +461,6 @@ bool dop_decoder_detect_and_process(dop_decoder_t* decoder,
 #elif defined(USE_OPENMP)
 #pragma omp parallel num_threads(decoder->channels)
     {
-      static _Thread_local bool is_promoted = false;
-      if (!is_promoted) {
-        set_realtime_thread_priority("DoP Worker", valid_frames,
-                                     (size_t)decoder->sample_rate);
-        is_promoted = true;
-      }
 #pragma omp for
       for (int ch = 0; ch < decoder->channels; ch++) {
         process_channel(&decoder->channel_states[ch],

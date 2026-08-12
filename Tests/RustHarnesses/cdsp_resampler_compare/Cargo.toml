@@ -8,8 +8,8 @@ publish = false
 # Pinned to a specific upstream rubato commit so the harness's bit-equivalent
 # results stay reproducible. Bump the rev when the AsyncSinc/AsyncPoly Swift
 # implementations are re-validated against a newer rubato.
-rubato = { version = "4.0" }
-audioadapter-buffers = "4.0"
+rubato = { version = "5.0" }
+audioadapter-buffers = "5.1"
 
 [[bin]]
 name = "cdsp_resampler_compare"

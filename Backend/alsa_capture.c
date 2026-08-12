@@ -589,13 +589,14 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     sample_bytes = 8;
   size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
 
-  size_t millis_per_chunk = 1000 * frames / (size_t)capture->sample_rate;
+  double millis_per_chunk =
+      1000.0 * (double)frames / (double)capture->sample_rate;
 
   char* buffer = (char*)capture->interleaved_buf;
   size_t buffer_len_bytes = frames * bytes_per_frame;
 
   for (;;) {
-    uint32_t timeout_millis = (uint32_t)(8 * millis_per_chunk);
+    uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
     if (timeout_millis < 20) {
       timeout_millis = 20;
     }

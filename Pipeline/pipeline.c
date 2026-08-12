@@ -40,8 +40,6 @@ const char* pipeline_error_description(pipeline_error_t err) {
 #if defined(__APPLE__) || defined(USE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
 
-#include "Engine/thread_priority.h"
-
 #define HAS_DISPATCH 1
 #else
 #define HAS_DISPATCH 0
@@ -622,13 +620,7 @@ typedef struct {
 } dispatch_ctx_t;
 
 static void parallel_filter_worker(void* context, size_t idx) {
-  static _Thread_local bool is_promoted = false;
   dispatch_ctx_t* ctx = (dispatch_ctx_t*)context;
-  if (!is_promoted) {
-    set_realtime_thread_priority("Pipeline Worker", ctx->valid_frames,
-                                 ctx->rate);
-    is_promoted = true;
-  }
   parallel_filter_chain_t* chain = &ctx->chains[idx];
   if ((size_t)chain->channel >= audio_chunk_get_channels(ctx->current_chunk))
     return;
@@ -731,12 +723,6 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
 #elif defined(USE_OPENMP)
 #pragma omp parallel num_threads(step->chains_count)
           {
-            static _Thread_local bool is_promoted = false;
-            if (!is_promoted) {
-              set_realtime_thread_priority("Pipeline Worker", valid_frames,
-                                           pipeline->rate);
-              is_promoted = true;
-            }
 #pragma omp for
             for (size_t idx = 0; idx < step->chains_count; idx++) {
               parallel_filter_chain_t* chain = &step->chains[idx];

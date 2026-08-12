@@ -1,5 +1,7 @@
 #include "Engine/thread_priority.h"
 
+#include <stdlib.h>
+
 #include "Logging/app_logger.h"
 
 #ifndef CDSP_TEST
@@ -11,31 +13,26 @@ static const logger_t g_logger = {"dsp.threadpriority"};
 #endif
 #include <pthread.h>
 
-/// Bind the *calling* thread to a Mach time-constraint scheduling policy
-/// tailored to the given audio buffer parameters.
-///
-/// This is the standard Darwin/macOS idiom for real-time audio threads.
-///
-/// - Parameters:
-///   - name: A descriptive name of the thread (e.g. Capture, Playback,
-///   Processing).
-///   - buffer_frames: The buffer size in frames.
-///   - sample_rate: The sample rate in Hz.
 #ifdef __APPLE__
-void set_realtime_thread_priority(const char* name, size_t buffer_frames,
-                                  size_t sample_rate) {
+struct realtime_thread_handle {
+  thread_port_t thread;
+  thread_time_constraint_policy_data_t previous_policy;
+};
+
+realtime_thread_handle_t* promote_current_thread_to_realtime(
+    const char* name, size_t buffer_frames, size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return;
+  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
 #else
   if (buffer_frames == 0 || sample_rate == 0) {
     logger_warn(&g_logger,
                 "[%s] Invalid audio parameters for real-time priority: "
-                "frames=%d, rate=%d",
+                "frames=%zu, rate=%zu",
                 name ? name : "unknown", buffer_frames, sample_rate);
-    return;
+    return NULL;
   }
 
   mach_timebase_info_data_t tb_info;
@@ -43,7 +40,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   if (status != KERN_SUCCESS) {
     logger_error(&g_logger, "[%s] Failed to retrieve Mach timebase info: %d",
                  name ? name : "unknown", status);
-    return;
+    return NULL;
   }
 
   // Calculate nominal buffer period in nanoseconds.
@@ -88,9 +85,13 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
       sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
   thread_port_t thread = mach_thread_self();
 
+  boolean_t get_default = 0;
+  thread_time_constraint_policy_data_t prev_policy = {0};
+  thread_policy_get(thread, THREAD_TIME_CONSTRAINT_POLICY,
+                    (thread_policy_t)&prev_policy, &count, &get_default);
+
   kern_return_t result = thread_policy_set(
       thread, THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy, count);
-  mach_port_deallocate(mach_task_self(), thread);
 
   if (result == KERN_SUCCESS) {
     logger_info(&g_logger,
@@ -98,11 +99,42 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 "computation=%.1fms, constraint=%.1fms",
                 name ? name : "unknown", period_ns / 1000000.0,
                 computation_ns / 1000000.0, constraint_ns / 1000000.0);
+
+    realtime_thread_handle_t* handle =
+        (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+    if (handle) {
+      handle->thread = thread;
+      handle->previous_policy = prev_policy;
+    } else {
+      mach_port_deallocate(mach_task_self(), thread);
+    }
+    return handle;
   } else {
     logger_warn(&g_logger, "[%s] Failed to set real-time thread policy: %d",
                 name ? name : "unknown", result);
+    mach_port_deallocate(mach_task_self(), thread);
+    return NULL;
   }
 #endif
+}
+
+void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
+  if (!handle) return;
+#ifndef CDSP_TEST
+  mach_msg_type_number_t count =
+      sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
+  kern_return_t res = thread_policy_set(
+      handle->thread, THREAD_TIME_CONSTRAINT_POLICY,
+      (thread_policy_t)&handle->previous_policy, count);
+  if (res == KERN_SUCCESS) {
+    logger_debug(&g_logger,
+                 "Thread demoted back to previous Mach scheduling policy");
+  } else {
+    logger_warn(&g_logger, "Failed to revert Mach real-time policy: %d", res);
+  }
+  mach_port_deallocate(mach_task_self(), handle->thread);
+#endif
+  free(handle);
 }
 #elif defined(__linux__)
 #if !defined(NO_DBUS) && !defined(DISABLE_DBUS)
@@ -119,6 +151,12 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+struct realtime_thread_handle {
+  pthread_t pthread_id;
+  int policy;
+  struct sched_param sched_param;
+};
 
 #if defined(CDSP_HAS_DBUS) && !defined(CDSP_TEST)
 typedef struct {
@@ -392,29 +430,58 @@ static bool promote_current_thread_to_real_time_internal(
 }
 #endif
 
-void set_realtime_thread_priority(const char* name, size_t buffer_frames,
-                                  size_t sample_rate) {
+realtime_thread_handle_t* promote_current_thread_to_realtime(
+    const char* name, size_t buffer_frames, size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return;
+  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
 #else
   pthread_t thread = pthread_self();
   struct sched_param param;
-  int policy;
+  int policy = 0;
 
-  // 1. Try native POSIX scheduling first.
+#ifndef SCHED_RESET_ON_FORK
+#define SCHED_RESET_ON_FORK 0x40000000
+#endif
+
+  realtime_thread_handle_t* handle =
+      (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  if (!handle) return NULL;
+  handle->pthread_id = thread;
+
+  // 1. Try native POSIX scheduling first with SCHED_RESET_ON_FORK.
   if (pthread_getschedparam(thread, &policy, &param) == 0) {
-    param.sched_priority = 10;  // Use default RT priority 10 (which fits under
-                                // standard rtprio 95 limits)
-    int res = pthread_setschedparam(thread, SCHED_FIFO, &param);
+    handle->policy = policy;
+    handle->sched_param = param;
+
+    int rt_priority = 10;
+    const char* env_prio = getenv("CAMILLADSP_RT_PRIORITY");
+    if (env_prio && *env_prio) {
+      char* endptr = NULL;
+      long val = strtol(env_prio, &endptr, 10);
+      if (endptr != env_prio && *endptr == '\0' && val >= 1 && val <= 99) {
+        rt_priority = (int)val;
+      } else {
+        logger_warn(&g_logger,
+                    "Ignoring invalid CAMILLADSP_RT_PRIORITY=\"%s\", expected "
+                    "an integer 1-99. Using the default priority.",
+                    env_prio);
+      }
+    }
+    param.sched_priority = rt_priority;
+    int res = pthread_setschedparam(thread, SCHED_FIFO | SCHED_RESET_ON_FORK,
+                                    &param);
+    if (res != 0) {
+      res = pthread_setschedparam(thread, SCHED_FIFO, &param);
+    }
     if (res == 0) {
       logger_info(&g_logger,
                   "[%s] Thread promoted to Linux SCHED_FIFO real-time priority "
-                  "via pthread_setschedparam",
-                  name ? name : "unknown");
-      return;
+                  "(priority %d) via pthread_setschedparam",
+                  name ? name : "unknown", rt_priority);
+      return handle;
     }
   }
 
@@ -432,9 +499,9 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
   }
   dbus_connection_set_exit_on_disconnect(conn, FALSE);
 
-  RtPriorityHandleInternal handle;
+  RtPriorityHandleInternal rtkit_h;
   if (promote_current_thread_to_real_time_internal(
-          conn, (uint32_t)buffer_frames, (uint32_t)sample_rate, &handle,
+          conn, (uint32_t)buffer_frames, (uint32_t)sample_rate, &rtkit_h,
           &dbus_err)) {
     dbus_connection_close(conn);
     dbus_connection_unref(conn);
@@ -442,7 +509,7 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 "[%s] Thread promoted to Linux real-time priority via direct "
                 "D-Bus call to rtkit-daemon",
                 name ? name : "unknown");
-    return;
+    return handle;
   }
 
   logger_warn(&g_logger, "[%s] rtkit-daemon MakeThreadRealtime failed: %s",
@@ -457,49 +524,57 @@ fallback:
               "[%s] Failed to promote thread to real-time priority (both "
               "pthread_setschedparam and RealtimeKit failed)",
               name ? name : "unknown");
+  free(handle);
+  return NULL;
 #endif
+}
+
+void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
+  if (!handle) return;
+#ifndef CDSP_TEST
+  struct sched_param param = handle->sched_param;
+  int rc = pthread_setschedparam(handle->pthread_id,
+                                 handle->policy | SCHED_RESET_ON_FORK,
+                                 &param);
+  if (rc != 0) {
+    rc = pthread_setschedparam(handle->pthread_id, handle->policy, &param);
+  }
+  if (rc == 0) {
+    logger_debug(&g_logger,
+                 "Thread demoted back to previous Linux scheduling policy (%d)",
+                 handle->policy);
+  } else {
+    logger_warn(&g_logger, "Failed to demote Linux real-time thread: %d", rc);
+  }
+#endif
+  free(handle);
 }
 #elif defined(_WIN32)
 #include <windows.h>
 
+struct realtime_thread_handle {
+  HANDLE task_handle;
+};
+
 #ifndef CDSP_TEST
 typedef HANDLE(WINAPI* AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
 typedef BOOL(WINAPI* AvRevertMmThreadCharacteristicsFn)(HANDLE);
-
-static pthread_key_t g_win32_avrt_key;
-static pthread_once_t g_win32_avrt_once = PTHREAD_ONCE_INIT;
-
-static void win32_avrt_cleanup(void* val) {
-  if (val) {
-    HANDLE task_handle = (HANDLE)val;
-    HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
-    if (avrt_module) {
-      AvRevertMmThreadCharacteristicsFn revert_fn =
-          (AvRevertMmThreadCharacteristicsFn)(void (*)(void))GetProcAddress(
-              avrt_module, "AvRevertMmThreadCharacteristics");
-      if (revert_fn) {
-        revert_fn(task_handle);
-      }
-      FreeLibrary(avrt_module);
-    }
-  }
-}
-
-static void win32_avrt_init_key(void) {
-  pthread_key_create(&g_win32_avrt_key, win32_avrt_cleanup);
-}
 #endif
 
-void set_realtime_thread_priority(const char* name, size_t buffer_frames,
-                                  size_t sample_rate) {
+realtime_thread_handle_t* promote_current_thread_to_realtime(
+    const char* name, size_t buffer_frames, size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return;
+  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
 #else
   (void)buffer_frames;
   (void)sample_rate;
+
+  realtime_thread_handle_t* handle =
+      (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  if (!handle) return NULL;
 
   HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
   if (avrt_module) {
@@ -514,16 +589,8 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
             &g_logger,
             "[%s] Thread promoted to Windows MMCSS (Audio task, index=%lu)",
             name ? name : "unknown", task_index);
-
-        pthread_once(&g_win32_avrt_once, win32_avrt_init_key);
-        void* old_val = pthread_getspecific(g_win32_avrt_key);
-        if (old_val) {
-          win32_avrt_cleanup(old_val);
-        }
-        pthread_setspecific(g_win32_avrt_key, (void*)task_handle);
-
-        // Keep avrt_module loaded as we have active handles referring to it
-        return;
+        handle->task_handle = task_handle;
+        return handle;
       } else {
         logger_warn(&g_logger,
                     "[%s] AvSetMmThreadCharacteristicsW failed: err=%lu",
@@ -541,18 +608,51 @@ void set_realtime_thread_priority(const char* name, size_t buffer_frames,
                 "[%s] MMCSS failed; thread promoted to fallback Windows "
                 "THREAD_PRIORITY_TIME_CRITICAL",
                 name ? name : "unknown");
+    return handle;
   } else {
     logger_warn(&g_logger,
                 "[%s] Failed to set thread priority on Windows: err=%lu",
                 name ? name : "unknown", GetLastError());
+    free(handle);
+    return NULL;
   }
 #endif
 }
+
+void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
+  if (!handle) return;
+#ifndef CDSP_TEST
+  if (handle->task_handle) {
+    HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
+    if (avrt_module) {
+      AvRevertMmThreadCharacteristicsFn revert_fn =
+          (AvRevertMmThreadCharacteristicsFn)(void (*)(void))GetProcAddress(
+              avrt_module, "AvRevertMmThreadCharacteristics");
+      if (revert_fn) {
+        revert_fn(handle->task_handle);
+      }
+      FreeLibrary(avrt_module);
+    }
+  } else {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+  }
+#endif
+  free(handle);
+}
 #else
-void set_realtime_thread_priority(const char* name, size_t buffer_frames,
-                                  size_t sample_rate) {
+struct realtime_thread_handle {
+  int dummy;
+};
+
+realtime_thread_handle_t* promote_current_thread_to_realtime(
+    const char* name, size_t buffer_frames, size_t sample_rate) {
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
+  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+}
+
+void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
+  if (handle) free(handle);
 }
 #endif

@@ -328,9 +328,10 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Processing thread started");
 
-  set_realtime_thread_priority("Processing",
-                               audio_chunk_get_frames(loop->pipeline_scratch),
-                               loop->pipeline_rate);
+  realtime_thread_handle_t* rt_handle =
+      promote_current_thread_to_realtime(
+          "Processing", audio_chunk_get_frames(loop->pipeline_scratch),
+          loop->pipeline_rate);
 
   audio_chunk_t* chunk = NULL;
 
@@ -434,6 +435,10 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   // NULL. Shutdown processed queue and exit thread.
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
+  }
+
+  if (rt_handle) {
+    demote_current_thread_from_realtime(rt_handle);
   }
   if (loop->processed_drop_counter > 0) {
     logger_warn(
