@@ -94,17 +94,28 @@ struct async_poly_resampler {
 #include <math.h>
 #include <stdlib.h>
 
+static inline double avg_t_ratio(double resample_ratio, double target_ratio) {
+  return 0.5 * (1.0 / resample_ratio + 1.0 / target_ratio);
+}
+
+static inline double compute_t_ratio_increment(double resample_ratio,
+                                               double target_ratio,
+                                               size_t nbr_frames) {
+  if (nbr_frames == 0) return 0.0;
+  return (1.0 / target_ratio - 1.0 / resample_ratio) / (double)nbr_frames;
+}
+
 static inline size_t calculate_input_size(
     size_t chunk_size, double resample_ratio, double target_ratio,
     double last_index, size_t interpolator_len, fixed_async_t fixed) {
   if (fixed == FIXED_ASYNC_INPUT) {
     return chunk_size;
   }
-  double inv_r1 = 1.0 / resample_ratio;
-  double inv_r2 = 1.0 / target_ratio;
-  double avg_t_ratio = 0.5 * (inv_r1 + inv_r2);
+  double ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
   double raw =
-      last_index + (double)chunk_size * avg_t_ratio + (double)interpolator_len;
+      last_index + (double)chunk_size * avg_t_ratio(resample_ratio, target_ratio) +
+      ramp_overshoot + (double)interpolator_len;
+  if (raw < 0.0) return 0;
   return (size_t)ceil(raw);
 }
 
@@ -114,12 +125,12 @@ static inline size_t calculate_output_size(
   if (fixed == FIXED_ASYNC_OUTPUT) {
     return chunk_size;
   }
-  double inv_r1 = 1.0 / resample_ratio;
-  double inv_r2 = 1.0 / target_ratio;
-  double avg_t_ratio = 0.5 * (inv_r1 + inv_r2);
+  double space =
+      (double)chunk_size - (double)(interpolator_len + 1) - last_index;
+  double ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
   double raw =
-      ((double)chunk_size - (double)(interpolator_len + 1) - last_index) /
-      avg_t_ratio;
+      (space - ramp_overshoot) / avg_t_ratio(resample_ratio, target_ratio);
+  if (raw < 0.0) return 0;
   return (size_t)floor(raw);
 }
 
@@ -402,9 +413,8 @@ static resampler_error_t async_poly_resampler_process(
   }
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
-  double t_ratio_end = 1.0 / resampler->target_ratio;
-  double t_ratio_increment =
-      (t_ratio_end - t_ratio_start) / (double)output_frames;
+  double t_ratio_increment = compute_t_ratio_increment(
+      resampler->resample_ratio, resampler->target_ratio, output_frames);
 
   double t_ratio = t_ratio_start;
   double idx = resampler->last_index;

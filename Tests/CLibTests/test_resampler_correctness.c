@@ -678,4 +678,393 @@ TEST(AsyncSinc_DriftCrash) {
   resampler_free(res);
 }
 
+TEST(AvgTRatio_EqualRatios) {
+  double ratios[] = {0.1, 0.5, 1.0, 2.0, 10.0};
+  for (size_t i = 0; i < sizeof(ratios) / sizeof(ratios[0]); i++) {
+    double r = ratios[i];
+    double got = 0.5 * (1.0 / r + 1.0 / r);
+    double expected = 1.0 / r;
+    ASSERT_NEAR(got, expected, 1e-12);
+  }
+}
+
+TEST(AvgTRatio_Symmetric) {
+  double pairs[][2] = {
+      {1.0, 0.2}, {2.0, 3.0}, {0.3, 0.5}, {0.125, 8.0}, {1.0, 1.0}};
+  for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+    double r1 = pairs[i][0];
+    double r2 = pairs[i][1];
+    double forward = 0.5 * (1.0 / r1 + 1.0 / r2);
+    double backward = 0.5 * (1.0 / r2 + 1.0 / r1);
+    ASSERT_NEAR(forward, backward, 1e-12);
+  }
+}
+
+TEST(AvgTRatio_KnownValues) {
+  // avg_t_ratio(1.0, 0.2) = 0.5 * (1/1.0 + 1/0.2) = 0.5 * (1 + 5) = 3.0
+  double got1 = 0.5 * (1.0 / 1.0 + 1.0 / 0.2);
+  ASSERT_NEAR(got1, 3.0, 1e-12);
+  // avg_t_ratio(2.0, 3.0) = 0.5 * (0.5 + 1/3) = 0.5 * (5/6) = 5/12
+  double got2 = 0.5 * (1.0 / 2.0 + 1.0 / 3.0);
+  ASSERT_NEAR(got2, 5.0 / 12.0, 1e-12);
+}
+
+TEST(TRatioIncrement_ReachesTarget) {
+  struct {
+    double r1;
+    double r2;
+    size_t n;
+  } cases[] = {{1.0, 0.2, 100},
+               {1.0, 5.0, 1024},
+               {2.0, 3.0, 512},
+               {0.5, 0.5, 256},
+               {0.125, 8.0, 64}};
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    double r1 = cases[i].r1;
+    double r2 = cases[i].r2;
+    size_t n = cases[i].n;
+    double inc = (1.0 / r2 - 1.0 / r1) / (double)n;
+    double t_ratio_end = 1.0 / r1 + (double)n * inc;
+    double expected_end = 1.0 / r2;
+    ASSERT_NEAR(t_ratio_end, expected_end, 1e-10);
+  }
+}
+
+TEST(TRatioIncrement_EqualRatiosIsZero) {
+  double ratios[] = {0.1, 0.5, 1.0, 2.0, 10.0};
+  size_t ns[] = {1, 100, 1024};
+  for (size_t i = 0; i < sizeof(ratios) / sizeof(ratios[0]); i++) {
+    for (size_t j = 0; j < sizeof(ns) / sizeof(ns[0]); j++) {
+      double r = ratios[i];
+      size_t n = ns[j];
+      double inc = (1.0 / r - 1.0 / r) / (double)n;
+      ASSERT_NEAR(inc, 0.0, 1e-15);
+    }
+  }
+}
+
+// --- Rubato 5.0.0: advance_index analytical & bound tests ---
+
+TEST(AdvanceIndex_MatchesAnalyticalFormula) {
+  struct {
+    double r1;
+    double r2;
+    size_t n;
+  } cases[] = {{1.0, 0.2, 100}, {1.0, 5.0, 1024}, {2.0, 3.0, 512},
+               {0.5, 0.8, 256},  {0.125, 8.0, 64},  {1.0, 1.0, 200}};
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    double r1 = cases[i].r1;
+    double r2 = cases[i].r2;
+    size_t n = cases[i].n;
+    double start_idx = 0.0;
+    double inc = (1.0 / r2 - 1.0 / r1) / (double)n;
+
+    double idx = start_idx;
+    double t_ratio = 1.0 / r1;
+    for (size_t k = 0; k < n; k++) {
+      t_ratio += inc;
+      idx += t_ratio;
+    }
+
+    double avg = 0.5 * (1.0 / r1 + 1.0 / r2);
+    double ramp_overshoot = 0.5 * (1.0 / r2 - 1.0 / r1);
+    double analytical = start_idx + (double)n * avg + ramp_overshoot;
+
+    ASSERT_NEAR(idx, analytical, 1e-6);
+  }
+}
+
+TEST(AdvanceIndex_StaysWithinBufferBounds) {
+  size_t chunk_size = 1024;
+  size_t interpolator_len = 4;
+  double last_indices[] = {0.0, 0.5, 2.0};
+  double pairs[][2] = {{1.0, 0.2}, {1.0, 5.0}, {0.5, 2.0},   {2.0, 0.5},
+                       {1.0, 1.0}, {0.3, 0.3}, {0.125, 8.0}, {8.0, 0.125}};
+
+  for (size_t li = 0; li < sizeof(last_indices) / sizeof(last_indices[0]);
+       li++) {
+    double last_index = last_indices[li];
+    for (size_t p = 0; p < sizeof(pairs) / sizeof(pairs[0]); p++) {
+      double r1 = pairs[p][0];
+      double r2 = pairs[p][1];
+
+      double space =
+          (double)chunk_size - (double)(interpolator_len + 1) - last_index;
+      double avg = 0.5 * (1.0 / r1 + 1.0 / r2);
+      double ramp_overshoot = 0.5 * (1.0 / r2 - 1.0 / r1);
+      double raw = (space - ramp_overshoot) / avg;
+      size_t n = (raw < 0.0) ? 0 : (size_t)floor(raw);
+
+      if (n == 0) continue;
+
+      double inc = (1.0 / r2 - 1.0 / r1) / (double)n;
+      double idx = last_index;
+      double t_ratio = 1.0 / r1;
+      for (size_t k = 0; k < n; k++) {
+        t_ratio += inc;
+        idx += t_ratio;
+      }
+
+      size_t bound = chunk_size - interpolator_len - 1;
+      ASSERT_TRUE((size_t)floor(idx) <= bound);
+    }
+  }
+}
+
+// --- Rubato 5.0.0 Issue #136 Regression Tests ---
+
+static resampler_t* make_poly_resampler_helper(const char* interp,
+                                               size_t chunk_size,
+                                               size_t channels) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+  strncpy(cfg.interpolation, interp, sizeof(cfg.interpolation) - 1);
+  cfg.has_interpolation = true;
+  return resampler_create_from_config(&cfg, 48000, 48000, channels, chunk_size,
+                                      NULL);
+}
+
+static resampler_t* make_sinc_resampler_helper(size_t chunk_size,
+                                               size_t channels) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  cfg.sinc_len = 128;
+  cfg.has_sinc_len = true;
+  cfg.oversampling_factor = 1024;
+  cfg.has_oversampling_factor = true;
+  strncpy(cfg.window, "BlackmanHarris2", sizeof(cfg.window) - 1);
+  cfg.has_window = true;
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+  cfg.has_interpolation = true;
+  cfg.f_cutoff = 0.95;
+  cfg.has_f_cutoff = true;
+  return resampler_create_from_config(&cfg, 48000, 48000, channels, chunk_size,
+                                      NULL);
+}
+
+static void test_ramp_resampler_helper(resampler_t* res, double target_rel) {
+  size_t channels = resampler_get_channels(res);
+  size_t chunk_size = resampler_get_chunk_size(res);
+  size_t max_out = resampler_get_max_output_frames(res);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(65536, channels);
+  audio_chunk_t* out_chunk = audio_chunk_create(max_out * 2 + 1024, channels);
+
+  // Block 1: nominal ratio
+  size_t needed_in1 = resampler_get_input_frames_next(res);
+  for (size_t ch = 0; ch < channels; ch++) {
+    double* in_data = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < needed_in1; i++) in_data[i] = 0.0;
+  }
+  audio_chunk_set_valid_frames(in_chunk, needed_in1);
+  resampler_error_t err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(chunk_size, needed_in1);
+
+  // Change ratio dynamically with ramp
+  resampler_set_relative_ratio(res, target_rel);
+
+  size_t needed_in2 = resampler_get_input_frames_next(res);
+  size_t needed_out2 = resampler_get_output_frames_next(res);
+  ASSERT_TRUE(needed_in2 > 0);
+  ASSERT_TRUE(needed_out2 > 0);
+  ASSERT_EQ(chunk_size, needed_in2);
+
+  // Block 2: must complete without out-of-bounds crash
+  for (size_t ch = 0; ch < channels; ch++) {
+    double* in_data = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < needed_in2; i++) in_data[i] = 0.0;
+  }
+  audio_chunk_set_valid_frames(in_chunk, needed_in2);
+  err = resampler_process(res, in_chunk, out_chunk);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(needed_out2, audio_chunk_get_valid_frames(out_chunk));
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  resampler_free(res);
+}
+
+TEST(Poly_Ramp_LargeRatioChange_DoesNotPanic) {
+  const char* interps[] = {"Cubic", "Linear"};
+  double targets[] = {0.92, 1.08, 0.95, 1.05};
+  for (size_t i = 0; i < sizeof(interps) / sizeof(interps[0]); i++) {
+    for (size_t j = 0; j < sizeof(targets) / sizeof(targets[0]); j++) {
+      resampler_t* res = make_poly_resampler_helper(interps[i], 1024, 1);
+      ASSERT_TRUE(res != NULL);
+      test_ramp_resampler_helper(res, targets[j]);
+    }
+  }
+}
+
+TEST(Sinc_Ramp_LargeRatioChange_DoesNotPanic) {
+  double targets[] = {0.92, 1.08, 0.95, 1.05};
+  for (size_t j = 0; j < sizeof(targets) / sizeof(targets[0]); j++) {
+    resampler_t* res = make_sinc_resampler_helper(1024, 1);
+    ASSERT_TRUE(res != NULL);
+    test_ramp_resampler_helper(res, targets[j]);
+  }
+}
+
+// --- Rubato: Sinc Interpolation Weights Unit Tests (asynchro_sinc.rs) ---
+
+TEST(Sinc_CubicWeightsMatchCubicDirect) {
+  double yvals[4] = {1.3, -0.7, 2.1, 0.4};
+  for (int x_int = 0; x_int <= 10; x_int++) {
+    double x = (double)x_int / 10.0;
+    // Direct cubic evaluation:
+    double a0 = 2.0 * yvals[1];
+    double a1 = -yvals[0] + yvals[2];
+    double a2 = 2.0 * yvals[0] - 5.0 * yvals[1] + 4.0 * yvals[2] - yvals[3];
+    double a3 = -yvals[0] + 3.0 * yvals[1] - 3.0 * yvals[2] + yvals[3];
+    double direct = 0.5 * (a0 + x * (a1 + x * (a2 + x * a3)));
+
+    // Equivalent weights blending:
+    double w0 = 0.5 * (-x + 2.0 * x * x - x * x * x);
+    double w1 = 0.5 * (2.0 - 5.0 * x * x + 3.0 * x * x * x);
+    double w2 = 0.5 * (x + 4.0 * x * x - 3.0 * x * x * x);
+    double w3 = 0.5 * (-x * x + x * x * x);
+    double blended =
+        w0 * yvals[0] + w1 * yvals[1] + w2 * yvals[2] + w3 * yvals[3];
+    ASSERT_NEAR(direct, blended, 1e-12);
+  }
+}
+
+TEST(Sinc_QuadWeightsMatchQuadDirect) {
+  double yvals[3] = {1.3, -0.7, 2.1};
+  for (int x_int = 0; x_int <= 10; x_int++) {
+    double x = (double)x_int / 10.0;
+    // Direct quadratic evaluation:
+    double a2 = yvals[0] - 2.0 * yvals[1] + yvals[2];
+    double a1 = -3.0 * yvals[0] + 4.0 * yvals[1] - yvals[2];
+    double a0 = 2.0 * yvals[0];
+    double direct = 0.5 * (a0 + x * (a1 + x * a2));
+
+    // Equivalent weights blending:
+    double w0 = 0.5 * (2.0 - 3.0 * x + x * x);
+    double w1 = 0.5 * (4.0 * x - 2.0 * x * x);
+    double w2 = 0.5 * (-x + x * x);
+    double blended = w0 * yvals[0] + w1 * yvals[1] + w2 * yvals[2];
+    ASSERT_NEAR(direct, blended, 1e-12);
+  }
+}
+
+TEST(Sinc_LinWeightsMatchLinDirect) {
+  double yvals[2] = {1.3, -0.7};
+  for (int x_int = 0; x_int <= 10; x_int++) {
+    double x = (double)x_int / 10.0;
+    double direct = yvals[0] + x * (yvals[1] - yvals[0]);
+    double blended = (1.0 - x) * yvals[0] + x * yvals[1];
+    ASSERT_NEAR(direct, blended, 1e-12);
+  }
+}
+
+// --- Rubato: Synchronous Resample Unit (synchro.rs) ---
+
+TEST(Synchronous_ResampleUnitEnergyConservation) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 147, 1000, 1, 147, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  audio_chunk_t* in = audio_chunk_create(147, 1);
+  double* in_d = audio_chunk_get_channel(in, 0);
+  memset(in_d, 0, 147 * sizeof(double));
+  in_d[0] = 0.3;
+  in_d[1] = 0.7;
+  in_d[2] = 1.0;
+  in_d[3] = 1.0;
+  in_d[4] = 0.7;
+  in_d[5] = 0.3;
+  audio_chunk_set_valid_frames(in, 147);
+
+  audio_chunk_t* out = audio_chunk_create(2048, 1);
+  double sum = 0.0;
+  double max_val = 0.0;
+  for (int b = 0; b < 10; b++) {
+    resampler_error_t err = resampler_process(res, in, out);
+    ASSERT_EQ(RESAMPLER_OK, err);
+    size_t valid = audio_chunk_get_valid_frames(out);
+    double* out_d = audio_chunk_get_channel(out, 0);
+    for (size_t i = 0; i < valid; i++) {
+      sum += out_d[i];
+      if (fabs(out_d[i]) > max_val) max_val = fabs(out_d[i]);
+    }
+    memset(in_d, 0, 147 * sizeof(double));
+  }
+  // Total pulse sum is 4.0, resampled sum should conserve DC energy
+  ASSERT_NEAR(sum, 4.0 * 1000.0 / 147.0, 1e-4);
+  ASSERT_NEAR(max_val, 1.0, 0.15);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
+// --- Rubato: Slip Resampler Unit Tests (slip.rs) ---
+
+TEST(Slip_UnitRatioIsIdentity) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 48000, 48000, 2, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  audio_chunk_t* in = audio_chunk_create(1024, 2);
+  audio_chunk_t* out = audio_chunk_create(2048, 2);
+  for (int ch = 0; ch < 2; ch++) {
+    double* d = audio_chunk_get_channel(in, ch);
+    for (size_t i = 0; i < 1024; i++) {
+      d[i] = (double)(i + 1) * 0.001;
+    }
+  }
+  audio_chunk_set_valid_frames(in, 1024);
+
+  resampler_error_t err = resampler_process(res, in, out);
+  ASSERT_EQ(RESAMPLER_OK, err);
+  ASSERT_EQ(1024, audio_chunk_get_valid_frames(out));
+
+  for (int ch = 0; ch < 2; ch++) {
+    double* in_d = audio_chunk_get_channel(in, ch);
+    double* out_d = audio_chunk_get_channel(out, ch);
+    for (size_t i = 0; i < 1024; i++) {
+      ASSERT_NEAR(in_d[i], out_d[i], 1e-12);
+    }
+  }
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
+TEST(Slip_DC_StaysFlatAcrossCorrection) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 48000, 48000, 1, 512, NULL);
+  ASSERT_TRUE(res != NULL);
+  resampler_set_relative_ratio(res, 1.0005);
+
+  audio_chunk_t* in = audio_chunk_create(512, 1);
+  audio_chunk_t* out = audio_chunk_create(1024, 1);
+  double* in_d = audio_chunk_get_channel(in, 0);
+  for (size_t i = 0; i < 512; i++) in_d[i] = 1.0;
+  audio_chunk_set_valid_frames(in, 512);
+
+  for (int b = 0; b < 20; b++) {
+    resampler_error_t err = resampler_process(res, in, out);
+    ASSERT_EQ(RESAMPLER_OK, err);
+    size_t valid = audio_chunk_get_valid_frames(out);
+    double* out_d = audio_chunk_get_channel(out, 0);
+    for (size_t i = 0; i < valid; i++) {
+      ASSERT_NEAR(out_d[i], 1.0, 1e-12);
+    }
+  }
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
 TEST_MAIN()
