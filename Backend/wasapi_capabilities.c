@@ -356,6 +356,8 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   IMMDevice* device = NULL;
   IAudioClient* client = NULL;
   audio_device_descriptor_t* desc = NULL;
+  temp_capabilities_map_t exclusive_map;
+  memset(&exclusive_map, 0, sizeof(exclusive_map));
 
   HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
                                 &IID_IMMDeviceEnumerator, (void**)&enumerator);
@@ -450,9 +452,6 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
       sizeof(EXCLUSIVE_SAMPLE_FORMATS) / sizeof(EXCLUSIVE_SAMPLE_FORMATS[0]);
 
   const size_t MAX_EXCLUSIVE_CHANNELS = 32;
-
-  temp_capabilities_map_t exclusive_map;
-  memset(&exclusive_map, 0, sizeof(exclusive_map));
 
   const int* families[2] = {FAMILY_48_RATES, FAMILY_44_RATES};
   const size_t family_counts[2] = {FAMILY_48_COUNT, FAMILY_44_COUNT};
