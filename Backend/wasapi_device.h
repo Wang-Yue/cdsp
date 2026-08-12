@@ -8,12 +8,22 @@
 
 #if defined(ENABLE_WASAPI)
 
+#ifndef COBJMACROS
+#define COBJMACROS
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include <audioclient.h>
 #include <audiopolicy.h>
 #include <mmdeviceapi.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <windows.h>
 
+#include "Backend/backend_error.h"
+#include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 
 extern const logger_t g_wasapi_logger;
@@ -23,6 +33,14 @@ extern const logger_t g_wasapi_logger;
     (punk)->lpVtbl->Release(punk); \
     (punk) = NULL;                 \
   }
+
+typedef enum {
+  WASAPI_BINARY_FORMAT_S16_LE = 0,
+  WASAPI_BINARY_FORMAT_S24_3_LE,
+  WASAPI_BINARY_FORMAT_S24_4_LJ_LE,
+  WASAPI_BINARY_FORMAT_S32_LE,
+  WASAPI_BINARY_FORMAT_F32_LE
+} wasapi_binary_sample_format_t;
 
 typedef void (*wasapi_format_change_callback_t)(void* parent, double new_rate);
 
@@ -49,24 +67,62 @@ IAudioSessionEvents* wasapi_session_events_create(
     void* parent, wasapi_format_change_callback_t callback);
 
 /**
- * @brief Sets up the wave format structure for WASAPI shared-mode streams.
- *
- * @param client Pointer to the active IAudioClient.
- * @param target_sample_rate The target sample rate configured by the user.
- * @param out_final_wfx Output pointer to receive the allocated WAVEFORMATEX
- * structure.
- * @param out_bits_per_sample Output pointer to receive the bits per sample
- * value.
- * @param out_valid_bits Output pointer to receive the valid bits per sample
- * value.
- * @param out_is_float Output pointer to receive whether the format is
- * floating-point.
- * @return true if format setup succeeded, false otherwise.
+ * @brief Generates a simple bitmask for the given channel count.
+ * Matches wasapi-rs make_simple_channelmask.
  */
-bool wasapi_setup_shared_format(IAudioClient* client, int target_sample_rate,
-                                WAVEFORMATEX** out_final_wfx,
-                                int* out_bits_per_sample, int* out_valid_bits,
-                                bool* out_is_float);
+uint32_t wasapi_make_simple_channelmask(size_t channels);
+
+/**
+ * @brief Generates candidate speaker channel bitmasks for a given channel
+ * count. Matches wasapi-rs make_channelmasks.
+ */
+size_t wasapi_make_channelmasks(size_t channels, DWORD masks[8]);
+
+/**
+ * @brief Builds a WAVEFORMATEXTENSIBLE descriptor for given sample parameters.
+ * Matches wasapi-rs WaveFormat::new / build_wave_format.
+ */
+void wasapi_build_wave_format(wasapi_binary_sample_format_t fmt, int samplerate,
+                              int channels, uint32_t channel_mask,
+                              bool has_mask, WAVEFORMATEXTENSIBLE* out_wfx);
+
+/**
+ * @brief Probes format support in exclusive mode, testing standard WAVEFORMATEX
+ * fallback (for <=2 channels) and candidate channel masks.
+ * Matches wasapi-rs is_supported_exclusive_with_quirks.
+ */
+bool wasapi_is_supported_exclusive_with_quirks(
+    IAudioClient* client, const WAVEFORMATEXTENSIBLE* in_wfx,
+    WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx);
+
+/**
+ * @brief Checks if a sample format is supported with optional preferred channel
+ * mask. Matches CamillaDSP get_supported_wave_format_with_channel_mask.
+ */
+bool wasapi_get_supported_wave_format_with_channel_mask(
+    IAudioClient* client, wasapi_sample_format_t sample_format, int samplerate,
+    int channels, bool exclusive, uint32_t channel_mask, bool has_mask,
+    WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx,
+    wasapi_binary_sample_format_t* out_bin_fmt);
+
+/**
+ * @brief Determines the negotiated WAVEFORMAT descriptor and binary sample
+ * format for a device. Matches CamillaDSP get_device_format.
+ */
+bool wasapi_get_device_format(
+    IAudioClient* client, int samplerate, int channels,
+    wasapi_sample_format_t requested_format, bool has_requested_format,
+    bool exclusive, const char* direction_name, WAVEFORMATEXTENSIBLE* out_wfx,
+    bool* out_is_std_wfx, wasapi_binary_sample_format_t* out_bin_fmt,
+    backend_error_t* err);
+
+/**
+ * @brief Locates an IMMDevice by friendly name, GUID, or default endpoint.
+ * Matches CamillaDSP find_device.
+ */
+IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
+                              const char* devname, bool is_capture,
+                              bool loopback);
 
 /**
  * @brief Queries the OS mix rate of the specified device.
@@ -81,46 +137,22 @@ double wasapi_device_get_current_mix_rate(const char* device_name,
 /**
  * @brief Calculates the closest hardware period aligned to a given frame/byte
  * boundary.
+ * Matches wasapi-rs calculate_aligned_period_near.
  *
  * @param client Pointer to the active IAudioClient.
  * @param desired_period The desired periodicity/buffer duration in 100ns units.
  * @param align_bytes Optional byte alignment constraint (e.g. 128 bytes). Pass
  * 0 for no alignment constraint.
- * @param wfx The extensible wave format descriptor of the stream.
+ * @param samplerate Stream sample rate in Hz.
+ * @param block_align Block alignment in bytes (frame size).
  * @return The aligned period in 100ns units.
  */
 REFERENCE_TIME wasapi_calculate_aligned_period_near(
     IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
-    const WAVEFORMATEXTENSIBLE* wfx);
+    int samplerate, int block_align);
 
 /**
- * @brief Checks if a format is supported by the device, falling back to
- * standard WAVEFORMATEX for stereo if needed.
- *
- * @param client Pointer to the active IAudioClient.
- * @param mode Sharing mode (shared/exclusive).
- * @param ext_wfx The extensible wave format descriptor to test.
- * @param out_std_wfx Output pointer to standard WAVEFORMATEX initialized if
- * fallback succeeded.
- * @param out_use_ext Output pointer set to true if extensible format should be
- * used, false if standard fallback should be used.
- * @return true if format is supported (either directly or via fallback), false
- * otherwise.
- */
-bool wasapi_check_format_supported(IAudioClient* client, AUDCLNT_SHAREMODE mode,
-                                   const WAVEFORMATEXTENSIBLE* ext_wfx,
-                                   WAVEFORMATEX* out_std_wfx,
-                                   bool* out_use_ext);
-
-/**
- * @brief Returns the standard Windows speaker channel bitmask for a given
- * channel count.
- *
- * Maps channel counts (1, 2, 4, 6, 8) to standard Windows SPEAKER_FRONT_*,
- * SPEAKER_BACK_*, SPEAKER_LOW_FREQUENCY, and SPEAKER_SIDE_* channel masks.
- *
- * @param channels Number of audio channels.
- * @return DWORD Bitmask representing speaker positions, or 0 if unmapped.
+ * @brief Legacy channel mask lookup for backwards compatibility.
  */
 DWORD wasapi_get_default_channel_mask(int channels);
 

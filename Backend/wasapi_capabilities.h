@@ -8,7 +8,6 @@
 
 #if defined(ENABLE_WASAPI)
 
-#include <mmdeviceapi.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -52,8 +51,7 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
                                                         bool is_capture,
                                                         device_error_t* err);
 
-IMMDevice* wasapi_find_device_by_name(IMMDeviceEnumerator* enumerator,
-                                      const char* name, bool is_capture);
+int wasapi_capabilities_channel_count(const char* device_name, bool is_capture);
 
 #endif  // ENABLE_WASAPI
 

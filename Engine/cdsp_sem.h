@@ -142,7 +142,9 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
 }
 
 #elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 typedef HANDLE cdsp_sem_t;
