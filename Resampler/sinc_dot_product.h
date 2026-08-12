@@ -38,7 +38,7 @@ static inline double sinc_dot_product(const double* wave, const double* kernel,
 #endif
   double sum = 0.0;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) unroll(enable)
+#pragma clang loop vectorize(enable)
 #endif
   for (size_t i = 0; i < count; i++) {
     sum += wave[i] * kernel[i];
