@@ -269,7 +269,7 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 # Compile library source files with CDSP_TEST define for tests
 $(TEST_OBJ_DIR)/%.o: $(ROOT_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DCDSP_TEST -c $< -o $@
+	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE -c $< -o $@
 
 # Archive object files into static library
 $(LIB_TARGET): $(OBJS)
@@ -285,6 +285,11 @@ BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark 
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
 
 UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
+UNIT_TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(UNIT_TEST_SRCS))
+SERVER_TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SERVER_SRCS))
+TEST_RUNNER_MAIN_OBJ := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c)
+ALL_TEST_RUNNER_OBJS := $(UNIT_TEST_OBJS) $(SERVER_TEST_OBJS) $(TEST_RUNNER_MAIN_OBJ)
+
 UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner
 UNIT_TEST_BINS := $(UNIT_TEST_RUNNER)
 
@@ -293,8 +298,8 @@ $(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
 
-# Build combined unit test runner binary
-$(UNIT_TEST_RUNNER): $(UNIT_TEST_SRCS) $(SERVER_SRCS) $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c $(TEST_LIB_TARGET)
+# Build combined unit test runner binary from object files (parallelized & cached)
+$(UNIT_TEST_RUNNER): $(ALL_TEST_RUNNER_OBJS) $(TEST_LIB_TARGET)
 	@mkdir -p $(dir $@)
 ifeq ($(IS_WINDOWS),1)
 	$(CC) $(CFLAGS) -DCDSP_TEST -DCDSP_COMBINED_TEST_SUITE $^ $(LDFLAGS) -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,free -o $@
@@ -342,7 +347,8 @@ $(foreach bin,$(UNIT_TEST_BINS),\
 callgraph-audit:
 	@python3 Tools/generate_callgraph.py > /dev/null && echo "✅ Static Call Graph Audit passed" || (echo "❌ Static Call Graph Audit failed" && exit 1)
 
-test: test-rust-build $(UNIT_TEST_BINS)
+test: test-rust-build
+	+@$(MAKE) -j$(NPROCS) $(UNIT_TEST_BINS)
 	+@$(MAKE) run-test-runner
 
 SAN_BASE_CFLAGS := $(filter-out -O3 -flto% -fno-math-errno -funroll-loops -fvisibility=hidden -mcpu=native -DCDSP_BUILD_SHARED,$(CFLAGS)) -O2 -g -fno-omit-frame-pointer
@@ -425,8 +431,8 @@ endif
 	@echo "\n✅ All sanitizer test passes passed!"
 
 run-test-runner:
-	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel using Makefile Jobserver...\n"
-	+@$(MAKE) $(ALL_TEST_CASES)
+	@echo "\n🚀 Running $(words $(ALL_TEST_CASES)) test cases in parallel (-j$(NPROCS))...\n"
+	+@$(MAKE) -j$(NPROCS) $(ALL_TEST_CASES)
 
 
 bench: test-rust-build $(BENCH_BINS)
