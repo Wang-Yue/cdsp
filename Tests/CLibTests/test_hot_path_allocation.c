@@ -939,26 +939,13 @@ static void dsd_enc_iter(int i, void* ctx) {
   dsd_encoder_encode(c->encoder, c->chunks[i % c->chunk_count]);
 }
 
-#if defined(ENABLE_BLAS)
-void openblas_set_num_threads(int num_threads);
-#endif
-
 TEST(DoPEncoder_AllocationFree) {
-#if defined(ENABLE_BLAS)
-  openblas_set_num_threads(1);
-#endif
   dsd_encoder_t* encoder = dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16,
                                               SDM_FILTER_SDM4, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   audio_chunk_t** inputs = make_random_chunks(32, 2, 1024, 0.5);
   dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};
-  assert_allocation_free("DSD encoder",
-#if defined(ENABLE_BLAS)
-                         1,
-#else
-                         0,
-#endif
-                         30, dsd_enc_iter, &ctx);
+  assert_allocation_free("DSD encoder", 0, 30, dsd_enc_iter, &ctx);
   free_chunks(inputs, 32);
   dsd_encoder_free(encoder);
 }

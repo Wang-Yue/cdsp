@@ -38,13 +38,10 @@
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.dsd.encoder"};
-#include "DoP/sigma_delta_modulator.h"
-#if defined(ENABLE_BLAS)
-#include <cblas.h>
-#elif defined(ENABLE_ACCELERATE)
-#endif
 #include <stdint.h>
 #include <stdlib.h>
+
+#include "DoP/sigma_delta_modulator.h"
 
 /**
  * @brief State for a single DSD encoder channel.
