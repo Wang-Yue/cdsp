@@ -16,7 +16,7 @@
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
-#pragma GCC optimize("fp-contract=fast", "associative-math")
+#pragma GCC optimize("O3", "fp-contract=fast", "associative-math")
 #endif
 
 /**
@@ -37,6 +37,9 @@ static inline double sinc_dot_product(const double* wave, const double* kernel,
 #pragma clang fp reassociate(on) contract(fast)
 #endif
   double sum = 0.0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) unroll(enable)
+#endif
   for (size_t i = 0; i < count; i++) {
     sum += wave[i] * kernel[i];
   }
