@@ -57,7 +57,7 @@
     defined(__SANITIZE_MEMORY__) || defined(__SANITIZE_LEAK__) ||            \
     (defined(__has_feature) &&                                               \
      (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
-      __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||   \
+      __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||    \
       __has_feature(cfi) || __has_feature(control_flow_integrity) ||         \
       __has_feature(undefined_behavior_sanitizer)))
 #define CDSP_SANITIZER_ACTIVE 1
@@ -96,8 +96,7 @@ static void* bootstrap_malloc(size_t size) {
   bootstrap_offset += aligned_size;
   return ptr;
 }
-__attribute__((no_sanitize("cfi")))
-static void init_real_allocators(void) {
+__attribute__((no_sanitize("cfi"))) static void init_real_allocators(void) {
   if (real_malloc) return;
   if (in_bootstrap) return;
   in_bootstrap = true;
@@ -113,8 +112,7 @@ static void init_real_allocators(void) {
   }
 }
 
-__attribute__((no_sanitize("cfi")))
-void* malloc(size_t size) {
+__attribute__((no_sanitize("cfi"))) void* malloc(size_t size) {
   if (!real_malloc) {
     init_real_allocators();
     if (!real_malloc) return bootstrap_malloc(size);
@@ -128,8 +126,7 @@ void* malloc(size_t size) {
   return ptr;
 }
 
-__attribute__((no_sanitize("cfi")))
-void* calloc(size_t num, size_t size) {
+__attribute__((no_sanitize("cfi"))) void* calloc(size_t num, size_t size) {
   size_t total = num * size;
   if (!real_calloc) {
     init_real_allocators();
@@ -148,8 +145,7 @@ void* calloc(size_t num, size_t size) {
   return ptr;
 }
 
-__attribute__((no_sanitize("cfi")))
-void* realloc(void* ptr, size_t size) {
+__attribute__((no_sanitize("cfi"))) void* realloc(void* ptr, size_t size) {
   if (ptr >= (void*)bootstrap_buffer &&
       ptr < (void*)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
     void* new_ptr = bootstrap_malloc(size);
@@ -170,8 +166,7 @@ void* realloc(void* ptr, size_t size) {
   return new_ptr;
 }
 
-__attribute__((no_sanitize("cfi")))
-void free(void* ptr) {
+__attribute__((no_sanitize("cfi"))) void free(void* ptr) {
   if (!ptr) return;
   if (ptr >= (void*)bootstrap_buffer &&
       ptr < (void*)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
@@ -1655,8 +1650,8 @@ TEST(EnginePlaybackLoop_AllocationFree) {
   // prior to entering the steady-state audio loop, one-time lazy allocations
   // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
   // buffers on fopen/write). 2) OS kernel/Mach thread QoS class state setup
-  // (via promote_current_thread_to_realtime). Once the startup sequence finishes,
-  // steady-state audio loops run 100% allocation-free.
+  // (via promote_current_thread_to_realtime). Once the startup sequence
+  // finishes, steady-state audio loops run 100% allocation-free.
   assert_allocation_free_on_thread("EnginePlaybackLoop", tid, 2, 20,
                                    playback_loop_iter, &ctx);
 

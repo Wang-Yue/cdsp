@@ -328,10 +328,9 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   if (!loop) return;
   logger_info(&g_logger, "Processing thread started");
 
-  realtime_thread_handle_t* rt_handle =
-      promote_current_thread_to_realtime(
-          "Processing", audio_chunk_get_frames(loop->pipeline_scratch),
-          loop->pipeline_rate);
+  realtime_thread_handle_t* rt_handle = promote_current_thread_to_realtime(
+      "Processing", audio_chunk_get_frames(loop->pipeline_scratch),
+      loop->pipeline_rate);
 
   audio_chunk_t* chunk = NULL;
 

@@ -221,7 +221,8 @@ static void fftw_real_fft_forward(void* ctx, waveform_t real_in,
   struct fftw_real_fft_ctx* fft = (struct fftw_real_fft_ctx*)ctx;
   memcpy(fft->in_real, real_in, fft->length * sizeof(double));
   fftw_execute(fft->plan_forward);
-  CDSP_MSAN_UNPOISON(fft->out_complex, fft->spectrum_length * sizeof(fftw_complex));
+  CDSP_MSAN_UNPOISON(fft->out_complex,
+                     fft->spectrum_length * sizeof(fftw_complex));
   for (size_t i = 0; i < fft->spectrum_length; i++) {
     spec_re[i] = __real__(fft->out_complex[i]);
     spec_im[i] = __imag__(fft->out_complex[i]);
@@ -338,7 +339,8 @@ static void fftwf_real_fft_forward(void* ctx, const float* real_in,
   struct fftwf_real_fft_ctx* fft = (struct fftwf_real_fft_ctx*)ctx;
   memcpy(fft->in_real, real_in, fft->length * sizeof(float));
   fftwf_execute(fft->plan_forward);
-  CDSP_MSAN_UNPOISON(fft->out_complex, fft->spectrum_length * sizeof(fftwf_complex));
+  CDSP_MSAN_UNPOISON(fft->out_complex,
+                     fft->spectrum_length * sizeof(fftwf_complex));
   for (size_t i = 0; i < fft->spectrum_length; i++) {
     spec_re[i] = __real__(fft->out_complex[i]);
     spec_im[i] = __imag__(fft->out_complex[i]);

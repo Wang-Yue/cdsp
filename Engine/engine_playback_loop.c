@@ -322,9 +322,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     return;
   }
 
-  realtime_thread_handle_t* rt_handle =
-      promote_current_thread_to_realtime("Playback", loop->chunk_size,
-                                         loop->pipeline_rate);
+  realtime_thread_handle_t* rt_handle = promote_current_thread_to_realtime(
+      "Playback", loop->chunk_size, loop->pipeline_rate);
   log_rate_adjust_mode(loop);
 
   double last_speed = 1.0;

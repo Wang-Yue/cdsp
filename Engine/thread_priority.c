@@ -123,9 +123,9 @@ void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
 #ifndef CDSP_TEST
   mach_msg_type_number_t count =
       sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
-  kern_return_t res = thread_policy_set(
-      handle->thread, THREAD_TIME_CONSTRAINT_POLICY,
-      (thread_policy_t)&handle->previous_policy, count);
+  kern_return_t res =
+      thread_policy_set(handle->thread, THREAD_TIME_CONSTRAINT_POLICY,
+                        (thread_policy_t)&handle->previous_policy, count);
   if (res == KERN_SUCCESS) {
     logger_debug(&g_logger,
                  "Thread demoted back to previous Mach scheduling policy");
@@ -471,8 +471,8 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
       }
     }
     param.sched_priority = rt_priority;
-    int res = pthread_setschedparam(thread, SCHED_FIFO | SCHED_RESET_ON_FORK,
-                                    &param);
+    int res =
+        pthread_setschedparam(thread, SCHED_FIFO | SCHED_RESET_ON_FORK, &param);
     if (res != 0) {
       res = pthread_setschedparam(thread, SCHED_FIFO, &param);
     }
@@ -534,8 +534,7 @@ void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
 #ifndef CDSP_TEST
   struct sched_param param = handle->sched_param;
   int rc = pthread_setschedparam(handle->pthread_id,
-                                 handle->policy | SCHED_RESET_ON_FORK,
-                                 &param);
+                                 handle->policy | SCHED_RESET_ON_FORK, &param);
   if (rc != 0) {
     rc = pthread_setschedparam(handle->pthread_id, handle->policy, &param);
   }

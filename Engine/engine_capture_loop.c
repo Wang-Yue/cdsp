@@ -485,9 +485,8 @@ void engine_capture_loop_run(engine_capture_loop_t* loop) {
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_RUNNING);
   }
 
-  realtime_thread_handle_t* rt_handle =
-      promote_current_thread_to_realtime("Capture", loop->chunk_size,
-                                         loop->samplerate);
+  realtime_thread_handle_t* rt_handle = promote_current_thread_to_realtime(
+      "Capture", loop->chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
   engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
 

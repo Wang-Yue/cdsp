@@ -2,7 +2,8 @@
 // thread.
 #include "Utils/lock_free_ring_buffer.h"
 
-#if defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -18,7 +19,8 @@
 static inline void* cdsp_aligned_alloc(size_t alignment, size_t size) {
 #if defined(_WIN32)
   return _aligned_malloc(size, alignment);
-#elif defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#elif defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
   void* ptr = NULL;
   if (posix_memalign(&ptr, alignment, size) != 0) {
     return NULL;

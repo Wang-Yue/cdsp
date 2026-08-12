@@ -751,7 +751,7 @@ TEST(AdvanceIndex_MatchesAnalyticalFormula) {
     double r2;
     size_t n;
   } cases[] = {{1.0, 0.2, 100}, {1.0, 5.0, 1024}, {2.0, 3.0, 512},
-               {0.5, 0.8, 256},  {0.125, 8.0, 64},  {1.0, 1.0, 200}};
+               {0.5, 0.8, 256}, {0.125, 8.0, 64}, {1.0, 1.0, 200}};
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
     double r1 = cases[i].r1;
     double r2 = cases[i].r2;

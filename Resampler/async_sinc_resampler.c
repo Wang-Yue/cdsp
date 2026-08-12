@@ -111,9 +111,9 @@ static inline size_t calculate_input_size(
     return chunk_size;
   }
   double ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
-  double raw =
-      last_index + (double)chunk_size * avg_t_ratio(resample_ratio, target_ratio) +
-      ramp_overshoot + (double)interpolator_len;
+  double raw = last_index +
+               (double)chunk_size * avg_t_ratio(resample_ratio, target_ratio) +
+               ramp_overshoot + (double)interpolator_len;
   if (raw < 0.0) return 0;
   return (size_t)ceil(raw);
 }
