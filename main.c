@@ -16,7 +16,9 @@
 #include "Public/processing.h"
 #include "Public/state.h"
 #include "Public/volume.h"
+#ifdef ENABLE_WEBSOCKET
 #include "Server/websocket_server.h"
+#endif
 #include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.main"};
@@ -48,11 +50,15 @@ static void print_usage(void) {
       "  -h, --help        Print this help message.\n"
       "  -c, --check       Check config file and exit.\n"
       "  -s, --statefile   Use the given file to persist volume/mute state.\n"
+#ifdef ENABLE_WEBSOCKET
       "  -w, --wait        Wait for config from websocket (starts inactive).\n"
+#endif
       "  --no_config       Ignore config file in statefile and start without.\n"
+#ifdef ENABLE_WEBSOCKET
       "  -p, --port        Port for the WebSocket control server.\n"
       "  -a, --address     IP address to bind WebSocket server to (defaults to "
       "127.0.0.1).\n"
+#endif
       "  -l, --loglevel    Log level (trace, debug, info, warn, error). "
       "Defaults to info.\n"
       "  -o, --logfile     Write logs to the given file path.\n"
@@ -119,10 +125,14 @@ int main(int argc, char** argv) {
   const char* config_path = NULL;
   const char* state_file_path = NULL;
   bool check_only = false;
+#ifdef ENABLE_WEBSOCKET
   uint16_t port = 0;
   bool has_port = false;
   const char* bind_address = "127.0.0.1";
   bool wait_config = false;
+#else
+  const bool wait_config = false;
+#endif
   bool no_config = false;
   const char* log_level_str = "info";
 
@@ -150,7 +160,12 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-c") == 0 || strcmp(arg, "--check") == 0) {
       check_only = true;
     } else if (strcmp(arg, "-w") == 0 || strcmp(arg, "--wait") == 0) {
+#ifdef ENABLE_WEBSOCKET
       wait_config = true;
+#else
+      printf("Error: WebSocket support is not compiled in.\n");
+      return 1;
+#endif
     } else if (strcmp(arg, "--no_config") == 0) {
       no_config = true;
     } else if (strcmp(arg, "-s") == 0 || strcmp(arg, "--statefile") == 0) {
@@ -161,6 +176,7 @@ int main(int argc, char** argv) {
         return 1;
       }
     } else if (strcmp(arg, "-p") == 0 || strcmp(arg, "--port") == 0) {
+#ifdef ENABLE_WEBSOCKET
       if (i + 1 < argc) {
         port = (uint16_t)atoi(argv[++i]);
         has_port = true;
@@ -168,13 +184,22 @@ int main(int argc, char** argv) {
         printf("Error: Invalid port for %s\n", arg);
         return 1;
       }
+#else
+      printf("Error: WebSocket support is not compiled in.\n");
+      return 1;
+#endif
     } else if (strcmp(arg, "-a") == 0 || strcmp(arg, "--address") == 0) {
+#ifdef ENABLE_WEBSOCKET
       if (i + 1 < argc) {
         bind_address = argv[++i];
       } else {
         printf("Error: Missing value for %s\n", arg);
         return 1;
       }
+#else
+      printf("Error: WebSocket support is not compiled in.\n");
+      return 1;
+#endif
     } else if (strcmp(arg, "-l") == 0 || strcmp(arg, "--loglevel") == 0) {
       if (i + 1 < argc) {
         log_level_str = argv[++i];
@@ -434,6 +459,7 @@ int main(int argc, char** argv) {
     cdsp_set_config_file_path(engine, config_path);
   }
 
+#ifdef ENABLE_WEBSOCKET
   websocket_server_t* server = NULL;
   if (has_port) {
     server = websocket_server_create(port, bind_address);
@@ -446,6 +472,7 @@ int main(int argc, char** argv) {
       printf("Error starting WebSocket server\n");
     }
   }
+#endif
 
   printf("Press Ctrl+C to stop.\n");
   bool started = (config_path != NULL);
@@ -461,7 +488,9 @@ int main(int argc, char** argv) {
     }
   }
 
+#ifdef ENABLE_WEBSOCKET
   if (server) websocket_server_free(server);
+#endif
   cdsp_engine_free(engine);
   if (allocated_config_path) free(allocated_config_path);
   logger_info(&g_logger, "Application exit clean");

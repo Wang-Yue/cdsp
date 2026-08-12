@@ -83,6 +83,7 @@ ifeq ($(IS_WINDOWS),1)
     ENABLE_WASAPI ?= 1
     ENABLE_ASIO ?= 1
     ENABLE_OPENMP ?= 0
+    ENABLE_WEBSOCKET ?= 1
     CLI_BIN_EXT := .exe
 else ifeq ($(IS_DARWIN),1)
     CFLAGS += -mcpu=native
@@ -95,6 +96,7 @@ else ifeq ($(IS_DARWIN),1)
     ENABLE_WASAPI ?= 0
     ENABLE_ASIO ?= 0
     ENABLE_OPENMP ?= 0
+    ENABLE_WEBSOCKET ?= 1
 else
     # Linux (Default)
     ifeq ($(CROSS_COMPILE),)
@@ -109,10 +111,11 @@ else
     ENABLE_WASAPI ?= 0
     ENABLE_ASIO ?= 0
     ENABLE_OPENMP ?= 0
+    ENABLE_WEBSOCKET ?= 1
 endif
 
 # Map Flags to CFLAGS preprocessor definitions
-$(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO,$(if $(filter 1,$(ENABLE_$(f))),$(eval CFLAGS += -DENABLE_$(f))))
+$(foreach f,COREAUDIO ACCELERATE ALSA PIPEWIRE FFTW BLAS WASAPI ASIO WEBSOCKET,$(if $(filter 1,$(ENABLE_$(f))),$(eval CFLAGS += -DENABLE_$(f))))
 
 # Multithreaded Linker Selection: auto (default), mold, lld, gold, default
 LINKER ?= auto
@@ -246,7 +249,11 @@ TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SRCS))
 TEST_LIB_TARGET := $(SRC_ROOT)/libdsp_test.a
 
 LIB_TARGET := $(SRC_ROOT)/libdsp.a
+ifeq ($(ENABLE_WEBSOCKET),1)
 SERVER_SRCS := $(wildcard $(SRC_ROOT)/Server/*.c)
+else
+SERVER_SRCS :=
+endif
 CLI_SRC := $(SRC_ROOT)/main.c
 CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
 
@@ -285,6 +292,9 @@ BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark 
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
 
 UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
+ifneq ($(ENABLE_WEBSOCKET),1)
+    UNIT_TEST_SRCS := $(filter-out %/test_websocket_server.c, $(UNIT_TEST_SRCS))
+endif
 UNIT_TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(UNIT_TEST_SRCS))
 SERVER_TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SERVER_SRCS))
 TEST_RUNNER_MAIN_OBJ := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c)
