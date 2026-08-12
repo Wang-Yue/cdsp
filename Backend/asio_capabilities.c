@@ -252,6 +252,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   bool com_initialized = SUCCEEDED(hr);
   audio_device_descriptor_t* desc = NULL;
+  IASIO* iasio = NULL;
 
   char target_dev_name[256] = {0};
   if (device_name && device_name[0] != '\0') {
@@ -281,7 +282,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
       0x11d2,
       {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
 
-  IASIO* iasio = NULL;
   hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
                         (void**)&iasio);
   if (FAILED(hr)) {

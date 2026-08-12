@@ -28,11 +28,10 @@ int wasapi_capabilities_available_device_names(bool is_capture,
   bool com_initialized = SUCCEEDED(init_hr);
 
   IMMDeviceEnumerator* enumerator = NULL;
+  IMMDeviceCollection* collection = NULL;
   HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
                                 &IID_IMMDeviceEnumerator, (void**)&enumerator);
   if (FAILED(hr)) goto error_cleanup;
-
-  IMMDeviceCollection* collection = NULL;
   hr = IMMDeviceEnumerator_EnumAudioEndpoints(enumerator,
                                               is_capture ? eCapture : eRender,
                                               DEVICE_STATE_ACTIVE, &collection);
