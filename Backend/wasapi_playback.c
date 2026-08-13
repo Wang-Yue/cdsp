@@ -176,16 +176,9 @@ static void* wasapi_playback_loop(void* arg) {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 #endif
 
-  HRESULT hr = IAudioClient_Start(playback->client);
-  if (FAILED(hr)) {
-    logger_error(&g_wasapi_logger, "Playback start stream failed: hr=0x%08lX",
-                 (unsigned long)hr);
-    CoUninitialize();
-    return NULL;
-  }
-
   bool running = false;
   bool starting = true;
+  bool started = false;
   size_t silence_frames_to_insert = 0;
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
@@ -198,6 +191,16 @@ static void* wasapi_playback_loop(void* arg) {
                  (unsigned long)(def_time / 10));
   }
 
+  // Fill the endpoint buffer with the first block before starting the stream,
+  // so playback begins with real audio (preceded by the target_level silence)
+  // instead of an empty buffer. This follows the ordering recommended by
+  // Microsoft:
+  // https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream
+  // The first pass does this prefill and then starts the stream. Every later
+  // pass is preceded by the event wait (or poll sleep) at the end of the
+  // previous pass, which matters because in exclusive event mode
+  // get_available_space_in_frames always returns the full buffer size: without
+  // the preceding wait we would rewrite the buffer while the hardware reads it.
   while (
       atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
     UINT32 buffer_free_frame_count =
@@ -262,7 +265,10 @@ static void* wasapi_playback_loop(void* arg) {
         memset(playback->transfer_buf +
                    (silence_frames + consumed_frames) * channels,
                0, missing_samples * sizeof(float));
-        if (running) {
+        // While prefilling (before the stream is started) a short
+        // fill just gets padded with silence and is not an
+        // interruption, so skip the underrun handling until started.
+        if (started && running) {
           running = false;
           logger_warn(&g_wasapi_logger,
                       "Playback interrupted, no data available.");
@@ -270,8 +276,8 @@ static void* wasapi_playback_loop(void* arg) {
       }
 
       BYTE* bufferptr = NULL;
-      hr = IAudioRenderClient_GetBuffer(playback->render_client,
-                                        (UINT32)frames_to_write, &bufferptr);
+      HRESULT hr = IAudioRenderClient_GetBuffer(
+          playback->render_client, (UINT32)frames_to_write, &bufferptr);
       if (SUCCEEDED(hr) && bufferptr) {
         encode_float_samples_to_wasapi(bufferptr, playback->transfer_buf,
                                        frames_to_write, playback->channels,
@@ -283,6 +289,18 @@ static void* wasapi_playback_loop(void* arg) {
                                  memory_order_acquire))
           break;
       }
+    }
+
+    if (!started) {
+      // The buffer now holds the first block, start playback.
+      HRESULT hr_start = IAudioClient_Start(playback->client);
+      if (FAILED(hr_start)) {
+        logger_error(&g_wasapi_logger,
+                     "Playback start stream failed: hr=0x%08lX",
+                     (unsigned long)hr_start);
+        break;
+      }
+      started = true;
     }
 
     if (playback->event_handle) {

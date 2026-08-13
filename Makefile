@@ -17,14 +17,45 @@ endif
 NPROCS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
 
-ifeq ($(origin CC),default)
-    CC := clang
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows_NT)
+
+ifeq ($(IS_WINDOWS),1)
+    IS_DARWIN := 0
+    IS_LINUX := 0
+else ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
+    IS_WINDOWS := 1
+    IS_DARWIN := 0
+    IS_LINUX := 0
+else ifeq ($(UNAME_S),Darwin)
+    IS_DARWIN := 1
+    IS_WINDOWS := 0
+    IS_LINUX := 0
+else
+    IS_LINUX := 1
+    IS_WINDOWS := 0
+    IS_DARWIN := 0
 endif
-CC ?= clang
+
+ifeq ($(IS_DARWIN),1)
+    ifeq ($(origin CC),default)
+        CC := clang
+    endif
+    CC ?= clang
+else
+    ifeq ($(origin CC),default)
+        CC := cc
+    endif
+    CC ?= cc
+endif
 AR ?= ar
 
+ifneq ($(CROSS_COMPILE),)
+    CC := $(CROSS_COMPILE)gcc
+    AR := $(shell which $(CROSS_COMPILE)gcc-ar 2>/dev/null || echo $(CROSS_COMPILE)ar)
+endif
+
 # Detect if compiler is Clang (Apple Clang or LLVM Clang)
-IS_CLANG := $(shell $(CC) --version 2>/dev/null | grep -iq clang && echo 1 || echo 0)
+IS_CLANG := $(shell echo '' | $(CC) -dM -E - 2>/dev/null | grep -q '__clang__' && echo 1 || echo 0)
 
 # Multithreaded LTO Configuration (LTO=thin default for Clang, LTO=full, LTO=auto, or ENABLE_LTO=0)
 ENABLE_LTO ?= 1
@@ -52,28 +83,8 @@ else
 endif
 
 CFLAGS ?= -O3 $(LTO_CFLAGS) -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden -DCDSP_BUILD_SHARED -Wall -Wextra -std=c11 -I$(ROOT_DIR) -I$(SRC_ROOT) -I$(SRC_ROOT)/Filters -I$(SRC_ROOT)/Audio -I$(SRC_ROOT)/Config -I$(SRC_ROOT)/FFT -I$(SRC_ROOT)/Mixer -I$(SRC_ROOT)/Resampler -I$(SRC_ROOT)/Processors -I$(SRC_ROOT)/DoP -I$(SRC_ROOT)/Pipeline -I$(SRC_ROOT)/Engine -I$(SRC_ROOT)/Server -I$(SRC_ROOT)/Backend -I$(SRC_ROOT)/Logging -I$(SRC_ROOT)/Utils
-UNAME_S := $(shell uname -s)
 
 ifeq ($(IS_WINDOWS),1)
-    IS_DARWIN := 0
-    IS_LINUX := 0
-else ifneq (,$(filter Windows_NT MINGW% MSYS% CYGWIN%,$(UNAME_S)))
-    IS_WINDOWS := 1
-    IS_DARWIN := 0
-    IS_LINUX := 0
-else ifeq ($(UNAME_S),Darwin)
-    IS_DARWIN := 1
-    IS_WINDOWS := 0
-    IS_LINUX := 0
-else
-    IS_LINUX := 1
-    IS_WINDOWS := 0
-    IS_DARWIN := 0
-endif
-
-ifeq ($(IS_WINDOWS),1)
-    CC := cc
-    AR := ar
     ENABLE_COREAUDIO ?= 0
     ENABLE_ACCELERATE ?= 0
     ENABLE_ALSA ?= 0
@@ -143,7 +154,10 @@ endif
 LDFLAGS += $(LTO_LDFLAGS) -lm -lpthread
 ifeq ($(IS_WINDOWS),1)
     # Windows Setup
-    CFLAGS += -march=native -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
+    ifeq ($(CROSS_COMPILE),)
+        CFLAGS += -march=native
+    endif
+    CFLAGS += -DCOBJMACROS -D_WIN32 -DUNICODE -D_UNICODE -D_USE_MATH_DEFINES -I$(ROOT_DIR)/win_deps/include
     ifeq ($(ENABLE_FFTW),1)
         LDFLAGS += -L$(ROOT_DIR)/win_deps/lib -lfftw3 -lfftw3f
     else
@@ -300,7 +314,7 @@ SERVER_TEST_OBJS := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(SERVER_SR
 TEST_RUNNER_MAIN_OBJ := $(patsubst $(ROOT_DIR)/%.c, $(TEST_OBJ_DIR)/%.o, $(ROOT_DIR)/Tests/CLibTests/test_runner_main.c)
 ALL_TEST_RUNNER_OBJS := $(UNIT_TEST_OBJS) $(SERVER_TEST_OBJS) $(TEST_RUNNER_MAIN_OBJ)
 
-UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner
+UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner$(CLI_BIN_EXT)
 UNIT_TEST_BINS := $(UNIT_TEST_RUNNER)
 
 # Build benchmark binaries linked against main library (without clock_mock)
@@ -322,7 +336,7 @@ endif
 RUST_HARNESS_DIR := $(ROOT_DIR)/Tests/RustHarnesses
 
 test-rust-build:
-	@if [ -d "$(RUST_HARNESS_DIR)" ]; then \
+	@if [ -d "$(RUST_HARNESS_DIR)" ] && command -v cargo >/dev/null 2>&1; then \
 		echo "🦀 Building Rust harness binaries..."; \
 		cd $(RUST_HARNESS_DIR) && cargo build --release; \
 	fi

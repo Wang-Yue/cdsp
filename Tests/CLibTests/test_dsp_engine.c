@@ -4664,6 +4664,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "    \"devices\": {\n"
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": false,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Generator\",\n"
            "            \"channels\": 2\n"
@@ -4733,6 +4734,10 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   // Re-enable playback rate change too to keep default formats aligned for
   // subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
+  wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
+                                  false);
+  wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
+                                  true);
 
   cdsp_sleep_ms(200);  // Allow Windows Audio service to apply the deferred
                        // format change once idle
@@ -4744,6 +4749,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "    \"devices\": {\n"
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": false,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Generator\",\n"
            "            \"channels\": 2\n"
