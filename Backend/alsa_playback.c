@@ -626,28 +626,27 @@ static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
 static bool alsa_playback_prefill_silence(void* ctx, size_t frames,
                                           backend_error_t* err) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
-  if (!playback || !playback->pcm) return false;
-
-  int bits = snd_pcm_format_physical_width(playback->format);
-  size_t sample_size = (bits > 0) ? ((size_t)bits / 8) : 4;
-
-  size_t zero_buf_size = frames * playback->channels * sample_size;
-  void* zero_buf = malloc(zero_buf_size);
-  if (!zero_buf) return false;
+  if (!playback || !playback->pcm || !playback->interleaved_buf) return false;
 
   if (alsa_is_dsd_format(playback->format)) {
-    memset(zero_buf, 0x69, zero_buf_size);
+    memset(playback->interleaved_buf, 0x69, playback->interleaved_buf_size);
   } else {
-    memset(zero_buf, 0, zero_buf_size);
+    memset(playback->interleaved_buf, 0, playback->interleaved_buf_size);
   }
 
-  snd_pcm_sframes_t rc = snd_pcm_writei(playback->pcm, zero_buf, frames);
-  free(zero_buf);
-
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, snd_strerror(rc));
-    return false;
+  size_t frames_left = frames;
+  while (frames_left > 0) {
+    size_t chunk_frames = frames_left < (size_t)playback->chunk_size
+                              ? frames_left
+                              : (size_t)playback->chunk_size;
+    snd_pcm_sframes_t rc =
+        snd_pcm_writei(playback->pcm, playback->interleaved_buf, chunk_frames);
+    if (rc < 0) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, snd_strerror(rc));
+      return false;
+    }
+    frames_left -= chunk_frames;
   }
   return true;
 }

@@ -1,20 +1,23 @@
 // AudioHistoryBuffer — stores recent audio samples for spectrum analysis and
-// vector scope.
+// vector scope (matching upstream CamillaDSP spectrum::AudioRingBuffer with
+// lock-free / wait-free seqlock synchronization for real-time audio threads).
 #include "Audio/audio_history_buffer.h"
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
+#include <string.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
-#include "Utils/lock_free_ring_buffer.h"
+#include "Utils/cdsp_memory.h"
 
 struct audio_history_buffer {
   size_t channels;
-  spsc_audio_ring_buffer_t** buffers;
+  size_t capacity;
+  _Atomic uint64_t write_pos __attribute__((aligned(64)));
+  _Atomic uint64_t total_written __attribute__((aligned(64)));
+  _Atomic uint64_t write_seq __attribute__((aligned(64)));
+  float** data;
 };
 
 size_t audio_history_buffer_get_channels(
@@ -23,23 +26,32 @@ size_t audio_history_buffer_get_channels(
 }
 
 audio_history_buffer_t* audio_history_buffer_create(void) {
-  audio_history_buffer_t* history =
-      (audio_history_buffer_t*)calloc(1, sizeof(audio_history_buffer_t));
+  audio_history_buffer_t* history = (audio_history_buffer_t*)cdsp_aligned_alloc(
+      64, sizeof(audio_history_buffer_t));
+  if (history) {
+    memset(history, 0, sizeof(audio_history_buffer_t));
+    history->capacity = AUDIO_HISTORY_BUFFER_CAPACITY;
+    atomic_init(&history->write_pos, 0);
+    atomic_init(&history->total_written, 0);
+    atomic_init(&history->write_seq, 0);
+  }
   return history;
 }
 
 static void audio_history_buffer_clear_internal(
     audio_history_buffer_t* history) {
   if (!history) return;
-  if (history->buffers) {
+  if (history->data) {
     for (size_t ch = 0; ch < history->channels; ch++) {
-      if (history->buffers[ch])
-        spsc_audio_ring_buffer_free(history->buffers[ch]);
+      if (history->data[ch]) cdsp_aligned_free(history->data[ch]);
     }
-    free(history->buffers);
-    history->buffers = NULL;
+    free(history->data);
+    history->data = NULL;
   }
   history->channels = 0;
+  atomic_store_explicit(&history->write_pos, 0, memory_order_relaxed);
+  atomic_store_explicit(&history->total_written, 0, memory_order_relaxed);
+  atomic_store_explicit(&history->write_seq, 0, memory_order_relaxed);
 }
 
 void audio_history_buffer_reset(audio_history_buffer_t* history,
@@ -48,21 +60,22 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
   audio_history_buffer_clear_internal(history);
 
   if (channels > 0) {
-    history->buffers = (spsc_audio_ring_buffer_t**)calloc(
-        channels, sizeof(spsc_audio_ring_buffer_t*));
-    if (!history->buffers) return;
-
     history->channels = channels;
+    history->capacity = AUDIO_HISTORY_BUFFER_CAPACITY;
+    atomic_store_explicit(&history->write_pos, 0, memory_order_relaxed);
+    atomic_store_explicit(&history->total_written, 0, memory_order_relaxed);
+    atomic_store_explicit(&history->write_seq, 0, memory_order_relaxed);
+    history->data = (float**)calloc(channels, sizeof(float*));
+    if (!history->data) return;
+
     for (size_t ch = 0; ch < channels; ch++) {
-      history->buffers[ch] =
-          spsc_audio_ring_buffer_create(AUDIO_HISTORY_BUFFER_CAPACITY);
-      if (!history->buffers[ch]) {
+      history->data[ch] =
+          (float*)cdsp_aligned_alloc(64, history->capacity * sizeof(float));
+      if (!history->data[ch]) {
         audio_history_buffer_clear_internal(history);
         return;
       }
-      history->channels = ch + 1;
-      spsc_audio_ring_buffer_set_overwrite_on_overflow(history->buffers[ch],
-                                                       true);
+      memset(history->data[ch], 0, history->capacity * sizeof(float));
     }
   }
 }
@@ -70,42 +83,55 @@ void audio_history_buffer_reset(audio_history_buffer_t* history,
 void audio_history_buffer_free(audio_history_buffer_t* history) {
   if (!history) return;
   audio_history_buffer_clear_internal(history);
-  free(history);
+  cdsp_aligned_free(history);
 }
 
 bool audio_history_buffer_has_data(const audio_history_buffer_t* history) {
-  if (!history || !history->buffers) return false;
-  for (size_t ch = 0; ch < history->channels; ch++) {
-    if (history->buffers[ch] &&
-        spsc_audio_ring_buffer_get_total_samples_written(history->buffers[ch]) >
-            0) {
-      return true;
-    }
-  }
-  return false;
+  if (!history) return false;
+  return atomic_load_explicit(&history->total_written, memory_order_acquire) >
+         0;
 }
 
 void audio_history_buffer_append(audio_history_buffer_t* history,
                                  const audio_chunk_t* chunk) {
-  if (!history || !chunk || !history->buffers) return;
-  size_t chunk_channels = audio_chunk_get_channels(chunk);
-  if (chunk_channels != history->channels || history->channels == 0) return;
-  size_t valid = audio_chunk_get_valid_frames(chunk);
-  if (valid == 0) return;
-  for (size_t ch = 0; ch < history->channels; ch++) {
-    mutable_waveform_t src_ptr = audio_chunk_get_channel(chunk, ch);
-    if (src_ptr && history->buffers[ch]) {
-      spsc_audio_ring_buffer_append_converting_double_to_float(
-          history->buffers[ch], src_ptr, valid);
+  if (!history || !chunk) return;
+  size_t n_frames = audio_chunk_get_valid_frames(chunk);
+  size_t n_ch = audio_chunk_get_channels(chunk);
+  if (n_frames == 0 || n_ch == 0) return;
+
+  if (history->channels != n_ch || !history->data) {
+    audio_history_buffer_reset(history, n_ch);
+    if (!history->data) return;
+  }
+
+  uint64_t seq =
+      atomic_load_explicit(&history->write_seq, memory_order_relaxed);
+  atomic_store_explicit(&history->write_seq, seq + 1, memory_order_release);
+
+  uint64_t pos =
+      atomic_load_explicit(&history->write_pos, memory_order_relaxed);
+  size_t cap = history->capacity;
+
+  for (size_t frame = 0; frame < n_frames; frame++) {
+    size_t write_idx = (size_t)((pos + frame) % cap);
+    for (size_t ch = 0; ch < n_ch; ch++) {
+      const double* ch_data = audio_chunk_get_channel(chunk, ch);
+      history->data[ch][write_idx] = (float)ch_data[frame];
     }
   }
+
+  atomic_store_explicit(&history->write_pos, (pos + n_frames) % cap,
+                        memory_order_release);
+  atomic_fetch_add_explicit(&history->total_written, n_frames,
+                            memory_order_release);
+  atomic_store_explicit(&history->write_seq, seq + 2, memory_order_release);
 }
 
 audio_history_buffer_status_t audio_history_buffer_read_latest(
     const audio_history_buffer_t* history, float* dest, size_t count,
     int channel, bool* enough_data) {
   if (enough_data) *enough_data = false;
-  if (!history || history->channels == 0 || !history->buffers) {
+  if (!history || history->channels == 0 || !history->data) {
     return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
   }
   if (channel >= 0 && (size_t)channel >= history->channels) {
@@ -113,87 +139,53 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
   }
   if (!dest || count == 0) return AUDIO_HISTORY_BUFFER_OK;
 
-  // If a specific channel is requested, read it directly and return.
-  if (channel >= 0) {
-    if (!history->buffers[channel]) return AUDIO_HISTORY_BUFFER_OK;
-    uint64_t written = spsc_audio_ring_buffer_get_total_samples_written(
-        history->buffers[channel]);
-    if (written < (uint64_t)count) return AUDIO_HISTORY_BUFFER_OK;
+  size_t cap = history->capacity;
+  if (count > cap) return AUDIO_HISTORY_BUFFER_OK;
 
-    bool ok = spsc_audio_ring_buffer_read_latest_at(history->buffers[channel],
-                                                    dest, count, written);
-    if (enough_data) *enough_data = ok;
-    return AUDIO_HISTORY_BUFFER_OK;
-  }
-
-  // Phase alignment logic: Find the minimum total samples written across all
-  // channels. This ensures that when we read "latest" samples, we read from
-  // the same point in time (phase-aligned) even if the producer is currently
-  // writing to some channels but has not finished all of them.
-  uint64_t min_written = UINT64_MAX;
-  for (size_t ch = 0; ch < history->channels; ch++) {
-    if (!history->buffers[ch]) continue;
-    uint64_t w =
-        spsc_audio_ring_buffer_get_total_samples_written(history->buffers[ch]);
-    if (w < min_written) {
-      min_written = w;
+  int retries = 10;
+  while (retries > 0) {
+    uint64_t seq_before =
+        atomic_load_explicit(&history->write_seq, memory_order_acquire);
+    if (seq_before & 1) {
+      retries--;
+      continue;
     }
-  }
-  // If we haven't even written 'count' samples yet overall, we can't satisfy
-  // the request.
-  if (min_written == UINT64_MAX || min_written < (uint64_t)count) {
-    return AUDIO_HISTORY_BUFFER_OK;
-  }
 
-  // Otherwise, we need to average all channels.
-  if (count > AUDIO_HISTORY_BUFFER_CAPACITY) {
-    return AUDIO_HISTORY_BUFFER_OK;
-  }
-
-  // Step 1: Read channel 0 directly into the destination buffer.
-  // This avoids having to initialize dest to zero and perform an extra copy.
-  bool ok = spsc_audio_ring_buffer_read_latest_at(history->buffers[0], dest,
-                                                  count, min_written);
-  if (!ok) return AUDIO_HISTORY_BUFFER_OK;
-
-  if (history->channels == 1) {
-    if (enough_data) *enough_data = true;
-    return AUDIO_HISTORY_BUFFER_OK;
-  }
-
-  // Step 2: Read subsequent channels into stack scratch memory in 2048-frame
-  // chunks to prevent data races on multi-threaded reads and avoid dynamic
-  // allocation.
-  float stack_scratch[2048];
-  for (size_t ch = 1; ch < history->channels; ch++) {
-    for (size_t offset = 0; offset < count; offset += 2048) {
-      size_t chunk_len = (count - offset > 2048) ? 2048 : (count - offset);
-      uint64_t chunk_written = min_written - (count - offset - chunk_len);
-      ok = spsc_audio_ring_buffer_read_latest_at(
-          history->buffers[ch], stack_scratch, chunk_len, chunk_written);
-      if (!ok) {
-        return AUDIO_HISTORY_BUFFER_OK;
-      }
-#ifdef ENABLE_ACCELERATE
-      vDSP_vadd(dest + offset, 1, stack_scratch, 1, dest + offset, 1,
-                chunk_len);
-#else
-      for (size_t i = 0; i < chunk_len; i++) {
-        dest[offset + i] += stack_scratch[i];
-      }
-#endif
+    uint64_t total =
+        atomic_load_explicit(&history->total_written, memory_order_acquire);
+    if (total < (uint64_t)count) {
+      return AUDIO_HISTORY_BUFFER_OK;
     }
+
+    uint64_t pos =
+        atomic_load_explicit(&history->write_pos, memory_order_acquire);
+    size_t start = (size_t)((pos + cap - (count % cap)) % cap);
+
+    if (channel >= 0) {
+      const float* ch_src = history->data[channel];
+      for (size_t i = 0; i < count; i++) {
+        dest[i] = ch_src[(start + i) % cap];
+      }
+    } else {
+      float n = (float)history->channels;
+      for (size_t i = 0; i < count; i++) {
+        size_t idx = (start + i) % cap;
+        float sum = 0.0f;
+        for (size_t ch = 0; ch < history->channels; ch++) {
+          sum += history->data[ch][idx];
+        }
+        dest[i] = sum / n;
+      }
+    }
+
+    uint64_t seq_after =
+        atomic_load_explicit(&history->write_seq, memory_order_acquire);
+    if (seq_after == seq_before) {
+      if (enough_data) *enough_data = true;
+      return AUDIO_HISTORY_BUFFER_OK;
+    }
+    retries--;
   }
 
-  // Step 3: Scale the accumulated sum to get the average.
-  float scale = 1.0f / (float)history->channels;
-#ifdef ENABLE_ACCELERATE
-  vDSP_vsmul(dest, 1, &scale, dest, 1, count);
-#else
-  for (size_t i = 0; i < count; i++) {
-    dest[i] *= scale;
-  }
-#endif
-  if (enough_data) *enough_data = true;
   return AUDIO_HISTORY_BUFFER_OK;
 }

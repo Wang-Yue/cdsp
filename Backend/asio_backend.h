@@ -3,6 +3,8 @@
 
 #if defined(ENABLE_ASIO)
 
+#include <stdbool.h>
+
 #include "Backend/audio_backend.h"
 
 /**
@@ -34,6 +36,12 @@ extern const capture_backend_vtable_t g_asio_capture_vtable;
  * @brief Global virtual method table for ASIO playback backend.
  */
 extern const playback_backend_vtable_t g_asio_playback_vtable;
+
+/**
+ * @brief Checks if an ASIO driver is currently initialized in-process.
+ * Matches CamillaDSP device.rs:ASIO_DRIVER_INITIALIZED.
+ */
+bool asio_driver_is_initialized(void);
 
 #endif  // ENABLE_ASIO
 

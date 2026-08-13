@@ -47,24 +47,17 @@ struct core_audio_playback {
   bool has_sample_format;
 
   AudioUnit audio_unit;
-  /// Per-channel SPSC ring buffer of `Float` samples. `write(chunk:)`
-  /// is the producer; the render callback is the consumer.
-  spsc_audio_ring_buffer_t** playback_rings;
-  int ring_buffer_size;
+  spsc_byte_ring_buffer_t* ring_buffer;
+  uint8_t* write_buf;
+  size_t write_buf_cap;
+  size_t bytes_per_sample;
+  size_t blockalign;
 
-  /// HAL device the unit is bound to. Captured from the resolved
-  /// device lookup in `open()` so `close()` can release hog mode
-  /// without doing the lookup again (which would race a default-
-  /// device change).
   AudioDeviceID opened_device_id;
   bool did_acquire_hog_mode;
-  /// Watches the device's nominal sample rate so the engine can
-  /// surface `.playbackFormatChange` when something else flips the
-  /// device rate at runtime.
   rate_change_watcher_t* rate_watcher;
   _Atomic bool is_device_alive;
   _Atomic bool is_paused;
-  bool is_interleaved;
   _Atomic bool stopped;
   _Atomic int active_callbacks;
 };
@@ -150,54 +143,23 @@ static OSStatus playback_callback(void* inRefCon,
       }
     }
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                              memory_order_relaxed);
+                              memory_order_release);
     return noErr;
   }
 
   size_t frame_count = (size_t)inNumberFrames;
-
-  if (playback->is_interleaved) {
-    float* float_ptr = (float*)ioData->mBuffers[0].mData;
-    if (float_ptr) {
-      for (int ch = 0; ch < playback->channels; ch++) {
-        size_t copied = spsc_audio_ring_buffer_consume_stride(
-            playback->playback_rings[ch], float_ptr + ch, frame_count,
-            playback->channels);
-        if (copied < frame_count) {
-          float zero = 0.0f;
-#ifdef ENABLE_ACCELERATE
-          vDSP_vfill(&zero, float_ptr + ch + (copied * playback->channels),
-                     playback->channels, frame_count - copied);
-#else
-          float* p = float_ptr + ch + (copied * playback->channels);
-          size_t count = frame_count - copied;
-          int stride = playback->channels;
-          for (size_t i = 0; i < count; i++) {
-            *p = zero;
-            p += stride;
-          }
-#endif
-        }
-      }
-    }
-  } else {
-    for (UInt32 ch = 0; ch < ioData->mNumberBuffers; ch++) {
-      float* float_ptr = (float*)ioData->mBuffers[ch].mData;
-      if (!float_ptr) continue;
-      if ((int)ch < playback->channels) {
-        size_t copied = spsc_audio_ring_buffer_consume(
-            playback->playback_rings[ch], float_ptr, frame_count);
-        if (copied < frame_count) {
-          memset(float_ptr + copied, 0, (frame_count - copied) * sizeof(float));
-        }
-      } else {
-        memset(float_ptr, 0, frame_count * sizeof(float));
-      }
+  uint8_t* dst = (uint8_t*)ioData->mBuffers[0].mData;
+  if (dst) {
+    size_t bytes_needed = frame_count * playback->blockalign;
+    size_t copied =
+        spsc_byte_ring_buffer_consume(playback->ring_buffer, dst, bytes_needed);
+    if (copied < bytes_needed) {
+      memset(dst + copied, 0, bytes_needed - copied);
     }
   }
 
   atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                            memory_order_relaxed);
+                            memory_order_release);
   return noErr;
 }
 
@@ -258,6 +220,10 @@ static void core_audio_playback_close(void* ctx) {
     AudioComponentInstanceDispose(playback->audio_unit);
     playback->audio_unit = NULL;
   }
+  if (playback->write_buf) {
+    free(playback->write_buf);
+    playback->write_buf = NULL;
+  }
   if (playback->did_acquire_hog_mode && playback->opened_device_id != 0) {
     pid_t pid = -1;
     AudioObjectPropertyAddress addr = {
@@ -283,9 +249,19 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
-  for (int c = 0; c < playback->channels; c++) {
-    if (playback->playback_rings[c]) {
-      spsc_audio_ring_buffer_drain(playback->playback_rings[c]);
+  if (playback->ring_buffer) {
+    spsc_byte_ring_buffer_drain(playback->ring_buffer);
+  }
+
+  if (!playback->write_buf) {
+    playback->write_buf_cap =
+        playback->blockalign * (size_t)playback->chunk_size * 2;
+    playback->write_buf = (uint8_t*)malloc(playback->write_buf_cap);
+    if (!playback->write_buf) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to allocate write buffer");
+      goto cleanup;
     }
   }
 
@@ -417,30 +393,19 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
 
   AudioStreamBasicDescription stream_format =
       core_audio_device_float32_stream_format(playback->sample_rate,
-                                              playback->channels, false);
+                                              playback->channels);
   status = AudioUnitSetProperty(
       playback->audio_unit, kAudioUnitProperty_StreamFormat,
       kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
   if (status != noErr) {
-    // Fallback to interleaved float32.
-    stream_format = core_audio_device_float32_stream_format(
-        playback->sample_rate, playback->channels, true);
-    status = AudioUnitSetProperty(
-        playback->audio_unit, kAudioUnitProperty_StreamFormat,
-        kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
-    if (status != noErr) {
-      logger_error(
-          &g_logger,
-          "Failed to set playback stream format on AudioUnit: status=%d",
-          status);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to set playback stream format");
-      goto cleanup;
-    }
+    logger_error(&g_logger,
+                 "Failed to set playback stream format on AudioUnit: status=%d",
+                 status);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to set playback stream format");
+    goto cleanup;
   }
-  playback->is_interleaved =
-      ((stream_format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0);
 
   AURenderCallbackStruct cb = {.inputProc = playback_callback,
                                .inputProcRefCon = playback};
@@ -502,7 +467,7 @@ cleanup:
   return false;
 }
 
-/// Write an audio chunk into the playback ring buffers.
+/// Write an audio chunk into the playback ring buffer.
 static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
                                       backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
@@ -516,14 +481,15 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
   size_t frames = audio_chunk_get_valid_frames(chunk);
   if (frames == 0) return true;
 
-  int usable_channels =
-      playback->channels < (int)audio_chunk_get_channels(chunk)
-          ? playback->channels
-          : (int)audio_chunk_get_channels(chunk);
+  size_t bytes_to_write = frames * playback->blockalign;
+  if (bytes_to_write > playback->write_buf_cap) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Frame count exceeds playback buffer capacity");
+    }
+    return false;
+  }
 
-  // Wait for space to become available in the ring buffers for all channels.
-  // This is a blocking wait from the writer's perspective, using a sleep loop
-  // to yield CPU. The consumer (CoreAudio render thread) remains lock-free.
   uint32_t elapsed_ms = 0;
   while (true) {
     if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
@@ -533,62 +499,52 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
       return false;
     }
-    bool space_available = true;
-    for (int ch = 0; ch < usable_channels; ch++) {
-      size_t free_space = spsc_audio_ring_buffer_get_available_to_write(
-          playback->playback_rings[ch]);
-      if (free_space < frames) {
-        space_available = false;
-        break;
-      }
-    }
-    if (space_available) {
+    if (spsc_byte_ring_buffer_get_available_to_write(playback->ring_buffer) >=
+        bytes_to_write) {
       break;
     }
 
-    // Sleep for 1ms to yield CPU.
     cdsp_sleep_ms(1);
     elapsed_ms += 1;
 
-    // Timeout after 1 second to prevent infinite blocking if playback stalls.
     if (elapsed_ms >= 1000) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "CoreAudio write timeout");
       }
-      return false;  // Timeout 1s
+      return false;
     }
 
-    // Abort if the device was disconnected.
     if (!atomic_load_explicit(&playback->is_device_alive,
                               memory_order_acquire)) {
       return false;
     }
-    // If paused, we fake a successful write to avoid blocking the caller.
-    // The caller might want to keep sending data, which will be discarded
-    // or accumulate depending on buffer state.
     if (atomic_load_explicit(&playback->is_paused, memory_order_acquire)) {
       return true;
     }
   }
 
-  for (int ch = 0; ch < usable_channels; ch++) {
-    const double* src_ptr = audio_chunk_get_channel(chunk, ch);
-    if (src_ptr) {
-      spsc_audio_ring_buffer_append_converting_double_to_float(
-          playback->playback_rings[ch], src_ptr, frames);
+  for (size_t f = 0; f < frames; f++) {
+    for (int ch = 0; ch < playback->channels; ch++) {
+      float sample = (float)audio_chunk_get_channel(chunk, ch)[f];
+      memcpy(playback->write_buf +
+                 (f * (size_t)playback->channels + (size_t)ch) * sizeof(float),
+             &sample, sizeof(float));
     }
   }
+
+  spsc_byte_ring_buffer_write(playback->ring_buffer, playback->write_buf,
+                              bytes_to_write);
   return true;
 }
 
-/// Get the current buffer level in samples.
+/// Get the current buffer level in frames.
 static size_t core_audio_playback_get_buffer_level(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
-  if (!playback || !playback->playback_rings || !playback->playback_rings[0])
+  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
     return 0;
-  return spsc_audio_ring_buffer_get_available_to_read(
-      playback->playback_rings[0]);
+  return spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
+         playback->blockalign;
 }
 
 /// Get any pending sample rate change detected on the playback device.
@@ -605,13 +561,15 @@ static bool core_audio_playback_prefill_silence(void* ctx, size_t frames,
                                                 backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   (void)err;
-  if (!playback || frames == 0) return true;
-  size_t to_write = frames < (size_t)playback->ring_buffer_size
-                        ? frames
-                        : (size_t)playback->ring_buffer_size;
-  for (int ch = 0; ch < playback->channels; ch++) {
-    spsc_audio_ring_buffer_write_silence(playback->playback_rings[ch],
-                                         to_write);
+  if (!playback || frames == 0 || !playback->ring_buffer) return true;
+  size_t bytes = frames * playback->blockalign;
+  uint8_t zero_buf[512] = {0};
+  while (bytes > 0) {
+    size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
+    size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
+                                                 zero_buf, chunk_bytes);
+    if (written == 0) break;
+    bytes -= written;
   }
   return true;
 }
@@ -646,12 +604,13 @@ static void core_audio_playback_destroy(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   core_audio_playback_close(playback);
-  if (playback->playback_rings) {
-    for (int i = 0; i < playback->channels; i++) {
-      if (playback->playback_rings[i])
-        spsc_audio_ring_buffer_free(playback->playback_rings[i]);
-    }
-    free(playback->playback_rings);
+  if (playback->ring_buffer) {
+    spsc_byte_ring_buffer_free(playback->ring_buffer);
+    playback->ring_buffer = NULL;
+  }
+  if (playback->write_buf) {
+    free(playback->write_buf);
+    playback->write_buf = NULL;
   }
   free(playback);
 }
@@ -707,27 +666,21 @@ static playback_backend_t* core_audio_playback_create(
     playback->has_sample_format = true;
   }
 
-  playback->ring_buffer_size = chunk_size * 8;
-  playback->playback_rings = (spsc_audio_ring_buffer_t**)calloc(
-      config_channels, sizeof(spsc_audio_ring_buffer_t*));
-  if (!playback->playback_rings) {
+  playback->bytes_per_sample = sizeof(float);
+  playback->blockalign = (size_t)config_channels * sizeof(float);
+  size_t ring_size = playback->blockalign * (2 * (size_t)chunk_size + 2048);
+  playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
+  if (!playback->ring_buffer) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Out of memory");
     core_audio_playback_destroy(playback);
     return NULL;
   }
-  for (int i = 0; i < config_channels; i++) {
-    playback->playback_rings[i] =
-        spsc_audio_ring_buffer_create(playback->ring_buffer_size);
-    if (!playback->playback_rings[i]) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Out of memory");
-      core_audio_playback_destroy(playback);
-      return NULL;
-    }
-  }
+
+  playback->write_buf_cap = playback->blockalign * (size_t)chunk_size * 2;
+  playback->write_buf = NULL;
+
   atomic_init(&playback->is_device_alive, true);
   atomic_init(&playback->is_paused, false);
 

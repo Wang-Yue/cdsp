@@ -25,224 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 
-// MARK: - SPSCAudioRingBuffer
-
-/**
- * @struct spsc_audio_ring_buffer
- * @brief Lock-free SPSC ring buffer of `float` samples.
- *
- * Power-of-two capacity so wrap-around is a single bitmask. Producer publishes
- * new samples with a `release` store on `write_index`; consumers observe with
- * an `acquire` load, establishing happens-before without locks.
- *
- * Two consumer styles, both supported on the same instance — but don't mix them
- * on a single ring:
- *
- * - **Consume:** call @ref spsc_audio_ring_buffer_consume to drain samples.
- *   Each sample is delivered to exactly one consumer call.
- *   Used by audio capture and playback paths.
- * - **Snapshot:** call @ref spsc_audio_ring_buffer_read_latest to copy the
- *   most-recent `count` samples without advancing any cursor.
- *   The same samples can be re-read across calls. Used by
- *   @ref spectrum_analyzer_t to feed FFTs at different lengths.
- */
-typedef struct spsc_audio_ring_buffer spsc_audio_ring_buffer_t;
-
-/**
- * @brief Create a new SPSC audio ring buffer.
- *
- * @param minimum_capacity The minimum requested capacity. The actual capacity
- *                         will be rounded up to the next power of two.
- * @return Pointer to the allocated buffer, or NULL on failure.
- */
-spsc_audio_ring_buffer_t* spsc_audio_ring_buffer_create(
-    size_t minimum_capacity);
-
-/**
- * @brief Set whether the ring buffer should overwrite the oldest unread data
- * when capacity is exceeded. Default is false (which caps writes to prevent
- * races).
- *
- * @param ring Pointer to the ring buffer.
- * @param overwrite True to overwrite on overflow, false to drop/cap writes.
- */
-void spsc_audio_ring_buffer_set_overwrite_on_overflow(
-    spsc_audio_ring_buffer_t* ring, bool overwrite);
-
-/**
- * @brief Free the SPSC audio ring buffer.
- *
- * @param ring Pointer to the ring buffer to free.
- */
-void spsc_audio_ring_buffer_free(spsc_audio_ring_buffer_t* ring);
-
-/**
- * @brief Get total samples written since allocation.
- *
- * @param ring Pointer to the ring buffer.
- * @return Total number of samples written.
- */
-uint64_t spsc_audio_ring_buffer_get_total_samples_written(
-    const spsc_audio_ring_buffer_t* ring);
-
-/**
- * @brief Number of samples currently waiting to be consumed.
- *
- * For consume-style use. Always non-negative.
- *
- * @param ring Pointer to the ring buffer.
- * @return Number of available samples to read.
- */
-size_t spsc_audio_ring_buffer_get_available_to_read(
-    const spsc_audio_ring_buffer_t* ring);
-
-/**
- * @brief Number of samples that can be written without overwriting unread data.
- *
- * @param ring Pointer to the ring buffer.
- * @return Number of available slots to write.
- */
-size_t spsc_audio_ring_buffer_get_available_to_write(
-    const spsc_audio_ring_buffer_t* ring);
-
-/**
- * @brief Get the capacity of the ring buffer.
- *
- * @param ring Pointer to the ring buffer.
- * @return The capacity.
- */
-size_t spsc_audio_ring_buffer_get_capacity(
-    const spsc_audio_ring_buffer_t* ring);
-
-// MARK: Producer
-
-/**
- * @brief Write samples into the ring buffer.
- *
- * **Producer-only.** Write `count` `float` samples from `source` into the ring.
- * `stride` lets the producer pull a single channel out of an interleaved buffer
- * (`stride = channels`); pass `1` for non-interleaved input. Always succeeds —
- * if the consumer is too far behind the oldest unread data is silently
- * overwritten.
- *
- * @param ring Pointer to the ring buffer.
- * @param source Pointer to the source array.
- * @param count Number of samples to write.
- * @param stride Stride for reading from source.
- */
-void spsc_audio_ring_buffer_write(spsc_audio_ring_buffer_t* ring,
-                                  const float* source, size_t count,
-                                  size_t stride);
-
-/**
- * @brief Convert and write double samples as float into the ring buffer.
- *
- * **Producer-only.** Convert `count` `double` samples from `source` to `float`
- * and write into the ring. Used by the spectrum-analyzer tap, which feeds
- * engine-precision `double` samples into a half-precision ring to halve memory.
- *
- * @param ring Pointer to the ring buffer.
- * @param source Pointer to the double source array.
- * @param count Number of samples to convert and write.
- */
-void spsc_audio_ring_buffer_append_converting_double_to_float(
-    spsc_audio_ring_buffer_t* ring, const double* source, size_t count);
-
-/**
- * @brief Write silence (zeros) into the ring buffer.
- *
- * **Producer-only.** Write `count` zeros into the ring.
- * Always succeeds — if the consumer is too far behind the oldest
- * unread data is silently overwritten.
- *
- * @param ring Pointer to the ring buffer.
- * @param count Number of silent samples to write.
- */
-void spsc_audio_ring_buffer_write_silence(spsc_audio_ring_buffer_t* ring,
-                                          size_t count);
-
-// MARK: Consumer (consume style)
-
-/**
- * @brief Consume samples from the ring buffer.
- *
- * **Consumer-only.** Copy up to `count` samples into `dest` and advance the
- * read cursor. Returns the number of samples actually copied — may be less than
- * `count` if fewer are available, in which case the remainder of `dest` is left
- * untouched and the caller should fill it with silence.
- *
- * @param ring Pointer to the ring buffer.
- * @param dest Destination buffer.
- * @param count Maximum number of samples to consume.
- * @return Number of samples actually consumed.
- */
-size_t spsc_audio_ring_buffer_consume(spsc_audio_ring_buffer_t* ring,
-                                      float* dest, size_t count);
-
-/**
- * @brief Consume samples from the ring buffer with a destination stride.
- *
- * **Consumer-only.** Copy up to `count` samples into `dest` with specified
- * `stride` and advance the read cursor. Returns the number of samples actually
- * copied.
- *
- * @param ring Pointer to the ring buffer.
- * @param dest Destination buffer.
- * @param count Maximum number of samples to consume.
- * @param stride Stride for writing to destination.
- * @return Number of samples actually consumed.
- */
-size_t spsc_audio_ring_buffer_consume_stride(spsc_audio_ring_buffer_t* ring,
-                                             float* dest, size_t count,
-                                             size_t stride);
-
-/**
- * @brief Discard all pending samples.
- *
- * **Consumer-only.** Discard any pending samples without copying. Useful when
- * the consumer wants to re-sync after a long stall.
- *
- * @param ring Pointer to the ring buffer.
- */
-void spsc_audio_ring_buffer_drain(spsc_audio_ring_buffer_t* ring);
-
-// MARK: Consumer (snapshot style)
-
-/**
- * @brief Read the latest samples without advancing the read cursor.
- *
- * **Consumer.** Copy the most recent `count` samples into `dest` *without*
- * advancing any cursor — subsequent calls can re-read overlapping windows.
- * Returns `false` (without writing to `dest`) when fewer than `count` samples
- * have been written so far.
- *
- * Tearing: in principle the producer can wrap the entire buffer during the
- * consumer's memcpy. With the spectrum analyzer's large buffer, the snapshot
- * is effectively atomic and we don't pay for a seqlock retry loop.
- *
- * @param ring Pointer to the ring buffer.
- * @param dest Destination buffer.
- * @param count Number of samples to read.
- * @return true if successful, false if not enough data.
- */
-bool spsc_audio_ring_buffer_read_latest(const spsc_audio_ring_buffer_t* ring,
-                                        float* dest, size_t count);
-
-/**
- * @brief Read the latest samples relative to a write index.
- *
- * **Consumer.** Similar to @ref spsc_audio_ring_buffer_read_latest, but reads
- * relative to a specific `written` count.
- *
- * @param ring Pointer to the ring buffer.
- * @param dest Destination buffer.
- * @param count Number of samples to read.
- * @param written The write index offset to read from.
- * @return true if successful, false if not enough data.
- */
-bool spsc_audio_ring_buffer_read_latest_at(const spsc_audio_ring_buffer_t* ring,
-                                           float* dest, size_t count,
-                                           uint64_t written);
+// MARK: - Power of Two Helper
 
 /**
  * @brief Round up a size to the next power of two.
@@ -250,7 +33,7 @@ bool spsc_audio_ring_buffer_read_latest_at(const spsc_audio_ring_buffer_t* ring,
  * @param n Size to round.
  * @return Rounded size.
  */
-static inline size_t spsc_audio_ring_buffer_round_up_to_power_of_two(size_t n) {
+static inline size_t spsc_round_up_to_power_of_two(size_t n) {
   if (n == 0) return 1;
   if (n > ((size_t)1 << (sizeof(size_t) * 8 - 1))) {
     return (size_t)1 << (sizeof(size_t) * 8 - 1);  // Cap at max power of two
@@ -341,6 +124,95 @@ void* spsc_queue_dequeue(spsc_queue_t* queue);
  * @param queue Pointer to the queue.
  */
 void spsc_queue_drain(spsc_queue_t* queue);
+
+// MARK: - SPSCByteRingBuffer
+
+/**
+ * @struct spsc_byte_ring_buffer
+ * @brief Lock-free single-producer / single-consumer byte ring buffer.
+ *
+ * Used for streaming raw audio bytes (PCM/Float/DSD) between real-time audio
+ * callbacks and worker threads.
+ */
+typedef struct spsc_byte_ring_buffer spsc_byte_ring_buffer_t;
+
+/**
+ * @brief Create a new SPSC byte ring buffer.
+ *
+ * @param minimum_capacity The minimum requested capacity in bytes. Will be
+ *                         rounded up to the next power of two.
+ * @return Pointer to allocated buffer, or NULL on failure.
+ */
+spsc_byte_ring_buffer_t* spsc_byte_ring_buffer_create(size_t minimum_capacity);
+
+/**
+ * @brief Free the SPSC byte ring buffer.
+ *
+ * @param ring Pointer to the ring buffer to free.
+ */
+void spsc_byte_ring_buffer_free(spsc_byte_ring_buffer_t* ring);
+
+/**
+ * @brief Number of bytes currently available to be read / consumed.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @return Number of available bytes.
+ */
+size_t spsc_byte_ring_buffer_get_available_to_read(
+    const spsc_byte_ring_buffer_t* ring);
+
+/**
+ * @brief Number of bytes that can be written without overwriting unread data.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @return Number of free bytes available to write.
+ */
+size_t spsc_byte_ring_buffer_get_available_to_write(
+    const spsc_byte_ring_buffer_t* ring);
+
+/**
+ * @brief Get total capacity in bytes.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @return Total byte capacity.
+ */
+size_t spsc_byte_ring_buffer_get_capacity(const spsc_byte_ring_buffer_t* ring);
+
+/**
+ * @brief Write bytes into the ring buffer.
+ *
+ * **Producer-only.** Write up to `count` bytes from `source`.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param source Pointer to source byte array.
+ * @param count Number of bytes to write.
+ * @return Number of bytes actually written.
+ */
+size_t spsc_byte_ring_buffer_write(spsc_byte_ring_buffer_t* ring,
+                                   const uint8_t* source, size_t count);
+
+/**
+ * @brief Consume bytes from the ring buffer.
+ *
+ * **Consumer-only.** Copy up to `count` bytes into `dest` and advance read
+ * cursor.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param dest Destination byte array.
+ * @param count Maximum number of bytes to consume.
+ * @return Number of bytes actually consumed.
+ */
+size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t* ring,
+                                     uint8_t* dest, size_t count);
+
+/**
+ * @brief Discard all pending bytes.
+ *
+ * **Consumer-only.**
+ *
+ * @param ring Pointer to the ring buffer.
+ */
+void spsc_byte_ring_buffer_drain(spsc_byte_ring_buffer_t* ring);
 
 // MARK: - AtomicDouble
 

@@ -1984,12 +1984,19 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   AudioDeviceID dev_id =
       core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
   ASSERT_NE(0, dev_id);
+  AudioDeviceID in_dev_id =
+      core_audio_device_id_for_name("BlackHole 2ch", CORE_AUDIO_SCOPE_INPUT);
+  ASSERT_NE(0, in_dev_id);
 
   double initial_rate = 44100.0;
   core_audio_device_get_nominal_sample_rate(dev_id, &initial_rate);
 
   int init_sr = (int)(initial_rate + 0.5);
   int target_sr = (init_sr == 44100) ? 48000 : 44100;
+
+  core_audio_device_set_nominal_sample_rate(in_dev_id, (double)init_sr);
+  core_audio_device_set_nominal_sample_rate(dev_id, (double)init_sr);
+  cdsp_sleep_ms(250);
 
   printf(
       "ℹ️ debug: initial playback device nominal rate is %d Hz, will change to "
@@ -2096,6 +2103,11 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
            "}",
            target_sr);
 
+  if (in_dev_id != 0) {
+    core_audio_device_set_nominal_sample_rate(in_dev_id, (double)target_sr);
+    cdsp_sleep_ms(250);
+  }
+
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
@@ -2120,6 +2132,9 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   if (engine && engine->free) engine->free(engine->ctx);
 
   // Restore the hardware nominal rate to its initial state
+  if (in_dev_id != 0) {
+    core_audio_device_set_nominal_sample_rate(in_dev_id, initial_rate);
+  }
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
   cdsp_sleep_ms(250);
 

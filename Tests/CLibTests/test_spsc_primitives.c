@@ -11,212 +11,126 @@
 #include "test_support.h"
 
 TEST(CapacityRoundsUpToPowerOfTwo) {
-  spsc_audio_ring_buffer_t* r1 = spsc_audio_ring_buffer_create(1);
-  ASSERT_EQ(2, spsc_audio_ring_buffer_get_capacity(r1));
-  spsc_audio_ring_buffer_free(r1);
-
-  spsc_audio_ring_buffer_t* r100 = spsc_audio_ring_buffer_create(100);
-  ASSERT_EQ(128, spsc_audio_ring_buffer_get_capacity(r100));
-  spsc_audio_ring_buffer_free(r100);
-
-  spsc_audio_ring_buffer_t* r1024 = spsc_audio_ring_buffer_create(1024);
-  ASSERT_EQ(1024, spsc_audio_ring_buffer_get_capacity(r1024));
-  spsc_audio_ring_buffer_free(r1024);
-
-  spsc_audio_ring_buffer_t* r1025 = spsc_audio_ring_buffer_create(1025);
-  ASSERT_EQ(2048, spsc_audio_ring_buffer_get_capacity(r1025));
-  spsc_audio_ring_buffer_free(r1025);
+  ASSERT_EQ(1, spsc_round_up_to_power_of_two(1));
+  ASSERT_EQ(2, spsc_round_up_to_power_of_two(2));
+  ASSERT_EQ(128, spsc_round_up_to_power_of_two(100));
+  ASSERT_EQ(1024, spsc_round_up_to_power_of_two(1024));
+  ASSERT_EQ(2048, spsc_round_up_to_power_of_two(1025));
 }
 
-TEST(ReadLatestRequiresEnoughData) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(64);
-  float dest[8];
-  for (int i = 0; i < 8; i++) dest[i] = -1.0f;
-  ASSERT_FALSE(spsc_audio_ring_buffer_read_latest(ring, dest, 8));
+TEST(SpscByteRingBuffer_CapacityAndAvailable) {
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(100);
+  ASSERT_EQ(128, spsc_byte_ring_buffer_get_capacity(ring));
+  ASSERT_EQ(128, spsc_byte_ring_buffer_get_available_to_write(ring));
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_available_to_read(ring));
+  spsc_byte_ring_buffer_free(ring);
+}
 
-  double src[4] = {1.0, 2.0, 3.0, 4.0};
-  spsc_audio_ring_buffer_append_converting_double_to_float(ring, src, 4);
-  ASSERT_FALSE(spsc_audio_ring_buffer_read_latest(ring, dest, 8));
-  for (int i = 0; i < 8; i++) {
-    ASSERT_FLOAT_EQ(-1.0f, dest[i]);
+TEST(SpscByteRingBuffer_BasicRoundTrip) {
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(100);
+  uint8_t write_data[64];
+  for (int i = 0; i < 64; i++) write_data[i] = (uint8_t)(i & 0xFF);
+
+  size_t written = spsc_byte_ring_buffer_write(ring, write_data, 64);
+  ASSERT_EQ(64, written);
+  ASSERT_EQ(64, spsc_byte_ring_buffer_get_available_to_read(ring));
+  ASSERT_EQ(64, spsc_byte_ring_buffer_get_available_to_write(ring));
+
+  uint8_t read_data[64] = {0};
+  size_t consumed = spsc_byte_ring_buffer_consume(ring, read_data, 64);
+  ASSERT_EQ(64, consumed);
+  for (int i = 0; i < 64; i++) {
+    ASSERT_EQ((uint8_t)(i & 0xFF), read_data[i]);
   }
-  spsc_audio_ring_buffer_free(ring);
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_available_to_read(ring));
+  ASSERT_EQ(128, spsc_byte_ring_buffer_get_available_to_write(ring));
+
+  spsc_byte_ring_buffer_free(ring);
 }
 
-TEST(RoundTripRespectsOrder) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
-  double src[] = {-1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 0.0};
-  size_t count = sizeof(src) / sizeof(src[0]);
-  spsc_audio_ring_buffer_append_converting_double_to_float(ring, src, count);
-  float dest[8] = {0};
-  ASSERT_TRUE(spsc_audio_ring_buffer_read_latest(ring, dest, count));
-  for (size_t i = 0; i < count; i++) {
-    ASSERT_NEAR((float)src[i], dest[i], 1e-7);
-  }
-  spsc_audio_ring_buffer_free(ring);
-}
+TEST(SpscByteRingBuffer_WrapAround) {
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(8);
+  ASSERT_EQ(8, spsc_byte_ring_buffer_get_capacity(ring));
 
-TEST(ReadLatestReturnsMostRecentAfterWrap) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(8);
-  ASSERT_EQ(8, spsc_audio_ring_buffer_get_capacity(ring));
-  double src[12];
-  for (int i = 0; i < 12; i++) src[i] = (double)i;
-  spsc_audio_ring_buffer_append_converting_double_to_float(ring, src, 12);
-  float dest[8] = {0};
-  ASSERT_TRUE(spsc_audio_ring_buffer_read_latest(ring, dest, 8));
-  for (int i = 0; i < 8; i++) {
-    ASSERT_FLOAT_EQ((float)(i + 4), dest[i]);
-  }
-  spsc_audio_ring_buffer_free(ring);
-}
+  uint8_t first_batch[] = {1, 2, 3, 4, 5, 6};
+  size_t w1 = spsc_byte_ring_buffer_write(ring, first_batch, 6);
+  ASSERT_EQ(6, w1);
 
-TEST(TotalSamplesWrittenIsMonotonic) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(64);
-  ASSERT_EQ(0, spsc_audio_ring_buffer_get_total_samples_written(ring));
-  double src[3] = {1.0, 2.0, 3.0};
-  spsc_audio_ring_buffer_append_converting_double_to_float(ring, src, 3);
-  spsc_audio_ring_buffer_append_converting_double_to_float(ring, src, 3);
-  ASSERT_EQ(6, spsc_audio_ring_buffer_get_total_samples_written(ring));
-  spsc_audio_ring_buffer_free(ring);
-}
-
-TEST(SpscRoundTripContiguous) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
-  float src[] = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f};
-  spsc_audio_ring_buffer_write(ring, src, 6, 1);
-  ASSERT_EQ(6, spsc_audio_ring_buffer_get_available_to_read(ring));
-  float dest[6];
-  for (int i = 0; i < 6; i++) dest[i] = -1.0f;
-  size_t n = spsc_audio_ring_buffer_consume(ring, dest, 6);
-  ASSERT_EQ(6, n);
-  for (int i = 0; i < 6; i++) {
-    ASSERT_FLOAT_EQ(src[i], dest[i]);
-  }
-  ASSERT_EQ(0, spsc_audio_ring_buffer_get_available_to_read(ring));
-  spsc_audio_ring_buffer_free(ring);
-}
-
-TEST(SpscStridedWriteDeinterleaves) {
-  float interleaved[] = {10.0f, 11.0f, 20.0f, 21.0f, 30.0f, 31.0f};
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
-  spsc_audio_ring_buffer_write(ring, interleaved + 1, 3, 2);
-  float dest[3] = {0};
-  spsc_audio_ring_buffer_consume(ring, dest, 3);
-  ASSERT_FLOAT_EQ(11.0f, dest[0]);
-  ASSERT_FLOAT_EQ(21.0f, dest[1]);
-  ASSERT_FLOAT_EQ(31.0f, dest[2]);
-  spsc_audio_ring_buffer_free(ring);
-}
-
-TEST(SpscConsumeReturnsLessThanRequestedOnUnderrun) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
-  float src[] = {1.0f, 2.0f, 3.0f};
-  spsc_audio_ring_buffer_write(ring, src, 3, 1);
-  float dest[8];
-  for (int i = 0; i < 8; i++) dest[i] = -1.0f;
-  size_t n = spsc_audio_ring_buffer_consume(ring, dest, 8);
-  ASSERT_EQ(3, n);
-  ASSERT_FLOAT_EQ(1.0f, dest[0]);
-  ASSERT_FLOAT_EQ(2.0f, dest[1]);
-  ASSERT_FLOAT_EQ(3.0f, dest[2]);
-  ASSERT_FLOAT_EQ(-1.0f, dest[3]);
-  ASSERT_EQ(0, spsc_audio_ring_buffer_get_available_to_read(ring));
-  spsc_audio_ring_buffer_free(ring);
-}
-
-TEST(SpscWriteWrapsAroundCapacity) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(8);
-  ASSERT_EQ(8, spsc_audio_ring_buffer_get_capacity(ring));
-  float first_batch[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
-  spsc_audio_ring_buffer_write(ring, first_batch, 6, 1);
-  float dest[4] = {0};
-  spsc_audio_ring_buffer_consume(ring, dest, 4);
+  uint8_t dest[4] = {0};
+  size_t r1 = spsc_byte_ring_buffer_consume(ring, dest, 4);
+  ASSERT_EQ(4, r1);
   for (int i = 0; i < 4; i++) {
-    ASSERT_FLOAT_EQ((float)(i + 1), dest[i]);
+    ASSERT_EQ((uint8_t)(i + 1), dest[i]);
   }
-  float second_batch[] = {7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f};
-  spsc_audio_ring_buffer_write(ring, second_batch, 6, 1);
-  float dest2[8] = {0};
-  size_t n = spsc_audio_ring_buffer_consume(ring, dest2, 8);
-  ASSERT_EQ(8, n);
+
+  uint8_t second_batch[] = {7, 8, 9, 10, 11, 12};
+  size_t w2 = spsc_byte_ring_buffer_write(ring, second_batch, 6);
+  ASSERT_EQ(6, w2);
+
+  uint8_t dest2[8] = {0};
+  size_t r2 = spsc_byte_ring_buffer_consume(ring, dest2, 8);
+  ASSERT_EQ(8, r2);
   for (int i = 0; i < 8; i++) {
-    ASSERT_FLOAT_EQ((float)(i + 5), dest2[i]);
+    ASSERT_EQ((uint8_t)(i + 5), dest2[i]);
   }
-  spsc_audio_ring_buffer_free(ring);
+
+  spsc_byte_ring_buffer_free(ring);
 }
 
-TEST(SpscDrainResetsAvailable) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(8);
+TEST(SpscByteRingBuffer_Drain) {
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(8);
   ASSERT_TRUE(ring != NULL);
-  float src[] = {1.0f, 2.0f, 3.0f, 4.0f};
-  spsc_audio_ring_buffer_write(ring, src, 4, 1);
-  ASSERT_EQ(4, spsc_audio_ring_buffer_get_available_to_read(ring));
-  spsc_audio_ring_buffer_drain(ring);
-  ASSERT_EQ(0, spsc_audio_ring_buffer_get_available_to_read(ring));
-  spsc_audio_ring_buffer_free(ring);
+  uint8_t src[] = {1, 2, 3, 4};
+  spsc_byte_ring_buffer_write(ring, src, 4);
+  ASSERT_EQ(4, spsc_byte_ring_buffer_get_available_to_read(ring));
+  spsc_byte_ring_buffer_drain(ring);
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_available_to_read(ring));
+  spsc_byte_ring_buffer_free(ring);
 }
 
 typedef struct {
-  spsc_audio_ring_buffer_t* ring;
-  int total_to_write;
-  int producer_chunk;
-  _Atomic bool producer_done;
-} spsc_concurrent_arg_t;
+  spsc_byte_ring_buffer_t* ring;
+  size_t total_bytes;
+} byte_thread_ctx_t;
 
-static void* spsc_producer_thread(void* arg) {
-  spsc_concurrent_arg_t* a = (spsc_concurrent_arg_t*)arg;
-  float counter = 0.0f;
-  float* chunk = (float*)calloc(a->producer_chunk, sizeof(float));
-  int written = 0;
-  while (written < a->total_to_write) {
-    for (int i = 0; i < a->producer_chunk; i++) {
-      chunk[i] = counter++;
+static void* byte_producer_thread(void* arg) {
+  byte_thread_ctx_t* ctx = (byte_thread_ctx_t*)arg;
+  size_t total = ctx->total_bytes;
+  size_t written = 0;
+  uint8_t chunk[128];
+  while (written < total) {
+    size_t to_write = (total - written < 128) ? total - written : 128;
+    for (size_t i = 0; i < to_write; i++) {
+      chunk[i] = (uint8_t)((written + i) & 0xFF);
     }
-    spsc_audio_ring_buffer_write(a->ring, chunk, a->producer_chunk, 1);
-    written += a->producer_chunk;
+    size_t pushed = spsc_byte_ring_buffer_write(ctx->ring, chunk, to_write);
+    written += pushed;
+    if (pushed == 0) sched_yield();
   }
-  free(chunk);
-  atomic_store_explicit(&a->producer_done, true, memory_order_release);
   return NULL;
 }
 
-TEST(SpscConcurrentProducerConsumerNoDataLoss) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(65536);
-  int producer_chunk = 256;
-  int consumer_chunk = 64;
-  int total_to_write = 50176;
-
-  spsc_concurrent_arg_t arg = {ring, total_to_write, producer_chunk, false};
+TEST(SpscByteRingBuffer_Concurrent) {
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(256);
+  byte_thread_ctx_t ctx = {.ring = ring, .total_bytes = 100000};
   pthread_t th;
-  pthread_create(&th, NULL, spsc_producer_thread, &arg);
+  pthread_create(&th, NULL, byte_producer_thread, &ctx);
 
-  float* dest = (float*)calloc(consumer_chunk, sizeof(float));
-  float last_seen = -1.0f;
-  int consumed = 0;
-
-  while (consumed < total_to_write) {
-    size_t n = spsc_audio_ring_buffer_consume(ring, dest, consumer_chunk);
-    if (n > 0) {
-      ASSERT_TRUE(dest[0] > last_seen);
-      for (size_t i = 1; i < n; i++) {
-        ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
-      }
-      last_seen = dest[n - 1];
-      consumed += (int)n;
+  size_t consumed = 0;
+  uint8_t chunk[128];
+  while (consumed < ctx.total_bytes) {
+    size_t to_read =
+        (ctx.total_bytes - consumed < 128) ? ctx.total_bytes - consumed : 128;
+    size_t n = spsc_byte_ring_buffer_consume(ring, chunk, to_read);
+    for (size_t i = 0; i < n; i++) {
+      ASSERT_EQ((uint8_t)((consumed + i) & 0xFF), chunk[i]);
     }
-    if (atomic_load_explicit(&arg.producer_done, memory_order_acquire)) {
-      while (true) {
-        size_t m = spsc_audio_ring_buffer_consume(ring, dest, consumer_chunk);
-        if (m == 0) break;
-        consumed += (int)m;
-      }
-      break;
-    }
+    consumed += n;
+    if (n == 0) sched_yield();
   }
+
   pthread_join(th, NULL);
-  free(dest);
-  spsc_audio_ring_buffer_free(ring);
-  ASSERT_EQ(total_to_write, consumed);
+  spsc_byte_ring_buffer_free(ring);
 }
 
 TEST(SpscQueueRoundTripFifo) {
@@ -334,80 +248,11 @@ TEST(AtomicDoubleRoundTrip) {
   atomic_double_free(value);
 }
 
-typedef struct {
-  spsc_audio_ring_buffer_t* ring;
-  int total_to_write;
-  int chunk_size;
-  _Atomic bool producer_done;
-} spmc_concurrent_arg_t;
-
-static void* spmc_producer_thread(void* arg) {
-  spmc_concurrent_arg_t* a = (spmc_concurrent_arg_t*)arg;
-  double counter = 0.0;
-  double* chunk = (double*)calloc(a->chunk_size, sizeof(double));
-  int written = 0;
-  while (written < a->total_to_write) {
-    for (int i = 0; i < a->chunk_size; i++) {
-      chunk[i] = counter++;
-    }
-    spsc_audio_ring_buffer_append_converting_double_to_float(a->ring, chunk,
-                                                             a->chunk_size);
-    written += a->chunk_size;
-    sched_yield();
-  }
-  free(chunk);
-  atomic_store_explicit(&a->producer_done, true, memory_order_release);
-  return NULL;
-}
-
-TEST(ConcurrentProducerConsumerSeesMonotonicSequence) {
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(4096);
-  spsc_audio_ring_buffer_set_overwrite_on_overflow(ring, true);
-  int total_to_write = 200000;
-  int chunk_size = 256;
-  int read_size = 64;
-  spmc_concurrent_arg_t arg = {ring, total_to_write, chunk_size, false};
-  pthread_t th;
-  pthread_create(&th, NULL, spmc_producer_thread, &arg);
-
-  int snapshots_taken = 0;
-  float* dest = (float*)calloc(read_size, sizeof(float));
-  while (!atomic_load_explicit(&arg.producer_done, memory_order_acquire)) {
-    bool ok = spsc_audio_ring_buffer_read_latest(ring, dest, read_size);
-    if (ok) {
-      for (int i = 1; i < read_size; i++) {
-        ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
-      }
-      snapshots_taken++;
-    }
-    sched_yield();
-  }
-  pthread_join(th, NULL);
-  if (snapshots_taken == 0) {
-    if (spsc_audio_ring_buffer_read_latest(ring, dest, read_size)) {
-      for (int i = 1; i < read_size; i++) {
-        ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
-      }
-      snapshots_taken++;
-    }
-  }
-  free(dest);
-  ASSERT_TRUE(snapshots_taken > 0);
-  ASSERT_TRUE(spsc_audio_ring_buffer_get_total_samples_written(ring) >=
-              (uint64_t)total_to_write);
-  spsc_audio_ring_buffer_free(ring);
-}
-
-TEST(SpscNullAndAvailableToReadCap) {
+TEST(SpscNullCheck) {
   ASSERT_EQ(0, spsc_queue_get_count(NULL));
-
-  spsc_audio_ring_buffer_t* ring = spsc_audio_ring_buffer_create(16);
-  spsc_audio_ring_buffer_set_overwrite_on_overflow(ring, true);
-  float src[32] = {0};
-  spsc_audio_ring_buffer_write(ring, src, 32, 1);
-  size_t avail = spsc_audio_ring_buffer_get_available_to_read(ring);
-  ASSERT_EQ(16, avail);
-  spsc_audio_ring_buffer_free(ring);
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_available_to_read(NULL));
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_available_to_write(NULL));
+  ASSERT_EQ(0, spsc_byte_ring_buffer_get_capacity(NULL));
 }
 
 TEST_MAIN()

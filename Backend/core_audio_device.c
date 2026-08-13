@@ -377,13 +377,12 @@ bool core_audio_device_has_nominal_sample_rate_property(
 
 /// Standard 32-bit linear-PCM ASBD used by both backends. Pass
 /// `interleaved: false` for the non-interleaved layout the engine
-/// prefers (one HAL buffer per channel); `true` for the classic
-/// interleaved fallback (one buffer with all channels packed).
+/// Build an interleaved Float32 AudioStreamBasicDescription matching upstream
+/// CamillaDSP (LinearPcmFlags::IS_FLOAT | LinearPcmFlags::IS_PACKED).
 AudioStreamBasicDescription core_audio_device_float32_stream_format(
-    double sample_rate, int channels, bool interleaved) {
-  uint32_t bytes_per_frame = (uint32_t)(interleaved ? 4 * channels : 4);
+    double sample_rate, int channels) {
+  uint32_t bytes_per_frame = (uint32_t)(4 * channels);
   AudioFormatFlags flags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-  if (!interleaved) flags |= kAudioFormatFlagIsNonInterleaved;
   AudioStreamBasicDescription asbd = {.mSampleRate = sample_rate,
                                       .mFormatID = kAudioFormatLinearPCM,
                                       .mFormatFlags = flags,

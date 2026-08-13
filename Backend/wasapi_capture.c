@@ -45,7 +45,8 @@ struct wasapi_capture {
   bool polling;
 
   wasapi_binary_sample_format_t bin_fmt;
-  int bytes_per_frame;
+  size_t bytes_per_sample;
+  size_t blockalign;
   bool com_initialized;
 
   IMMDeviceEnumerator* enumerator;
@@ -58,8 +59,8 @@ struct wasapi_capture {
   REFERENCE_TIME def_period;
   HANDLE event_handle;
 
-  spsc_audio_ring_buffer_t* ring_buffer;
-  float* decode_buf;
+  spsc_byte_ring_buffer_t* ring_buffer;
+  uint8_t* decode_buf;
   size_t decode_buf_cap;
 
   pthread_t inner_thread;
@@ -77,42 +78,18 @@ static void wasapi_capture_on_format_change(void* parent, double new_rate) {
                         memory_order_release);
 }
 
-static inline void decode_wasapi_bytes_to_float_interleaved(
-    const uint8_t* src, float* dst, size_t frames, int channels,
-    wasapi_binary_sample_format_t bin_fmt) {
-  size_t total_samples = frames * (size_t)channels;
-  switch (bin_fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE: {
-      const int16_t* s16 = (const int16_t*)src;
-      for (size_t i = 0; i < total_samples; i++) {
-        dst[i] = (float)pcm_sample_decode_s16(s16[i]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S24_3_LE: {
-      for (size_t i = 0; i < total_samples; i++) {
-        dst[i] = (float)pcm_sample_decode_s24_3bytes(&src[i * 3]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE: {
-      const int32_t* s32 = (const int32_t*)src;
-      for (size_t i = 0; i < total_samples; i++) {
-        dst[i] = (float)pcm_sample_decode_s24(s32[i] >> 8);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S32_LE: {
-      const int32_t* s32 = (const int32_t*)src;
-      for (size_t i = 0; i < total_samples; i++) {
-        dst[i] = (float)pcm_sample_decode_s32(s32[i]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_F32_LE: {
-      memcpy(dst, src, total_samples * sizeof(float));
-      break;
-    }
+static inline size_t wasapi_binary_format_bytes_per_sample(
+    wasapi_binary_sample_format_t fmt) {
+  switch (fmt) {
+    case WASAPI_BINARY_FORMAT_S16_LE:
+      return 2;
+    case WASAPI_BINARY_FORMAT_S24_3_LE:
+      return 3;
+    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+    case WASAPI_BINARY_FORMAT_S32_LE:
+    case WASAPI_BINARY_FORMAT_F32_LE:
+    default:
+      return 4;
   }
 }
 
@@ -190,16 +167,12 @@ static void* wasapi_capture_loop(void* arg) {
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   (void)init_hr;
 
-  size_t blockalign = (size_t)capture->bytes_per_frame;
-  size_t channels = (size_t)capture->channels;
+  size_t blockalign = capture->blockalign;
   bool inactive = false;
 
   size_t data_buf_size = 8 * blockalign * 1024;
   uint8_t* data = (uint8_t*)malloc(data_buf_size);
-  float* float_buf = (float*)malloc(8 * channels * 1024 * sizeof(float));
-  if (!data || !float_buf) {
-    if (data) free(data);
-    if (float_buf) free(float_buf);
+  if (!data) {
     CoUninitialize();
     return NULL;
   }
@@ -227,7 +200,6 @@ static void* wasapi_capture_loop(void* arg) {
     logger_error(&g_wasapi_logger, "Capture start stream failed: hr=0x%08lX",
                  (unsigned long)hr);
     free(data);
-    free(float_buf);
     CoUninitialize();
     return NULL;
   }
@@ -239,7 +211,6 @@ static void* wasapi_capture_loop(void* arg) {
       logger_debug(&g_wasapi_logger, "Stopping inner capture loop on request.");
       IAudioClient_Stop(capture->client);
       free(data);
-      free(float_buf);
       CoUninitialize();
       return NULL;
     }
@@ -327,11 +298,7 @@ static void* wasapi_capture_loop(void* arg) {
           memset(data, 0, nbr_bytes_loop);
         }
 
-        decode_wasapi_bytes_to_float_interleaved(
-            data, float_buf, nbr_frames_read, capture->channels,
-            capture->bin_fmt);
-        spsc_audio_ring_buffer_write(capture->ring_buffer, float_buf,
-                                     (size_t)nbr_frames_read * channels, 1);
+        spsc_byte_ring_buffer_write(capture->ring_buffer, data, nbr_bytes_loop);
 
         if (capture->exclusive && capture->event_handle) {
           break;
@@ -369,7 +336,6 @@ static void* wasapi_capture_loop(void* arg) {
 
   IAudioClient_Stop(capture->client);
   free(data);
-  free(float_buf);
   CoUninitialize();
   return NULL;
 }
@@ -431,7 +397,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
   capture->bin_fmt = bin_fmt;
-  capture->bytes_per_frame = (int)wfx.Format.nBlockAlign;
+  capture->blockalign = (size_t)wfx.Format.nBlockAlign;
 
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(capture->client, &def_time, &min_time);
@@ -442,7 +408,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
       capture->client, def_time, 128, capture->sample_rate,
-      capture->bytes_per_frame);
+      (int)capture->blockalign);
 
   AUDCLNT_SHAREMODE mode =
       exclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
@@ -534,14 +500,18 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   logger_debug(&g_wasapi_logger, "Opened Wasapi capture device \"%s\".",
                capture->device[0] != '\0' ? capture->device : "default");
 
-  // Allocate SPSC ring buffer for audio samples
+  capture->bytes_per_sample =
+      wasapi_binary_format_bytes_per_sample(capture->bin_fmt);
+  capture->blockalign = (size_t)capture->channels * capture->bytes_per_sample;
+
+  // Allocate SPSC byte ring buffer for audio samples
   size_t ring_size =
-      (size_t)capture->channels * (2 * (size_t)capture->chunk_size + 2048);
-  capture->ring_buffer = spsc_audio_ring_buffer_create(ring_size);
+      (size_t)capture->channels * 4 * (2 * (size_t)capture->chunk_size + 2048);
+  capture->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
 
   capture->decode_buf_cap =
-      (size_t)capture->chunk_size * (size_t)capture->channels * 2;
-  capture->decode_buf = (float*)malloc(capture->decode_buf_cap * sizeof(float));
+      (size_t)capture->chunk_size * capture->blockalign * 2;
+  capture->decode_buf = (uint8_t*)malloc(capture->decode_buf_cap);
 
   atomic_store_explicit(&capture->thread_running, true, memory_order_release);
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
@@ -562,7 +532,7 @@ error_cleanup:
     capture->decode_buf = NULL;
   }
   if (capture->ring_buffer) {
-    spsc_audio_ring_buffer_free(capture->ring_buffer);
+    spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
   }
   if (capture->session_control) {
@@ -629,22 +599,18 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     return false;
   }
 
-  size_t samples_requested = frames * (size_t)capture->channels;
-  if (samples_requested > capture->decode_buf_cap) {
-    capture->decode_buf_cap = samples_requested * 2;
-    capture->decode_buf = (float*)realloc(
-        capture->decode_buf, capture->decode_buf_cap * sizeof(float));
-    if (!capture->decode_buf) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                           "Failed to allocate decode buffer");
-      return false;
+  size_t bytes_requested = frames * capture->blockalign;
+  if (bytes_requested > capture->decode_buf_cap) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Frame count exceeds capture buffer capacity");
     }
+    return false;
   }
 
   DWORD start_time = GetTickCount();
-  while (spsc_audio_ring_buffer_get_available_to_read(capture->ring_buffer) <
-         samples_requested) {
+  while (spsc_byte_ring_buffer_get_available_to_read(capture->ring_buffer) <
+         bytes_requested) {
     if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
         !atomic_load_explicit(&capture->thread_running, memory_order_acquire)) {
       if (err)
@@ -665,14 +631,38 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     cdsp_sleep_ms(1);
   }
 
-  size_t consumed_samples = spsc_audio_ring_buffer_consume(
-      capture->ring_buffer, capture->decode_buf, samples_requested);
-  size_t valid_frames = consumed_samples / (size_t)capture->channels;
+  size_t consumed_bytes = spsc_byte_ring_buffer_consume(
+      capture->ring_buffer, capture->decode_buf, bytes_requested);
+  size_t valid_frames =
+      (capture->blockalign > 0) ? (consumed_bytes / capture->blockalign) : 0;
 
   for (size_t f = 0; f < valid_frames; f++) {
     for (int c = 0; c < capture->channels; c++) {
-      audio_chunk_get_channel(chunk, c)[f] =
-          (double)capture->decode_buf[f * (size_t)capture->channels + c];
+      const uint8_t* src =
+          capture->decode_buf + (f * (size_t)capture->channels + (size_t)c) *
+                                    capture->bytes_per_sample;
+      double sample = 0.0;
+      switch (capture->bin_fmt) {
+        case WASAPI_BINARY_FORMAT_S16_LE:
+          sample = pcm_sample_decode_s16_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_3_LE:
+          sample = pcm_sample_decode_s24_3bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+          sample = pcm_sample_decode_s24_4_lj_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S32_LE:
+          sample = pcm_sample_decode_s32_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_F32_LE:
+          sample = pcm_sample_decode_f32_bytes(src);
+          break;
+        default:
+          sample = pcm_sample_decode_s32_bytes(src);
+          break;
+      }
+      audio_chunk_get_channel(chunk, c)[f] = sample;
     }
   }
   audio_chunk_set_valid_frames(chunk, valid_frames);
@@ -697,14 +687,14 @@ static void wasapi_capture_close(void* ctx) {
     capture->decode_buf = NULL;
   }
   if (capture->ring_buffer) {
-    spsc_audio_ring_buffer_free(capture->ring_buffer);
+    spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
   }
   if (capture->client) {
     IAudioClient_Stop(capture->client);
-    SAFE_RELEASE(capture->capture_client);
-    SAFE_RELEASE(capture->client);
   }
+  SAFE_RELEASE(capture->capture_client);
+  SAFE_RELEASE(capture->client);
   if (capture->session_control) {
     if (capture->session_events_listener) {
       IAudioSessionControl_UnregisterAudioSessionNotification(

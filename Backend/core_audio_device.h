@@ -224,17 +224,15 @@ bool core_audio_device_has_nominal_sample_rate_property(
 // MARK: - Stream-format builder
 
 /**
- * @brief Helper to build a standard 32-bit linear-PCM
- * AudioStreamBasicDescription (ASBD).
+ * @brief Helper to build a standard 32-bit linear-PCM interleaved
+ * AudioStreamBasicDescription (ASBD) matching upstream CamillaDSP.
  *
  * @param sample_rate Sample rate in Hz.
  * @param channels Number of channels.
- * @param interleaved True for interleaved layout, false for non-interleaved
- * (preferred).
  * @return The constructed ASBD.
  */
 AudioStreamBasicDescription core_audio_device_float32_stream_format(
-    double sample_rate, int channels, bool interleaved);
+    double sample_rate, int channels);
 
 /**
  * @brief Set physical format of a device matching sample rate, format string,

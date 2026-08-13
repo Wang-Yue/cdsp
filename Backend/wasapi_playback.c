@@ -45,7 +45,8 @@ struct wasapi_playback {
   int target_level;
 
   wasapi_binary_sample_format_t bin_fmt;
-  int bytes_per_frame;
+  size_t bytes_per_sample;
+  size_t blockalign;
   bool com_initialized;
 
   IMMDeviceEnumerator* enumerator;
@@ -58,10 +59,8 @@ struct wasapi_playback {
   REFERENCE_TIME def_period;
   HANDLE event_handle;
 
-  spsc_audio_ring_buffer_t* ring_buffer;
-  float* transfer_buf;
-  size_t transfer_buf_cap;
-  float* write_buf;
+  spsc_byte_ring_buffer_t* ring_buffer;
+  uint8_t* write_buf;
   size_t write_buf_cap;
 
   pthread_t inner_thread;
@@ -79,41 +78,18 @@ static void wasapi_playback_on_format_change(void* parent, double new_rate) {
                         memory_order_release);
 }
 
-static inline void encode_float_samples_to_wasapi(
-    BYTE* dst, const float* src, size_t frames, int channels,
-    wasapi_binary_sample_format_t bin_fmt) {
-  switch (bin_fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE: {
-      int16_t* s16 = (int16_t*)dst;
-      for (size_t i = 0; i < frames * (size_t)channels; i++) {
-        s16[i] = pcm_sample_encode_s16(src[i]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S24_3_LE: {
-      for (size_t i = 0; i < frames * (size_t)channels; i++) {
-        pcm_sample_encode_s24_3bytes(src[i], &dst[i * 3]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE: {
-      int32_t* s32 = (int32_t*)dst;
-      for (size_t i = 0; i < frames * (size_t)channels; i++) {
-        s32[i] = pcm_sample_encode_s24_msb(src[i]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_S32_LE: {
-      int32_t* s32 = (int32_t*)dst;
-      for (size_t i = 0; i < frames * (size_t)channels; i++) {
-        s32[i] = pcm_sample_encode_s32(src[i]);
-      }
-      break;
-    }
-    case WASAPI_BINARY_FORMAT_F32_LE: {
-      memcpy(dst, src, frames * (size_t)channels * sizeof(float));
-      break;
-    }
+static inline size_t wasapi_binary_format_bytes_per_sample(
+    wasapi_binary_sample_format_t fmt) {
+  switch (fmt) {
+    case WASAPI_BINARY_FORMAT_S16_LE:
+      return 2;
+    case WASAPI_BINARY_FORMAT_S24_3_LE:
+      return 3;
+    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+    case WASAPI_BINARY_FORMAT_S32_LE:
+    case WASAPI_BINARY_FORMAT_F32_LE:
+    default:
+      return 4;
   }
 }
 
@@ -150,7 +126,7 @@ static void* wasapi_playback_loop(void* arg) {
   (void)init_hr;
 
   size_t chunksize = (size_t)playback->chunk_size;
-  size_t channels = (size_t)playback->channels;
+  size_t blockalign = playback->blockalign;
   size_t target_level =
       playback->target_level > 0 ? (size_t)playback->target_level : chunksize;
 
@@ -160,8 +136,8 @@ static void* wasapi_playback_loop(void* arg) {
   logger_trace(
       &g_wasapi_logger,
       "Waiting for data to start playback, will time out after one second.");
-  while (spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) <
-             2 * chunksize * channels &&
+  while (spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) <
+             2 * chunksize * blockalign &&
          waited_millis < 1000) {
     if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
       CoUninitialize();
@@ -211,9 +187,9 @@ static void* wasapi_playback_loop(void* arg) {
                  buffer_free_frame_count);
 
     if (buffer_free_frame_count > 0) {
-      size_t avail_samples =
-          spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer);
-      size_t avail_frames = avail_samples / channels;
+      size_t avail_bytes =
+          spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer);
+      size_t avail_frames = (blockalign > 0) ? (avail_bytes / blockalign) : 0;
 
       if (!running && avail_frames > 0) {
         running = true;
@@ -231,57 +207,43 @@ static void* wasapi_playback_loop(void* arg) {
       }
 
       size_t frames_to_write = (size_t)buffer_free_frame_count;
-      size_t samples_to_write = frames_to_write * channels;
-
-      if (samples_to_write > playback->transfer_buf_cap) {
-        playback->transfer_buf_cap = samples_to_write * 2;
-        playback->transfer_buf = (float*)realloc(
-            playback->transfer_buf, playback->transfer_buf_cap * sizeof(float));
-      }
-
       size_t silence_frames = 0;
       if (silence_frames_to_insert > 0) {
         silence_frames = (silence_frames_to_insert < frames_to_write)
                              ? silence_frames_to_insert
                              : frames_to_write;
-        memset(playback->transfer_buf, 0,
-               silence_frames * channels * sizeof(float));
         silence_frames_to_insert -= silence_frames;
       }
 
+      size_t silence_bytes = silence_frames * blockalign;
       size_t frames_from_ring = frames_to_write - silence_frames;
-      size_t consumed_frames = 0;
-      if (frames_from_ring > 0) {
-        size_t consumed_samples = spsc_audio_ring_buffer_consume(
-            playback->ring_buffer,
-            playback->transfer_buf + silence_frames * channels,
-            frames_from_ring * channels);
-        consumed_frames = consumed_samples / channels;
-      }
-
-      if (consumed_frames < frames_from_ring) {
-        size_t missing_samples =
-            (frames_from_ring - consumed_frames) * channels;
-        memset(playback->transfer_buf +
-                   (silence_frames + consumed_frames) * channels,
-               0, missing_samples * sizeof(float));
-        // While prefilling (before the stream is started) a short
-        // fill just gets padded with silence and is not an
-        // interruption, so skip the underrun handling until started.
-        if (started && running) {
-          running = false;
-          logger_warn(&g_wasapi_logger,
-                      "Playback interrupted, no data available.");
-        }
-      }
+      size_t bytes_from_ring = frames_from_ring * blockalign;
 
       BYTE* bufferptr = NULL;
       HRESULT hr = IAudioRenderClient_GetBuffer(
           playback->render_client, (UINT32)frames_to_write, &bufferptr);
       if (SUCCEEDED(hr) && bufferptr) {
-        encode_float_samples_to_wasapi(bufferptr, playback->transfer_buf,
-                                       frames_to_write, playback->channels,
-                                       playback->bin_fmt);
+        if (silence_bytes > 0) {
+          memset(bufferptr, 0, silence_bytes);
+        }
+        size_t consumed_bytes = 0;
+        if (bytes_from_ring > 0) {
+          consumed_bytes = spsc_byte_ring_buffer_consume(
+              playback->ring_buffer, bufferptr + silence_bytes,
+              bytes_from_ring);
+        }
+        if (consumed_bytes < bytes_from_ring) {
+          memset(bufferptr + silence_bytes + consumed_bytes, 0,
+                 bytes_from_ring - consumed_bytes);
+          // While prefilling (before the stream is started) a short
+          // fill just gets padded with silence and is not an
+          // interruption, so skip the underrun handling until started.
+          if (started && running) {
+            running = false;
+            logger_warn(&g_wasapi_logger,
+                        "Playback interrupted, no data available.");
+          }
+        }
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
                                          (UINT32)frames_to_write, 0);
       } else {
@@ -374,7 +336,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
   playback->bin_fmt = bin_fmt;
-  playback->bytes_per_frame = (int)wfx.Format.nBlockAlign;
+  playback->blockalign = (size_t)wfx.Format.nBlockAlign;
 
   logger_debug(&g_wasapi_logger, "Opening Wasapi playback device.");
   REFERENCE_TIME def_time = 0, min_time = 0;
@@ -383,7 +345,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
       playback->client, def_time, 128, playback->sample_rate,
-      playback->bytes_per_frame);
+      (int)playback->blockalign);
 
   AUDCLNT_SHAREMODE mode = playback->exclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE
                                                : AUDCLNT_SHAREMODE_SHARED;
@@ -475,19 +437,19 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   logger_debug(&g_wasapi_logger, "Opened Wasapi playback device \"%s\".",
                playback->device[0] != '\0' ? playback->device : "default");
 
-  // Allocate SPSC ring buffer for audio samples
-  size_t ring_size =
-      (size_t)playback->channels * (2 * (size_t)playback->chunk_size + 2048);
-  playback->ring_buffer = spsc_audio_ring_buffer_create(ring_size);
+  playback->bytes_per_sample =
+      wasapi_binary_format_bytes_per_sample(playback->bin_fmt);
+  playback->blockalign =
+      (size_t)playback->channels * playback->bytes_per_sample;
 
-  playback->transfer_buf_cap =
-      (size_t)playback->chunk_size * (size_t)playback->channels * 2;
-  playback->transfer_buf =
-      (float*)malloc(playback->transfer_buf_cap * sizeof(float));
+  // Allocate SPSC byte ring buffer matching upstream CamillaDSP
+  size_t ring_size = (size_t)playback->channels * 4 *
+                     (2 * (size_t)playback->chunk_size + 2048);
+  playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
 
   playback->write_buf_cap =
-      (size_t)playback->chunk_size * (size_t)playback->channels * 2;
-  playback->write_buf = (float*)malloc(playback->write_buf_cap * sizeof(float));
+      (size_t)playback->chunk_size * playback->blockalign * 2;
+  playback->write_buf = (uint8_t*)malloc(playback->write_buf_cap);
 
   atomic_store_explicit(&playback->thread_running, true, memory_order_release);
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
@@ -507,12 +469,8 @@ error_cleanup:
     free(playback->write_buf);
     playback->write_buf = NULL;
   }
-  if (playback->transfer_buf) {
-    free(playback->transfer_buf);
-    playback->transfer_buf = NULL;
-  }
   if (playback->ring_buffer) {
-    spsc_audio_ring_buffer_free(playback->ring_buffer);
+    spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
   }
   if (playback->session_control) {
@@ -582,24 +540,43 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   }
 
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
-  size_t samples_to_write = total_frames * (size_t)playback->channels;
+  size_t bytes_to_write = total_frames * playback->blockalign;
 
-  if (samples_to_write > playback->write_buf_cap) {
-    playback->write_buf_cap = samples_to_write * 2;
-    playback->write_buf = (float*)realloc(
-        playback->write_buf, playback->write_buf_cap * sizeof(float));
-    if (!playback->write_buf) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Failed to allocate write buffer");
-      return false;
+  if (bytes_to_write > playback->write_buf_cap) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Frame count exceeds playback buffer capacity");
     }
+    return false;
   }
 
+  // Convert chunk (double) directly to raw bytes in write_buf
   for (size_t f = 0; f < total_frames; f++) {
     for (int c = 0; c < playback->channels; c++) {
-      playback->write_buf[f * playback->channels + c] =
-          (float)audio_chunk_get_channel(chunk, c)[f];
+      double sample = audio_chunk_get_channel(chunk, c)[f];
+      uint8_t* dst =
+          playback->write_buf + (f * (size_t)playback->channels + (size_t)c) *
+                                    playback->bytes_per_sample;
+      switch (playback->bin_fmt) {
+        case WASAPI_BINARY_FORMAT_S16_LE:
+          pcm_sample_encode_s16_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_3_LE:
+          pcm_sample_encode_s24_3bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+          pcm_sample_encode_s24_4_lj_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S32_LE:
+          pcm_sample_encode_s32_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_F32_LE:
+          pcm_sample_encode_f32_bytes(sample, dst);
+          break;
+        default:
+          pcm_sample_encode_s32_bytes(sample, dst);
+          break;
+      }
     }
   }
 
@@ -611,21 +588,19 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
 
   const int max_retries = 8;
   for (int retry = 0; retry < max_retries; retry++) {
-    if (spsc_audio_ring_buffer_get_available_to_write(playback->ring_buffer) >=
-        samples_to_write) {
+    if (spsc_byte_ring_buffer_get_available_to_write(playback->ring_buffer) >=
+        bytes_to_write) {
       break;
     }
     cdsp_sleep_ms(sleep_duration_ms);
   }
 
-  if (spsc_audio_ring_buffer_get_available_to_write(playback->ring_buffer) >=
-      samples_to_write) {
-    spsc_audio_ring_buffer_write(playback->ring_buffer, playback->write_buf,
-                                 samples_to_write, 1);
-  } else {
+  size_t pushed = spsc_byte_ring_buffer_write(
+      playback->ring_buffer, playback->write_buf, bytes_to_write);
+  if (pushed < bytes_to_write) {
     logger_debug(&g_wasapi_logger,
-                 "Playback ring buffer is full, dropped chunk of %zu samples",
-                 samples_to_write);
+                 "Playback ring buffer is full, dropped chunk of %zu bytes",
+                 bytes_to_write);
   }
 
   return true;
@@ -647,19 +622,15 @@ static void wasapi_playback_close(void* ctx) {
     free(playback->write_buf);
     playback->write_buf = NULL;
   }
-  if (playback->transfer_buf) {
-    free(playback->transfer_buf);
-    playback->transfer_buf = NULL;
-  }
   if (playback->ring_buffer) {
-    spsc_audio_ring_buffer_free(playback->ring_buffer);
+    spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
   }
   if (playback->client) {
     IAudioClient_Stop(playback->client);
-    SAFE_RELEASE(playback->render_client);
-    SAFE_RELEASE(playback->client);
   }
+  SAFE_RELEASE(playback->render_client);
+  SAFE_RELEASE(playback->client);
   if (playback->session_control) {
     if (playback->session_events_listener) {
       IAudioSessionControl_UnregisterAudioSessionNotification(
@@ -683,9 +654,10 @@ static void wasapi_playback_close(void* ctx) {
 
 static size_t wasapi_playback_get_buffer_level(void* ctx) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback || !playback->ring_buffer || playback->channels == 0) return 0;
-  return spsc_audio_ring_buffer_get_available_to_read(playback->ring_buffer) /
-         (size_t)playback->channels;
+  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
+    return 0;
+  return spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
+         playback->blockalign;
 }
 
 static bool wasapi_playback_get_pending_rate_change(void* ctx,

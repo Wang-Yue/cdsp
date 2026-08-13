@@ -13,12 +13,10 @@
 
 /**
  * @def AUDIO_HISTORY_BUFFER_CAPACITY
- * @brief Maximum number of frames retained per channel.
- *
- * At 48 kHz that's roughly 5.5 s of audio — enough headroom for an FFT down to
- * ~5 Hz.
+ * @brief Maximum number of frames retained per channel, matching upstream
+ * CamillaDSP RING_BUFFER_CAPACITY.
  */
-#define AUDIO_HISTORY_BUFFER_CAPACITY 262144
+#define AUDIO_HISTORY_BUFFER_CAPACITY 16384
 
 /**
  * @enum audio_history_buffer_status
@@ -40,12 +38,8 @@ typedef enum {
 
 /**
  * @struct audio_history_buffer
- * @brief Owns one @ref spsc_audio_ring_buffer_t per channel.
- *
- * Resized only between engine starts, when no audio thread is running.
- * Read by consumers via @ref audio_history_buffer_read_latest (snapshot
- * semantics — same window can be re-read for FFTs at different lengths),
- * optionally averaging across channels.
+ * @brief Circular planar float ring buffer storing the last 16384 frames per
+ * channel (matching upstream spectrum::AudioRingBuffer).
  */
 typedef struct audio_history_buffer audio_history_buffer_t;
 

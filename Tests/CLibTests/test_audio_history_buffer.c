@@ -1,3 +1,6 @@
+#include <pthread.h>
+#include <sched.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -113,11 +116,13 @@ TEST(ReadLatestChannelOutOfRange) {
 TEST(AppendMismatchedChannels) {
   audio_history_buffer_t* buffer = audio_history_buffer_create();
   audio_history_buffer_reset(buffer, 2);
+  ASSERT_EQ(2, audio_history_buffer_get_channels(buffer));
 
   audio_chunk_t* chunk = audio_chunk_create(1024, 1);
   audio_chunk_set_valid_frames(chunk, 1024);
   audio_history_buffer_append(buffer, chunk);
-  ASSERT_FALSE(audio_history_buffer_has_data(buffer));
+  ASSERT_TRUE(audio_history_buffer_has_data(buffer));
+  ASSERT_EQ(1, audio_history_buffer_get_channels(buffer));
 
   audio_chunk_free(chunk);
   audio_history_buffer_free(buffer);
@@ -151,6 +156,78 @@ TEST(ReadLatestAverageChannelsLargeCount) {
   free(dest);
   audio_chunk_free(chunk);
   audio_history_buffer_free(buffer);
+}
+
+typedef struct {
+  audio_history_buffer_t* buffer;
+  int total_to_write;
+  int chunk_size;
+  _Atomic bool producer_done;
+} history_concurrent_arg_t;
+
+static void* history_producer_thread(void* arg) {
+  history_concurrent_arg_t* a = (history_concurrent_arg_t*)arg;
+  audio_chunk_t* chunk = audio_chunk_create(a->chunk_size, 2);
+  double counter = 0.0;
+  int written = 0;
+  while (written < a->total_to_write) {
+    for (int i = 0; i < a->chunk_size; i++) {
+      audio_chunk_get_channel(chunk, 0)[i] = counter;
+      audio_chunk_get_channel(chunk, 1)[i] = counter;
+      counter += 1.0;
+    }
+    audio_chunk_set_valid_frames(chunk, a->chunk_size);
+    audio_history_buffer_append(a->buffer, chunk);
+    written += a->chunk_size;
+    sched_yield();
+  }
+  audio_chunk_free(chunk);
+  atomic_store_explicit(&a->producer_done, true, memory_order_release);
+  return NULL;
+}
+
+TEST(AudioHistoryBuffer_ConcurrentProducerConsumer) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  int total_to_write = 100000;
+  int chunk_size = 256;
+  int read_size = 64;
+
+  history_concurrent_arg_t arg = {buffer, total_to_write, chunk_size, false};
+  pthread_t th;
+  pthread_create(&th, NULL, history_producer_thread, &arg);
+
+  float* dest = (float*)calloc(read_size, sizeof(float));
+  int snapshots_taken = 0;
+
+  while (!atomic_load_explicit(&arg.producer_done, memory_order_acquire)) {
+    bool enough = false;
+    audio_history_buffer_status_t st =
+        audio_history_buffer_read_latest(buffer, dest, read_size, 0, &enough);
+    if (st == AUDIO_HISTORY_BUFFER_OK && enough) {
+      for (int i = 1; i < read_size; i++) {
+        ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
+      }
+      snapshots_taken++;
+    }
+    sched_yield();
+  }
+
+  pthread_join(th, NULL);
+
+  bool enough = false;
+  audio_history_buffer_status_t st =
+      audio_history_buffer_read_latest(buffer, dest, read_size, 0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, st);
+  ASSERT_TRUE(enough);
+  for (int i = 1; i < read_size; i++) {
+    ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
+  }
+
+  free(dest);
+  audio_history_buffer_free(buffer);
+  ASSERT_TRUE(snapshots_taken > 0);
 }
 
 TEST_MAIN()

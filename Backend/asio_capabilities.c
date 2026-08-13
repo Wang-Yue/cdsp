@@ -11,7 +11,7 @@
 #include <unknwn.h>
 #include <windows.h>
 
-#include "Logging/app_logger.h"
+#include "Backend/asio_backend.h"
 
 // COM Release helper
 #define SAFE_RELEASE(punk)         \
@@ -61,6 +61,14 @@ typedef struct {
   char name[32];
 } ASIOChannelInfo;
 
+typedef struct {
+  long asioVersion;
+  long driverVersion;
+  char name[32];
+  char errorMessage[124];
+  void* sysRef;
+} ASIODriverInfo;
+
 // Forward declaration of COM interface
 typedef struct IASIO IASIO;
 typedef struct IASIOVtbl {
@@ -104,14 +112,17 @@ struct IASIO {
   const IASIOVtbl* lpVtbl;
 };
 
-/**
- * @brief Searches the Windows Registry to find the CLSID of an ASIO driver by
- * name.
- *
- * @param driver_name Name of the ASIO driver.
- * @param out_clsid Pointer to a CLSID structure to receive the result.
- * @return true if the CLSID was successfully found, false otherwise.
- */
+static const GUID g_IID_IASIO_VAL = {
+    0x9333b620,
+    0x1f0b,
+    0x11d2,
+    {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
+
+#define STANDARD_RATES_COUNT 17
+static const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
+    5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
+    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
+
 static bool asio_check_drv_path(const char* clsid_str, char* out_dll_path,
                                 size_t max_path) {
   char clsid_key[384];
@@ -185,6 +196,32 @@ static bool find_asio_driver_caps_clsid(const char* driver_name,
   return found;
 }
 
+static const char* asio_sample_type_to_format_str(int type_id) {
+  switch (type_id) {
+    case ASIOSTInt16LSB:
+      return "S16_LE";
+    case ASIOSTInt24LSB:
+      return "S24_3_LE";
+    case ASIOSTInt32LSB:
+    case ASIOSTInt32LSB16:
+    case ASIOSTInt32LSB18:
+    case ASIOSTInt32LSB20:
+      return "S32_LE";
+    case ASIOSTInt32LSB24:
+      return "S24_4_LE";
+    case ASIOSTFloat32LSB:
+      return "F32_LE";
+    case ASIOSTFloat64LSB:
+      return "F64_LE";
+    default:
+      return NULL;
+  }
+}
+
+/**
+ * @brief list_device_names matching CamillaDSP device.rs:list_device_names
+ * (lines 1195-1211).
+ */
 int asio_capabilities_available_device_names(bool is_capture,
                                              char out_names[][256],
                                              int max_names) {
@@ -246,13 +283,26 @@ bool asio_capabilities_default_device_name(bool is_capture, char* out_name,
   return false;
 }
 
+/**
+ * @brief get_device_capabilities matching CamillaDSP
+ * device.rs:get_device_capabilities (lines 1219-1315).
+ */
 audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
-  HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-  bool com_initialized = SUCCEEDED(hr);
-  audio_device_descriptor_t* desc = NULL;
-  IASIO* iasio = NULL;
+  // Refuse to probe if an in-process ASIO driver is already loaded (live
+  // stream). Matches CamillaDSP device.rs lines 1223-1230.
+  if (asio_driver_is_initialized()) {
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "ASIO driver is already in use; cannot probe '%s' while a "
+               "stream is active",
+               device_name ? device_name : "default");
+      device_error_init(err, DEVICE_ERROR_BUSY, msg);
+    }
+    return NULL;
+  }
 
   char target_dev_name[256] = {0};
   if (device_name && device_name[0] != '\0') {
@@ -264,78 +314,134 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
         device_error_init(err, DEVICE_ERROR_NOT_FOUND,
                           "No ASIO driver available");
       }
-      goto error_cleanup;
+      return NULL;
     }
   }
+
+  // Check if device name exists in list_device_names (lines 1232-1235)
+  char available_names[64][256];
+  int available_count =
+      asio_capabilities_available_device_names(is_capture, available_names, 64);
+  bool found_name = false;
+  for (int i = 0; i < available_count; i++) {
+    if (strcasecmp(available_names[i], target_dev_name) == 0) {
+      found_name = true;
+      break;
+    }
+  }
+  if (!found_name && strcasecmp(target_dev_name, "default") != 0) {
+    if (err) {
+      device_error_init(err, DEVICE_ERROR_NOT_FOUND, target_dev_name);
+    }
+    return NULL;
+  }
+
+  HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  bool com_initialized = SUCCEEDED(hr);
+  audio_device_descriptor_t* desc = NULL;
+  IASIO* iasio = NULL;
 
   CLSID clsid;
   if (!find_asio_driver_caps_clsid(target_dev_name, &clsid)) {
     if (err) {
-      device_error_init(err, DEVICE_ERROR_NOT_FOUND, "ASIO driver not found");
+      device_error_init(err, DEVICE_ERROR_NOT_FOUND, target_dev_name);
     }
     goto error_cleanup;
   }
 
-  static const GUID IID_IASIO_VAL = {
-      0x9333b620,
-      0x1f0b,
-      0x11d2,
-      {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
-
   hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &clsid,
                         (void**)&iasio);
   if (FAILED(hr)) {
-    hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IASIO_VAL,
+    hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &g_IID_IASIO_VAL,
                           (void**)&iasio);
   }
   if (FAILED(hr)) {
     hr = CoCreateInstance(&clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,
                           (void**)&iasio);
   }
-  if (FAILED(hr)) {
+  if (FAILED(hr) || !iasio) {
     if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER,
-                        "Failed to instantiate ASIO COM object");
+      char msg[256];
+      snprintf(msg, sizeof(msg), "Failed to load ASIO driver '%s'",
+               target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
     }
     goto error_cleanup;
   }
 
   if (!iasio->lpVtbl->init(iasio, GetDesktopWindow())) {
     if (err) {
-      device_error_init(
-          err, DEVICE_ERROR_BUSY,
-          "ASIO driver initialization failed (busy or disconnected)");
+      char msg[256];
+      snprintf(msg, sizeof(msg), "ASIOInit failed for driver '%s'",
+               target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
     }
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
 
-  long num_inputs = 0, num_outputs = 0;
-  if (iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs) != 0) {
+  // Supported rates probe (lines 1242-1247)
+  size_t supported_rates_indices[STANDARD_RATES_COUNT];
+  size_t supported_rates_count = 0;
+  for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
+    if (iasio->lpVtbl->canSampleRate(iasio, (double)STANDARD_RATES[r]) == 0) {
+      supported_rates_indices[supported_rates_count++] = r;
+    }
+  }
+
+  // Probe native sample format (lines 1249-1260)
+  ASIOChannelInfo chan_info = {0};
+  chan_info.channel = 0;
+  chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
+  if (iasio->lpVtbl->getChannelInfo(iasio, &chan_info) != 0) {
+    chan_info.isInput = is_capture ? ASIOFalse : ASIOTrue;
+    chan_info.channel = 0;
+    iasio->lpVtbl->getChannelInfo(iasio, &chan_info);
+  }
+
+  const char* fmt_str = asio_sample_type_to_format_str(chan_info.type);
+  if (!fmt_str) {
     if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "ASIO getChannels failed");
+      const char* direction_name = is_capture ? "capture" : "playback";
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Failed to detect %s sample format for ASIO device '%s'",
+               direction_name, target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
     }
     SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
+
+  // Get channel count (lines 1262-1274)
+  long num_inputs = 0, num_outputs = 0;
+  if (iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs) != 0) {
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg), "ASIOGetChannels failed for '%s'",
+               target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
+    }
+    SAFE_RELEASE(iasio);
+    goto error_cleanup;
+  }
+
+  SAFE_RELEASE(iasio);
+
   long target_channels = is_capture ? num_inputs : num_outputs;
 
   desc =
       (audio_device_descriptor_t*)calloc(1, sizeof(audio_device_descriptor_t));
   if (!desc) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "Out of memory");
-    }
-    SAFE_RELEASE(iasio);
+    if (err) device_error_init(err, DEVICE_ERROR_OTHER, "Out of memory");
     goto error_cleanup;
   }
-  snprintf(desc->name, sizeof(desc->name), "%s",
-           target_dev_name[0] ? target_dev_name : "");
+  snprintf(desc->name, sizeof(desc->name), "%s", target_dev_name);
 
-  if (target_channels <= 0) {
+  // Filter 0 channels or empty supported rates (lines 1283-1292)
+  if (target_channels <= 0 || supported_rates_count == 0) {
     desc->capability_sets_count = 0;
     desc->capability_sets = NULL;
-    SAFE_RELEASE(iasio);
     if (com_initialized) CoUninitialize();
     return desc;
   }
@@ -344,7 +450,6 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   desc->capability_sets =
       (device_capability_set_t*)calloc(1, sizeof(device_capability_set_t));
   if (!desc->capability_sets) {
-    SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
 
@@ -354,118 +459,32 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   set->capabilities =
       (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
   if (!set->capabilities) {
-    SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
 
   channel_capability_t* cap = &set->capabilities[0];
   cap->channels = (int)target_channels;
-
-  // Probe supported sample rates from a predefined list matching CamillaDSP
-  // STANDARD_RATES.
-  const double PROBE_RATES[] = {
-      5512.0,   8000.0,   11025.0,  16000.0,  22050.0, 32000.0,
-      44100.0,  48000.0,  64000.0,  88200.0,  96000.0, 176400.0,
-      192000.0, 352800.0, 384000.0, 705600.0, 768000.0};
-  const size_t PROBE_RATES_COUNT = sizeof(PROBE_RATES) / sizeof(PROBE_RATES[0]);
-
+  cap->samplerates_count = supported_rates_count;
   cap->samplerates = (samplerate_capability_t*)calloc(
-      PROBE_RATES_COUNT, sizeof(samplerate_capability_t));
+      supported_rates_count, sizeof(samplerate_capability_t));
   if (!cap->samplerates) {
-    SAFE_RELEASE(iasio);
-    goto error_cleanup;
-  }
-  size_t valid_rates_count = 0;
-
-  // Probe native sample format of the first channel.
-  ASIOChannelInfo chan_info = {0};
-  chan_info.channel = 0;
-  chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
-  if (iasio->lpVtbl->getChannelInfo(iasio, &chan_info) != 0) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER, "ASIO getChannelInfo failed");
-    }
-    SAFE_RELEASE(iasio);
     goto error_cleanup;
   }
 
-  // Map the ASIO-specific sample format to our internal format string
-  // representation matching CamillaDSP format names.
-  const char* native_fmt_name = NULL;  // No MSB/Big-Endian fallback
-  if (chan_info.type == ASIOSTInt16LSB)
-    native_fmt_name = "S16_LE";
-  else if (chan_info.type == ASIOSTInt24LSB)
-    native_fmt_name = "S24_3_LE";
-  else if (chan_info.type == ASIOSTInt32LSB24)
-    native_fmt_name = "S24_4_LE";
-  else if (chan_info.type == ASIOSTInt32LSB ||
-           chan_info.type == ASIOSTInt32LSB16 ||
-           chan_info.type == ASIOSTInt32LSB18 ||
-           chan_info.type == ASIOSTInt32LSB20)
-    native_fmt_name = "S32_LE";
-  else if (chan_info.type == ASIOSTFloat32LSB)
-    native_fmt_name = "F32_LE";
-  else if (chan_info.type == ASIOSTFloat64LSB)
-    native_fmt_name = "F64_LE";
-  else if (chan_info.type == ASIOTSDSDInt8LSB ||
-           chan_info.type == ASIOTSDSDInt8MSB ||
-           chan_info.type == ASIOTSDSDInt8NER8)
-    native_fmt_name = "DSD_INT8";
-
-  if (!native_fmt_name) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_OTHER,
-                        "Unsupported ASIO sample format (MSB/Big-Endian)");
-    }
-    SAFE_RELEASE(iasio);
-    goto error_cleanup;
-  }
-
-  for (size_t r = 0; r < PROBE_RATES_COUNT; r++) {
-    double rate = PROBE_RATES[r];
-    if (iasio->lpVtbl->canSampleRate(iasio, rate) == 0) {  // ASE_OK is 0
-      samplerate_capability_t* rate_cap = &cap->samplerates[valid_rates_count];
-      rate_cap->samplerate = (int)rate;
-      rate_cap->formats = (char**)calloc(1, sizeof(char*));
-      if (!rate_cap->formats) {
-        SAFE_RELEASE(iasio);
-        goto error_cleanup;
-      }
-      rate_cap->formats[0] = strdup(native_fmt_name);
-      if (!rate_cap->formats[0]) {
-        free(rate_cap->formats);
-        rate_cap->formats = NULL;
-        SAFE_RELEASE(iasio);
-        goto error_cleanup;
-      }
-      rate_cap->formats_count = 1;
-      valid_rates_count++;
-      cap->samplerates_count = valid_rates_count;
+  for (size_t i = 0; i < supported_rates_count; i++) {
+    samplerate_capability_t* rate_cap = &cap->samplerates[i];
+    rate_cap->samplerate = (int)STANDARD_RATES[supported_rates_indices[i]];
+    rate_cap->formats_count = 1;
+    rate_cap->formats = (char**)calloc(1, sizeof(char*));
+    if (rate_cap->formats) {
+      rate_cap->formats[0] = strdup(fmt_str);
     }
   }
 
-  cap->samplerates_count = valid_rates_count;
-  if (valid_rates_count == 0) {
-    double current_rate = 0.0;
-    if (iasio->lpVtbl->getSampleRate(iasio, &current_rate) == 0 &&
-        current_rate > 0) {
-      samplerate_capability_t* rate_cap = &cap->samplerates[0];
-      rate_cap->samplerate = (int)current_rate;
-      rate_cap->formats = (char**)calloc(1, sizeof(char*));
-      if (rate_cap->formats) {
-        rate_cap->formats[0] = strdup(native_fmt_name);
-        rate_cap->formats_count = 1;
-      }
-      cap->samplerates_count = 1;
-    }
-  }
-
-  SAFE_RELEASE(iasio);
   if (com_initialized) CoUninitialize();
   return desc;
 
 error_cleanup:
-  SAFE_RELEASE(iasio);
   if (desc) {
     free_audio_device_descriptor(desc);
     desc = NULL;
