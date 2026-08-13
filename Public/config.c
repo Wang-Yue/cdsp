@@ -131,6 +131,24 @@ void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path) {
   }
 }
 
+static char* json_str_to_yaml_str(const char* json_str) {
+  if (!json_str) return NULL;
+  cJSON* root = cJSON_Parse(json_str);
+  if (!root) return NULL;
+  char* yaml = cdsp_json_to_yaml(root);
+  cJSON_Delete(root);
+  return yaml;
+}
+
+static char* yaml_str_to_json_str(const char* yaml_str, char** out_err_msg) {
+  if (!yaml_str) return NULL;
+  cJSON* root = cdsp_yaml_to_json(yaml_str, out_err_msg);
+  if (!root) return NULL;
+  char* json = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  return json;
+}
+
 bool cdsp_get_active_config_json(const dsp_engine_t* engine, char** out_json) {
   if (!engine || !out_json) return false;
   return engine->get_active_config_json &&
@@ -141,11 +159,8 @@ bool cdsp_get_active_config_yaml(const dsp_engine_t* engine, char** out_yaml) {
   if (!engine || !out_yaml) return false;
   char* json_str = NULL;
   if (!cdsp_get_active_config_json(engine, &json_str)) return false;
-  cJSON* root = cJSON_Parse(json_str);
+  *out_yaml = json_str_to_yaml_str(json_str);
   free(json_str);
-  if (!root) return false;
-  *out_yaml = cdsp_json_to_yaml(root);
-  cJSON_Delete(root);
   return *out_yaml != NULL;
 }
 
@@ -161,11 +176,8 @@ bool cdsp_get_previous_config_yaml(const dsp_engine_t* engine,
   if (!engine || !out_yaml) return false;
   char* json_str = NULL;
   if (!cdsp_get_previous_config_json(engine, &json_str)) return false;
-  cJSON* root = cJSON_Parse(json_str);
+  *out_yaml = json_str_to_yaml_str(json_str);
   free(json_str);
-  if (!root) return false;
-  *out_yaml = cdsp_json_to_yaml(root);
-  cJSON_Delete(root);
   return *out_yaml != NULL;
 }
 
@@ -202,8 +214,8 @@ bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
                           cdsp_backend_error_t* out_err) {
   if (!engine || !yaml_str) return false;
   char* err_msg = NULL;
-  cJSON* json_root = cdsp_yaml_to_json(yaml_str, &err_msg);
-  if (!json_root) {
+  char* json_str = yaml_str_to_json_str(yaml_str, &err_msg);
+  if (!json_str) {
     if (out_err) {
       out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
       snprintf(out_err->message, sizeof(out_err->message),
@@ -214,54 +226,79 @@ bool cdsp_set_config_yaml(dsp_engine_t* engine, const char* yaml_str,
     return false;
   }
   if (err_msg) free(err_msg);
-  char* json_str = cJSON_PrintUnformatted(json_root);
-  cJSON_Delete(json_root);
-  if (!json_str) return false;
   bool ok = cdsp_set_config_json(engine, json_str, out_err);
   free(json_str);
   return ok;
 }
 
-bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
-                                 int samplerate_override, int channels_override,
-                                 const char* format_override,
-                                 int extra_samples_override,
-                                 cdsp_backend_error_t* out_err) {
-  if (!engine || !path) return false;
+// Helper to load a YAML/JSON configuration file and apply CLI overrides
+static char* read_config_file_as_json_with_overrides(
+    const char* path, int samplerate_override, int channels_override,
+    const char* format_override, int extra_samples_override, bool* out_is_json,
+    char* err_msg, size_t err_msg_len) {
+  if (out_is_json) *out_is_json = false;
+  if (err_msg && err_msg_len > 0) err_msg[0] = '\0';
   char* raw_content = read_file_to_str(path);
   if (!raw_content) {
-    if (out_err)
-      snprintf(out_err->message, sizeof(out_err->message),
-               "Could not read file %s", path);
-    return false;
+    if (err_msg) snprintf(err_msg, err_msg_len, "Could not read file %s", path);
+    return NULL;
   }
 
   const char* p = raw_content;
   while (isspace((unsigned char)*p)) p++;
+  bool is_json = (*p == '{');
+  if (out_is_json) *out_is_json = is_json;
+
   cJSON* root = NULL;
-  if (*p == '{') {
+  if (is_json) {
     root = cJSON_Parse(raw_content);
+    if (!root && err_msg) {
+      snprintf(err_msg, err_msg_len, "Invalid JSON syntax");
+    }
   } else {
-    char* err_msg = NULL;
-    root = cdsp_yaml_to_json(raw_content, &err_msg);
-    if (err_msg) free(err_msg);
+    char* yaml_err = NULL;
+    root = cdsp_yaml_to_json(raw_content, &yaml_err);
+    if (!root && err_msg) {
+      snprintf(err_msg, err_msg_len, "YAML parse error: %s",
+               yaml_err ? yaml_err : "Invalid YAML syntax");
+    }
+    if (yaml_err) free(yaml_err);
   }
   free(raw_content);
   if (!root) {
-    if (out_err)
-      snprintf(out_err->message, sizeof(out_err->message),
-               "Could not parse config file format");
-    return false;
+    if (err_msg && err_msg[0] == '\0') {
+      snprintf(err_msg, err_msg_len, "Could not parse config file format");
+    }
+    return NULL;
   }
 
   cJSON* devices = cJSON_GetObjectItem(root, "devices");
   if (devices) {
     if (samplerate_override > 0) {
-      cJSON* item = cJSON_CreateNumber(samplerate_override);
-      if (cJSON_HasObjectItem(devices, "samplerate")) {
-        cJSON_ReplaceItemInObject(devices, "samplerate", item);
+      cJSON* resampler = cJSON_GetObjectItem(devices, "resampler");
+      if (!resampler || cJSON_IsNull(resampler)) {
+        cJSON* old_sr = cJSON_GetObjectItem(devices, "samplerate");
+        cJSON* old_cs = cJSON_GetObjectItem(devices, "chunksize");
+        if (old_sr && old_cs && old_sr->valuedouble > 0) {
+          double scaled_cs =
+              old_cs->valuedouble *
+              ((double)samplerate_override / old_sr->valuedouble);
+          cJSON_ReplaceItemInObject(devices, "chunksize",
+                                    cJSON_CreateNumber((int)scaled_cs));
+        }
+        cJSON* item = cJSON_CreateNumber(samplerate_override);
+        if (cJSON_HasObjectItem(devices, "samplerate")) {
+          cJSON_ReplaceItemInObject(devices, "samplerate", item);
+        } else {
+          cJSON_AddItemToObject(devices, "samplerate", item);
+        }
       } else {
-        cJSON_AddItemToObject(devices, "samplerate", item);
+        cJSON* item = cJSON_CreateNumber(samplerate_override);
+        if (cJSON_HasObjectItem(devices, "capture_samplerate")) {
+          cJSON_ReplaceItemInObject(devices, "capture_samplerate", item);
+        } else {
+          cJSON_AddItemToObject(devices, "capture_samplerate", item);
+        }
       }
     }
     cJSON* capture = cJSON_GetObjectItem(devices, "capture");
@@ -296,14 +333,37 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
   char* updated_json = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
   if (!updated_json) {
-    if (out_err)
-      snprintf(out_err->message, sizeof(out_err->message),
-               "Failed to format updated JSON");
+    if (err_msg)
+      snprintf(err_msg, err_msg_len, "Failed to format updated JSON");
+    return NULL;
+  }
+  return updated_json;
+}
+
+bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
+                                 int samplerate_override, int channels_override,
+                                 const char* format_override,
+                                 int extra_samples_override,
+                                 cdsp_backend_error_t* out_err) {
+  if (!engine || !path) return false;
+  char err_msg[256] = {0};
+  char* updated_json = read_config_file_as_json_with_overrides(
+      path, samplerate_override, channels_override, format_override,
+      extra_samples_override, NULL, err_msg, sizeof(err_msg));
+  if (!updated_json) {
+    if (out_err) {
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_READ;
+      snprintf(out_err->message, sizeof(out_err->message), "%s",
+               err_msg[0] ? err_msg : "Could not read config file");
+    }
     return false;
   }
 
   bool ok = cdsp_set_config_json(engine, updated_json, out_err);
   free(updated_json);
+  if (ok) {
+    cdsp_set_config_file_path(engine, path);
+  }
   return ok;
 }
 
@@ -469,25 +529,8 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
     }
     return false;
   }
-  char* file_str = read_file_to_str(path);
-  if (!file_str) {
-    if (out_err)
-      snprintf(out_err->message, sizeof(out_err->message),
-               "Could not read config file %s", path);
-    free(path);
-    return false;
-  }
+  bool ok = cdsp_engine_set_config_file(engine, path, 0, 0, NULL, -1, out_err);
   free(path);
-
-  const char* p = file_str;
-  while (isspace((unsigned char)*p)) p++;
-  bool ok = false;
-  if (*p == '{') {
-    ok = cdsp_set_config_json(engine, file_str, out_err);
-  } else {
-    ok = cdsp_set_config_yaml(engine, file_str, out_err);
-  }
-  free(file_str);
   return ok;
 }
 
@@ -516,30 +559,23 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
                                cdsp_config_error_type_t* out_err_type) {
   if (!yaml_str || !out_result || !out_err_type) return false;
   char* err_msg = NULL;
-  cJSON* json_root = cdsp_yaml_to_json(yaml_str, &err_msg);
-  if (!json_root) {
+  char* json_str = yaml_str_to_json_str(yaml_str, &err_msg);
+  if (!json_str) {
     *out_result = strdup(err_msg ? err_msg : "Invalid YAML syntax");
     *out_err_type = CDSP_CONFIG_ERR_PARSE;
     if (err_msg) free(err_msg);
     return false;
   }
   if (err_msg) free(err_msg);
-  char* json_str = cJSON_PrintUnformatted(json_root);
-  cJSON_Delete(json_root);
-  if (!json_str) {
-    *out_result = strdup("Memory allocation error during YAML validation");
-    *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
-    return false;
-  }
+
   char* json_res = NULL;
   bool ok = cdsp_validate_config_json(json_str, &json_res, out_err_type);
   free(json_str);
   if (ok && json_res && *out_err_type == CDSP_CONFIG_ERR_NONE) {
-    cJSON* val_root = cJSON_Parse(json_res);
-    if (val_root) {
+    char* yaml_res = json_str_to_yaml_str(json_res);
+    if (yaml_res) {
       free(json_res);
-      *out_result = cdsp_json_to_yaml(val_root);
-      cJSON_Delete(val_root);
+      *out_result = yaml_res;
       return true;
     }
   }
@@ -549,21 +585,38 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
 
 bool cdsp_validate_config_file(const char* path, char** out_result,
                                cdsp_config_error_type_t* out_err_type) {
+  return cdsp_validate_config_file_with_overrides(path, 0, 0, NULL, -1,
+                                                  out_result, out_err_type);
+}
+
+bool cdsp_validate_config_file_with_overrides(
+    const char* path, int samplerate_override, int channels_override,
+    const char* format_override, int extra_samples_override, char** out_result,
+    cdsp_config_error_type_t* out_err_type) {
   if (!path) return false;
-  char* file_str = read_file_to_str(path);
-  if (!file_str) {
-    if (out_result) *out_result = strdup("Could not read file");
+  char err_msg[256] = {0};
+  bool is_json = false;
+  char* updated_json = read_config_file_as_json_with_overrides(
+      path, samplerate_override, channels_override, format_override,
+      extra_samples_override, &is_json, err_msg, sizeof(err_msg));
+  if (!updated_json) {
+    if (out_result)
+      *out_result = strdup(err_msg[0] ? err_msg : "Could not read file");
     if (out_err_type) *out_err_type = CDSP_CONFIG_ERR_PARSE;
     return false;
   }
-  const char* p = file_str;
-  while (isspace((unsigned char)*p)) p++;
-  bool ok = false;
-  if (*p == '{') {
-    ok = cdsp_validate_config_json(file_str, out_result, out_err_type);
-  } else {
-    ok = cdsp_validate_config_yaml(file_str, out_result, out_err_type);
+
+  bool ok = cdsp_validate_config_json(updated_json, out_result, out_err_type);
+  free(updated_json);
+
+  if (ok && !is_json && out_result && *out_result &&
+      *out_err_type == CDSP_CONFIG_ERR_NONE) {
+    char* yaml_res = json_str_to_yaml_str(*out_result);
+    if (yaml_res) {
+      free(*out_result);
+      *out_result = yaml_res;
+    }
   }
-  free(file_str);
+
   return ok;
 }

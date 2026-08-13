@@ -220,4 +220,155 @@ TEST(YamlConverter_QuotedKeyListItems) {
   cJSON_Delete(json);
 }
 
+TEST(YamlConverter_ValidateConfigFileYaml) {
+  char yaml_path[256];
+  snprintf(yaml_path, sizeof(yaml_path), "/tmp/test_val_config_%d.yml",
+           getpid());
+  const char* yaml_config =
+      "devices:\n"
+      "  samplerate: 44100\n"
+      "  chunksize: 1024\n"
+      "  capture:\n"
+      "    type: File\n"
+      "    channels: 2\n"
+      "    filename: \"/dev/null\"\n"
+      "    format: S16LE\n"
+      "  playback:\n"
+      "    type: File\n"
+      "    channels: 2\n"
+      "    filename: \"/dev/null\"\n"
+      "    format: S16LE\n";
+
+  FILE* f = fopen(yaml_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(yaml_config, f);
+  fclose(f);
+
+  char* result_str = NULL;
+  cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_PARSE;
+  bool valid = cdsp_validate_config_file_with_overrides(
+      yaml_path, 48000, 2, NULL, -1, &result_str, &err_type);
+  ASSERT_TRUE(valid);
+  ASSERT_EQ(CDSP_CONFIG_ERR_NONE, err_type);
+  ASSERT_TRUE(result_str != NULL);
+  ASSERT_TRUE(strstr(result_str, "samplerate: 48000") != NULL);
+
+  free(result_str);
+  remove(yaml_path);
+}
+
+TEST(YamlConverter_ValidateConfigFileJson) {
+  char json_path[256];
+  snprintf(json_path, sizeof(json_path), "/tmp/test_val_config_%d.json",
+           getpid());
+  const char* json_config =
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100,\n"
+      "    \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16LE\"},\n"
+      "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16LE\"}\n"
+      "  }\n"
+      "}";
+
+  FILE* f = fopen(json_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(json_config, f);
+  fclose(f);
+
+  char* result_str = NULL;
+  cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_PARSE;
+  bool valid = cdsp_validate_config_file_with_overrides(
+      json_path, 96000, 2, NULL, -1, &result_str, &err_type);
+  ASSERT_TRUE(valid);
+  ASSERT_EQ(CDSP_CONFIG_ERR_NONE, err_type);
+  ASSERT_TRUE(result_str != NULL);
+  ASSERT_TRUE(strstr(result_str, "\"samplerate\":96000") != NULL ||
+              strstr(result_str, "\"samplerate\": 96000") != NULL);
+
+  free(result_str);
+  remove(json_path);
+}
+
+TEST(YamlConverter_EngineSetConfigYamlAndJsonFiles) {
+  dsp_engine_t* engine = cdsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  // 1. Test with YAML file
+  char yaml_path[256];
+  snprintf(yaml_path, sizeof(yaml_path), "/tmp/test_engine_cfg_%d.yml",
+           getpid());
+  const char* yaml_config =
+      "devices:\n"
+      "  samplerate: 44100\n"
+      "  chunksize: 1024\n"
+      "  capture:\n"
+      "    type: File\n"
+      "    channels: 2\n"
+      "    filename: \"/dev/null\"\n"
+      "    format: S16LE\n"
+      "  playback:\n"
+      "    type: File\n"
+      "    channels: 2\n"
+      "    filename: \"/dev/null\"\n"
+      "    format: S16LE\n";
+
+  FILE* f = fopen(yaml_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(yaml_config, f);
+  fclose(f);
+
+  cdsp_backend_error_t berr = {0};
+  bool ok_yaml =
+      cdsp_engine_set_config_file(engine, yaml_path, 48000, 2, NULL, -1, &berr);
+  ASSERT_TRUE(ok_yaml);
+
+  char* path_stored = cdsp_get_config_file_path(engine);
+  ASSERT_TRUE(path_stored != NULL);
+  ASSERT_STR_EQ(yaml_path, path_stored);
+  free(path_stored);
+
+  char* active_yaml = NULL;
+  ASSERT_TRUE(cdsp_get_active_config_yaml(engine, &active_yaml));
+  ASSERT_TRUE(strstr(active_yaml, "samplerate: 48000") != NULL);
+  free(active_yaml);
+  remove(yaml_path);
+
+  // 2. Test with JSON file
+  char json_path[256];
+  snprintf(json_path, sizeof(json_path), "/tmp/test_engine_cfg_%d.json",
+           getpid());
+  const char* json_config =
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100,\n"
+      "    \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16LE\"},\n"
+      "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16LE\"}\n"
+      "  }\n"
+      "}";
+
+  f = fopen(json_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(json_config, f);
+  fclose(f);
+
+  bool ok_json =
+      cdsp_engine_set_config_file(engine, json_path, 96000, 2, NULL, -1, &berr);
+  ASSERT_TRUE(ok_json);
+
+  char* active_json = NULL;
+  ASSERT_TRUE(cdsp_get_active_config_json(engine, &active_json));
+  ASSERT_TRUE(strstr(active_json, "\"samplerate\":96000") != NULL ||
+              strstr(active_json, "\"samplerate\": 96000") != NULL);
+  free(active_json);
+  remove(json_path);
+
+  cdsp_engine_free(engine);
+}
+
 TEST_MAIN()

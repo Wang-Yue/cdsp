@@ -353,7 +353,9 @@ int main(int argc, char** argv) {
     }
     char* result = NULL;
     cdsp_config_error_type_t is_error = CDSP_CONFIG_ERR_NONE;
-    if (cdsp_validate_config_file(config_path, &result, &is_error) &&
+    if (cdsp_validate_config_file_with_overrides(
+            config_path, samplerate_override, channels_override,
+            format_override, extra_samples_override, &result, &is_error) &&
         is_error == CDSP_CONFIG_ERR_NONE) {
       logger_info(&g_logger, "Configuration check succeeded for %s",
                   config_path);

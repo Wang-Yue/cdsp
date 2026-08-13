@@ -230,6 +230,15 @@ CDSP_API bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
 CDSP_API bool cdsp_validate_config_file(const char* path, char** out_result,
                                         cdsp_config_error_type_t* out_err_type);
 
+/**
+ * @brief Parse and fill defaults for a configuration file on disk with CLI
+ * overrides.
+ */
+CDSP_API bool cdsp_validate_config_file_with_overrides(
+    const char* path, int samplerate_override, int channels_override,
+    const char* format_override, int extra_samples_override, char** out_result,
+    cdsp_config_error_type_t* out_err_type);
+
 #ifdef __cplusplus
 }
 #endif
