@@ -525,6 +525,8 @@ typedef struct {
   bool has_format;             /**< True if format is specified. */
   bool output_dsd;             /**< Enable Native DSD output. */
   bool has_output_dsd;         /**< True if output_dsd is specified. */
+  int target_level;            /**< Target buffer level in frames. */
+  bool has_target_level;       /**< True if target_level is specified. */
 } alsa_playback_config_t;
 #endif
 

@@ -11,15 +11,14 @@
 
 /**
  * @file alsa_device.h
- * @brief Provides shared ALSA device resources, such as mutexes.
+ * @brief Provides shared ALSA device resources, mutexes, and buffer/period
+ * sizing utilities.
  */
 
 /**
  * @brief Global mutex for protecting ALSA API calls.
  *
- * Since ALSA functions are not all thread-safe or need synchronization
- * when accessed from multiple threads (e.g. playback thread vs control thread),
- * this mutex should be locked before performing ALSA operations.
+ * Matches ALSA_MUTEX in upstream CamillaDSP (src/alsa_backend/device.rs:59).
  */
 extern pthread_mutex_t g_alsa_mutex;
 
@@ -27,16 +26,14 @@ extern pthread_mutex_t g_alsa_mutex;
  * @brief Calculates and applies a power-of-two buffer size to an ALSA hardware
  * parameters container.
  *
- * Computes a buffer size large enough to accommodate any changes due to
- * resampling, requiring at least 4 times the minimum period size to prevent
- * buffer underruns. If the primary power-of-two buffer size is rejected by the
- * ALSA driver, it falls back to an alternate buffer size calculated as 3
- * multiplied by a power of two.
+ * Matches calculate_buffer_size and apply_buffer_size in upstream CamillaDSP
+ * (src/alsa_backend/buffermanager.rs:34-83).
  *
  * @param pcm Pointer to the ALSA PCM handle.
  * @param hwp Pointer to the ALSA hardware parameters container.
  * @param chunksize The requested audio chunk size in frames.
- * @param resampling_ratio The resampling ratio (input rate / output rate).
+ * @param resampling_ratio Ratio of samplerate / capture_samplerate (or 1.0 for
+ * playback).
  * @param out_bufsize Pointer to receive the applied buffer size in frames.
  * @return 0 on success, or a negative ALSA error code on failure.
  */
@@ -48,9 +45,8 @@ int alsa_apply_buffer_size(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp,
  * @brief Calculates and applies a period size to an ALSA hardware parameters
  * container.
  *
- * Computes a period size derived from the buffer size (bufsize / 8). If the
- * primary period size is rejected by the ALSA driver, it falls back to an
- * alternate period size calculated as 3 multiplied by a power of two.
+ * Matches apply_period_size in upstream CamillaDSP
+ * (src/alsa_backend/buffermanager.rs:85-106).
  *
  * @param pcm Pointer to the ALSA PCM handle.
  * @param hwp Pointer to the ALSA hardware parameters container.
@@ -66,16 +62,25 @@ int alsa_apply_period_size(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp,
  * @brief Recovers an ALSA PCM handle from a suspended state
  * (SND_PCM_STATE_SUSPENDED / ESTRPIPE).
  *
- * Loops up to 200 times sleeping 10 ms while attempting snd_pcm_resume(). If
- * resume succeeds, returns 0. If resume fails or is pending, falls back to
- * snd_pcm_prepare().
+ * Matches recover_suspended_pcm in upstream CamillaDSP
+ * (src/alsa_backend/utils.rs:279-310).
  *
  * @param pcm Pointer to the ALSA PCM handle.
- * @param direction String label ("PB" for playback, "CAP" for capture) used for
- * logging.
+ * @param direction String label ("PB" for playback, "Capture" for capture) used
+ * for logging.
  * @return 0 on success, or a negative ALSA error code on failure.
  */
 int alsa_recover_suspended_pcm(snd_pcm_t* pcm, const char* direction);
+
+/**
+ * @brief Returns the descriptive string representation of an ALSA PCM state.
+ *
+ * Matches state_desc in upstream CamillaDSP (src/alsa_backend/utils.rs:255-277).
+ *
+ * @param state ALSA PCM state code.
+ * @return Constant string description.
+ */
+const char* alsa_state_desc(snd_pcm_state_t state);
 
 #endif  // ENABLE_ALSA
 

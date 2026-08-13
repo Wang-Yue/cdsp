@@ -619,4 +619,45 @@ TEST(DSDEncoderGoldenCorrectness) {
   audio_chunk_free(chunk);
 }
 
+#if defined(ENABLE_ALSA)
+#include "Backend/audio_backend.h"
+TEST(ALSAPlayback_NativeDSD_FormatSupportAndSilencePrefill) {
+  alsa_sample_format_t dsd_fmts[] = {
+      ALSA_SAMPLE_FORMAT_DSD_U8, ALSA_SAMPLE_FORMAT_DSD_U16_LE,
+      ALSA_SAMPLE_FORMAT_DSD_U16_BE, ALSA_SAMPLE_FORMAT_DSD_U32_LE,
+      ALSA_SAMPLE_FORMAT_DSD_U32_BE};
+
+  for (size_t i = 0; i < sizeof(dsd_fmts) / sizeof(dsd_fmts[0]); i++) {
+    playback_device_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.type = AUDIO_BACKEND_TYPE_ALSA;
+    cfg.cfg.alsa.channels = 2;
+    snprintf(cfg.cfg.alsa.device, sizeof(cfg.cfg.alsa.device), "null");
+    cfg.cfg.alsa.format = dsd_fmts[i];
+    cfg.cfg.alsa.has_format = true;
+    cfg.cfg.alsa.output_dsd = true;
+    cfg.cfg.alsa.has_output_dsd = true;
+
+    backend_error_t err;
+    playback_backend_t* pb =
+        create_playback_backend(&cfg, 352800, 1024, false, NULL, &err);
+    ASSERT_TRUE(pb != NULL);
+
+    if (playback_backend_open(pb, &err)) {
+      bool prefill_ok = playback_backend_prefill_silence(pb, 1024, &err);
+      ASSERT_TRUE(prefill_ok);
+
+      audio_chunk_t* chunk = audio_chunk_create(1024, 2);
+      audio_chunk_set_valid_frames(chunk, 1024);
+      bool write_ok = playback_backend_write(pb, chunk, &err);
+      ASSERT_TRUE(write_ok);
+      audio_chunk_free(chunk);
+
+      playback_backend_close(pb);
+    }
+    playback_backend_free(pb);
+  }
+}
+#endif
+
 TEST_MAIN()

@@ -619,6 +619,9 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.alsa.output_dsd =
           temp.has_output_dsd ? temp.output_dsd : false;
       final_play->cfg.alsa.has_output_dsd = temp.has_output_dsd;
+      final_play->cfg.alsa.target_level =
+          devices->has_target_level ? devices->target_level : 0;
+      final_play->cfg.alsa.has_target_level = devices->has_target_level;
       break;
 #endif
 

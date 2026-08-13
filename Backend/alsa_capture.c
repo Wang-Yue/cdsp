@@ -4,7 +4,9 @@
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <math.h>
+#include <poll.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,15 +20,19 @@
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
 
 struct alsa_capture {
   char device_name[256];
-  int sample_rate;
-  int capture_samplerate;
+  int sample_rate;          // pipeline rate
+  int capture_sample_rate;  // hardware capture rate
   int channels;
   int chunk_size;
+  snd_pcm_uframes_t bufsize;
+  snd_pcm_uframes_t period;
+  size_t last_avail_min;
 
   bool has_format;
   alsa_sample_format_t requested_format;
@@ -38,13 +44,25 @@ struct alsa_capture {
   snd_ctl_t* ctl;
   snd_hctl_t* hctl;
   snd_hctl_elem_t* hctl_pitch_elem;
+  snd_hctl_elem_t* hctl_rate_elem;
+  snd_hctl_elem_t* hctl_loopback_active_elem;
+  snd_hctl_elem_t* hctl_volume_elem;
+  snd_hctl_elem_t* hctl_mute_elem;
+
+  unsigned int loopback_active_numid;
+  unsigned int gadget_rate_numid;
+  unsigned int volume_numid;
+  unsigned int mute_numid;
+
   bool pitch_is_loopback;
-  snd_mixer_t* mixer;
-  snd_mixer_elem_t* vol_elem;
-  snd_mixer_elem_t* mute_elem;
-  snd_mixer_elem_t* pitch_elem;
-  double last_synced_volume;
-  bool last_synced_mute;
+  _Atomic double pending_rate;
+  _Atomic bool has_pending_rate_change;
+  _Atomic bool is_inactive;
+
+  double linked_volume_value;
+  bool has_linked_volume_value;
+  bool linked_mute_value;
+  bool has_linked_mute_value;
 
   snd_pcm_t* pcm;
   snd_pcm_format_t format;
@@ -52,112 +70,113 @@ struct alsa_capture {
   void* interleaved_buf;
   size_t interleaved_buf_size;
   pthread_mutex_t mixer_mutex;
-  bool was_stalled;
+  _Atomic bool stopped;
 };
 
-/**
- * @brief Helper to query the volume of a mixer element in decibels.
- *
- * Retrieves the current playback or capture volume of the given mixer element,
- * and converts the raw integer volume range to decibels.
- *
- * @param elem The ALSA mixer element.
- * @return Volume in decibels, or -100.0 if muted/extremely quiet, or 0.0 if not
- * supported.
- */
-static double get_elem_volume_db(snd_mixer_elem_t* elem) {
-  if (!elem) return 0.0;
-  long val = 0;
-  long min = 0, max = 0;
-  long db_val = 0;
-  if (snd_mixer_selem_has_playback_volume(elem)) {
-    if (snd_mixer_selem_get_playback_dB(elem, SND_MIXER_SCHN_FRONT_LEFT,
-                                        &db_val) >= 0) {
-      return (double)db_val / 100.0;
-    }
-    snd_mixer_selem_get_playback_volume_range(elem, &min, &max);
-    snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &val);
-  } else if (snd_mixer_selem_has_capture_volume(elem)) {
-    if (snd_mixer_selem_get_capture_dB(elem, SND_MIXER_SCHN_FRONT_LEFT,
-                                       &db_val) >= 0) {
-      return (double)db_val / 100.0;
-    }
-    snd_mixer_selem_get_capture_volume_range(elem, &min, &max);
-    snd_mixer_selem_get_capture_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &val);
-  } else {
-    return 0.0;
+// Helper to look up an ALSA control element matching find_elem in upstream
+// (src/alsa_backend/utils.rs:758-780)
+static snd_hctl_elem_t* find_elem(snd_hctl_t* hctl, snd_ctl_elem_iface_t iface,
+                                  int device, int subdevice, const char* name,
+                                  unsigned int* out_numid) {
+  if (!hctl || !name || !name[0]) return NULL;
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_ctl_elem_id_set_interface(id, iface);
+  if (device >= 0) snd_ctl_elem_id_set_device(id, (unsigned int)device);
+  if (subdevice >= 0)
+    snd_ctl_elem_id_set_subdevice(id, (unsigned int)subdevice);
+  snd_ctl_elem_id_set_name(id, name);
+
+  snd_hctl_elem_t* elem = snd_hctl_find_elem(hctl, id);
+  if (elem) {
+    snd_ctl_elem_id_t* found_id;
+    snd_ctl_elem_id_alloca(&found_id);
+    snd_hctl_elem_get_id(elem, found_id);
+    if (out_numid) *out_numid = snd_ctl_elem_id_get_numid(found_id);
+    logger_debug(&g_logger, "Found element with name %s and numid %u", name,
+                 out_numid ? *out_numid : 0);
   }
-  if (max == min) return 0.0;
-  double ratio = (double)(val - min) / (double)(max - min);
-  if (ratio <= 0.0001) return -100.0;
-  return 20.0 * log10(ratio);
+  return elem;
 }
 
-/**
- * @brief Helper to set the volume of a mixer element in decibels.
- *
- * Converts the decibel value and updates the playback or capture volume on
- * all channels of the given mixer element.
- *
- * @param elem The ALSA mixer element.
- * @param db_val Volume in decibels.
- */
-static void set_elem_volume_db(snd_mixer_elem_t* elem, double db_val) {
-  if (!elem) return;
-  long raw_db = (long)(db_val * 100.0);
-  if (snd_mixer_selem_has_playback_volume(elem)) {
-    snd_mixer_selem_set_playback_dB_all(elem, raw_db, 0);
-  } else if (snd_mixer_selem_has_capture_volume(elem)) {
-    snd_mixer_selem_set_capture_dB_all(elem, raw_db, 0);
-  }
-}
-
-/**
- * @brief Helper to query the mute status of a mixer element.
- *
- * Checks if the switch for playback or capture is off (muted).
- *
- * @param elem The ALSA mixer element.
- * @return True if muted, false otherwise.
- */
-static bool get_elem_mute(snd_mixer_elem_t* elem) {
+// Read element as integer (utils.rs:473-478)
+static bool elem_read_as_int(snd_hctl_elem_t* elem, long* out_val) {
   if (!elem) return false;
-  int val = 1;
-  if (snd_mixer_selem_has_playback_switch(elem)) {
-    snd_mixer_selem_get_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &val);
-  } else if (snd_mixer_selem_has_capture_switch(elem)) {
-    snd_mixer_selem_get_capture_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &val);
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  if (snd_hctl_elem_read(elem, val) >= 0) {
+    if (out_val) *out_val = snd_ctl_elem_value_get_integer(val, 0);
+    return true;
   }
-  return val == 0;
+  return false;
 }
 
-/**
- * @brief Helper to set the mute status of a mixer element.
- *
- * Sets the switch for playback or capture on all channels.
- *
- * @param elem The ALSA mixer element.
- * @param mute True to mute (turn switch off), false to unmute.
- */
-static void set_elem_mute(snd_mixer_elem_t* elem, bool mute) {
+// Read element as boolean (utils.rs:480-485)
+static bool elem_read_as_bool(snd_hctl_elem_t* elem, bool* out_val) {
+  if (!elem) return false;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  if (snd_hctl_elem_read(elem, val) >= 0) {
+    if (out_val) *out_val = (snd_ctl_elem_value_get_boolean(val, 0) != 0);
+    return true;
+  }
+  return false;
+}
+
+// Read volume in dB (utils.rs:487-493)
+static bool elem_read_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
+                                   double* out_db) {
+  if (!ctl || !elem) return false;
+  long intval = 0;
+  if (!elem_read_as_int(elem, &intval)) return false;
+
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_hctl_elem_get_id(elem, id);
+
+  long db_gain = 0;
+  if (snd_ctl_convert_to_dB(ctl, id, intval, &db_gain) >= 0) {
+    if (out_db) *out_db = (double)db_gain / 100.0;
+    return true;
+  }
+  return false;
+}
+
+// Write element as integer (utils.rs:506-511)
+static void elem_write_as_int(snd_hctl_elem_t* elem, long value) {
   if (!elem) return;
-  int val = mute ? 0 : 1;
-  if (snd_mixer_selem_has_playback_switch(elem)) {
-    snd_mixer_selem_set_playback_switch_all(elem, val);
-  } else if (snd_mixer_selem_has_capture_switch(elem)) {
-    snd_mixer_selem_set_capture_switch_all(elem, val);
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  snd_ctl_elem_value_set_integer(val, 0, value);
+  snd_hctl_elem_write(elem, val);
+}
+
+// Write element as boolean (utils.rs:513-518)
+static void elem_write_as_bool(snd_hctl_elem_t* elem, bool value) {
+  if (!elem) return;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  snd_ctl_elem_value_set_boolean(val, 0, value ? 1 : 0);
+  snd_hctl_elem_write(elem, val);
+}
+
+// Write volume in dB (utils.rs:495-504)
+static void elem_write_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
+                                    double db_val) {
+  if (!ctl || !elem) return;
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_hctl_elem_get_id(elem, id);
+
+  long intval = 0;
+  if (snd_ctl_convert_from_dB(ctl, id, (long)(db_val * 100.0), &intval, -1) >=
+      0) {
+    elem_write_as_int(elem, intval);
   }
 }
 
-/**
- * @brief Initialize ALSA control and mixer interfaces for volume/mute linking.
- *
- * Subscribes to control events to listen for hardware changes, attaches
- * the mixer, and looks up the specified volume, mute, and pitch control
- * elements. Initial values are synchronized to the engine.
- *
- * @param capture Pointer to the ALSA capture backend instance.
- */
+// Initialize ALSA control elements matching find_elements in upstream
+// (src/alsa_backend/utils.rs:723-756 & src/alsa_backend/device.rs:788-846)
 static void alsa_capture_init_controls(alsa_capture_t* capture) {
   if (!capture->pcm) return;
 
@@ -173,152 +192,268 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
 
   pthread_mutex_lock(&capture->mixer_mutex);
 
-  // Open control interface (non-blocking)
+  // Open Ctl interface (non-blocking) and subscribe to events
+  // (device.rs:790-794)
   snd_ctl_t* ctl = NULL;
-  if (snd_ctl_open(&ctl, ctl_name, SND_CTL_NONBLOCK) >= 0) {
+  if (snd_ctl_open(&ctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && ctl) {
     capture->ctl = ctl;
     snd_ctl_subscribe_events(ctl, 1);
   }
 
-  // Open simple mixer interface
-  snd_mixer_t* mixer = NULL;
-  if (snd_mixer_open(&mixer, 0) >= 0) {
-    if (snd_mixer_attach(mixer, ctl_name) >= 0 &&
-        snd_mixer_selem_register(mixer, NULL, NULL) >= 0 &&
-        snd_mixer_load(mixer) >= 0) {
-      capture->mixer = mixer;
+  // Open HCtl interface in non-blocking mode (device.rs:789)
+  snd_hctl_t* hctl = NULL;
+  if (snd_hctl_open(&hctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && hctl) {
+    snd_hctl_nonblock(hctl, 1);
+    if (snd_hctl_load(hctl) >= 0) {
+      capture->hctl = hctl;
+      int dev_idx = snd_pcm_info_get_device(info);
+      int subdev_idx = snd_pcm_info_get_subdevice(info);
 
-      // Find volume element
-      if (capture->link_volume_control[0]) {
-        snd_mixer_selem_id_t* sid;
-        snd_mixer_selem_id_alloca(&sid);
-        snd_mixer_selem_id_set_name(sid, capture->link_volume_control);
-        capture->vol_elem = snd_mixer_find_selem(mixer, sid);
-        if (capture->vol_elem) {
-          capture->last_synced_volume = get_elem_volume_db(capture->vol_elem);
-          processing_parameters_set_target_volume(capture->params,
-                                                  capture->last_synced_volume);
-        }
-      }
-
-      // Find mute element
-      if (capture->link_mute_control[0]) {
-        snd_mixer_selem_id_t* sid;
-        snd_mixer_selem_id_alloca(&sid);
-        snd_mixer_selem_id_set_name(sid, capture->link_mute_control);
-        capture->mute_elem = snd_mixer_find_selem(mixer, sid);
-        if (capture->mute_elem) {
-          capture->last_synced_mute = get_elem_mute(capture->mute_elem);
-          processing_parameters_set_muted(capture->params,
-                                          capture->last_synced_mute);
-        }
-      }
-      // Open high-level control interface (HCtl) to search for PCM pitch
-      // controls matching CamillaDSP (alsa_backend/device.rs:L789 &
-      // alsa_backend/utils.rs:L758)
-      snd_hctl_t* hctl = NULL;
-      if (snd_hctl_open(&hctl, ctl_name, 0) >= 0 && snd_hctl_load(hctl) >= 0) {
-        capture->hctl = hctl;
-        int dev_idx = snd_pcm_info_get_device(info);
-        int subdev_idx = snd_pcm_info_get_subdevice(info);
-
-        snd_ctl_elem_id_t* id;
-        snd_ctl_elem_id_alloca(&id);
-        snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_PCM);
-        snd_ctl_elem_id_set_device(id, dev_idx >= 0 ? dev_idx : 0);
-        snd_ctl_elem_id_set_subdevice(id, subdev_idx >= 0 ? subdev_idx : 0);
-
-        snd_ctl_elem_id_set_name(id, "PCM Rate Shift 100000");
-        capture->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
+      // Look up pitch control: PCM Rate Shift 100000 / Capture Pitch 1000000
+      capture->hctl_pitch_elem =
+          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                    "PCM Rate Shift 100000", NULL);
+      if (capture->hctl_pitch_elem) {
+        capture->pitch_is_loopback = true;
+        logger_info(&g_logger, "Capture device supports rate adjust");
+      } else {
+        capture->hctl_pitch_elem =
+            find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                      "Capture Pitch 1000000", NULL);
         if (capture->hctl_pitch_elem) {
-          capture->pitch_is_loopback = true;
-          logger_info(
-              &g_logger,
-              "Found capture loopback pitch control: PCM Rate Shift 100000");
-        } else {
-          snd_ctl_elem_id_set_name(id, "Capture Pitch 1000000");
-          capture->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
-          if (capture->hctl_pitch_elem) {
-            capture->pitch_is_loopback = false;
-            logger_info(
-                &g_logger,
-                "Found capture gadget pitch control: Capture Pitch 1000000");
+          capture->pitch_is_loopback = false;
+          logger_info(&g_logger, "Capture device supports rate adjust");
+        }
+      }
+
+      // Look up PCM Slave Active (loopback active)
+      capture->hctl_loopback_active_elem =
+          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                    "PCM Slave Active", &capture->loopback_active_numid);
+      if (capture->hctl_loopback_active_elem) {
+        bool active = false;
+        if (elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
+          if (!active) {
+            if (capture->stop_on_inactive) {
+              atomic_store_explicit(&capture->is_inactive, true,
+                                    memory_order_release);
+            }
+          } else {
+            atomic_store_explicit(&capture->is_inactive, false,
+                                  memory_order_release);
+          }
+        }
+      }
+
+      // Look up Capture Rate (gadget rate)
+      capture->hctl_rate_elem =
+          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                    "Capture Rate", &capture->gadget_rate_numid);
+      if (capture->hctl_rate_elem) {
+        long rate = 0;
+        if (elem_read_as_int(capture->hctl_rate_elem, &rate)) {
+          if (rate == 0) {
+            if (capture->stop_on_inactive) {
+              atomic_store_explicit(&capture->is_inactive, true,
+                                    memory_order_release);
+            }
+          } else if (rate > 0 && rate != capture->capture_sample_rate) {
+            atomic_store_explicit(&capture->pending_rate, (double)rate,
+                                  memory_order_release);
+            atomic_store_explicit(&capture->has_pending_rate_change, true,
+                                  memory_order_release);
+            atomic_store_explicit(&capture->is_inactive, false,
+                                  memory_order_release);
+          }
+        }
+      }
+
+      // Look up Mixer Volume Control
+      if (capture->link_volume_control[0]) {
+        capture->hctl_volume_elem =
+            find_elem(hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
+                      capture->link_volume_control, &capture->volume_numid);
+        if (capture->hctl_volume_elem && capture->ctl) {
+          double vol_db = 0.0;
+          if (elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                     &vol_db)) {
+            logger_info(&g_logger, "Using initial volume from Alsa: %.2f dB",
+                        vol_db);
+            capture->linked_volume_value = vol_db;
+            capture->has_linked_volume_value = true;
+            if (capture->params) {
+              processing_parameters_set_target_volume(capture->params, vol_db);
+            }
+          }
+        }
+      }
+
+      // Look up Mixer Mute Control
+      if (capture->link_mute_control[0]) {
+        capture->hctl_mute_elem =
+            find_elem(hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
+                      capture->link_mute_control, &capture->mute_numid);
+        if (capture->hctl_mute_elem) {
+          bool active = false;
+          if (elem_read_as_bool(capture->hctl_mute_elem, &active)) {
+            logger_info(&g_logger, "Using initial active switch from Alsa: %d",
+                        active);
+            capture->linked_mute_value = !active;
+            capture->has_linked_mute_value = true;
+            if (capture->params) {
+              processing_parameters_set_muted(capture->params, !active);
+            }
           }
         }
       }
     } else {
-      snd_mixer_close(mixer);
+      snd_hctl_close(hctl);
     }
   }
+
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
-/**
- * @brief Synchronize mixer settings between the engine and ALSA hardware.
- *
- * Processes pending ALSA control events. Checks if the hardware mixer settings
- * (volume/mute) changed and updates the engine. Conversely, if engine target
- * faders changed, updates the hardware mixer values.
- *
- * @param capture Pointer to the ALSA capture backend instance.
- */
-static void alsa_capture_sync_controls(alsa_capture_t* capture) {
+// Sync linked controls to ALSA hardware matching sync_linked_controls in
+// upstream (src/alsa_backend/utils.rs:782-808)
+static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
+  if (!capture->params) return;
   pthread_mutex_lock(&capture->mixer_mutex);
-  if (!capture->mixer) {
-    pthread_mutex_unlock(&capture->mixer_mutex);
-    return;
+
+  if (capture->ctl && capture->hctl_volume_elem &&
+      capture->has_linked_volume_value) {
+    double target_vol =
+        processing_parameters_get_target_volume(capture->params);
+    if (fabs(capture->linked_volume_value - target_vol) > 0.1) {
+      logger_debug(&g_logger, "Updating linked volume control to %.2f dB",
+                   target_vol);
+    }
+    if (capture->linked_volume_value != target_vol) {
+      elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                              target_vol);
+      capture->linked_volume_value = target_vol;
+    }
   }
 
-  if (capture->ctl) {
-    snd_ctl_event_t* event;
-    snd_ctl_event_alloca(&event);
-    while (snd_ctl_read(capture->ctl, event) > 0) {
-      if (snd_ctl_event_get_type(event) == SND_CTL_EVENT_ELEM) {
-        unsigned int mask = snd_ctl_event_elem_get_mask(event);
-        if (mask & SND_CTL_EVENT_MASK_VALUE) {
-          snd_mixer_handle_events(capture->mixer);
+  if (capture->hctl_mute_elem && capture->has_linked_mute_value) {
+    bool target_mute = processing_parameters_is_muted(capture->params);
+    if (capture->linked_mute_value != target_mute) {
+      logger_debug(&g_logger, "Updating linked switch control to %d",
+                   !target_mute);
+      elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
+      capture->linked_mute_value = target_mute;
+    }
+  }
+
+  pthread_mutex_unlock(&capture->mixer_mutex);
+}
+
+// Process events from ALSA control interface matching process_events &
+// get_event_action in upstream (src/alsa_backend/utils.rs:574-721)
+static void alsa_capture_process_events(alsa_capture_t* capture) {
+  if (!capture->ctl) return;
+  pthread_mutex_lock(&capture->mixer_mutex);
+
+  snd_ctl_event_t* event;
+  snd_ctl_event_alloca(&event);
+
+  while (snd_ctl_read(capture->ctl, event) > 0) {
+    if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM) {
+      continue;
+    }
+    unsigned int numid = snd_ctl_event_elem_get_numid(event);
+    logger_debug(&g_logger, "Event from numid %u", numid);
+
+    // Loopback active event
+    if (capture->hctl_loopback_active_elem &&
+        numid == capture->loopback_active_numid) {
+      bool active = false;
+      if (elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
+        logger_debug(&g_logger, "Loopback active: %d", active);
+        if (!active) {
+          if (capture->stop_on_inactive) {
+            logger_debug(&g_logger,
+                         "Stopping, capture device is inactive and "
+                         "stop_on_inactive is set to true");
+            atomic_store_explicit(&capture->is_inactive, true,
+                                  memory_order_release);
+          }
+        } else {
+          atomic_store_explicit(&capture->is_inactive, false,
+                                memory_order_release);
+        }
+      }
+    }
+
+    // Gadget rate event
+    if (capture->hctl_rate_elem && numid == capture->gadget_rate_numid) {
+      long rate = 0;
+      if (elem_read_as_int(capture->hctl_rate_elem, &rate)) {
+        logger_debug(&g_logger, "Gadget rate: %ld", rate);
+        if (rate == 0) {
+          if (capture->stop_on_inactive) {
+            logger_debug(&g_logger,
+                         "Stopping, capture device is inactive and "
+                         "stop_on_inactive is set to true");
+            atomic_store_explicit(&capture->is_inactive, true,
+                                  memory_order_release);
+          }
+        } else if (rate > 0 && rate != capture->capture_sample_rate) {
+          logger_debug(&g_logger,
+                       "Stopping, capture device sample format changed");
+          atomic_store_explicit(&capture->pending_rate, (double)rate,
+                                memory_order_release);
+          atomic_store_explicit(&capture->has_pending_rate_change, true,
+                                memory_order_release);
+          atomic_store_explicit(&capture->is_inactive, false,
+                                memory_order_release);
+        } else {
+          logger_debug(&g_logger,
+                       "Capture device resumed with unchanged sample rate");
+        }
+      }
+    }
+
+    // Volume control event
+    if (capture->hctl_volume_elem && numid == capture->volume_numid) {
+      double vol_db = 0.0;
+      if (elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                 &vol_db)) {
+        logger_debug(&g_logger,
+                     "Alsa volume change event, set main fader to %.2f dB",
+                     vol_db);
+        capture->linked_volume_value = vol_db;
+        capture->has_linked_volume_value = true;
+        if (capture->params) {
+          processing_parameters_set_target_volume(capture->params, vol_db);
+        }
+      }
+    }
+
+    // Mute control event
+    if (capture->hctl_mute_elem && numid == capture->mute_numid) {
+      bool active = false;
+      if (elem_read_as_bool(capture->hctl_mute_elem, &active)) {
+        logger_debug(&g_logger, "Alsa mute change event, set mute state to %d",
+                     !active);
+        capture->linked_mute_value = !active;
+        capture->has_linked_mute_value = true;
+        if (capture->params) {
+          processing_parameters_set_muted(capture->params, !active);
         }
       }
     }
   }
 
-  // Sync hardware to engine faders
-  if (capture->vol_elem) {
-    double hw_vol = get_elem_volume_db(capture->vol_elem);
-    if (hw_vol != capture->last_synced_volume) {
-      processing_parameters_set_target_volume(capture->params, hw_vol);
-      capture->last_synced_volume = hw_vol;
-    }
-  }
-  if (capture->mute_elem) {
-    bool hw_mute = get_elem_mute(capture->mute_elem);
-    if (hw_mute != capture->last_synced_mute) {
-      processing_parameters_set_muted(capture->params, hw_mute);
-      capture->last_synced_mute = hw_mute;
-    }
+  if (capture->hctl) {
+    snd_hctl_handle_events(capture->hctl);
   }
 
-  // Sync engine faders to hardware
-  double engine_vol = processing_parameters_get_target_volume(capture->params);
-  if (engine_vol != capture->last_synced_volume) {
-    set_elem_volume_db(capture->vol_elem, engine_vol);
-    capture->last_synced_volume = engine_vol;
-  }
-  bool engine_mute = processing_parameters_is_muted(capture->params);
-  if (engine_mute != capture->last_synced_mute) {
-    set_elem_mute(capture->mute_elem, engine_mute);
-    capture->last_synced_mute = engine_mute;
-  }
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
-/**
- * @brief Opens the ALSA capture device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return True on success, false otherwise.
- */
+// Open the ALSA capture device matching open_pcm in upstream
+// (src/alsa_backend/device.rs:416-493)
 static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return false;
@@ -328,7 +463,6 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     return true;
   }
   int rc;
-  // Open the ALSA PCM capture device
   rc = snd_pcm_open(&capture->pcm, capture->device_name, SND_PCM_STREAM_CAPTURE,
                     SND_PCM_NONBLOCK);
   if (rc < 0) {
@@ -349,9 +483,8 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set access type to interleaved read/write
-  rc = snd_pcm_hw_params_set_access(capture->pcm, params,
-                                    SND_PCM_ACCESS_RW_INTERLEAVED);
+  // Set number of channels
+  rc = snd_pcm_hw_params_set_channels(capture->pcm, params, capture->channels);
   if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -359,8 +492,20 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Probe supported formats, trying requested format first, then falling back
-  // to defaults.
+  // Set capture samplerate
+  unsigned int val = capture->capture_sample_rate;
+  int dir = 0;
+  rc = snd_pcm_hw_params_set_rate_near(capture->pcm, params, &val, &dir);
+  if (rc < 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         snd_strerror(rc));
+    goto error_cleanup;
+  }
+
+  // Set sample format: if specified, use it; otherwise pick preferred format
+  // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
+  // F64_LE (src/alsa_backend/utils.rs:433-456)
   snd_pcm_format_t formats[6];
   size_t num_formats = 0;
   if (capture->has_format) {
@@ -409,8 +554,10 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set channel count
-  rc = snd_pcm_hw_params_set_channels(capture->pcm, params, capture->channels);
+  // Set access mode, buffersize and periods
+  // (src/alsa_backend/device.rs:475-480)
+  rc = snd_pcm_hw_params_set_access(capture->pcm, params,
+                                    SND_PCM_ACCESS_RW_INTERLEAVED);
   if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -418,35 +565,20 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set sample rate (accepting nearest rate supported by hardware)
-  unsigned int val = capture->sample_rate;
-  int dir = 0;
-  rc = snd_pcm_hw_params_set_rate_near(capture->pcm, params, &val, &dir);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  double resampling_ratio = 1.0;
-  if (capture->capture_samplerate > 0 && capture->sample_rate > 0) {
-    resampling_ratio =
-        (double)capture->sample_rate / (double)capture->capture_samplerate;
-  }
-
-  snd_pcm_uframes_t buffer_size = 0;
+  double resampling_ratio = (capture->capture_sample_rate > 0)
+                                ? ((double)capture->sample_rate /
+                                   (double)capture->capture_sample_rate)
+                                : 1.0;
   if (alsa_apply_buffer_size(capture->pcm, params, capture->chunk_size,
-                             resampling_ratio, &buffer_size) < 0) {
+                             resampling_ratio, &capture->bufsize) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA buffer size");
     goto error_cleanup;
   }
 
-  snd_pcm_uframes_t period_size = 0;
-  if (alsa_apply_period_size(capture->pcm, params, buffer_size, &period_size) <
-      0) {
+  if (alsa_apply_period_size(capture->pcm, params, capture->bufsize,
+                             &capture->period) < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to set ALSA period size");
@@ -461,15 +593,30 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set ALSA software parameters (e.g. start threshold, minimum available
-  // frames)
+  // Calculate init_io_size (buffermanager.rs:168: init_io_size = (chunksize as
+  // f32 / resampling_ratio) as Frames)
+  snd_pcm_uframes_t capture_avail_min =
+      (snd_pcm_uframes_t)((double)capture->chunk_size / resampling_ratio);
+  if (capture_avail_min > capture->bufsize) {
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "Trying to set avail_min to %lu, must be smaller than or equal to "
+             "device buffer size of %lu",
+             (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
+    logger_error(&g_logger, "%s", msg);
+    if (err) backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    goto error_cleanup;
+  }
+
+  // Set software parameters (src/alsa_backend/device.rs:483-491)
   snd_pcm_sw_params_t* sw_params;
   snd_pcm_sw_params_alloca(&sw_params);
   rc = snd_pcm_sw_params_current(capture->pcm, sw_params);
   if (rc >= 0) {
-    snd_pcm_uframes_t capture_avail_min = (snd_pcm_uframes_t)round(
-        (double)capture->chunk_size / resampling_ratio);
+    // immediate start after pcmdev.prepare (buffermanager.rs:194)
     snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
+    // avail_min = initial io_size (buffermanager.rs:120)
+    capture->last_avail_min = (size_t)capture_avail_min;
     snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params, capture_avail_min);
     rc = snd_pcm_sw_params(capture->pcm, sw_params);
     if (rc < 0) {
@@ -478,7 +625,6 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  // Determine sample size in bytes for the interleaved buffer allocation
   size_t sample_size = 4;
   if (capture->format == SND_PCM_FORMAT_S16_LE) {
     sample_size = 2;
@@ -489,8 +635,15 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   } else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE) {
     sample_size = 8;
   }
+
+  // Size buffer generously to accommodate dynamic resampling buffer needs
+  // (src/alsa_backend/device.rs:863 & buffermanager.rs:157)
+  size_t buffer_frames = (size_t)capture->bufsize;
+  if (buffer_frames < (size_t)capture->chunk_size * 2) {
+    buffer_frames = (size_t)capture->chunk_size * 2;
+  }
   capture->interleaved_buf_size =
-      capture->chunk_size * capture->channels * sample_size;
+      buffer_frames * capture->channels * sample_size;
   capture->interleaved_buf = calloc(capture->interleaved_buf_size, 1);
   if (!capture->interleaved_buf) {
     if (err)
@@ -526,19 +679,19 @@ error_cleanup:
   return false;
 }
 
-/**
- * @brief Reads audio frames from the ALSA capture device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @param frames The number of frames to read.
- * @param chunk Pointer to the audio chunk to store the read samples.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return True on success, false otherwise.
- */
+// Capture a buffer matching capture_buffer in upstream
+// (src/alsa_backend/device.rs:243-413)
 static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                               backend_error_t* err) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture || !capture->pcm) return false;
+
+  if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
+    }
+    return false;
+  }
 
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
@@ -549,13 +702,36 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     return false;
   }
 
-  // Sync volume/mute between hardware and engine before reading
-  alsa_capture_sync_controls(capture);
+  // Sync volume/mute from engine to hardware (src/alsa_backend/device.rs:1090)
+  alsa_capture_sync_linked_controls(capture);
+  alsa_capture_process_events(capture);
 
-  if (frames > (size_t)capture->chunk_size) {
-    frames = capture->chunk_size;
+  if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
+    logger_debug(&g_logger,
+                 "Capture source inactive and stop_on_inactive is enabled, "
+                 "stopping capture");
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_NONE, "Capture source inactive");
+    }
+    return false;
   }
 
+  // Update avail_min and start_threshold if requested input frames changed
+  // (src/alsa_backend/device.rs:958 & buffermanager.rs:126-133)
+  if (frames != capture->last_avail_min && frames <= capture->bufsize) {
+    snd_pcm_sw_params_t* sw_params;
+    snd_pcm_sw_params_alloca(&sw_params);
+    if (snd_pcm_sw_params_current(capture->pcm, sw_params) >= 0) {
+      snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params,
+                                      (snd_pcm_uframes_t)frames);
+      snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
+      if (snd_pcm_sw_params(capture->pcm, sw_params) >= 0) {
+        capture->last_avail_min = frames;
+      }
+    }
+  }
+
+  // State checks and recoveries matching device.rs:259-282
   snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
   if (capture_state == SND_PCM_STATE_XRUN) {
     logger_warn(&g_logger, "Prepare capture device");
@@ -568,15 +744,15 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   } else if ((int)capture_state < 0) {
     logger_error(&g_logger,
                  "Alsa snd_pcm_state() of capture device returned an "
-                 "unexpected error: %d",
-                 (int)capture_state);
+                 "unexpected error: %s",
+                 snd_strerror((int)capture_state));
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          snd_strerror((int)capture_state));
     return false;
   } else if (capture_state != SND_PCM_STATE_RUNNING) {
-    logger_debug(&g_logger, "Starting capture from state: %d",
-                 (int)capture_state);
+    logger_debug(&g_logger, "Starting capture from state: %s",
+                 alsa_state_desc(capture_state));
     snd_pcm_start(capture->pcm);
   }
 
@@ -590,28 +766,73 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
 
   double millis_per_chunk =
-      1000.0 * (double)frames / (double)capture->sample_rate;
+      1000.0 * (double)frames / (double)capture->capture_sample_rate;
 
   char* buffer = (char*)capture->interleaved_buf;
   size_t buffer_len_bytes = frames * bytes_per_frame;
 
-  for (;;) {
-    uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
-    if (timeout_millis < 20) {
-      timeout_millis = 20;
+  if (buffer_len_bytes > capture->interleaved_buf_size) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Frame count exceeds capture buffer capacity");
     }
+    return false;
+  }
+
+  // Poll loop matching capture_buffer in upstream
+  // (src/alsa_backend/device.rs:287-364)
+  for (;;) {
+    int pcm_fds_count = snd_pcm_poll_descriptors_count(capture->pcm);
+    int ctl_fds_count = 0;
+    if (capture->ctl) {
+      ctl_fds_count = snd_ctl_poll_descriptors_count(capture->ctl);
+    }
+    if (pcm_fds_count < 0) pcm_fds_count = 0;
+    if (ctl_fds_count < 0) ctl_fds_count = 0;
+
+    int total_fds = pcm_fds_count + ctl_fds_count;
+    struct pollfd pfds[total_fds > 0 ? total_fds : 1];
+    memset(pfds, 0, sizeof(pfds));
+
+    if (pcm_fds_count > 0) {
+      snd_pcm_poll_descriptors(capture->pcm, pfds, (unsigned int)pcm_fds_count);
+    }
+    if (ctl_fds_count > 0 && capture->ctl) {
+      snd_ctl_poll_descriptors(capture->ctl, pfds + pcm_fds_count,
+                               (unsigned int)ctl_fds_count);
+    }
+
+    uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
+    if (timeout_millis < 20) timeout_millis = 20;
+
     logger_trace(&g_logger, "Capture pcmdevice.wait with timeout %u ms",
                  timeout_millis);
     uint32_t remaining_timeout_millis = timeout_millis;
+
     while (true) {
+      if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
+        }
+        return false;
+      }
+
       uint32_t poll_slice_millis =
           remaining_timeout_millis < 20 ? remaining_timeout_millis : 20;
-      int err_wait = snd_pcm_wait(capture->pcm, (int)poll_slice_millis);
-      if (err_wait == 0) {
+      int poll_res = 0;
+      if (total_fds > 0) {
+        poll_res = poll(pfds, (nfds_t)total_fds, (int)poll_slice_millis);
+      } else {
+        poll_res = snd_pcm_wait(capture->pcm, (int)poll_slice_millis);
+      }
+
+      if (poll_res == 0) {
         if (remaining_timeout_millis <= poll_slice_millis) {
           logger_trace(&g_logger,
                        "Wait timed out, capture device takes too long to "
                        "capture frames");
+          snd_pcm_drop(capture->pcm);
+          snd_pcm_prepare(capture->pcm);
           if (err) {
             backend_error_init(err, BACKEND_ERROR_NONE,
                                "Capture device wait timeout");
@@ -620,42 +841,123 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
         }
         remaining_timeout_millis -= poll_slice_millis;
         continue;
-      } else if (err_wait > 0) {
-        break;
-      } else if (err_wait < 0) {
-        if (err_wait == -EPIPE) {
-          logger_warn(&g_logger,
-                      "Capture: wait overrun, trying to recover. Error: %s",
-                      snd_strerror(err_wait));
-          logger_trace(&g_logger, "snd_pcm_prepare");
-          snd_pcm_prepare(capture->pcm);
-          break;
-        } else if (err_wait == -ESTRPIPE ||
-                   snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
-          logger_warn(
-              &g_logger,
-              "Capture: wait interrupted by suspend, trying to recover. Error: "
-              "%s",
-              snd_strerror(err_wait));
-          alsa_recover_suspended_pcm(capture->pcm, "Capture");
-          if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-            snd_pcm_start(capture->pcm);
+      } else if (poll_res < 0) {
+        if (errno == EINTR) {
+          if (err) {
+            backend_error_init(err, BACKEND_ERROR_NONE,
+                               "Capture poll interrupted by signal");
           }
-          break;
-        } else {
-          logger_warn(
-              &g_logger,
-              "Capture: device failed while waiting for available frames, "
-              "error: %s",
-              snd_strerror(err_wait));
-          if (err)
-            backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                               snd_strerror(err_wait));
           return false;
         }
+        logger_warn(&g_logger,
+                    "Capture: poll failed while waiting for available frames, "
+                    "error: %s",
+                    strerror(errno));
+        if (err) {
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR, strerror(errno));
+        }
+        return false;
+      }
+
+      // Check control events (device.rs:316-331)
+      if (ctl_fds_count > 0) {
+        bool ctl_event = false;
+        for (int i = pcm_fds_count; i < total_fds; i++) {
+          if (pfds[i].revents != 0) {
+            ctl_event = true;
+            break;
+          }
+        }
+        if (ctl_event) {
+          logger_trace(&g_logger, "Got a control event");
+          alsa_capture_process_events(capture);
+          if (atomic_load_explicit(&capture->is_inactive,
+                                   memory_order_acquire)) {
+            if (err) {
+              backend_error_init(err, BACKEND_ERROR_NONE,
+                                 "Capture source inactive");
+            }
+            return false;
+          }
+        }
+      }
+
+      // Check PCM events (device.rs:332-355)
+      if (pcm_fds_count > 0) {
+        unsigned short pcm_revents = 0;
+        int rev_rc = snd_pcm_poll_descriptors_revents(
+            capture->pcm, pfds, (unsigned int)pcm_fds_count, &pcm_revents);
+        if (rev_rc < 0) {
+          if (rev_rc == -EPIPE) {
+            logger_warn(&g_logger,
+                        "Capture: wait overrun, trying to recover. Error: %s",
+                        snd_strerror(rev_rc));
+            snd_pcm_prepare(capture->pcm);
+            break;
+          } else if (rev_rc == -ESTRPIPE ||
+                     snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
+            logger_warn(&g_logger,
+                        "Capture: wait interrupted by suspend, trying to "
+                        "recover. Error: %s",
+                        snd_strerror(rev_rc));
+            alsa_recover_suspended_pcm(capture->pcm, "Capture");
+            if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+              snd_pcm_start(capture->pcm);
+            }
+            break;
+          } else {
+            logger_warn(&g_logger,
+                        "Capture: device failed while waiting for available "
+                        "frames, error: %s",
+                        snd_strerror(rev_rc));
+            if (err) {
+              backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                                 snd_strerror(rev_rc));
+            }
+            return false;
+          }
+        }
+
+        if (pcm_revents & (POLLIN | POLLERR | POLLNVAL)) {
+          if (pcm_revents & (POLLERR | POLLNVAL)) {
+            snd_pcm_state_t st = snd_pcm_state(capture->pcm);
+            if (st == SND_PCM_STATE_XRUN) {
+              logger_warn(&g_logger,
+                          "Capture: wait overrun, trying to recover.");
+              snd_pcm_prepare(capture->pcm);
+              break;
+            } else if (st == SND_PCM_STATE_SUSPENDED) {
+              logger_warn(
+                  &g_logger,
+                  "Capture: wait interrupted by suspend, trying to recover.");
+              alsa_recover_suspended_pcm(capture->pcm, "Capture");
+              if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+                snd_pcm_start(capture->pcm);
+              }
+              break;
+            }
+          }
+          break;
+        }
+      } else {
+        break;
+      }
+
+      if (remaining_timeout_millis > poll_slice_millis) {
+        remaining_timeout_millis -= poll_slice_millis;
+      } else {
+        remaining_timeout_millis = 0;
       }
     }
 
+    if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
+      }
+      return false;
+    }
+
+    // Read audio frames matching device.rs:368-411
     size_t frames_req = buffer_len_bytes / bytes_per_frame;
     snd_pcm_sframes_t rc = snd_pcm_readi(capture->pcm, buffer, frames_req);
     if (rc > 0) {
@@ -689,16 +991,14 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
         logger_warn(&g_logger,
                     "Capture: read overrun, trying to recover. Error: %s",
                     snd_strerror(err_read));
-        logger_trace(&g_logger, "snd_pcm_prepare");
         snd_pcm_prepare(capture->pcm);
         continue;
       } else if (err_read == -ESTRPIPE ||
                  snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
-        logger_warn(
-            &g_logger,
-            "Capture: read interrupted by suspend, trying to recover. Error: "
-            "%s",
-            snd_strerror(err_read));
+        logger_warn(&g_logger,
+                    "Capture: read interrupted by suspend, trying to recover. "
+                    "Error: %s",
+                    snd_strerror(err_read));
         alsa_recover_suspended_pcm(capture->pcm, "Capture");
         if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
           snd_pcm_start(capture->pcm);
@@ -718,8 +1018,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t read_frames = frames;
   audio_chunk_set_valid_frames(chunk, read_frames);
 
-  // Convert and de-interleave samples to the output audio chunk.
-  // Normalizes integer types to double [-1.0, 1.0].
+  // Decode interleaved samples to planar double audio chunk
   if (capture->format == SND_PCM_FORMAT_FLOAT_LE) {
     float* src = (float*)capture->interleaved_buf;
     for (size_t f = 0; f < read_frames; f++) {
@@ -737,7 +1036,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_S24_3LE) {
-    // Handle 24-bit 3-byte format (requires sign extension)
     uint8_t* src = (uint8_t*)capture->interleaved_buf;
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
@@ -775,16 +1073,14 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   return true;
 }
 
-/**
- * @brief Closes the ALSA capture device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- */
+// Close the ALSA capture device
 static void alsa_capture_close(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
+  atomic_store_explicit(&capture->stopped, true, memory_order_release);
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
+    snd_pcm_drop(capture->pcm);
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
   }
@@ -799,13 +1095,13 @@ static void alsa_capture_close(void* ctx) {
     capture->hctl = NULL;
   }
   capture->hctl_pitch_elem = NULL;
-  if (capture->mixer) {
-    snd_mixer_close(capture->mixer);
-    capture->mixer = NULL;
-  }
-  capture->vol_elem = NULL;
-  capture->mute_elem = NULL;
-  capture->pitch_elem = NULL;
+  capture->hctl_rate_elem = NULL;
+  capture->hctl_loopback_active_elem = NULL;
+  capture->hctl_volume_elem = NULL;
+  capture->hctl_mute_elem = NULL;
+  atomic_store_explicit(&capture->has_pending_rate_change, false,
+                        memory_order_release);
+  atomic_store_explicit(&capture->is_inactive, false, memory_order_release);
   pthread_mutex_unlock(&capture->mixer_mutex);
   if (capture->interleaved_buf) {
     free(capture->interleaved_buf);
@@ -813,44 +1109,36 @@ static void alsa_capture_close(void* ctx) {
   }
 }
 
-/**
- * @brief Checks if there is a pending sample rate change detected by the
- * device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @param out_rate Pointer to store the new sample rate if a change is pending.
- * @return True if a rate change is pending, false otherwise.
- */
+// Check for pending rate change matching
+// capture_backend_get_pending_rate_change
 static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
-  (void)ctx;
-  (void)out_rate;
+  alsa_capture_t* capture = (alsa_capture_t*)ctx;
+  if (!capture) return false;
+  alsa_capture_process_events(capture);
+  if (atomic_load_explicit(&capture->has_pending_rate_change,
+                           memory_order_acquire)) {
+    if (out_rate) {
+      *out_rate =
+          atomic_load_explicit(&capture->pending_rate, memory_order_acquire);
+    }
+    return true;
+  }
   return false;
 }
 
-/**
- * @brief Checks if pitch control is supported by the backend.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @return True if supported, false otherwise.
- */
 static bool alsa_capture_pitch_control_supported(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return false;
   pthread_mutex_lock(&capture->mixer_mutex);
-  bool res = capture->hctl_pitch_elem != NULL || capture->pitch_elem != NULL;
+  bool res = (capture->hctl_pitch_elem != NULL);
   pthread_mutex_unlock(&capture->mixer_mutex);
   return res;
 }
 
-/**
- * @brief Sets the pitch multiplier for the capture device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @param multiplier The pitch multiplier factor.
- */
+// Set capture pitch matching upstream (src/alsa_backend/device.rs:920-926)
 static void alsa_capture_set_pitch(void* ctx, double multiplier) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
-  if (!capture) return;
+  if (!capture || multiplier <= 0.0) return;
   pthread_mutex_lock(&capture->mixer_mutex);
   if (capture->hctl_pitch_elem) {
     long value = 0;
@@ -859,49 +1147,25 @@ static void alsa_capture_set_pitch(void* ctx, double multiplier) {
     } else {
       value = (long)round(multiplier * 1000000.0);
     }
-    snd_ctl_elem_value_t* elem_val;
-    snd_ctl_elem_value_alloca(&elem_val);
-    snd_ctl_elem_value_set_integer(elem_val, 0, value);
-    snd_hctl_elem_write(capture->hctl_pitch_elem, elem_val);
-  } else if (capture->pitch_elem) {
-    const char* elem_name = snd_mixer_selem_get_name(capture->pitch_elem);
-    long value = 0;
-    if (elem_name && strstr(elem_name, "PCM Rate Shift")) {
-      value = (long)round(100000.0 / multiplier);
-    } else {
-      value = (long)round(multiplier * 1000000.0);
-    }
-    if (snd_mixer_selem_has_playback_volume(capture->pitch_elem)) {
-      snd_mixer_selem_set_playback_volume_all(capture->pitch_elem, value);
-    } else if (snd_mixer_selem_has_capture_volume(capture->pitch_elem)) {
-      snd_mixer_selem_set_capture_volume_all(capture->pitch_elem, value);
-    }
+    elem_write_as_int(capture->hctl_pitch_elem, value);
   }
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
-/**
- * @brief Waits for the ALSA capture device to have data available.
- *
- * @param ctx Pointer to the ALSA capture instance.
- * @param timeout_ms The timeout in milliseconds.
- * @return True if data is available, false if timeout or error.
- */
 static bool alsa_capture_wait(void* ctx, uint32_t timeout_ms) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture || !capture->pcm) return false;
+  if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+    return false;
+  }
   int err = snd_pcm_wait(capture->pcm, (int)timeout_ms);
   return err > 0;
 }
 
-/**
- * @brief Stops the ALSA capture device.
- *
- * @param ctx Pointer to the ALSA capture instance.
- */
 static void alsa_capture_stop(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
+  atomic_store_explicit(&capture->stopped, true, memory_order_release);
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
     snd_pcm_drop(capture->pcm);
@@ -909,11 +1173,6 @@ static void alsa_capture_stop(void* ctx) {
   pthread_mutex_unlock(&g_alsa_mutex);
 }
 
-/**
- * @brief Destroys the ALSA capture instance and frees associated resources.
- *
- * @param ctx Pointer to the ALSA capture instance.
- */
 static void alsa_capture_destroy(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
@@ -922,18 +1181,8 @@ static void alsa_capture_destroy(void* ctx) {
   free(capture);
 }
 
-/**
- * @brief Creates a new ALSA capture backend instance.
- *
- * @param config Pointer to the capture device configuration.
- * @param sample_rate The target sample rate.
- * @param chunk_size The target chunk size (number of frames per read).
- * @param full_duplex True if running in full duplex mode.
- * @param params Pointer to the processing parameters for telemetry updates.
- * @param err Pointer to a backend_error_t to receive error details on failure.
- * @return Pointer to the generic capture_backend_t interface, or NULL on
- * failure.
- */
+// Create ALSA capture backend matching AlsaCaptureDevice::start in upstream
+// (src/alsa_backend/device.rs:1219-1324)
 static capture_backend_t* alsa_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
@@ -946,7 +1195,7 @@ static capture_backend_t* alsa_capture_create(
            config->cfg.alsa.device[0] ? config->cfg.alsa.device : "default");
 
   capture->sample_rate = sample_rate;
-  capture->capture_samplerate = sample_rate;
+  capture->capture_sample_rate = sample_rate;  // Default to sample_rate
   capture->channels = config->cfg.alsa.channels;
   capture->chunk_size = chunk_size;
 
@@ -958,6 +1207,9 @@ static capture_backend_t* alsa_capture_create(
            "%s", config->cfg.alsa.link_volume_control);
   snprintf(capture->link_mute_control, sizeof(capture->link_mute_control), "%s",
            config->cfg.alsa.link_mute_control);
+  atomic_init(&capture->pending_rate, 0.0);
+  atomic_init(&capture->has_pending_rate_change, false);
+  atomic_init(&capture->is_inactive, false);
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
   capture_backend_t* backend =
