@@ -44,6 +44,8 @@ struct alsa_playback {
 
   void* interleaved_buf;
   size_t interleaved_buf_size;
+  size_t bytes_per_sample;
+  size_t blockalign;
   void* zero_stall_buf;
   size_t zero_stall_buf_size;
 
@@ -288,8 +290,10 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     sample_size = 4;
   }
 
+  playback->bytes_per_sample = sample_size;
+  playback->blockalign = (size_t)playback->channels * sample_size;
   playback->interleaved_buf_size =
-      2 * playback->chunk_size * playback->channels * sample_size;
+      2 * playback->chunk_size * playback->blockalign;
   playback->interleaved_buf = calloc(playback->interleaved_buf_size, 1);
   if (!playback->interleaved_buf) {
     if (err)
@@ -465,20 +469,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
                 alsa_state_desc(playback_state));
   }
 
-  size_t sample_bytes = 4;
-  if (playback->format == SND_PCM_FORMAT_S16_LE) {
-    sample_bytes = 2;
-  } else if (playback->format == SND_PCM_FORMAT_S24_3LE) {
-    sample_bytes = 3;
-  } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
-    sample_bytes = 8;
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
-    sample_bytes = 1;
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE ||
-             playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    sample_bytes = 2;
-  }
-  size_t bytes_per_frame = (size_t)playback->channels * sample_bytes;
+  size_t bytes_per_frame = playback->blockalign;
   double millis_per_frame = 1000.0 / (double)playback->sample_rate;
   size_t total_bytes = total_frames * bytes_per_frame;
 

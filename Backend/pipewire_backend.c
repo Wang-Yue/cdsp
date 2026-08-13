@@ -849,7 +849,7 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
   size_t pb_ring_size = pb_frames_needed * playback->blockalign;
 
   playback->ring = spsc_byte_ring_buffer_create(pb_ring_size);
-  playback->encode_buf_size = playback->chunk_size * playback->blockalign;
+  playback->encode_buf_size = 2 * playback->chunk_size * playback->blockalign;
   playback->encode_buf = (uint8_t*)calloc(playback->encode_buf_size, 1);
 
   if (!playback->ring || !playback->encode_buf) {

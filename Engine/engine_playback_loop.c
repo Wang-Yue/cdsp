@@ -299,10 +299,21 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   if (loop->dsd_encoder && dsd_encoder_is_enabled(loop->dsd_encoder)) {
     size_t channels =
         processing_parameters_get_playback_channels(loop->processing_params);
-    audio_chunk_t* prefill_chunk = audio_chunk_create(prefill_frames, channels);
+    size_t slice_capacity = loop->chunk_size > 0 ? loop->chunk_size : 1024;
+    audio_chunk_t* prefill_chunk = audio_chunk_create(slice_capacity, channels);
     if (prefill_chunk) {
-      dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);
-      playback_backend_write(loop->playback, prefill_chunk, &berr);
+      size_t frames_left = prefill_frames;
+      while (frames_left > 0) {
+        size_t current_slice =
+            frames_left < slice_capacity ? frames_left : slice_capacity;
+        audio_chunk_set_valid_frames(prefill_chunk, current_slice);
+        dsd_encoder_fill_silence(loop->dsd_encoder, prefill_chunk);
+        if (!playback_backend_write(loop->playback, prefill_chunk, &berr) ||
+            berr.type != BACKEND_ERROR_NONE) {
+          break;
+        }
+        frames_left -= current_slice;
+      }
       audio_chunk_free(prefill_chunk);
     }
   } else {
