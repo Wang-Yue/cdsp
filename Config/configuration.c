@@ -1,16 +1,229 @@
 #include "Config/configuration.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Backend/file_backend.h"
 #include "Config/resampler_config_types.h"
 #include "Filters/filter.h"
+#include "Logging/app_logger.h"
 #include "Mixer/mixer.h"
 #include "Pipeline/pipeline.h"
 #include "Processors/processor.h"
 #include "Resampler/audio_resampler.h"
+
+static const logger_t g_logger = {"dsp.config"};
+
+int dsp_config_apply_overrides(dsp_config_t* config,
+                               const dsp_config_overrides_t* overrides_in,
+                               config_error_t* err) {
+  (void)err;
+  if (!config) return 0;
+
+  dsp_config_overrides_t overrides;
+  if (overrides_in) {
+    overrides = *overrides_in;
+  } else {
+    memset(&overrides, 0, sizeof(overrides));
+    overrides.samplerate = -1;
+    overrides.channels = -1;
+    overrides.extra_samples = -1;
+  }
+
+  // 1. If capture device is WavFile, read WAV info to populate base overrides
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
+      config->devices.capture.is_wav &&
+      config->devices.capture.cfg.wav_file.has_filename) {
+    const char* fname = config->devices.capture.cfg.wav_file.filename;
+    cdsp_wav_info_t wav_info;
+    char wav_err[256];
+    if (cdsp_wav_file_read_info(fname, &wav_info, wav_err, sizeof(wav_err))) {
+      logger_info(
+          &g_logger,
+          "Updating overrides with values from wav input file, rate %u, "
+          "format: %s, channels: %u",
+          wav_info.sample_rate, binary_sample_format_to_string(wav_info.format),
+          (unsigned int)wav_info.channels);
+      if (overrides.channels <= 0) {
+        overrides.channels = wav_info.channels;
+      }
+      if (!overrides.has_sample_format) {
+        overrides.sample_format = wav_info.format;
+        overrides.has_sample_format = true;
+      }
+      if (overrides.samplerate <= 0) {
+        overrides.samplerate = (int)wav_info.sample_rate;
+      }
+    } else {
+      logger_warn(&g_logger, "Failed to read wav header from %s: %s", fname,
+                  wav_err);
+    }
+  }
+
+  // 2. Apply samplerate override
+  if (overrides.samplerate > 0) {
+    size_t rate = (size_t)overrides.samplerate;
+    size_t cfg_rate = config->devices.samplerate;
+    size_t cfg_chunksize = config->devices.chunksize;
+
+    if (!config->devices.has_resampler) {
+      logger_debug(&g_logger, "Apply override for samplerate: %zu", rate);
+      config->devices.samplerate = rate;
+      if (cfg_rate > 0 && cfg_chunksize > 0) {
+        size_t scaled_chunksize = cfg_chunksize;
+        if (rate > cfg_rate) {
+          scaled_chunksize =
+              cfg_chunksize * (size_t)round((double)rate / (double)cfg_rate);
+        } else {
+          size_t divisor = (size_t)round((double)cfg_rate / (double)rate);
+          if (divisor > 0) scaled_chunksize = cfg_chunksize / divisor;
+        }
+        logger_debug(&g_logger,
+                     "Samplerate changed, adjusting chunksize: %zu -> %zu",
+                     cfg_chunksize, scaled_chunksize);
+        config->devices.chunksize = scaled_chunksize;
+
+        if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
+            !config->devices.capture.is_wav &&
+            config->devices.capture.cfg.raw_file.has_extra_samples) {
+          config->devices.capture.cfg.raw_file.extra_samples =
+              config->devices.capture.cfg.raw_file.extra_samples * rate /
+              cfg_rate;
+        } else if (config->devices.capture.type ==
+                       AUDIO_BACKEND_TYPE_STDIN_OUT &&
+                   config->devices.capture.cfg.stdin_in.has_extra_samples) {
+          config->devices.capture.cfg.stdin_in.extra_samples =
+              config->devices.capture.cfg.stdin_in.extra_samples * rate /
+              cfg_rate;
+        }
+      }
+    } else {
+      logger_debug(&g_logger, "Apply override for capture_samplerate: %zu",
+                   rate);
+      config->devices.capture_samplerate = rate;
+      config->devices.has_capture_samplerate = true;
+      if (rate == cfg_rate && !config->devices.enable_rate_adjust) {
+        logger_debug(&g_logger, "Disabling unnecessary 1:1 resampling");
+        config->devices.has_resampler = false;
+      }
+    }
+  }
+
+  // 3. Apply extra_samples override
+  if (overrides.has_extra_samples && overrides.extra_samples >= 0) {
+    logger_debug(&g_logger, "Apply override for extra_samples: %d",
+                 overrides.extra_samples);
+    if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
+      if (config->devices.capture.is_wav) {
+        config->devices.capture.cfg.wav_file.extra_samples =
+            overrides.extra_samples;
+        config->devices.capture.cfg.wav_file.has_extra_samples = true;
+      } else {
+        config->devices.capture.cfg.raw_file.extra_samples =
+            overrides.extra_samples;
+        config->devices.capture.cfg.raw_file.has_extra_samples = true;
+      }
+    } else if (config->devices.capture.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+      config->devices.capture.cfg.stdin_in.extra_samples =
+          overrides.extra_samples;
+      config->devices.capture.cfg.stdin_in.has_extra_samples = true;
+    }
+  }
+
+  // 4. Apply channels override
+  if (overrides.channels > 0) {
+    logger_debug(&g_logger, "Apply override for capture channels: %d",
+                 overrides.channels);
+    switch (config->devices.capture.type) {
+      case AUDIO_BACKEND_TYPE_FILE:
+        if (config->devices.capture.is_wav) {
+          config->devices.capture.cfg.wav_file.channels = overrides.channels;
+        } else {
+          config->devices.capture.cfg.raw_file.channels = overrides.channels;
+        }
+        break;
+      case AUDIO_BACKEND_TYPE_STDIN_OUT:
+        config->devices.capture.cfg.stdin_in.channels = overrides.channels;
+        break;
+      case AUDIO_BACKEND_TYPE_GENERATOR:
+        config->devices.capture.cfg.generator.channels = overrides.channels;
+        break;
+#if defined(ENABLE_ALSA)
+      case AUDIO_BACKEND_TYPE_ALSA:
+        config->devices.capture.cfg.alsa.channels = overrides.channels;
+        break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+      case AUDIO_BACKEND_TYPE_PIPEWIRE:
+        config->devices.capture.cfg.pipewire.channels = overrides.channels;
+        break;
+#endif
+#if defined(ENABLE_COREAUDIO)
+      case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+        config->devices.capture.cfg.coreaudio.channels = overrides.channels;
+        break;
+#endif
+#if defined(ENABLE_WASAPI)
+      case AUDIO_BACKEND_TYPE_WASAPI:
+        config->devices.capture.cfg.wasapi.channels = overrides.channels;
+        break;
+#endif
+#if defined(ENABLE_ASIO)
+      case AUDIO_BACKEND_TYPE_ASIO:
+        config->devices.capture.cfg.asio.channels = overrides.channels;
+        break;
+#endif
+      default:
+        break;
+    }
+  }
+
+  // 5. Apply sample_format override
+  if (overrides.has_sample_format) {
+    logger_debug(&g_logger, "Apply override for capture sample format: %s",
+                 binary_sample_format_to_string(overrides.sample_format));
+    switch (config->devices.capture.type) {
+      case AUDIO_BACKEND_TYPE_FILE:
+        if (!config->devices.capture.is_wav) {
+          config->devices.capture.cfg.raw_file.format = overrides.sample_format;
+          config->devices.capture.cfg.raw_file.has_format = true;
+        }
+        break;
+      case AUDIO_BACKEND_TYPE_STDIN_OUT:
+        config->devices.capture.cfg.stdin_in.format = overrides.sample_format;
+        break;
+#if defined(ENABLE_ALSA)
+      case AUDIO_BACKEND_TYPE_ALSA: {
+        alsa_sample_format_t alsa_fmt = alsa_sample_format_from_string(
+            binary_sample_format_to_string(overrides.sample_format));
+        if (alsa_fmt != ALSA_SAMPLE_FORMAT_INVALID) {
+          config->devices.capture.cfg.alsa.format = alsa_fmt;
+          config->devices.capture.cfg.alsa.has_format = true;
+        }
+        break;
+      }
+#endif
+#if defined(ENABLE_COREAUDIO)
+      case AUDIO_BACKEND_TYPE_CORE_AUDIO: {
+        coreaudio_sample_format_t ca_fmt = coreaudio_sample_format_from_string(
+            binary_sample_format_to_string(overrides.sample_format));
+        if (ca_fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
+          config->devices.capture.cfg.coreaudio.format = ca_fmt;
+          config->devices.capture.cfg.coreaudio.has_format = true;
+        }
+        break;
+      }
+#endif
+      default:
+        break;
+    }
+  }
+
+  return 0;
+}
 
 // Top-level configuration validation and memory management.
 

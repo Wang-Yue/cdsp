@@ -831,4 +831,104 @@ TEST(RejectMissingResamplerWhenRatesDiffer) {
   ASSERT_TRUE(config == NULL);
 }
 
+TEST(WavFileOverrideWithoutResampler) {
+  char wav_path[256];
+  snprintf(wav_path, sizeof(wav_path), "/tmp/test_ovr_96k_%d.wav", getpid());
+  remove(wav_path);
+
+  // Write a minimal 96kHz 2-channel 16-bit WAV header
+  FILE* f = fopen(wav_path, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t header[44] = {'R', 'I',  'F',  'F',  36,  0,   0,    0,    'W',
+                        'A', 'V',  'E',  'f',  'm', 't', ' ',  16,   0,
+                        0,   0,    1,    0,    2,   0,   0x00, 0x77, 0x01,
+                        0,   0x00, 0xdc, 0x05, 0,   4,   0,    16,   0,
+                        'd', 'a',  't',  'a',  0,   0,   0,    0};
+  fwrite(header, 1, 44, f);
+  fclose(f);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 48000,\n"
+           "        \"chunksize\": 1024,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"WavFile\",\n"
+           "            \"filename\": \"%s\"\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           wav_path);
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  // Overrides samplerate 48000 -> 96000 and scales chunksize 1024 -> 2048
+  ASSERT_EQ(96000, (int)config->devices.samplerate);
+  ASSERT_EQ(2048, (int)config->devices.chunksize);
+  ASSERT_EQ(2, (int)config->devices.capture.cfg.wav_file.channels);
+  dsp_config_free(config);
+  remove(wav_path);
+}
+
+TEST(WavFileOverrideWithResampler) {
+  char wav_path[256];
+  snprintf(wav_path, sizeof(wav_path), "/tmp/test_ovr_44k_%d.wav", getpid());
+  remove(wav_path);
+
+  // Write a minimal 44.1kHz 2-channel 16-bit WAV header
+  FILE* f = fopen(wav_path, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t header[44] = {'R', 'I',  'F',  'F',  36,  0,   0,    0,    'W',
+                        'A', 'V',  'E',  'f',  'm', 't', ' ',  16,   0,
+                        0,   0,    1,    0,    2,   0,   0x44, 0xac, 0x00,
+                        0,   0x10, 0xb1, 0x02, 0,   4,   0,    16,   0,
+                        'd', 'a',  't',  'a',  0,   0,   0,    0};
+  fwrite(header, 1, 44, f);
+  fclose(f);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 352800,\n"
+           "        \"chunksize\": 2048,\n"
+           "        \"resampler\": {\n"
+           "            \"type\": \"Synchronous\"\n"
+           "        },\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"WavFile\",\n"
+           "            \"filename\": \"%s\"\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           wav_path);
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  // Resampler configured: samplerate stays 352800, capture_samplerate set to
+  // 44100
+  ASSERT_EQ(352800, (int)config->devices.samplerate);
+  ASSERT_EQ(44100, (int)config->devices.capture_samplerate);
+  ASSERT_TRUE(config->devices.has_resampler);
+  dsp_config_free(config);
+  remove(wav_path);
+}
+
 TEST_MAIN()

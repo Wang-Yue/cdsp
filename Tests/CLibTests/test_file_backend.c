@@ -13,6 +13,9 @@
 #include "Audio/audio_chunk.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
+#include "Backend/file_backend.h"
+#include "Config/config_error.h"
+#include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Utils/cdsp_time.h"
 #include "test_support.h"
@@ -1148,17 +1151,40 @@ TEST(FileBackendGetChannelsRF64) {
   fwrite(rf64_header, 1, sizeof(rf64_header), f);
   fclose(f);
 
-  capture_device_config_t cap_cfg;
-  memset(&cap_cfg, 0, sizeof(cap_cfg));
-  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
-  cap_cfg.is_wav = true;
-  cap_cfg.has_is_wav = true;
-  snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
-           "%s", rf64_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
+  cdsp_wav_info_t info;
+  char wav_err[256];
+  ASSERT_TRUE(
+      cdsp_wav_file_read_info(rf64_filename, &info, wav_err, sizeof(wav_err)));
+  ASSERT_EQ(6, (int)info.channels);
+  ASSERT_EQ(16000, (int)info.sample_rate);
 
-  int channels = capture_device_config_get_channels(&cap_cfg);
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 1024,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"WavFile\",\n"
+           "            \"filename\": \"%s\"\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"channels\": 6\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           rf64_filename);
+
+  dsp_config_t* config = NULL;
+  config_error_t cerr;
+  config_error_init(&cerr);
+  int res = dsp_config_parse_json(json, &config, &cerr);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  int channels = capture_device_config_get_channels(&config->devices.capture);
   ASSERT_EQ(6, channels);
+  dsp_config_free(config);
 
   remove(rf64_filename);
 }

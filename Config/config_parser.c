@@ -4,12 +4,14 @@
  * sub-parsers.
  */
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
+#include "Backend/file_backend.h"
 #include "Config/cJSON.h"
 #include "Config/config_error.h"
 #include "Config/config_parse_devices.h"
@@ -228,12 +230,21 @@ static void resolve_relative_paths_in_filters(cJSON* filters_obj,
 
 int dsp_config_parse_json(const char* json, dsp_config_t** out_config,
                           config_error_t* err) {
-  return dsp_config_parse_json_with_dir(json, NULL, out_config, err);
+  return dsp_config_parse_json_with_dir_and_overrides(json, NULL, NULL,
+                                                      out_config, err);
 }
 
 int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
                                    dsp_config_t** out_config,
                                    config_error_t* err) {
+  return dsp_config_parse_json_with_dir_and_overrides(json, config_dir, NULL,
+                                                      out_config, err);
+}
+
+int dsp_config_parse_json_with_dir_and_overrides(
+    const char* json, const char* config_dir,
+    const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
+    config_error_t* err) {
   if (!json || !out_config) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "JSON string or output pointer is NULL");
@@ -277,26 +288,23 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
     return -1;
   }
 
-  int sr = 0;
-  cJSON* sr_item = cJSON_GetObjectItemCaseSensitive(devices_obj, "samplerate");
-  if (cJSON_IsNumber(sr_item)) sr = sr_item->valueint;
-  int ch = 0;
-  cJSON* capture_obj = cJSON_GetObjectItemCaseSensitive(devices_obj, "capture");
-  if (capture_obj) {
-    cJSON* ch_item = cJSON_GetObjectItemCaseSensitive(capture_obj, "channels");
-    if (cJSON_IsNumber(ch_item)) ch = ch_item->valueint;
-  }
-
-  if (sr > 0 || ch > 0) {
-    replace_tokens_in_json_node(root, sr, ch, 0);
-  }
-
   if (config_parse_devices(devices_obj, config, err) != 0) {
     cJSON_Delete(root);
     dsp_config_free(config);
     logger_error(&g_logger, "Config parsing failed in devices section: %s",
                  err ? err->message : "");
     return -1;
+  }
+
+  // Apply WAV file and command-line overrides matching upstream CamillaDSP
+  // apply_overrides (src/config/utils.rs:130-265)
+  dsp_config_apply_overrides(config, overrides, err);
+
+  // Replace tokens in JSON with final effective samplerate and channels
+  int final_sr = (int)config->devices.samplerate;
+  int final_ch = capture_device_config_get_channels(&config->devices.capture);
+  if (final_sr > 0 || final_ch > 0) {
+    replace_tokens_in_json_node(root, final_sr, final_ch, 0);
   }
 
   cJSON* pipeline_arr = cJSON_GetObjectItemCaseSensitive(root, "pipeline");

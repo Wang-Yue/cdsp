@@ -512,8 +512,6 @@ void playback_device_config_init(playback_device_config_t* config,
   }
 }
 
-#include "Utils/cdsp_path.h"
-
 int capture_device_config_get_channels(const capture_device_config_t* config) {
   if (!config) return 0;
   switch (config->type) {
@@ -530,43 +528,8 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
       return config->cfg.pipewire.channels;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
-      if (config->is_wav) {
-        if (config->cfg.wav_file.channels > 0)
-          return config->cfg.wav_file.channels;
-        FILE* f = cdsp_fopen(config->cfg.wav_file.filename, "rb");
-        if (f) {
-          uint8_t header[12];
-          int wav_channels = 0;
-          if (fread(header, 1, 12, f) == 12) {
-            bool is_riff = (memcmp(header, "RIFF", 4) == 0);
-            bool is_rf64 = (memcmp(header, "RF64", 4) == 0);
-            if ((is_riff || is_rf64) && memcmp(header + 8, "WAVE", 4) == 0) {
-              uint8_t chunk_header[8];
-              while (fread(chunk_header, 1, 8, f) == 8) {
-                uint32_t chunk_size = chunk_header[4] | (chunk_header[5] << 8) |
-                                      (chunk_header[6] << 16) |
-                                      (chunk_header[7] << 24);
-                if (memcmp(chunk_header, "fmt ", 4) == 0) {
-                  uint8_t fmt_data[4];
-                  if (fread(fmt_data, 1, 4, f) == 4) {
-                    wav_channels = fmt_data[2] | (fmt_data[3] << 8);
-                  }
-                  break;
-                } else {
-                  if (chunk_size > (uint32_t)LONG_MAX ||
-                      fseek(f, (long)chunk_size, SEEK_CUR) != 0) {
-                    break;
-                  }
-                }
-              }
-            }
-          }
-          fclose(f);
-          if (wav_channels > 0) return wav_channels;
-        }
-        return config->cfg.wav_file.channels;
-      }
-      return config->cfg.raw_file.channels;
+      return config->is_wav ? config->cfg.wav_file.channels
+                            : config->cfg.raw_file.channels;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return config->cfg.stdin_in.channels;
     case AUDIO_BACKEND_TYPE_GENERATOR:

@@ -86,13 +86,7 @@ struct file_playback {
 };
 
 // WAV parsing header
-typedef struct {
-  uint32_t sample_rate;
-  uint16_t channels;
-  binary_sample_format_t format;
-  uint64_t data_bytes;
-  uint64_t data_start_offset;
-} wav_info_t;
+typedef cdsp_wav_info_t wav_info_t;
 
 /**
  * @brief Get the size in bytes of a sample for a given format.
@@ -300,6 +294,31 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
   info->data_bytes = data_bytes;
   info->data_start_offset = data_start_offset;
   return true;
+}
+
+bool cdsp_wav_file_read_info(const char* filename, cdsp_wav_info_t* info,
+                             char* err_msg, size_t err_msg_len) {
+  if (!filename || !info) {
+    if (err_msg && err_msg_len > 0) {
+      snprintf(err_msg, err_msg_len, "Invalid arguments");
+    }
+    return false;
+  }
+  FILE* f = cdsp_fopen(filename, "rb");
+  if (!f) {
+    if (err_msg && err_msg_len > 0) {
+      snprintf(err_msg, err_msg_len, "Could not open WAV file '%s': %s",
+               filename, strerror(errno));
+    }
+    return false;
+  }
+  char msg[256] = {0};
+  bool ok = parse_wav_header(f, info, msg, sizeof(msg));
+  fclose(f);
+  if (!ok && err_msg && err_msg_len > 0) {
+    snprintf(err_msg, err_msg_len, "%s", msg);
+  }
+  return ok;
 }
 
 /**

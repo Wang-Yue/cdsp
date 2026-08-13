@@ -133,6 +133,43 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
                                    config_error_t* err);
 
 /**
+ * @brief Active command-line or programmatic configuration overrides.
+ */
+typedef struct {
+  int samplerate; /**< Overridden sample rate (> 0), or -1 / 0 if none. */
+  int channels;   /**< Overridden capture channels (> 0), or -1 / 0 if none. */
+  binary_sample_format_t
+      sample_format;      /**< Overridden capture sample format. */
+  bool has_sample_format; /**< True if sample_format is set. */
+  int extra_samples; /**< Overridden extra samples (>= 0), or -1 if none. */
+  bool has_extra_samples; /**< True if extra_samples is set. */
+} dsp_config_overrides_t;
+
+/**
+ * @brief Parses a DSP configuration from JSON with directory resolution and
+ * overrides.
+ */
+int dsp_config_parse_json_with_dir_and_overrides(
+    const char* json, const char* config_dir,
+    const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
+    config_error_t* err);
+
+/**
+ * @brief Applies WAV file parameters and command-line overrides to a
+ * configuration.
+ *
+ * Matches upstream CamillaDSP apply_overrides (src/config/utils.rs:130-265).
+ *
+ * @param config Pointer to the configuration to modify.
+ * @param overrides Optional command-line overrides (may be NULL).
+ * @param err Pointer to receive error details on failure.
+ * @return 0 on success, non-zero on failure.
+ */
+int dsp_config_apply_overrides(dsp_config_t* config,
+                               const dsp_config_overrides_t* overrides,
+                               config_error_t* err);
+
+/**
  * @brief Frees a DSP configuration.
  *
  * Deallocates the configuration structure and all associated nested structures.
