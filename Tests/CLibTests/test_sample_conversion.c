@@ -146,17 +146,23 @@ TEST(SampleConversion_DSD_U8_RoundTrip) {
 }
 
 TEST(SampleConversion_DSD_U32_RoundTrip) {
-  uint32_t patterns[] = {0x3F800000, 0xBF800000,
-                         0x00000000};  // 1.0f, -1.0f, 0.0f
+  uint32_t patterns[] = {0x3F800000, 0xBF800000, 0x00000000,
+                         0x96696996, 0x12345678, 0xDEADBEEF};
   double expected_doubles[] = {1.0, -1.0, 0.0};
 
-  for (size_t i = 0; i < 3; i++) {
+  for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
     double decoded = pcm_sample_decode_dsd_u32(patterns[i]);
-    ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
+    if (i < 3) {
+      ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
+    }
 
     float val_f = (float)decoded;
     uint8_t buf_msb[4];
     pcm_sample_encode_dsd_u32_bytes(val_f, buf_msb);
+
+    // Convert back from bytes to double sample
+    double dec_msb = pcm_sample_decode_dsd_u32_bytes(buf_msb);
+    ASSERT_NEAR(decoded, dec_msb, 1e-15);
 
     // Convert back from bytes to u32 bits
     uint32_t val_msb_bits;
@@ -172,6 +178,10 @@ TEST(SampleConversion_DSD_U32_RoundTrip) {
     // LSB reversed bytes
     uint8_t buf_lsb[4];
     pcm_sample_encode_dsd_u32_reversed_bytes(val_f, buf_lsb);
+
+    // Convert back from LSB bytes to double sample
+    double dec_lsb = pcm_sample_decode_dsd_u32_reversed_bytes(buf_lsb);
+    ASSERT_NEAR(decoded, dec_lsb, 1e-15);
 
     // Check that LSB bytes are indeed bit-reversed versions of MSB bytes
     ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[0]), buf_lsb[0]);

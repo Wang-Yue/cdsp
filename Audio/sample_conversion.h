@@ -466,4 +466,33 @@ static inline void pcm_sample_encode_dsd_u32_reversed_bytes(float val,
   dst[3] = pcm_reverse_bits_u8(bytes[3]);
 }
 
+/**
+ * @brief Decode 4 bytes (MSB bit order) into a double sample containing 32 raw
+ * DSD bits.
+ *
+ * @param src Source 4-byte buffer.
+ * @return Normalized double sample containing packed 32 DSD bits.
+ */
+static inline double pcm_sample_decode_dsd_u32_bytes(const uint8_t* src) {
+  uint32_t u32 = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+                 ((uint32_t)src[2] << 8) | (uint32_t)src[3];
+  return pcm_sample_decode_dsd_u32(u32);
+}
+
+/**
+ * @brief Decode 4 bytes (LSB bit order, reversed bits per byte) into a double
+ * sample containing 32 raw DSD bits.
+ *
+ * @param src Source 4-byte buffer.
+ * @return Normalized double sample containing packed 32 DSD bits.
+ */
+static inline double pcm_sample_decode_dsd_u32_reversed_bytes(
+    const uint8_t* src) {
+  uint32_t u32 = ((uint32_t)pcm_reverse_bits_u8(src[0]) << 24) |
+                 ((uint32_t)pcm_reverse_bits_u8(src[1]) << 16) |
+                 ((uint32_t)pcm_reverse_bits_u8(src[2]) << 8) |
+                 (uint32_t)pcm_reverse_bits_u8(src[3]);
+  return pcm_sample_decode_dsd_u32(u32);
+}
+
 #endif  // CLIB_AUDIO_SAMPLE_CONVERSION_H

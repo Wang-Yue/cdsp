@@ -213,6 +213,9 @@ static const char* asio_sample_type_to_format_str(int type_id) {
       return "F32_LE";
     case ASIOSTFloat64LSB:
       return "F64_LE";
+    case ASIOTSDSDInt8LSB:
+    case ASIOTSDSDInt8MSB:
+      return "DSD_INT8";
     default:
       return NULL;
   }

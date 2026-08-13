@@ -77,6 +77,23 @@ typedef long ASIOError;
 #define K_ASIO_RESYNC_REQUEST 7
 #define K_ASIO_LATENCIES_CHANGED 8
 
+// ASIO DSD Future Selectors (Steinberg ASIO SDK 2.3)
+#define kAsioSetIoFormat 0x23111961L
+#define kAsioGetIoFormat 0x23111983L
+#define kAsioCanDoIoFormat 0x23112004L
+#define ASE_SUCCESS 0x3f4847a0L
+
+typedef enum {
+  kASIOFormatInvalid = -1,
+  kASIOFormatPCM = 0,
+  kASIOFormatDSD = 1
+} ASIOSampleFormatType;
+
+typedef struct {
+  ASIOSampleFormatType FormatType;
+  char future[512 - sizeof(ASIOSampleFormatType)];
+} ASIOIoFormat;
+
 typedef struct {
   long asioVersion;
   long driverVersion;
@@ -189,29 +206,6 @@ static ASIOBufferInfo* make_buffer_infos(size_t num_channels, bool is_input) {
 }
 
 /**
- * @brief resolve_binary_format matching CamillaDSP utils.rs lines 68-77.
- */
-static binary_sample_format_t resolve_binary_format(
-    asio_sample_format_t format) {
-  switch (format) {
-    case ASIO_SAMPLE_FORMAT_S16_LE:
-      return BINARY_SAMPLE_FORMAT_S16_LE;
-    case ASIO_SAMPLE_FORMAT_S24_4_LE:
-      return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
-    case ASIO_SAMPLE_FORMAT_S24_3_LE:
-      return BINARY_SAMPLE_FORMAT_S24_3_LE;
-    case ASIO_SAMPLE_FORMAT_S32_LE:
-      return BINARY_SAMPLE_FORMAT_S32_LE;
-    case ASIO_SAMPLE_FORMAT_F32_LE:
-      return BINARY_SAMPLE_FORMAT_F32_LE;
-    case ASIO_SAMPLE_FORMAT_F64_LE:
-      return BINARY_SAMPLE_FORMAT_F64_LE;
-    default:
-      return BINARY_SAMPLE_FORMAT_S32_LE;
-  }
-}
-
-/**
  * @brief asio_format_to_str matching CamillaDSP utils.rs lines 80-89.
  */
 static const char* asio_format_to_str(asio_sample_format_t fmt) {
@@ -228,6 +222,8 @@ static const char* asio_format_to_str(asio_sample_format_t fmt) {
       return "F32_LE";
     case ASIO_SAMPLE_FORMAT_F64_LE:
       return "F64_LE";
+    case ASIO_SAMPLE_FORMAT_DSD_INT8:
+      return "DSD_INT8";
     default:
       return "Unknown";
   }
@@ -305,6 +301,9 @@ static asio_sample_format_t asio_sample_type_to_format(int type_id) {
       return ASIO_SAMPLE_FORMAT_F32_LE;
     case ASIO_ST_FLOAT64_LSB:
       return ASIO_SAMPLE_FORMAT_F64_LE;
+    case ASIO_ST_DSD_INT8_LSB_1:
+    case ASIO_ST_DSD_INT8_MSB_1:
+      return ASIO_SAMPLE_FORMAT_DSD_INT8;
     default:
       return ASIO_SAMPLE_FORMAT_INVALID;
   }
@@ -319,6 +318,7 @@ static size_t asio_format_bytes_per_sample(asio_sample_format_t fmt) {
     case ASIO_SAMPLE_FORMAT_S24_4_LE:
     case ASIO_SAMPLE_FORMAT_S32_LE:
     case ASIO_SAMPLE_FORMAT_F32_LE:
+    case ASIO_SAMPLE_FORMAT_DSD_INT8:
       return 4;
     case ASIO_SAMPLE_FORMAT_F64_LE:
       return 8;
@@ -474,6 +474,7 @@ typedef struct {
   size_t transfer_buf_cap;
   size_t target_level;
   size_t silence_frames_to_insert;
+  uint8_t silence_byte;
   _Atomic double buffer_fill;
   bool running;
 } asio_playback_context_t;
@@ -607,7 +608,8 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
     silence_frames = (ctx->silence_frames_to_insert < frames)
                          ? ctx->silence_frames_to_insert
                          : frames;
-    memset(ctx->transfer_buf, 0, silence_frames * bytes_per_frame);
+    memset(ctx->transfer_buf, ctx->silence_byte,
+           silence_frames * bytes_per_frame);
     ctx->silence_frames_to_insert -= silence_frames;
   }
 
@@ -624,7 +626,7 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
     size_t missing_bytes = bytes_from_ring - consumed_bytes;
     memset(
         ctx->transfer_buf + silence_frames * bytes_per_frame + consumed_bytes,
-        0, missing_bytes);
+        ctx->silence_byte, missing_bytes);
     if (ctx->running) {
       ctx->running = false;
       logger_warn(
@@ -827,18 +829,19 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid);
 static void teardown_asio_driver(IASIO** p_iasio);
 static bool load_driver_by_name(const char* name, IASIO** out_iasio,
                                 backend_error_t* err);
-static bool open_asio_device(const char* devname, int samplerate,
+static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
                              IASIO** out_iasio, long* out_inputs,
                              long* out_outputs, backend_error_t* err);
 
 /**
  * @brief init_shared_asio matching CamillaDSP device.rs lines 554-620.
  */
-static bool init_shared_asio(const char* devname, int samplerate,
+static bool init_shared_asio(const char* devname, int samplerate, bool is_dsd,
                              long* out_inputs, long* out_outputs,
                              long* out_preferred_buf, backend_error_t* err) {
-  logger_trace(&g_logger, "init_shared_asio: dev='%s', samplerate=%d", devname,
-               samplerate);
+  logger_trace(&g_logger,
+               "init_shared_asio: dev='%s', samplerate=%d, is_dsd=%d", devname,
+               samplerate, (int)is_dsd);
   AcquireSRWLockExclusive(&g_asio_shared.lock);
 
   if (g_asio_shared.state) {
@@ -864,8 +867,8 @@ static bool init_shared_asio(const char* devname, int samplerate,
 
   IASIO* iasio = NULL;
   long num_inputs = 0, num_outputs = 0;
-  if (!open_asio_device(devname, samplerate, &iasio, &num_inputs, &num_outputs,
-                        err)) {
+  if (!open_asio_device(devname, samplerate, is_dsd, &iasio, &num_inputs,
+                        &num_outputs, err)) {
     ReleaseSRWLockExclusive(&g_asio_shared.lock);
     return false;
   }
@@ -1317,6 +1320,12 @@ static bool force_sample_rate_with_dummy_cycle(const char* devname, double rate,
   }
   iasio = *p_iasio;
 
+  if (rate >= 1000000.0) {
+    ASIOIoFormat dsd_format = {0};
+    dsd_format.FormatType = kASIOFormatDSD;
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
+  }
+
   long set_res = iasio->lpVtbl->setSampleRate(iasio, rate);
   if (set_res != 0) {
     if (err) {
@@ -1367,16 +1376,34 @@ static bool force_sample_rate_with_dummy_cycle(const char* devname, double rate,
 /**
  * @brief open_asio_device matching CamillaDSP device.rs lines 1014-1152.
  */
-static bool open_asio_device(const char* devname, int samplerate,
+static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
                              IASIO** out_iasio, long* out_inputs,
                              long* out_outputs, backend_error_t* err) {
-  logger_trace(&g_logger, "open_asio_device: dev='%s', samplerate=%d", devname,
-               samplerate);
+  logger_trace(&g_logger,
+               "open_asio_device: dev='%s', samplerate=%d, is_dsd=%d", devname,
+               samplerate, (int)is_dsd);
 
   if (!load_driver_by_name(devname, out_iasio, err)) {
     return false;
   }
   IASIO* iasio = *out_iasio;
+
+  if (is_dsd) {
+    ASIOIoFormat dsd_format = {0};
+    dsd_format.FormatType = kASIOFormatDSD;
+    ASIOError io_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioSetIoFormat, &dsd_format);
+    if (io_res == 0 || io_res == (ASIOError)ASE_SUCCESS) {
+      logger_info(&g_logger,
+                  "ASIO driver successfully set to Native DSD format via "
+                  "kAsioSetIoFormat");
+    } else {
+      logger_warn(
+          &g_logger,
+          "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
+          io_res, (long)dsd_format.FormatType);
+    }
+  }
 
   double current_rate = 0.0;
   long rate_res = iasio->lpVtbl->getSampleRate(iasio, &current_rate);
@@ -1392,13 +1419,13 @@ static bool open_asio_device(const char* devname, int samplerate,
   }
   logger_debug(&g_logger, "ASIO current sample rate: %.1f Hz", current_rate);
 
-  double rate = (double)samplerate;
+  double rate = (double)(is_dsd ? (samplerate * 32) : samplerate);
   if (iasio->lpVtbl->canSampleRate(iasio, rate) != 0) {
     teardown_asio_driver(out_iasio);
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
-               "ASIO device does not support sample rate %d Hz.", samplerate);
+               "ASIO device does not support sample rate %.0f Hz.", rate);
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     return false;
@@ -1407,8 +1434,8 @@ static bool open_asio_device(const char* devname, int samplerate,
   bool already_correct = (fabs(current_rate - rate) <= 0.5);
   if (already_correct) {
     logger_debug(&g_logger,
-                 "ASIO sample rate already at %d Hz, no change needed.",
-                 samplerate);
+                 "ASIO sample rate already at %.0f Hz, no change needed.",
+                 rate);
   } else {
     long set_res = iasio->lpVtbl->setSampleRate(iasio, rate);
     if (set_res != 0) {
@@ -1416,16 +1443,16 @@ static bool open_asio_device(const char* devname, int samplerate,
       if (err) {
         char msg[256];
         snprintf(msg, sizeof(msg),
-                 "Failed to set ASIO sample rate to %d Hz (error code %ld)",
-                 samplerate, set_res);
+                 "Failed to set ASIO sample rate to %.0f Hz (error code %ld)",
+                 rate, set_res);
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
       }
       return false;
     }
 
     logger_debug(&g_logger,
-                 "Forcing ASIO rate change to %d Hz via dummy stream cycle.",
-                 samplerate);
+                 "Forcing ASIO rate change to %.0f Hz via dummy stream cycle.",
+                 rate);
     if (!force_sample_rate_with_dummy_cycle(devname, rate, out_iasio, err)) {
       return false;
     }
@@ -1479,12 +1506,13 @@ static bool open_asio_device(const char* devname, int samplerate,
 static bool open_asio_playback(const char* devname, size_t num_channels,
                                int samplerate,
                                asio_sample_format_t configured_format,
-                               bool has_format, IASIO** out_iasio,
+                               bool has_format, bool output_dsd,
+                               IASIO** out_iasio,
                                asio_sample_format_t* out_resolved_format,
                                backend_error_t* err) {
   long inputs = 0, outputs = 0;
-  if (!open_asio_device(devname, samplerate, out_iasio, &inputs, &outputs,
-                        err)) {
+  if (!open_asio_device(devname, samplerate, output_dsd, out_iasio, &inputs,
+                        &outputs, err)) {
     return false;
   }
   if (num_channels > (size_t)outputs) {
@@ -1516,8 +1544,9 @@ static bool open_asio_capture(const char* devname, size_t num_channels,
                               asio_sample_format_t* out_resolved_format,
                               backend_error_t* err) {
   long inputs = 0, outputs = 0;
-  if (!open_asio_device(devname, samplerate, out_iasio, &inputs, &outputs,
-                        err)) {
+  bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+  if (!open_asio_device(devname, samplerate, is_dsd, out_iasio, &inputs,
+                        &outputs, err)) {
     return false;
   }
   if (num_channels > (size_t)inputs) {
@@ -1548,10 +1577,12 @@ struct asio_playback {
   int chunk_size;
   asio_sample_format_t format;
   bool has_format;
+  bool output_dsd;
   bool full_duplex;
   int target_level;
 
-  binary_sample_format_t binary_format;
+  asio_sample_format_t resolved_format;
+  bool is_lsb;
   size_t bytes_per_sample;
   long actual_buffer_size;
 
@@ -1633,8 +1664,9 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
 
   if (playback->full_duplex) {
     long inputs = 0, outputs = 0, preferred_buf = 0;
-    if (!init_shared_asio(playback->device, playback->sample_rate, &inputs,
-                          &outputs, &preferred_buf, err)) {
+    if (!init_shared_asio(playback->device, playback->sample_rate,
+                          playback->output_dsd, &inputs, &outputs,
+                          &preferred_buf, err)) {
       goto error_cleanup;
     }
     if ((size_t)playback->channels > (size_t)outputs) {
@@ -1655,8 +1687,8 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   } else {
     if (!open_asio_playback(playback->device, (size_t)playback->channels,
                             playback->sample_rate, playback->format,
-                            playback->has_format, &playback->iasio,
-                            &resolved_format, err)) {
+                            playback->has_format, playback->output_dsd,
+                            &playback->iasio, &resolved_format, err)) {
       goto error_cleanup;
     }
     long preferred_buf = 0;
@@ -1666,7 +1698,28 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
     asio_buffer_size = preferred_buf;
   }
 
-  playback->binary_format = resolve_binary_format(resolved_format);
+  // Detect whether channel 0 uses LSB-first bit ordering for DSD
+  bool is_lsb = false;
+  IASIO* active_iasio =
+      playback->full_duplex ? g_asio_shared.state->iasio : playback->iasio;
+  if (active_iasio) {
+    ASIOChannelInfo ch_info = {0};
+    ch_info.channel = 0;
+    ch_info.isInput = ASIOFalse;
+    if (active_iasio->lpVtbl->getChannelInfo(active_iasio, &ch_info) == 0) {
+      if (ch_info.type == ASIO_ST_DSD_INT8_LSB_1) {
+        is_lsb = true;
+      }
+    }
+  }
+
+  long driver_buffer_size = asio_buffer_size;
+  if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+    asio_buffer_size /= 32;
+  }
+
+  playback->resolved_format = resolved_format;
+  playback->is_lsb = is_lsb;
   playback->bytes_per_sample = asio_format_bytes_per_sample(resolved_format);
   playback->actual_buffer_size = asio_buffer_size;
 
@@ -1704,6 +1757,8 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   playback->context->target_level = target_level;
   playback->context->silence_frames_to_insert = 0;
   playback->context->running = false;
+  playback->context->silence_byte =
+      (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
   atomic_init(&playback->context->buffer_fill, 0.0);
 
   if (playback->full_duplex) {
@@ -1714,6 +1769,9 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
             &playback->actual_buffer_size, &playback->iasio, err)) {
       atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
       goto error_cleanup;
+    }
+    if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      playback->actual_buffer_size /= 32;
     }
   } else {
     playback->buffer_infos =
@@ -1727,7 +1785,7 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
         buffer_switch_timeinfo_playback;
 
     if (!create_asio_buffers(playback->iasio, playback->buffer_infos,
-                             (long)playback->channels, asio_buffer_size,
+                             (long)playback->channels, driver_buffer_size,
                              &playback->callbacks_for_driver, err)) {
       goto error_cleanup;
     }
@@ -1811,24 +1869,31 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
       uint8_t* dst =
           playback->encode_buf + (f * (size_t)playback->channels + (size_t)c) *
                                      playback->bytes_per_sample;
-      switch (playback->binary_format) {
-        case BINARY_SAMPLE_FORMAT_S16_LE:
+      switch (playback->resolved_format) {
+        case ASIO_SAMPLE_FORMAT_S16_LE:
           pcm_sample_encode_s16_bytes(sample, dst);
           break;
-        case BINARY_SAMPLE_FORMAT_S24_3_LE:
+        case ASIO_SAMPLE_FORMAT_S24_3_LE:
           pcm_sample_encode_s24_3bytes(sample, dst);
           break;
-        case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+        case ASIO_SAMPLE_FORMAT_S24_4_LE:
           pcm_sample_encode_s24_4_lj_bytes(sample, dst);
           break;
-        case BINARY_SAMPLE_FORMAT_S32_LE:
+        case ASIO_SAMPLE_FORMAT_S32_LE:
           pcm_sample_encode_s32_bytes(sample, dst);
           break;
-        case BINARY_SAMPLE_FORMAT_F32_LE:
+        case ASIO_SAMPLE_FORMAT_F32_LE:
           pcm_sample_encode_f32_bytes(sample, dst);
           break;
-        case BINARY_SAMPLE_FORMAT_F64_LE:
+        case ASIO_SAMPLE_FORMAT_F64_LE:
           pcm_sample_encode_f64_bytes(sample, dst);
+          break;
+        case ASIO_SAMPLE_FORMAT_DSD_INT8:
+          if (playback->is_lsb) {
+            pcm_sample_encode_dsd_u32_reversed_bytes((float)sample, dst);
+          } else {
+            pcm_sample_encode_dsd_u32_bytes((float)sample, dst);
+          }
           break;
         default:
           pcm_sample_encode_s32_bytes(sample, dst);
@@ -1921,9 +1986,15 @@ static playback_backend_t* asio_playback_create(
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.asio.channels;
   playback->chunk_size = chunk_size;
-  playback->format = config->cfg.asio.format;
-  playback->has_format =
-      (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
+  playback->output_dsd = config->cfg.asio.output_dsd;
+  if (playback->output_dsd) {
+    playback->format = ASIO_SAMPLE_FORMAT_DSD_INT8;
+    playback->has_format = true;
+  } else {
+    playback->format = config->cfg.asio.format;
+    playback->has_format =
+        (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
+  }
   playback->full_duplex = full_duplex;
 
   atomic_init(&playback->is_running, false);
@@ -1968,7 +2039,8 @@ struct asio_capture {
   bool has_format;
   bool full_duplex;
 
-  binary_sample_format_t binary_format;
+  asio_sample_format_t resolved_format;
+  bool is_lsb;
   size_t bytes_per_sample;
   long actual_buffer_size;
 
@@ -2054,8 +2126,9 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
 
   if (capture->full_duplex) {
     long inputs = 0, outputs = 0, preferred_buf = 0;
-    if (!init_shared_asio(capture->device, capture->sample_rate, &inputs,
-                          &outputs, &preferred_buf, err)) {
+    bool is_dsd = (capture->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+    if (!init_shared_asio(capture->device, capture->sample_rate, is_dsd,
+                          &inputs, &outputs, &preferred_buf, err)) {
       goto error_cleanup;
     }
     if ((size_t)capture->channels > (size_t)inputs) {
@@ -2087,7 +2160,28 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
     asio_buffer_size = preferred_buf;
   }
 
-  capture->binary_format = resolve_binary_format(resolved_format);
+  // Detect whether channel 0 uses LSB-first bit ordering for DSD
+  bool is_lsb = false;
+  IASIO* active_iasio =
+      capture->full_duplex ? g_asio_shared.state->iasio : capture->iasio;
+  if (active_iasio) {
+    ASIOChannelInfo ch_info = {0};
+    ch_info.channel = 0;
+    ch_info.isInput = ASIOTrue;
+    if (active_iasio->lpVtbl->getChannelInfo(active_iasio, &ch_info) == 0) {
+      if (ch_info.type == ASIO_ST_DSD_INT8_LSB_1) {
+        is_lsb = true;
+      }
+    }
+  }
+
+  long driver_buffer_size = asio_buffer_size;
+  if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+    asio_buffer_size /= 32;
+  }
+
+  capture->resolved_format = resolved_format;
+  capture->is_lsb = is_lsb;
   capture->bytes_per_sample = asio_format_bytes_per_sample(resolved_format);
   capture->actual_buffer_size = asio_buffer_size;
 
@@ -2127,6 +2221,9 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
       atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
       goto error_cleanup;
     }
+    if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      capture->actual_buffer_size /= 32;
+    }
   } else {
     capture->buffer_infos = make_buffer_infos((size_t)capture->channels, true);
     capture->single_mode_allocated_infos = true;
@@ -2138,7 +2235,7 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
         buffer_switch_timeinfo_capture;
 
     if (!create_asio_buffers(capture->iasio, capture->buffer_infos,
-                             (long)capture->channels, asio_buffer_size,
+                             (long)capture->channels, driver_buffer_size,
                              &capture->callbacks_for_driver, err)) {
       goto error_cleanup;
     }
@@ -2232,24 +2329,31 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           capture->decode_buf + (f * (size_t)capture->channels + (size_t)c) *
                                     capture->bytes_per_sample;
       double sample = 0.0;
-      switch (capture->binary_format) {
-        case BINARY_SAMPLE_FORMAT_S16_LE:
+      switch (capture->resolved_format) {
+        case ASIO_SAMPLE_FORMAT_S16_LE:
           sample = pcm_sample_decode_s16_bytes(src);
           break;
-        case BINARY_SAMPLE_FORMAT_S24_3_LE:
+        case ASIO_SAMPLE_FORMAT_S24_3_LE:
           sample = pcm_sample_decode_s24_3bytes(src);
           break;
-        case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+        case ASIO_SAMPLE_FORMAT_S24_4_LE:
           sample = pcm_sample_decode_s24_4_lj_bytes(src);
           break;
-        case BINARY_SAMPLE_FORMAT_S32_LE:
+        case ASIO_SAMPLE_FORMAT_S32_LE:
           sample = pcm_sample_decode_s32_bytes(src);
           break;
-        case BINARY_SAMPLE_FORMAT_F32_LE:
+        case ASIO_SAMPLE_FORMAT_F32_LE:
           sample = pcm_sample_decode_f32_bytes(src);
           break;
-        case BINARY_SAMPLE_FORMAT_F64_LE:
+        case ASIO_SAMPLE_FORMAT_F64_LE:
           sample = pcm_sample_decode_f64_bytes(src);
+          break;
+        case ASIO_SAMPLE_FORMAT_DSD_INT8:
+          if (capture->is_lsb) {
+            sample = pcm_sample_decode_dsd_u32_reversed_bytes(src);
+          } else {
+            sample = pcm_sample_decode_dsd_u32_bytes(src);
+          }
           break;
         default:
           sample = pcm_sample_decode_s32_bytes(src);

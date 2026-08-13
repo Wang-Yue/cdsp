@@ -122,6 +122,63 @@ TEST(AllCases) {
   ASSERT_EQ(11, count);
 }
 
+#elif defined(ENABLE_ASIO)
+
+TEST(CanonicalRawValues) {
+  ASSERT_STR_EQ("S16_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_S16_LE));
+  ASSERT_STR_EQ("S24_3_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_S24_3_LE));
+  ASSERT_STR_EQ("S24_4_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_S24_4_LE));
+  ASSERT_STR_EQ("S32_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_S32_LE));
+  ASSERT_STR_EQ("F32_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_F32_LE));
+  ASSERT_STR_EQ("F64_LE",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_F64_LE));
+  ASSERT_STR_EQ("DSD_INT8",
+                asio_sample_format_to_string(ASIO_SAMPLE_FORMAT_DSD_INT8));
+}
+
+TEST(DecodesCanonicalNames) {
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_S16_LE,
+            asio_sample_format_from_string("S16_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_S24_3_LE,
+            asio_sample_format_from_string("S24_3_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_S24_4_LE,
+            asio_sample_format_from_string("S24_4_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_S32_LE,
+            asio_sample_format_from_string("S32_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_F32_LE,
+            asio_sample_format_from_string("F32_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_F64_LE,
+            asio_sample_format_from_string("F64_LE"));
+  ASSERT_EQ(ASIO_SAMPLE_FORMAT_DSD_INT8,
+            asio_sample_format_from_string("DSD_INT8"));
+}
+
+TEST(RejectsAliases) {
+  const char* aliases[] = {"S16", "S24",   "S32",   "FLOAT32",
+                           "F32", "S16LE", "s16_le"};
+  for (size_t i = 0; i < sizeof(aliases) / sizeof(aliases[0]); i++) {
+    ASSERT_EQ(ASIO_SAMPLE_FORMAT_INVALID,
+              asio_sample_format_from_string(aliases[i]));
+  }
+}
+
+TEST(AllCases) {
+  int count = 0;
+  for (int i = 0; i < 10; i++) {
+    if (asio_sample_format_to_string((asio_sample_format_t)i) != NULL &&
+        strcmp(asio_sample_format_to_string((asio_sample_format_t)i),
+               "Invalid") != 0) {
+      count++;
+    }
+  }
+  ASSERT_EQ(7, count);
+}
+
 #endif
 
 TEST_MAIN()

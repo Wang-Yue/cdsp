@@ -421,7 +421,7 @@ typedef enum {
   BINARY_SAMPLE_FORMAT_S32_LE,      /**< Signed 32-bit Little Endian. */
   BINARY_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   BINARY_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
-  BINARY_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
+  BINARY_SAMPLE_FORMAT_INVALID = -1  /**< Invalid format. */
 } binary_sample_format_t;
 
 /**
