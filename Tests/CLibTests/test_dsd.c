@@ -710,6 +710,23 @@ TEST(CarrierBitsCalculationTest) {
   ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_DOP);
   alsa_cap_cfg.bypass_dop = true;
   ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_PCM);
+
+  // ALSA Native DSD capture formats
+  alsa_cap_cfg.cfg.alsa.has_format = true;
+  alsa_cap_cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U8;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_NATIVE);
+  ASSERT_EQ(capture_device_config_calculate_carrier_bits(&alsa_cap_cfg),
+            (size_t)8);
+
+  alsa_cap_cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U16_LE;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_NATIVE);
+  ASSERT_EQ(capture_device_config_calculate_carrier_bits(&alsa_cap_cfg),
+            (size_t)16);
+
+  alsa_cap_cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U32_LE;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_NATIVE);
+  ASSERT_EQ(capture_device_config_calculate_carrier_bits(&alsa_cap_cfg),
+            (size_t)32);
 #endif
 
 #if defined(ENABLE_ASIO)

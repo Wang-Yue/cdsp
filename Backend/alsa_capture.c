@@ -506,7 +506,7 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   // Set sample format: if specified, use it; otherwise pick preferred format
   // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
   // F64_LE (src/alsa_backend/utils.rs:433-456)
-  snd_pcm_format_t formats[6];
+  snd_pcm_format_t formats[11];
   size_t num_formats = 0;
   if (capture->has_format) {
     if (capture->requested_format == ALSA_SAMPLE_FORMAT_S16_LE) {
@@ -526,6 +526,21 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
       num_formats = 1;
     } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_F64_LE) {
       formats[0] = SND_PCM_FORMAT_FLOAT64_LE;
+      num_formats = 1;
+    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U8) {
+      formats[0] = SND_PCM_FORMAT_DSD_U8;
+      num_formats = 1;
+    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U16_LE;
+      num_formats = 1;
+    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_BE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U16_BE;
+      num_formats = 1;
+    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U32_LE;
+      num_formats = 1;
+    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
+      formats[0] = SND_PCM_FORMAT_DSD_U32_BE;
       num_formats = 1;
     }
   } else {
@@ -626,14 +641,16 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   }
 
   size_t sample_size = 4;
-  if (capture->format == SND_PCM_FORMAT_S16_LE) {
+  if (capture->format == SND_PCM_FORMAT_S16_LE ||
+      capture->format == SND_PCM_FORMAT_DSD_U16_LE ||
+      capture->format == SND_PCM_FORMAT_DSD_U16_BE) {
     sample_size = 2;
   } else if (capture->format == SND_PCM_FORMAT_S24_3LE) {
     sample_size = 3;
-  } else if (capture->format == SND_PCM_FORMAT_S24_LE) {
-    sample_size = 4;
   } else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE) {
     sample_size = 8;
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U8) {
+    sample_size = 1;
   }
 
   // Size buffer generously to accommodate dynamic resampling buffer needs
@@ -757,12 +774,16 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   }
 
   size_t sample_bytes = 4;
-  if (capture->format == SND_PCM_FORMAT_S16_LE)
+  if (capture->format == SND_PCM_FORMAT_S16_LE ||
+      capture->format == SND_PCM_FORMAT_DSD_U16_LE ||
+      capture->format == SND_PCM_FORMAT_DSD_U16_BE)
     sample_bytes = 2;
   else if (capture->format == SND_PCM_FORMAT_S24_3LE)
     sample_bytes = 3;
   else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE)
     sample_bytes = 8;
+  else if (capture->format == SND_PCM_FORMAT_DSD_U8)
+    sample_bytes = 1;
   size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
 
   double millis_per_chunk =
@@ -1069,6 +1090,49 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         dst_channels[c][f] =
             pcm_sample_decode_s16(src[f * capture->channels + c]);
+      }
+    }
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U8) {
+    uint8_t* src = (uint8_t*)capture->interleaved_buf;
+    for (size_t f = 0; f < read_frames; f++) {
+      for (size_t c = 0; c < (size_t)capture->channels; c++) {
+        dst_channels[c][f] =
+            pcm_sample_decode_dsd_u8(src[f * capture->channels + c]);
+      }
+    }
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U16_LE) {
+    uint8_t* src = (uint8_t*)capture->interleaved_buf;
+    for (size_t f = 0; f < read_frames; f++) {
+      for (size_t c = 0; c < (size_t)capture->channels; c++) {
+        size_t offset = (f * capture->channels + c) * 2;
+        uint16_t u16 = (uint16_t)src[offset] | ((uint16_t)src[offset + 1] << 8);
+        dst_channels[c][f] = pcm_sample_decode_s16((int16_t)u16);
+      }
+    }
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U16_BE) {
+    uint8_t* src = (uint8_t*)capture->interleaved_buf;
+    for (size_t f = 0; f < read_frames; f++) {
+      for (size_t c = 0; c < (size_t)capture->channels; c++) {
+        size_t offset = (f * capture->channels + c) * 2;
+        uint16_t u16 = ((uint16_t)src[offset] << 8) | (uint16_t)src[offset + 1];
+        dst_channels[c][f] = pcm_sample_decode_s16((int16_t)u16);
+      }
+    }
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U32_LE) {
+    uint8_t* src = (uint8_t*)capture->interleaved_buf;
+    for (size_t f = 0; f < read_frames; f++) {
+      for (size_t c = 0; c < (size_t)capture->channels; c++) {
+        size_t offset = (f * capture->channels + c) * 4;
+        dst_channels[c][f] =
+            pcm_sample_decode_dsd_u32_reversed_bytes(&src[offset]);
+      }
+    }
+  } else if (capture->format == SND_PCM_FORMAT_DSD_U32_BE) {
+    uint8_t* src = (uint8_t*)capture->interleaved_buf;
+    for (size_t f = 0; f < read_frames; f++) {
+      for (size_t c = 0; c < (size_t)capture->channels; c++) {
+        size_t offset = (f * capture->channels + c) * 4;
+        dst_channels[c][f] = pcm_sample_decode_dsd_u32_bytes(&src[offset]);
       }
     }
   }

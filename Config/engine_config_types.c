@@ -634,6 +634,19 @@ size_t capture_device_config_calculate_carrier_bits(
     const capture_device_config_t* config) {
   if (!config) return 16;
 
+#if defined(ENABLE_ALSA)
+  if (config->type == AUDIO_BACKEND_TYPE_ALSA && config->cfg.alsa.has_format) {
+    alsa_sample_format_t fmt = config->cfg.alsa.format;
+    if (fmt == ALSA_SAMPLE_FORMAT_DSD_U8) return 8;
+    if (fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U16_BE)
+      return 16;
+    if (fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U32_BE)
+      return 32;
+  }
+#endif
+
 #if defined(ENABLE_ASIO)
   if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
     if (config->cfg.asio.format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
@@ -648,6 +661,19 @@ size_t capture_device_config_calculate_carrier_bits(
 dsd_mode_t capture_device_config_get_dsd_mode(
     const capture_device_config_t* config) {
   if (!config) return DSD_MODE_PCM;
+
+#if defined(ENABLE_ALSA)
+  if (config->type == AUDIO_BACKEND_TYPE_ALSA && config->cfg.alsa.has_format) {
+    alsa_sample_format_t fmt = config->cfg.alsa.format;
+    if (fmt == ALSA_SAMPLE_FORMAT_DSD_U8 ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U16_BE ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE ||
+        fmt == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
+      return DSD_MODE_NATIVE;
+    }
+  }
+#endif
 
 #if defined(ENABLE_ASIO)
   if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
