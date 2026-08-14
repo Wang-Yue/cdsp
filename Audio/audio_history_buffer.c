@@ -112,21 +112,30 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
       atomic_load_explicit(&history->write_pos, memory_order_relaxed);
   size_t cap = history->capacity;
 
+  size_t frames_to_copy = n_frames;
+  size_t offset_in_chunk = 0;
+  if (frames_to_copy > cap) {
+    offset_in_chunk = frames_to_copy - cap;
+    frames_to_copy = cap;
+  }
+
+  size_t start_idx = (size_t)((pos + n_frames - frames_to_copy) % cap);
+  size_t first_count = cap - start_idx;
+  if (first_count > frames_to_copy) first_count = frames_to_copy;
+  size_t second_count = frames_to_copy - first_count;
+
   for (size_t ch = 0; ch < n_ch; ch++) {
     const double* ch_data = audio_chunk_get_channel(chunk, ch);
     float* dst = history->data[ch];
     if (!ch_data || !dst) continue;
 
-    size_t start_idx = (size_t)(pos % cap);
-    size_t first_count = cap - start_idx;
-    if (first_count > n_frames) first_count = n_frames;
-    size_t second_count = n_frames - first_count;
+    const double* src = ch_data + offset_in_chunk;
 
     for (size_t f = 0; f < first_count; f++) {
-      dst[start_idx + f] = (float)ch_data[f];
+      dst[start_idx + f] = (float)src[f];
     }
     for (size_t f = 0; f < second_count; f++) {
-      dst[f] = (float)ch_data[first_count + f];
+      dst[f] = (float)src[first_count + f];
     }
   }
 

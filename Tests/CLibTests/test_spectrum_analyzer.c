@@ -129,4 +129,42 @@ TEST(LogBinFrequenciesAreGeometric) {
   spectrum_analyzer_free(analyzer);
 }
 
+TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  size_t large_frames = 71680;
+  audio_chunk_t* chunk = audio_chunk_create(large_frames, 2);
+  audio_chunk_set_valid_frames(chunk, large_frames);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t b = audio_chunk_get_channel(chunk, ch);
+    for (size_t i = 0; i < large_frames; i++) {
+      b[i] = (double)i;
+    }
+  }
+
+  // Appending chunk with 71680 frames (capacity is 16384)
+  audio_history_buffer_append(buffer, chunk);
+  audio_chunk_free(chunk);
+
+  ASSERT_TRUE(audio_history_buffer_has_data(buffer));
+
+  // Read latest 16384 frames
+  float dest[16384];
+  bool enough = false;
+  audio_history_buffer_status_t status =
+      audio_history_buffer_read_latest(buffer, dest, 16384, 0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
+  ASSERT_TRUE(enough);
+
+  // The latest 16384 frames must be the tail of the chunk: (71680 - 16384) ..
+  // 71679
+  for (size_t i = 0; i < 16384; i++) {
+    float expected = (float)(71680 - 16384 + i);
+    ASSERT_EQ(expected, dest[i]);
+  }
+
+  audio_history_buffer_free(buffer);
+}
+
 TEST_MAIN()
