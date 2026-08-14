@@ -30,7 +30,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "Engine/engine_shared_state.h"
 
 /**
@@ -53,7 +53,7 @@ typedef struct {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
   processing_parameters_t* processing_params;
-  dop_decoder_t* dop_decoder;
+  dsd_decoder_t* dsd_decoder;
   round_robin_chunk_pool_t* chunk_pool;
   size_t chunk_size;
   size_t channels;

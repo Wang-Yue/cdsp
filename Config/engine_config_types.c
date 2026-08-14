@@ -630,6 +630,40 @@ double capture_device_config_get_dop_cutoff_hz(
   return config->dop_cutoff_hz;
 }
 
+size_t capture_device_config_calculate_carrier_bits(
+    const capture_device_config_t* config) {
+  if (!config) return 16;
+
+#if defined(ENABLE_ASIO)
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
+    if (config->cfg.asio.format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      return 32;
+    }
+  }
+#endif
+
+  return 16;
+}
+
+dsd_mode_t capture_device_config_get_dsd_mode(
+    const capture_device_config_t* config) {
+  if (!config) return DSD_MODE_PCM;
+
+#if defined(ENABLE_ASIO)
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
+    if (config->cfg.asio.format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      return DSD_MODE_NATIVE;
+    }
+  }
+#endif
+
+  if (!config->bypass_dop) {
+    return DSD_MODE_DOP;
+  }
+
+  return DSD_MODE_PCM;
+}
+
 const char* playback_device_config_get_device(
     const playback_device_config_t* config) {
   if (!config) return "";

@@ -52,7 +52,7 @@ graph TD
     engine_capture_loop_step -->|Steady Hot Path| capture_loop_process_and_enqueue
     engine_capture_loop_step -->|Error Handling Path| capture_loop_handle_no_data
 
-    capture_loop_process_and_enqueue -->|Steady Hot Path| dop_decoder_detect_and_process
+    capture_loop_process_and_enqueue -->|Steady Hot Path| dsd_decoder_process
     capture_loop_process_and_enqueue -->|Steady Hot Path| processing_parameters_update_capture_levels
     capture_loop_process_and_enqueue -->|Steady Hot Path| silence_counter_update
     capture_loop_process_and_enqueue -->|Steady Hot Path| engine_shared_state_enqueue_captured

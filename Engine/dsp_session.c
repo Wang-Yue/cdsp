@@ -44,7 +44,7 @@
 #include "Config/config_diff.h"
 #include "Config/config_error.h"
 #include "Config/configuration.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "Engine/dsp_session_internal.h"
 #include "Engine/engine_capture_loop.h"
@@ -262,9 +262,9 @@ processing_stop_reason_t dsp_session_stop_and_free(
     engine_shared_state_free(core->shared);
     core->shared = NULL;
   }
-  if (core->dop_decoder) {
-    dop_decoder_free(core->dop_decoder);
-    core->dop_decoder = NULL;
+  if (core->dsd_decoder) {
+    dsd_decoder_free(core->dsd_decoder);
+    core->dsd_decoder = NULL;
   }
   if (core->dsd_encoder) {
     dsd_encoder_free(core->dsd_encoder);

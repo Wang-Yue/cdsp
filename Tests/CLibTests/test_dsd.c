@@ -7,7 +7,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/sample_conversion.h"
 #include "Config/engine_config_types.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "Utils/double_helpers.h"
 #include "test_support.h"
@@ -25,8 +25,8 @@ TEST(DoPDetectionAndBypass) {
     for (int j = 0; j < 2; j++) {
       double base_rate = base_rates[j];
       double pcm_sample_rate = base_rate * (double)mult / 16.0;
-      dop_decoder_t* decoder =
-          dop_decoder_create(2, pcm_sample_rate, false, 20000.0, false);
+      dsd_decoder_t* decoder = dsd_decoder_create(
+          2, pcm_sample_rate, DSD_MODE_DOP, 16, false, 20000.0, false);
       ASSERT_TRUE(decoder != NULL);
 
       audio_chunk_t* chunk = audio_chunk_create(64, 2);
@@ -49,9 +49,9 @@ TEST(DoPDetectionAndBypass) {
           }
         }
       }
-      bool is_decoded = dop_decoder_detect_and_process(decoder, part_chunk);
+      bool is_decoded = dsd_decoder_process(decoder, part_chunk);
       ASSERT_FALSE(is_decoded);
-      ASSERT_FALSE(dop_decoder_is_active(decoder));
+      ASSERT_FALSE(dsd_decoder_is_active(decoder));
       audio_chunk_free(part_chunk);
 
       audio_chunk_t* part_chunk2 = audio_chunk_create(44, 2);
@@ -64,14 +64,14 @@ TEST(DoPDetectionAndBypass) {
           }
         }
       }
-      is_decoded = dop_decoder_detect_and_process(decoder, part_chunk2);
+      is_decoded = dsd_decoder_process(decoder, part_chunk2);
       ASSERT_TRUE(is_decoded);
-      ASSERT_TRUE(dop_decoder_is_active(decoder));
+      ASSERT_TRUE(dsd_decoder_is_active(decoder));
       audio_chunk_free(part_chunk2);
-      dop_decoder_free(decoder);
+      dsd_decoder_free(decoder);
 
-      dop_decoder_t* bypassed_decoder =
-          dop_decoder_create(2, pcm_sample_rate, true, 20000.0, false);
+      dsd_decoder_t* bypassed_decoder = dsd_decoder_create(
+          2, pcm_sample_rate, DSD_MODE_DOP, 16, true, 20000.0, false);
       audio_chunk_t* test_chunk = audio_chunk_create(64, 2);
       for (int ch = 0; ch < 2; ch++) {
         for (size_t t = 0; t < 64; t++) {
@@ -79,13 +79,12 @@ TEST(DoPDetectionAndBypass) {
               audio_chunk_get_channel(chunk, ch)[t];
         }
       }
-      bool processed =
-          dop_decoder_detect_and_process(bypassed_decoder, test_chunk);
+      bool processed = dsd_decoder_process(bypassed_decoder, test_chunk);
       ASSERT_FALSE(processed);
-      ASSERT_FALSE(dop_decoder_is_active(bypassed_decoder));
+      ASSERT_FALSE(dsd_decoder_is_active(bypassed_decoder));
       audio_chunk_free(test_chunk);
       audio_chunk_free(chunk);
-      dop_decoder_free(bypassed_decoder);
+      dsd_decoder_free(bypassed_decoder);
     }
   }
 }
@@ -99,66 +98,61 @@ TEST(DoPFalsePositives) {
     for (int j = 0; j < 2; j++) {
       double base_rate = base_rates[j];
       double pcm_sample_rate = base_rate * (double)mult / 16.0;
-      dop_decoder_t* decoder =
-          dop_decoder_create(1, pcm_sample_rate, false, 20000.0, false);
-      audio_chunk_t* chunk = audio_chunk_create(64, 1);
+      dsd_decoder_t* decoder = dsd_decoder_create(
+          1, pcm_sample_rate, DSD_MODE_DOP, 16, false, 20000.0, false);
+      ASSERT_TRUE(decoder != NULL);
 
-      for (size_t t = 0; t < 64; t++)
-        audio_chunk_get_channel(chunk, 0)[t] = 0.0;
-      bool res1 = dop_decoder_detect_and_process(decoder, chunk);
-      ASSERT_FALSE(res1);
-
-      for (size_t t = 0; t < 64; t++) {
-        audio_chunk_get_channel(chunk, 0)[t] =
-            ((double)rand() / RAND_MAX) * 2.0 - 1.0;
+      audio_chunk_t* chunk = audio_chunk_create(1024, 1);
+      for (size_t t = 0; t < 1024; t++) {
+        audio_chunk_get_channel(chunk, 0)[t] = 0.5 * sin((double)t);
       }
-      bool res2 = dop_decoder_detect_and_process(decoder, chunk);
+      bool res1 = dsd_decoder_process(decoder, chunk);
+      ASSERT_FALSE(res1);
+      ASSERT_FALSE(dsd_decoder_is_active(decoder));
+
+      for (size_t t = 0; t < 1024; t++) {
+        audio_chunk_get_channel(chunk, 0)[t] = 0.0;
+      }
+      bool res2 = dsd_decoder_process(decoder, chunk);
       ASSERT_FALSE(res2);
+      ASSERT_FALSE(dsd_decoder_is_active(decoder));
 
       audio_chunk_free(chunk);
-      dop_decoder_free(decoder);
+      dsd_decoder_free(decoder);
     }
   }
 }
 
-TEST(MultiChunkDoPStreamStability) {
-  int multipliers[] = {64, 128, 256};
-  double base_rates[] = {44100.0, 48000.0};
+TEST(DoPMonoStereoMultichannel) {
+  int channel_counts[] = {1, 2, 4, 8};
+  for (int ci = 0; ci < 4; ci++) {
+    int channels = channel_counts[ci];
+    double pcm_sample_rate = 176400.0;
+    dsd_decoder_t* decoder = dsd_decoder_create(
+        channels, pcm_sample_rate, DSD_MODE_DOP, 16, false, 20000.0, false);
+    ASSERT_TRUE(decoder != NULL);
 
-  for (int i = 0; i < 3; i++) {
-    int mult = multipliers[i];
-    for (int j = 0; j < 2; j++) {
-      double base_rate = base_rates[j];
-      double pcm_sample_rate = base_rate * (double)mult / 16.0;
-      dop_decoder_t* decoder =
-          dop_decoder_create(2, pcm_sample_rate, false, 20000.0, false);
-      int chunk_size = 1024;
-      int num_chunks = 10;
-
-      int global_frame_idx = 0;
-      for (int chunk_idx = 1; chunk_idx <= num_chunks; chunk_idx++) {
-        audio_chunk_t* chunk = audio_chunk_create(chunk_size, 2);
-        for (int t = 0; t < chunk_size; t++) {
-          uint32_t marker = (global_frame_idx % 2 == 0) ? 0x05 : 0xFA;
-          uint32_t val24 = (marker << 16) | 0x4321;
-          int32_t int_val = (int32_t)(val24 << 8) >> 8;
-          double float_val = (double)int_val / 8388608.0;
-          audio_chunk_get_channel(chunk, 0)[t] = float_val;
-          audio_chunk_get_channel(chunk, 1)[t] = float_val;
-          global_frame_idx++;
-        }
-
-        bool processed = dop_decoder_detect_and_process(decoder, chunk);
-        ASSERT_TRUE(processed);
-        ASSERT_TRUE(dop_decoder_is_active(decoder));
-        audio_chunk_free(chunk);
+    audio_chunk_t* chunk = audio_chunk_create(64, channels);
+    for (int ch = 0; ch < channels; ch++) {
+      for (size_t t = 0; t < 64; t++) {
+        uint32_t marker = (t % 2 == 0) ? 0x05 : 0xFA;
+        uint32_t val24 = (marker << 16) | 0x6969;
+        int32_t int_val = (int32_t)(val24 << 8) >> 8;
+        double float_val = (double)int_val / 8388608.0;
+        audio_chunk_get_channel(chunk, ch)[t] = float_val;
       }
-      dop_decoder_free(decoder);
     }
+
+    bool processed = dsd_decoder_process(decoder, chunk);
+    ASSERT_TRUE(processed);
+    ASSERT_TRUE(dsd_decoder_is_active(decoder));
+
+    audio_chunk_free(chunk);
+    dsd_decoder_free(decoder);
   }
 }
 
-TEST(DoPRoundtripSINAD) {
+TEST(DoPSINAD) {
   int multipliers[] = {64, 128, 256};
   double base_rates[] = {44100.0, 48000.0};
 
@@ -166,38 +160,39 @@ TEST(DoPRoundtripSINAD) {
     int mult = multipliers[i];
     for (int j = 0; j < 2; j++) {
       double base_rate = base_rates[j];
-      size_t pcm_sample_rate = (size_t)round(base_rate * (double)mult / 16.0);
+      size_t pcm_sample_rate = (size_t)(base_rate * (double)mult / 16.0);
       dsd_encoder_t* encoder =
           dsd_encoder_create(1, pcm_sample_rate, DSD_MODE_DOP, 16,
                              SDM_FILTER_SDM6, 20000.0, false);
-      dop_decoder_t* decoder =
-          dop_decoder_create(1, pcm_sample_rate, false, 20000.0, false);
+      dsd_decoder_t* decoder = dsd_decoder_create(
+          1, (double)pcm_sample_rate, DSD_MODE_DOP, 16, false, 20000.0, false);
       ASSERT_TRUE(encoder != NULL);
       ASSERT_TRUE(decoder != NULL);
 
-      double frames_per_cycle = pcm_sample_rate / 1000.0;
-      int active_frames = (int)round(frames_per_cycle * 10.0);
-      int settle_frames = (int)round(frames_per_cycle * 4.0);
+      double target_freq = 1000.0;
+      double frames_per_cycle = (double)pcm_sample_rate / target_freq;
+      int active_frames = (int)round(frames_per_cycle * 20.0);
+      int settle_frames = (int)round(frames_per_cycle * 8.0);
       int frames = settle_frames + active_frames;
 
       audio_chunk_t* chunk = audio_chunk_create(frames, 1);
       double amplitude = 0.7071;
       for (int t = 0; t < frames; t++) {
         audio_chunk_get_channel(chunk, 0)[t] =
-            amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / pcm_sample_rate);
+            amplitude *
+            sin(2.0 * M_PI * target_freq * (double)t / (double)pcm_sample_rate);
       }
 
       dsd_encoder_encode(encoder, chunk);
-
-      bool processed = dop_decoder_detect_and_process(decoder, chunk);
+      bool processed = dsd_decoder_process(decoder, chunk);
       ASSERT_TRUE(processed);
-      ASSERT_TRUE(dop_decoder_is_active(decoder));
+      ASSERT_TRUE(dsd_decoder_is_active(decoder));
 
-      double target_freq = 1000.0;
       double cos_sum = 0.0;
       double sin_sum = 0.0;
       for (int t = settle_frames; t < frames; t++) {
-        double angle = 2.0 * M_PI * target_freq * (double)t / pcm_sample_rate;
+        double angle =
+            2.0 * M_PI * target_freq * (double)t / (double)pcm_sample_rate;
         cos_sum += audio_chunk_get_channel(chunk, 0)[t] * cos(angle);
         sin_sum += audio_chunk_get_channel(chunk, 0)[t] * sin(angle);
       }
@@ -227,7 +222,7 @@ TEST(DoPRoundtripSINAD) {
       ASSERT_TRUE(sinad >= expected_min_sinad);
 
       audio_chunk_free(chunk);
-      dop_decoder_free(decoder);
+      dsd_decoder_free(decoder);
       dsd_encoder_free(encoder);
     }
   }
@@ -237,8 +232,8 @@ TEST(DoPVariableChunkRoundtrip) {
   size_t pcm_sample_rate = 176400;
   dsd_encoder_t* encoder = dsd_encoder_create(
       1, pcm_sample_rate, DSD_MODE_DOP, 16, SDM_FILTER_SDM6, 20000.0, false);
-  dop_decoder_t* decoder =
-      dop_decoder_create(1, (double)pcm_sample_rate, false, 20000.0, false);
+  dsd_decoder_t* decoder = dsd_decoder_create(
+      1, (double)pcm_sample_rate, DSD_MODE_DOP, 16, false, 20000.0, false);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(decoder != NULL);
 
@@ -267,10 +262,10 @@ TEST(DoPVariableChunkRoundtrip) {
     audio_chunk_set_valid_frames(chunk, sz);
 
     dsd_encoder_encode(encoder, chunk);
-    bool processed = dop_decoder_detect_and_process(decoder, chunk);
+    bool processed = dsd_decoder_process(decoder, chunk);
     if (offset >= 32) {
       ASSERT_TRUE(processed);
-      ASSERT_TRUE(dop_decoder_is_active(decoder));
+      ASSERT_TRUE(dsd_decoder_is_active(decoder));
     }
 
     memcpy(output_buf + offset, audio_chunk_get_channel(chunk, 0),
@@ -306,7 +301,351 @@ TEST(DoPVariableChunkRoundtrip) {
 
   free(input_buf);
   free(output_buf);
-  dop_decoder_free(decoder);
+  dsd_decoder_free(decoder);
+  dsd_encoder_free(encoder);
+}
+
+// MARK: - Native DSD Decoder Tests
+
+TEST(NativeDSD_8Bit_Roundtrip_SINAD) {
+  size_t carrier_rate = 352800;  // DSD64: 352800 * 8 = 2822400 Hz
+  dsd_encoder_t* encoder = dsd_encoder_create(
+      1, carrier_rate, DSD_MODE_NATIVE, 8, SDM_FILTER_SDM6, 20000.0, false);
+  dsd_decoder_t* decoder = dsd_decoder_create(
+      1, (double)carrier_rate, DSD_MODE_NATIVE, 8, false, 20000.0, false);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+  ASSERT_TRUE(dsd_decoder_is_active(decoder));
+
+  double target_freq = 1000.0;
+  double frames_per_cycle = (double)carrier_rate / target_freq;
+  int active_frames = (int)round(frames_per_cycle * 20.0);
+  int settle_frames = (int)round(frames_per_cycle * 8.0);
+  int total_frames = settle_frames + active_frames;
+
+  audio_chunk_t* chunk = audio_chunk_create(total_frames, 1);
+  double amplitude = 0.7071;
+  for (int t = 0; t < total_frames; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] =
+        amplitude *
+        sin(2.0 * M_PI * target_freq * (double)t / (double)carrier_rate);
+  }
+
+  dsd_encoder_encode(encoder, chunk);
+  bool processed = dsd_decoder_process(decoder, chunk);
+  ASSERT_TRUE(processed);
+
+  double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+  for (int t = settle_frames; t < total_frames; t++) {
+    double angle = 2.0 * M_PI * target_freq * (double)t / (double)carrier_rate;
+    double val = audio_chunk_get_channel(chunk, 0)[t];
+    cos_sum += val * cos(angle);
+    sin_sum += val * sin(angle);
+    total_power += val * val;
+  }
+  double cos_amp = (2.0 / (double)active_frames) * cos_sum;
+  double sin_amp = (2.0 / (double)active_frames) * sin_sum;
+  double fundamental_power = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+  total_power /= (double)active_frames;
+
+  double noise_power = total_power - fundamental_power;
+  if (noise_power < 1e-20) noise_power = 1e-20;
+  double sinad = 10.0 * log10(fundamental_power / noise_power);
+
+  ASSERT_TRUE(sinad >= 90.0);
+
+  audio_chunk_free(chunk);
+  dsd_decoder_free(decoder);
+  dsd_encoder_free(encoder);
+}
+
+TEST(NativeDSD_16Bit_Roundtrip_SINAD) {
+  size_t carrier_rate = 176400;  // DSD64: 176400 * 16 = 2822400 Hz
+  dsd_encoder_t* encoder = dsd_encoder_create(
+      1, carrier_rate, DSD_MODE_NATIVE, 16, SDM_FILTER_SDM6, 20000.0, false);
+  dsd_decoder_t* decoder = dsd_decoder_create(
+      1, (double)carrier_rate, DSD_MODE_NATIVE, 16, false, 20000.0, false);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+  ASSERT_TRUE(dsd_decoder_is_active(decoder));
+
+  double target_freq = 1000.0;
+  double frames_per_cycle = (double)carrier_rate / target_freq;
+  int active_frames = (int)round(frames_per_cycle * 20.0);
+  int settle_frames = (int)round(frames_per_cycle * 8.0);
+  int total_frames = settle_frames + active_frames;
+
+  audio_chunk_t* chunk = audio_chunk_create(total_frames, 1);
+  double amplitude = 0.7071;
+  for (int t = 0; t < total_frames; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] =
+        amplitude *
+        sin(2.0 * M_PI * target_freq * (double)t / (double)carrier_rate);
+  }
+
+  dsd_encoder_encode(encoder, chunk);
+  bool processed = dsd_decoder_process(decoder, chunk);
+  ASSERT_TRUE(processed);
+
+  double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+  for (int t = settle_frames; t < total_frames; t++) {
+    double angle = 2.0 * M_PI * target_freq * (double)t / (double)carrier_rate;
+    double val = audio_chunk_get_channel(chunk, 0)[t];
+    cos_sum += val * cos(angle);
+    sin_sum += val * sin(angle);
+    total_power += val * val;
+  }
+  double cos_amp = (2.0 / (double)active_frames) * cos_sum;
+  double sin_amp = (2.0 / (double)active_frames) * sin_sum;
+  double fundamental_power = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+  total_power /= (double)active_frames;
+
+  double noise_power = total_power - fundamental_power;
+  if (noise_power < 1e-20) noise_power = 1e-20;
+  double sinad = 10.0 * log10(fundamental_power / noise_power);
+
+  ASSERT_TRUE(sinad >= 90.0);
+
+  audio_chunk_free(chunk);
+  dsd_decoder_free(decoder);
+  dsd_encoder_free(encoder);
+}
+
+TEST(NativeDSD_32Bit_ASIO_Roundtrip_SINAD) {
+  // ASIO Native DSD format: 32 DSD bits per carrier sample (DSD64 at 88200 Hz
+  // carrier)
+  size_t carrier_rate = 88200;  // 88200 * 32 = 2822400 Hz
+  dsd_encoder_t* encoder = dsd_encoder_create(
+      1, carrier_rate, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0, false);
+  dsd_decoder_t* decoder = dsd_decoder_create(
+      1, (double)carrier_rate, DSD_MODE_NATIVE, 32, false, 20000.0, false);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+  ASSERT_TRUE(dsd_decoder_is_active(decoder));
+
+  double target_freq = 1000.0;
+  double frames_per_cycle = (double)carrier_rate / target_freq;
+  int active_frames = (int)round(frames_per_cycle * 20.0);
+  int settle_frames = (int)round(frames_per_cycle * 8.0);
+  int total_frames = settle_frames + active_frames;
+
+  audio_chunk_t* chunk = audio_chunk_create(total_frames, 1);
+  double amplitude = 0.7071;
+  for (int t = 0; t < total_frames; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] =
+        amplitude *
+        sin(2.0 * M_PI * target_freq * (double)t / (double)carrier_rate);
+  }
+
+  dsd_encoder_encode(encoder, chunk);
+  bool processed = dsd_decoder_process(decoder, chunk);
+  ASSERT_TRUE(processed);
+
+  double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+  for (int t = settle_frames; t < total_frames; t++) {
+    double angle = 2.0 * M_PI * target_freq * (double)t / (double)carrier_rate;
+    double val = audio_chunk_get_channel(chunk, 0)[t];
+    cos_sum += val * cos(angle);
+    sin_sum += val * sin(angle);
+    total_power += val * val;
+  }
+  double cos_amp = (2.0 / (double)active_frames) * cos_sum;
+  double sin_amp = (2.0 / (double)active_frames) * sin_sum;
+  double fundamental_power = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+  total_power /= (double)active_frames;
+
+  double noise_power = total_power - fundamental_power;
+  if (noise_power < 1e-20) noise_power = 1e-20;
+  double sinad = 10.0 * log10(fundamental_power / noise_power);
+
+  ASSERT_TRUE(sinad >= 90.0);
+
+  audio_chunk_free(chunk);
+  dsd_decoder_free(decoder);
+  dsd_encoder_free(encoder);
+}
+
+TEST(NativeDSD_HighRates_32Bit_Roundtrip) {
+  // DSD128 at 32-bit (176400 * 32 = 5644800 Hz)
+  {
+    size_t rate = 176400;
+    dsd_encoder_t* enc = dsd_encoder_create(1, rate, DSD_MODE_NATIVE, 32,
+                                            SDM_FILTER_SDM6, 20000.0, false);
+    dsd_decoder_t* dec = dsd_decoder_create(1, (double)rate, DSD_MODE_NATIVE,
+                                            32, false, 20000.0, false);
+    ASSERT_TRUE(enc && dec);
+    int total_frames = 2000;
+    audio_chunk_t* chunk = audio_chunk_create(total_frames, 1);
+    for (int t = 0; t < total_frames; t++) {
+      audio_chunk_get_channel(chunk, 0)[t] =
+          0.7071 * sin(2.0 * M_PI * 1000.0 * (double)t / (double)rate);
+    }
+    dsd_encoder_encode(enc, chunk);
+    dsd_decoder_process(dec, chunk);
+
+    double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+    int settle = 400;
+    int active = total_frames - settle;
+    for (int t = settle; t < total_frames; t++) {
+      double angle = 2.0 * M_PI * 1000.0 * (double)t / (double)rate;
+      double val = audio_chunk_get_channel(chunk, 0)[t];
+      cos_sum += val * cos(angle);
+      sin_sum += val * sin(angle);
+      total_power += val * val;
+    }
+    double cos_amp = (2.0 / (double)active) * cos_sum;
+    double sin_amp = (2.0 / (double)active) * sin_sum;
+    double fund = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+    total_power /= (double)active;
+    double noise = total_power - fund;
+    if (noise < 1e-20) noise = 1e-20;
+    double sinad = 10.0 * log10(fund / noise);
+    ASSERT_TRUE(sinad >= 105.0);
+
+    audio_chunk_free(chunk);
+    dsd_decoder_free(dec);
+    dsd_encoder_free(enc);
+  }
+
+  // DSD256 at 32-bit (352800 * 32 = 11289600 Hz)
+  {
+    size_t rate = 352800;
+    dsd_encoder_t* enc = dsd_encoder_create(1, rate, DSD_MODE_NATIVE, 32,
+                                            SDM_FILTER_SDM6, 20000.0, false);
+    dsd_decoder_t* dec = dsd_decoder_create(1, (double)rate, DSD_MODE_NATIVE,
+                                            32, false, 20000.0, false);
+    ASSERT_TRUE(enc && dec);
+    int total_frames = 4000;
+    audio_chunk_t* chunk = audio_chunk_create(total_frames, 1);
+    for (int t = 0; t < total_frames; t++) {
+      audio_chunk_get_channel(chunk, 0)[t] =
+          0.7071 * sin(2.0 * M_PI * 1000.0 * (double)t / (double)rate);
+    }
+    dsd_encoder_encode(enc, chunk);
+    dsd_decoder_process(dec, chunk);
+
+    double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+    int settle = 800;
+    int active = total_frames - settle;
+    for (int t = settle; t < total_frames; t++) {
+      double angle = 2.0 * M_PI * 1000.0 * (double)t / (double)rate;
+      double val = audio_chunk_get_channel(chunk, 0)[t];
+      cos_sum += val * cos(angle);
+      sin_sum += val * sin(angle);
+      total_power += val * val;
+    }
+    double cos_amp = (2.0 / (double)active) * cos_sum;
+    double sin_amp = (2.0 / (double)active) * sin_sum;
+    double fund = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+    total_power /= (double)active;
+    double noise = total_power - fund;
+    if (noise < 1e-20) noise = 1e-20;
+    double sinad = 10.0 * log10(fund / noise);
+    ASSERT_TRUE(sinad >= 110.0);
+
+    audio_chunk_free(chunk);
+    dsd_decoder_free(dec);
+    dsd_encoder_free(enc);
+  }
+}
+
+TEST(NativeDSD_VariableChunkRoundtrip_32Bit) {
+  size_t rate = 88200;
+  dsd_encoder_t* encoder = dsd_encoder_create(1, rate, DSD_MODE_NATIVE, 32,
+                                              SDM_FILTER_SDM6, 20000.0, false);
+  dsd_decoder_t* decoder = dsd_decoder_create(1, (double)rate, DSD_MODE_NATIVE,
+                                              32, false, 20000.0, false);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+
+  double frames_per_cycle = (double)rate / 1000.0;
+  int active_frames = (int)round(frames_per_cycle * 10.0);
+  int settle_frames = (int)round(frames_per_cycle * 4.0);
+  int total_frames = settle_frames + active_frames;
+
+  double* input_buf = (double*)calloc(total_frames, sizeof(double));
+  double* output_buf = (double*)calloc(total_frames, sizeof(double));
+  double amplitude = 0.7071;
+  for (int t = 0; t < total_frames; t++) {
+    input_buf[t] =
+        amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / (double)rate);
+  }
+
+  int chunk_sizes[] = {150, 45, 300, 800, 10, 500};
+  int num_chunks = sizeof(chunk_sizes) / sizeof(chunk_sizes[0]);
+
+  int offset = 0;
+  for (int i = 0; i < num_chunks; i++) {
+    int sz = chunk_sizes[i];
+    if (offset + sz > total_frames) sz = total_frames - offset;
+    if (sz <= 0) break;
+
+    audio_chunk_t* chunk = audio_chunk_create(sz, 1);
+    memcpy(audio_chunk_get_channel(chunk, 0), input_buf + offset,
+           sz * sizeof(double));
+    audio_chunk_set_valid_frames(chunk, sz);
+
+    dsd_encoder_encode(encoder, chunk);
+    bool processed = dsd_decoder_process(decoder, chunk);
+    ASSERT_TRUE(processed);
+
+    memcpy(output_buf + offset, audio_chunk_get_channel(chunk, 0),
+           sz * sizeof(double));
+    audio_chunk_free(chunk);
+    offset += sz;
+  }
+
+  double target_freq = 1000.0;
+  double cos_sum = 0.0, sin_sum = 0.0, total_power = 0.0;
+  for (int t = settle_frames; t < offset; t++) {
+    double angle = 2.0 * M_PI * target_freq * (double)t / (double)rate;
+    cos_sum += output_buf[t] * cos(angle);
+    sin_sum += output_buf[t] * sin(angle);
+    total_power += output_buf[t] * output_buf[t];
+  }
+  int used_frames = offset - settle_frames;
+  double cos_amp = (2.0 / (double)used_frames) * cos_sum;
+  double sin_amp = (2.0 / (double)used_frames) * sin_sum;
+  double fund = (cos_amp * cos_amp + sin_amp * sin_amp) / 2.0;
+  total_power /= (double)used_frames;
+  double noise = total_power - fund;
+  if (noise < 1e-20) noise = 1e-20;
+  double sinad = 10.0 * log10(fund / noise);
+
+  ASSERT_TRUE(sinad >= 90.0);
+
+  free(input_buf);
+  free(output_buf);
+  dsd_decoder_free(decoder);
+  dsd_encoder_free(encoder);
+}
+
+TEST(NativeDSD_MultichannelParallel) {
+  int channels = 8;
+  size_t rate = 88200;
+  dsd_encoder_t* encoder = dsd_encoder_create(
+      channels, rate, DSD_MODE_NATIVE, 32, SDM_FILTER_SDM6, 20000.0, true);
+  dsd_decoder_t* decoder = dsd_decoder_create(
+      channels, (double)rate, DSD_MODE_NATIVE, 32, false, 20000.0, true);
+  ASSERT_TRUE(encoder != NULL);
+  ASSERT_TRUE(decoder != NULL);
+
+  audio_chunk_t* chunk = audio_chunk_create(1024, channels);
+  for (int ch = 0; ch < channels; ch++) {
+    for (size_t t = 0; t < 1024; t++) {
+      audio_chunk_get_channel(chunk, ch)[t] =
+          0.5 *
+          sin(2.0 * M_PI * 1000.0 * (double)t / (double)rate + (double)ch);
+    }
+  }
+
+  dsd_encoder_encode(encoder, chunk);
+  bool processed = dsd_decoder_process(decoder, chunk);
+  ASSERT_TRUE(processed);
+  ASSERT_TRUE(dsd_decoder_is_active(decoder));
+
+  audio_chunk_free(chunk);
+  dsd_decoder_free(decoder);
   dsd_encoder_free(encoder);
 }
 
@@ -332,7 +671,7 @@ TEST(NativeDSDEncoderCreationAndOutput) {
   for (size_t t = 0; t < 64; t++) {
     double val0 = audio_chunk_get_channel(chunk, 0)[t];
     int16_t s16 = pcm_sample_encode_s16(val0);
-    (void)s16;  // Valid bit-exact 16-bit DSD stream word
+    (void)s16;
   }
 
   audio_chunk_free(chunk);
@@ -354,6 +693,31 @@ TEST(CarrierBitsCalculationTest) {
 
   cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U32_LE;
   ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)32);
+#endif
+
+  capture_device_config_t cap_cfg = {0};
+  cap_cfg.bypass_dop = false;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&cap_cfg), DSD_MODE_DOP);
+  ASSERT_EQ(capture_device_config_calculate_carrier_bits(&cap_cfg), (size_t)16);
+
+  cap_cfg.bypass_dop = true;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&cap_cfg), DSD_MODE_PCM);
+
+#if defined(ENABLE_ALSA)
+  capture_device_config_t alsa_cap_cfg = {0};
+  alsa_cap_cfg.type = AUDIO_BACKEND_TYPE_ALSA;
+  alsa_cap_cfg.bypass_dop = false;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_DOP);
+  alsa_cap_cfg.bypass_dop = true;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&alsa_cap_cfg), DSD_MODE_PCM);
+#endif
+
+#if defined(ENABLE_ASIO)
+  cap_cfg.type = AUDIO_BACKEND_TYPE_ASIO;
+  cap_cfg.cfg.asio.format = ASIO_SAMPLE_FORMAT_DSD_INT8;
+  cap_cfg.cfg.asio.has_format = true;
+  ASSERT_EQ(capture_device_config_get_dsd_mode(&cap_cfg), DSD_MODE_NATIVE);
+  ASSERT_EQ(capture_device_config_calculate_carrier_bits(&cap_cfg), (size_t)32);
 #endif
 }
 
@@ -535,7 +899,6 @@ TEST(DSDEncoderSilencePrefill) {
 }
 
 TEST(DSDEncoderGoldenCorrectness) {
-  // Create input sine wave
   audio_chunk_t* chunk = audio_chunk_create(64, 1);
   double* ch = audio_chunk_get_channel(chunk, 0);
   for (size_t i = 0; i < 64; i++) {

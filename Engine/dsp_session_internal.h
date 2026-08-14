@@ -41,8 +41,8 @@ struct dsp_session {
   engine_capture_loop_t* capture_loop;
   /** Playback loop instance. */
   engine_playback_loop_t* playback_loop;
-  /** DoP decoder instance. */
-  dop_decoder_t* dop_decoder;
+  /** DSD / DoP decoder instance. */
+  dsd_decoder_t* dsd_decoder;
   /** DSD encoder instance. */
   dsd_encoder_t* dsd_encoder;
 

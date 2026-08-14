@@ -12,6 +12,7 @@
 
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
+#include "Audio/sample_conversion.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/configuration.h"
@@ -20,7 +21,7 @@
 #include "Config/mixer_config_types.h"
 #include "Config/processor_config_types.h"
 #include "Config/resampler_config_types.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "Engine/cdsp_sem.h"
 #include "Engine/engine_capture_loop.h"
@@ -951,19 +952,19 @@ TEST(DoPEncoder_AllocationFree) {
 }
 
 typedef struct {
-  dop_decoder_t* decoder;
+  dsd_decoder_t* decoder;
   audio_chunk_t** chunks;
   int chunk_count;
-} dop_dec_test_ctx_t;
+} dsd_dec_test_ctx_t;
 
-static void dop_dec_iter(int i, void* ctx) {
-  dop_dec_test_ctx_t* c = (dop_dec_test_ctx_t*)ctx;
-  dop_decoder_detect_and_process(c->decoder, c->chunks[i % c->chunk_count]);
+static void dsd_dec_iter(int i, void* ctx) {
+  dsd_dec_test_ctx_t* c = (dsd_dec_test_ctx_t*)ctx;
+  dsd_decoder_process(c->decoder, c->chunks[i % c->chunk_count]);
 }
 
 TEST(DoPDecoder_AllocationFree) {
-  dop_decoder_t* decoder =
-      dop_decoder_create(2, 176400.0, false, 20000.0, false);
+  dsd_decoder_t* decoder =
+      dsd_decoder_create(2, 176400.0, DSD_MODE_DOP, 16, false, 20000.0, false);
   ASSERT_TRUE(decoder != NULL);
   int total_chunks = 36;
   audio_chunk_t** chunks =
@@ -982,10 +983,32 @@ TEST(DoPDecoder_AllocationFree) {
     }
     audio_chunk_set_valid_frames(chunks[i], 1024);
   }
-  dop_dec_test_ctx_t ctx = {decoder, chunks, total_chunks};
-  assert_allocation_free("DoP decoder", 0, 30, dop_dec_iter, &ctx);
+  dsd_dec_test_ctx_t ctx = {decoder, chunks, total_chunks};
+  assert_allocation_free("DoP decoder", 0, 30, dsd_dec_iter, &ctx);
   free_chunks(chunks, total_chunks);
-  dop_decoder_free(decoder);
+  dsd_decoder_free(decoder);
+}
+
+TEST(NativeDSDDecoder_AllocationFree) {
+  dsd_decoder_t* decoder = dsd_decoder_create(2, 88200.0, DSD_MODE_NATIVE, 32,
+                                              false, 20000.0, false);
+  ASSERT_TRUE(decoder != NULL);
+  int total_chunks = 36;
+  audio_chunk_t** chunks =
+      (audio_chunk_t**)calloc(total_chunks, sizeof(audio_chunk_t*));
+  for (int i = 0; i < total_chunks; i++) {
+    chunks[i] = audio_chunk_create(1024, 2);
+    for (int t = 0; t < 1024; t++) {
+      double f = pcm_sample_decode_dsd_u32(0x69696969);
+      audio_chunk_get_channel(chunks[i], 0)[t] = f;
+      audio_chunk_get_channel(chunks[i], 1)[t] = f;
+    }
+    audio_chunk_set_valid_frames(chunks[i], 1024);
+  }
+  dsd_dec_test_ctx_t ctx = {decoder, chunks, total_chunks};
+  assert_allocation_free("Native DSD decoder", 0, 30, dsd_dec_iter, &ctx);
+  free_chunks(chunks, total_chunks);
+  dsd_decoder_free(decoder);
 }
 
 static void logger_iter(int i, void* ctx) {
@@ -1504,7 +1527,7 @@ TEST(EngineCaptureLoop_AllocationFree) {
       .shared = shared,
       .capture = capture,
       .processing_params = NULL,
-      .dop_decoder = NULL,
+      .dsd_decoder = NULL,
       .chunk_pool = chunk_pool,
       .chunk_size = 1024,
       .channels = 2,

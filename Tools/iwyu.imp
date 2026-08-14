@@ -1073,9 +1073,9 @@
   },
   {
     "include": [
-      "\"dop_decoder.h\"",
+      "\"dsd_decoder.h\"",
       "private",
-      "\"DoP/dop_decoder.h\"",
+      "\"DoP/dsd_decoder.h\"",
       "public"
     ]
   },

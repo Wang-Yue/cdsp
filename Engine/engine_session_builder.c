@@ -16,7 +16,7 @@
 #include "Backend/audio_backend.h"
 #include "Backend/audio_backend_factory.h"
 #include "Config/config_error.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "Engine/dsp_session.h"
 #include "Engine/dsp_session_internal.h"
@@ -90,9 +90,14 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
                                      ? config->devices.capture_samplerate
                                      : config->devices.samplerate);
 
-  core->dop_decoder = dop_decoder_create(
+  dsd_mode_t capture_dsd_mode =
+      capture_device_config_get_dsd_mode(&config->devices.capture);
+  size_t capture_dsd_bit_depth =
+      capture_device_config_calculate_carrier_bits(&config->devices.capture);
+
+  core->dsd_decoder = dsd_decoder_create(
       capture_device_config_get_channels(&config->devices.capture),
-      capture_rate,
+      capture_rate, capture_dsd_mode, capture_dsd_bit_depth,
       capture_device_config_get_bypass_dop(&config->devices.capture),
       capture_device_config_get_dop_cutoff_hz(&config->devices.capture),
       multithreaded);
@@ -129,7 +134,7 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
       playback_rate, dsd_mode, dsd_bit_depth, dop_filter, 20000.0,
       multithreaded);
 
-  return (core->shared && core->processing_params && core->dop_decoder &&
+  return (core->shared && core->processing_params && core->dsd_decoder &&
           core->dsd_encoder);
 }
 
@@ -288,7 +293,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
       .shared = core->shared,
       .capture = core->capture,
       .processing_params = core->processing_params,
-      .dop_decoder = core->dop_decoder,
+      .dsd_decoder = core->dsd_decoder,
       .chunk_pool = core->capture_chunk_pool,
       .chunk_size = capture_chunk_size,
       .channels = capture_device_config_get_channels(&config->devices.capture),

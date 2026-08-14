@@ -302,10 +302,10 @@ $(TEST_LIB_TARGET): $(TEST_OBJS)
 	@rm -f $@
 	$(AR) rcs $@ $(TEST_OBJS)
 
-BENCH_NAMES := test_filter_benchmark test_dop_benchmark test_pipeline_benchmark test_resampler_matrix
+BENCH_NAMES := test_filter_benchmark test_dsd_benchmark test_pipeline_benchmark test_resampler_matrix
 BENCH_BINS := $(patsubst %, $(ROOT_DIR)/Tests/CLibTests/bin/%, $(BENCH_NAMES))
 
-UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_filter_benchmark.c %/test_dop_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
+UNIT_TEST_SRCS := $(filter-out %/test_runner_main.c %/test_filter_benchmark.c %/test_dsd_benchmark.c %/test_pipeline_benchmark.c %/test_resampler_matrix.c, $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c))
 ifneq ($(ENABLE_WEBSOCKET),1)
     UNIT_TEST_SRCS := $(filter-out %/test_websocket_server.c, $(UNIT_TEST_SRCS))
 endif
@@ -318,9 +318,9 @@ UNIT_TEST_RUNNER := $(ROOT_DIR)/Tests/CLibTests/bin/test_runner$(CLI_BIN_EXT)
 UNIT_TEST_BINS := $(UNIT_TEST_RUNNER)
 
 # Build benchmark binaries linked against main library (without clock_mock)
-$(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(LIB_TARGET)
+$(BENCH_BINS): $(ROOT_DIR)/Tests/CLibTests/bin/%: $(ROOT_DIR)/Tests/CLibTests/%.c $(OBJS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< $(LIB_TARGET) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) -o $@
 
 # Build combined unit test runner binary from object files (parallelized & cached)
 $(UNIT_TEST_RUNNER): $(ALL_TEST_RUNNER_OBJS) $(TEST_LIB_TARGET)

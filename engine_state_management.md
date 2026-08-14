@@ -149,7 +149,7 @@ When adding or modifying components in the engine, follow these strict memory sa
 1. **Never Nullify Without Freeing**: When replacing pointers (e.g. `active_json`, `previous_json`, `current_config`), always free the existing object before overwriting or transfer ownership explicitly to a destructor queue.
 2. **Set Pointers to `NULL` Post-Free**: Immediately after calling `free()` or object-specific destructors (e.g. `capture_backend_free(core->capture)`), set the struct field to `NULL`. All teardown paths check for `NULL` before freeing to guarantee idempotency.
 3. **Worker Thread Single-Thread Backend & Codec Ownership**: Audio backends and codecs are strictly owned and operated by their respective single worker thread:
-   - `capture_backend_t` and `dop_decoder_t` are owned and accessed **exclusively** by `EngineCaptureLoop`.
+   - `capture_backend_t` and `dsd_decoder_t` are owned and accessed **exclusively** by `EngineCaptureLoop`.
    - `playback_backend_t` and `dsd_encoder_t` are owned and accessed **exclusively** by `EnginePlaybackLoop`.
    - `resampler_t` and `pipeline_t` are owned and accessed **exclusively** by `EngineProcessingLoop`.
    Cross-thread adjustments (such as rate control speed adjustments or silence auto-pause states) are communicated strictly through lock-free atomics in `engine_shared_state_t` (`resampler_ratio`, `capture_pitch`, `state_raw`), never by sharing backend or codec pointers across threads. `dsp_session_stop_and_free()` signals stop via `engine_shared_state_request_stop()`. Upon observing the stop signal, worker threads invoke `stop()` and `close()` on their own backend before exiting. `dsp_session_stop_and_free()` joins all worker threads via `pthread_join()` before freeing backend contexts, pipelines, resamplers, or `engine_shared_state_t`.
@@ -241,7 +241,7 @@ sequenceDiagram
 
 3. **Shared State & DSD/DoP Helpers Setup**:
    - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`).
-   - If DoP is enabled on capture/playback, it allocates `dop_decoder_t`. If DSD is enabled on playback, it allocates `dsd_encoder_t`.
+   - If DSD/DoP is enabled on capture, it allocates `dsd_decoder_t`. If DSD/DoP is enabled on playback, it allocates `dsd_encoder_t`.
 
 4. **Resampler Sizing & Allocation**:
    - The resampler ratio is calculated. If the configured capture rate differs from the target pipeline rate, `resampler_create_from_config()` allocates a synchronous, asynchronous sinc, or asynchronous poly resampler.

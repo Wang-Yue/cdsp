@@ -421,7 +421,7 @@ typedef enum {
   BINARY_SAMPLE_FORMAT_S32_LE,      /**< Signed 32-bit Little Endian. */
   BINARY_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   BINARY_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
-  BINARY_SAMPLE_FORMAT_INVALID = -1  /**< Invalid format. */
+  BINARY_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
 } binary_sample_format_t;
 
 /**
@@ -872,6 +872,24 @@ bool capture_device_config_get_bypass_dop(
  * @return Cutoff frequency in Hz.
  */
 double capture_device_config_get_dop_cutoff_hz(
+    const capture_device_config_t* config);
+
+/**
+ * @brief Calculates carrier bit depth (8, 16, or 32) for a capture device
+ * configuration.
+ * @param config Pointer to the configuration.
+ * @return Carrier bit depth.
+ */
+size_t capture_device_config_calculate_carrier_bits(
+    const capture_device_config_t* config);
+
+/**
+ * @brief Gets DSD mode (PCM, DoP, or Native DSD) for a capture device
+ * configuration.
+ * @param config Pointer to the configuration.
+ * @return DSD mode.
+ */
+dsd_mode_t capture_device_config_get_dsd_mode(
     const capture_device_config_t* config);
 
 /**

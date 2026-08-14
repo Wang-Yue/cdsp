@@ -3710,7 +3710,7 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
       .shared = shared,
       .capture = cap_backend,
       .processing_params = NULL,
-      .dop_decoder = NULL,
+      .dsd_decoder = NULL,
       .chunk_pool = pool,
       .chunk_size = 64,
       .channels = 1,

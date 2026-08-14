@@ -6,7 +6,7 @@
 #include <math.h>
 #include <time.h>
 
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "DoP/dsd_encoder.h"
 #include "test_support.h"
 
@@ -78,13 +78,15 @@ TEST(DSDEncoder_Benchmark) {
   run_encoder_benchmark(8, true);
 }
 
-static void run_decoder_benchmark(int channels, bool multithreaded) {
-  size_t carrier_rate = 768000;
-  dsd_encoder_t* encoder =
-      dsd_encoder_create(channels, carrier_rate, DSD_MODE_DOP, 16,
-                         SDM_FILTER_SDM6, 20000.0, false);
-  dop_decoder_t* decoder = dop_decoder_create(channels, (double)carrier_rate,
-                                              false, 20000.0, multithreaded);
+static void run_decoder_benchmark(int channels, dsd_mode_t mode,
+                                  size_t bit_depth, bool multithreaded) {
+  size_t carrier_rate =
+      (mode == DSD_MODE_NATIVE && bit_depth == 32) ? 352800 : 768000;
+  dsd_encoder_t* encoder = dsd_encoder_create(
+      channels, carrier_rate, mode, bit_depth, SDM_FILTER_SDM6, 20000.0, false);
+  dsd_decoder_t* decoder =
+      dsd_decoder_create(channels, (double)carrier_rate, mode, bit_depth, false,
+                         20000.0, multithreaded);
   ASSERT_TRUE(encoder != NULL);
   ASSERT_TRUE(dsd_encoder_is_enabled(encoder));
   ASSERT_TRUE(decoder != NULL);
@@ -95,7 +97,8 @@ static void run_decoder_benchmark(int channels, bool multithreaded) {
   for (int ch = 0; ch < channels; ch++) {
     for (int t = 0; t < frames; t++) {
       audio_chunk_get_channel(pcm_source, ch)[t] =
-          amplitude * sin(2.0 * M_PI * 1000.0 * (double)t / carrier_rate);
+          amplitude *
+          sin(2.0 * M_PI * 1000.0 * (double)t / (double)carrier_rate);
     }
   }
 
@@ -114,10 +117,10 @@ static void run_decoder_benchmark(int channels, bool multithreaded) {
              audio_chunk_get_channel(encoded_source, ch),
              frames * sizeof(double));
     }
-    bool processed = dop_decoder_detect_and_process(decoder, temp_chunk);
+    bool processed = dsd_decoder_process(decoder, temp_chunk);
     ASSERT_TRUE(processed);
   }
-  ASSERT_TRUE(dop_decoder_is_active(decoder));
+  ASSERT_TRUE(dsd_decoder_is_active(decoder));
 
   int iters = 1000;
   struct timespec start, end;
@@ -128,33 +131,41 @@ static void run_decoder_benchmark(int channels, bool multithreaded) {
              audio_chunk_get_channel(encoded_source, ch),
              frames * sizeof(double));
     }
-    dop_decoder_detect_and_process(decoder, temp_chunk);
+    dsd_decoder_process(decoder, temp_chunk);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
   double elapsed_ns = (double)(end.tv_sec - start.tv_sec) * 1e9 +
                       (double)(end.tv_nsec - start.tv_nsec);
   double ns_per_frame = elapsed_ns / (double)(frames * iters);
-  double real_time_ratio = (1.0 / (carrier_rate * 1e-9)) / ns_per_frame;
+  double real_time_ratio = (1.0 / ((double)carrier_rate * 1e-9)) / ns_per_frame;
 
-  printf("=== DoP Decoder Throughput (%d channels, multithreaded=%s) ===\n",
-         channels, multithreaded ? "ON" : "OFF");
+  printf(
+      "=== %s Decoder Throughput (%d channels, %zu-bit, multithreaded=%s) "
+      "===\n",
+      (mode == DSD_MODE_NATIVE) ? "Native DSD" : "DoP", channels, bit_depth,
+      multithreaded ? "ON" : "OFF");
   printf("Throughput: %8.2f ns/frame\n", ns_per_frame);
   printf("Real-time ratio: %8.2fx\n", real_time_ratio);
 
   audio_chunk_free(temp_chunk);
   audio_chunk_free(encoded_source);
   audio_chunk_free(pcm_source);
-  dop_decoder_free(decoder);
+  dsd_decoder_free(decoder);
   dsd_encoder_free(encoder);
 }
 
-TEST(DoPDecoder_Benchmark) {
-  // Benchmark stereo (always sequential)
-  run_decoder_benchmark(2, false);
+TEST(DSDDecoder_Benchmark) {
+  // Benchmark DoP stereo
+  run_decoder_benchmark(2, DSD_MODE_DOP, 16, false);
 
-  // Benchmark 8-channel (sequential vs parallel)
-  run_decoder_benchmark(8, false);
-  run_decoder_benchmark(8, true);
+  // Benchmark DoP 8-channel (sequential vs parallel)
+  run_decoder_benchmark(8, DSD_MODE_DOP, 16, false);
+  run_decoder_benchmark(8, DSD_MODE_DOP, 16, true);
+
+  // Benchmark Native DSD 32-bit (ASIO mode)
+  run_decoder_benchmark(2, DSD_MODE_NATIVE, 32, false);
+  run_decoder_benchmark(8, DSD_MODE_NATIVE, 32, false);
+  run_decoder_benchmark(8, DSD_MODE_NATIVE, 32, true);
 }
 
 TEST_MAIN()

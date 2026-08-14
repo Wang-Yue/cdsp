@@ -29,14 +29,14 @@
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
-#include "DoP/dop_decoder.h"
+#include "DoP/dsd_decoder.h"
 #include "Engine/sample_rate_watcher.h"
 
 struct engine_capture_loop {
   engine_shared_state_t* shared;
   capture_backend_t* capture;
   processing_parameters_t* processing_params;
-  dop_decoder_t* dop_decoder;
+  dsd_decoder_t* dsd_decoder;
 
   size_t chunk_size;
   size_t channels;
@@ -73,7 +73,7 @@ engine_capture_loop_t* engine_capture_loop_create(
   loop->shared = config->shared;
   loop->capture = config->capture;
   loop->processing_params = config->processing_params;
-  loop->dop_decoder = config->dop_decoder;
+  loop->dsd_decoder = config->dsd_decoder;
   loop->chunk_pool = config->chunk_pool;
   loop->chunk_size = config->chunk_size;
   loop->channels = config->channels;
@@ -376,13 +376,12 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
                                                     current_measured);
   }
 
-  // DoP (DSD over PCM) Decoding:
-  // If DoP decoding is active, process the PCM chunk to detect DSD marker
-  // flags and decode them back to raw DSD samples in-place. Decoding is done
-  // before metering so RMS/Peak values reflect the actual signal instead of
-  // the carrier noise.
-  if (loop->dop_decoder) {
-    dop_decoder_detect_and_process(loop->dop_decoder, chunk);
+  // DSD (DoP / Native DSD) Decoding:
+  // If DSD decoding is active, process the chunk to decode DSD back to
+  // high-resolution PCM in-place. Decoding is done before metering so
+  // RMS/Peak values reflect the actual signal instead of carrier noise.
+  if (loop->dsd_decoder) {
+    dsd_decoder_process(loop->dsd_decoder, chunk);
   }
 
   // Update level meters with the peak/rms of this chunk.
