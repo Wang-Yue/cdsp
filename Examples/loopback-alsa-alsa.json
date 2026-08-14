@@ -1,0 +1,30 @@
+{
+  "devices": {
+    "samplerate": 48000,
+    "chunksize": 1024,
+    "capture_samplerate": 44100,
+    "queuelimit": 8,
+    "enable_rate_adjust": true,
+    "adjust_interval_s": 3.0,
+    "target_level": 4096,
+    "resampler": {
+      "type": "AsyncSinc",
+      "profile": "Balanced"
+    },
+    "capture": {
+      "type": "Alsa",
+      "channels": 2,
+      "device": "hw:Loopback,1,0",
+      "format": "F32_LE"
+    },
+    "playback": {
+      "type": "Alsa",
+      "channels": 2,
+      "device": "default",
+      "format": "S16_LE"
+    }
+  },
+  "filters": {},
+  "mixers": {},
+  "pipeline": []
+}

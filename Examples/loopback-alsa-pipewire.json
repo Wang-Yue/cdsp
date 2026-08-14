@@ -1,0 +1,30 @@
+{
+  "devices": {
+    "samplerate": 48000,
+    "chunksize": 1024,
+    "capture_samplerate": 44100,
+    "queuelimit": 4,
+    "enable_rate_adjust": true,
+    "adjust_interval_s": 3.0,
+    "resampler": {
+      "type": "AsyncSinc",
+      "profile": "Balanced"
+    },
+    "capture": {
+      "type": "Alsa",
+      "channels": 2,
+      "device": "hw:Loopback,1,0",
+      "format": "F32_LE"
+    },
+    "playback": {
+      "type": "PipeWire",
+      "channels": 2,
+      "autoconnect_to": "",
+      "node_name": "cdsp_playback",
+      "node_description": "CDSP Playback to PipeWire"
+    }
+  },
+  "filters": {},
+  "mixers": {},
+  "pipeline": []
+}
