@@ -483,11 +483,16 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
 
   // Convert planar double samples to interleaved format
   // matching chunk_to_buffer_rawbytes in upstream
+  const double* src_channels[playback->channels];
+  for (size_t c = 0; c < (size_t)playback->channels; c++) {
+    src_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   if (playback->format == SND_PCM_FORMAT_FLOAT_LE) {
     float* dst = (float*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         dst[f * playback->channels + c] = pcm_sample_encode_f32(val);
       }
     }
@@ -495,7 +500,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     int32_t* dst = (int32_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         dst[f * playback->channels + c] = pcm_sample_encode_s32(val);
       }
     }
@@ -503,7 +508,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         size_t offset = (f * playback->channels + c) * 3;
         pcm_sample_encode_s24_3bytes(val, &dst[offset]);
       }
@@ -512,7 +517,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     int32_t* dst = (int32_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         dst[f * playback->channels + c] = pcm_sample_encode_s24(val);
       }
     }
@@ -520,14 +525,14 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     double* dst = (double*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        dst[f * playback->channels + c] = audio_chunk_get_channel(chunk, c)[f];
+        dst[f * playback->channels + c] = src_channels[c][f];
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_S16_LE) {
     int16_t* dst = (int16_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
       }
     }
@@ -535,7 +540,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         dst[f * playback->channels + c] = pcm_sample_encode_dsd_u8(val);
       }
     }
@@ -543,7 +548,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint16_t* dst = (uint16_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
 #if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -556,7 +561,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint16_t* dst = (uint16_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -569,7 +574,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint32_t* dst = (uint32_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         uint32_t u32 = pcm_sample_u32_from_f32((float)val);
 #if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -582,7 +587,7 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     uint32_t* dst = (uint32_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = audio_chunk_get_channel(chunk, c)[f];
+        double val = src_channels[c][f];
         uint32_t u32 = pcm_sample_u32_from_f32((float)val);
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__

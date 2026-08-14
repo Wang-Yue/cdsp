@@ -354,14 +354,9 @@ static void lookahead_limiter_processor_process(void* impl,
   }
 
   // 4. Apply gain envelope to process channels
-  const double* gain_env = processor->scratch;
-  for (size_t i = 0; i < processor->process_channels_count; i++) {
-    int ch = processor->process_channels[i];
-    double* ch_buf = audio_chunk_get_channel(chunk, (size_t)ch);
-    for (size_t f = 0; f < count; f++) {
-      ch_buf[f] *= gain_env[f];
-    }
-  }
+  audio_chunk_apply_gain(chunk, processor->process_channels,
+                         processor->process_channels_count, processor->scratch,
+                         count);
 }
 
 static void lookahead_limiter_processor_transfer_state(void* dest_ptr,

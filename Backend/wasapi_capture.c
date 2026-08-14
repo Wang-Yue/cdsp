@@ -636,6 +636,11 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t valid_frames =
       (capture->blockalign > 0) ? (consumed_bytes / capture->blockalign) : 0;
 
+  double* dst_channels[capture->channels];
+  for (int c = 0; c < capture->channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   for (size_t f = 0; f < valid_frames; f++) {
     for (int c = 0; c < capture->channels; c++) {
       const uint8_t* src =
@@ -662,7 +667,7 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           sample = pcm_sample_decode_s32_bytes(src);
           break;
       }
-      audio_chunk_get_channel(chunk, c)[f] = sample;
+      dst_channels[c][f] = sample;
     }
   }
   audio_chunk_set_valid_frames(chunk, valid_frames);

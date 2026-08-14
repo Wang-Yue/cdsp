@@ -551,9 +551,14 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   }
 
   // Convert chunk (double) directly to raw bytes in write_buf
+  const double* src_channels[playback->channels];
+  for (int c = 0; c < playback->channels; c++) {
+    src_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   for (size_t f = 0; f < total_frames; f++) {
     for (int c = 0; c < playback->channels; c++) {
-      double sample = audio_chunk_get_channel(chunk, c)[f];
+      double sample = src_channels[c][f];
       uint8_t* dst =
           playback->write_buf + (f * (size_t)playback->channels + (size_t)c) *
                                     playback->bytes_per_sample;

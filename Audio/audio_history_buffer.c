@@ -112,11 +112,21 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
       atomic_load_explicit(&history->write_pos, memory_order_relaxed);
   size_t cap = history->capacity;
 
-  for (size_t frame = 0; frame < n_frames; frame++) {
-    size_t write_idx = (size_t)((pos + frame) % cap);
-    for (size_t ch = 0; ch < n_ch; ch++) {
-      const double* ch_data = audio_chunk_get_channel(chunk, ch);
-      history->data[ch][write_idx] = (float)ch_data[frame];
+  for (size_t ch = 0; ch < n_ch; ch++) {
+    const double* ch_data = audio_chunk_get_channel(chunk, ch);
+    float* dst = history->data[ch];
+    if (!ch_data || !dst) continue;
+
+    size_t start_idx = (size_t)(pos % cap);
+    size_t first_count = cap - start_idx;
+    if (first_count > n_frames) first_count = n_frames;
+    size_t second_count = n_frames - first_count;
+
+    for (size_t f = 0; f < first_count; f++) {
+      dst[start_idx + f] = (float)ch_data[f];
+    }
+    for (size_t f = 0; f < second_count; f++) {
+      dst[f] = (float)ch_data[first_count + f];
     }
   }
 

@@ -524,12 +524,15 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
     }
   }
 
+  const double* src_channels[playback->channels];
+  for (int ch = 0; ch < playback->channels; ch++) {
+    src_channels[ch] = audio_chunk_get_channel(chunk, ch);
+  }
+  float* dst = (float*)playback->write_buf;
   for (size_t f = 0; f < frames; f++) {
     for (int ch = 0; ch < playback->channels; ch++) {
-      float sample = (float)audio_chunk_get_channel(chunk, ch)[f];
-      memcpy(playback->write_buf +
-                 (f * (size_t)playback->channels + (size_t)ch) * sizeof(float),
-             &sample, sizeof(float));
+      dst[f * (size_t)playback->channels + (size_t)ch] =
+          (float)src_channels[ch][f];
     }
   }
 

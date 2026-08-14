@@ -831,9 +831,10 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     }
 
     if (extra_to_generate > 0) {
-      for (size_t f = frames_read; f < (frames_read + extra_to_generate); f++) {
-        for (int c = 0; c < capture->channels; c++) {
-          audio_chunk_get_channel(chunk, c)[f] = 0.0;
+      for (int c = 0; c < capture->channels; c++) {
+        if (dst_channels[c]) {
+          memset(dst_channels[c] + frames_read, 0,
+                 extra_to_generate * sizeof(double));
         }
       }
       capture->extra_samples_generated += extra_to_generate;

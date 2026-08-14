@@ -1863,9 +1863,14 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
   }
 
   // Convert chunk to interleaved raw bytes
+  const double* src_channels[playback->channels];
+  for (int c = 0; c < playback->channels; c++) {
+    src_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   for (size_t f = 0; f < valid_frames; f++) {
     for (int c = 0; c < playback->channels; c++) {
-      double sample = audio_chunk_get_channel(chunk, c)[f];
+      double sample = src_channels[c][f];
       uint8_t* dst =
           playback->encode_buf + (f * (size_t)playback->channels + (size_t)c) *
                                      playback->bytes_per_sample;
@@ -2323,6 +2328,11 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   }
 
   // Convert raw bytes to audio_chunk_t
+  double* dst_channels[capture->channels];
+  for (int c = 0; c < capture->channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   for (size_t f = 0; f < frames; f++) {
     for (int c = 0; c < capture->channels; c++) {
       const uint8_t* src =
@@ -2359,7 +2369,7 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           sample = pcm_sample_decode_s32_bytes(src);
           break;
       }
-      audio_chunk_get_channel(chunk, c)[f] = sample;
+      dst_channels[c][f] = sample;
     }
   }
   audio_chunk_set_valid_frames(chunk, frames);

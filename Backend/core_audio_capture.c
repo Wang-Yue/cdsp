@@ -510,10 +510,14 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
   size_t valid_frames =
       (capture->blockalign > 0) ? (consumed / capture->blockalign) : 0;
 
+  double* dst_channels[capture->channels];
+  for (int ch = 0; ch < capture->channels; ch++) {
+    dst_channels[ch] = audio_chunk_get_channel(chunk, ch);
+  }
   const float* fsrc = (const float*)capture->read_scratch;
   for (size_t f = 0; f < valid_frames; f++) {
     for (int ch = 0; ch < capture->channels; ch++) {
-      audio_chunk_get_channel(chunk, ch)[f] =
+      dst_channels[ch][f] =
           (double)fsrc[f * (size_t)capture->channels + (size_t)ch];
     }
   }

@@ -121,13 +121,18 @@ static bool generator_capture_read(void* ctx, size_t frames,
   freq_delta = fmod(freq_delta, 1.0);
   if (freq_delta < 0.0) freq_delta += 1.0;
 
+  double* dst_channels[capture->channels];
+  for (int c = 0; c < capture->channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
   switch (capture->signal_type) {
     case SIGNAL_TYPE_SINE: {
       double phase = capture->phase;
       for (size_t f = 0; f < frames; f++) {
         double val = sin(phase * 2.0 * M_PI) * capture->amplitude;
         for (int c = 0; c < capture->channels; c++) {
-          audio_chunk_get_channel(chunk, c)[f] = val;
+          dst_channels[c][f] = val;
         }
         phase += freq_delta;
         if (phase >= 1.0) {
@@ -144,7 +149,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
         double val =
             (sin(phase * 2.0 * M_PI) >= 0.0 ? 1.0 : -1.0) * capture->amplitude;
         for (int c = 0; c < capture->channels; c++) {
-          audio_chunk_get_channel(chunk, c)[f] = val;
+          dst_channels[c][f] = val;
         }
         phase += freq_delta;
         if (phase >= 1.0) {
@@ -162,7 +167,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
               (((double)rand_r(&capture->rand_seed) / (double)RAND_MAX) * 2.0 -
                1.0) *
               capture->amplitude;
-          audio_chunk_get_channel(chunk, c)[f] = noise_val;
+          dst_channels[c][f] = noise_val;
         }
       }
       break;
@@ -171,7 +176,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
     default: {
       for (size_t f = 0; f < frames; f++) {
         for (int c = 0; c < capture->channels; c++) {
-          audio_chunk_get_channel(chunk, c)[f] = 0.0;
+          dst_channels[c][f] = 0.0;
         }
       }
       break;
