@@ -1,0 +1,24 @@
+{
+  "devices": {
+    "samplerate": 768000,
+    "capture_samplerate": 44100,
+    "chunksize": 2048,
+    "capture": {
+      "type": "WavFile",
+      "filename": "/Users/wangyue/music.wav",
+      "channels": 2,
+      "bypass_dop": true
+    },
+    "playback": {
+      "type": "CoreAudio",
+      "device": "DX3 Pro+",
+      "channels": 2,
+      "output_dop": true,
+      "exclusive": false
+    },
+    "resampler": {
+      "type": "Synchronous"
+    }
+  },
+  "pipeline": []
+}

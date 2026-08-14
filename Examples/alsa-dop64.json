@@ -1,0 +1,27 @@
+{
+  "devices": {
+    "samplerate": 176400,
+    "capture_samplerate": 44100,
+    "chunksize": 2048,
+    "target_level": 2048,
+    "multithreaded": true,
+    "resampler": {
+      "type": "AsyncPoly",
+      "profile": "Fast"
+    },
+    "capture": {
+      "type": "File",
+      "channels": 2,
+      "filename": "/home/yue/music.wav",
+      "format": "S16_LE",
+      "is_wav": true
+    },
+    "playback": {
+      "type": "Alsa",
+      "channels": 2,
+      "device": "hw:Pro,0",
+      "format": "S32_LE",
+      "output_dop": true
+    }
+  }
+}

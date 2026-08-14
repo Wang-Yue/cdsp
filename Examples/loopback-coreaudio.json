@@ -1,0 +1,27 @@
+{
+    "devices": {
+        "samplerate": 44100,
+        "playback": {
+            "output_dop": false,
+            "channels": 2,
+            "exclusive": true,
+            "type": "CoreAudio",
+            "device": "BlackHole 16ch"
+        },
+        "silence_timeout_s": 6,
+        "queuelimit": 4,
+        "rate_measure_interval_s": 1,
+        "silence_threshold": -84,
+        "multithreaded": false,
+        "stop_on_rate_change": false,
+        "capture": {
+            "bypass_dop": true,
+            "channels": 2,
+            "dop_cutoff_hz": 20000,
+            "type": "CoreAudio",
+            "device": "BlackHole 2ch"
+        },
+        "chunksize": 2048,
+        "enable_rate_adjust": true
+    }
+}
