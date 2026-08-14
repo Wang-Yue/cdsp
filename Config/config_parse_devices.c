@@ -425,8 +425,6 @@ typedef struct {
   bool has_exclusive;
   bool output_dop;
   bool has_output_dop;
-  bool output_dsd;
-  bool has_output_dsd;
   sdm_filter_t dsd_encoder_filter;
   bool has_dsd_encoder_filter;
   char filename[512];
@@ -547,8 +545,6 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 
   play->has_output_dop =
       parse_json_bool(play_obj, "output_dop", &play->output_dop);
-  play->has_output_dsd =
-      parse_json_bool(play_obj, "output_dsd", &play->output_dsd);
 
   char dsd_filter_buf[64];
   if (parse_json_str(play_obj, "dsd_encoder_filter", dsd_filter_buf,
@@ -616,9 +612,6 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.alsa.format =
           temp.has_alsa_format ? temp.alsa_format : ALSA_SAMPLE_FORMAT_INVALID;
       final_play->cfg.alsa.has_format = temp.has_alsa_format;
-      final_play->cfg.alsa.output_dsd =
-          temp.has_output_dsd ? temp.output_dsd : false;
-      final_play->cfg.alsa.has_output_dsd = temp.has_output_dsd;
       final_play->cfg.alsa.target_level =
           devices->has_target_level ? devices->target_level : 0;
       final_play->cfg.alsa.has_target_level = devices->has_target_level;
@@ -696,9 +689,6 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.asio.format =
           temp.has_asio_format ? temp.asio_format : ASIO_SAMPLE_FORMAT_INVALID;
       final_play->cfg.asio.has_format = temp.has_asio_format;
-      final_play->cfg.asio.output_dsd =
-          temp.has_output_dsd ? temp.output_dsd : false;
-      final_play->cfg.asio.has_output_dsd = temp.has_output_dsd;
       break;
 #endif
     default:

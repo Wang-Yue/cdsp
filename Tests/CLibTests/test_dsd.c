@@ -682,17 +682,27 @@ TEST(CarrierBitsCalculationTest) {
 #if defined(ENABLE_ALSA)
   playback_device_config_t cfg = {0};
   cfg.type = AUDIO_BACKEND_TYPE_ALSA;
-  cfg.cfg.alsa.output_dsd = true;
   cfg.cfg.alsa.has_format = true;
 
   cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U8;
+  ASSERT_EQ(playback_device_config_get_dsd_mode(&cfg), DSD_MODE_NATIVE);
   ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)8);
 
   cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U16_LE;
+  ASSERT_EQ(playback_device_config_get_dsd_mode(&cfg), DSD_MODE_NATIVE);
   ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)16);
 
   cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_DSD_U32_LE;
+  ASSERT_EQ(playback_device_config_get_dsd_mode(&cfg), DSD_MODE_NATIVE);
   ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)32);
+
+  cfg.cfg.alsa.format = ALSA_SAMPLE_FORMAT_S32_LE;
+  ASSERT_EQ(playback_device_config_get_dsd_mode(&cfg), DSD_MODE_PCM);
+  ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)16);
+
+  cfg.output_dop = true;
+  ASSERT_EQ(playback_device_config_get_dsd_mode(&cfg), DSD_MODE_DOP);
+  ASSERT_EQ(playback_device_config_calculate_carrier_bits(&cfg), (size_t)16);
 #endif
 
   capture_device_config_t cap_cfg = {0};
@@ -1015,8 +1025,6 @@ TEST(ALSAPlayback_NativeDSD_FormatSupportAndSilencePrefill) {
     snprintf(cfg.cfg.alsa.device, sizeof(cfg.cfg.alsa.device), "null");
     cfg.cfg.alsa.format = dsd_fmts[i];
     cfg.cfg.alsa.has_format = true;
-    cfg.cfg.alsa.output_dsd = true;
-    cfg.cfg.alsa.has_output_dsd = true;
 
     backend_error_t err;
     playback_backend_t* pb =

@@ -108,24 +108,8 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
   if (dop_filter == SDM_FILTER_INVALID) {
     dop_filter = SDM_FILTER_SDM6;
   }
-  dsd_mode_t dsd_mode = DSD_MODE_PCM;
-  bool is_dsd = false;
-#if defined(ENABLE_ALSA)
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
-    is_dsd = config->devices.playback.cfg.alsa.output_dsd;
-  }
-#endif
-#if defined(ENABLE_ASIO)
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
-    is_dsd = config->devices.playback.cfg.asio.output_dsd;
-  }
-#endif
-
-  if (is_dsd) {
-    dsd_mode = DSD_MODE_NATIVE;
-  } else if (config->devices.playback.output_dop) {
-    dsd_mode = DSD_MODE_DOP;
-  }
+  dsd_mode_t dsd_mode =
+      playback_device_config_get_dsd_mode(&config->devices.playback);
   size_t dsd_bit_depth =
       playback_device_config_calculate_carrier_bits(&config->devices.playback);
 

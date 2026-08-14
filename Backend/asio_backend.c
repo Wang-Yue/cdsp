@@ -1506,12 +1506,12 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
 static bool open_asio_playback(const char* devname, size_t num_channels,
                                int samplerate,
                                asio_sample_format_t configured_format,
-                               bool has_format, bool output_dsd,
-                               IASIO** out_iasio,
+                               bool has_format, IASIO** out_iasio,
                                asio_sample_format_t* out_resolved_format,
                                backend_error_t* err) {
   long inputs = 0, outputs = 0;
-  if (!open_asio_device(devname, samplerate, output_dsd, out_iasio, &inputs,
+  bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+  if (!open_asio_device(devname, samplerate, is_dsd, out_iasio, &inputs,
                         &outputs, err)) {
     return false;
   }
@@ -1577,7 +1577,6 @@ struct asio_playback {
   int chunk_size;
   asio_sample_format_t format;
   bool has_format;
-  bool output_dsd;
   bool full_duplex;
   int target_level;
 
@@ -1664,9 +1663,9 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
 
   if (playback->full_duplex) {
     long inputs = 0, outputs = 0, preferred_buf = 0;
-    if (!init_shared_asio(playback->device, playback->sample_rate,
-                          playback->output_dsd, &inputs, &outputs,
-                          &preferred_buf, err)) {
+    bool is_dsd = (playback->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+    if (!init_shared_asio(playback->device, playback->sample_rate, is_dsd,
+                          &inputs, &outputs, &preferred_buf, err)) {
       goto error_cleanup;
     }
     if ((size_t)playback->channels > (size_t)outputs) {
@@ -1687,8 +1686,8 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   } else {
     if (!open_asio_playback(playback->device, (size_t)playback->channels,
                             playback->sample_rate, playback->format,
-                            playback->has_format, playback->output_dsd,
-                            &playback->iasio, &resolved_format, err)) {
+                            playback->has_format, &playback->iasio,
+                            &resolved_format, err)) {
       goto error_cleanup;
     }
     long preferred_buf = 0;
@@ -1991,15 +1990,9 @@ static playback_backend_t* asio_playback_create(
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.asio.channels;
   playback->chunk_size = chunk_size;
-  playback->output_dsd = config->cfg.asio.output_dsd;
-  if (playback->output_dsd) {
-    playback->format = ASIO_SAMPLE_FORMAT_DSD_INT8;
-    playback->has_format = true;
-  } else {
-    playback->format = config->cfg.asio.format;
-    playback->has_format =
-        (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
-  }
+  playback->format = config->cfg.asio.format;
+  playback->has_format =
+      (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
   playback->full_duplex = full_duplex;
 
   atomic_init(&playback->is_running, false);

@@ -18,10 +18,9 @@
     "playback": {
       "type": "Asio",
       "device": "Topping USB Audio Device",
-      "format": "S32_LE",
+      "format": "DSD_INT8",
       "channels": 2,
-      "output_dop": false,
-      "output_dsd": true
+      "output_dop": false
     },
     "resampler": {
       "type": "AsyncPoly",

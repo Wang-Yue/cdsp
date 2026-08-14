@@ -263,7 +263,7 @@ static void* lookahead_limiter_processor_create(
                           .parameters.delay = dparams};
 
   for (size_t i = 0; i < processor->delays_count; i++) {
-    char dname[64];
+    char dname[128];
     snprintf(dname, sizeof(dname), "%s_delay_%zu", processor->name, i);
     processor->delays[i] =
         g_delay_vtable.create(dname, &fcfg, sample_rate, chunk_size, NULL, err);

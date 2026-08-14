@@ -755,11 +755,6 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       if (a->playback.cfg.alsa.format != b->playback.cfg.alsa.format)
         return false;
-      if (a->playback.cfg.alsa.output_dsd != b->playback.cfg.alsa.output_dsd)
-        return false;
-      if (a->playback.cfg.alsa.has_output_dsd !=
-          b->playback.cfg.alsa.has_output_dsd)
-        return false;
       break;
 #endif
 #if defined(ENABLE_PIPEWIRE)
@@ -833,11 +828,6 @@ bool devices_config_equal(const devices_config_t* a,
       if (!safe_streq(a->playback.cfg.asio.device, b->playback.cfg.asio.device))
         return false;
       if (a->playback.cfg.asio.format != b->playback.cfg.asio.format)
-        return false;
-      if (a->playback.cfg.asio.output_dsd != b->playback.cfg.asio.output_dsd)
-        return false;
-      if (a->playback.cfg.asio.has_output_dsd !=
-          b->playback.cfg.asio.has_output_dsd)
         return false;
       break;
 #endif

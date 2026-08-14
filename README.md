@@ -120,7 +120,7 @@ To demonstrate the architectural flexibility of our clean-sheet engines in accom
 
 Rather than running DSD as a separate, bulky processing layer, our design integrates it directly into the capture and processing pipeline:
 - **Automatic In-Place Decoding**: The DSD decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](Engine/engine_capture_loop.c)). It handles both Native DSD bitstreams (e.g. from ALSA or ASIO) and DoP carrier streams (detecting the `0x05`/`0xFA` marker alternation). When active, it decodes the raw 1-bit DSD samples in-place and decimates them back to high-resolution PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
-- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Engine/engine_processing_loop.c)), if `output_dop` or `output_dsd` is enabled, processed PCM is modulated back to DSD and packed into a DoP or Native DSD stream before being sent to the playback SPSC queue.
+- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Engine/engine_processing_loop.c)), if `output_dop` is enabled or a Native DSD sample format is configured, processed PCM is modulated back to DSD and packed into a DoP or Native DSD stream before being sent to the playback SPSC queue.
 
 ### 2.6 Resampling Architecture: Fixed Input vs. Fixed Output Models
 

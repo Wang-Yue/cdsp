@@ -20,8 +20,7 @@
       "type": "Alsa",
       "channels": 2,
       "device": "hw:Pro,0",
-      "format": "DSD_U32_BE",
-      "output_dsd": true
+      "format": "DSD_U32_BE"
     }
   }
 }

@@ -749,27 +749,6 @@ size_t playback_device_config_calculate_carrier_bits(
     const playback_device_config_t* config) {
   if (!config) return 16;
 
-  bool is_dsd = false;
-#if defined(ENABLE_ALSA)
-  if (config->type == AUDIO_BACKEND_TYPE_ALSA) {
-    is_dsd = config->cfg.alsa.output_dsd;
-  }
-#endif
-#if defined(ENABLE_ASIO)
-  if (config->type == AUDIO_BACKEND_TYPE_ASIO) {
-    is_dsd = config->cfg.asio.output_dsd;
-  }
-#endif
-
-  bool is_dop = config->output_dop;
-  if (!is_dsd && !is_dop) {
-    return 16;
-  }
-
-  if (is_dop) {
-    return 16;
-  }
-
   // Native DSD mode container bit calculations
 #if defined(ENABLE_ALSA)
   if (config->type == AUDIO_BACKEND_TYPE_ALSA && config->cfg.alsa.has_format) {
@@ -787,12 +766,46 @@ size_t playback_device_config_calculate_carrier_bits(
 #endif
 
 #if defined(ENABLE_ASIO)
-  if (config->type == AUDIO_BACKEND_TYPE_ASIO) {
-    return 32;
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
+    if (config->cfg.asio.format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      return 32;
+    }
   }
 #endif
 
   return 16;
+}
+
+dsd_mode_t playback_device_config_get_dsd_mode(
+    const playback_device_config_t* config) {
+  if (!config) return DSD_MODE_PCM;
+
+#if defined(ENABLE_ALSA)
+  if (config->type == AUDIO_BACKEND_TYPE_ALSA && config->cfg.alsa.has_format) {
+    alsa_sample_format_t alsa_fmt = config->cfg.alsa.format;
+    if (alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U8 ||
+        alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_LE ||
+        alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U16_BE ||
+        alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_LE ||
+        alsa_fmt == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
+      return DSD_MODE_NATIVE;
+    }
+  }
+#endif
+
+#if defined(ENABLE_ASIO)
+  if (config->type == AUDIO_BACKEND_TYPE_ASIO && config->cfg.asio.has_format) {
+    if (config->cfg.asio.format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      return DSD_MODE_NATIVE;
+    }
+  }
+#endif
+
+  if (config->output_dop) {
+    return DSD_MODE_DOP;
+  }
+
+  return DSD_MODE_PCM;
 }
 
 sdm_filter_t playback_device_config_get_dsd_encoder_filter(

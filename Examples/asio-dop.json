@@ -15,8 +15,7 @@
       "device": "Topping USB Audio Device",
       "format": "S32_LE",
       "channels": 2,
-      "output_dop": true,
-      "output_dsd": false
+      "output_dop": true
     },
     "resampler": {
       "type": "Synchronous"

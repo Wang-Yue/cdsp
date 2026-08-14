@@ -523,8 +523,6 @@ typedef struct {
   char device[256];            /**< Device name. */
   alsa_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
-  bool output_dsd;             /**< Enable Native DSD output. */
-  bool has_output_dsd;         /**< True if output_dsd is specified. */
   int target_level;            /**< Target buffer level in frames. */
   bool has_target_level;       /**< True if target_level is specified. */
 } alsa_playback_config_t;
@@ -643,8 +641,6 @@ typedef struct {
   char device[256];            /**< Device name. */
   asio_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
-  bool output_dsd;             /**< Enable Native DSD output. */
-  bool has_output_dsd;         /**< True if output_dsd is specified. */
 } asio_playback_config_t;
 #endif
 
@@ -932,6 +928,15 @@ bool playback_device_config_get_exclusive(
  * @return The carrier bits (8, 16, or 32).
  */
 size_t playback_device_config_calculate_carrier_bits(
+    const playback_device_config_t* config);
+
+/**
+ * @brief Gets the DSD mode (Native, DoP, or PCM) for a playback device
+ * configuration based on format and output_dop.
+ * @param config Pointer to the configuration.
+ * @return DSD mode (DSD_MODE_NATIVE, DSD_MODE_DOP, or DSD_MODE_PCM).
+ */
+dsd_mode_t playback_device_config_get_dsd_mode(
     const playback_device_config_t* config);
 
 /**
