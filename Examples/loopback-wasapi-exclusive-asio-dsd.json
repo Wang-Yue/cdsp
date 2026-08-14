@@ -1,0 +1,33 @@
+{
+  "devices": {
+    "samplerate": 192000,
+    "capture_samplerate": 48000,
+    "chunksize": 1024,
+    "stop_on_rate_change": true,
+    "enable_rate_adjust": true,
+    "multithreaded": true,
+
+    "capture": {
+      "type": "WASAPI",
+      "device": "CABLE Output (VB-Audio Virtual Cable)",
+      "format": "S16",
+      "channels": 2,
+      "exclusive": true,
+      "polling": true
+    },
+    "playback": {
+      "type": "Asio",
+      "device": "Topping USB Audio Device",
+      "format": "S32_LE",
+      "channels": 2,
+      "output_dop": false,
+      "output_dsd": true
+    },
+    "resampler": {
+      "type": "AsyncPoly",
+      "interpolation": "Linear"
+    },
+    "target_level": 2048
+  },
+  "pipeline": []
+}

@@ -1,0 +1,26 @@
+{
+  "devices": {
+    "samplerate": 44100,
+    "capture_samplerate": 16000,
+    "chunksize": 2048,
+    "stop_on_rate_change": false,
+    "capture": {
+      "type": "WavFile",
+      "filename": "C:/Users/yuleo/music.wav",
+      "channels": 2,
+      "bypass_dop": true
+    },
+    "playback": {
+      "type": "Asio",
+      "device": "Topping USB Audio Device",
+      "format": "S32_LE",
+      "channels": 2,
+      "output_dop": false,
+      "output_dsd": false
+    },
+    "resampler": {
+      "type": "Synchronous"
+    }
+  },
+  "pipeline": []
+}

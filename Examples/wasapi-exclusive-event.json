@@ -1,0 +1,26 @@
+{
+  "devices": {
+    "samplerate": 176400,
+    "capture_samplerate": 16000,
+    "chunksize": 4096,
+    "stop_on_rate_change": false,
+    "capture": {
+      "type": "WavFile",
+      "filename": "C:/Users/yuleo/music.wav",
+      "channels": 2,
+      "bypass_dop": true
+    },
+    "playback": {
+      "type": "WASAPI",
+      "device": "Speakers (TOPPING USB DAC)",
+      "format": "S32",
+      "channels": 2,
+      "exclusive": true,
+      "polling": false
+    },
+    "resampler": {
+      "type": "Synchronous"
+    }
+  },
+  "pipeline": []
+}

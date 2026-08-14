@@ -1,0 +1,30 @@
+{
+  "devices": {
+    "samplerate": 44100,
+    "capture_samplerate": 48000,
+    "chunksize": 1024,
+    "stop_on_rate_change": true,
+    "enable_rate_adjust": true,
+    "capture": {
+      "type": "WASAPI",
+      "device": "CABLE Output (VB-Audio Virtual Cable)",
+      "format": "F32",
+      "channels": 2,
+      "exclusive": false,
+      "polling": true
+    },
+    "playback": {
+      "type": "WASAPI",
+      "device": "Speakers (TOPPING USB DAC)",
+      "format": "S32",
+      "channels": 2,
+      "exclusive": true
+    },
+    "resampler": {
+      "type": "AsyncPoly",
+      "interpolation": "Linear"
+    },
+    "target_level": 2048
+  },
+  "pipeline": []
+}
