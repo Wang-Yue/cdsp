@@ -86,12 +86,18 @@ int dsp_config_apply_overrides(dsp_config_t* config,
                      cfg_chunksize, scaled_chunksize);
         config->devices.chunksize = scaled_chunksize;
 
-        if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
-            !config->devices.capture.is_wav &&
-            config->devices.capture.cfg.raw_file.has_extra_samples) {
-          config->devices.capture.cfg.raw_file.extra_samples =
-              config->devices.capture.cfg.raw_file.extra_samples * rate /
-              cfg_rate;
+        if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
+          if (config->devices.capture.is_wav &&
+              config->devices.capture.cfg.wav_file.has_extra_samples) {
+            config->devices.capture.cfg.wav_file.extra_samples =
+                config->devices.capture.cfg.wav_file.extra_samples * rate /
+                cfg_rate;
+          } else if (!config->devices.capture.is_wav &&
+                     config->devices.capture.cfg.raw_file.has_extra_samples) {
+            config->devices.capture.cfg.raw_file.extra_samples =
+                config->devices.capture.cfg.raw_file.extra_samples * rate /
+                cfg_rate;
+          }
         } else if (config->devices.capture.type ==
                        AUDIO_BACKEND_TYPE_STDIN_OUT &&
                    config->devices.capture.cfg.stdin_in.has_extra_samples) {

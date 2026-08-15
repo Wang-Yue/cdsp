@@ -883,6 +883,9 @@ binary_sample_format_t capture_device_config_get_binary_format(
                                          : BINARY_SAMPLE_FORMAT_INVALID;
 #endif
     case AUDIO_BACKEND_TYPE_FILE:
+      if (config->is_wav) {
+        return BINARY_SAMPLE_FORMAT_INVALID;
+      }
       return config->cfg.raw_file.has_format ? config->cfg.raw_file.format
                                              : BINARY_SAMPLE_FORMAT_INVALID;
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
