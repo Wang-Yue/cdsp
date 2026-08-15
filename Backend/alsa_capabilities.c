@@ -126,7 +126,7 @@ static int list_pcm_devices(bool input, char out_names[][256], int max_names,
       for (char* p = desc_clean; *p; p++) {
         if (*p == '\n' || *p == '\r') *p = ' ';
       }
-      snprintf(out_names[count++], 256, "%s (%s)", name, desc_clean);
+      snprintf(out_names[count++], 256, "%.120s (%.120s)", name, desc_clean);
       free(desc);
     } else {
       snprintf(out_names[count++], 256, "%s", name);

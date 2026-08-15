@@ -33,10 +33,9 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
       return false;
     }
     for (int i = 0; i < count; i++) {
-      strncpy(list[i].identifier, devs[i].name, sizeof(list[i].identifier) - 1);
-      list[i].identifier[sizeof(list[i].identifier) - 1] = '\0';
-      strncpy(list[i].name, devs[i].name, sizeof(list[i].name) - 1);
-      list[i].name[sizeof(list[i].name) - 1] = '\0';
+      snprintf(list[i].identifier, sizeof(list[i].identifier), "%.255s",
+               devs[i].name);
+      snprintf(list[i].name, sizeof(list[i].name), "%.255s", devs[i].name);
       list[i].has_name = true;
     }
     *out_devices = list;
@@ -70,8 +69,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
           out_err->type = CDSP_DEVICE_ERROR_UNKNOWN;
           break;
       }
-      strncpy(out_err->message, err.message, sizeof(out_err->message) - 1);
-      out_err->message[sizeof(out_err->message) - 1] = '\0';
+      snprintf(out_err->message, sizeof(out_err->message), "%s", err.message);
     }
     return false;
   }
@@ -83,8 +81,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
     return false;
   }
 
-  strncpy(pub->name, desc->name, sizeof(pub->name) - 1);
-  pub->name[sizeof(pub->name) - 1] = '\0';
+  snprintf(pub->name, sizeof(pub->name), "%s", desc->name);
   pub->description[0] = '\0';  // Not used internally in C port
 
   pub->capability_sets_count = desc->capability_sets_count;
