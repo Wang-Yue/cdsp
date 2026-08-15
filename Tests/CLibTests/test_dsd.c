@@ -1009,6 +1009,248 @@ TEST(DSDEncoderGoldenCorrectness) {
   audio_chunk_free(chunk);
 }
 
+TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
+  int channels = 2;
+  size_t frames = 512;
+
+  // 1. ALSA 8-bit DSD_U8 Round Trip
+  {
+    audio_chunk_t* chunk_in = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out = audio_chunk_create(frames, channels);
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint8_t raw_byte = (uint8_t)((f * 37 + c * 59) & 0xFF);
+        audio_chunk_get_channel(chunk_in, c)[f] =
+            pcm_sample_decode_dsd_u8(raw_byte);
+      }
+    }
+
+    uint8_t* hw_buf =
+        (uint8_t*)malloc(frames * (size_t)channels * sizeof(uint8_t));
+    // ALSA Playback serialization
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        double val = audio_chunk_get_channel(chunk_in, c)[f];
+        hw_buf[f * (size_t)channels + (size_t)c] =
+            pcm_sample_encode_dsd_u8(val);
+      }
+    }
+    // ALSA Capture deserialization
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        audio_chunk_get_channel(chunk_out, c)[f] =
+            pcm_sample_decode_dsd_u8(hw_buf[f * (size_t)channels + (size_t)c]);
+      }
+    }
+
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        ASSERT_EQ(
+            pcm_sample_encode_dsd_u8(audio_chunk_get_channel(chunk_in, c)[f]),
+            pcm_sample_encode_dsd_u8(audio_chunk_get_channel(chunk_out, c)[f]));
+      }
+    }
+    free(hw_buf);
+    audio_chunk_free(chunk_in);
+    audio_chunk_free(chunk_out);
+  }
+
+  // 2. ALSA 16-bit DSD_U16_LE and DSD_U16_BE Round Trip
+  {
+    audio_chunk_t* chunk_in = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_le = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_be = audio_chunk_create(frames, channels);
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint16_t raw_word = (uint16_t)((f * 1337 + c * 7919) & 0xFFFF);
+        audio_chunk_get_channel(chunk_in, c)[f] =
+            pcm_sample_decode_s16((int16_t)raw_word);
+      }
+    }
+
+    uint8_t* hw_buf_le = (uint8_t*)malloc(frames * (size_t)channels * 2);
+    uint8_t* hw_buf_be = (uint8_t*)malloc(frames * (size_t)channels * 2);
+
+    // Playback LE & BE
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        double val = audio_chunk_get_channel(chunk_in, c)[f];
+        uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
+        size_t off = (f * (size_t)channels + (size_t)c) * 2;
+        hw_buf_le[off] = (uint8_t)(u16 & 0xFF);
+        hw_buf_le[off + 1] = (uint8_t)((u16 >> 8) & 0xFF);
+        hw_buf_be[off] = (uint8_t)((u16 >> 8) & 0xFF);
+        hw_buf_be[off + 1] = (uint8_t)(u16 & 0xFF);
+      }
+    }
+
+    // Capture LE & BE
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        size_t off = (f * (size_t)channels + (size_t)c) * 2;
+        uint16_t u16_le =
+            (uint16_t)hw_buf_le[off] | ((uint16_t)hw_buf_le[off + 1] << 8);
+        uint16_t u16_be =
+            ((uint16_t)hw_buf_be[off] << 8) | (uint16_t)hw_buf_be[off + 1];
+        audio_chunk_get_channel(chunk_out_le, c)[f] =
+            pcm_sample_decode_s16((int16_t)u16_le);
+        audio_chunk_get_channel(chunk_out_be, c)[f] =
+            pcm_sample_decode_s16((int16_t)u16_be);
+      }
+    }
+
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        ASSERT_EQ(
+            pcm_sample_encode_s16(audio_chunk_get_channel(chunk_in, c)[f]),
+            pcm_sample_encode_s16(audio_chunk_get_channel(chunk_out_le, c)[f]));
+        ASSERT_EQ(
+            pcm_sample_encode_s16(audio_chunk_get_channel(chunk_in, c)[f]),
+            pcm_sample_encode_s16(audio_chunk_get_channel(chunk_out_be, c)[f]));
+      }
+    }
+
+    free(hw_buf_le);
+    free(hw_buf_be);
+    audio_chunk_free(chunk_in);
+    audio_chunk_free(chunk_out_le);
+    audio_chunk_free(chunk_out_be);
+  }
+
+  // 3. ALSA 32-bit DSD_U32_LE and DSD_U32_BE Round Trip
+  {
+    audio_chunk_t* chunk_in = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_le = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_be = audio_chunk_create(frames, channels);
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint32_t raw_word =
+            (uint32_t)(0x12345678U ^ (uint32_t)(f * 104729U + c * 31337U));
+        audio_chunk_get_channel(chunk_in, c)[f] =
+            pcm_sample_decode_dsd_u32(raw_word);
+      }
+    }
+
+    uint8_t* hw_buf_le = (uint8_t*)malloc(frames * (size_t)channels * 4);
+    uint8_t* hw_buf_be = (uint8_t*)malloc(frames * (size_t)channels * 4);
+
+    // Playback LE & BE
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        double val = audio_chunk_get_channel(chunk_in, c)[f];
+        uint32_t u32 = pcm_sample_u32_from_f32((float)val);
+        size_t off = (f * (size_t)channels + (size_t)c) * 4;
+        hw_buf_le[off] = (uint8_t)(u32 & 0xFF);
+        hw_buf_le[off + 1] = (uint8_t)((u32 >> 8) & 0xFF);
+        hw_buf_le[off + 2] = (uint8_t)((u32 >> 16) & 0xFF);
+        hw_buf_le[off + 3] = (uint8_t)((u32 >> 24) & 0xFF);
+
+        hw_buf_be[off] = (uint8_t)((u32 >> 24) & 0xFF);
+        hw_buf_be[off + 1] = (uint8_t)((u32 >> 16) & 0xFF);
+        hw_buf_be[off + 2] = (uint8_t)((u32 >> 8) & 0xFF);
+        hw_buf_be[off + 3] = (uint8_t)(u32 & 0xFF);
+      }
+    }
+
+    // Capture LE & BE
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        size_t off = (f * (size_t)channels + (size_t)c) * 4;
+        uint32_t u32_le = (uint32_t)hw_buf_le[off] |
+                          ((uint32_t)hw_buf_le[off + 1] << 8) |
+                          ((uint32_t)hw_buf_le[off + 2] << 16) |
+                          ((uint32_t)hw_buf_le[off + 3] << 24);
+        uint32_t u32_be = ((uint32_t)hw_buf_be[off] << 24) |
+                          ((uint32_t)hw_buf_be[off + 1] << 16) |
+                          ((uint32_t)hw_buf_be[off + 2] << 8) |
+                          (uint32_t)hw_buf_be[off + 3];
+        audio_chunk_get_channel(chunk_out_le, c)[f] =
+            pcm_sample_decode_dsd_u32(u32_le);
+        audio_chunk_get_channel(chunk_out_be, c)[f] =
+            pcm_sample_decode_dsd_u32(u32_be);
+      }
+    }
+
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint32_t in_u32 = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_in, c)[f]);
+        uint32_t out_u32_le = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_out_le, c)[f]);
+        uint32_t out_u32_be = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_out_be, c)[f]);
+        ASSERT_EQ((int)in_u32, (int)out_u32_le);
+        ASSERT_EQ((int)in_u32, (int)out_u32_be);
+      }
+    }
+
+    free(hw_buf_le);
+    free(hw_buf_be);
+    audio_chunk_free(chunk_in);
+    audio_chunk_free(chunk_out_le);
+    audio_chunk_free(chunk_out_be);
+  }
+
+  // 4. ASIO DSD_INT8 (MSB-first and LSB-first reversed) Round Trip
+  {
+    audio_chunk_t* chunk_in = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_msb = audio_chunk_create(frames, channels);
+    audio_chunk_t* chunk_out_lsb = audio_chunk_create(frames, channels);
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint32_t raw_word =
+            (uint32_t)(0xDEADBEEFU ^ (uint32_t)(f * 65537U + c * 99991U));
+        audio_chunk_get_channel(chunk_in, c)[f] =
+            pcm_sample_decode_dsd_u32(raw_word);
+      }
+    }
+
+    uint8_t* asio_buf_msb = (uint8_t*)malloc(frames * (size_t)channels * 4);
+    uint8_t* asio_buf_lsb = (uint8_t*)malloc(frames * (size_t)channels * 4);
+
+    // ASIO Playback encode
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        double val = audio_chunk_get_channel(chunk_in, c)[f];
+        size_t off = (f * (size_t)channels + (size_t)c) * 4;
+        pcm_sample_encode_dsd_u32_bytes((float)val, &asio_buf_msb[off]);
+        pcm_sample_encode_dsd_u32_reversed_bytes((float)val,
+                                                 &asio_buf_lsb[off]);
+      }
+    }
+
+    // ASIO Capture decode
+    for (size_t f = 0; f < frames; f++) {
+      for (int c = 0; c < channels; c++) {
+        size_t off = (f * (size_t)channels + (size_t)c) * 4;
+        audio_chunk_get_channel(chunk_out_msb, c)[f] =
+            pcm_sample_decode_dsd_u32_bytes(&asio_buf_msb[off]);
+        audio_chunk_get_channel(chunk_out_lsb, c)[f] =
+            pcm_sample_decode_dsd_u32_reversed_bytes(&asio_buf_lsb[off]);
+      }
+    }
+
+    for (int c = 0; c < channels; c++) {
+      for (size_t f = 0; f < frames; f++) {
+        uint32_t in_u32 = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_in, c)[f]);
+        uint32_t out_u32_msb = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_out_msb, c)[f]);
+        uint32_t out_u32_lsb = pcm_sample_u32_from_f32(
+            (float)audio_chunk_get_channel(chunk_out_lsb, c)[f]);
+        ASSERT_EQ((int)in_u32, (int)out_u32_msb);
+        ASSERT_EQ((int)in_u32, (int)out_u32_lsb);
+      }
+    }
+
+    free(asio_buf_msb);
+    free(asio_buf_lsb);
+    audio_chunk_free(chunk_in);
+    audio_chunk_free(chunk_out_msb);
+    audio_chunk_free(chunk_out_lsb);
+  }
+}
+
 #if defined(ENABLE_ALSA)
 #include "Backend/audio_backend.h"
 TEST(ALSAPlayback_NativeDSD_FormatSupportAndSilencePrefill) {
