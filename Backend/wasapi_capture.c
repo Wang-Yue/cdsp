@@ -78,21 +78,6 @@ static void wasapi_capture_on_format_change(void* parent, double new_rate) {
                         memory_order_release);
 }
 
-static inline size_t wasapi_binary_format_bytes_per_sample(
-    wasapi_binary_sample_format_t fmt) {
-  switch (fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE:
-      return 2;
-    case WASAPI_BINARY_FORMAT_S24_3_LE:
-      return 3;
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
-    case WASAPI_BINARY_FORMAT_S32_LE:
-    case WASAPI_BINARY_FORMAT_F32_LE:
-    default:
-      return 4;
-  }
-}
-
 /**
  * @brief get_next_packet_size matching wasapi-rs api.rs.
  */
@@ -353,31 +338,9 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   atomic_init(&capture->paused, false);
   atomic_init(&capture->has_pending_rate_change, false);
 
-  HRESULT hr =
-      CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                       &IID_IMMDeviceEnumerator, (void**)&capture->enumerator);
-  if (FAILED(hr)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create MMDeviceEnumerator");
-    goto error_cleanup;
-  }
-
-  capture->mm_device = wasapi_find_device(capture->enumerator, capture->device,
-                                          true, capture->loopback);
-  if (!capture->mm_device) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                         "WASAPI capture device not found");
-    goto error_cleanup;
-  }
-
-  hr = IMMDevice_Activate(capture->mm_device, &IID_IAudioClient, CLSCTX_ALL,
-                          NULL, (void**)&capture->client);
-  if (FAILED(hr)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to activate IAudioClient");
+  if (!wasapi_create_device_and_client(
+          capture->device, true, capture->loopback, &capture->enumerator,
+          &capture->mm_device, &capture->client, err)) {
     goto error_cleanup;
   }
   logger_trace(&g_wasapi_logger, "Got capture iaudioclient.");
@@ -399,86 +362,17 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   capture->bin_fmt = bin_fmt;
   capture->blockalign = (size_t)wfx.Format.nBlockAlign;
 
-  REFERENCE_TIME def_time = 0, min_time = 0;
-  IAudioClient_GetDevicePeriod(capture->client, &def_time, &min_time);
-  capture->def_period = def_time;
-  logger_debug(&g_wasapi_logger,
-               "Capture default period %lld, min period %lld.",
-               (long long)def_time, (long long)min_time);
-
-  REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
-      capture->client, def_time, 128, capture->sample_rate,
-      (int)capture->blockalign);
-
-  AUDCLNT_SHAREMODE mode =
-      exclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
-
-  DWORD streamflags = 0;
-  if (!capture->polling) {
-    streamflags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
-  }
-  if (capture->loopback) {
-    streamflags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
-  }
-
-  REFERENCE_TIME buffer_duration = 0;
-  REFERENCE_TIME period = 0;
-  if (exclusive) {
-    if (capture->polling) {
-      buffer_duration = 8 * aligned_time;
-      period = aligned_time;
-    } else {
-      buffer_duration = aligned_time;
-      period = aligned_time;
-    }
-  } else {
-    buffer_duration = 8 * def_time;
-    period = 0;
-  }
-
-  logger_debug(&g_wasapi_logger,
-               "Capture stream mode: polling=%d, exclusive=%d",
-               capture->polling, exclusive);
-
-  hr = IAudioClient_Initialize(capture->client, mode, streamflags,
-                               buffer_duration, period,
-                               (const WAVEFORMATEX*)&wfx, NULL);
-  if (FAILED(hr)) {
-    if (err) {
-      char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Failed to initialize IAudioClient (Capture): hr=0x%08lX",
-               (unsigned long)hr);
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-    }
+  if (!wasapi_initialize_stream(capture->client, &wfx, capture->sample_rate,
+                                capture->blockalign, exclusive,
+                                capture->polling, capture->loopback,
+                                &capture->def_period, &capture->event_handle,
+                                &capture->buffer_frame_count, "Capture", err)) {
     goto error_cleanup;
   }
-  logger_debug(&g_wasapi_logger, "Initialized capture audio client.");
 
-  if (!capture->polling) {
-    capture->event_handle = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!capture->event_handle) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to create event handle");
-      goto error_cleanup;
-    }
-    hr = IAudioClient_SetEventHandle(capture->client, capture->event_handle);
-    if (FAILED(hr)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to set event handle");
-      goto error_cleanup;
-    }
-  } else {
-    capture->event_handle = NULL;
-  }
-  logger_trace(&g_wasapi_logger, "Capture got event handle.");
-
-  hr =
-      IAudioClient_GetBufferSize(capture->client, &capture->buffer_frame_count);
-  hr = IAudioClient_GetService(capture->client, &IID_IAudioCaptureClient,
-                               (void**)&capture->capture_client);
+  HRESULT hr =
+      IAudioClient_GetService(capture->client, &IID_IAudioCaptureClient,
+                              (void**)&capture->capture_client);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -486,16 +380,9 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  IAudioClient_GetService(capture->client, &IID_IAudioSessionControl,
-                          (void**)&capture->session_control);
-  if (capture->session_control) {
-    capture->session_events_listener =
-        wasapi_session_events_create(capture, wasapi_capture_on_format_change);
-    if (capture->session_events_listener) {
-      IAudioSessionControl_RegisterAudioSessionNotification(
-          capture->session_control, capture->session_events_listener);
-    }
-  }
+  wasapi_register_session_events(
+      capture->client, capture, wasapi_capture_on_format_change,
+      &capture->session_control, &capture->session_events_listener);
 
   logger_debug(&g_wasapi_logger, "Opened Wasapi capture device \"%s\".",
                capture->device[0] != '\0' ? capture->device : "default");
@@ -535,36 +422,11 @@ error_cleanup:
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
   }
-  if (capture->session_control) {
-    if (capture->session_events_listener) {
-      IAudioSessionControl_UnregisterAudioSessionNotification(
-          capture->session_control, capture->session_events_listener);
-      SAFE_RELEASE(capture->session_events_listener);
-    }
-    SAFE_RELEASE(capture->session_control);
-  } else if (capture->session_events_listener) {
-    SAFE_RELEASE(capture->session_events_listener);
-  }
-  if (capture->capture_client) {
-    SAFE_RELEASE(capture->capture_client);
-  }
-  if (capture->client) {
-    SAFE_RELEASE(capture->client);
-  }
-  if (capture->mm_device) {
-    SAFE_RELEASE(capture->mm_device);
-  }
-  if (capture->enumerator) {
-    SAFE_RELEASE(capture->enumerator);
-  }
-  if (capture->event_handle) {
-    CloseHandle(capture->event_handle);
-    capture->event_handle = NULL;
-  }
-  if (capture->com_initialized) {
-    CoUninitialize();
-    capture->com_initialized = false;
-  }
+  wasapi_cleanup_device_resources(
+      &capture->client, (IUnknown**)&capture->capture_client,
+      &capture->session_control, &capture->session_events_listener,
+      &capture->event_handle, &capture->mm_device, &capture->enumerator,
+      &capture->com_initialized);
   return false;
 }
 
@@ -636,41 +498,9 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   size_t valid_frames =
       (capture->blockalign > 0) ? (consumed_bytes / capture->blockalign) : 0;
 
-  double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  for (size_t f = 0; f < valid_frames; f++) {
-    for (int c = 0; c < capture->channels; c++) {
-      const uint8_t* src =
-          capture->decode_buf + (f * (size_t)capture->channels + (size_t)c) *
-                                    capture->bytes_per_sample;
-      double sample = 0.0;
-      switch (capture->bin_fmt) {
-        case WASAPI_BINARY_FORMAT_S16_LE:
-          sample = pcm_sample_decode_s16_bytes(src);
-          break;
-        case WASAPI_BINARY_FORMAT_S24_3_LE:
-          sample = pcm_sample_decode_s24_3bytes(src);
-          break;
-        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
-          sample = pcm_sample_decode_s24_4_lj_bytes(src);
-          break;
-        case WASAPI_BINARY_FORMAT_S32_LE:
-          sample = pcm_sample_decode_s32_bytes(src);
-          break;
-        case WASAPI_BINARY_FORMAT_F32_LE:
-          sample = pcm_sample_decode_f32_bytes(src);
-          break;
-        default:
-          sample = pcm_sample_decode_s32_bytes(src);
-          break;
-      }
-      dst_channels[c][f] = sample;
-    }
-  }
-  audio_chunk_set_valid_frames(chunk, valid_frames);
+  wasapi_decode_interleaved_samples(capture->decode_buf, capture->bin_fmt,
+                                    capture->bytes_per_sample,
+                                    capture->channels, valid_frames, chunk);
 
   return true;
 }
@@ -695,67 +525,20 @@ static void wasapi_capture_close(void* ctx) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
   }
-  if (capture->client) {
-    IAudioClient_Stop(capture->client);
-  }
-  SAFE_RELEASE(capture->capture_client);
-  SAFE_RELEASE(capture->client);
-  if (capture->session_control) {
-    if (capture->session_events_listener) {
-      IAudioSessionControl_UnregisterAudioSessionNotification(
-          capture->session_control, capture->session_events_listener);
-      SAFE_RELEASE(capture->session_events_listener);
-    }
-    SAFE_RELEASE(capture->session_control);
-  }
-  if (capture->event_handle) {
-    CloseHandle(capture->event_handle);
-    capture->event_handle = NULL;
-  }
-  SAFE_RELEASE(capture->mm_device);
-  SAFE_RELEASE(capture->enumerator);
-
-  if (capture->com_initialized) {
-    CoUninitialize();
-    capture->com_initialized = false;
-  }
+  wasapi_cleanup_device_resources(
+      &capture->client, (IUnknown**)&capture->capture_client,
+      &capture->session_control, &capture->session_events_listener,
+      &capture->event_handle, &capture->mm_device, &capture->enumerator,
+      &capture->com_initialized);
 }
 
 static bool wasapi_capture_get_pending_rate_change(void* ctx,
                                                    double* out_rate) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
-  if (atomic_load_explicit(&capture->has_pending_rate_change,
-                           memory_order_acquire)) {
-    logger_info(&g_wasapi_logger,
-                "capture get_pending_rate_change detected flag: "
-                "pending_rate=%f, sample_rate=%d",
-                capture->pending_rate, capture->sample_rate);
-    double rate = capture->pending_rate;
-    if (rate <= 0.0) {
-      for (int i = 0; i < 100; i++) {
-        rate = wasapi_device_get_current_mix_rate(capture->device,
-                                                  !capture->loopback);
-        if (rate > 0.0) break;
-        cdsp_sleep_ms(50);
-      }
-    }
-    atomic_store_explicit(&capture->has_pending_rate_change, false,
-                          memory_order_release);
-    logger_info(&g_wasapi_logger,
-                "capture get_pending_rate_change evaluated final rate=%f",
-                rate);
-    if (rate > 0.0) {
-      if (out_rate) {
-        *out_rate = rate;
-      }
-      logger_info(&g_wasapi_logger,
-                  "capture get_pending_rate_change returning true with rate=%f",
-                  rate);
-      return true;
-    }
-  }
-  return false;
+  return wasapi_check_and_resolve_pending_rate(
+      capture->device, !capture->loopback, capture->pending_rate,
+      &capture->has_pending_rate_change, out_rate);
 }
 
 static bool wasapi_capture_pitch_control_supported(void* ctx) {
@@ -813,13 +596,9 @@ static capture_backend_t* wasapi_capture_create(
       (wasapi_capture_t*)calloc(1, sizeof(wasapi_capture_t));
   if (!capture) return NULL;
 
-  if (config->cfg.wasapi.has_device &&
-      strcmp(config->cfg.wasapi.device, "default") != 0) {
-    snprintf(capture->device, sizeof(capture->device), "%s",
-             config->cfg.wasapi.device);
-  } else {
-    capture->device[0] = '\0';
-  }
+  wasapi_extract_device_name(config->cfg.wasapi.has_device,
+                             config->cfg.wasapi.device, capture->device,
+                             sizeof(capture->device));
 
   capture->sample_rate = sample_rate;
   capture->channels = config->cfg.wasapi.channels;

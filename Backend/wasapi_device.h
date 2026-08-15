@@ -18,10 +18,12 @@
 #include <audioclient.h>
 #include <audiopolicy.h>
 #include <mmdeviceapi.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <windows.h>
 
+#include "Audio/audio_chunk.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
@@ -41,6 +43,15 @@ typedef enum {
   WASAPI_BINARY_FORMAT_S32_LE,
   WASAPI_BINARY_FORMAT_F32_LE
 } wasapi_binary_sample_format_t;
+
+/**
+ * @brief Returns the byte size of a single sample for a given WASAPI binary
+ * format.
+ *
+ * @param fmt The WASAPI binary sample format enum.
+ * @return Size in bytes per sample (2, 3, or 4).
+ */
+size_t wasapi_binary_format_bytes_per_sample(wasapi_binary_sample_format_t fmt);
 
 typedef void (*wasapi_format_change_callback_t)(void* parent, double new_rate);
 
@@ -65,6 +76,46 @@ typedef struct {
  */
 IAudioSessionEvents* wasapi_session_events_create(
     void* parent, wasapi_format_change_callback_t callback);
+
+/**
+ * @brief Subscribes to IAudioSessionControl format change notifications.
+ *
+ * @param client Active IAudioClient.
+ * @param parent Pointer to backend context.
+ * @param callback Callback triggered when the session format changes.
+ * @param out_control Pointer to receive the IAudioSessionControl interface.
+ * @param out_listener Pointer to receive the created IAudioSessionEvents
+ * listener.
+ */
+void wasapi_register_session_events(IAudioClient* client, void* parent,
+                                    wasapi_format_change_callback_t callback,
+                                    IAudioSessionControl** out_control,
+                                    IAudioSessionEvents** out_listener);
+
+/**
+ * @brief Unregisters and releases audio session event listeners.
+ *
+ * @param control Pointer to IAudioSessionControl pointer (will be set to NULL).
+ * @param listener Pointer to IAudioSessionEvents pointer (will be set to NULL).
+ */
+void wasapi_unregister_session_events(IAudioSessionControl** control,
+                                      IAudioSessionEvents** listener);
+
+/**
+ * @brief Checks if a pending sample rate change occurred and resolves the new
+ * rate.
+ *
+ * @param device Device name or ID.
+ * @param is_capture True if capture stream, false if playback stream.
+ * @param pending_rate The pending rate reported by the session callback.
+ * @param has_pending_rate_change Pointer to atomic flag indicating pending rate
+ * change.
+ * @param out_rate Pointer to receive the resolved sample rate.
+ * @return True if rate change was resolved, false otherwise.
+ */
+bool wasapi_check_and_resolve_pending_rate(
+    const char* device, bool is_capture, double pending_rate,
+    _Atomic bool* has_pending_rate_change, double* out_rate);
 
 /**
  * @brief Generates a simple bitmask for the given channel count.
@@ -117,12 +168,93 @@ bool wasapi_get_device_format(
     backend_error_t* err);
 
 /**
+ * @brief Initializes an IAudioClient stream with appropriate timing, share
+ * mode, flags, period calculations, and sets up event-driven notifications if
+ * requested.
+ *
+ * @param client Pointer to the active IAudioClient.
+ * @param wfx Pointer to the negotiated WAVEFORMATEXTENSIBLE descriptor.
+ * @param samplerate Stream sample rate in Hz.
+ * @param blockalign Frame block align in bytes.
+ * @param exclusive True for exclusive mode, false for shared mode.
+ * @param polling True for polling mode, false for event-driven mode.
+ * @param loopback True for loopback capture, false otherwise.
+ * @param out_def_period Optional pointer to receive default device period in
+ * 100ns units.
+ * @param out_event_handle Optional pointer to receive the created event handle.
+ * @param out_buffer_frame_count Pointer to receive device buffer frame count.
+ * @param direction_name String describing stream direction ("Capture",
+ * "Playback", "Render").
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success, false on failure.
+ */
+bool wasapi_initialize_stream(IAudioClient* client,
+                              const WAVEFORMATEXTENSIBLE* wfx, int samplerate,
+                              size_t blockalign, bool exclusive, bool polling,
+                              bool loopback, REFERENCE_TIME* out_def_period,
+                              HANDLE* out_event_handle,
+                              UINT32* out_buffer_frame_count,
+                              const char* direction_name, backend_error_t* err);
+
+/**
  * @brief Locates an IMMDevice by friendly name, GUID, or default endpoint.
  * Matches CamillaDSP find_device.
  */
 IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
                               const char* devname, bool is_capture,
                               bool loopback);
+
+/**
+ * @brief Creates an MMDeviceEnumerator, locates the requested IMMDevice, and
+ * activates its IAudioClient interface.
+ *
+ * @param devname Device name, GUID, or "default".
+ * @param is_capture True for capture endpoint, false for render endpoint.
+ * @param loopback True for loopback capture on a render endpoint.
+ * @param out_enumerator Pointer to receive the IMMDeviceEnumerator.
+ * @param out_device Pointer to receive the activated IMMDevice.
+ * @param out_client Pointer to receive the activated IAudioClient.
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success, false on failure.
+ */
+bool wasapi_create_device_and_client(const char* devname, bool is_capture,
+                                     bool loopback,
+                                     IMMDeviceEnumerator** out_enumerator,
+                                     IMMDevice** out_device,
+                                     IAudioClient** out_client,
+                                     backend_error_t* err);
+
+/**
+ * @brief Releases all WASAPI device, client, and session COM resources,
+ * closes event handles, and optionally calls CoUninitialize.
+ *
+ * @param client Pointer to IAudioClient pointer.
+ * @param sub_client Pointer to IUnknown/IAudioCaptureClient/IAudioRenderClient
+ * pointer.
+ * @param session_control Pointer to IAudioSessionControl pointer.
+ * @param session_events_listener Pointer to IAudioSessionEvents pointer.
+ * @param event_handle Pointer to event handle.
+ * @param mm_device Pointer to IMMDevice pointer.
+ * @param enumerator Pointer to IMMDeviceEnumerator pointer.
+ * @param com_initialized Pointer to bool indicating if COM was initialized.
+ */
+void wasapi_cleanup_device_resources(
+    IAudioClient** client, IUnknown** sub_client,
+    IAudioSessionControl** session_control,
+    IAudioSessionEvents** session_events_listener, HANDLE* event_handle,
+    IMMDevice** mm_device, IMMDeviceEnumerator** enumerator,
+    bool* com_initialized);
+
+/**
+ * @brief Extracts and normalizes device name string from configuration.
+ *
+ * @param has_device True if device field is configured.
+ * @param config_device Device name string from config.
+ * @param out_device Output buffer to receive device name.
+ * @param max_len Size of output buffer.
+ */
+void wasapi_extract_device_name(bool has_device, const char* config_device,
+                                char* out_device, size_t max_len);
 
 /**
  * @brief Queries the OS mix rate of the specified device.
@@ -155,6 +287,37 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
  * @brief Legacy channel mask lookup for backwards compatibility.
  */
 DWORD wasapi_get_default_channel_mask(int channels);
+
+/**
+ * @brief Decodes raw interleaved WASAPI PCM/Float bytes into an audio_chunk_t.
+ *
+ * @param src_bytes Pointer to raw interleaved byte buffer.
+ * @param bin_fmt Binary sample format of source bytes.
+ * @param bytes_per_sample Byte size of each sample.
+ * @param channels Number of channels.
+ * @param frames Number of frames to decode.
+ * @param chunk Output audio_chunk_t to receive planar double audio data.
+ */
+void wasapi_decode_interleaved_samples(const uint8_t* src_bytes,
+                                       wasapi_binary_sample_format_t bin_fmt,
+                                       size_t bytes_per_sample, int channels,
+                                       size_t frames, audio_chunk_t* chunk);
+
+/**
+ * @brief Encodes planar double audio data from an audio_chunk_t into
+ * interleaved WASAPI bytes.
+ *
+ * @param chunk Input audio_chunk_t containing planar double audio data.
+ * @param bin_fmt Target binary sample format.
+ * @param bytes_per_sample Byte size of each sample.
+ * @param channels Number of channels.
+ * @param frames Number of frames to encode.
+ * @param dst_bytes Output buffer to receive interleaved raw bytes.
+ */
+void wasapi_encode_interleaved_samples(const audio_chunk_t* chunk,
+                                       wasapi_binary_sample_format_t bin_fmt,
+                                       size_t bytes_per_sample, int channels,
+                                       size_t frames, uint8_t* dst_bytes);
 
 #endif  // ENABLE_WASAPI
 

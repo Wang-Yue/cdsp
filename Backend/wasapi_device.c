@@ -11,13 +11,30 @@
 #include <ks.h>
 #include <ksmedia.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Audio/sample_conversion.h"
 #include "Utils/cdsp_time.h"
 
 const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
+
+size_t wasapi_binary_format_bytes_per_sample(
+    wasapi_binary_sample_format_t fmt) {
+  switch (fmt) {
+    case WASAPI_BINARY_FORMAT_S16_LE:
+      return 2;
+    case WASAPI_BINARY_FORMAT_S24_3_LE:
+      return 3;
+    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+    case WASAPI_BINARY_FORMAT_S32_LE:
+    case WASAPI_BINARY_FORMAT_F32_LE:
+    default:
+      return 4;
+  }
+}
 
 #ifndef KSAUDIO_SPEAKER_MONO
 #define KSAUDIO_SPEAKER_MONO (SPEAKER_FRONT_CENTER)
@@ -194,6 +211,70 @@ IAudioSessionEvents* wasapi_session_events_create(
   events->parent = parent;
   events->callback = callback;
   return (IAudioSessionEvents*)events;
+}
+
+void wasapi_register_session_events(IAudioClient* client, void* parent,
+                                    wasapi_format_change_callback_t callback,
+                                    IAudioSessionControl** out_control,
+                                    IAudioSessionEvents** out_listener) {
+  if (!client || !out_control || !out_listener) return;
+  *out_control = NULL;
+  *out_listener = NULL;
+
+  IAudioClient_GetService(client, &IID_IAudioSessionControl,
+                          (void**)out_control);
+  if (*out_control) {
+    *out_listener = wasapi_session_events_create(parent, callback);
+    if (*out_listener) {
+      IAudioSessionControl_RegisterAudioSessionNotification(*out_control,
+                                                            *out_listener);
+    }
+  }
+}
+
+void wasapi_unregister_session_events(IAudioSessionControl** control,
+                                      IAudioSessionEvents** listener) {
+  if (control && *control) {
+    if (listener && *listener) {
+      IAudioSessionControl_UnregisterAudioSessionNotification(*control,
+                                                              *listener);
+      SAFE_RELEASE(*listener);
+    }
+    SAFE_RELEASE(*control);
+  } else if (listener && *listener) {
+    SAFE_RELEASE(*listener);
+  }
+}
+
+bool wasapi_check_and_resolve_pending_rate(
+    const char* device, bool is_capture, double pending_rate,
+    _Atomic bool* has_pending_rate_change, double* out_rate) {
+  if (!has_pending_rate_change) return false;
+  if (atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    logger_info(&g_wasapi_logger,
+                "get_pending_rate_change detected flag: pending_rate=%f",
+                pending_rate);
+    double rate = pending_rate;
+    if (rate <= 0.0) {
+      for (int i = 0; i < 100; i++) {
+        rate = wasapi_device_get_current_mix_rate(device, is_capture);
+        if (rate > 0.0) break;
+        cdsp_sleep_ms(50);
+      }
+    }
+    atomic_store_explicit(has_pending_rate_change, false, memory_order_release);
+    logger_info(&g_wasapi_logger,
+                "get_pending_rate_change evaluated final rate=%f", rate);
+    if (rate > 0.0) {
+      if (out_rate) {
+        *out_rate = rate;
+      }
+      logger_info(&g_wasapi_logger,
+                  "get_pending_rate_change returning true with rate=%f", rate);
+      return true;
+    }
+  }
+  return false;
 }
 
 uint32_t wasapi_make_simple_channelmask(size_t channels) {
@@ -517,6 +598,185 @@ bool wasapi_get_device_format(
   return false;
 }
 
+bool wasapi_initialize_stream(IAudioClient* client,
+                              const WAVEFORMATEXTENSIBLE* wfx, int samplerate,
+                              size_t blockalign, bool exclusive, bool polling,
+                              bool loopback, REFERENCE_TIME* out_def_period,
+                              HANDLE* out_event_handle,
+                              UINT32* out_buffer_frame_count,
+                              const char* direction_name,
+                              backend_error_t* err) {
+  if (!client || !wfx) return false;
+
+  REFERENCE_TIME def_time = 0, min_time = 0;
+  IAudioClient_GetDevicePeriod(client, &def_time, &min_time);
+  if (out_def_period) {
+    *out_def_period = def_time;
+  }
+
+  REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
+      client, def_time, 128, samplerate, (int)blockalign);
+
+  AUDCLNT_SHAREMODE mode =
+      exclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
+
+  DWORD streamflags = 0;
+  if (!polling) {
+    streamflags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+  }
+  if (loopback) {
+    streamflags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
+  }
+
+  REFERENCE_TIME buffer_duration = 0;
+  REFERENCE_TIME period = 0;
+  if (exclusive) {
+    if (polling) {
+      buffer_duration = 8 * aligned_time;
+      period = aligned_time;
+    } else {
+      buffer_duration = aligned_time;
+      period = aligned_time;
+    }
+  } else {
+    buffer_duration = 8 * def_time;
+    period = 0;
+  }
+
+  logger_debug(&g_wasapi_logger, "%s stream mode: polling=%d, exclusive=%d",
+               direction_name ? direction_name : "Audio", polling, exclusive);
+
+  HRESULT hr =
+      IAudioClient_Initialize(client, mode, streamflags, buffer_duration,
+                              period, (const WAVEFORMATEX*)wfx, NULL);
+  if (FAILED(hr)) {
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Failed to initialize IAudioClient (%s): hr=0x%08lX",
+               direction_name ? direction_name : "Audio", (unsigned long)hr);
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    return false;
+  }
+
+  logger_debug(&g_wasapi_logger,
+               "%s default period %lld, min period %lld, aligned period %lld.",
+               direction_name ? direction_name : "Audio", (long long)def_time,
+               (long long)min_time, (long long)aligned_time);
+  logger_debug(&g_wasapi_logger, "Initialized %s audio client.",
+               direction_name ? direction_name : "Audio");
+
+  if (!polling) {
+    HANDLE event_handle = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (!event_handle) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to create event handle");
+      return false;
+    }
+    hr = IAudioClient_SetEventHandle(client, event_handle);
+    if (FAILED(hr)) {
+      CloseHandle(event_handle);
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to set event handle");
+      return false;
+    }
+    if (out_event_handle) {
+      *out_event_handle = event_handle;
+    }
+  } else {
+    if (out_event_handle) {
+      *out_event_handle = NULL;
+    }
+  }
+
+  if (out_buffer_frame_count) {
+    IAudioClient_GetBufferSize(client, out_buffer_frame_count);
+  }
+
+  return true;
+}
+
+void wasapi_decode_interleaved_samples(const uint8_t* src_bytes,
+                                       wasapi_binary_sample_format_t bin_fmt,
+                                       size_t bytes_per_sample, int channels,
+                                       size_t frames, audio_chunk_t* chunk) {
+  if (!src_bytes || !chunk || channels <= 0 || frames == 0) return;
+  double* dst_channels[channels];
+  for (int c = 0; c < channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+  for (size_t f = 0; f < frames; f++) {
+    for (int c = 0; c < channels; c++) {
+      const uint8_t* src =
+          src_bytes + (f * (size_t)channels + (size_t)c) * bytes_per_sample;
+      double sample = 0.0;
+      switch (bin_fmt) {
+        case WASAPI_BINARY_FORMAT_S16_LE:
+          sample = pcm_sample_decode_s16_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_3_LE:
+          sample = pcm_sample_decode_s24_3bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+          sample = pcm_sample_decode_s24_4_lj_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_S32_LE:
+          sample = pcm_sample_decode_s32_bytes(src);
+          break;
+        case WASAPI_BINARY_FORMAT_F32_LE:
+          sample = pcm_sample_decode_f32_bytes(src);
+          break;
+        default:
+          sample = pcm_sample_decode_s32_bytes(src);
+          break;
+      }
+      dst_channels[c][f] = sample;
+    }
+  }
+  audio_chunk_set_valid_frames(chunk, frames);
+}
+
+void wasapi_encode_interleaved_samples(const audio_chunk_t* chunk,
+                                       wasapi_binary_sample_format_t bin_fmt,
+                                       size_t bytes_per_sample, int channels,
+                                       size_t frames, uint8_t* dst_bytes) {
+  if (!chunk || !dst_bytes || channels <= 0 || frames == 0) return;
+  const double* src_channels[channels];
+  for (int c = 0; c < channels; c++) {
+    src_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+  for (size_t f = 0; f < frames; f++) {
+    for (int c = 0; c < channels; c++) {
+      double sample = src_channels[c][f];
+      uint8_t* dst =
+          dst_bytes + (f * (size_t)channels + (size_t)c) * bytes_per_sample;
+      switch (bin_fmt) {
+        case WASAPI_BINARY_FORMAT_S16_LE:
+          pcm_sample_encode_s16_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_3_LE:
+          pcm_sample_encode_s24_3bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+          pcm_sample_encode_s24_4_lj_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_S32_LE:
+          pcm_sample_encode_s32_bytes(sample, dst);
+          break;
+        case WASAPI_BINARY_FORMAT_F32_LE:
+          pcm_sample_encode_f32_bytes(sample, dst);
+          break;
+        default:
+          pcm_sample_encode_s32_bytes(sample, dst);
+          break;
+      }
+    }
+  }
+}
+
 IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
                               const char* devname, bool is_capture,
                               bool loopback) {
@@ -589,6 +849,95 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
   }
 
   return found;
+}
+
+bool wasapi_create_device_and_client(const char* devname, bool is_capture,
+                                     bool loopback,
+                                     IMMDeviceEnumerator** out_enumerator,
+                                     IMMDevice** out_device,
+                                     IAudioClient** out_client,
+                                     backend_error_t* err) {
+  if (!out_enumerator || !out_device || !out_client) return false;
+  *out_enumerator = NULL;
+  *out_device = NULL;
+  *out_client = NULL;
+
+  HRESULT hr =
+      CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+                       &IID_IMMDeviceEnumerator, (void**)out_enumerator);
+  if (FAILED(hr)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to create MMDeviceEnumerator");
+    return false;
+  }
+
+  *out_device =
+      wasapi_find_device(*out_enumerator, devname, is_capture, loopback);
+  if (!*out_device) {
+    SAFE_RELEASE(*out_enumerator);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         is_capture ? "WASAPI capture device not found"
+                                    : "WASAPI playback device not found");
+    return false;
+  }
+
+  hr = IMMDevice_Activate(*out_device, &IID_IAudioClient, CLSCTX_ALL, NULL,
+                          (void**)out_client);
+  if (FAILED(hr)) {
+    SAFE_RELEASE(*out_device);
+    SAFE_RELEASE(*out_enumerator);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to activate IAudioClient");
+    return false;
+  }
+
+  return true;
+}
+
+void wasapi_cleanup_device_resources(
+    IAudioClient** client, IUnknown** sub_client,
+    IAudioSessionControl** session_control,
+    IAudioSessionEvents** session_events_listener, HANDLE* event_handle,
+    IMMDevice** mm_device, IMMDeviceEnumerator** enumerator,
+    bool* com_initialized) {
+  if (client && *client) {
+    IAudioClient_Stop(*client);
+  }
+  if (sub_client && *sub_client) {
+    SAFE_RELEASE(*sub_client);
+  }
+  if (client && *client) {
+    SAFE_RELEASE(*client);
+  }
+  wasapi_unregister_session_events(session_control, session_events_listener);
+  if (event_handle && *event_handle) {
+    CloseHandle(*event_handle);
+    *event_handle = NULL;
+  }
+  if (mm_device && *mm_device) {
+    SAFE_RELEASE(*mm_device);
+  }
+  if (enumerator && *enumerator) {
+    SAFE_RELEASE(*enumerator);
+  }
+  if (com_initialized && *com_initialized) {
+    CoUninitialize();
+    *com_initialized = false;
+  }
+}
+
+void wasapi_extract_device_name(bool has_device, const char* config_device,
+                                char* out_device, size_t max_len) {
+  if (!out_device || max_len == 0) return;
+  if (has_device && config_device && config_device[0] != '\0' &&
+      strcmp(config_device, "default") != 0) {
+    snprintf(out_device, max_len, "%s", config_device);
+  } else {
+    out_device[0] = '\0';
+  }
 }
 
 double wasapi_device_get_current_mix_rate(const char* device_name,

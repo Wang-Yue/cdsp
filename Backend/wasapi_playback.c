@@ -78,21 +78,6 @@ static void wasapi_playback_on_format_change(void* parent, double new_rate) {
                         memory_order_release);
 }
 
-static inline size_t wasapi_binary_format_bytes_per_sample(
-    wasapi_binary_sample_format_t fmt) {
-  switch (fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE:
-      return 2;
-    case WASAPI_BINARY_FORMAT_S24_3_LE:
-      return 3;
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
-    case WASAPI_BINARY_FORMAT_S32_LE:
-    case WASAPI_BINARY_FORMAT_F32_LE:
-    default:
-      return 4;
-  }
-}
-
 /**
  * @brief get_available_space_in_frames matching wasapi-rs api.rs.
  */
@@ -295,31 +280,9 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   atomic_init(&playback->paused, false);
   atomic_init(&playback->has_pending_rate_change, false);
 
-  HRESULT hr =
-      CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                       &IID_IMMDeviceEnumerator, (void**)&playback->enumerator);
-  if (FAILED(hr)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create MMDeviceEnumerator");
-    goto error_cleanup;
-  }
-
-  playback->mm_device =
-      wasapi_find_device(playback->enumerator, playback->device, false, false);
-  if (!playback->mm_device) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                         "WASAPI playback device not found");
-    goto error_cleanup;
-  }
-
-  hr = IMMDevice_Activate(playback->mm_device, &IID_IAudioClient, CLSCTX_ALL,
-                          NULL, (void**)&playback->client);
-  if (FAILED(hr)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to activate IAudioClient");
+  if (!wasapi_create_device_and_client(
+          playback->device, false, false, &playback->enumerator,
+          &playback->mm_device, &playback->client, err)) {
     goto error_cleanup;
   }
   logger_trace(&g_wasapi_logger, "Got playback iaudioclient.");
@@ -339,83 +302,17 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
   playback->blockalign = (size_t)wfx.Format.nBlockAlign;
 
   logger_debug(&g_wasapi_logger, "Opening Wasapi playback device.");
-  REFERENCE_TIME def_time = 0, min_time = 0;
-  IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
-  playback->def_period = def_time;
-
-  REFERENCE_TIME aligned_time = wasapi_calculate_aligned_period_near(
-      playback->client, def_time, 128, playback->sample_rate,
-      (int)playback->blockalign);
-
-  AUDCLNT_SHAREMODE mode = playback->exclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE
-                                               : AUDCLNT_SHAREMODE_SHARED;
-  DWORD streamflags = 0;
-  if (!playback->polling) {
-    streamflags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
-  }
-
-  REFERENCE_TIME buffer_duration = 0;
-  REFERENCE_TIME period = 0;
-  if (playback->exclusive) {
-    if (playback->polling) {
-      buffer_duration = 8 * aligned_time;
-      period = aligned_time;
-    } else {
-      buffer_duration = aligned_time;
-      period = aligned_time;
-    }
-  } else {
-    buffer_duration = 8 * def_time;
-    period = 0;
-  }
-
-  logger_debug(&g_wasapi_logger,
-               "Playback stream mode: polling=%d, exclusive=%d",
-               playback->polling, playback->exclusive);
-
-  hr = IAudioClient_Initialize(playback->client, mode, streamflags,
-                               buffer_duration, period,
-                               (const WAVEFORMATEX*)&wfx, NULL);
-  if (FAILED(hr)) {
-    if (err) {
-      char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Failed to initialize IAudioClient (Playback): hr=0x%08lX",
-               (unsigned long)hr);
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-    }
+  if (!wasapi_initialize_stream(
+          playback->client, &wfx, playback->sample_rate, playback->blockalign,
+          playback->exclusive, playback->polling, false, &playback->def_period,
+          &playback->event_handle, &playback->buffer_frame_count, "Playback",
+          err)) {
     goto error_cleanup;
   }
 
-  logger_debug(
-      &g_wasapi_logger,
-      "Playback default period %lld, min period %lld, aligned period %lld.",
-      (long long)def_time, (long long)min_time, (long long)aligned_time);
-  logger_debug(&g_wasapi_logger, "Initialized playback audio client.");
-
-  if (!playback->polling) {
-    playback->event_handle = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!playback->event_handle) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to create event handle");
-      goto error_cleanup;
-    }
-    hr = IAudioClient_SetEventHandle(playback->client, playback->event_handle);
-    if (FAILED(hr)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to set event handle");
-      goto error_cleanup;
-    }
-  } else {
-    playback->event_handle = NULL;
-  }
-
-  hr = IAudioClient_GetBufferSize(playback->client,
-                                  &playback->buffer_frame_count);
-  hr = IAudioClient_GetService(playback->client, &IID_IAudioRenderClient,
-                               (void**)&playback->render_client);
+  HRESULT hr =
+      IAudioClient_GetService(playback->client, &IID_IAudioRenderClient,
+                              (void**)&playback->render_client);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -423,16 +320,9 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  IAudioClient_GetService(playback->client, &IID_IAudioSessionControl,
-                          (void**)&playback->session_control);
-  if (playback->session_control) {
-    playback->session_events_listener = wasapi_session_events_create(
-        playback, wasapi_playback_on_format_change);
-    if (playback->session_events_listener) {
-      IAudioSessionControl_RegisterAudioSessionNotification(
-          playback->session_control, playback->session_events_listener);
-    }
-  }
+  wasapi_register_session_events(
+      playback->client, playback, wasapi_playback_on_format_change,
+      &playback->session_control, &playback->session_events_listener);
 
   logger_debug(&g_wasapi_logger, "Opened Wasapi playback device \"%s\".",
                playback->device[0] != '\0' ? playback->device : "default");
@@ -473,36 +363,11 @@ error_cleanup:
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
   }
-  if (playback->session_control) {
-    if (playback->session_events_listener) {
-      IAudioSessionControl_UnregisterAudioSessionNotification(
-          playback->session_control, playback->session_events_listener);
-      SAFE_RELEASE(playback->session_events_listener);
-    }
-    SAFE_RELEASE(playback->session_control);
-  } else if (playback->session_events_listener) {
-    SAFE_RELEASE(playback->session_events_listener);
-  }
-  if (playback->render_client) {
-    SAFE_RELEASE(playback->render_client);
-  }
-  if (playback->client) {
-    SAFE_RELEASE(playback->client);
-  }
-  if (playback->mm_device) {
-    SAFE_RELEASE(playback->mm_device);
-  }
-  if (playback->enumerator) {
-    SAFE_RELEASE(playback->enumerator);
-  }
-  if (playback->event_handle) {
-    CloseHandle(playback->event_handle);
-    playback->event_handle = NULL;
-  }
-  if (playback->com_initialized) {
-    CoUninitialize();
-    playback->com_initialized = false;
-  }
+  wasapi_cleanup_device_resources(
+      &playback->client, (IUnknown**)&playback->render_client,
+      &playback->session_control, &playback->session_events_listener,
+      &playback->event_handle, &playback->mm_device, &playback->enumerator,
+      &playback->com_initialized);
   return false;
 }
 
@@ -550,40 +415,9 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
     return false;
   }
 
-  // Convert chunk (double) directly to raw bytes in write_buf
-  const double* src_channels[playback->channels];
-  for (int c = 0; c < playback->channels; c++) {
-    src_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  for (size_t f = 0; f < total_frames; f++) {
-    for (int c = 0; c < playback->channels; c++) {
-      double sample = src_channels[c][f];
-      uint8_t* dst =
-          playback->write_buf + (f * (size_t)playback->channels + (size_t)c) *
-                                    playback->bytes_per_sample;
-      switch (playback->bin_fmt) {
-        case WASAPI_BINARY_FORMAT_S16_LE:
-          pcm_sample_encode_s16_bytes(sample, dst);
-          break;
-        case WASAPI_BINARY_FORMAT_S24_3_LE:
-          pcm_sample_encode_s24_3bytes(sample, dst);
-          break;
-        case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
-          pcm_sample_encode_s24_4_lj_bytes(sample, dst);
-          break;
-        case WASAPI_BINARY_FORMAT_S32_LE:
-          pcm_sample_encode_s32_bytes(sample, dst);
-          break;
-        case WASAPI_BINARY_FORMAT_F32_LE:
-          pcm_sample_encode_f32_bytes(sample, dst);
-          break;
-        default:
-          pcm_sample_encode_s32_bytes(sample, dst);
-          break;
-      }
-    }
-  }
+  wasapi_encode_interleaved_samples(
+      chunk, playback->bin_fmt, playback->bytes_per_sample, playback->channels,
+      total_frames, playback->write_buf);
 
   DWORD sleep_duration_us =
       (DWORD)(1000000ULL * (unsigned long long)playback->chunk_size /
@@ -631,30 +465,11 @@ static void wasapi_playback_close(void* ctx) {
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
   }
-  if (playback->client) {
-    IAudioClient_Stop(playback->client);
-  }
-  SAFE_RELEASE(playback->render_client);
-  SAFE_RELEASE(playback->client);
-  if (playback->session_control) {
-    if (playback->session_events_listener) {
-      IAudioSessionControl_UnregisterAudioSessionNotification(
-          playback->session_control, playback->session_events_listener);
-      SAFE_RELEASE(playback->session_events_listener);
-    }
-    SAFE_RELEASE(playback->session_control);
-  }
-  if (playback->event_handle) {
-    CloseHandle(playback->event_handle);
-    playback->event_handle = NULL;
-  }
-  SAFE_RELEASE(playback->mm_device);
-  SAFE_RELEASE(playback->enumerator);
-
-  if (playback->com_initialized) {
-    CoUninitialize();
-    playback->com_initialized = false;
-  }
+  wasapi_cleanup_device_resources(
+      &playback->client, (IUnknown**)&playback->render_client,
+      &playback->session_control, &playback->session_events_listener,
+      &playback->event_handle, &playback->mm_device, &playback->enumerator,
+      &playback->com_initialized);
 }
 
 static size_t wasapi_playback_get_buffer_level(void* ctx) {
@@ -669,34 +484,9 @@ static bool wasapi_playback_get_pending_rate_change(void* ctx,
                                                     double* out_rate) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
-  if (atomic_load_explicit(&playback->has_pending_rate_change,
-                           memory_order_acquire)) {
-    logger_info(&g_wasapi_logger,
-                "get_pending_rate_change detected flag: pending_rate=%f, "
-                "sample_rate=%d",
-                playback->pending_rate, playback->sample_rate);
-    double rate = playback->pending_rate;
-    if (rate <= 0.0) {
-      for (int i = 0; i < 100; i++) {
-        rate = wasapi_device_get_current_mix_rate(playback->device, false);
-        if (rate > 0.0) break;
-        cdsp_sleep_ms(50);
-      }
-    }
-    atomic_store_explicit(&playback->has_pending_rate_change, false,
-                          memory_order_release);
-    logger_info(&g_wasapi_logger,
-                "get_pending_rate_change evaluated final rate=%f", rate);
-    if (rate > 0.0) {
-      if (out_rate) {
-        *out_rate = rate;
-      }
-      logger_info(&g_wasapi_logger,
-                  "get_pending_rate_change returning true with rate=%f", rate);
-      return true;
-    }
-  }
-  return false;
+  return wasapi_check_and_resolve_pending_rate(
+      playback->device, false, playback->pending_rate,
+      &playback->has_pending_rate_change, out_rate);
 }
 
 static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
@@ -757,13 +547,9 @@ static playback_backend_t* wasapi_playback_create(
       (wasapi_playback_t*)calloc(1, sizeof(wasapi_playback_t));
   if (!playback) return NULL;
 
-  if (config->cfg.wasapi.has_device &&
-      strcmp(config->cfg.wasapi.device, "default") != 0) {
-    snprintf(playback->device, sizeof(playback->device), "%s",
-             config->cfg.wasapi.device);
-  } else {
-    playback->device[0] = '\0';
-  }
+  wasapi_extract_device_name(config->cfg.wasapi.has_device,
+                             config->cfg.wasapi.device, playback->device,
+                             sizeof(playback->device));
 
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.wasapi.channels;
