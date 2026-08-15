@@ -181,4 +181,29 @@ TEST(AllCases) {
 
 #endif
 
+TEST(AudioBackendTypeCanonical) {
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_FILE, audio_backend_type_from_string("File"));
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_FILE, audio_backend_type_from_string("RawFile"));
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_FILE, audio_backend_type_from_string("WavFile"));
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_STDIN_OUT,
+            audio_backend_type_from_string("Stdin"));
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_STDIN_OUT,
+            audio_backend_type_from_string("Stdout"));
+  ASSERT_EQ(AUDIO_BACKEND_TYPE_GENERATOR,
+            audio_backend_type_from_string("SignalGenerator"));
+}
+
+TEST(AudioBackendTypeRejectsAliases) {
+  const char* invalid_backend_names[] = {
+      "file",      "rawfile",         "wavfile",    "stdin",     "stdout",
+      "Generator", "signalgenerator", "Core Audio", "coreaudio", "alsa",
+      "ALSA",      "pipewire",        "wasapi",     "asio"};
+  for (size_t i = 0;
+       i < sizeof(invalid_backend_names) / sizeof(invalid_backend_names[0]);
+       i++) {
+    ASSERT_EQ(AUDIO_BACKEND_TYPE_INVALID,
+              audio_backend_type_from_string(invalid_backend_names[i]));
+  }
+}
+
 TEST_MAIN()

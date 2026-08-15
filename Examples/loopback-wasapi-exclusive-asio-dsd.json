@@ -8,7 +8,7 @@
     "multithreaded": true,
 
     "capture": {
-      "type": "WASAPI",
+      "type": "Wasapi",
       "device": "CABLE Output (VB-Audio Virtual Cable)",
       "format": "S16",
       "channels": 2,

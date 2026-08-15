@@ -568,8 +568,10 @@ TEST(test_websocket_patch_config) {
       "  \"devices\": {\n"
       "    \"samplerate\": 44100,\n"
       "    \"chunksize\": 1024,\n"
-      "    \"capture\": {\"type\": \"File\", \"channels\": 2},\n"
-      "    \"playback\": {\"type\": \"File\", \"channels\": 2}\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2},\n"
+      "    \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
       "  },\n"
       "  \"filters\": {\n"
       "    \"mygain\": {\n"
@@ -669,8 +671,10 @@ TEST(test_websocket_format_alignments) {
   // 2. ReadConfigJson value format (should return input config string as value)
   const char* valid_cfg =
       "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,"
-      "\\\"capture\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2},"
-      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2}}}";
+      "\\\"capture\\\":{\\\"type\\\":\\\"RawFile\\\",\\\"filename\\\":\\\"/dev/"
+      "null\\\",\\\"format\\\":\\\"S16_LE\\\",\\\"channels\\\":2},"
+      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"filename\\\":\\\"/dev/"
+      "null\\\",\\\"format\\\":\\\"S16_LE\\\",\\\"channels\\\":2}}}";
   char read_cmd[1024];
   snprintf(read_cmd, sizeof(read_cmd),
            "{\"command\":\"ReadConfigJson\",\"value\":\"%s\"}", valid_cfg);
@@ -749,9 +753,9 @@ TEST(test_websocket_format_alignments) {
   // 6. YAML Config Commands: SetConfig and ReadConfig / ValidateConfig
   const char* valid_yaml =
       "devices:\\n  samplerate: 44100\\n  chunksize: 1024\\n  capture:\\n    "
-      "type: File\\n    channels: 2\\n    filename: \\\"/dev/null\\\"\\n    "
-      "format: S16LE\\n  playback:\\n    type: File\\n    channels: 2\\n    "
-      "filename: \\\"/dev/null\\\"\\n    format: S16LE\\n";
+      "type: RawFile\\n    channels: 2\\n    filename: \\\"/dev/null\\\"\\n    "
+      "format: S16_LE\\n  playback:\\n    type: File\\n    channels: 2\\n    "
+      "filename: \\\"/dev/null\\\"\\n    format: S16_LE\\n";
   char yaml_cmd[1024];
   snprintf(yaml_cmd, sizeof(yaml_cmd),
            "{\"command\":\"SetConfig\",\"value\":\"%s\"}", valid_yaml);

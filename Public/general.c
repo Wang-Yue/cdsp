@@ -54,7 +54,7 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 #if defined(ENABLE_ASIO)
   cap_count++;
 #endif
-  cap_count += 3;  // File, Stdin, Generator
+  cap_count += 4;  // RawFile, WavFile, Stdin, SignalGenerator
 
   char** pb_arr = (char**)calloc(pb_count, sizeof(char*));
   char** cap_arr = (char**)calloc(cap_count, sizeof(char*));
@@ -85,41 +85,43 @@ void cdsp_get_supported_device_types(char*** out_playback_types,
 
   size_t pb_idx = 0;
   size_t cap_idx = 0;
-#if defined(ENABLE_COREAUDIO)
-  SAFE_STRDUP(pb_arr, pb_idx, "CoreAudio");
-#endif
+  SAFE_STRDUP(pb_arr, pb_idx, "File");
+  SAFE_STRDUP(pb_arr, pb_idx, "Stdout");
 #if defined(ENABLE_ALSA)
-  SAFE_STRDUP(pb_arr, pb_idx, "ALSA");
+  SAFE_STRDUP(pb_arr, pb_idx, "Alsa");
 #endif
 #if defined(ENABLE_PIPEWIRE)
   SAFE_STRDUP(pb_arr, pb_idx, "PipeWire");
 #endif
+#if defined(ENABLE_COREAUDIO)
+  SAFE_STRDUP(pb_arr, pb_idx, "CoreAudio");
+#endif
 #if defined(ENABLE_WASAPI)
-  SAFE_STRDUP(pb_arr, pb_idx, "WASAPI");
+  SAFE_STRDUP(pb_arr, pb_idx, "Wasapi");
 #endif
 #if defined(ENABLE_ASIO)
-  SAFE_STRDUP(pb_arr, pb_idx, "ASIO");
+  SAFE_STRDUP(pb_arr, pb_idx, "Asio");
 #endif
-  SAFE_STRDUP(pb_arr, pb_idx, "File");
-  SAFE_STRDUP(pb_arr, pb_idx, "Stdout");
-#if defined(ENABLE_COREAUDIO)
-  SAFE_STRDUP(cap_arr, cap_idx, "CoreAudio");
-#endif
+
+  SAFE_STRDUP(cap_arr, cap_idx, "RawFile");
+  SAFE_STRDUP(cap_arr, cap_idx, "WavFile");
+  SAFE_STRDUP(cap_arr, cap_idx, "Stdin");
+  SAFE_STRDUP(cap_arr, cap_idx, "SignalGenerator");
 #if defined(ENABLE_ALSA)
-  SAFE_STRDUP(cap_arr, cap_idx, "ALSA");
+  SAFE_STRDUP(cap_arr, cap_idx, "Alsa");
 #endif
 #if defined(ENABLE_PIPEWIRE)
   SAFE_STRDUP(cap_arr, cap_idx, "PipeWire");
 #endif
+#if defined(ENABLE_COREAUDIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "CoreAudio");
+#endif
 #if defined(ENABLE_WASAPI)
-  SAFE_STRDUP(cap_arr, cap_idx, "WASAPI");
+  SAFE_STRDUP(cap_arr, cap_idx, "Wasapi");
 #endif
 #if defined(ENABLE_ASIO)
-  SAFE_STRDUP(cap_arr, cap_idx, "ASIO");
+  SAFE_STRDUP(cap_arr, cap_idx, "Asio");
 #endif
-  SAFE_STRDUP(cap_arr, cap_idx, "File");
-  SAFE_STRDUP(cap_arr, cap_idx, "Stdin");
-  SAFE_STRDUP(cap_arr, cap_idx, "Generator");
 
 #undef SAFE_STRDUP
 

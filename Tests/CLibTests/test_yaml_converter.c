@@ -107,15 +107,15 @@ TEST(YamlConverter_EnginePublicAPI) {
       "  samplerate: 44100\n"
       "  chunksize: 1024\n"
       "  capture:\n"
-      "    type: File\n"
+      "    type: RawFile\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n"
+      "    format: S16_LE\n"
       "  playback:\n"
       "    type: File\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n";
+      "    format: S16_LE\n";
 
   cdsp_backend_error_t berr;
   bool set_ok = cdsp_set_config_yaml(engine, yaml_config, &berr);
@@ -137,15 +137,15 @@ TEST(YamlConverter_Validation) {
       "  samplerate: 44100\n"
       "  chunksize: 1024\n"
       "  capture:\n"
-      "    type: File\n"
+      "    type: RawFile\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n"
+      "    format: S16_LE\n"
       "  playback:\n"
       "    type: File\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n";
+      "    format: S16_LE\n";
 
   char* result_yaml = NULL;
   cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_PARSE;
@@ -229,15 +229,15 @@ TEST(YamlConverter_ValidateConfigFileYaml) {
       "  samplerate: 44100\n"
       "  chunksize: 1024\n"
       "  capture:\n"
-      "    type: File\n"
+      "    type: RawFile\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n"
+      "    format: S16_LE\n"
       "  playback:\n"
       "    type: File\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n";
+      "    format: S16_LE\n";
 
   FILE* f = fopen(yaml_path, "w");
   ASSERT_TRUE(f != NULL);
@@ -266,10 +266,10 @@ TEST(YamlConverter_ValidateConfigFileJson) {
       "  \"devices\": {\n"
       "    \"samplerate\": 44100,\n"
       "    \"chunksize\": 1024,\n"
-      "    \"capture\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
-      "\"/dev/null\", \"format\": \"S16LE\"},\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"},\n"
       "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
-      "\"/dev/null\", \"format\": \"S16LE\"}\n"
+      "\"/dev/null\", \"format\": \"S16_LE\"}\n"
       "  }\n"
       "}";
 
@@ -305,15 +305,15 @@ TEST(YamlConverter_EngineSetConfigYamlAndJsonFiles) {
       "  samplerate: 44100\n"
       "  chunksize: 1024\n"
       "  capture:\n"
-      "    type: File\n"
+      "    type: RawFile\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n"
+      "    format: S16_LE\n"
       "  playback:\n"
       "    type: File\n"
       "    channels: 2\n"
       "    filename: \"/dev/null\"\n"
-      "    format: S16LE\n";
+      "    format: S16_LE\n";
 
   FILE* f = fopen(yaml_path, "w");
   ASSERT_TRUE(f != NULL);
@@ -345,10 +345,10 @@ TEST(YamlConverter_EngineSetConfigYamlAndJsonFiles) {
       "  \"devices\": {\n"
       "    \"samplerate\": 44100,\n"
       "    \"chunksize\": 1024,\n"
-      "    \"capture\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
-      "\"/dev/null\", \"format\": \"S16LE\"},\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"},\n"
       "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
-      "\"/dev/null\", \"format\": \"S16LE\"}\n"
+      "\"/dev/null\", \"format\": \"S16_LE\"}\n"
       "  }\n"
       "}";
 

@@ -126,37 +126,53 @@ typedef struct {
  * @param cap_obj The cJSON object containing capture settings.
  * @param devices Pointer to the devices configuration structure to populate.
  */
-static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
-  if (!cJSON_IsObject(cap_obj)) return;
+static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
+                         config_error_t* err) {
+  if (!cJSON_IsObject(cap_obj)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'capture' in devices");
+    return -1;
+  }
 
   flat_capture_device_config_t temp = {0};
   flat_capture_device_config_t* cap = &temp;
 
-  cJSON* item;
-
-  parse_json_int(cap_obj, "channels", &cap->channels);
-
-  item = cJSON_GetObjectItemCaseSensitive(cap_obj, "type");
-  char type_str[64] = "";
-  if (cJSON_IsString(item) && item->valuestring) {
-    strncpy(type_str, item->valuestring, sizeof(type_str) - 1);
-    cap->type = audio_backend_type_from_string(type_str);
-    if (strcasecmp(type_str, "WavFile") == 0) {
-      cap->is_wav = true;
-      cap->has_is_wav = true;
-    }
-  } else {
-#if defined(ENABLE_COREAUDIO)
-    cap->type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
-#elif defined(ENABLE_ALSA)
-    cap->type = AUDIO_BACKEND_TYPE_ALSA;
-#elif defined(ENABLE_WASAPI)
-    cap->type = AUDIO_BACKEND_TYPE_WASAPI;
-#else
-    cap->type = AUDIO_BACKEND_TYPE_FILE;
-#endif
+  cJSON* item = cJSON_GetObjectItemCaseSensitive(cap_obj, "type");
+  if (!cJSON_IsString(item) || !item->valuestring) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'type' in capture device");
+    return -1;
   }
 
+  const char* type_str = item->valuestring;
+  if (strcmp(type_str, "File") == 0 || strcmp(type_str, "Stdout") == 0) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "unknown variant '%s', expected one of 'Alsa', 'PipeWire', 'RawFile', "
+        "'WavFile', 'Stdin', 'CoreAudio', 'Wasapi', 'Asio', 'SignalGenerator'",
+        type_str);
+    return -1;
+  }
+
+  cap->type = audio_backend_type_from_string(type_str);
+  if (cap->type == AUDIO_BACKEND_TYPE_INVALID) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "unknown variant '%s', expected one of 'Alsa', 'PipeWire', 'RawFile', "
+        "'WavFile', 'Stdin', 'CoreAudio', 'Wasapi', 'Asio', 'SignalGenerator'",
+        type_str);
+    return -1;
+  }
+
+  if (strcmp(type_str, "RawFile") == 0) {
+    cap->is_wav = false;
+    cap->has_is_wav = true;
+  } else if (strcmp(type_str, "WavFile") == 0) {
+    cap->is_wav = true;
+    cap->has_is_wav = true;
+  }
+
+  parse_json_int(cap_obj, "channels", &cap->channels);
   cap->has_device =
       parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
   cap->has_filename =
@@ -167,6 +183,12 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
     if (cap->type == AUDIO_BACKEND_TYPE_FILE ||
         cap->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
       cap->file_format = file_sample_format_from_string(item->valuestring);
+      if (cap->file_format == BINARY_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for capture",
+                         item->valuestring);
+        return -1;
+      }
       cap->has_file_format = true;
 #if defined(ENABLE_WASAPI)
     } else if (cap->type == AUDIO_BACKEND_TYPE_WASAPI) {
@@ -414,6 +436,66 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
     default:
       break;
   }
+
+  if (temp.type == AUDIO_BACKEND_TYPE_FILE) {
+    if (temp.is_wav) {
+      if (!temp.has_filename || temp.filename[0] == '\0') {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "missing field 'filename' in WavFile capture");
+        return -1;
+      }
+    } else {
+      if (!temp.has_filename || temp.filename[0] == '\0') {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "missing field 'filename' in RawFile capture");
+        return -1;
+      }
+      if (temp.channels <= 0) {
+        config_error_set(
+            err, CONFIG_ERR_PARSE,
+            "missing or non-positive field 'channels' in RawFile capture");
+        return -1;
+      }
+      if (!temp.has_file_format) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "missing field 'format' in RawFile capture");
+        return -1;
+      }
+    }
+  } else if (temp.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    if (temp.channels <= 0) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "missing or non-positive field 'channels' in Stdin capture");
+      return -1;
+    }
+    if (!temp.has_file_format) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'format' in Stdin capture");
+      return -1;
+    }
+  } else if (temp.type == AUDIO_BACKEND_TYPE_GENERATOR) {
+    if (temp.channels <= 0) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing or non-positive field 'channels' in "
+                       "SignalGenerator capture");
+      return -1;
+    }
+    if (!cJSON_IsObject(sig_obj)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'signal' in SignalGenerator capture");
+      return -1;
+    }
+  } else {
+    if (temp.channels <= 0) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing or non-positive field 'channels' in %s capture",
+                       type_str);
+      return -1;
+    }
+  }
+
+  return 0;
 }
 
 typedef struct {
@@ -487,31 +569,48 @@ typedef struct {
  * @param play_obj The cJSON object containing playback settings.
  * @param devices Pointer to the devices configuration structure to populate.
  */
-static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
-  if (!cJSON_IsObject(play_obj)) return;
+static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
+                          config_error_t* err) {
+  if (!cJSON_IsObject(play_obj)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'playback' in devices");
+    return -1;
+  }
 
   flat_playback_device_config_t temp = {0};
   flat_playback_device_config_t* play = &temp;
 
-  cJSON* item;
-
-  parse_json_int(play_obj, "channels", &play->channels);
-
-  item = cJSON_GetObjectItemCaseSensitive(play_obj, "type");
-  if (cJSON_IsString(item) && item->valuestring) {
-    play->type = audio_backend_type_from_string(item->valuestring);
-  } else {
-#if defined(ENABLE_COREAUDIO)
-    play->type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
-#elif defined(ENABLE_ALSA)
-    play->type = AUDIO_BACKEND_TYPE_ALSA;
-#elif defined(ENABLE_WASAPI)
-    play->type = AUDIO_BACKEND_TYPE_WASAPI;
-#else
-    play->type = AUDIO_BACKEND_TYPE_FILE;
-#endif
+  cJSON* item = cJSON_GetObjectItemCaseSensitive(play_obj, "type");
+  if (!cJSON_IsString(item) || !item->valuestring) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'type' in playback device");
+    return -1;
   }
 
+  const char* type_str = item->valuestring;
+  if (strcmp(type_str, "RawFile") == 0 || strcmp(type_str, "WavFile") == 0 ||
+      strcmp(type_str, "Stdin") == 0 ||
+      strcmp(type_str, "SignalGenerator") == 0 ||
+      strcmp(type_str, "Generator") == 0) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "unknown variant '%s', expected one of 'Alsa', 'PipeWire', 'File', "
+        "'Stdout', 'CoreAudio', 'Wasapi', 'Asio'",
+        type_str);
+    return -1;
+  }
+
+  play->type = audio_backend_type_from_string(type_str);
+  if (play->type == AUDIO_BACKEND_TYPE_INVALID) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "unknown variant '%s', expected one of 'Alsa', 'PipeWire', 'File', "
+        "'Stdout', 'CoreAudio', 'Wasapi', 'Asio'",
+        type_str);
+    return -1;
+  }
+
+  parse_json_int(play_obj, "channels", &play->channels);
   play->has_device =
       parse_json_str(play_obj, "device", play->device, sizeof(play->device));
   play->has_filename = parse_json_str(play_obj, "filename", play->filename,
@@ -522,6 +621,12 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
     if (play->type == AUDIO_BACKEND_TYPE_FILE ||
         play->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
       play->file_format = file_sample_format_from_string(item->valuestring);
+      if (play->file_format == BINARY_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for playback",
+                         item->valuestring);
+        return -1;
+      }
       play->has_file_format = true;
 #if defined(ENABLE_WASAPI)
     } else if (play->type == AUDIO_BACKEND_TYPE_WASAPI) {
@@ -715,6 +820,47 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
     default:
       break;
   }
+
+  // Type-specific field validations matching upstream CamillaDSP
+  if (play->type == AUDIO_BACKEND_TYPE_FILE) {
+    if (!play->has_filename || play->filename[0] == '\0') {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'filename' in File playback");
+      return -1;
+    }
+    if (play->channels <= 0) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "missing or non-positive field 'channels' in File playback");
+      return -1;
+    }
+    if (!play->has_file_format) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'format' in File playback");
+      return -1;
+    }
+  } else if (play->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    if (play->channels <= 0) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "missing or non-positive field 'channels' in Stdout playback");
+      return -1;
+    }
+    if (!play->has_file_format) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'format' in Stdout playback");
+      return -1;
+    }
+  } else {
+    if (play->channels <= 0) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "missing or non-positive field 'channels' in %s playback", type_str);
+      return -1;
+    }
+  }
+
+  return 0;
 }
 
 int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
@@ -726,12 +872,20 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   devices_config_t* dev = &config->devices;
 
   int val_int = 0;
-  if (parse_json_int(dev_obj, "samplerate", &val_int)) {
-    dev->samplerate = val_int > 0 ? (size_t)val_int : 0;
+  if (!parse_json_int(dev_obj, "samplerate", &val_int) || val_int <= 0) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing or non-positive field 'samplerate' in devices");
+    return -1;
   }
-  if (parse_json_int(dev_obj, "chunksize", &val_int)) {
-    dev->chunksize = val_int > 0 ? (size_t)val_int : 0;
+  dev->samplerate = (size_t)val_int;
+
+  if (!parse_json_int(dev_obj, "chunksize", &val_int) || val_int <= 0) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing or non-positive field 'chunksize' in devices");
+    return -1;
   }
+  dev->chunksize = (size_t)val_int;
+
   if (parse_json_int(dev_obj, "queuelimit", &dev->queuelimit)) {
     dev->has_queuelimit = true;
   }
@@ -775,9 +929,30 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->has_worker_threads = (dev->worker_threads > 0);
   }
 
-  parse_resampler(cJSON_GetObjectItemCaseSensitive(dev_obj, "resampler"), dev);
-  parse_capture(cJSON_GetObjectItemCaseSensitive(dev_obj, "capture"), dev);
-  parse_playback(cJSON_GetObjectItemCaseSensitive(dev_obj, "playback"), dev);
+  cJSON* res_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "resampler");
+  if (res_obj) {
+    parse_resampler(res_obj, dev);
+  }
+
+  cJSON* cap_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "capture");
+  if (!cap_obj) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'capture' in devices");
+    return -1;
+  }
+  if (parse_capture(cap_obj, dev, err) != 0) {
+    return -1;
+  }
+
+  cJSON* play_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "playback");
+  if (!play_obj) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'playback' in devices");
+    return -1;
+  }
+  if (parse_playback(play_obj, dev, err) != 0) {
+    return -1;
+  }
 
   return 0;
 }

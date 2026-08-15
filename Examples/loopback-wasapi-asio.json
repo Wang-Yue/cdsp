@@ -6,7 +6,7 @@
     "stop_on_rate_change": true,
     "enable_rate_adjust": true,
     "capture": {
-      "type": "WASAPI",
+      "type": "Wasapi",
       "device": "CABLE Output (VB-Audio Virtual Cable)",
       "format": "F32",
       "channels": 2

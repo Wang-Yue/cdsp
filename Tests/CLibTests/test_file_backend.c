@@ -1170,6 +1170,8 @@ TEST(FileBackendGetChannelsRF64) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"File\",\n"
+           "            \"filename\": \"/dev/null\",\n"
+           "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 6\n"
            "        }\n"
            "    }\n"

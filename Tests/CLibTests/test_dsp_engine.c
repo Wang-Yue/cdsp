@@ -281,7 +281,7 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -301,7 +301,7 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -560,7 +560,7 @@ TEST(DSPEngineHotParameterReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -593,7 +593,7 @@ TEST(DSPEngineHotParameterReload) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -708,7 +708,7 @@ TEST(DSPEngineSetConfigStruct) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -783,7 +783,7 @@ TEST(DSPEngineSetConfigStruct) {
       "        \"samplerate\": 48000,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 4\n"
@@ -1001,7 +1001,8 @@ typedef struct {
 static void* alsa_loopback_reader_func(void* arg) {
   alsa_loopback_reader_t* reader = (alsa_loopback_reader_t*)arg;
   snd_pcm_t* pcm = NULL;
-  if (snd_pcm_open(&pcm, "hw:CARD=Loopback,DEV=1", SND_PCM_STREAM_CAPTURE, 0) < 0) {
+  if (snd_pcm_open(&pcm, "hw:CARD=Loopback,DEV=1", SND_PCM_STREAM_CAPTURE, 0) <
+      0) {
     return NULL;
   }
   snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
@@ -1025,7 +1026,8 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            getpid());
   remove(wav_file);
 
-  // Create a valid 16-bit stereo 44.1kHz WAV file with 20000 frames (~0.45s) of audio
+  // Create a valid 16-bit stereo 44.1kHz WAV file with 20000 frames (~0.45s) of
+  // audio
   size_t test_frames = 20000;
   int16_t* samples = (int16_t*)malloc(test_frames * 2 * sizeof(int16_t));
   for (size_t i = 0; i < test_frames * 2; i++) {
@@ -1038,7 +1040,8 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   uint32_t sample_rate = 44100;
   uint16_t num_channels = 2;
   uint16_t bits_per_sample = 16;
-  uint32_t data_size = (uint32_t)(test_frames * num_channels * (bits_per_sample / 8));
+  uint32_t data_size =
+      (uint32_t)(test_frames * num_channels * (bits_per_sample / 8));
   uint32_t total_size = data_size + 36;
   uint32_t byte_rate = sample_rate * num_channels * (bits_per_sample / 8);
   uint16_t block_align = num_channels * (bits_per_sample / 8);
@@ -1069,7 +1072,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
@@ -1531,7 +1534,7 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -1747,7 +1750,7 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "        \"stop_on_rate_change\": true,\n"
            "        \"rate_measure_interval_s\": 0.02,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -1845,7 +1848,7 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -2357,7 +2360,7 @@ TEST(DSPEngineE2E_GeneratorFile) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -2406,7 +2409,7 @@ TEST(DSPEngineE2E_FileFile) {
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
@@ -2470,7 +2473,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 256,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -2927,7 +2930,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -3008,7 +3011,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -3070,7 +3073,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 128,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 1,\n"
@@ -3231,7 +3234,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 500,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 1,\n"
@@ -3315,7 +3318,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 16,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Noise\",\n"
@@ -3402,7 +3405,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
            "        \"silence_threshold\": -50.0,\n"
            "        \"silence_timeout_s\": 0.1,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Noise\",\n"
@@ -3430,7 +3433,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
            "        \"silence_threshold\": -50.0,\n"
            "        \"silence_timeout_s\": 0.1,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Noise\",\n"
@@ -3528,7 +3531,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "        \"silence_threshold\": -50.0,\n"
            "        \"silence_timeout_s\": 0.1,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -3557,7 +3560,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "        \"silence_threshold\": -50.0,\n"
            "        \"silence_timeout_s\": 0.1,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -3634,7 +3637,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 16,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
@@ -3744,7 +3747,7 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
       "        \"chunksize\": 512,\n"
       "        \"queuelimit\": 16,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"filename\": \"%s\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
@@ -3824,7 +3827,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 16,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": "
            "\"/nonexistent_directory/nonexistent_file.raw\",\n"  // Invalid file
                                                                  // path!
@@ -4088,7 +4091,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
            "        \"silence_threshold_db\": -40.0,\n"
            "        \"silence_timeout_s\": 0.2,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"File\",\n"
+           "            \"type\": \"RawFile\",\n"
            "            \"filename\": \"%s\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 1,\n"
@@ -4878,7 +4881,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"stop_on_rate_change\": false,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -4963,7 +4966,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"stop_on_rate_change\": false,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Generator\",\n"
+           "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"

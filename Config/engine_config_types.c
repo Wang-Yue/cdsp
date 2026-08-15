@@ -187,6 +187,10 @@ const char* audio_backend_type_to_string(audio_backend_type_t type) {
     case AUDIO_BACKEND_TYPE_ALSA:
       return "Alsa";
 #endif
+#if defined(ENABLE_PIPEWIRE)
+    case AUDIO_BACKEND_TYPE_PIPEWIRE:
+      return "PipeWire";
+#endif
 #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return "Wasapi";
@@ -209,34 +213,26 @@ const char* audio_backend_type_to_string(audio_backend_type_t type) {
 audio_backend_type_t audio_backend_type_from_string(const char* str) {
   if (!str) return AUDIO_BACKEND_TYPE_INVALID;
 #if defined(ENABLE_COREAUDIO)
-  if (strcasecmp(str, "CoreAudio") == 0 || strcasecmp(str, "Core Audio") == 0)
-    return AUDIO_BACKEND_TYPE_CORE_AUDIO;
+  if (strcmp(str, "CoreAudio") == 0) return AUDIO_BACKEND_TYPE_CORE_AUDIO;
 #endif
 #if defined(ENABLE_ALSA)
-  if (strcasecmp(str, "Alsa") == 0 || strcasecmp(str, "ALSA") == 0)
-    return AUDIO_BACKEND_TYPE_ALSA;
+  if (strcmp(str, "Alsa") == 0) return AUDIO_BACKEND_TYPE_ALSA;
 #endif
 #if defined(ENABLE_PIPEWIRE)
-  if (strcasecmp(str, "Pipewire") == 0 || strcasecmp(str, "PipeWire") == 0)
-    return AUDIO_BACKEND_TYPE_PIPEWIRE;
+  if (strcmp(str, "PipeWire") == 0) return AUDIO_BACKEND_TYPE_PIPEWIRE;
 #endif
 #if defined(ENABLE_WASAPI)
-  if (strcasecmp(str, "Wasapi") == 0 || strcasecmp(str, "WASAPI") == 0)
-    return AUDIO_BACKEND_TYPE_WASAPI;
+  if (strcmp(str, "Wasapi") == 0) return AUDIO_BACKEND_TYPE_WASAPI;
 #endif
 #if defined(ENABLE_ASIO)
-  if (strcasecmp(str, "Asio") == 0 || strcasecmp(str, "ASIO") == 0)
-    return AUDIO_BACKEND_TYPE_ASIO;
+  if (strcmp(str, "Asio") == 0) return AUDIO_BACKEND_TYPE_ASIO;
 #endif
-  if (strcasecmp(str, "File") == 0 || strcasecmp(str, "RawFile") == 0 ||
-      strcasecmp(str, "WavFile") == 0)
+  if (strcmp(str, "File") == 0 || strcmp(str, "RawFile") == 0 ||
+      strcmp(str, "WavFile") == 0)
     return AUDIO_BACKEND_TYPE_FILE;
-  if (strcasecmp(str, "Stdin") == 0 || strcasecmp(str, "Stdout") == 0 ||
-      strcasecmp(str, "STDIN") == 0 || strcasecmp(str, "STDOUT") == 0)
+  if (strcmp(str, "Stdin") == 0 || strcmp(str, "Stdout") == 0)
     return AUDIO_BACKEND_TYPE_STDIN_OUT;
-  if (strcasecmp(str, "SignalGenerator") == 0 ||
-      strcasecmp(str, "Generator") == 0)
-    return AUDIO_BACKEND_TYPE_GENERATOR;
+  if (strcmp(str, "SignalGenerator") == 0) return AUDIO_BACKEND_TYPE_GENERATOR;
   return AUDIO_BACKEND_TYPE_INVALID;
 }
 
@@ -255,10 +251,9 @@ const char* signal_type_to_string(signal_type_t type) {
 
 signal_type_t signal_type_from_string(const char* str) {
   if (!str) return SIGNAL_TYPE_INVALID;
-  if (strcasecmp(str, "Sine") == 0) return SIGNAL_TYPE_SINE;
-  if (strcasecmp(str, "Square") == 0) return SIGNAL_TYPE_SQUARE;
-  if (strcasecmp(str, "WhiteNoise") == 0 || strcasecmp(str, "White Noise") == 0)
-    return SIGNAL_TYPE_WHITE_NOISE;
+  if (strcmp(str, "Sine") == 0) return SIGNAL_TYPE_SINE;
+  if (strcmp(str, "Square") == 0) return SIGNAL_TYPE_SQUARE;
+  if (strcmp(str, "WhiteNoise") == 0) return SIGNAL_TYPE_WHITE_NOISE;
   return SIGNAL_TYPE_INVALID;
 }
 

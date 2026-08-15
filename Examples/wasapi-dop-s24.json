@@ -11,7 +11,7 @@
       "bypass_dop": true
     },
     "playback": {
-      "type": "WASAPI",
+      "type": "Wasapi",
       "device": "Speakers (TOPPING USB DAC)",
       "format": "S24",
       "channels": 2,

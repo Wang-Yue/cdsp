@@ -10,11 +10,8 @@
       "profile": "Fast"
     },
     "capture": {
-      "type": "File",
-      "channels": 2,
-      "filename": "/home/yue/music.wav",
-      "format": "S16_LE",
-      "is_wav": true
+      "type": "WavFile",
+      "filename": "/home/yue/music.wav"
     },
     "playback": {
       "type": "Alsa",

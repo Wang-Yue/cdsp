@@ -31,11 +31,15 @@ TEST(ParseValidConfig) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -65,11 +69,15 @@ TEST(ParseResamplerConfigProfile) {
       "            \"profile\": \"Balanced\"\n"
       "        },\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -107,11 +115,15 @@ TEST(ParseResamplerConfigFree) {
       "            \"f_cutoff\": 0.95\n"
       "        },\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -144,7 +156,7 @@ TEST(ParseInvalidJSON) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
       "            \"channels\": 2\n";
   dsp_config_t* config = NULL;
   config_error_t err;
@@ -633,11 +645,15 @@ TEST(ParseFullConfigWithMixerAndFilter) {
       "        \"samplerate\": 48000,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -735,12 +751,16 @@ TEST(ParseChannelLabels) {
       "        \"samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 4,\n"
       "            \"labels\": [\"Left\", \"Right\", null, \"Center\"]\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 4,\n"
       "            \"labels\": [\"OutputLeft\", null, \"OutputRight\", null]\n"
       "        }\n"
@@ -782,11 +802,14 @@ TEST(RejectWavS24_4_RJ) {
       "        \"samplerate\": 48000,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
       "            \"channels\": 2,\n"
       "            \"format\": \"S24_4_RJ_LE\",\n"
       "            \"wav_header\": true\n"
@@ -811,11 +834,15 @@ TEST(RejectMissingResamplerWhenRatesDiffer) {
       "        \"capture_samplerate\": 44100,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
-      "            \"type\": \"File\",\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -859,6 +886,8 @@ TEST(WavFileOverrideWithoutResampler) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"File\",\n"
+           "            \"filename\": \"/dev/null\",\n"
+           "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -910,6 +939,8 @@ TEST(WavFileOverrideWithResampler) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"File\",\n"
+           "            \"filename\": \"/dev/null\",\n"
+           "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -992,5 +1023,181 @@ TEST(AlsaThreadedOptionParsing) {
   dsp_config_free(config);
 }
 #endif
+
+TEST(StrictValidationRejectFileCapture) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'File'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectRawFilePlayback) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'RawFile'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectMissingRawFileFilename) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'filename'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectMissingRawFileFormat) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'format'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectMissingFilePlaybackFilename) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'filename'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectMissingSamplerate) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "samplerate") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
 
 TEST_MAIN()
