@@ -1,0 +1,23 @@
+{
+  "devices": {
+    "samplerate": 44100,
+    "chunksize": 2048,
+    "target_level": 2048,
+    "multithreaded": true,
+    "capture": {
+      "type": "File",
+      "channels": 2,
+      "filename": "~/Desktop/music.wav",
+      "format": "S16_LE",
+      "is_wav": true
+    },
+
+    "playback": {
+      "type": "Alsa",
+      "threaded": true,
+      "channels": 2,
+      "device": "default",
+      "format": "S16_LE"
+    }
+  }
+}

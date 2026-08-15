@@ -992,6 +992,32 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
 #endif
 }
 
+#if defined(__linux__) && defined(ENABLE_ALSA)
+typedef struct {
+  atomic_bool stop;
+  pthread_t thread;
+} alsa_loopback_reader_t;
+
+static void* alsa_loopback_reader_func(void* arg) {
+  alsa_loopback_reader_t* reader = (alsa_loopback_reader_t*)arg;
+  snd_pcm_t* pcm = NULL;
+  if (snd_pcm_open(&pcm, "hw:CARD=Loopback,DEV=1", SND_PCM_STREAM_CAPTURE, 0) < 0) {
+    return NULL;
+  }
+  snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
+                     2, 44100, 1, 100000);
+  int16_t buf[512 * 2];
+  while (!atomic_load_explicit(&reader->stop, memory_order_acquire)) {
+    snd_pcm_sframes_t r = snd_pcm_readi(pcm, buf, 512);
+    if (r < 0) {
+      snd_pcm_recover(pcm, (int)r, 1);
+    }
+  }
+  snd_pcm_close(pcm);
+  return NULL;
+}
+#endif
+
 TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
   char wav_file[256];
@@ -999,9 +1025,10 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            getpid());
   remove(wav_file);
 
-  // Create a valid 16-bit stereo 44.1kHz WAV file with 1024 frames of audio
-  int16_t samples[1024 * 2];
-  for (int i = 0; i < 1024 * 2; i++) {
+  // Create a valid 16-bit stereo 44.1kHz WAV file with 20000 frames (~0.45s) of audio
+  size_t test_frames = 20000;
+  int16_t* samples = (int16_t*)malloc(test_frames * 2 * sizeof(int16_t));
+  for (size_t i = 0; i < test_frames * 2; i++) {
     samples[i] = (int16_t)(((i % 128) - 64) * 200);
   }
   FILE* wf = fopen(wav_file, "wb");
@@ -1011,7 +1038,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   uint32_t sample_rate = 44100;
   uint16_t num_channels = 2;
   uint16_t bits_per_sample = 16;
-  uint32_t data_size = 1024 * num_channels * (bits_per_sample / 8);
+  uint32_t data_size = (uint32_t)(test_frames * num_channels * (bits_per_sample / 8));
   uint32_t total_size = data_size + 36;
   uint32_t byte_rate = sample_rate * num_channels * (bits_per_sample / 8);
   uint16_t block_align = num_channels * (bits_per_sample / 8);
@@ -1031,8 +1058,9 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   fwrite(&bits_per_sample, 2, 1, wf);
   fwrite("data", 1, 4, wf);
   fwrite(&data_size, 4, 1, wf);
-  fwrite(samples, sizeof(int16_t), 1024 * 2, wf);
+  fwrite(samples, sizeof(int16_t), test_frames * 2, wf);
   fclose(wf);
+  free(samples);
 
   char json[1024];
   snprintf(json, sizeof(json),
@@ -1048,7 +1076,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Alsa\",\n"
-           "            \"device\": \"null\",\n"
+           "            \"device\": \"hw:CARD=Loopback,DEV=0\",\n"
            "            \"threaded\": true,\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
@@ -1056,6 +1084,11 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            "    }\n"
            "}",
            wav_file);
+
+  alsa_loopback_reader_t reader = {0};
+  atomic_init(&reader.stop, false);
+  pthread_create(&reader.thread, NULL, alsa_loopback_reader_func, &reader);
+  cdsp_sleep_ms(50);
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -1066,7 +1099,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   ASSERT_TRUE(success);
 
   bool reached_inactive = false;
-  for (int i = 0; i < 200; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       reached_inactive = true;
@@ -1074,6 +1107,9 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
     }
     cdsp_sleep_ms(10);
   }
+
+  atomic_store_explicit(&reader.stop, true, memory_order_release);
+  pthread_join(reader.thread, NULL);
 
   ASSERT_TRUE(reached_inactive);
   ASSERT_EQ(CDSP_PROCESSING_STATE_INACTIVE, cdsp_get_state(engine));
