@@ -89,33 +89,6 @@ struct file_playback {
 typedef cdsp_wav_info_t wav_info_t;
 
 /**
- * @brief Get the size in bytes of a sample for a given format.
- *
- * @param format The binary sample format.
- * @return Size in bytes, or 0 if format is invalid.
- */
-static size_t get_sample_size(binary_sample_format_t format) {
-  switch (format) {
-    case BINARY_SAMPLE_FORMAT_S16_LE:
-      return 2;
-    case BINARY_SAMPLE_FORMAT_S24_3_LE:
-      return 3;
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_S32_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_F32_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_F64_LE:
-      return 8;
-    default:
-      return 0;
-  }
-}
-
-/**
  * @brief Parse WAV header from a file.
  *
  * Extracts sample rate, channels, format, and data chunk size/offset.
@@ -359,7 +332,7 @@ static void write_wav_header_to_file(FILE* f, size_t channels,
   header[25] = (sample_rate >> 8) & 0xFF;
   header[26] = (sample_rate >> 16) & 0xFF;
   header[27] = (sample_rate >> 24) & 0xFF;
-  size_t sample_size = get_sample_size(format);
+  size_t sample_size = sample_format_bytes_per_sample(format);
   uint32_t byte_rate = sample_rate * channels * sample_size;
   header[28] = byte_rate & 0xFF;
   header[29] = (byte_rate >> 8) & 0xFF;
@@ -419,7 +392,7 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
   }
 
   // 64-bit Sample count
-  size_t sample_size = get_sample_size(format);
+  size_t sample_size = sample_format_bytes_per_sample(format);
   uint64_t sample_count = data_bytes / (channels * sample_size);
   for (int i = 0; i < 8; i++) {
     header[36 + i] = (sample_count >> (i * 8)) & 0xFF;
@@ -467,11 +440,6 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
   fwrite(header, 1, 80, f);
 }
 
-/**
- * @brief Decode multiple interleaved binary samples to deinterleaved double
- * channels in range [-1.0, 1.0].
- *
- * @param dst_channels Array of pointers to destination channel buffers.
 // MARK: - File Capture Backend implementation
 
 /**
@@ -526,7 +494,7 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  size_t sample_size = get_sample_size(capture->format);
+  size_t sample_size = sample_format_bytes_per_sample(capture->format);
   if (sample_size == 0 || capture->channels <= 0 || capture->chunk_size <= 0) {
     if (err) {
       backend_error_init(
@@ -620,7 +588,7 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   }
 #endif
 
-  size_t sample_size = get_sample_size(capture->format);
+  size_t sample_size = sample_format_bytes_per_sample(capture->format);
   if (sample_size == 0 || capture->channels == 0) {
     audio_chunk_set_valid_frames(chunk, 0);
     return false;
@@ -946,7 +914,7 @@ static bool file_playback_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  size_t sample_size = get_sample_size(playback->format);
+  size_t sample_size = sample_format_bytes_per_sample(playback->format);
   if (sample_size == 0 || playback->channels <= 0 ||
       playback->chunk_size <= 0) {
     if (err) {
@@ -1042,7 +1010,7 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
     return false;
   }
   size_t frames = audio_chunk_get_valid_frames(chunk);
-  size_t sample_size = get_sample_size(playback->format);
+  size_t sample_size = sample_format_bytes_per_sample(playback->format);
 
   size_t required_bytes = frames * playback->channels * sample_size;
 

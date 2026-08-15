@@ -173,38 +173,6 @@ void audio_chunk_apply_gain(audio_chunk_t* chunk, const int* channels,
   }
 }
 
-size_t sample_format_bytes_per_sample(binary_sample_format_t fmt) {
-  switch (fmt) {
-    case BINARY_SAMPLE_FORMAT_DSD_U8:
-      return 1;
-    case BINARY_SAMPLE_FORMAT_S16_LE:
-    case BINARY_SAMPLE_FORMAT_S16_BE:
-    case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
-    case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
-      return 2;
-    case BINARY_SAMPLE_FORMAT_S24_3_LE:
-    case BINARY_SAMPLE_FORMAT_S24_3_BE:
-      return 3;
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
-    case BINARY_SAMPLE_FORMAT_S32_LE:
-    case BINARY_SAMPLE_FORMAT_S32_BE:
-    case BINARY_SAMPLE_FORMAT_F32_LE:
-    case BINARY_SAMPLE_FORMAT_F32_BE:
-    case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
-    case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
-    case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_F64_LE:
-    case BINARY_SAMPLE_FORMAT_F64_BE:
-      return 8;
-    default:
-      return 0;
-  }
-}
-
 bool audio_chunk_decode_interleaved(const void* src, binary_sample_format_t fmt,
                                     size_t channels, size_t frames,
                                     audio_chunk_t* chunk) {

@@ -44,7 +44,7 @@ struct wasapi_playback {
   bool polling;
   int target_level;
 
-  wasapi_binary_sample_format_t bin_fmt;
+  binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
   size_t blockalign;
   bool com_initialized;
@@ -289,7 +289,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   WAVEFORMATEXTENSIBLE wfx;
   bool is_std_wfx = false;
-  wasapi_binary_sample_format_t bin_fmt;
+  binary_sample_format_t bin_fmt;
   bool has_format = (playback->format != WASAPI_SAMPLE_FORMAT_INVALID);
 
   if (!wasapi_get_device_format(playback->client, playback->sample_rate,
@@ -328,7 +328,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
                playback->device[0] != '\0' ? playback->device : "default");
 
   playback->bytes_per_sample =
-      wasapi_binary_format_bytes_per_sample(playback->bin_fmt);
+      sample_format_bytes_per_sample(playback->bin_fmt);
   playback->blockalign =
       (size_t)playback->channels * playback->bytes_per_sample;
 

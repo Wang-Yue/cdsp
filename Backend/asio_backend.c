@@ -309,47 +309,6 @@ static asio_sample_format_t asio_sample_type_to_format(int type_id) {
   }
 }
 
-static size_t asio_format_bytes_per_sample(asio_sample_format_t fmt) {
-  switch (fmt) {
-    case ASIO_SAMPLE_FORMAT_S16_LE:
-      return 2;
-    case ASIO_SAMPLE_FORMAT_S24_3_LE:
-      return 3;
-    case ASIO_SAMPLE_FORMAT_S24_4_LE:
-    case ASIO_SAMPLE_FORMAT_S32_LE:
-    case ASIO_SAMPLE_FORMAT_F32_LE:
-    case ASIO_SAMPLE_FORMAT_DSD_INT8:
-      return 4;
-    case ASIO_SAMPLE_FORMAT_F64_LE:
-      return 8;
-    default:
-      return 4;
-  }
-}
-
-static inline binary_sample_format_t asio_format_to_binary_format(
-    asio_sample_format_t fmt, bool is_lsb) {
-  switch (fmt) {
-    case ASIO_SAMPLE_FORMAT_S16_LE:
-      return BINARY_SAMPLE_FORMAT_S16_LE;
-    case ASIO_SAMPLE_FORMAT_S24_3_LE:
-      return BINARY_SAMPLE_FORMAT_S24_3_LE;
-    case ASIO_SAMPLE_FORMAT_S24_4_LE:
-      return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
-    case ASIO_SAMPLE_FORMAT_S32_LE:
-      return BINARY_SAMPLE_FORMAT_S32_LE;
-    case ASIO_SAMPLE_FORMAT_F32_LE:
-      return BINARY_SAMPLE_FORMAT_F32_LE;
-    case ASIO_SAMPLE_FORMAT_F64_LE:
-      return BINARY_SAMPLE_FORMAT_F64_LE;
-    case ASIO_SAMPLE_FORMAT_DSD_INT8:
-      return is_lsb ? BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED
-                    : BINARY_SAMPLE_FORMAT_DSD_U32_BE;
-    default:
-      return BINARY_SAMPLE_FORMAT_S32_LE;
-  }
-}
-
 /**
  * @brief query_device_format matching CamillaDSP utils.rs lines 172-195.
  */
@@ -1742,7 +1701,8 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
 
   playback->resolved_format = resolved_format;
   playback->is_lsb = is_lsb;
-  playback->bytes_per_sample = asio_format_bytes_per_sample(resolved_format);
+  playback->bytes_per_sample = sample_format_bytes_per_sample(
+      asio_sample_format_to_binary_format(resolved_format, is_lsb));
   playback->actual_buffer_size = asio_buffer_size;
 
   // Size ring buffer to fit at least driver's buffer size (issue #498)
@@ -1886,7 +1846,8 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
 
   audio_chunk_encode_interleaved(
       chunk,
-      asio_format_to_binary_format(playback->resolved_format, playback->is_lsb),
+      asio_sample_format_to_binary_format(playback->resolved_format,
+                                          playback->is_lsb),
       (size_t)playback->channels, valid_frames, playback->encode_buf);
 
   // Sleep duration based on time to play back one chunksize (lines 1670-1679)
@@ -2163,7 +2124,8 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
 
   capture->resolved_format = resolved_format;
   capture->is_lsb = is_lsb;
-  capture->bytes_per_sample = asio_format_bytes_per_sample(resolved_format);
+  capture->bytes_per_sample = sample_format_bytes_per_sample(
+      asio_sample_format_to_binary_format(resolved_format, is_lsb));
   capture->actual_buffer_size = asio_buffer_size;
 
   size_t ring_frames = ((size_t)capture->chunk_size > (size_t)asio_buffer_size)
@@ -2303,10 +2265,10 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     memset(capture->decode_buf + read_bytes, 0, capture_bytes - read_bytes);
   }
 
-  audio_chunk_decode_interleaved(
-      capture->decode_buf,
-      asio_format_to_binary_format(capture->resolved_format, capture->is_lsb),
-      (size_t)capture->channels, frames, chunk);
+  audio_chunk_decode_interleaved(capture->decode_buf,
+                                 asio_sample_format_to_binary_format(
+                                     capture->resolved_format, capture->is_lsb),
+                                 (size_t)capture->channels, frames, chunk);
   return true;
 }
 

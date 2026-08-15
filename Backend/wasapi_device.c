@@ -21,21 +21,6 @@
 
 const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
 
-size_t wasapi_binary_format_bytes_per_sample(
-    wasapi_binary_sample_format_t fmt) {
-  switch (fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE:
-      return 2;
-    case WASAPI_BINARY_FORMAT_S24_3_LE:
-      return 3;
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
-    case WASAPI_BINARY_FORMAT_S32_LE:
-    case WASAPI_BINARY_FORMAT_F32_LE:
-    default:
-      return 4;
-  }
-}
-
 #ifndef KSAUDIO_SPEAKER_MONO
 #define KSAUDIO_SPEAKER_MONO (SPEAKER_FRONT_CENTER)
 #endif
@@ -341,7 +326,7 @@ size_t wasapi_make_channelmasks(size_t channels, DWORD masks[8]) {
   }
 }
 
-void wasapi_build_wave_format(wasapi_binary_sample_format_t fmt, int samplerate,
+void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
                               int channels, uint32_t channel_mask,
                               bool has_mask, WAVEFORMATEXTENSIBLE* out_wfx) {
   memset(out_wfx, 0, sizeof(WAVEFORMATEXTENSIBLE));
@@ -350,30 +335,32 @@ void wasapi_build_wave_format(wasapi_binary_sample_format_t fmt, int samplerate,
   bool is_float = false;
 
   switch (fmt) {
-    case WASAPI_BINARY_FORMAT_S16_LE:
+    case BINARY_SAMPLE_FORMAT_S16_LE:
       storebits = 16;
       validbits = 16;
       is_float = false;
       break;
-    case WASAPI_BINARY_FORMAT_S24_3_LE:
+    case BINARY_SAMPLE_FORMAT_S24_3_LE:
       storebits = 24;
       validbits = 24;
       is_float = false;
       break;
-    case WASAPI_BINARY_FORMAT_S24_4_LJ_LE:
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
       storebits = 32;
       validbits = 24;
       is_float = false;
       break;
-    case WASAPI_BINARY_FORMAT_S32_LE:
+    case BINARY_SAMPLE_FORMAT_S32_LE:
       storebits = 32;
       validbits = 32;
       is_float = false;
       break;
-    case WASAPI_BINARY_FORMAT_F32_LE:
+    case BINARY_SAMPLE_FORMAT_F32_LE:
       storebits = 32;
       validbits = 32;
       is_float = true;
+      break;
+    default:
       break;
   }
 
@@ -460,38 +447,38 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
     IAudioClient* client, wasapi_sample_format_t sample_format, int samplerate,
     int channels, bool exclusive, uint32_t channel_mask, bool has_mask,
     WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx,
-    wasapi_binary_sample_format_t* out_bin_fmt) {
+    binary_sample_format_t* out_bin_fmt) {
   if (exclusive) {
     switch (sample_format) {
       case WASAPI_SAMPLE_FORMAT_S16: {
         WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(WASAPI_BINARY_FORMAT_S16_LE, samplerate,
+        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S16_LE, samplerate,
                                  channels, channel_mask, has_mask, &wfx);
         if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
                                                       out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_S16_LE;
+          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S16_LE;
           return true;
         }
         return false;
       }
       case WASAPI_SAMPLE_FORMAT_S32: {
         WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(WASAPI_BINARY_FORMAT_S32_LE, samplerate,
+        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S32_LE, samplerate,
                                  channels, channel_mask, has_mask, &wfx);
         if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
                                                       out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_S32_LE;
+          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S32_LE;
           return true;
         }
         return false;
       }
       case WASAPI_SAMPLE_FORMAT_F32: {
         WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(WASAPI_BINARY_FORMAT_F32_LE, samplerate,
+        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate,
                                  channels, channel_mask, has_mask, &wfx);
         if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
                                                       out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_F32_LE;
+          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
           return true;
         }
         return false;
@@ -499,20 +486,20 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
       case WASAPI_SAMPLE_FORMAT_S24: {
         // Try S24_3_LE first
         WAVEFORMATEXTENSIBLE wfx24_3;
-        wasapi_build_wave_format(WASAPI_BINARY_FORMAT_S24_3_LE, samplerate,
+        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_3_LE, samplerate,
                                  channels, channel_mask, has_mask, &wfx24_3);
         if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_3, out_wfx,
                                                       out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_S24_3_LE;
+          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_3_LE;
           return true;
         }
         // Fallback to S24_4_LJ_LE
         WAVEFORMATEXTENSIBLE wfx24_4;
-        wasapi_build_wave_format(WASAPI_BINARY_FORMAT_S24_4_LJ_LE, samplerate,
+        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE, samplerate,
                                  channels, channel_mask, has_mask, &wfx24_4);
         if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_4, out_wfx,
                                                       out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_S24_4_LJ_LE;
+          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
           return true;
         }
         return false;
@@ -523,7 +510,7 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
   } else {
     // Shared mode: standard 32-bit float extensible
     WAVEFORMATEXTENSIBLE wfx;
-    wasapi_build_wave_format(WASAPI_BINARY_FORMAT_F32_LE, samplerate, channels,
+    wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate, channels,
                              0, false, &wfx);
     WAVEFORMATEX* closest = NULL;
     HRESULT hr = IAudioClient_IsFormatSupported(
@@ -534,7 +521,7 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
     if (SUCCEEDED(hr) && hr == S_OK) {
       *out_wfx = wfx;
       *out_is_std_wfx = false;
-      if (out_bin_fmt) *out_bin_fmt = WASAPI_BINARY_FORMAT_F32_LE;
+      if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
       return true;
     }
     return false;
@@ -545,7 +532,7 @@ bool wasapi_get_device_format(
     IAudioClient* client, int samplerate, int channels,
     wasapi_sample_format_t requested_format, bool has_requested_format,
     bool exclusive, const char* direction_name, WAVEFORMATEXTENSIBLE* out_wfx,
-    bool* out_is_std_wfx, wasapi_binary_sample_format_t* out_bin_fmt,
+    bool* out_is_std_wfx, binary_sample_format_t* out_bin_fmt,
     backend_error_t* err) {
   wasapi_sample_format_t temp_format = requested_format;
   bool has_temp = has_requested_format;

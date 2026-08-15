@@ -13,29 +13,12 @@ static const logger_t g_alsa_dev_logger = {"dsp.backend.alsa"};
 pthread_mutex_t g_alsa_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool alsa_is_dsd_format(snd_pcm_format_t format) {
-  if (format == SND_PCM_FORMAT_DSD_U8) return true;
-  if (format == SND_PCM_FORMAT_DSD_U16_LE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U16_BE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U32_LE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U32_BE) return true;
-  return false;
+  return sample_format_is_dsd(alsa_pcm_format_to_binary_format(format));
 }
 
 size_t alsa_format_sample_size(snd_pcm_format_t format) {
-  if (format == SND_PCM_FORMAT_DSD_U8) {
-    return 1;
-  }
-  if (format == SND_PCM_FORMAT_S16_LE || format == SND_PCM_FORMAT_DSD_U16_LE ||
-      format == SND_PCM_FORMAT_DSD_U16_BE) {
-    return 2;
-  }
-  if (format == SND_PCM_FORMAT_S24_3LE) {
-    return 3;
-  }
-  if (format == SND_PCM_FORMAT_FLOAT64_LE) {
-    return 8;
-  }
-  return 4;
+  return sample_format_bytes_per_sample(
+      alsa_pcm_format_to_binary_format(format));
 }
 
 snd_pcm_format_t alsa_sample_format_to_pcm_format(alsa_sample_format_t fmt) {

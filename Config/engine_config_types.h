@@ -459,6 +459,59 @@ const char* binary_sample_format_to_string(binary_sample_format_t fmt);
 binary_sample_format_t binary_sample_format_from_string(const char* str);
 
 /**
+ * @brief Returns the byte width per sample for a binary sample format.
+ * @param fmt The binary sample format.
+ * @return Size in bytes per single sample channel.
+ */
+size_t sample_format_bytes_per_sample(binary_sample_format_t fmt);
+
+/**
+ * @brief Checks if a binary sample format is a native DSD format.
+ * @param fmt The binary sample format.
+ * @return True if DSD, false otherwise.
+ */
+bool sample_format_is_dsd(binary_sample_format_t fmt);
+
+/**
+ * @brief Checks if a binary sample format is a floating-point format (F32/F64).
+ * @param fmt The binary sample format.
+ * @return True if float, false otherwise.
+ */
+bool sample_format_is_float(binary_sample_format_t fmt);
+
+#if defined(ENABLE_COREAUDIO)
+/**
+ * @brief Maps CoreAudio sample format to universal binary format.
+ */
+binary_sample_format_t coreaudio_sample_format_to_binary_format(
+    coreaudio_sample_format_t fmt);
+#endif
+
+#if defined(ENABLE_ALSA)
+/**
+ * @brief Maps ALSA sample format enum to universal binary format.
+ */
+binary_sample_format_t alsa_sample_format_to_binary_format(
+    alsa_sample_format_t fmt);
+#endif
+
+#if defined(ENABLE_WASAPI)
+/**
+ * @brief Maps WASAPI sample format enum to universal binary format.
+ */
+binary_sample_format_t wasapi_sample_format_to_binary_format(
+    wasapi_sample_format_t fmt);
+#endif
+
+#if defined(ENABLE_ASIO)
+/**
+ * @brief Maps ASIO sample format enum to universal binary format.
+ */
+binary_sample_format_t asio_sample_format_to_binary_format(
+    asio_sample_format_t fmt, bool is_lsb);
+#endif
+
+/**
  * @brief Signal generator types.
  */
 typedef enum {
@@ -864,6 +917,15 @@ int capture_device_config_get_channels(const capture_device_config_t* config);
 const char* capture_device_config_get_device(
     const capture_device_config_t* config);
 
+/**
+ * @brief Gets universal binary sample format from a capture device
+ * configuration.
+ * @param config Pointer to the configuration.
+ * @return Universal binary sample format.
+ */
+binary_sample_format_t capture_device_config_get_binary_format(
+    const capture_device_config_t* config);
+
 #if defined(ENABLE_COREAUDIO)
 /**
  * @brief Gets CoreAudio sample format from a capture device configuration.
@@ -921,6 +983,15 @@ int playback_device_config_get_channels(const playback_device_config_t* config);
  * @return Device name string, or NULL.
  */
 const char* playback_device_config_get_device(
+    const playback_device_config_t* config);
+
+/**
+ * @brief Gets universal binary sample format from a playback device
+ * configuration.
+ * @param config Pointer to the configuration.
+ * @return Universal binary sample format.
+ */
+binary_sample_format_t playback_device_config_get_binary_format(
     const playback_device_config_t* config);
 
 #if defined(ENABLE_COREAUDIO)

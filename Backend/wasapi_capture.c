@@ -44,7 +44,7 @@ struct wasapi_capture {
   bool exclusive;
   bool polling;
 
-  wasapi_binary_sample_format_t bin_fmt;
+  binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
   size_t blockalign;
   bool com_initialized;
@@ -350,7 +350,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   WAVEFORMATEXTENSIBLE wfx;
   bool is_std_wfx = false;
-  wasapi_binary_sample_format_t bin_fmt;
+  binary_sample_format_t bin_fmt;
   bool has_format = (capture->format != WASAPI_SAMPLE_FORMAT_INVALID);
 
   if (!wasapi_get_device_format(capture->client, capture->sample_rate,
@@ -387,8 +387,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   logger_debug(&g_wasapi_logger, "Opened Wasapi capture device \"%s\".",
                capture->device[0] != '\0' ? capture->device : "default");
 
-  capture->bytes_per_sample =
-      wasapi_binary_format_bytes_per_sample(capture->bin_fmt);
+  capture->bytes_per_sample = sample_format_bytes_per_sample(capture->bin_fmt);
   capture->blockalign = (size_t)capture->channels * capture->bytes_per_sample;
 
   // Allocate SPSC byte ring buffer for audio samples

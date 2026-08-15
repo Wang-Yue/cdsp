@@ -36,23 +36,6 @@ extern const logger_t g_wasapi_logger;
     (punk) = NULL;                 \
   }
 
-typedef enum {
-  WASAPI_BINARY_FORMAT_S16_LE = 0,
-  WASAPI_BINARY_FORMAT_S24_3_LE,
-  WASAPI_BINARY_FORMAT_S24_4_LJ_LE,
-  WASAPI_BINARY_FORMAT_S32_LE,
-  WASAPI_BINARY_FORMAT_F32_LE
-} wasapi_binary_sample_format_t;
-
-/**
- * @brief Returns the byte size of a single sample for a given WASAPI binary
- * format.
- *
- * @param fmt The WASAPI binary sample format enum.
- * @return Size in bytes per sample (2, 3, or 4).
- */
-size_t wasapi_binary_format_bytes_per_sample(wasapi_binary_sample_format_t fmt);
-
 typedef void (*wasapi_format_change_callback_t)(void* parent, double new_rate);
 
 /**
@@ -133,7 +116,7 @@ size_t wasapi_make_channelmasks(size_t channels, DWORD masks[8]);
  * @brief Builds a WAVEFORMATEXTENSIBLE descriptor for given sample parameters.
  * Matches wasapi-rs WaveFormat::new / build_wave_format.
  */
-void wasapi_build_wave_format(wasapi_binary_sample_format_t fmt, int samplerate,
+void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
                               int channels, uint32_t channel_mask,
                               bool has_mask, WAVEFORMATEXTENSIBLE* out_wfx);
 
@@ -154,7 +137,7 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
     IAudioClient* client, wasapi_sample_format_t sample_format, int samplerate,
     int channels, bool exclusive, uint32_t channel_mask, bool has_mask,
     WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx,
-    wasapi_binary_sample_format_t* out_bin_fmt);
+    binary_sample_format_t* out_bin_fmt);
 
 /**
  * @brief Determines the negotiated WAVEFORMAT descriptor and binary sample
@@ -164,7 +147,7 @@ bool wasapi_get_device_format(
     IAudioClient* client, int samplerate, int channels,
     wasapi_sample_format_t requested_format, bool has_requested_format,
     bool exclusive, const char* direction_name, WAVEFORMATEXTENSIBLE* out_wfx,
-    bool* out_is_std_wfx, wasapi_binary_sample_format_t* out_bin_fmt,
+    bool* out_is_std_wfx, binary_sample_format_t* out_bin_fmt,
     backend_error_t* err);
 
 /**

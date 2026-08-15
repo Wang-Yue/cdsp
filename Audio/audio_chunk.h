@@ -163,14 +163,6 @@ void audio_chunk_apply_gain(audio_chunk_t* chunk, const int* channels,
                             const double* gain_multipliers, size_t frames);
 
 /**
- * @brief Returns the byte width per sample for a binary sample format.
- *
- * @param fmt The binary sample format.
- * @return Size in bytes per single sample channel.
- */
-size_t sample_format_bytes_per_sample(binary_sample_format_t fmt);
-
-/**
  * @brief Decodes interleaved raw byte samples into planar double audio chunk.
  *
  * @param src Pointer to interleaved raw bytes.
