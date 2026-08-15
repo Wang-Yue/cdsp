@@ -987,8 +987,8 @@ TEST(AlsaThreadedOptionParsing) {
   res = dsp_config_parse_json(json_threaded_default, &config, &err);
   ASSERT_EQ(0, res);
   ASSERT_TRUE(config != NULL);
-  ASSERT_TRUE(config->devices.capture.cfg.alsa.threaded);
-  ASSERT_TRUE(config->devices.playback.cfg.alsa.threaded);
+  ASSERT_FALSE(config->devices.capture.cfg.alsa.threaded);
+  ASSERT_FALSE(config->devices.playback.cfg.alsa.threaded);
   dsp_config_free(config);
 }
 #endif

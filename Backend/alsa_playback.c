@@ -178,23 +178,32 @@ static void* alsa_playback_inner_thread_func(void* arg) {
       }
     } else {
       // Ring buffer is empty - check if ALSA buffer is running low
-      // (src/alsa_backend/threaded_device.rs:512-550)
-      snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
-      size_t delay = 0;
-      if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
-        delay = playback->bufsize - (snd_pcm_uframes_t)avail;
+      // (src/alsa_backend/threaded_device.rs:512-550 in upstream CamillaDSP)
+      snd_pcm_state_t st = snd_pcm_state(playback->pcm);
+      bool buffer_low = false;
+      if (st == SND_PCM_STATE_RUNNING) {
+        snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
+        size_t delay = 0;
+        if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
+          delay = playback->bufsize - (snd_pcm_uframes_t)avail;
+        }
+        size_t low_threshold = playback->period > 0 ? playback->period : 1;
+        buffer_low = (delay < low_threshold);
+      } else {
+        buffer_low = true;
       }
-      size_t low_threshold = playback->period > 0 ? playback->period : 1;
-      if (delay < low_threshold) {
+
+      if (buffer_low) {
         if (!playback_interrupted) {
           logger_warn(&g_logger, "PB: Playback interrupted, no data available");
           playback_interrupted = true;
         }
+        // Matching play_buffer in threaded_device.rs: wait for PCM readiness before writing
+        snd_pcm_wait(playback->pcm, 20);
         snd_pcm_writei(playback->pcm, playback->zero_stall_buf,
                        playback->chunk_size);
-      } else {
-        cdsp_sleep_us(500);
       }
+      cdsp_sleep_us(500);
     }
   }
 
@@ -709,9 +718,46 @@ static bool alsa_playback_get_pending_rate_change(void* ctx, double* out_rate) {
 
 static bool alsa_playback_prefill_silence(void* ctx, size_t frames,
                                           backend_error_t* err) {
-  (void)ctx;
-  (void)frames;
   (void)err;
+  alsa_playback_t* playback = (alsa_playback_t*)ctx;
+  if (!playback || frames == 0) return true;
+
+  if (playback->threaded) {
+    if (!playback->ring_buffer) return true;
+    size_t bytes = frames * playback->blockalign;
+    uint8_t zero_buf[512] = {0};
+    if (alsa_is_dsd_format(playback->format)) {
+      memset(zero_buf, 0x69, sizeof(zero_buf));
+    }
+    while (bytes > 0) {
+      size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
+      size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
+                                                   zero_buf, chunk_bytes);
+      if (written == 0) break;
+      bytes -= written;
+    }
+    return true;
+  }
+
+  if (!playback->pcm) return true;
+  uint8_t zero_buf[512] = {0};
+  if (alsa_is_dsd_format(playback->format)) {
+    memset(zero_buf, 0x69, sizeof(zero_buf));
+  }
+  size_t written_frames = 0;
+  while (written_frames < frames) {
+    size_t max_chunk_frames = sizeof(zero_buf) / playback->blockalign;
+    if (max_chunk_frames == 0) max_chunk_frames = 1;
+    size_t chunk = (frames - written_frames) < max_chunk_frames
+                       ? (frames - written_frames)
+                       : max_chunk_frames;
+    snd_pcm_sframes_t rc = snd_pcm_writei(playback->pcm, zero_buf, chunk);
+    if (rc > 0) {
+      written_frames += (size_t)rc;
+    } else {
+      break;
+    }
+  }
   return true;
 }
 
@@ -806,7 +852,7 @@ static playback_backend_t* alsa_playback_create(
   atomic_init(&playback->paused, false);
   playback->currently_paused = false;
   playback->threaded =
-      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : true;
+      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : false;
   pthread_mutex_init(&playback->mixer_mutex, NULL);
 
   playback_backend_t* backend =

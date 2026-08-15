@@ -213,7 +213,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
                      sizeof(cap->link_mute_control));
   cap->has_threaded = parse_json_bool(cap_obj, "threaded", &cap->threaded);
   if (!cap->has_threaded) {
-    cap->threaded = true;  // Default to true (threaded ALSA)
+    cap->threaded = false;  // Default to false (direct ALSA)
   }
 #endif
 
@@ -573,7 +573,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
 #if defined(ENABLE_ALSA)
   play->has_threaded = parse_json_bool(play_obj, "threaded", &play->threaded);
   if (!play->has_threaded) {
-    play->threaded = true;
+    play->threaded = false;
   }
 #endif
 

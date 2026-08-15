@@ -1036,7 +1036,7 @@ static capture_backend_t* alsa_capture_create(
   atomic_init(&capture->has_pending_rate_change, false);
   atomic_init(&capture->is_inactive, false);
   capture->threaded =
-      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : true;
+      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : false;
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
   capture_backend_t* backend =
