@@ -436,73 +436,11 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                                 backend_error_t* err) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return false;
-
-  if (atomic_load_explicit(&capture->has_pending_rate_change,
-                           memory_order_acquire)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-    return false;
-  }
-
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
-      !atomic_load_explicit(&capture->thread_running, memory_order_acquire)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Capture stream stopped");
-    return false;
-  }
-
-  if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INVALID_CHANNELS,
-          "Chunk channels count does not match capture channels");
-    }
-    return false;
-  }
-
-  size_t bytes_requested = frames * capture->blockalign;
-  if (bytes_requested > capture->decode_buf_cap) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Frame count exceeds capture buffer capacity");
-    }
-    return false;
-  }
-
-  DWORD start_time = GetTickCount();
-  while (spsc_byte_ring_buffer_get_available_to_read(capture->ring_buffer) <
-         bytes_requested) {
-    if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
-        !atomic_load_explicit(&capture->thread_running, memory_order_acquire)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                           "Capture stream stopped");
-      return false;
-    }
-    if (atomic_load_explicit(&capture->has_pending_rate_change,
-                             memory_order_acquire)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-      return false;
-    }
-    if (GetTickCount() - start_time > 3000) {
-      // Stream timeout
-      break;
-    }
-    cdsp_sleep_ms(1);
-  }
-
-  size_t consumed_bytes = spsc_byte_ring_buffer_consume(
-      capture->ring_buffer, capture->decode_buf, bytes_requested);
-  size_t valid_frames =
-      (capture->blockalign > 0) ? (consumed_bytes / capture->blockalign) : 0;
-
-  wasapi_decode_interleaved_samples(capture->decode_buf, capture->bin_fmt,
-                                    capture->bytes_per_sample,
-                                    capture->channels, valid_frames, chunk);
-
-  return true;
+  return audio_backend_ring_buffer_read(
+      capture->ring_buffer, capture->decode_buf, capture->decode_buf_cap,
+      capture->blockalign, frames, (binary_sample_format_t)capture->bin_fmt,
+      (size_t)capture->channels, 3000, &capture->thread_running,
+      &capture->stopped, &capture->has_pending_rate_change, chunk, err);
 }
 
 static void wasapi_capture_close(void* ctx) {

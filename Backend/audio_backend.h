@@ -13,6 +13,7 @@
 #include "Audio/audio_chunk.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 /**
  * @file audio_backend.h
@@ -477,5 +478,63 @@ void playback_backend_stop(playback_backend_t* backend);
  * @param backend Pointer to the playback backend to free.
  */
 void playback_backend_free(playback_backend_t* backend);
+
+/**
+ * @brief Reads audio frames from an SPSC byte ring buffer, decoding them into
+ * an audio chunk.
+ *
+ * @param ring_buffer Pointer to the SPSC byte ring buffer.
+ * @param scratch_buf Pointer to temporary decode byte buffer.
+ * @param scratch_cap Capacity of scratch_buf in bytes.
+ * @param blockalign Frame block align in bytes (channels * bytes_per_sample).
+ * @param frames_requested Number of frames requested to read.
+ * @param fmt Binary sample format of raw bytes in the ring buffer.
+ * @param channels Number of audio channels.
+ * @param timeout_ms Max milliseconds to wait for data (0 to return false
+ * immediately if not ready).
+ * @param thread_running Optional pointer to atomic thread_running flag.
+ * @param stopped Optional pointer to atomic stopped flag.
+ * @param has_pending_rate_change Optional pointer to atomic
+ * has_pending_rate_change flag.
+ * @param chunk Destination audio chunk.
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success, false on error, stream stop, or format change.
+ */
+bool audio_backend_ring_buffer_read(
+    spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
+    size_t blockalign, size_t frames_requested, binary_sample_format_t fmt,
+    size_t channels, uint32_t timeout_ms, _Atomic bool* thread_running,
+    _Atomic bool* stopped, _Atomic bool* has_pending_rate_change,
+    audio_chunk_t* chunk, backend_error_t* err);
+
+/**
+ * @brief Encodes an audio chunk and writes it into an SPSC byte ring buffer
+ * with backoff.
+ *
+ * @param ring_buffer Pointer to the SPSC byte ring buffer.
+ * @param scratch_buf Pointer to temporary encode byte buffer.
+ * @param scratch_cap Capacity of scratch_buf in bytes.
+ * @param blockalign Frame block align in bytes (channels * bytes_per_sample).
+ * @param chunk Source audio chunk to write.
+ * @param fmt Binary sample format to encode into.
+ * @param channels Number of audio channels.
+ * @param sleep_ms Sleep duration in milliseconds per retry attempt when buffer
+ * is full.
+ * @param max_retries Maximum retry attempts when ring buffer is full.
+ * @param thread_running Optional pointer to atomic thread_running flag.
+ * @param stopped Optional pointer to atomic stopped flag.
+ * @param is_paused Optional pointer to atomic paused flag.
+ * @param has_pending_rate_change Optional pointer to atomic
+ * has_pending_rate_change flag.
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success (or paused), false on error or stream stop.
+ */
+bool audio_backend_ring_buffer_write(
+    spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
+    size_t blockalign, const audio_chunk_t* chunk, binary_sample_format_t fmt,
+    size_t channels, uint32_t sleep_ms, uint32_t max_retries,
+    _Atomic bool* thread_running, _Atomic bool* stopped,
+    _Atomic bool* is_paused, _Atomic bool* has_pending_rate_change,
+    backend_error_t* err);
 
 #endif  // CLIB_BACKEND_AUDIO_BACKEND_H

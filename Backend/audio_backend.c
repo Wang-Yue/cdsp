@@ -29,6 +29,7 @@
 #include "Audio/audio_chunk.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend"};
 #include "Backend/file_backend.h"
@@ -297,4 +298,176 @@ void playback_backend_free(playback_backend_t* backend) {
     backend->vtable->destroy(backend->ctx);
   }
   free(backend);
+}
+
+bool audio_backend_ring_buffer_read(
+    spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
+    size_t blockalign, size_t frames_requested, binary_sample_format_t fmt,
+    size_t channels, uint32_t timeout_ms, _Atomic bool* thread_running,
+    _Atomic bool* stopped, _Atomic bool* has_pending_rate_change,
+    audio_chunk_t* chunk, backend_error_t* err) {
+  if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
+      blockalign == 0) {
+    return false;
+  }
+
+  if (has_pending_rate_change &&
+      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+    return false;
+  }
+
+  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+      (thread_running &&
+       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Capture stream stopped");
+    return false;
+  }
+
+  if (audio_chunk_get_channels(chunk) < channels) {
+    if (err)
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
+    return false;
+  }
+
+  size_t bytes_requested = frames_requested * blockalign;
+  if (bytes_requested > scratch_cap) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Frame count exceeds capture buffer capacity");
+    return false;
+  }
+
+  if (timeout_ms > 0) {
+    uint32_t elapsed_ms = 0;
+    while (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
+           bytes_requested) {
+      if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+          (thread_running &&
+           !atomic_load_explicit(thread_running, memory_order_acquire))) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Capture stream stopped");
+        return false;
+      }
+      if (has_pending_rate_change &&
+          atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+        return false;
+      }
+      if (elapsed_ms >= timeout_ms) {
+        break;
+      }
+      cdsp_sleep_ms(1);
+      elapsed_ms++;
+    }
+  } else {
+    if (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
+        bytes_requested) {
+      return false;
+    }
+  }
+
+  size_t consumed_bytes = spsc_byte_ring_buffer_consume(
+      ring_buffer, (uint8_t*)scratch_buf, bytes_requested);
+  size_t valid_frames = (blockalign > 0) ? (consumed_bytes / blockalign) : 0;
+
+  return audio_chunk_decode_interleaved(scratch_buf, fmt, channels,
+                                        valid_frames, chunk);
+}
+
+bool audio_backend_ring_buffer_write(
+    spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
+    size_t blockalign, const audio_chunk_t* chunk, binary_sample_format_t fmt,
+    size_t channels, uint32_t sleep_ms, uint32_t max_retries,
+    _Atomic bool* thread_running, _Atomic bool* stopped,
+    _Atomic bool* is_paused, _Atomic bool* has_pending_rate_change,
+    backend_error_t* err) {
+  if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
+      blockalign == 0) {
+    return false;
+  }
+
+  if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+    return true;
+  }
+
+  if (has_pending_rate_change &&
+      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+    return false;
+  }
+
+  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+      (thread_running &&
+       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Playback stream stopped");
+    return false;
+  }
+
+  if (audio_chunk_get_channels(chunk) < channels) {
+    if (err)
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match playback channels");
+    return false;
+  }
+
+  size_t frames = audio_chunk_get_valid_frames(chunk);
+  if (frames == 0) return true;
+
+  size_t bytes_to_write = frames * blockalign;
+  if (bytes_to_write > scratch_cap) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Frame count exceeds playback buffer capacity");
+    return false;
+  }
+
+  if (!audio_chunk_encode_interleaved(chunk, fmt, channels, frames,
+                                      scratch_buf)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Failed to encode audio samples");
+    return false;
+  }
+
+  uint32_t retries = (max_retries > 0) ? max_retries : 1;
+  for (uint32_t retry = 0; retry < retries; retry++) {
+    if (spsc_byte_ring_buffer_get_available_to_write(ring_buffer) >=
+        bytes_to_write) {
+      break;
+    }
+    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+        (thread_running &&
+         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Playback stream stopped");
+      return false;
+    }
+    if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+      return true;
+    }
+    cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
+  }
+
+  size_t pushed = spsc_byte_ring_buffer_write(
+      ring_buffer, (const uint8_t*)scratch_buf, bytes_to_write);
+  if (pushed < bytes_to_write) {
+    logger_debug(&g_logger,
+                 "Playback ring buffer is full, dropped chunk of %zu bytes",
+                 bytes_to_write);
+  }
+
+  return true;
 }

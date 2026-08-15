@@ -396,105 +396,15 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
     return false;
   }
 
-  // Convert planar double samples to interleaved format
-  // matching chunk_to_buffer_rawbytes in upstream
-  const double* src_channels[playback->channels];
-  for (size_t c = 0; c < (size_t)playback->channels; c++) {
-    src_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  if (playback->format == SND_PCM_FORMAT_FLOAT_LE) {
-    float* dst = (float*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        dst[f * playback->channels + c] = pcm_sample_encode_f32(val);
-      }
+  if (!audio_chunk_encode_interleaved(
+          chunk, alsa_pcm_format_to_binary_format(playback->format),
+          (size_t)playback->channels, total_frames,
+          playback->interleaved_buf)) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Failed to encode audio chunk");
     }
-  } else if (playback->format == SND_PCM_FORMAT_S32_LE) {
-    int32_t* dst = (int32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        dst[f * playback->channels + c] = pcm_sample_encode_s32(val);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_S24_3LE) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        size_t offset = (f * playback->channels + c) * 3;
-        pcm_sample_encode_s24_3bytes(val, &dst[offset]);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_S24_LE) {
-    int32_t* dst = (int32_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        dst[f * playback->channels + c] = pcm_sample_encode_s24(val);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
-    double* dst = (double*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        dst[f * playback->channels + c] = src_channels[c][f];
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_S16_LE) {
-    int16_t* dst = (int16_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        dst[f * playback->channels + c] = pcm_sample_encode_s16(val);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        dst[f * playback->channels + c] = pcm_sample_encode_dsd_u8(val);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        size_t off = (f * (size_t)playback->channels + c) * 2;
-        pcm_sample_encode_dsd_u16_le_bytes(val, &dst[off]);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        size_t off = (f * (size_t)playback->channels + c) * 2;
-        pcm_sample_encode_dsd_u16_be_bytes(val, &dst[off]);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        size_t off = (f * (size_t)playback->channels + c) * 4;
-        pcm_sample_encode_dsd_u32_le_bytes(val, &dst[off]);
-      }
-    }
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
-    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
-    for (size_t f = 0; f < total_frames; f++) {
-      for (size_t c = 0; c < (size_t)playback->channels; c++) {
-        double val = src_channels[c][f];
-        size_t off = (f * (size_t)playback->channels + c) * 4;
-        pcm_sample_encode_dsd_u32_be_bytes(val, &dst[off]);
-      }
-    }
+    return false;
   }
 
   char* buf_ptr = (char*)playback->interleaved_buf;

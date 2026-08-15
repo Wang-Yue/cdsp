@@ -377,47 +377,6 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
                                   backend_error_t* err) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
-  if (atomic_load_explicit(&playback->paused, memory_order_acquire))
-    return true;
-
-  if (atomic_load_explicit(&playback->has_pending_rate_change,
-                           memory_order_acquire)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-    return false;
-  }
-
-  if (atomic_load_explicit(&playback->stopped, memory_order_acquire) ||
-      !atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Playback stream stopped");
-    return false;
-  }
-
-  if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INVALID_CHANNELS,
-          "Chunk channels count does not match playback channels");
-    }
-    return false;
-  }
-
-  size_t total_frames = audio_chunk_get_valid_frames(chunk);
-  size_t bytes_to_write = total_frames * playback->blockalign;
-
-  if (bytes_to_write > playback->write_buf_cap) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Frame count exceeds playback buffer capacity");
-    }
-    return false;
-  }
-
-  wasapi_encode_interleaved_samples(
-      chunk, playback->bin_fmt, playback->bytes_per_sample, playback->channels,
-      total_frames, playback->write_buf);
 
   DWORD sleep_duration_us =
       (DWORD)(1000000ULL * (unsigned long long)playback->chunk_size /
@@ -425,24 +384,12 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
   DWORD sleep_duration_ms = sleep_duration_us / 1000;
   if (sleep_duration_ms == 0) sleep_duration_ms = 1;
 
-  const int max_retries = 8;
-  for (int retry = 0; retry < max_retries; retry++) {
-    if (spsc_byte_ring_buffer_get_available_to_write(playback->ring_buffer) >=
-        bytes_to_write) {
-      break;
-    }
-    cdsp_sleep_ms(sleep_duration_ms);
-  }
-
-  size_t pushed = spsc_byte_ring_buffer_write(
-      playback->ring_buffer, playback->write_buf, bytes_to_write);
-  if (pushed < bytes_to_write) {
-    logger_debug(&g_wasapi_logger,
-                 "Playback ring buffer is full, dropped chunk of %zu bytes",
-                 bytes_to_write);
-  }
-
-  return true;
+  return audio_backend_ring_buffer_write(
+      playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
+      playback->blockalign, chunk, (binary_sample_format_t)playback->bin_fmt,
+      (size_t)playback->channels, (uint32_t)sleep_duration_ms, 8,
+      &playback->thread_running, &playback->stopped, &playback->paused,
+      &playback->has_pending_rate_change, err);
 }
 
 static void wasapi_playback_close(void* ctx) {

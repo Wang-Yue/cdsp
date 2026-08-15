@@ -327,6 +327,29 @@ static size_t asio_format_bytes_per_sample(asio_sample_format_t fmt) {
   }
 }
 
+static inline binary_sample_format_t asio_format_to_binary_format(
+    asio_sample_format_t fmt, bool is_lsb) {
+  switch (fmt) {
+    case ASIO_SAMPLE_FORMAT_S16_LE:
+      return BINARY_SAMPLE_FORMAT_S16_LE;
+    case ASIO_SAMPLE_FORMAT_S24_3_LE:
+      return BINARY_SAMPLE_FORMAT_S24_3_LE;
+    case ASIO_SAMPLE_FORMAT_S24_4_LE:
+      return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+    case ASIO_SAMPLE_FORMAT_S32_LE:
+      return BINARY_SAMPLE_FORMAT_S32_LE;
+    case ASIO_SAMPLE_FORMAT_F32_LE:
+      return BINARY_SAMPLE_FORMAT_F32_LE;
+    case ASIO_SAMPLE_FORMAT_F64_LE:
+      return BINARY_SAMPLE_FORMAT_F64_LE;
+    case ASIO_SAMPLE_FORMAT_DSD_INT8:
+      return is_lsb ? BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED
+                    : BINARY_SAMPLE_FORMAT_DSD_U32_BE;
+    default:
+      return BINARY_SAMPLE_FORMAT_S32_LE;
+  }
+}
+
 /**
  * @brief query_device_format matching CamillaDSP utils.rs lines 172-195.
  */
@@ -1861,50 +1884,10 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
     return false;
   }
 
-  // Convert chunk to interleaved raw bytes
-  const double* src_channels[playback->channels];
-  for (int c = 0; c < playback->channels; c++) {
-    src_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  for (size_t f = 0; f < valid_frames; f++) {
-    for (int c = 0; c < playback->channels; c++) {
-      double sample = src_channels[c][f];
-      uint8_t* dst =
-          playback->encode_buf + (f * (size_t)playback->channels + (size_t)c) *
-                                     playback->bytes_per_sample;
-      switch (playback->resolved_format) {
-        case ASIO_SAMPLE_FORMAT_S16_LE:
-          pcm_sample_encode_s16_bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_S24_3_LE:
-          pcm_sample_encode_s24_3bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_S24_4_LE:
-          pcm_sample_encode_s24_4_lj_bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_S32_LE:
-          pcm_sample_encode_s32_bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_F32_LE:
-          pcm_sample_encode_f32_bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_F64_LE:
-          pcm_sample_encode_f64_bytes(sample, dst);
-          break;
-        case ASIO_SAMPLE_FORMAT_DSD_INT8:
-          if (playback->is_lsb) {
-            pcm_sample_encode_dsd_u32_reversed_bytes(sample, dst);
-          } else {
-            pcm_sample_encode_dsd_u32_be_bytes(sample, dst);
-          }
-          break;
-        default:
-          pcm_sample_encode_s32_bytes(sample, dst);
-          break;
-      }
-    }
-  }
+  audio_chunk_encode_interleaved(
+      chunk,
+      asio_format_to_binary_format(playback->resolved_format, playback->is_lsb),
+      (size_t)playback->channels, valid_frames, playback->encode_buf);
 
   // Sleep duration based on time to play back one chunksize (lines 1670-1679)
   size_t sleep_duration_us =
@@ -2320,52 +2303,10 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     memset(capture->decode_buf + read_bytes, 0, capture_bytes - read_bytes);
   }
 
-  // Convert raw bytes to audio_chunk_t
-  double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  for (size_t f = 0; f < frames; f++) {
-    for (int c = 0; c < capture->channels; c++) {
-      const uint8_t* src =
-          capture->decode_buf + (f * (size_t)capture->channels + (size_t)c) *
-                                    capture->bytes_per_sample;
-      double sample = 0.0;
-      switch (capture->resolved_format) {
-        case ASIO_SAMPLE_FORMAT_S16_LE:
-          sample = pcm_sample_decode_s16_bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_S24_3_LE:
-          sample = pcm_sample_decode_s24_3bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_S24_4_LE:
-          sample = pcm_sample_decode_s24_4_lj_bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_S32_LE:
-          sample = pcm_sample_decode_s32_bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_F32_LE:
-          sample = pcm_sample_decode_f32_bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_F64_LE:
-          sample = pcm_sample_decode_f64_bytes(src);
-          break;
-        case ASIO_SAMPLE_FORMAT_DSD_INT8:
-          if (capture->is_lsb) {
-            sample = pcm_sample_decode_dsd_u32_reversed_bytes(src);
-          } else {
-            sample = pcm_sample_decode_dsd_u32_be_bytes(src);
-          }
-          break;
-        default:
-          sample = pcm_sample_decode_s32_bytes(src);
-          break;
-      }
-      dst_channels[c][f] = sample;
-    }
-  }
-  audio_chunk_set_valid_frames(chunk, frames);
+  audio_chunk_decode_interleaved(
+      capture->decode_buf,
+      asio_format_to_binary_format(capture->resolved_format, capture->is_lsb),
+      (size_t)capture->channels, frames, chunk);
   return true;
 }
 

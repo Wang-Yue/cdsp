@@ -861,104 +861,10 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   }
 
   size_t read_frames = frames;
-  audio_chunk_set_valid_frames(chunk, read_frames);
-
-  // Decode interleaved samples to planar double audio chunk
-  double* dst_channels[capture->channels];
-  for (size_t c = 0; c < (size_t)capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-
-  if (capture->format == SND_PCM_FORMAT_FLOAT_LE) {
-    float* src = (float*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] =
-            pcm_sample_decode_f32(src[f * capture->channels + c]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_S32_LE) {
-    int32_t* src = (int32_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] =
-            pcm_sample_decode_s32(src[f * capture->channels + c]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_S24_3LE) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        size_t offset = (f * capture->channels + c) * 3;
-        dst_channels[c][f] = pcm_sample_decode_s24_3bytes(&src[offset]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_S24_LE) {
-    int32_t* src = (int32_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] =
-            pcm_sample_decode_s24(src[f * capture->channels + c]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE) {
-    double* src = (double*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] = src[f * capture->channels + c];
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_S16_LE) {
-    int16_t* src = (int16_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] =
-            pcm_sample_decode_s16(src[f * capture->channels + c]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U8) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        dst_channels[c][f] =
-            pcm_sample_decode_dsd_u8(src[f * capture->channels + c]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U16_LE) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        size_t offset = (f * capture->channels + c) * 2;
-        dst_channels[c][f] = pcm_sample_decode_dsd_u16_le_bytes(&src[offset]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        size_t offset = (f * capture->channels + c) * 2;
-        dst_channels[c][f] = pcm_sample_decode_dsd_u16_be_bytes(&src[offset]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U32_LE) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        size_t offset = (f * capture->channels + c) * 4;
-        dst_channels[c][f] = pcm_sample_decode_dsd_u32_le_bytes(&src[offset]);
-      }
-    }
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U32_BE) {
-    uint8_t* src = (uint8_t*)capture->interleaved_buf;
-    for (size_t f = 0; f < read_frames; f++) {
-      for (size_t c = 0; c < (size_t)capture->channels; c++) {
-        size_t offset = (f * capture->channels + c) * 4;
-        dst_channels[c][f] = pcm_sample_decode_dsd_u32_be_bytes(&src[offset]);
-      }
-    }
-  }
-
-  return true;
+  return audio_chunk_decode_interleaved(
+      capture->interleaved_buf,
+      alsa_pcm_format_to_binary_format(capture->format),
+      (size_t)capture->channels, read_frames, chunk);
 }
 
 // Close the ALSA capture device

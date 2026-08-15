@@ -472,167 +472,6 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
  * channels in range [-1.0, 1.0].
  *
  * @param dst_channels Array of pointers to destination channel buffers.
- * @param src Pointer to the binary source data buffer.
- * @param frames Number of frames to decode.
- * @param channels Number of audio channels.
- * @param format The source sample format.
- */
-static inline void decode_samples_deinterleave(double* const* dst_channels,
-                                               const uint8_t* src,
-                                               size_t frames, int channels,
-                                               binary_sample_format_t format) {
-  switch (format) {
-    case BINARY_SAMPLE_FORMAT_S16_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 2;
-          dst_channels[c][f] = pcm_sample_decode_s16_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_3_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 3;
-          dst_channels[c][f] = pcm_sample_decode_s24_3bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          dst_channels[c][f] = pcm_sample_decode_s24_4_rj_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          dst_channels[c][f] = pcm_sample_decode_s24_4_lj_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S32_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          dst_channels[c][f] = pcm_sample_decode_s32_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_F32_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          dst_channels[c][f] = pcm_sample_decode_f32_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_F64_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 8;
-          dst_channels[c][f] = pcm_sample_decode_f64_bytes(src + offset);
-        }
-      }
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-/**
- * @brief Encode multiple deinterleaved double channels in range [-1.0, 1.0] to
- * interleaved binary format.
- *
- * @param dst Pointer to destination interleaved binary buffer.
- * @param src_channels Array of pointers to source double channel buffers.
- * @param frames Number of frames to encode.
- * @param channels Number of audio channels.
- * @param format The target sample format.
- */
-static inline void encode_samples_interleave(uint8_t* dst,
-                                             const double* const* src_channels,
-                                             size_t frames, int channels,
-                                             binary_sample_format_t format) {
-  switch (format) {
-    case BINARY_SAMPLE_FORMAT_S16_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 2;
-          pcm_sample_encode_s16_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_3_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 3;
-          pcm_sample_encode_s24_3bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          pcm_sample_encode_s24_4_rj_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          pcm_sample_encode_s24_4_lj_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_S32_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          pcm_sample_encode_s32_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_F32_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 4;
-          pcm_sample_encode_f32_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    case BINARY_SAMPLE_FORMAT_F64_LE: {
-      for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < channels; c++) {
-          size_t offset = (f * channels + c) * 8;
-          pcm_sample_encode_f64_bytes(src_channels[c][f], dst + offset);
-        }
-      }
-      break;
-    }
-    default:
-      break;
-  }
-}
-
 // MARK: - File Capture Backend implementation
 
 /**
@@ -815,12 +654,8 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
   size_t frames_read = bytes_read / (capture->channels * sample_size);
 
-  double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-  decode_samples_deinterleave(dst_channels, capture->raw_buf, frames_read,
-                              capture->channels, capture->format);
+  audio_chunk_decode_interleaved(capture->raw_buf, capture->format,
+                                 (size_t)capture->channels, frames_read, chunk);
 
   if (frames_read < frames) {
     size_t remaining_frames = frames - frames_read;
@@ -832,9 +667,9 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
     if (extra_to_generate > 0) {
       for (int c = 0; c < capture->channels; c++) {
-        if (dst_channels[c]) {
-          memset(dst_channels[c] + frames_read, 0,
-                 extra_to_generate * sizeof(double));
+        double* ch_data = audio_chunk_get_channel(chunk, c);
+        if (ch_data) {
+          memset(ch_data + frames_read, 0, extra_to_generate * sizeof(double));
         }
       }
       capture->extra_samples_generated += extra_to_generate;
@@ -1238,12 +1073,9 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
     playback->raw_buf_capacity = required_bytes;
   }
 
-  const double* src_channels[playback->channels];
-  for (int c = 0; c < playback->channels; c++) {
-    src_channels[c] = audio_chunk_get_channel((audio_chunk_t*)chunk, c);
-  }
-  encode_samples_interleave(playback->raw_buf, src_channels, frames,
-                            playback->channels, playback->format);
+  audio_chunk_encode_interleaved(chunk, playback->format,
+                                 (size_t)playback->channels, frames,
+                                 playback->raw_buf);
 
   size_t bytes_written =
       fwrite(playback->raw_buf, 1, required_bytes, playback->f);

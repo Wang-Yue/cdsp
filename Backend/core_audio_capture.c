@@ -480,8 +480,6 @@ cleanup:
   return false;
 }
 
-/// Read a chunk of audio from the capture ring buffer into the provided audio
-/// chunk.
 static bool core_audio_capture_read(void* ctx, size_t frames,
                                     audio_chunk_t* chunk,
                                     backend_error_t* err) {
@@ -496,33 +494,13 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
                          "Capture device disconnected");
     return false;
   }
-  size_t frames_to_read =
-      (frames > capture->chunk_size) ? capture->chunk_size : frames;
-  size_t bytes_requested = frames_to_read * capture->blockalign;
-  if (spsc_byte_ring_buffer_get_available_to_read(capture->ring_buffer) <
-      bytes_requested) {
-    return false;
-  }
-  if (!capture->read_scratch) return false;
-
-  size_t consumed = spsc_byte_ring_buffer_consume(
-      capture->ring_buffer, capture->read_scratch, bytes_requested);
-  size_t valid_frames =
-      (capture->blockalign > 0) ? (consumed / capture->blockalign) : 0;
-
-  double* dst_channels[capture->channels];
-  for (int ch = 0; ch < capture->channels; ch++) {
-    dst_channels[ch] = audio_chunk_get_channel(chunk, ch);
-  }
-  const float* fsrc = (const float*)capture->read_scratch;
-  for (size_t f = 0; f < valid_frames; f++) {
-    for (int ch = 0; ch < capture->channels; ch++) {
-      dst_channels[ch][f] =
-          (double)fsrc[f * (size_t)capture->channels + (size_t)ch];
-    }
-  }
-  audio_chunk_set_valid_frames(chunk, valid_frames);
-  return true;
+  size_t frames_to_read = (frames > (size_t)capture->chunk_size)
+                              ? (size_t)capture->chunk_size
+                              : frames;
+  return audio_backend_ring_buffer_read(
+      capture->ring_buffer, capture->read_scratch, capture->read_scratch_cap,
+      capture->blockalign, frames_to_read, BINARY_SAMPLE_FORMAT_F32_LE,
+      (size_t)capture->channels, 0, NULL, &capture->stopped, NULL, chunk, err);
 }
 
 /// Get any pending sample rate change detected on the capture device.

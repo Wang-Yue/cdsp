@@ -50,6 +50,15 @@ size_t alsa_format_sample_size(snd_pcm_format_t format);
 snd_pcm_format_t alsa_sample_format_to_pcm_format(alsa_sample_format_t fmt);
 
 /**
+ * @brief Converts an ALSA snd_pcm_format_t to the corresponding
+ * binary_sample_format_t.
+ *
+ * @param fmt The snd_pcm_format_t format.
+ * @return The corresponding binary_sample_format_t.
+ */
+binary_sample_format_t alsa_pcm_format_to_binary_format(snd_pcm_format_t fmt);
+
+/**
  * @brief Calculates and applies a sample format to an ALSA hardware parameters
  * container.
  *

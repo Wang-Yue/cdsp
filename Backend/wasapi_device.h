@@ -288,37 +288,6 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
  */
 DWORD wasapi_get_default_channel_mask(int channels);
 
-/**
- * @brief Decodes raw interleaved WASAPI PCM/Float bytes into an audio_chunk_t.
- *
- * @param src_bytes Pointer to raw interleaved byte buffer.
- * @param bin_fmt Binary sample format of source bytes.
- * @param bytes_per_sample Byte size of each sample.
- * @param channels Number of channels.
- * @param frames Number of frames to decode.
- * @param chunk Output audio_chunk_t to receive planar double audio data.
- */
-void wasapi_decode_interleaved_samples(const uint8_t* src_bytes,
-                                       wasapi_binary_sample_format_t bin_fmt,
-                                       size_t bytes_per_sample, int channels,
-                                       size_t frames, audio_chunk_t* chunk);
-
-/**
- * @brief Encodes planar double audio data from an audio_chunk_t into
- * interleaved WASAPI bytes.
- *
- * @param chunk Input audio_chunk_t containing planar double audio data.
- * @param bin_fmt Target binary sample format.
- * @param bytes_per_sample Byte size of each sample.
- * @param channels Number of channels.
- * @param frames Number of frames to encode.
- * @param dst_bytes Output buffer to receive interleaved raw bytes.
- */
-void wasapi_encode_interleaved_samples(const audio_chunk_t* chunk,
-                                       wasapi_binary_sample_format_t bin_fmt,
-                                       size_t bytes_per_sample, int channels,
-                                       size_t frames, uint8_t* dst_bytes);
-
 #endif  // ENABLE_WASAPI
 
 #endif  // CLIB_BACKEND_WASAPI_DEVICE_H

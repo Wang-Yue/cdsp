@@ -467,7 +467,6 @@ cleanup:
   return false;
 }
 
-/// Write an audio chunk into the playback ring buffer.
 static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
                                       backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
@@ -478,67 +477,11 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
                          "Playback device disconnected");
     return false;
   }
-  size_t frames = audio_chunk_get_valid_frames(chunk);
-  if (frames == 0) return true;
-
-  size_t bytes_to_write = frames * playback->blockalign;
-  if (bytes_to_write > playback->write_buf_cap) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Frame count exceeds playback buffer capacity");
-    }
-    return false;
-  }
-
-  uint32_t elapsed_ms = 0;
-  while (true) {
-    if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Playback stream stopped");
-      }
-      return false;
-    }
-    if (spsc_byte_ring_buffer_get_available_to_write(playback->ring_buffer) >=
-        bytes_to_write) {
-      break;
-    }
-
-    cdsp_sleep_ms(1);
-    elapsed_ms += 1;
-
-    if (elapsed_ms >= 1000) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "CoreAudio write timeout");
-      }
-      return false;
-    }
-
-    if (!atomic_load_explicit(&playback->is_device_alive,
-                              memory_order_acquire)) {
-      return false;
-    }
-    if (atomic_load_explicit(&playback->is_paused, memory_order_acquire)) {
-      return true;
-    }
-  }
-
-  const double* src_channels[playback->channels];
-  for (int ch = 0; ch < playback->channels; ch++) {
-    src_channels[ch] = audio_chunk_get_channel(chunk, ch);
-  }
-  float* dst = (float*)playback->write_buf;
-  for (size_t f = 0; f < frames; f++) {
-    for (int ch = 0; ch < playback->channels; ch++) {
-      dst[f * (size_t)playback->channels + (size_t)ch] =
-          (float)src_channels[ch][f];
-    }
-  }
-
-  spsc_byte_ring_buffer_write(playback->ring_buffer, playback->write_buf,
-                              bytes_to_write);
-  return true;
+  return audio_backend_ring_buffer_write(
+      playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
+      playback->blockalign, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
+      (size_t)playback->channels, 1, 1000, NULL, &playback->stopped,
+      &playback->is_paused, NULL, err);
 }
 
 /// Get the current buffer level in frames.

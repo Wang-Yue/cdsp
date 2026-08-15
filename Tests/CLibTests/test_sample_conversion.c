@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "Audio/audio_chunk.h"
 #include "Audio/sample_conversion.h"
 #include "test_support.h"
 
@@ -195,6 +196,115 @@ TEST(SampleConversion_DSD_U32_RoundTrip) {
     ASSERT_EQ(pcm_reverse_bits_u8(buf_be[2]), buf_lsb[2]);
     ASSERT_EQ(pcm_reverse_bits_u8(buf_be[3]), buf_lsb[3]);
   }
+}
+
+TEST(AudioChunk_InterleavedRoundTrip) {
+  const size_t channels = 2;
+  const size_t frames = 4;
+  audio_chunk_t* src_chunk = audio_chunk_create(frames, channels);
+  ASSERT_TRUE(src_chunk != NULL);
+
+  double* ch0 = audio_chunk_get_channel(src_chunk, 0);
+  double* ch1 = audio_chunk_get_channel(src_chunk, 1);
+  ch0[0] = -0.75;
+  ch0[1] = -0.25;
+  ch0[2] = 0.25;
+  ch0[3] = 0.75;
+  ch1[0] = 0.5;
+  ch1[1] = -0.5;
+  ch1[2] = 0.0;
+  ch1[3] = 0.9;
+  audio_chunk_set_valid_frames(src_chunk, frames);
+
+  binary_sample_format_t formats[] = {
+      BINARY_SAMPLE_FORMAT_S16_LE,      BINARY_SAMPLE_FORMAT_S24_3_LE,
+      BINARY_SAMPLE_FORMAT_S24_4_RJ_LE, BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+      BINARY_SAMPLE_FORMAT_S32_LE,      BINARY_SAMPLE_FORMAT_F32_LE,
+      BINARY_SAMPLE_FORMAT_F64_LE,
+  };
+
+  uint8_t buffer[256];
+  audio_chunk_t* dst_chunk = audio_chunk_create(frames, channels);
+  ASSERT_TRUE(dst_chunk != NULL);
+
+  for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+    binary_sample_format_t fmt = formats[i];
+    memset(buffer, 0, sizeof(buffer));
+
+    ASSERT_TRUE(audio_chunk_encode_interleaved(src_chunk, fmt, channels, frames,
+                                               buffer));
+    ASSERT_TRUE(audio_chunk_decode_interleaved(buffer, fmt, channels, frames,
+                                               dst_chunk));
+    ASSERT_EQ(frames, audio_chunk_get_valid_frames(dst_chunk));
+
+    const double* dst_ch0 = audio_chunk_get_channel(dst_chunk, 0);
+    const double* dst_ch1 = audio_chunk_get_channel(dst_chunk, 1);
+
+    for (size_t f = 0; f < frames; f++) {
+      ASSERT_NEAR(ch0[f], dst_ch0[f], 1e-4);
+      ASSERT_NEAR(ch1[f], dst_ch1[f], 1e-4);
+    }
+  }
+
+  audio_chunk_free(src_chunk);
+  audio_chunk_free(dst_chunk);
+}
+
+TEST(AudioChunk_PlanarRoundTrip) {
+  const size_t channels = 2;
+  const size_t frames = 4;
+  audio_chunk_t* src_chunk = audio_chunk_create(frames, channels);
+  ASSERT_TRUE(src_chunk != NULL);
+
+  double* ch0 = audio_chunk_get_channel(src_chunk, 0);
+  double* ch1 = audio_chunk_get_channel(src_chunk, 1);
+  ch0[0] = -0.6;
+  ch0[1] = -0.1;
+  ch0[2] = 0.3;
+  ch0[3] = 0.8;
+  ch1[0] = 0.4;
+  ch1[1] = -0.4;
+  ch1[2] = 0.1;
+  ch1[3] = -0.9;
+  audio_chunk_set_valid_frames(src_chunk, frames);
+
+  binary_sample_format_t formats[] = {
+      BINARY_SAMPLE_FORMAT_S16_LE,      BINARY_SAMPLE_FORMAT_S24_3_LE,
+      BINARY_SAMPLE_FORMAT_S24_4_RJ_LE, BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+      BINARY_SAMPLE_FORMAT_S32_LE,      BINARY_SAMPLE_FORMAT_F32_LE,
+      BINARY_SAMPLE_FORMAT_F64_LE,
+  };
+
+  uint8_t buf0[128];
+  uint8_t buf1[128];
+  void* dst_ptrs[2] = {buf0, buf1};
+  const void* src_ptrs[2] = {buf0, buf1};
+
+  audio_chunk_t* dst_chunk = audio_chunk_create(frames, channels);
+  ASSERT_TRUE(dst_chunk != NULL);
+
+  for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+    binary_sample_format_t fmt = formats[i];
+    memset(buf0, 0, sizeof(buf0));
+    memset(buf1, 0, sizeof(buf1));
+
+    ASSERT_TRUE(
+        audio_chunk_encode_planar(src_chunk, fmt, channels, frames, dst_ptrs));
+    ASSERT_TRUE(
+        audio_chunk_decode_planar(src_ptrs, fmt, channels, frames, dst_chunk));
+    ASSERT_EQ(frames, audio_chunk_get_valid_frames(dst_chunk));
+
+    const double* dst_ch0 = audio_chunk_get_channel(dst_chunk, 0);
+    const double* dst_ch1 = audio_chunk_get_channel(dst_chunk, 1);
+
+    for (size_t f = 0; f < frames; f++) {
+      ASSERT_NEAR(ch0[f], dst_ch0[f], 1e-4);
+      ASSERT_NEAR(ch1[f], dst_ch1[f], 1e-4);
+    }
+  }
+
+  audio_chunk_free(src_chunk);
+  audio_chunk_free(dst_chunk);
 }
 
 TEST_MAIN()

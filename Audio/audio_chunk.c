@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "Audio/audio_buffers.h"
+#include "Audio/sample_conversion.h"
 #include "Utils/double_helpers.h"
 
 struct audio_chunk {
@@ -170,4 +171,531 @@ void audio_chunk_apply_gain(audio_chunk_t* chunk, const int* channels,
     }
 #endif
   }
+}
+
+size_t sample_format_bytes_per_sample(binary_sample_format_t fmt) {
+  switch (fmt) {
+    case BINARY_SAMPLE_FORMAT_DSD_U8:
+      return 1;
+    case BINARY_SAMPLE_FORMAT_S16_LE:
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+    case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+    case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+      return 2;
+    case BINARY_SAMPLE_FORMAT_S24_3_LE:
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      return 3;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+    case BINARY_SAMPLE_FORMAT_S32_LE:
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+    case BINARY_SAMPLE_FORMAT_F32_LE:
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+    case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+    case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+    case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
+      return 4;
+    case BINARY_SAMPLE_FORMAT_F64_LE:
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      return 8;
+    default:
+      return 0;
+  }
+}
+
+bool audio_chunk_decode_interleaved(const void* src, binary_sample_format_t fmt,
+                                    size_t channels, size_t frames,
+                                    audio_chunk_t* chunk) {
+  if (!src || !chunk || channels == 0 || frames == 0) return false;
+  if (audio_chunk_get_channels(chunk) < channels) return false;
+
+  double* dst_channels[channels];
+  for (size_t c = 0; c < channels; c++) {
+    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
+  switch (fmt) {
+    case BINARY_SAMPLE_FORMAT_S16_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_s16_bytes(ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_3_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_s24_3bytes(ptr);
+          ptr += 3;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_s24_4_rj_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_s24_4_lj_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S32_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_s32_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_F32_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_f32_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_F64_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_f64_bytes(ptr);
+          ptr += 8;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U8: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u8(*ptr);
+          ptr += 1;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U16_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u16_le_bytes(ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U16_BE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u16_be_bytes(ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_LE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u32_le_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_BE: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u32_be_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED: {
+      const uint8_t* ptr = (const uint8_t*)src;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          dst_channels[c][f] = pcm_sample_decode_dsd_u32_reversed_bytes(ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    default:
+      return false;
+  }
+
+  audio_chunk_set_valid_frames(chunk, frames);
+  return true;
+}
+
+bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
+                                    binary_sample_format_t fmt, size_t channels,
+                                    size_t frames, void* dst) {
+  if (!chunk || !dst || channels == 0 || frames == 0) return false;
+  if (audio_chunk_get_channels(chunk) < channels) return false;
+
+  const double* src_channels[channels];
+  for (size_t c = 0; c < channels; c++) {
+    src_channels[c] = audio_chunk_get_channel(chunk, c);
+  }
+
+  switch (fmt) {
+    case BINARY_SAMPLE_FORMAT_S16_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_s16_bytes(src_channels[c][f], ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_3_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_s24_3bytes(src_channels[c][f], ptr);
+          ptr += 3;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_s24_4_rj_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_s24_4_lj_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_S32_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_s32_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_F32_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_f32_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_F64_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_f64_bytes(src_channels[c][f], ptr);
+          ptr += 8;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U8: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          *ptr = pcm_sample_encode_dsd_u8(src_channels[c][f]);
+          ptr += 1;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U16_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_dsd_u16_le_bytes(src_channels[c][f], ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U16_BE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_dsd_u16_be_bytes(src_channels[c][f], ptr);
+          ptr += 2;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_LE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_dsd_u32_le_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_BE: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_dsd_u32_be_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED: {
+      uint8_t* ptr = (uint8_t*)dst;
+      for (size_t f = 0; f < frames; f++) {
+        for (size_t c = 0; c < channels; c++) {
+          pcm_sample_encode_dsd_u32_reversed_bytes(src_channels[c][f], ptr);
+          ptr += 4;
+        }
+      }
+      break;
+    }
+    default:
+      return false;
+  }
+  return true;
+}
+
+bool audio_chunk_decode_planar(const void* const* src_ptrs,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, audio_chunk_t* chunk) {
+  if (!src_ptrs || !chunk || channels == 0 || frames == 0) return false;
+  if (audio_chunk_get_channels(chunk) < channels) return false;
+
+  for (size_t c = 0; c < channels; c++) {
+    double* dst = audio_chunk_get_channel(chunk, c);
+    const uint8_t* src = (const uint8_t*)src_ptrs[c];
+    if (!src || !dst) continue;
+
+    switch (fmt) {
+      case BINARY_SAMPLE_FORMAT_S16_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_s16_bytes(src + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_3_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_s24_3bytes(src + f * 3);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_s24_4_rj_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_s24_4_lj_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_s32_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_F32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_f32_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_F64_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_f64_bytes(src + f * 8);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U8: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u8(src[f]);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U16_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u16_le_bytes(src + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U16_BE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u16_be_bytes(src + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u32_le_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_BE: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u32_be_bytes(src + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_decode_dsd_u32_reversed_bytes(src + f * 4);
+        }
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+
+  audio_chunk_set_valid_frames(chunk, frames);
+  return true;
+}
+
+bool audio_chunk_encode_planar(const audio_chunk_t* chunk,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, void* const* dst_ptrs) {
+  if (!chunk || !dst_ptrs || channels == 0 || frames == 0) return false;
+  if (audio_chunk_get_channels(chunk) < channels) return false;
+
+  for (size_t c = 0; c < channels; c++) {
+    const double* src = audio_chunk_get_channel(chunk, c);
+    uint8_t* dst = (uint8_t*)dst_ptrs[c];
+    if (!src || !dst) continue;
+
+    switch (fmt) {
+      case BINARY_SAMPLE_FORMAT_S16_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_s16_bytes(src[f], dst + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_3_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_s24_3bytes(src[f], dst + f * 3);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_s24_4_rj_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_s24_4_lj_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_S32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_s32_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_F32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_f32_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_F64_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_f64_bytes(src[f], dst + f * 8);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U8: {
+        for (size_t f = 0; f < frames; f++) {
+          dst[f] = pcm_sample_encode_dsd_u8(src[f]);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U16_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_dsd_u16_le_bytes(src[f], dst + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U16_BE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_dsd_u16_be_bytes(src[f], dst + f * 2);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_LE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_dsd_u32_le_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_BE: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_dsd_u32_be_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED: {
+        for (size_t f = 0; f < frames; f++) {
+          pcm_sample_encode_dsd_u32_reversed_bytes(src[f], dst + f * 4);
+        }
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+
+  return true;
 }

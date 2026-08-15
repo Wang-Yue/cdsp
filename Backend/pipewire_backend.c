@@ -492,19 +492,9 @@ static bool pipewire_capture_read(void* ctx, size_t frames,
     memset(capture->decode_buf + consumed, 0, requested - consumed);
   }
 
-  double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-  const float* fsrc = (const float*)capture->decode_buf;
-  for (size_t f = 0; f < frames; f++) {
-    for (int c = 0; c < capture->channels; c++) {
-      dst_channels[c][f] =
-          pcm_sample_decode_f32(fsrc[f * capture->channels + c]);
-    }
-  }
-
-  audio_chunk_set_valid_frames(chunk, frames);
+  audio_chunk_decode_interleaved(capture->decode_buf,
+                                 BINARY_SAMPLE_FORMAT_F32_LE,
+                                 (size_t)capture->channels, frames, chunk);
   return true;
 }
 
@@ -907,17 +897,9 @@ static bool pipewire_playback_write(void* ctx, const audio_chunk_t* chunk,
     return false;
   }
 
-  const double* src_channels[playback->channels];
-  for (int c = 0; c < playback->channels; c++) {
-    src_channels[c] = audio_chunk_get_channel(chunk, c);
-  }
-  float* fdst = (float*)playback->encode_buf;
-  for (size_t f = 0; f < frames; f++) {
-    for (int c = 0; c < playback->channels; c++) {
-      fdst[f * playback->channels + c] =
-          pcm_sample_encode_f32(src_channels[c][f]);
-    }
-  }
+  audio_chunk_encode_interleaved(chunk, BINARY_SAMPLE_FORMAT_F32_LE,
+                                 (size_t)playback->channels, frames,
+                                 playback->encode_buf);
 
   // Wait until there is space in the SPSC ring buffer to prevent overwriting
   // oldest data. This blocks the writer thread (with a timeout) if the consumer

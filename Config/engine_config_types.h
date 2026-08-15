@@ -421,7 +421,27 @@ typedef enum {
   BINARY_SAMPLE_FORMAT_S32_LE,      /**< Signed 32-bit Little Endian. */
   BINARY_SAMPLE_FORMAT_F32_LE,      /**< 32-bit Float Little Endian. */
   BINARY_SAMPLE_FORMAT_F64_LE,      /**< 64-bit Float Little Endian. */
-  BINARY_SAMPLE_FORMAT_INVALID = -1 /**< Invalid format. */
+  BINARY_SAMPLE_FORMAT_S16_BE,      /**< Signed 16-bit Big Endian. */
+  BINARY_SAMPLE_FORMAT_S24_3_BE,    /**< Signed 24-bit Big Endian (3 bytes). */
+  BINARY_SAMPLE_FORMAT_S24_4_RJ_BE, /**< Signed 24-bit Right Justified in 4
+                                       bytes Big Endian. */
+  BINARY_SAMPLE_FORMAT_S24_4_LJ_BE, /**< Signed 24-bit Left Justified in 4 bytes
+                                       Big Endian. */
+  BINARY_SAMPLE_FORMAT_S32_BE,      /**< Signed 32-bit Big Endian. */
+  BINARY_SAMPLE_FORMAT_F32_BE,      /**< 32-bit Float Big Endian. */
+  BINARY_SAMPLE_FORMAT_F64_BE,      /**< 64-bit Float Big Endian. */
+  BINARY_SAMPLE_FORMAT_DSD_U8,      /**< Native DSD 8-bit Unsigned. */
+  BINARY_SAMPLE_FORMAT_DSD_U16_LE,  /**< Native DSD 16-bit Unsigned Little
+                                       Endian. */
+  BINARY_SAMPLE_FORMAT_DSD_U16_BE,  /**< Native DSD 16-bit Unsigned Big Endian.
+                                     */
+  BINARY_SAMPLE_FORMAT_DSD_U32_LE,  /**< Native DSD 32-bit Unsigned Little
+                                       Endian. */
+  BINARY_SAMPLE_FORMAT_DSD_U32_BE,  /**< Native DSD 32-bit Unsigned Big Endian.
+                                     */
+  BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED, /**< Native DSD 32-bit Reversed Bit
+                                            Order. */
+  BINARY_SAMPLE_FORMAT_INVALID = -1      /**< Invalid format. */
 } binary_sample_format_t;
 
 /**

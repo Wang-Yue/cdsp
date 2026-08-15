@@ -340,6 +340,32 @@ const char* binary_sample_format_to_string(binary_sample_format_t fmt) {
       return "F32_LE";
     case BINARY_SAMPLE_FORMAT_F64_LE:
       return "F64_LE";
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+      return "S16_BE";
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      return "S24_3_BE";
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+      return "S24_4_RJ_BE";
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+      return "S24_4_LJ_BE";
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+      return "S32_BE";
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+      return "F32_BE";
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      return "F64_BE";
+    case BINARY_SAMPLE_FORMAT_DSD_U8:
+      return "DSD_U8";
+    case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+      return "DSD_U16_LE";
+    case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+      return "DSD_U16_BE";
+    case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+      return "DSD_U32_LE";
+    case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+      return "DSD_U32_BE";
+    case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
+      return "DSD_U32_REVERSED";
     default:
       return "Invalid";
   }
@@ -347,13 +373,59 @@ const char* binary_sample_format_to_string(binary_sample_format_t fmt) {
 
 binary_sample_format_t binary_sample_format_from_string(const char* str) {
   if (!str) return BINARY_SAMPLE_FORMAT_INVALID;
-  if (strcmp(str, "S16_LE") == 0) return BINARY_SAMPLE_FORMAT_S16_LE;
-  if (strcmp(str, "S24_3_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_3_LE;
-  if (strcmp(str, "S24_4_RJ_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
-  if (strcmp(str, "S24_4_LJ_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
-  if (strcmp(str, "S32_LE") == 0) return BINARY_SAMPLE_FORMAT_S32_LE;
-  if (strcmp(str, "F32_LE") == 0) return BINARY_SAMPLE_FORMAT_F32_LE;
-  if (strcmp(str, "F64_LE") == 0) return BINARY_SAMPLE_FORMAT_F64_LE;
+  if (strcmp(str, "S16_LE") == 0 || strcmp(str, "S16LE") == 0)
+    return BINARY_SAMPLE_FORMAT_S16_LE;
+  if (strcmp(str, "S24_3_LE") == 0 || strcmp(str, "S24_3LE") == 0 ||
+      strcmp(str, "S24LE3") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_3_LE;
+  if (strcmp(str, "S24_4_RJ_LE") == 0 || strcmp(str, "S24_4_RJLE") == 0 ||
+      strcmp(str, "S24LE4RJ") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+  if (strcmp(str, "S24_4_LJ_LE") == 0 || strcmp(str, "S24_4_LJLE") == 0 ||
+      strcmp(str, "S24LE4LJ") == 0 || strcmp(str, "S24_4_LE") == 0 ||
+      strcmp(str, "S24_4LE") == 0 || strcmp(str, "S24LE") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+  if (strcmp(str, "S32_LE") == 0 || strcmp(str, "S32LE") == 0)
+    return BINARY_SAMPLE_FORMAT_S32_LE;
+  if (strcmp(str, "F32_LE") == 0 || strcmp(str, "FLOAT32_LE") == 0 ||
+      strcmp(str, "F32LE") == 0 || strcmp(str, "FLOAT32LE") == 0)
+    return BINARY_SAMPLE_FORMAT_F32_LE;
+  if (strcmp(str, "F64_LE") == 0 || strcmp(str, "FLOAT64_LE") == 0 ||
+      strcmp(str, "F64LE") == 0 || strcmp(str, "FLOAT64LE") == 0)
+    return BINARY_SAMPLE_FORMAT_F64_LE;
+  if (strcmp(str, "S16_BE") == 0 || strcmp(str, "S16BE") == 0)
+    return BINARY_SAMPLE_FORMAT_S16_BE;
+  if (strcmp(str, "S24_3_BE") == 0 || strcmp(str, "S24_3BE") == 0 ||
+      strcmp(str, "S24BE3") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_3_BE;
+  if (strcmp(str, "S24_4_RJ_BE") == 0 || strcmp(str, "S24_4_RJBE") == 0 ||
+      strcmp(str, "S24BE4RJ") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_4_RJ_BE;
+  if (strcmp(str, "S24_4_LJ_BE") == 0 || strcmp(str, "S24_4_LJBE") == 0 ||
+      strcmp(str, "S24BE4LJ") == 0 || strcmp(str, "S24_4_BE") == 0 ||
+      strcmp(str, "S24_4BE") == 0 || strcmp(str, "S24BE") == 0)
+    return BINARY_SAMPLE_FORMAT_S24_4_LJ_BE;
+  if (strcmp(str, "S32_BE") == 0 || strcmp(str, "S32BE") == 0)
+    return BINARY_SAMPLE_FORMAT_S32_BE;
+  if (strcmp(str, "F32_BE") == 0 || strcmp(str, "FLOAT32_BE") == 0 ||
+      strcmp(str, "F32BE") == 0 || strcmp(str, "FLOAT32BE") == 0)
+    return BINARY_SAMPLE_FORMAT_F32_BE;
+  if (strcmp(str, "F64_BE") == 0 || strcmp(str, "FLOAT64_BE") == 0 ||
+      strcmp(str, "F64BE") == 0 || strcmp(str, "FLOAT64BE") == 0)
+    return BINARY_SAMPLE_FORMAT_F64_BE;
+  if (strcmp(str, "DSD_U8") == 0 || strcmp(str, "DSD8") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U8;
+  if (strcmp(str, "DSD_U16_LE") == 0 || strcmp(str, "DSD16_LE") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U16_LE;
+  if (strcmp(str, "DSD_U16_BE") == 0 || strcmp(str, "DSD16_BE") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U16_BE;
+  if (strcmp(str, "DSD_U32_LE") == 0 || strcmp(str, "DSD32_LE") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U32_LE;
+  if (strcmp(str, "DSD_U32_BE") == 0 || strcmp(str, "DSD32_BE") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U32_BE;
+  if (strcmp(str, "DSD_U32_REVERSED") == 0 ||
+      strcmp(str, "DSD32_REVERSED") == 0)
+    return BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED;
   return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
