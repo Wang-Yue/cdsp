@@ -445,18 +445,19 @@ typedef enum {
 } binary_sample_format_t;
 
 /**
- * @brief Converts binary sample format to string.
+ * @brief Converts file sample format to string.
  * @param fmt The format.
- * @return String representation.
+ * @return String representation (e.g. "S16_LE", "S24_3_LE", "S32_LE", "F32_LE",
+ * "F64_LE").
  */
-const char* binary_sample_format_to_string(binary_sample_format_t fmt);
+const char* file_sample_format_to_string(binary_sample_format_t fmt);
 
 /**
- * @brief Parses binary sample format from string.
+ * @brief Parses file sample format from string.
  * @param str The string representation.
- * @return The format.
+ * @return The format, or BINARY_SAMPLE_FORMAT_INVALID if unsupported.
  */
-binary_sample_format_t binary_sample_format_from_string(const char* str);
+binary_sample_format_t file_sample_format_from_string(const char* str);
 
 /**
  * @brief Returns the byte width per sample for a binary sample format.
@@ -485,6 +486,12 @@ bool sample_format_is_float(binary_sample_format_t fmt);
  */
 binary_sample_format_t coreaudio_sample_format_to_binary_format(
     coreaudio_sample_format_t fmt);
+
+/**
+ * @brief Maps universal binary format to CoreAudio sample format.
+ */
+coreaudio_sample_format_t coreaudio_sample_format_from_binary_format(
+    binary_sample_format_t fmt);
 #endif
 
 #if defined(ENABLE_ALSA)
@@ -493,6 +500,12 @@ binary_sample_format_t coreaudio_sample_format_to_binary_format(
  */
 binary_sample_format_t alsa_sample_format_to_binary_format(
     alsa_sample_format_t fmt);
+
+/**
+ * @brief Maps universal binary format to ALSA sample format enum.
+ */
+alsa_sample_format_t alsa_sample_format_from_binary_format(
+    binary_sample_format_t fmt);
 #endif
 
 #if defined(ENABLE_WASAPI)
@@ -501,6 +514,12 @@ binary_sample_format_t alsa_sample_format_to_binary_format(
  */
 binary_sample_format_t wasapi_sample_format_to_binary_format(
     wasapi_sample_format_t fmt);
+
+/**
+ * @brief Maps universal binary format to WASAPI sample format enum.
+ */
+wasapi_sample_format_t wasapi_sample_format_from_binary_format(
+    binary_sample_format_t fmt);
 #endif
 
 #if defined(ENABLE_ASIO)
@@ -509,6 +528,12 @@ binary_sample_format_t wasapi_sample_format_to_binary_format(
  */
 binary_sample_format_t asio_sample_format_to_binary_format(
     asio_sample_format_t fmt, bool is_lsb);
+
+/**
+ * @brief Maps universal binary format to ASIO sample format enum.
+ */
+asio_sample_format_t asio_sample_format_from_binary_format(
+    binary_sample_format_t fmt);
 #endif
 
 /**

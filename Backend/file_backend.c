@@ -485,7 +485,7 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
     logger_info(&g_logger,
                 "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
                 info.sample_rate, info.channels,
-                binary_sample_format_to_string(info.format));
+                file_sample_format_to_string(info.format));
 
     fseek_64(capture->f, info.data_start_offset, SEEK_SET);
   } else {

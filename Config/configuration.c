@@ -45,7 +45,7 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           &g_logger,
           "Updating overrides with values from wav input file, rate %u, "
           "format: %s, channels: %u",
-          wav_info.sample_rate, binary_sample_format_to_string(wav_info.format),
+          wav_info.sample_rate, file_sample_format_to_string(wav_info.format),
           (unsigned int)wav_info.channels);
       if (overrides.channels <= 0) {
         overrides.channels = wav_info.channels;
@@ -183,36 +183,73 @@ int dsp_config_apply_overrides(dsp_config_t* config,
 
   // 5. Apply sample_format override
   if (overrides.has_sample_format) {
-    logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                 binary_sample_format_to_string(overrides.sample_format));
     switch (config->devices.capture.type) {
       case AUDIO_BACKEND_TYPE_FILE:
         if (!config->devices.capture.is_wav) {
           config->devices.capture.cfg.raw_file.format = overrides.sample_format;
           config->devices.capture.cfg.raw_file.has_format = true;
+          logger_debug(&g_logger,
+                       "Apply override for capture sample format: %s",
+                       file_sample_format_to_string(overrides.sample_format));
         }
         break;
       case AUDIO_BACKEND_TYPE_STDIN_OUT:
         config->devices.capture.cfg.stdin_in.format = overrides.sample_format;
+        logger_debug(&g_logger, "Apply override for capture sample format: %s",
+                     file_sample_format_to_string(overrides.sample_format));
         break;
 #if defined(ENABLE_ALSA)
       case AUDIO_BACKEND_TYPE_ALSA: {
-        alsa_sample_format_t alsa_fmt = alsa_sample_format_from_string(
-            binary_sample_format_to_string(overrides.sample_format));
+        alsa_sample_format_t alsa_fmt =
+            alsa_sample_format_from_binary_format(overrides.sample_format);
         if (alsa_fmt != ALSA_SAMPLE_FORMAT_INVALID) {
           config->devices.capture.cfg.alsa.format = alsa_fmt;
           config->devices.capture.cfg.alsa.has_format = true;
+          logger_debug(&g_logger,
+                       "Apply override for capture sample format: %s",
+                       alsa_sample_format_to_string(alsa_fmt));
         }
         break;
       }
 #endif
 #if defined(ENABLE_COREAUDIO)
       case AUDIO_BACKEND_TYPE_CORE_AUDIO: {
-        coreaudio_sample_format_t ca_fmt = coreaudio_sample_format_from_string(
-            binary_sample_format_to_string(overrides.sample_format));
+        coreaudio_sample_format_t ca_fmt =
+            coreaudio_sample_format_from_binary_format(overrides.sample_format);
         if (ca_fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
           config->devices.capture.cfg.coreaudio.format = ca_fmt;
           config->devices.capture.cfg.coreaudio.has_format = true;
+          logger_debug(&g_logger,
+                       "Apply override for capture sample format: %s",
+                       coreaudio_sample_format_to_string(ca_fmt));
+        }
+        break;
+      }
+#endif
+#if defined(ENABLE_WASAPI)
+      case AUDIO_BACKEND_TYPE_WASAPI: {
+        wasapi_sample_format_t wasapi_fmt =
+            wasapi_sample_format_from_binary_format(overrides.sample_format);
+        if (wasapi_fmt != WASAPI_SAMPLE_FORMAT_INVALID) {
+          config->devices.capture.cfg.wasapi.format = wasapi_fmt;
+          config->devices.capture.cfg.wasapi.has_format = true;
+          logger_debug(&g_logger,
+                       "Apply override for capture sample format: %s",
+                       wasapi_sample_format_to_string(wasapi_fmt));
+        }
+        break;
+      }
+#endif
+#if defined(ENABLE_ASIO)
+      case AUDIO_BACKEND_TYPE_ASIO: {
+        asio_sample_format_t asio_fmt =
+            asio_sample_format_from_binary_format(overrides.sample_format);
+        if (asio_fmt != ASIO_SAMPLE_FORMAT_INVALID) {
+          config->devices.capture.cfg.asio.format = asio_fmt;
+          config->devices.capture.cfg.asio.has_format = true;
+          logger_debug(&g_logger,
+                       "Apply override for capture sample format: %s",
+                       asio_sample_format_to_string(asio_fmt));
         }
         break;
       }

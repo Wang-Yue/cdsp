@@ -71,31 +71,6 @@ typedef double double4 __attribute__((vector_size(32), aligned(8)));
 ///
 /// Convenience initialiser that resolves `ConvParameters` to a flat
 /// IR buffer first (control plane only, may touch the filesystem).
-/**
- * @brief Helper to get the size in bytes of a binary sample format.
- *
- * @param format The binary sample format.
- * @return The size in bytes, or 0 if invalid.
- */
-static size_t get_raw_sample_size(binary_sample_format_t format) {
-  switch (format) {
-    case BINARY_SAMPLE_FORMAT_S16_LE:
-      return 2;
-    case BINARY_SAMPLE_FORMAT_S24_3_LE:
-      return 3;
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_S32_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_F32_LE:
-      return 4;
-    case BINARY_SAMPLE_FORMAT_F64_LE:
-      return 8;
-    default:
-      return 0;
-  }
-}
 
 /**
  * @brief Loads a single channel from a WAV file and converts it to double.
@@ -314,13 +289,13 @@ static double* load_raw_file(const char* path, const char* format_str,
     fseek(f, skip_bytes, SEEK_SET);
   }
 
-  binary_sample_format_t format = binary_sample_format_from_string(format_str);
+  binary_sample_format_t format = file_sample_format_from_string(format_str);
   if (format == BINARY_SAMPLE_FORMAT_INVALID) {
     fclose(f);
     return NULL;
   }
 
-  size_t sample_size = get_raw_sample_size(format);
+  size_t sample_size = sample_format_bytes_per_sample(format);
   if (sample_size == 0) {
     fclose(f);
     return NULL;

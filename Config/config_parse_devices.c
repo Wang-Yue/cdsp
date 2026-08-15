@@ -164,7 +164,7 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
   if (cJSON_IsString(item) && item->valuestring) {
     if (cap->type == AUDIO_BACKEND_TYPE_FILE ||
         cap->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-      cap->file_format = binary_sample_format_from_string(item->valuestring);
+      cap->file_format = file_sample_format_from_string(item->valuestring);
       cap->has_file_format = true;
 #if defined(ENABLE_WASAPI)
     } else if (cap->type == AUDIO_BACKEND_TYPE_WASAPI) {
@@ -509,7 +509,7 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   if (cJSON_IsString(item) && item->valuestring) {
     if (play->type == AUDIO_BACKEND_TYPE_FILE ||
         play->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-      play->file_format = binary_sample_format_from_string(item->valuestring);
+      play->file_format = file_sample_format_from_string(item->valuestring);
       play->has_file_format = true;
 #if defined(ENABLE_WASAPI)
     } else if (play->type == AUDIO_BACKEND_TYPE_WASAPI) {
