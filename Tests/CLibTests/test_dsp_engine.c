@@ -992,6 +992,98 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
 #endif
 }
 
+TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
+#if defined(__linux__) && defined(ENABLE_ALSA)
+  char wav_file[256];
+  snprintf(wav_file, sizeof(wav_file), "/tmp/test_threaded_alsa_%d.wav",
+           getpid());
+  remove(wav_file);
+
+  // Create a valid 16-bit stereo 44.1kHz WAV file with 1024 frames of audio
+  int16_t samples[1024 * 2];
+  for (int i = 0; i < 1024 * 2; i++) {
+    samples[i] = (int16_t)(((i % 128) - 64) * 200);
+  }
+  FILE* wf = fopen(wav_file, "wb");
+  ASSERT_TRUE(wf != NULL);
+
+  // Write 44-byte WAV header
+  uint32_t sample_rate = 44100;
+  uint16_t num_channels = 2;
+  uint16_t bits_per_sample = 16;
+  uint32_t data_size = 1024 * num_channels * (bits_per_sample / 8);
+  uint32_t total_size = data_size + 36;
+  uint32_t byte_rate = sample_rate * num_channels * (bits_per_sample / 8);
+  uint16_t block_align = num_channels * (bits_per_sample / 8);
+
+  fwrite("RIFF", 1, 4, wf);
+  fwrite(&total_size, 4, 1, wf);
+  fwrite("WAVE", 1, 4, wf);
+  fwrite("fmt ", 1, 4, wf);
+  uint32_t subchunk1_size = 16;
+  uint16_t audio_format = 1;  // PCM
+  fwrite(&subchunk1_size, 4, 1, wf);
+  fwrite(&audio_format, 2, 1, wf);
+  fwrite(&num_channels, 2, 1, wf);
+  fwrite(&sample_rate, 4, 1, wf);
+  fwrite(&byte_rate, 4, 1, wf);
+  fwrite(&block_align, 2, 1, wf);
+  fwrite(&bits_per_sample, 2, 1, wf);
+  fwrite("data", 1, 4, wf);
+  fwrite(&data_size, 4, 1, wf);
+  fwrite(samples, sizeof(int16_t), 1024 * 2, wf);
+  fclose(wf);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"null\",\n"
+           "            \"threaded\": true,\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           wav_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json, &berr);
+  ASSERT_TRUE(success);
+
+  bool reached_inactive = false;
+  for (int i = 0; i < 200; i++) {
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+      reached_inactive = true;
+      break;
+    }
+    cdsp_sleep_ms(10);
+  }
+
+  ASSERT_TRUE(reached_inactive);
+  ASSERT_EQ(CDSP_PROCESSING_STATE_INACTIVE, cdsp_get_state(engine));
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(wav_file);
+#endif
+}
+
 #if defined(__linux__) && defined(ENABLE_ALSA)
 typedef struct {
   const char* pcm_name;

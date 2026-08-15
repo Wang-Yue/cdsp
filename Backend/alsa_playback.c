@@ -695,7 +695,13 @@ static void alsa_playback_close(void* ctx) {
 // (src/alsa_backend/buffermanager.rs:255: self.data.bufsize - avail)
 static size_t alsa_playback_get_buffer_level(void* ctx) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
-  if (!playback || !playback->pcm) return 0;
+  if (!playback) return 0;
+  if (playback->threaded) {
+    if (!playback->ring_buffer || playback->blockalign == 0) return 0;
+    return spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
+           playback->blockalign;
+  }
+  if (!playback->pcm) return 0;
   snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
   if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
     return (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail);
