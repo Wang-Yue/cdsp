@@ -931,4 +931,66 @@ TEST(WavFileOverrideWithResampler) {
   remove(wav_path);
 }
 
+#if defined(ENABLE_ALSA)
+TEST(AlsaThreadedOptionParsing) {
+  const char* json_threaded_false =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"channels\": 2,\n"
+      "            \"device\": \"hw:0,0\",\n"
+      "            \"threaded\": false\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"channels\": 2,\n"
+      "            \"device\": \"hw:0,0\",\n"
+      "            \"threaded\": false\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_threaded_false, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_FALSE(config->devices.capture.cfg.alsa.threaded);
+  ASSERT_TRUE(config->devices.capture.cfg.alsa.has_threaded);
+  ASSERT_FALSE(config->devices.playback.cfg.alsa.threaded);
+  ASSERT_TRUE(config->devices.playback.cfg.alsa.has_threaded);
+  dsp_config_free(config);
+
+  const char* json_threaded_default =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"channels\": 2,\n"
+      "            \"device\": \"hw:0,0\"\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Alsa\",\n"
+      "            \"channels\": 2,\n"
+      "            \"device\": \"hw:0,0\"\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
+  config = NULL;
+  res = dsp_config_parse_json(json_threaded_default, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_TRUE(config->devices.capture.cfg.alsa.threaded);
+  ASSERT_TRUE(config->devices.playback.cfg.alsa.threaded);
+  dsp_config_free(config);
+}
+#endif
+
 TEST_MAIN()

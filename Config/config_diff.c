@@ -590,6 +590,8 @@ bool devices_config_equal(const devices_config_t* a,
       if (!safe_streq(a->capture.cfg.alsa.link_mute_control,
                       b->capture.cfg.alsa.link_mute_control))
         return false;
+      if (a->capture.cfg.alsa.threaded != b->capture.cfg.alsa.threaded)
+        return false;
       break;
 #endif
 #if defined(ENABLE_PIPEWIRE)
@@ -741,6 +743,8 @@ bool devices_config_equal(const devices_config_t* a,
       if (!safe_streq(a->playback.cfg.alsa.device, b->playback.cfg.alsa.device))
         return false;
       if (a->playback.cfg.alsa.format != b->playback.cfg.alsa.format)
+        return false;
+      if (a->playback.cfg.alsa.threaded != b->playback.cfg.alsa.threaded)
         return false;
       break;
 #endif

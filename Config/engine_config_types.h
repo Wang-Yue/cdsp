@@ -611,6 +611,8 @@ typedef struct {
       has_link_volume_control; /**< True if link_volume_control is specified. */
   char link_mute_control[256]; /**< Name of ALSA control to link mute to. */
   bool has_link_mute_control;  /**< True if link_mute_control is specified. */
+  bool threaded;     /**< True for decoupled threaded mode (default). */
+  bool has_threaded; /**< True if threaded is specified. */
 } alsa_capture_config_t;
 
 /**
@@ -623,6 +625,8 @@ typedef struct {
   bool has_format;             /**< True if format is specified. */
   int target_level;            /**< Target buffer level in frames. */
   bool has_target_level;       /**< True if target_level is specified. */
+  bool threaded;     /**< True for decoupled threaded mode (default). */
+  bool has_threaded; /**< True if threaded is specified. */
 } alsa_playback_config_t;
 #endif
 

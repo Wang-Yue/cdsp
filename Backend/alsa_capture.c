@@ -19,8 +19,10 @@
 #include "Backend/alsa_device.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
+#include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
 
@@ -71,7 +73,81 @@ struct alsa_capture {
   size_t interleaved_buf_size;
   pthread_mutex_t mixer_mutex;
   _Atomic bool stopped;
+
+  // Runtime switch for decoupled threaded mode vs direct mode
+  // (src/alsa_backend/threaded_device.rs vs src/alsa_backend/device.rs)
+  bool threaded;
+  spsc_byte_ring_buffer_t* ring_buffer;
+  pthread_t inner_thread;
+  _Atomic bool inner_running;
 };
+
+// Calculate SPSC ring buffer frame capacity for threaded ALSA capture
+static inline size_t alsa_capture_ring_capacity_frames(
+    size_t chunk_size, snd_pcm_uframes_t period) {
+  size_t base =
+      3 * chunk_size > (size_t)period ? 3 * chunk_size : (size_t)period;
+  return base + 4 * chunk_size;
+}
+
+// Dedicated real-time capture inner thread matching AlsaCaptureInner in
+// upstream (src/alsa_backend/threaded_device.rs:1368-1540)
+static void* alsa_capture_inner_thread_func(void* arg) {
+  alsa_capture_t* capture = (alsa_capture_t*)arg;
+  realtime_thread_handle_t* rt_handle = promote_current_thread_to_realtime(
+      "AlsaCaptureInner", (size_t)capture->chunk_size,
+      (size_t)capture->capture_sample_rate);
+  if (rt_handle) {
+    logger_debug(&g_logger, "Capture inner thread has real-time priority.");
+  }
+
+  size_t sample_bytes = alsa_format_sample_size(capture->format);
+  size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
+  size_t chunk_bytes = (size_t)capture->chunk_size * bytes_per_frame;
+  uint8_t* local_buf = (uint8_t*)malloc(chunk_bytes);
+  double millis_per_chunk = 1000.0 * (double)capture->chunk_size /
+                            (double)capture->capture_sample_rate;
+  uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
+  if (timeout_millis < 20) timeout_millis = 20;
+
+  while (!atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+    snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
+    if (capture_state == SND_PCM_STATE_XRUN) {
+      logger_warn(&g_logger, "Prepare capture device");
+      snd_pcm_prepare(capture->pcm);
+      snd_pcm_start(capture->pcm);
+    } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
+      alsa_recover_suspended_pcm(capture->pcm, "Capture");
+      snd_pcm_start(capture->pcm);
+    } else if (capture_state == SND_PCM_STATE_PREPARED) {
+      snd_pcm_start(capture->pcm);
+    }
+
+    int wait_rc = snd_pcm_wait(capture->pcm, (int)timeout_millis);
+    if (wait_rc > 0) {
+      snd_pcm_sframes_t frames_read = snd_pcm_readi(
+          capture->pcm, local_buf, (snd_pcm_uframes_t)capture->chunk_size);
+      if (frames_read > 0) {
+        size_t bytes_read = (size_t)frames_read * bytes_per_frame;
+        spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
+                                    bytes_read);
+      } else if (frames_read == -EPIPE) {
+        logger_warn(&g_logger, "Capture buffer underrun/overrun");
+        snd_pcm_prepare(capture->pcm);
+        snd_pcm_start(capture->pcm);
+      } else if (frames_read == -ESTRPIPE) {
+        alsa_recover_suspended_pcm(capture->pcm, "Capture");
+        snd_pcm_start(capture->pcm);
+      }
+    }
+  }
+
+  if (local_buf) free(local_buf);
+  if (rt_handle) {
+    demote_current_thread_from_realtime(rt_handle);
+  }
+  return NULL;
+}
 
 // Initialize ALSA control elements matching find_elements in upstream
 // (src/alsa_backend/utils.rs:723-756 & src/alsa_backend/device.rs:788-846)
@@ -514,6 +590,32 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
+  if (capture->threaded) {
+    size_t ring_frames = alsa_capture_ring_capacity_frames(
+        (size_t)capture->chunk_size, capture->period);
+    capture->ring_buffer = spsc_byte_ring_buffer_create(
+        ring_frames * (size_t)capture->channels * sample_size);
+    if (!capture->ring_buffer) {
+      if (err) {
+        backend_error_init(
+            err, BACKEND_ERROR_INITIALIZATION_FAILED,
+            "Failed to allocate SPSC ring buffer for threaded ALSA capture");
+      }
+      goto error_cleanup;
+    }
+    atomic_store_explicit(&capture->inner_running, true, memory_order_release);
+    if (pthread_create(&capture->inner_thread, NULL,
+                       alsa_capture_inner_thread_func, capture) != 0) {
+      atomic_store_explicit(&capture->inner_running, false,
+                            memory_order_release);
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to spawn ALSA capture inner thread");
+      }
+      goto error_cleanup;
+    }
+  }
+
   pthread_mutex_unlock(&g_alsa_mutex);
   return true;
 
@@ -531,7 +633,8 @@ error_cleanup:
 }
 
 // Capture a buffer matching capture_buffer in upstream
-// (src/alsa_backend/device.rs:243-413)
+// (src/alsa_backend/device.rs:243-413 and
+// src/alsa_backend/threaded_device.rs:1350-1650)
 static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
                               backend_error_t* err) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
@@ -565,6 +668,17 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       backend_error_init(err, BACKEND_ERROR_NONE, "Capture source inactive");
     }
     return false;
+  }
+
+  if (capture->threaded) {
+    size_t sample_bytes = alsa_format_sample_size(capture->format);
+    size_t blockalign = (size_t)capture->channels * sample_bytes;
+    return audio_backend_ring_buffer_read(
+        capture->ring_buffer, capture->interleaved_buf,
+        capture->interleaved_buf_size, blockalign, frames,
+        alsa_pcm_format_to_binary_format(capture->format),
+        (size_t)capture->channels, 2000, &capture->inner_running,
+        &capture->stopped, &capture->has_pending_rate_change, chunk, err);
   }
 
   // Update avail_min and start_threshold if requested input frames changed
@@ -871,6 +985,17 @@ static void alsa_capture_close(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
+
+  if (capture->threaded &&
+      atomic_load_explicit(&capture->inner_running, memory_order_acquire)) {
+    pthread_join(capture->inner_thread, NULL);
+    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    if (capture->ring_buffer) {
+      spsc_byte_ring_buffer_free(capture->ring_buffer);
+      capture->ring_buffer = NULL;
+    }
+  }
+
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
     snd_pcm_drop(capture->pcm);
@@ -975,7 +1100,8 @@ static void alsa_capture_destroy(void* ctx) {
 }
 
 // Create ALSA capture backend matching AlsaCaptureDevice::start in upstream
-// (src/alsa_backend/device.rs:1219-1324)
+// (src/alsa_backend/device.rs:1219-1324 and
+// src/alsa_backend/threaded_device.rs:1350-1368)
 static capture_backend_t* alsa_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
@@ -1003,11 +1129,14 @@ static capture_backend_t* alsa_capture_create(
   atomic_init(&capture->pending_rate, 0.0);
   atomic_init(&capture->has_pending_rate_change, false);
   atomic_init(&capture->is_inactive, false);
+  capture->threaded =
+      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : true;
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
   capture_backend_t* backend =
       (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
+    pthread_mutex_destroy(&capture->mixer_mutex);
     free(capture);
     return NULL;
   }

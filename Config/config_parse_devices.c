@@ -102,6 +102,8 @@ typedef struct {
   bool has_link_volume_control;
   char link_mute_control[256];
   bool has_link_mute_control;
+  bool threaded;
+  bool has_threaded;
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
@@ -209,6 +211,10 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
   cap->has_link_mute_control =
       parse_json_str(cap_obj, "link_mute_control", cap->link_mute_control,
                      sizeof(cap->link_mute_control));
+  cap->has_threaded = parse_json_bool(cap_obj, "threaded", &cap->threaded);
+  if (!cap->has_threaded) {
+    cap->threaded = true;  // Default to true (threaded ALSA)
+  }
 #endif
 
 #if defined(ENABLE_PIPEWIRE)
@@ -302,6 +308,8 @@ static void parse_capture(const cJSON* cap_obj, devices_config_t* devices) {
                sizeof(final_cap->cfg.alsa.link_mute_control), "%s",
                temp.link_mute_control);
       final_cap->cfg.alsa.has_link_mute_control = temp.has_link_mute_control;
+      final_cap->cfg.alsa.threaded = temp.threaded;
+      final_cap->cfg.alsa.has_threaded = temp.has_threaded;
       break;
 #endif
 
@@ -454,6 +462,10 @@ typedef struct {
   asio_sample_format_t asio_format;
   bool has_asio_format;
 #endif
+#if defined(ENABLE_ALSA)
+  bool threaded;
+  bool has_threaded;
+#endif
 
 #if defined(ENABLE_PIPEWIRE)
   // PipeWire fields
@@ -558,6 +570,13 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
   play->has_realtime = parse_json_bool(play_obj, "realtime", &play->realtime);
 #endif
 
+#if defined(ENABLE_ALSA)
+  play->has_threaded = parse_json_bool(play_obj, "threaded", &play->threaded);
+  if (!play->has_threaded) {
+    play->threaded = true;
+  }
+#endif
+
 #if defined(ENABLE_PIPEWIRE)
   play->has_node_name = parse_json_str(play_obj, "node_name", play->node_name,
                                        sizeof(play->node_name));
@@ -615,6 +634,8 @@ static void parse_playback(const cJSON* play_obj, devices_config_t* devices) {
       final_play->cfg.alsa.target_level =
           devices->has_target_level ? devices->target_level : 0;
       final_play->cfg.alsa.has_target_level = devices->has_target_level;
+      final_play->cfg.alsa.threaded = temp.threaded;
+      final_play->cfg.alsa.has_threaded = temp.has_threaded;
       break;
 #endif
 
