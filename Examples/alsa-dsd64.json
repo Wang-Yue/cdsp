@@ -7,7 +7,7 @@
     "multithreaded": true,
     "resampler": {
       "type": "AsyncPoly",
-      "profile": "Fast"
+      "interpolation": "Cubic"
     },
     "capture": {
       "type": "WavFile",

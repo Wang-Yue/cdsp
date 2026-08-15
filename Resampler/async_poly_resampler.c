@@ -34,10 +34,10 @@ typedef enum {
 
 static poly_interpolation_t poly_interpolation_from_string(const char* str) {
   if (!str) return POLY_INTERPOLATION_CUBIC;
-  if (strcasecmp(str, "Linear") == 0) return POLY_INTERPOLATION_LINEAR;
-  if (strcasecmp(str, "Cubic") == 0) return POLY_INTERPOLATION_CUBIC;
-  if (strcasecmp(str, "Quintic") == 0) return POLY_INTERPOLATION_QUINTIC;
-  if (strcasecmp(str, "Septic") == 0) return POLY_INTERPOLATION_SEPTIC;
+  if (strcmp(str, "Linear") == 0) return POLY_INTERPOLATION_LINEAR;
+  if (strcmp(str, "Cubic") == 0) return POLY_INTERPOLATION_CUBIC;
+  if (strcmp(str, "Quintic") == 0) return POLY_INTERPOLATION_QUINTIC;
+  if (strcmp(str, "Septic") == 0) return POLY_INTERPOLATION_SEPTIC;
   return POLY_INTERPOLATION_LAST;
 }
 
@@ -607,10 +607,10 @@ static int async_poly_resampler_config_validate(
     }
   }
   if (config->has_profile) {
-    if (strcasecmp(config->profile, "VeryFast") != 0 &&
-        strcasecmp(config->profile, "Fast") != 0 &&
-        strcasecmp(config->profile, "Balanced") != 0 &&
-        strcasecmp(config->profile, "Accurate") != 0) {
+    if (strcmp(config->profile, "VeryFast") != 0 &&
+        strcmp(config->profile, "Fast") != 0 &&
+        strcmp(config->profile, "Balanced") != 0 &&
+        strcmp(config->profile, "Accurate") != 0) {
       config_error_set(err, CONFIG_ERR_VALIDATION,
                        "AsyncPoly: invalid profile %s", config->profile);
       return -1;

@@ -36,10 +36,10 @@ typedef enum {
 static sinc_interpolation_type_t sinc_interpolation_type_from_string(
     const char* str) {
   if (!str) return SINC_INTERPOLATION_QUADRATIC;
-  if (strcasecmp(str, "Nearest") == 0) return SINC_INTERPOLATION_NEAREST;
-  if (strcasecmp(str, "Linear") == 0) return SINC_INTERPOLATION_LINEAR;
-  if (strcasecmp(str, "Quadratic") == 0) return SINC_INTERPOLATION_QUADRATIC;
-  if (strcasecmp(str, "Cubic") == 0) return SINC_INTERPOLATION_CUBIC;
+  if (strcmp(str, "Nearest") == 0) return SINC_INTERPOLATION_NEAREST;
+  if (strcmp(str, "Linear") == 0) return SINC_INTERPOLATION_LINEAR;
+  if (strcmp(str, "Quadratic") == 0) return SINC_INTERPOLATION_QUADRATIC;
+  if (strcmp(str, "Cubic") == 0) return SINC_INTERPOLATION_CUBIC;
   return SINC_INTERPOLATION_LAST;
 }
 
@@ -838,10 +838,10 @@ static int async_sinc_resampler_config_validate(
     }
   }
   if (config->has_profile) {
-    if (strcasecmp(config->profile, "VeryFast") != 0 &&
-        strcasecmp(config->profile, "Fast") != 0 &&
-        strcasecmp(config->profile, "Balanced") != 0 &&
-        strcasecmp(config->profile, "Accurate") != 0) {
+    if (strcmp(config->profile, "VeryFast") != 0 &&
+        strcmp(config->profile, "Fast") != 0 &&
+        strcmp(config->profile, "Balanced") != 0 &&
+        strcmp(config->profile, "Accurate") != 0) {
       config_error_set(err, CONFIG_ERR_VALIDATION,
                        "AsyncSinc: invalid profile %s", config->profile);
       return -1;

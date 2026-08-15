@@ -101,9 +101,17 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                 char scale_buf[64];
                 if (parse_json_str(src_el, "scale", scale_buf,
                                    sizeof(scale_buf))) {
-                  src->scale = (strcasecmp(scale_buf, "Linear") == 0)
-                                   ? GAIN_SCALE_LINEAR
-                                   : GAIN_SCALE_DB;
+                  if (strcmp(scale_buf, "linear") == 0) {
+                    src->scale = GAIN_SCALE_LINEAR;
+                  } else if (strcmp(scale_buf, "dB") == 0) {
+                    src->scale = GAIN_SCALE_DB;
+                  } else {
+                    config_error_set(
+                        err, CONFIG_ERR_PARSE,
+                        "unknown variant '%s', expected one of 'linear', 'dB'",
+                        scale_buf);
+                    return -1;
+                  }
                 } else {
                   src->scale = GAIN_SCALE_DB;
                 }

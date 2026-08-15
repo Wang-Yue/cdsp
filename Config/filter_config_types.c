@@ -24,11 +24,11 @@ const char* fader_to_string(fader_t fader) {
 
 fader_t fader_from_string(const char* str) {
   if (!str) return FADER_NONE;
-  if (strcasecmp(str, "main") == 0) return FADER_MAIN;
-  if (strcasecmp(str, "aux1") == 0) return FADER_AUX1;
-  if (strcasecmp(str, "aux2") == 0) return FADER_AUX2;
-  if (strcasecmp(str, "aux3") == 0) return FADER_AUX3;
-  if (strcasecmp(str, "aux4") == 0) return FADER_AUX4;
+  if (strcmp(str, "Main") == 0) return FADER_MAIN;
+  if (strcmp(str, "Aux1") == 0) return FADER_AUX1;
+  if (strcmp(str, "Aux2") == 0) return FADER_AUX2;
+  if (strcmp(str, "Aux3") == 0) return FADER_AUX3;
+  if (strcmp(str, "Aux4") == 0) return FADER_AUX4;
   return FADER_NONE;
 }
 

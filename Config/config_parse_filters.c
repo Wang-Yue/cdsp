@@ -66,8 +66,17 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           gp->has_gain = parse_json_double(params, "gain", &gp->gain);
           char str_buf[64];
           if (parse_json_str(params, "scale", str_buf, sizeof(str_buf))) {
-            gp->scale = (strcasecmp(str_buf, "Linear") == 0) ? GAIN_SCALE_LINEAR
-                                                             : GAIN_SCALE_DB;
+            if (strcmp(str_buf, "linear") == 0) {
+              gp->scale = GAIN_SCALE_LINEAR;
+            } else if (strcmp(str_buf, "dB") == 0) {
+              gp->scale = GAIN_SCALE_DB;
+            } else {
+              config_error_set(
+                  err, CONFIG_ERR_PARSE,
+                  "unknown variant '%s', expected one of 'linear', 'dB'",
+                  str_buf);
+              return -1;
+            }
           } else {
             gp->scale = GAIN_SCALE_DB;
           }

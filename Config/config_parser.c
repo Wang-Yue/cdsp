@@ -203,8 +203,7 @@ static void resolve_relative_paths_in_filters(cJSON* filters_obj,
   while (filter) {
     cJSON* type_item = cJSON_GetObjectItemCaseSensitive(filter, "type");
     if (type_item && cJSON_IsString(type_item) &&
-        (strcasecmp(type_item->valuestring, "Conv") == 0 ||
-         strcasecmp(type_item->valuestring, "Convolution") == 0)) {
+        strcmp(type_item->valuestring, "Conv") == 0) {
       cJSON* params = cJSON_GetObjectItemCaseSensitive(filter, "parameters");
       if (params && cJSON_IsObject(params)) {
         cJSON* fn_node = cJSON_GetObjectItemCaseSensitive(params, "filename");

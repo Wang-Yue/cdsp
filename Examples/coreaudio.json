@@ -6,7 +6,6 @@
     "capture": {
       "type": "WavFile",
       "filename": "/Users/wangyue/music.wav",
-      "channels": 2,
       "bypass_dop": true
     },
     "playback": {

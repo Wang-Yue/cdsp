@@ -484,7 +484,7 @@ TEST(AsyncPoly_Stereo) {
   resampler_config_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.type = RESAMPLER_TYPE_ASYNC_POLY;
-  strcpy(cfg.interpolation, "cubic");
+  strcpy(cfg.interpolation, "Cubic");
   cfg.has_interpolation = true;
 
   resampler_t* res =
@@ -498,7 +498,7 @@ TEST(AsyncSinc_Stereo) {
   resampler_config_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.type = RESAMPLER_TYPE_ASYNC_SINC;
-  strcpy(cfg.profile, "accurate");
+  strcpy(cfg.profile, "Accurate");
   cfg.has_profile = true;
 
   resampler_t* res =
