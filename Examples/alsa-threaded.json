@@ -5,11 +5,8 @@
     "target_level": 2048,
     "multithreaded": true,
     "capture": {
-      "type": "File",
-      "channels": 2,
-      "filename": "~/Desktop/music.wav",
-      "format": "S16_LE",
-      "is_wav": true
+      "type": "WavFile",
+      "filename": "~/Desktop/music.wav"
     },
 
     "playback": {
