@@ -209,11 +209,15 @@ static void on_playback_process(void* data) {
             : requested_bytes;
     callback_bytes -= (callback_bytes % stride);
 
-    size_t consumed_bytes =
-        spsc_byte_ring_buffer_consume(p->ring, dst, callback_bytes);
+    if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
+      memset(dst, 0, callback_bytes);
+    } else {
+      size_t consumed_bytes =
+          spsc_byte_ring_buffer_consume(p->ring, dst, callback_bytes);
 
-    if (consumed_bytes < callback_bytes) {
-      memset(dst + consumed_bytes, 0, callback_bytes - consumed_bytes);
+      if (consumed_bytes < callback_bytes) {
+        memset(dst + consumed_bytes, 0, callback_bytes - consumed_bytes);
+      }
     }
 
     buf->datas[0].chunk->offset = 0;
@@ -429,7 +433,7 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
   size_t cap_ring_size = cap_frames_needed * capture->blockalign;
 
   capture->ring = spsc_byte_ring_buffer_create(cap_ring_size);
-  capture->decode_buf_size = capture->chunk_size * capture->blockalign;
+  capture->decode_buf_size = cap_frames_needed * capture->blockalign;
   capture->decode_buf = (uint8_t*)calloc(capture->decode_buf_size, 1);
   capture->semaphore = cdsp_sem_create();
 

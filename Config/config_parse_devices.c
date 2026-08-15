@@ -721,19 +721,19 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   }
   if (parse_json_double(dev_obj, "adjust_interval_s",
                         &dev->adjust_interval_s)) {
-    dev->has_adjust_interval_s = (dev->adjust_interval_s > 0.0);
+    dev->has_adjust_interval_s = true;
   }
   if (parse_json_double(dev_obj, "silence_threshold",
                         &dev->silence_threshold)) {
-    dev->has_silence_threshold = (dev->silence_threshold != 0.0);
+    dev->has_silence_threshold = true;
   }
   if (parse_json_double(dev_obj, "silence_timeout_s",
                         &dev->silence_timeout_s)) {
-    dev->has_silence_timeout_s = (dev->silence_timeout_s > 0.0);
+    dev->has_silence_timeout_s = true;
   }
   if (parse_json_int(dev_obj, "capture_samplerate", &val_int)) {
     dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;
-    dev->has_capture_samplerate = (dev->capture_samplerate > 0);
+    dev->has_capture_samplerate = true;
   }
   if (parse_json_double(dev_obj, "volume_ramp_time_ms",
                         &dev->volume_ramp_time_ms)) {

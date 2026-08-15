@@ -218,30 +218,28 @@ static int biquad_combo_config_validate(const filter_config_t* config,
         return -1;
       }
       break;
-    case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
-      if (!params->gains || params->gains_count <= 0 ||
-          params->gains_count > 32) {
+    case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
+      if (!params->gains || params->gains_count <= 0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "GraphicEqualizer: gains must be non-empty and have "
-                         "at most 32 bands, got %d",
-                         params->gains_count);
+                         "GraphicEqualizer: gains must be non-empty");
         return -1;
       }
-      if (!params->has_freq_min || params->freq_min <= 0.0 ||
-          !params->has_freq_max || params->freq_max <= 0.0) {
+      double f_min = params->has_freq_min ? params->freq_min : 20.0;
+      double f_max = params->has_freq_max ? params->freq_max : 20000.0;
+      if (f_min <= 0.0 || f_max <= 0.0) {
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
             "GraphicEqualizer: min and max frequencies must be > 0");
         return -1;
       }
-      if (params->freq_min >= nyquist || params->freq_max >= nyquist) {
+      if (f_min >= nyquist || f_max >= nyquist) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "GraphicEqualizer: min and max frequencies must be "
                          "less than Nyquist (%g)",
                          nyquist);
         return -1;
       }
-      if (params->freq_min >= params->freq_max) {
+      if (f_min >= f_max) {
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
             "GraphicEqualizer: min frequency must be lower than max frequency");
@@ -252,11 +250,12 @@ static int biquad_combo_config_validate(const filter_config_t* config,
         if (g < -40.0 || g > 40.0) {
           config_error_set(
               err, CONFIG_ERR_INVALID_FILTER,
-              "GraphicEqualizer: gains must be within +- 40 dB, got %g", g);
+              "GraphicEqualizer: gain[%zu]=%g out of bounds [-40, +40]", i, g);
           return -1;
         }
       }
       break;
+    }
   }
   return 0;
 }

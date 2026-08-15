@@ -477,11 +477,11 @@ int main(int argc, char** argv) {
 #endif
 
   printf("Press Ctrl+C to stop.\n");
-  bool started = (config_path != NULL);
+  bool is_batch_mode = (config_path != NULL && !has_port && !wait_config);
   while (keep_running) {
     cdsp_sleep_ms(100);
     cdsp_engine_poll(engine);
-    if (started) {
+    if (is_batch_mode) {
       if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
         logger_info(&g_logger, "Engine reached inactive state, exiting loop");
         printf("Engine finished processing. Exiting.\n");

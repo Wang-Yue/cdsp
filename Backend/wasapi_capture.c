@@ -176,7 +176,11 @@ static void* wasapi_capture_loop(void* arg) {
   int no_frames_counter = 0;
 
 #ifdef _WIN32
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  DWORD task_index = 0;
+  HANDLE mmcss_handle = AvSetMmThreadCharacteristicsA("Pro Audio", &task_index);
+  if (!mmcss_handle) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  }
 #endif
 
   logger_trace(&g_wasapi_logger, "Starting capture stream.");

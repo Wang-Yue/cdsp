@@ -116,3 +116,25 @@ void ws_send_frame(socket_t fd, const char* response) {
     }
   }
 }
+
+void ws_send_pong_frame(socket_t fd, const char* payload, size_t len) {
+  if (IS_INVALID_SOCKET(fd)) return;
+  if (len > 125) len = 125;
+  char frame[128];
+  frame[0] = (char)0x8A;
+  frame[1] = (char)len;
+  if (len > 0 && payload) {
+    memcpy(&frame[2], payload, len);
+  }
+  send_all(fd, frame, 2 + len);
+}
+
+void ws_send_close_frame(socket_t fd, uint16_t code) {
+  if (IS_INVALID_SOCKET(fd)) return;
+  char frame[4];
+  frame[0] = (char)0x88;
+  frame[1] = (char)2;
+  frame[2] = (char)((code >> 8) & 0xFF);
+  frame[3] = (char)(code & 0xFF);
+  send_all(fd, frame, 4);
+}

@@ -170,7 +170,7 @@ ifeq ($(IS_WINDOWS),1)
         CFLAGS += -DUSE_LIBDISPATCH -DHAVE_MODE_T
         LDFLAGS += -ldispatch -lBlocksRuntime
     endif
-    LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid
+    LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid -lavrt
 else ifeq ($(IS_DARWIN),1)
     ifeq ($(ENABLE_COREAUDIO),1)
         LDFLAGS += -framework CoreAudio -framework AudioToolbox

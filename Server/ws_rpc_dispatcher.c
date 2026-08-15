@@ -1,5 +1,6 @@
 #include "Server/ws_rpc_dispatcher.h"
 
+#include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -462,6 +463,13 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
   }
 }
 
+static inline bool validate_and_clamp_volume(double* inout_vol) {
+  if (isnan(*inout_vol) || isinf(*inout_vol)) return false;
+  if (*inout_vol > 50.0) *inout_vol = 50.0;
+  if (*inout_vol < -150.0) *inout_vol = -150.0;
+  return true;
+}
+
 static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
                                   const char* cmd_name, cJSON* root,
                                   dyn_string_t* ds) {
@@ -469,6 +477,11 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
     double vol = arg->valuedouble;
+    if (!validate_and_clamp_volume(&vol)) {
+      reply_error(cmd_name, "InvalidValueError",
+                  "Volume must be a finite number", ds);
+      return;
+    }
     if (server && server->engine) {
       cdsp_set_fader_volume(server->engine, CDSP_FADER_MAIN, (float)vol, false);
       reply_ok(cmd_name, NULL, ds);
@@ -588,6 +601,11 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
       cJSON_IsNumber(vol_node)) {
     int idx = fader_node->valueint;
     double vol = vol_node->valuedouble;
+    if (!validate_and_clamp_volume(&vol)) {
+      reply_error(cmd_name, "InvalidValueError",
+                  "Volume must be a finite number", ds);
+      return;
+    }
     if (server && server->engine) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
@@ -618,6 +636,11 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
       cJSON_IsNumber(vol_node)) {
     int idx = fader_node->valueint;
     double vol = vol_node->valuedouble;
+    if (!validate_and_clamp_volume(&vol)) {
+      reply_error(cmd_name, "InvalidValueError",
+                  "Volume must be a finite number", ds);
+      return;
+    }
     if (server && server->engine) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
         cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
@@ -1047,7 +1070,7 @@ static void handle_cmd_get_config_title(websocket_server_t* server,
     reply_ok(cmd_name, cJSON_CreateString(title), ds);
     free(title);
   } else {
-    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+    reply_ok(cmd_name, cJSON_CreateString(""), ds);
   }
 }
 
@@ -1064,7 +1087,7 @@ static void handle_cmd_get_config_description(websocket_server_t* server,
     reply_ok(cmd_name, cJSON_CreateString(desc), ds);
     free(desc);
   } else {
-    reply_ok(cmd_name, cJSON_CreateNull(), ds);
+    reply_ok(cmd_name, cJSON_CreateString(""), ds);
   }
 }
 
@@ -1393,7 +1416,6 @@ static void handle_get_signal_since_last(websocket_server_t* server,
         hist = &server->playback_peak_history;
       }
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
     size_t ch = hist ? hist->channels : 0;
     if (ch > 0 && hist) {
       double* vals = (double*)calloc(ch, sizeof(double));
@@ -1402,9 +1424,11 @@ static void handle_get_signal_since_last(websocket_server_t* server,
       } else {
         level_history_get_max_since(hist, since, vals);
       }
+      pthread_mutex_unlock(&server->sessions_mutex);
       reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
       free(vals);
     } else {
+      pthread_mutex_unlock(&server->sessions_mutex);
       reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
     }
   } else {
@@ -1832,9 +1856,13 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 static void handle_get_available_devices(websocket_server_t* server,
                                          const char* cmd_name, cJSON* root,
                                          bool is_capture, dyn_string_t* ds) {
-  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
+  const char* backend = NULL;
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "backend");
+  if (!arg) {
+    arg = cJSON_GetObjectItemCaseSensitive(root, "value");
+  }
   if (arg && cJSON_IsString(arg) && arg->valuestring) {
-    const char* backend = arg->valuestring;
+    backend = arg->valuestring;
     cdsp_device_info_t* devs = NULL;
     size_t count = 0;
     bool ok = server && server->engine &&
@@ -1843,7 +1871,9 @@ static void handle_get_available_devices(websocket_server_t* server,
       cJSON* arr = cJSON_CreateArray();
       for (size_t i = 0; i < count; i++) {
         cJSON* tuple = cJSON_CreateArray();
-        cJSON_AddItemToArray(tuple, cJSON_CreateString(devs[i].name));
+        const char* id =
+            (devs[i].identifier[0] != '\0') ? devs[i].identifier : devs[i].name;
+        cJSON_AddItemToArray(tuple, cJSON_CreateString(id));
         cJSON_AddItemToArray(tuple, cJSON_CreateString(devs[i].name));
         cJSON_AddItemToArray(arr, tuple);
       }
@@ -1865,14 +1895,23 @@ static void handle_get_device_capabilities(websocket_server_t* server,
   char backend[128] = "";
   char device[256] = "";
   bool ok = false;
-  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
-  if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
-    cJSON* b_node = cJSON_GetArrayItem(arg, 0);
-    cJSON* d_node = cJSON_GetArrayItem(arg, 1);
-    if (b_node && d_node && cJSON_IsString(b_node) && cJSON_IsString(d_node)) {
-      strncpy(backend, b_node->valuestring, sizeof(backend) - 1);
-      strncpy(device, d_node->valuestring, sizeof(device) - 1);
-      ok = true;
+  cJSON* b_top = cJSON_GetObjectItemCaseSensitive(root, "backend");
+  cJSON* d_top = cJSON_GetObjectItemCaseSensitive(root, "device");
+  if (b_top && d_top && cJSON_IsString(b_top) && cJSON_IsString(d_top)) {
+    strncpy(backend, b_top->valuestring, sizeof(backend) - 1);
+    strncpy(device, d_top->valuestring, sizeof(device) - 1);
+    ok = true;
+  } else {
+    cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
+    if (arg && cJSON_IsArray(arg) && cJSON_GetArraySize(arg) >= 2) {
+      cJSON* b_node = cJSON_GetArrayItem(arg, 0);
+      cJSON* d_node = cJSON_GetArrayItem(arg, 1);
+      if (b_node && d_node && cJSON_IsString(b_node) &&
+          cJSON_IsString(d_node)) {
+        strncpy(backend, b_node->valuestring, sizeof(backend) - 1);
+        strncpy(device, d_node->valuestring, sizeof(device) - 1);
+        ok = true;
+      }
     }
   }
   if (ok) {

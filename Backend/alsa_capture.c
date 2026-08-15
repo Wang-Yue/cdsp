@@ -589,9 +589,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     snd_pcm_prepare(capture->pcm);
   } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
     alsa_recover_suspended_pcm(capture->pcm, "Capture");
-    if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-      snd_pcm_start(capture->pcm);
-    }
   } else if ((int)capture_state < 0) {
     logger_error(&g_logger,
                  "Alsa snd_pcm_state() of capture device returned an "
@@ -601,9 +598,11 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          snd_strerror((int)capture_state));
     return false;
-  } else if (capture_state != SND_PCM_STATE_RUNNING) {
+  }
+
+  if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
     logger_debug(&g_logger, "Starting capture from state: %s",
-                 alsa_state_desc(capture_state));
+                 alsa_state_desc(snd_pcm_state(capture->pcm)));
     snd_pcm_start(capture->pcm);
   }
 

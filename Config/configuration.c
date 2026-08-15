@@ -337,6 +337,52 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
 
+#if defined(ENABLE_WASAPI)
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_WASAPI) {
+    const wasapi_capture_config_t* wcap = &config->devices.capture.cfg.wasapi;
+    if (!wcap->exclusive && wcap->has_format &&
+        wcap->format != WASAPI_SAMPLE_FORMAT_F32) {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_DEVICE,
+          "Wasapi capture in shared mode only supports the F32 format");
+      return -1;
+    }
+    if (wcap->loopback && wcap->exclusive) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "Wasapi loopback capture only supported in shared mode");
+      return -1;
+    }
+  }
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_WASAPI) {
+    const wasapi_playback_config_t* wplay =
+        &config->devices.playback.cfg.wasapi;
+    if (!wplay->exclusive && wplay->has_format &&
+        wplay->format != WASAPI_SAMPLE_FORMAT_F32) {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_DEVICE,
+          "Wasapi playback in shared mode only supports the F32 format");
+      return -1;
+    }
+  }
+#endif
+
+#if defined(ENABLE_ASIO)
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO &&
+      config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
+    if (strcmp(config->devices.capture.cfg.asio.device,
+               config->devices.playback.cfg.asio.device) != 0) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "ASIO capture and playback must use the same device");
+      return -1;
+    }
+    if (config->devices.has_resampler) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "Full duplex ASIO does not support resampling");
+      return -1;
+    }
+  }
+#endif
+
   if (config->devices.has_silence_timeout_s &&
       config->devices.silence_timeout_s < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
@@ -367,29 +413,26 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
       return -1;
     }
   }
-  if (config->devices.has_target_level) {
-    /* Target level is verified against a maximum theoretical limit.
-     * The limit is buffer-dependent and differs for ALSA due to the larger
-     * buffer requirements of the backend. */
-    int64_t qlimit_val =
-        config->devices.has_queuelimit ? config->devices.queuelimit : 4;
-    if (qlimit_val < 0 || qlimit_val > 1000) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "queuelimit must be between 0 and 1000");
-      return -1;
-    }
-    if (config->devices.chunksize <= 0 || config->devices.chunksize > 1000000) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "chunksize must be between 1 and 1000000");
-      return -1;
-    }
-    int64_t target_limit =
-        (2 + qlimit_val) * (int64_t)config->devices.chunksize;
+
+  int64_t qlimit_val =
+      config->devices.has_queuelimit ? config->devices.queuelimit : 4;
+  if (qlimit_val < 0 || qlimit_val > 1000) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "queuelimit must be between 0 and 1000");
+    return -1;
+  }
+  if (config->devices.chunksize <= 0 || config->devices.chunksize > 1000000) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "chunksize must be between 1 and 1000000");
+    return -1;
+  }
+  int64_t target_limit = (2 + qlimit_val) * (int64_t)config->devices.chunksize;
 #if defined(ENABLE_ALSA)
-    if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
-      target_limit = (4 + qlimit_val) * (int64_t)config->devices.chunksize;
-    }
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
+    target_limit = (4 + qlimit_val) * (int64_t)config->devices.chunksize;
+  }
 #endif
+  if (config->devices.has_target_level) {
     if ((int64_t)config->devices.target_level > target_limit ||
         config->devices.target_level <= 0) {
       char msg[128];
@@ -450,9 +493,10 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     }
   }
 
-  // Validate resampler
-  if (resampler_config_validate(&config->devices.resampler, err) != 0) {
-    return -1;
+  if (config->devices.has_resampler) {
+    if (resampler_config_validate(&config->devices.resampler, err) != 0) {
+      return -1;
+    }
   }
 
   size_t cap_rate = config->devices.has_capture_samplerate
@@ -503,6 +547,13 @@ void dsp_config_free(dsp_config_t* config) {
           free(config->mixers[i].mixer.mapping[j].sources);
         }
         free(config->mixers[i].mixer.mapping);
+      }
+      if (config->mixers[i].mixer.has_labels &&
+          config->mixers[i].mixer.labels) {
+        for (size_t j = 0; j < config->mixers[i].mixer.labels_count; j++) {
+          free(config->mixers[i].mixer.labels[j]);
+        }
+        free(config->mixers[i].mixer.labels);
       }
     }
     free(config->mixers);

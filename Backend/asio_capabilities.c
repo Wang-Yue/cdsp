@@ -137,7 +137,14 @@ static bool asio_check_drv_path(const char* clsid_str, char* out_dll_path,
                                &datasize);
     RegCloseKey(hkpath);
     if (cr == ERROR_SUCCESS) {
-      if (GetFileAttributesA(out_dll_path) != INVALID_FILE_ATTRIBUTES) {
+      char expanded[MAX_PATH];
+      if (ExpandEnvironmentStringsA(out_dll_path, expanded, MAX_PATH) > 0) {
+        if (GetFileAttributesA(expanded) != INVALID_FILE_ATTRIBUTES) {
+          strncpy(out_dll_path, expanded, max_path - 1);
+          out_dll_path[max_path - 1] = '\0';
+          return true;
+        }
+      } else if (GetFileAttributesA(out_dll_path) != INVALID_FILE_ATTRIBUTES) {
         return true;
       }
     }

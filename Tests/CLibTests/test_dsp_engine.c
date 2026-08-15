@@ -1819,16 +1819,30 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   }
   cdsp_sleep_ms(150);
 
-  // Resolve capture device ID and nominal rate
+  // Resolve capture and playback device IDs and nominal rate
   AudioDeviceID dev_id =
       core_audio_device_id_for_name("BlackHole 2ch", CORE_AUDIO_SCOPE_INPUT);
-  ASSERT_NE(0, dev_id);
+  AudioDeviceID out_dev_id =
+      core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
+  if (dev_id == 0 || out_dev_id == 0) {
+    printf(
+        "⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole devices not found\n");
+    if (lock_fd >= 0) {
+      flock(lock_fd, LOCK_UN);
+      close(lock_fd);
+    }
+    return;
+  }
 
   double initial_rate = 44100.0;
   core_audio_device_get_nominal_sample_rate(dev_id, &initial_rate);
 
   int init_sr = (int)(initial_rate + 0.5);
   int target_sr = (init_sr == 44100) ? 48000 : 44100;
+
+  core_audio_device_set_nominal_sample_rate(dev_id, (double)init_sr);
+  core_audio_device_set_nominal_sample_rate(out_dev_id, (double)init_sr);
+  cdsp_sleep_ms(250);
 
   printf(
       "ℹ️ debug: initial capture device nominal rate is %d Hz, will change to "
@@ -1878,8 +1892,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   }
   ASSERT_TRUE(running);
 
-  // Let 44.1kHz capture run for a short duration
-  cdsp_sleep_ms(100);
+  // Let initial capture run for a short duration
+  cdsp_sleep_ms(150);
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   // 2. Change capture hardware nominal sample rate to target_sr
@@ -1894,7 +1908,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
-  for (int i = 0; i < 500; i++) {
+  for (int i = 0; i < 800; i++) {
     cdsp_engine_poll(engine);
     cdsp_processing_state_t st = cdsp_get_state(engine);
     if (st == CDSP_PROCESSING_STATE_INACTIVE) {
@@ -1913,6 +1927,10 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
+
+  // Ensure playback device is also set to target_sr before restart
+  core_audio_device_set_nominal_sample_rate(out_dev_id, (double)target_sr);
+  cdsp_sleep_ms(250);
 
   // 4. Re-configure the engine for target_sr and verify it restarts and runs
   // smoothly
@@ -1961,8 +1979,9 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
 
-  // Restore the hardware nominal rate to its initial state
+  // Restore the hardware nominal rates to initial state
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
+  core_audio_device_set_nominal_sample_rate(out_dev_id, initial_rate);
   cdsp_sleep_ms(250);
 
   if (lock_fd >= 0) {

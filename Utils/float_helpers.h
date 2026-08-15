@@ -67,9 +67,9 @@ static inline void dsp_ops_float_hann_window(float* buffer, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_hann_window(buffer, (vDSP_Length)count, 0);
 #else
+  double denom = (count > 1) ? (double)(count - 1) : 1.0;
   for (size_t i = 0; i < count; i++) {
-    buffer[i] =
-        0.5f * (1.0f - cosf(2.0f * (float)M_PI * (float)i / (float)count));
+    buffer[i] = (float)(0.5 * (1.0 - cos(2.0 * M_PI * (double)i / denom)));
   }
 #endif
 }

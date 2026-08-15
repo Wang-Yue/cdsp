@@ -17,6 +17,7 @@
 
 #include <audioclient.h>
 #include <audiopolicy.h>
+#include <avrt.h>
 #include <mmdeviceapi.h>
 #include <stdatomic.h>
 #include <stdbool.h>

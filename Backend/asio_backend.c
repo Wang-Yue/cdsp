@@ -498,6 +498,15 @@ static bool take_capture_rate_change_event(void) {
                                   memory_order_acq_rel);
 }
 
+static bool peek_playback_rate_change_event(void) {
+  return atomic_load_explicit(&ASIO_PLAYBACK_RATE_CHANGED,
+                              memory_order_acquire);
+}
+
+static bool peek_capture_rate_change_event(void) {
+  return atomic_load_explicit(&ASIO_CAPTURE_RATE_CHANGED, memory_order_acquire);
+}
+
 bool asio_driver_is_initialized(void) {
   return atomic_load_explicit(&ASIO_DRIVER_INITIALIZED, memory_order_acquire);
 }
@@ -1031,6 +1040,14 @@ static bool register_and_wait(bool is_input, size_t num_channels,
 static void release_shared_asio(void) {
   AcquireSRWLockExclusive(&g_asio_shared.lock);
   if (g_asio_shared.state) {
+    if (!g_asio_shared.state->stream_started &&
+        g_asio_shared.state->setup_error[0] == '\0') {
+      strncpy(g_asio_shared.state->setup_error, "ASIO setup aborted",
+              sizeof(g_asio_shared.state->setup_error) - 1);
+      g_asio_shared.state
+          ->setup_error[sizeof(g_asio_shared.state->setup_error) - 1] = '\0';
+      WakeAllConditionVariable(&g_asio_shared.cond);
+    }
     if (g_asio_shared.state->active_count > 0) {
       g_asio_shared.state->active_count--;
     }
@@ -1080,7 +1097,14 @@ static bool asio_check_drv_path(const char* clsid_str, char* out_dll_path,
                                &datasize);
     RegCloseKey(hkpath);
     if (cr == ERROR_SUCCESS) {
-      if (GetFileAttributesA(out_dll_path) != INVALID_FILE_ATTRIBUTES) {
+      char expanded[MAX_PATH];
+      if (ExpandEnvironmentStringsA(out_dll_path, expanded, MAX_PATH) > 0) {
+        if (GetFileAttributesA(expanded) != INVALID_FILE_ATTRIBUTES) {
+          strncpy(out_dll_path, expanded, max_path - 1);
+          out_dll_path[max_path - 1] = '\0';
+          return true;
+        }
+      } else if (GetFileAttributesA(out_dll_path) != INVALID_FILE_ATTRIBUTES) {
         return true;
       }
     }
@@ -1223,6 +1247,19 @@ static bool load_driver_by_name(const char* name, IASIO** out_iasio,
   return true;
 }
 
+static void dummy_buffer_switch(long doubleBufferIndex,
+                                ASIOBool directProcess) {
+  (void)doubleBufferIndex;
+  (void)directProcess;
+}
+
+static void* dummy_buffer_switch_timeinfo(void* params, long doubleBufferIndex,
+                                          ASIOBool directProcess) {
+  (void)doubleBufferIndex;
+  (void)directProcess;
+  return params;
+}
+
 /**
  * @brief force_sample_rate_with_dummy_cycle matching CamillaDSP device.rs lines
  * 875-1008.
@@ -1258,10 +1295,10 @@ static bool force_sample_rate_with_dummy_cycle(const char* devname, double rate,
   dummy_bufs[0].buffers[1] = NULL;
 
   ASIOCallbacks dummy_callbacks = {
-      .bufferSwitch = buffer_switch_combined,
+      .bufferSwitch = dummy_buffer_switch,
       .sampleRateDidChange = NULL,
       .asioMessage = asio_message_callback,
-      .bufferSwitchTimeInfo = buffer_switch_timeinfo_combined,
+      .bufferSwitchTimeInfo = dummy_buffer_switch_timeinfo,
   };
 
   long create_res = iasio->lpVtbl->createBuffers(
@@ -1816,7 +1853,7 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
   if (atomic_load_explicit(&playback->paused, memory_order_acquire))
     return true;
 
-  if (take_playback_rate_change_event()) {
+  if (peek_playback_rate_change_event()) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_NONE, "Sample rate changed");
     }
@@ -1911,6 +1948,18 @@ static void asio_playback_stop(void* ctx) {
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
 }
 
+static bool asio_playback_get_is_paused(void* ctx) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  if (!playback) return false;
+  return atomic_load_explicit(&playback->paused, memory_order_acquire);
+}
+
+static void asio_playback_set_is_paused(void* ctx, bool paused) {
+  asio_playback_t* playback = (asio_playback_t*)ctx;
+  if (!playback) return;
+  atomic_store_explicit(&playback->paused, paused, memory_order_release);
+}
+
 static void asio_playback_destroy(void* ctx) {
   asio_playback_t* playback = (asio_playback_t*)ctx;
   if (playback) {
@@ -1962,8 +2011,8 @@ const playback_backend_vtable_t g_asio_playback_vtable = {
     .get_buffer_level = asio_playback_get_buffer_level,
     .get_pending_rate_change = asio_playback_get_pending_rate_change,
     .prefill_silence = asio_playback_prefill_silence,
-    .get_is_paused = NULL,
-    .set_is_paused = NULL,
+    .get_is_paused = asio_playback_get_is_paused,
+    .set_is_paused = asio_playback_set_is_paused,
     .pitch_control_supported = NULL,
     .set_pitch = NULL,
     .stop = asio_playback_stop,
@@ -2221,7 +2270,7 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   asio_capture_t* capture = (asio_capture_t*)ctx;
   if (!capture) return false;
 
-  if (take_capture_rate_change_event()) {
+  if (peek_capture_rate_change_event()) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_NONE, "Sample rate changed");
     }
@@ -2341,6 +2390,12 @@ static capture_backend_t* asio_capture_create(
   return backend;
 }
 
+static void asio_capture_set_is_paused(void* ctx, bool paused) {
+  asio_capture_t* capture = (asio_capture_t*)ctx;
+  if (!capture) return;
+  (void)paused;
+}
+
 const capture_backend_vtable_t g_asio_capture_vtable = {
     .create = asio_capture_create,
     .open = asio_capture_open,
@@ -2350,7 +2405,7 @@ const capture_backend_vtable_t g_asio_capture_vtable = {
     .is_pitch_control_supported = NULL,
     .set_pitch = NULL,
     .wait_for_data = asio_capture_wait_for_data,
-    .set_is_paused = NULL,
+    .set_is_paused = asio_capture_set_is_paused,
     .stop = asio_capture_stop,
     .destroy = asio_capture_destroy,
 };

@@ -110,7 +110,6 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
           pi->ramp_trigger_limit) {
     pi->ramp_start = level;
     pi->ramp_step = 0;
-    pi->accumulated = 0.0;
   }
   if (pi->ramp_step == 0) {
     pi->ramp_start = level;
@@ -133,11 +132,7 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
   double err = level - current_target;
   double rel_err =
       pi->frames_per_interval > 0.0 ? err / pi->frames_per_interval : 0.0;
-  if (pi->ramp_step >= pi->ramp_steps) {
-    pi->accumulated += rel_err * pi->interval;
-  } else {
-    pi->accumulated = 0.0;
-  }
+  pi->accumulated += rel_err * pi->interval;
 
   // Anti-windup: clamp the integrator term to the safe saturation band (±0.005)
   double max_val = 0.005;

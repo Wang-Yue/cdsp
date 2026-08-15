@@ -91,6 +91,9 @@ static OSStatus capture_alive_listener_callback(
       noErr) {
     atomic_store_explicit(&capture->is_device_alive, (alive != 0),
                           memory_order_release);
+  } else {
+    atomic_store_explicit(&capture->is_device_alive, false,
+                          memory_order_release);
   }
   return noErr;
 }
@@ -507,9 +510,23 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
 static bool core_audio_capture_get_pending_rate_change(void* ctx,
                                                        double* out_rate) {
   core_audio_capture_t* capture = (core_audio_capture_t*)ctx;
-  if (!capture || !capture->rate_watcher) return false;
-  return rate_change_watcher_get_pending_change(capture->rate_watcher,
-                                                out_rate);
+  if (!capture) return false;
+  if (capture->rate_watcher &&
+      rate_change_watcher_get_pending_change(capture->rate_watcher, out_rate)) {
+    return true;
+  }
+  if (capture->opened_device_id != 0) {
+    double current = 0.0;
+    if (core_audio_device_get_nominal_sample_rate(capture->opened_device_id,
+                                                  &current)) {
+      if (current > 0.0 &&
+          fabs(current - (double)capture->sample_rate) >= 0.5) {
+        if (out_rate) *out_rate = current;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /// Check if clock-pitch control is supported on the capture device.

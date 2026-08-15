@@ -40,6 +40,7 @@ static inline biquad_coefficients_t biquad_coefficients_passthrough(void) {
 
 struct biquad_filter {
   char name[64];
+  biquad_type_t type;
   biquad_coefficients_t coeffs;
 #ifdef ENABLE_ACCELERATE
   vDSP_biquadm_SetupD setup;
@@ -597,8 +598,10 @@ static void* biquad_filter_create(const char* name,
   }
 
   if (!params) {
+    filter->type = (biquad_type_t)0;
     filter->coeffs = biquad_coefficients_passthrough();
   } else {
+    filter->type = params->type;
     if (!biquad_coefficients_compute(params, sample_rate, &filter->coeffs)) {
       config_error_set(
           err, CONFIG_ERR_INVALID_FILTER,
@@ -734,6 +737,19 @@ static void biquad_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   biquad_filter_t* dest = (biquad_filter_t*)dest_ptr;
   const biquad_filter_t* src = (const biquad_filter_t*)src_ptr;
   if (!dest || !src) return;
+
+  if (dest->type != src->type) {
+#ifdef ENABLE_ACCELERATE
+    if (dest->setup) {
+      vDSP_biquadm_ResetStateD(dest->setup);
+    }
+#else
+    dest->z1 = 0.0;
+    dest->z2 = 0.0;
+#endif
+    return;
+  }
+
 #ifdef ENABLE_ACCELERATE
   if (dest->setup && src->setup) {
     vDSP_biquadm_CopyStateD(dest->setup, src->setup);

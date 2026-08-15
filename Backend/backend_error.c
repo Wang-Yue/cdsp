@@ -23,8 +23,15 @@ const char* backend_error_description(const backend_error_t* err, char* out_buf,
                                       size_t buf_len) {
   if (!err || !out_buf || buf_len == 0) return "";
   switch (err->type) {
+    case BACKEND_ERROR_NONE:
+      snprintf(out_buf, buf_len, "%s",
+               err->message[0] ? err->message : "No error");
+      break;
     case BACKEND_ERROR_DEVICE_NOT_FOUND:
       snprintf(out_buf, buf_len, "Device not found: %s", err->message);
+      break;
+    case BACKEND_ERROR_DEVICE_BUSY:
+      snprintf(out_buf, buf_len, "Device busy: %s", err->message);
       break;
     case BACKEND_ERROR_INITIALIZATION_FAILED:
       snprintf(out_buf, buf_len, "Initialization failed: %s", err->message);
@@ -35,8 +42,14 @@ const char* backend_error_description(const backend_error_t* err, char* out_buf,
     case BACKEND_ERROR_WRITE_ERROR:
       snprintf(out_buf, buf_len, "Write error: %s", err->message);
       break;
+    case BACKEND_ERROR_READ_EOF:
+      snprintf(out_buf, buf_len, "End of file/stream: %s", err->message);
+      break;
+    case BACKEND_ERROR_INVALID_CHANNELS:
+      snprintf(out_buf, buf_len, "Invalid channels count: %s", err->message);
+      break;
     default:
-      out_buf[0] = '\0';
+      snprintf(out_buf, buf_len, "Unknown error: %s", err->message);
       break;
   }
   return out_buf;

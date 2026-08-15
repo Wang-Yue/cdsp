@@ -31,6 +31,8 @@ log_level_t log_level_from_raw_byte(uint8_t raw_byte) {
       return LOG_LEVEL_ERROR;
     case 2:
       return LOG_LEVEL_WARN;
+    case 3:
+      return LOG_LEVEL_INFO;
     case 4:
       return LOG_LEVEL_DEBUG;
     case 5:

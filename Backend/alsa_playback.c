@@ -532,7 +532,13 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
           }
           return false;
         }
-        break;
+        size_t retry_written = (size_t)retry_rc;
+        if (retry_written >= remaining_frames) {
+          break;
+        }
+        buf_ptr += retry_written * bytes_per_frame;
+        remaining_frames -= retry_written;
+        continue;
       } else if (err_write == -ESTRPIPE ||
                  snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
         logger_warn(
@@ -561,12 +567,14 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
 static void alsa_playback_close(void* ctx) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback) return;
-  pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm) {
     if (!atomic_load_explicit(&playback->stopped, memory_order_acquire) &&
         !atomic_load_explicit(&playback->paused, memory_order_acquire)) {
       snd_pcm_drain(playback->pcm);
     }
+  }
+  pthread_mutex_lock(&g_alsa_mutex);
+  if (playback->pcm) {
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
   }

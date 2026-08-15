@@ -65,6 +65,9 @@ typedef struct {
     mixer_mapping_t* mappings; /**< Alias for mapping. */
   };
   char description[256]; /**< Description of the mixer. */
+  char** labels;         /**< Output channel labels. */
+  size_t labels_count;   /**< Number of channel labels. */
+  bool has_labels;       /**< True if labels are specified. */
 } mixer_config_t;
 
 /**

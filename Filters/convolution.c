@@ -778,23 +778,25 @@ static void convolution_filter_process(void* instance,
   if (!filter || !waveform || count == 0) return;
   size_t cs = filter->chunk_size;
   size_t i = 0;
-
-  // 1. If we have some accumulated input, we must complete it first
   if (filter->buf_pos > 0) {
-    size_t len = count - i;
-    if (len > cs - filter->buf_pos) len = cs - filter->buf_pos;
-    if (len > 0) {
-      memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
-             len * sizeof(double));
-      memcpy(waveform + i, filter->output_buffer + filter->buf_pos,
-             len * sizeof(double));
-      filter->buf_pos += len;
-      i += len;
-    }
+    size_t needed = cs - filter->buf_pos;
+    size_t len = (count - i < needed) ? (count - i) : needed;
+    memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
+           len * sizeof(double));
+    filter->buf_pos += len;
+
     if (filter->buf_pos == cs) {
       process_chunk(filter, filter->input_buffer);
       memcpy(filter->output_buffer, filter->input_buffer, cs * sizeof(double));
       filter->buf_pos = 0;
+      memcpy(waveform + i, filter->output_buffer + (cs - len),
+             len * sizeof(double));
+      i += len;
+    } else {
+      memcpy(waveform + i, filter->output_buffer + filter->buf_pos - len,
+             len * sizeof(double));
+      i += len;
+      return;
     }
   }
 
@@ -805,14 +807,14 @@ static void convolution_filter_process(void* instance,
   }
 
   // 3. Buffer any remaining partial block
-  size_t len = count - i;
-  if (len > 0) {
+  size_t rem = count - i;
+  if (rem > 0) {
     memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
-           len * sizeof(double));
+           rem * sizeof(double));
     memcpy(waveform + i, filter->output_buffer + filter->buf_pos,
-           len * sizeof(double));
-    filter->buf_pos += len;
-    i += len;
+           rem * sizeof(double));
+    filter->buf_pos += rem;
+    i += rem;
   }
 }
 

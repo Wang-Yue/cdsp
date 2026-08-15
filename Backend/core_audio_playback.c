@@ -91,6 +91,9 @@ static OSStatus playback_alive_listener_callback(
       noErr) {
     atomic_store_explicit(&playback->is_device_alive, (alive != 0),
                           memory_order_release);
+  } else {
+    atomic_store_explicit(&playback->is_device_alive, false,
+                          memory_order_release);
   }
   return noErr;
 }
@@ -497,9 +500,23 @@ static size_t core_audio_playback_get_buffer_level(void* ctx) {
 static bool core_audio_playback_get_pending_rate_change(void* ctx,
                                                         double* out_rate) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
-  if (!playback || !playback->rate_watcher) return false;
-  return rate_change_watcher_get_pending_change(playback->rate_watcher,
-                                                out_rate);
+  if (!playback) return false;
+  if (playback->rate_watcher && rate_change_watcher_get_pending_change(
+                                    playback->rate_watcher, out_rate)) {
+    return true;
+  }
+  if (playback->opened_device_id != 0) {
+    double current = 0.0;
+    if (core_audio_device_get_nominal_sample_rate(playback->opened_device_id,
+                                                  &current)) {
+      if (current > 0.0 &&
+          fabs(current - (double)playback->sample_rate) >= 0.5) {
+        if (out_rate) *out_rate = current;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /// Push zero samples into the playback ring buffer before real audio arrives.

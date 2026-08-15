@@ -44,6 +44,12 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
 
     mixer_config_t* m_conf = &nm->mixer;
 
+    parse_json_str(mixer_child, "description", m_conf->description,
+                   sizeof(m_conf->description));
+    parse_labels_array(cJSON_GetObjectItemCaseSensitive(mixer_child, "labels"),
+                       &m_conf->labels, &m_conf->labels_count,
+                       &m_conf->has_labels);
+
     cJSON* channels_obj =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "channels");
     if (cJSON_IsObject(channels_obj)) {

@@ -703,8 +703,10 @@ static void* server_thread_func(void* arg) {
                                         (size_t)(n - offset), &payload_len,
                                         &header_len, &mask, &opcode)) {
                 if (opcode == 0x08) {
+                  ws_send_close_frame(client_fds[i], 1000);
                   remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
+                  polled_clients--;
                   i--;
                   break;
                 }
@@ -712,6 +714,7 @@ static void* server_thread_func(void* arg) {
                 if (payload_len > 128 * 1024) {
                   remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
+                  polled_clients--;
                   i--;
                   break;
                 }
@@ -723,6 +726,7 @@ static void* server_thread_func(void* arg) {
                 if (!payload) {
                   remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
+                  polled_clients--;
                   i--;
                   break;
                 }
@@ -744,6 +748,7 @@ static void* server_thread_func(void* arg) {
                   free(payload);
                   remove_client_session(server, fds, client_fds, last_state,
                                         &num_clients, i);
+                  polled_clients--;
                   i--;
                   break;
                 }
@@ -754,6 +759,18 @@ static void* server_thread_func(void* arg) {
                   }
                 }
                 payload[payload_len] = '\0';
+
+                if (opcode == 0x09) {
+                  ws_send_pong_frame(client_fds[i], payload, payload_len);
+                  free(payload);
+                  offset += (int)(header_len + payload_len);
+                  continue;
+                }
+                if (opcode == 0x0A) {
+                  free(payload);
+                  offset += (int)(header_len + payload_len);
+                  continue;
+                }
 
                 logger_debug(&server_logger, "Received WS frame: %s", payload);
 

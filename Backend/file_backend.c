@@ -190,7 +190,7 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
       }
 
       if (audio_format == 0xFFFE) {
-        if (to_read < 24) {
+        if (to_read < 26) {
           snprintf(err_msg, err_msg_len,
                    "fmt chunk too short for EXTENSIBLE format");
           return false;
@@ -312,7 +312,8 @@ static void write_wav_header_to_file(FILE* f, size_t channels,
   uint8_t header[44];
   memset(header, 0, 44);
   memcpy(header, "RIFF", 4);
-  uint32_t file_size = data_bytes + 36;
+  uint32_t file_size =
+      (data_bytes >= 0xFFFFFFDC) ? 0xFFFFFFFF : (data_bytes + 36);
   header[4] = file_size & 0xFF;
   header[5] = (file_size >> 8) & 0xFF;
   header[6] = (file_size >> 16) & 0xFF;
@@ -577,7 +578,7 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     int poll_ret = poll(&pfd, 1, 50);
     if (poll_ret == 0) {
       audio_chunk_set_valid_frames(chunk, 0);
-      return false;
+      return true;
     } else if (poll_ret < 0) {
       if (err) {
         backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Poll error");

@@ -118,39 +118,28 @@ static bool biquad_config_equal(const biquad_config_t* a,
  */
 static bool volume_config_equal(const volume_config_t* a,
                                 const volume_config_t* b) {
-  if (a->ramp_time_ms != b->ramp_time_ms) return false;
   if (a->has_ramp_time_ms != b->has_ramp_time_ms) return false;
-  if (a->limit != b->limit) return false;
+  if (a->has_ramp_time_ms && a->ramp_time_ms != b->ramp_time_ms) return false;
   if (a->has_limit != b->has_limit) return false;
+  if (a->has_limit && a->limit != b->limit) return false;
   if (a->fader != b->fader) return false;
   return true;
 }
 
-/**
- * @brief Compares two loudness parameter structures for equality.
- * @param a Pointer to first loudness parameters.
- * @param b Pointer to second loudness parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool loudness_config_equal(const loudness_config_t* a,
                                   const loudness_config_t* b) {
-  if (a->reference_level != b->reference_level) return false;
   if (a->has_reference_level != b->has_reference_level) return false;
-  if (a->high_boost != b->high_boost) return false;
+  if (a->has_reference_level && a->reference_level != b->reference_level)
+    return false;
   if (a->has_high_boost != b->has_high_boost) return false;
-  if (a->low_boost != b->low_boost) return false;
+  if (a->has_high_boost && a->high_boost != b->high_boost) return false;
   if (a->has_low_boost != b->has_low_boost) return false;
+  if (a->has_low_boost && a->low_boost != b->low_boost) return false;
   if (a->attenuate_mid != b->attenuate_mid) return false;
   if (a->fader != b->fader) return false;
   return true;
 }
 
-/**
- * @brief Compares two convolution parameter structures for equality.
- * @param a Pointer to first convolution parameters.
- * @param b Pointer to second convolution parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool convolution_config_equal(const convolution_config_t* a,
                                      const convolution_config_t* b) {
   if (a->type != b->type) return false;
@@ -166,12 +155,6 @@ static bool convolution_config_equal(const convolution_config_t* a,
   return true;
 }
 
-/**
- * @brief Compares two delay parameter structures for equality.
- * @param a Pointer to first delay parameters.
- * @param b Pointer to second delay parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool delay_config_equal(const delay_config_t* a,
                                const delay_config_t* b) {
   if (a->delay != b->delay) return false;
@@ -180,55 +163,50 @@ static bool delay_config_equal(const delay_config_t* a,
   return true;
 }
 
-/**
- * @brief Compares two biquad combo parameter structures for equality.
- * @param a Pointer to first biquad combo parameters.
- * @param b Pointer to second biquad combo parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool biquad_combo_config_equal(const biquad_combo_config_t* a,
                                       const biquad_combo_config_t* b) {
   if (a->type != b->type) return false;
-  if (a->freq != b->freq) return false;
   if (a->has_freq != b->has_freq) return false;
-  if (a->order != b->order) return false;
+  if (a->has_freq && a->freq != b->freq) return false;
   if (a->has_order != b->has_order) return false;
-  if (a->gain != b->gain) return false;
+  if (a->has_order && a->order != b->order) return false;
   if (a->has_gain != b->has_gain) return false;
-  if (a->fls != b->fls || a->qls != b->qls || a->gls != b->gls) return false;
+  if (a->has_gain && a->gain != b->gain) return false;
   if (a->has_fls != b->has_fls || a->has_qls != b->has_qls ||
       a->has_gls != b->has_gls)
     return false;
-  if (a->fp1 != b->fp1 || a->qp1 != b->qp1 || a->gp1 != b->gp1) return false;
+  if (a->has_fls && (a->fls != b->fls || a->qls != b->qls || a->gls != b->gls))
+    return false;
   if (a->has_fp1 != b->has_fp1 || a->has_qp1 != b->has_qp1 ||
       a->has_gp1 != b->has_gp1)
     return false;
-  if (a->fp2 != b->fp2 || a->qp2 != b->qp2 || a->gp2 != b->gp2) return false;
+  if (a->has_fp1 && (a->fp1 != b->fp1 || a->qp1 != b->qp1 || a->gp1 != b->gp1))
+    return false;
   if (a->has_fp2 != b->has_fp2 || a->has_qp2 != b->has_qp2 ||
       a->has_gp2 != b->has_gp2)
     return false;
-  if (a->fp3 != b->fp3 || a->qp3 != b->qp3 || a->gp3 != b->gp3) return false;
+  if (a->has_fp2 && (a->fp2 != b->fp2 || a->qp2 != b->qp2 || a->gp2 != b->gp2))
+    return false;
   if (a->has_fp3 != b->has_fp3 || a->has_qp3 != b->has_qp3 ||
       a->has_gp3 != b->has_gp3)
     return false;
-  if (a->fhs != b->fhs || a->qhs != b->qhs || a->ghs != b->ghs) return false;
+  if (a->has_fp3 && (a->fp3 != b->fp3 || a->qp3 != b->qp3 || a->gp3 != b->gp3))
+    return false;
   if (a->has_fhs != b->has_fhs || a->has_qhs != b->has_qhs ||
       a->has_ghs != b->has_ghs)
     return false;
-  if (a->freq_min != b->freq_min || a->freq_max != b->freq_max) return false;
+  if (a->has_fhs && (a->fhs != b->fhs || a->qhs != b->qhs || a->ghs != b->ghs))
+    return false;
   if (a->has_freq_min != b->has_freq_min || a->has_freq_max != b->has_freq_max)
+    return false;
+  if (a->has_freq_min &&
+      (a->freq_min != b->freq_min || a->freq_max != b->freq_max))
     return false;
   if (!double_arrays_equal(a->gains, a->gains_count, b->gains, b->gains_count))
     return false;
   return true;
 }
 
-/**
- * @brief Compares two difference equation parameter structures for equality.
- * @param a Pointer to first difference equation parameters.
- * @param b Pointer to second difference equation parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool diffeq_config_equal(const diffeq_config_t* a,
                                 const diffeq_config_t* b) {
   if (!double_arrays_equal(a->a, a->a_count, b->a, b->a_count)) return false;
@@ -236,18 +214,12 @@ static bool diffeq_config_equal(const diffeq_config_t* a,
   return true;
 }
 
-/**
- * @brief Compares two dither parameter structures for equality.
- * @param a Pointer to first dither parameters.
- * @param b Pointer to second dither parameters.
- * @return true if parameters are equal, false otherwise.
- */
 static bool dither_config_equal(const dither_config_t* a,
                                 const dither_config_t* b) {
   if (a->type != b->type) return false;
   if (a->bits != b->bits) return false;
-  if (a->amplitude != b->amplitude) return false;
   if (a->has_amplitude != b->has_amplitude) return false;
+  if (a->has_amplitude && a->amplitude != b->amplitude) return false;
   return true;
 }
 
@@ -524,33 +496,48 @@ bool devices_config_equal(const devices_config_t* a,
                           const devices_config_t* b) {
   if (a->samplerate != b->samplerate) return false;
   if (a->chunksize != b->chunksize) return false;
-  if (a->enable_rate_adjust != b->enable_rate_adjust) return false;
   if (a->has_enable_rate_adjust != b->has_enable_rate_adjust) return false;
-  if (a->target_level != b->target_level) return false;
+  if (a->has_enable_rate_adjust &&
+      a->enable_rate_adjust != b->enable_rate_adjust)
+    return false;
   if (a->has_target_level != b->has_target_level) return false;
-  if (a->adjust_interval_s != b->adjust_interval_s) return false;
+  if (a->has_target_level && a->target_level != b->target_level) return false;
   if (a->has_adjust_interval_s != b->has_adjust_interval_s) return false;
-  if (a->capture_samplerate != b->capture_samplerate) return false;
+  if (a->has_adjust_interval_s && a->adjust_interval_s != b->adjust_interval_s)
+    return false;
   if (a->has_capture_samplerate != b->has_capture_samplerate) return false;
-  if (a->silence_threshold != b->silence_threshold) return false;
+  if (a->has_capture_samplerate &&
+      a->capture_samplerate != b->capture_samplerate)
+    return false;
   if (a->has_silence_threshold != b->has_silence_threshold) return false;
-  if (a->silence_timeout_s != b->silence_timeout_s) return false;
+  if (a->has_silence_threshold && a->silence_threshold != b->silence_threshold)
+    return false;
   if (a->has_silence_timeout_s != b->has_silence_timeout_s) return false;
-  if (a->volume_ramp_time_ms != b->volume_ramp_time_ms) return false;
+  if (a->has_silence_timeout_s && a->silence_timeout_s != b->silence_timeout_s)
+    return false;
   if (a->has_volume_ramp_time_ms != b->has_volume_ramp_time_ms) return false;
-  if (a->volume_limit != b->volume_limit) return false;
+  if (a->has_volume_ramp_time_ms &&
+      a->volume_ramp_time_ms != b->volume_ramp_time_ms)
+    return false;
   if (a->has_volume_limit != b->has_volume_limit) return false;
-  if (a->queuelimit != b->queuelimit) return false;
+  if (a->has_volume_limit && a->volume_limit != b->volume_limit) return false;
   if (a->has_queuelimit != b->has_queuelimit) return false;
-  if (a->stop_on_rate_change != b->stop_on_rate_change) return false;
+  if (a->has_queuelimit && a->queuelimit != b->queuelimit) return false;
   if (a->has_stop_on_rate_change != b->has_stop_on_rate_change) return false;
-  if (a->rate_measure_interval_s != b->rate_measure_interval_s) return false;
+  if (a->has_stop_on_rate_change &&
+      a->stop_on_rate_change != b->stop_on_rate_change)
+    return false;
   if (a->has_rate_measure_interval_s != b->has_rate_measure_interval_s)
     return false;
-  if (a->multithreaded != b->multithreaded) return false;
+  if (a->has_rate_measure_interval_s &&
+      a->rate_measure_interval_s != b->rate_measure_interval_s)
+    return false;
   if (a->has_multithreaded != b->has_multithreaded) return false;
-  if (a->worker_threads != b->worker_threads) return false;
+  if (a->has_multithreaded && a->multithreaded != b->multithreaded)
+    return false;
   if (a->has_worker_threads != b->has_worker_threads) return false;
+  if (a->has_worker_threads && a->worker_threads != b->worker_threads)
+    return false;
 
   if (a->has_resampler != b->has_resampler) return false;
   if (a->has_resampler) {

@@ -461,12 +461,21 @@ bool audio_backend_ring_buffer_write(
     cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
   }
 
-  size_t pushed = spsc_byte_ring_buffer_write(
-      ring_buffer, (const uint8_t*)scratch_buf, bytes_to_write);
+  size_t avail = spsc_byte_ring_buffer_get_available_to_write(ring_buffer);
+  size_t aligned_avail =
+      (blockalign > 0) ? (avail / blockalign) * blockalign : avail;
+  size_t to_push =
+      bytes_to_write <= aligned_avail ? bytes_to_write : aligned_avail;
+  size_t pushed = 0;
+  if (to_push > 0) {
+    pushed = spsc_byte_ring_buffer_write(ring_buffer,
+                                         (const uint8_t*)scratch_buf, to_push);
+  }
   if (pushed < bytes_to_write) {
     logger_debug(&g_logger,
-                 "Playback ring buffer is full, dropped chunk of %zu bytes",
-                 bytes_to_write);
+                 "Playback ring buffer is full, dropped chunk of %zu bytes "
+                 "(pushed %zu bytes)",
+                 bytes_to_write, pushed);
   }
 
   return true;

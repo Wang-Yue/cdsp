@@ -261,6 +261,16 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               parse_json_double(params, "freq_min", &bcp->freq_min);
           bcp->has_freq_max =
               parse_json_double(params, "freq_max", &bcp->freq_max);
+          if (bcp->type == BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER) {
+            if (!bcp->has_freq_min) {
+              bcp->freq_min = 20.0;
+              bcp->has_freq_min = true;
+            }
+            if (!bcp->has_freq_max) {
+              bcp->freq_max = 20000.0;
+              bcp->has_freq_max = true;
+            }
+          }
           bcp->has_order = parse_json_int(params, "order", &bcp->order);
           bcp->has_gain = parse_json_double(params, "gain", &bcp->gain);
 #define PARSE_COMBO_DOUBLE(name, field)                   \

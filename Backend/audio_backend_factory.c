@@ -15,6 +15,12 @@ static audio_backend_error_type_t map_backend_error_type(
       return AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND;
     case BACKEND_ERROR_DEVICE_BUSY:
       return AUDIO_BACKEND_ERR_DEVICE_BUSY;
+    case BACKEND_ERROR_INITIALIZATION_FAILED:
+    case BACKEND_ERROR_INVALID_CHANNELS:
+      return AUDIO_BACKEND_ERR_CONFIG_PARSE;
+    case BACKEND_ERROR_READ_EOF:
+    case BACKEND_ERROR_READ_ERROR:
+    case BACKEND_ERROR_WRITE_ERROR:
     default:
       return AUDIO_BACKEND_ERR_COMMAND_SEND;
   }

@@ -1,5 +1,7 @@
 #include "Filters/dither.h"
 
+#include <stdio.h>
+
 #include "Audio/processing_parameters.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
@@ -511,21 +513,30 @@ static void* dither_filter_create(const char* name,
     strcpy(filter->name, "dither");
   }
 
-  // Initialize RNG seed
-  filter->rng_state = 123456789U;
-  uint32_t hash = 5381;
-  if (name) {
-    for (const char* p = name; *p; p++) {
-      hash = (hash * 33u) + (uint8_t)*p;
+  uint32_t seed = 0;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+  seed = arc4random();
+#else
+  FILE* urandom = fopen("/dev/urandom", "rb");
+  if (urandom) {
+    if (fread(&seed, sizeof(seed), 1, urandom) != 1) {
+      seed = 0;
     }
+    fclose(urandom);
   }
-  // Add uniqueness (e.g., memory address of instance) to prevent channel
-  // correlation
-  uintptr_t addr = (uintptr_t)filter;
-  hash ^= (uint32_t)(addr ^ (addr >> 32));
-  if (hash != 0) {
-    filter->rng_state = hash;
+#endif
+  if (seed == 0) {
+    uint32_t hash = 5381;
+    if (name) {
+      for (const char* p = name; *p; p++) {
+        hash = (hash * 33u) + (uint8_t)*p;
+      }
+    }
+    uintptr_t addr = (uintptr_t)filter;
+    hash ^= (uint32_t)(addr ^ (addr >> 32));
+    seed = (hash != 0) ? hash : 123456789U;
   }
+  filter->rng_state = seed;
 
   int bits = params ? params->bits : 16;
   dither_type_t dither_type = params ? params->type : DITHER_TYPE_NONE;

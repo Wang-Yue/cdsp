@@ -150,7 +150,7 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
 typedef HANDLE cdsp_sem_t;
 
 static inline cdsp_sem_t cdsp_sem_create(void) {
-  return CreateEvent(NULL, FALSE, FALSE, NULL);
+  return CreateSemaphoreA(NULL, 0, 0x7FFFFFFF, NULL);
 }
 
 static inline void cdsp_sem_destroy(cdsp_sem_t sem) {
@@ -158,7 +158,7 @@ static inline void cdsp_sem_destroy(cdsp_sem_t sem) {
 }
 
 static inline void cdsp_sem_signal(cdsp_sem_t sem) {
-  if (sem) SetEvent(sem);
+  if (sem) ReleaseSemaphore(sem, 1, NULL);
 }
 
 static inline void cdsp_sem_wait(cdsp_sem_t sem) {

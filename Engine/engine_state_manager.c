@@ -58,6 +58,7 @@ engine_state_manager_t* engine_state_manager_create(void) {
 
 void engine_state_manager_free(engine_state_manager_t* mgr) {
   if (!mgr) return;
+  engine_state_manager_save_if_needed(mgr);
   pthread_mutex_destroy(&mgr->mutex);
   free(mgr);
 }

@@ -134,7 +134,11 @@ static void* wasapi_playback_loop(void* arg) {
   logger_debug(&g_wasapi_logger, "Waited for data for %d ms.", waited_millis);
 
 #ifdef _WIN32
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  DWORD task_index = 0;
+  HANDLE mmcss_handle = AvSetMmThreadCharacteristicsA("Pro Audio", &task_index);
+  if (!mmcss_handle) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  }
 #endif
 
   bool running = false;
@@ -232,9 +236,10 @@ static void* wasapi_playback_loop(void* arg) {
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
                                          (UINT32)frames_to_write, 0);
       } else {
-        if (atomic_load_explicit(&playback->has_pending_rate_change,
-                                 memory_order_acquire))
-          break;
+        logger_error(&g_wasapi_logger,
+                     "IAudioRenderClient_GetBuffer failed: hr=0x%08lX",
+                     (unsigned long)hr);
+        break;
       }
     }
 
