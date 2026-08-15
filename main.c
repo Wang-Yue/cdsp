@@ -132,6 +132,7 @@ int main(int argc, char** argv) {
   bool wait_config = false;
 #else
   const bool wait_config = false;
+  const bool has_port = false;
 #endif
   bool no_config = false;
   const char* log_level_str = "info";

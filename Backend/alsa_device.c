@@ -385,4 +385,237 @@ const char* alsa_state_desc(snd_pcm_state_t state) {
   }
 }
 
+int alsa_device_open_and_configure_hw(
+    snd_pcm_t** pcm, const char* device_name, snd_pcm_stream_t stream,
+    int channels, unsigned int sample_rate, bool has_format,
+    alsa_sample_format_t requested_format, size_t chunk_size,
+    double resampling_ratio, snd_pcm_format_t* out_format,
+    snd_pcm_uframes_t* out_bufsize, snd_pcm_uframes_t* out_period,
+    bool* out_can_pause, char* out_error_msg, size_t error_msg_len) {
+  if (!pcm || !device_name) return -EINVAL;
+
+  int rc = snd_pcm_open(pcm, device_name, stream, SND_PCM_NONBLOCK);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    return rc;
+  }
+
+  snd_pcm_hw_params_t* params;
+  snd_pcm_hw_params_alloca(&params);
+  rc = snd_pcm_hw_params_any(*pcm, params);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  // Set channels
+  rc = snd_pcm_hw_params_set_channels(*pcm, params, channels);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  // Set sample rate
+  unsigned int val = sample_rate;
+  int dir = 0;
+  rc = snd_pcm_hw_params_set_rate_near(*pcm, params, &val, &dir);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  // Set sample format
+  rc =
+      alsa_apply_format(*pcm, params, has_format, requested_format, out_format);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len,
+               "Requested or supported ALSA format not available");
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  // Set access mode
+  rc =
+      snd_pcm_hw_params_set_access(*pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  // Set buffer size
+  if (alsa_apply_buffer_size(*pcm, params, chunk_size, resampling_ratio,
+                             out_bufsize) < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "Failed to set ALSA buffer size");
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return -EINVAL;
+  }
+
+  // Set period size
+  if (alsa_apply_period_size(*pcm, params, *out_bufsize, out_period) < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "Failed to set ALSA period size");
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return -EINVAL;
+  }
+
+  rc = snd_pcm_hw_params(*pcm, params);
+  if (rc < 0) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return rc;
+  }
+
+  if (out_can_pause) {
+    *out_can_pause = (snd_pcm_hw_params_can_pause(params) != 0);
+  }
+
+  return 0;
+}
+
+int alsa_device_configure_sw(snd_pcm_t* pcm, snd_pcm_uframes_t avail_min,
+                             snd_pcm_uframes_t start_threshold) {
+  if (!pcm) return -EINVAL;
+
+  snd_pcm_sw_params_t* sw_params;
+  snd_pcm_sw_params_alloca(&sw_params);
+  int rc = snd_pcm_sw_params_current(pcm, sw_params);
+  if (rc < 0) return rc;
+
+  snd_pcm_sw_params_set_start_threshold(pcm, sw_params, start_threshold);
+  snd_pcm_sw_params_set_avail_min(pcm, sw_params, avail_min);
+  return snd_pcm_sw_params(pcm, sw_params);
+}
+
+bool alsa_device_get_card_ctl_name(snd_pcm_t* pcm, char* out_ctl_name,
+                                   size_t max_len, int* out_dev_idx,
+                                   int* out_subdev_idx) {
+  if (!pcm || !out_ctl_name || max_len == 0) return false;
+
+  snd_pcm_info_t* pcm_info;
+  snd_pcm_info_alloca(&pcm_info);
+  if (snd_pcm_info(pcm, pcm_info) < 0) return false;
+
+  int card = snd_pcm_info_get_card(pcm_info);
+  if (card < 0) return false;
+
+  snprintf(out_ctl_name, max_len, "hw:%d", card);
+  if (out_dev_idx) {
+    *out_dev_idx = snd_pcm_info_get_device(pcm_info);
+  }
+  if (out_subdev_idx) {
+    *out_subdev_idx = snd_pcm_info_get_subdevice(pcm_info);
+  }
+  return true;
+}
+
+bool alsa_device_prime_delay(snd_pcm_t* pcm, size_t target_level,
+                             snd_pcm_uframes_t bufsize, int sample_rate,
+                             size_t blockalign, size_t queued_frames,
+                             const void* silence_buf, size_t silence_buf_size) {
+  size_t target_frames = target_level < bufsize ? target_level : bufsize;
+  if (target_frames == 0) return true;
+
+  snd_pcm_sframes_t avail = snd_pcm_avail(pcm);
+  size_t current_delay = 0;
+  if (avail >= 0 && (snd_pcm_uframes_t)avail <= bufsize) {
+    current_delay = bufsize - (snd_pcm_uframes_t)avail;
+  }
+  size_t queued_total = current_delay + queued_frames;
+  if (queued_total >= target_frames) return true;
+  size_t missing_frames = target_frames - queued_total;
+  size_t silence_bytes = missing_frames * blockalign;
+
+  if (silence_bytes > silence_buf_size) {
+    logger_warn(&g_alsa_dev_logger, "Playback silence buffer is too small");
+    return false;
+  }
+
+  size_t bytes_written = 0;
+  int retries = 0;
+  double millis_per_frame = 1000.0 / (double)sample_rate;
+  uint32_t timeout_millis =
+      (uint32_t)(2.0 * millis_per_frame * (double)bufsize);
+  if (timeout_millis < 20) timeout_millis = 20;
+
+  while (bytes_written < silence_bytes) {
+    retries++;
+    if (retries >= 100) {
+      logger_warn(&g_alsa_dev_logger,
+                  "Aborting playback silence priming after too many retries");
+      return false;
+    }
+    const uint8_t* slice = (const uint8_t*)silence_buf + bytes_written;
+    size_t frames_to_write = (silence_bytes - bytes_written) / blockalign;
+    snd_pcm_sframes_t rc = snd_pcm_writei(pcm, slice, frames_to_write);
+    if (rc == 0) {
+      if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
+        logger_warn(&g_alsa_dev_logger,
+                    "Timed out while priming playback delay");
+        return false;
+      }
+    } else if (rc > 0) {
+      bytes_written += (size_t)rc * blockalign;
+    } else {
+      int err = (int)rc;
+      if (err == -EAGAIN) {
+        if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
+          logger_warn(&g_alsa_dev_logger,
+                      "Timed out while waiting to prime playback delay");
+          return false;
+        }
+      } else if (err == -EPIPE) {
+        logger_warn(&g_alsa_dev_logger,
+                    "PB: silence priming underrun, trying to recover");
+        snd_pcm_prepare(pcm);
+        bytes_written = 0;
+      } else if (err == -ESTRPIPE ||
+                 snd_pcm_state(pcm) == SND_PCM_STATE_SUSPENDED) {
+        logger_warn(
+            &g_alsa_dev_logger,
+            "PB: silence priming interrupted by suspend, trying to recover");
+        alsa_recover_suspended_pcm(pcm, "PB");
+        bytes_written = 0;
+      } else {
+        logger_warn(&g_alsa_dev_logger,
+                    "PB: failed to prime playback delay: %s",
+                    snd_strerror(err));
+        return false;
+      }
+    }
+  }
+  logger_trace(&g_alsa_dev_logger,
+               "PB: primed playback delay with %zu silent frames",
+               missing_frames);
+  return true;
+}
+
 #endif

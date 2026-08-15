@@ -82,14 +82,6 @@ struct alsa_capture {
   _Atomic bool inner_running;
 };
 
-// Calculate SPSC ring buffer frame capacity for threaded ALSA capture
-static inline size_t alsa_capture_ring_capacity_frames(
-    size_t chunk_size, snd_pcm_uframes_t period) {
-  size_t base =
-      3 * chunk_size > (size_t)period ? 3 * chunk_size : (size_t)period;
-  return base + 4 * chunk_size;
-}
-
 // Dedicated real-time capture inner thread matching AlsaCaptureInner in
 // upstream (src/alsa_backend/threaded_device.rs:1368-1540)
 static void* alsa_capture_inner_thread_func(void* arg) {
@@ -154,15 +146,13 @@ static void* alsa_capture_inner_thread_func(void* arg) {
 static void alsa_capture_init_controls(alsa_capture_t* capture) {
   if (!capture->pcm) return;
 
-  snd_pcm_info_t* info;
-  snd_pcm_info_alloca(&info);
-  if (snd_pcm_info(capture->pcm, info) < 0) return;
-
-  int card = snd_pcm_info_get_card(info);
-  if (card < 0) return;
-
   char ctl_name[32];
-  snprintf(ctl_name, sizeof(ctl_name), "hw:%d", card);
+  int dev_idx = 0;
+  int subdev_idx = 0;
+  if (!alsa_device_get_card_ctl_name(capture->pcm, ctl_name, sizeof(ctl_name),
+                                     &dev_idx, &subdev_idx)) {
+    return;
+  }
 
   pthread_mutex_lock(&capture->mixer_mutex);
 
@@ -180,8 +170,6 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
     snd_hctl_nonblock(hctl, 1);
     if (snd_hctl_load(hctl) >= 0) {
       capture->hctl = hctl;
-      int dev_idx = snd_pcm_info_get_device(info);
-      int subdev_idx = snd_pcm_info_get_subdevice(info);
 
       // Look up pitch control: PCM Rate Shift 100000 / Capture Pitch 1000000
       capture->hctl_pitch_elem =
@@ -437,96 +425,26 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     pthread_mutex_unlock(&g_alsa_mutex);
     return true;
   }
-  int rc;
-  rc = snd_pcm_open(&capture->pcm, capture->device_name, SND_PCM_STREAM_CAPTURE,
-                    SND_PCM_NONBLOCK);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    pthread_mutex_unlock(&g_alsa_mutex);
-    return false;
-  }
-
-  snd_pcm_hw_params_t* params;
-  snd_pcm_hw_params_alloca(&params);
-  rc = snd_pcm_hw_params_any(capture->pcm, params);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set number of channels
-  rc = snd_pcm_hw_params_set_channels(capture->pcm, params, capture->channels);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set capture samplerate
-  unsigned int val = capture->capture_sample_rate;
-  int dir = 0;
-  rc = snd_pcm_hw_params_set_rate_near(capture->pcm, params, &val, &dir);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set sample format: if specified, use it; otherwise pick preferred format
-  // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
-  // F64_LE (src/alsa_backend/utils.rs:433-456)
-  rc = alsa_apply_format(capture->pcm, params, capture->has_format,
-                         capture->requested_format, &capture->format);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Requested or supported ALSA format not available");
-    goto error_cleanup;
-  }
-
-  // Set access mode, buffersize and periods
-  // (src/alsa_backend/device.rs:475-480)
-  rc = snd_pcm_hw_params_set_access(capture->pcm, params,
-                                    SND_PCM_ACCESS_RW_INTERLEAVED);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
 
   double resampling_ratio = (capture->capture_sample_rate > 0)
                                 ? ((double)capture->sample_rate /
                                    (double)capture->capture_sample_rate)
                                 : 1.0;
-  if (alsa_apply_buffer_size(capture->pcm, params, capture->chunk_size,
-                             resampling_ratio, &capture->bufsize) < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set ALSA buffer size");
-    goto error_cleanup;
-  }
 
-  if (alsa_apply_period_size(capture->pcm, params, capture->bufsize,
-                             &capture->period) < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set ALSA period size");
-    goto error_cleanup;
-  }
-
-  rc = snd_pcm_hw_params(capture->pcm, params);
+  char error_msg[256] = {0};
+  int rc = alsa_device_open_and_configure_hw(
+      &capture->pcm, capture->device_name, SND_PCM_STREAM_CAPTURE,
+      capture->channels, (unsigned int)capture->capture_sample_rate,
+      capture->has_format, capture->requested_format,
+      (size_t)capture->chunk_size, resampling_ratio, &capture->format,
+      &capture->bufsize, &capture->period, NULL, error_msg, sizeof(error_msg));
   if (rc < 0) {
-    if (err)
+    if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
+                         error_msg[0] ? error_msg : snd_strerror(rc));
+    }
+    pthread_mutex_unlock(&g_alsa_mutex);
+    return false;
   }
 
   // Calculate init_io_size (buffermanager.rs:168: init_io_size = (chunksize as
@@ -545,21 +463,9 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   }
 
   // Set software parameters (src/alsa_backend/device.rs:483-491)
-  snd_pcm_sw_params_t* sw_params;
-  snd_pcm_sw_params_alloca(&sw_params);
-  rc = snd_pcm_sw_params_current(capture->pcm, sw_params);
-  if (rc >= 0) {
-    // immediate start after pcmdev.prepare (buffermanager.rs:194)
-    snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
-    // avail_min = initial io_size (buffermanager.rs:120)
-    capture->last_avail_min = (size_t)capture_avail_min;
-    snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params, capture_avail_min);
-    rc = snd_pcm_sw_params(capture->pcm, sw_params);
-    if (rc < 0) {
-      logger_warn(&g_logger, "Failed to set ALSA software parameters: %s",
-                  snd_strerror(rc));
-    }
-  }
+  // immediate start after pcmdev.prepare (buffermanager.rs:194)
+  capture->last_avail_min = (size_t)capture_avail_min;
+  alsa_device_configure_sw(capture->pcm, capture_avail_min, 0);
 
   size_t sample_size = alsa_format_sample_size(capture->format);
 

@@ -83,94 +83,6 @@ static void sleep_for_target_delay(alsa_playback_t* playback) {
   }
 }
 
-// Calculate SPSC ring buffer frame capacity for threaded ALSA playback
-static inline size_t alsa_playback_ring_capacity_frames(size_t target_level,
-                                                        size_t chunk_size) {
-  size_t base = target_level > 3 * chunk_size ? target_level : 3 * chunk_size;
-  return base + 4 * chunk_size;
-}
-
-// Prime playback delay with silence frames matching prime_playback_delay in
-// upstream (src/alsa_backend/threaded_device.rs:122-207)
-static bool prime_playback_delay(snd_pcm_t* pcm, size_t target_level,
-                                 snd_pcm_uframes_t bufsize, int sample_rate,
-                                 size_t blockalign, size_t queued_frames,
-                                 const void* silence_buf,
-                                 size_t silence_buf_size) {
-  size_t target_frames = target_level < bufsize ? target_level : bufsize;
-  if (target_frames == 0) return true;
-
-  snd_pcm_sframes_t avail = snd_pcm_avail(pcm);
-  size_t current_delay = 0;
-  if (avail >= 0 && (snd_pcm_uframes_t)avail <= bufsize) {
-    current_delay = bufsize - (snd_pcm_uframes_t)avail;
-  }
-  size_t queued_total = current_delay + queued_frames;
-  if (queued_total >= target_frames) return true;
-  size_t missing_frames = target_frames - queued_total;
-  size_t silence_bytes = missing_frames * blockalign;
-
-  if (silence_bytes > silence_buf_size) {
-    logger_warn(&g_logger, "Playback silence buffer is too small");
-    return false;
-  }
-
-  size_t bytes_written = 0;
-  int retries = 0;
-  double millis_per_frame = 1000.0 / (double)sample_rate;
-  uint32_t timeout_millis =
-      (uint32_t)(2.0 * millis_per_frame * (double)bufsize);
-  if (timeout_millis < 20) timeout_millis = 20;
-
-  while (bytes_written < silence_bytes) {
-    retries++;
-    if (retries >= 100) {
-      logger_warn(&g_logger,
-                  "Aborting playback silence priming after too many retries");
-      return false;
-    }
-    const uint8_t* slice = (const uint8_t*)silence_buf + bytes_written;
-    size_t frames_to_write = (silence_bytes - bytes_written) / blockalign;
-    snd_pcm_sframes_t rc = snd_pcm_writei(pcm, slice, frames_to_write);
-    if (rc == 0) {
-      if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
-        logger_warn(&g_logger, "Timed out while priming playback delay");
-        return false;
-      }
-    } else if (rc > 0) {
-      bytes_written += (size_t)rc * blockalign;
-    } else {
-      int err = (int)rc;
-      if (err == -EAGAIN) {
-        if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
-          logger_warn(&g_logger,
-                      "Timed out while waiting to prime playback delay");
-          return false;
-        }
-      } else if (err == -EPIPE) {
-        logger_warn(&g_logger,
-                    "PB: silence priming underrun, trying to recover");
-        snd_pcm_prepare(pcm);
-        bytes_written = 0;
-      } else if (err == -ESTRPIPE ||
-                 snd_pcm_state(pcm) == SND_PCM_STATE_SUSPENDED) {
-        logger_warn(
-            &g_logger,
-            "PB: silence priming interrupted by suspend, trying to recover");
-        alsa_recover_suspended_pcm(pcm, "PB");
-        bytes_written = 0;
-      } else {
-        logger_warn(&g_logger, "PB: failed to prime playback delay: %s",
-                    snd_strerror(err));
-        return false;
-      }
-    }
-  }
-  logger_trace(&g_logger, "PB: primed playback delay with %zu silent frames",
-               missing_frames);
-  return true;
-}
-
 // Dedicated real-time playback inner thread matching AlsaPlaybackInner in
 // upstream (src/alsa_backend/threaded_device.rs:1078-1345)
 static void* alsa_playback_inner_thread_func(void* arg) {
@@ -214,18 +126,18 @@ static void* alsa_playback_inner_thread_func(void* arg) {
         if (st == SND_PCM_STATE_XRUN) {
           logger_warn(&g_logger, "PB: Prepare playback after buffer underrun");
           snd_pcm_prepare(playback->pcm);
-          prime_playback_delay(
+          alsa_device_prime_delay(
               playback->pcm, playback->target_level, playback->bufsize,
               playback->sample_rate, playback->blockalign, 0,
               playback->zero_stall_buf, playback->zero_stall_buf_size);
         } else if (st == SND_PCM_STATE_SUSPENDED) {
           alsa_recover_suspended_pcm(playback->pcm, "PB");
-          prime_playback_delay(
+          alsa_device_prime_delay(
               playback->pcm, playback->target_level, playback->bufsize,
               playback->sample_rate, playback->blockalign, 0,
               playback->zero_stall_buf, playback->zero_stall_buf_size);
         } else if (st == SND_PCM_STATE_PREPARED) {
-          prime_playback_delay(
+          alsa_device_prime_delay(
               playback->pcm, playback->target_level, playback->bufsize,
               playback->sample_rate, playback->blockalign, 0,
               playback->zero_stall_buf, playback->zero_stall_buf_size);
@@ -244,18 +156,18 @@ static void* alsa_playback_inner_thread_func(void* arg) {
           } else if (rc == -EPIPE) {
             logger_warn(&g_logger, "PB: write underrun, trying to recover");
             snd_pcm_prepare(playback->pcm);
-            prime_playback_delay(playback->pcm, playback->target_level,
-                                 playback->bufsize, playback->sample_rate,
-                                 playback->blockalign, frames - written_frames,
-                                 playback->zero_stall_buf,
-                                 playback->zero_stall_buf_size);
+            alsa_device_prime_delay(
+                playback->pcm, playback->target_level, playback->bufsize,
+                playback->sample_rate, playback->blockalign,
+                frames - written_frames, playback->zero_stall_buf,
+                playback->zero_stall_buf_size);
           } else if (rc == -ESTRPIPE) {
             alsa_recover_suspended_pcm(playback->pcm, "PB");
-            prime_playback_delay(playback->pcm, playback->target_level,
-                                 playback->bufsize, playback->sample_rate,
-                                 playback->blockalign, frames - written_frames,
-                                 playback->zero_stall_buf,
-                                 playback->zero_stall_buf_size);
+            alsa_device_prime_delay(
+                playback->pcm, playback->target_level, playback->bufsize,
+                playback->sample_rate, playback->blockalign,
+                frames - written_frames, playback->zero_stall_buf,
+                playback->zero_stall_buf_size);
           } else if (rc == -EAGAIN) {
             snd_pcm_wait(playback->pcm, 10);
           } else {
@@ -303,100 +215,21 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     pthread_mutex_unlock(&g_alsa_mutex);
     return true;
   }
-  int rc;
-  rc = snd_pcm_open(&playback->pcm, playback->device_name,
-                    SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
+
+  char error_msg[256] = {0};
+  int rc = alsa_device_open_and_configure_hw(
+      &playback->pcm, playback->device_name, SND_PCM_STREAM_PLAYBACK,
+      playback->channels, (unsigned int)playback->sample_rate,
+      playback->has_format, playback->requested_format, playback->chunk_size,
+      1.0, &playback->format, &playback->bufsize, &playback->period,
+      &playback->can_pause, error_msg, sizeof(error_msg));
   if (rc < 0) {
-    if (err)
+    if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
+                         error_msg[0] ? error_msg : snd_strerror(rc));
+    }
     pthread_mutex_unlock(&g_alsa_mutex);
     return false;
-  }
-
-  snd_pcm_hw_params_t* params;
-  snd_pcm_hw_params_alloca(&params);
-  rc = snd_pcm_hw_params_any(playback->pcm, params);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set number of channels
-  rc =
-      snd_pcm_hw_params_set_channels(playback->pcm, params, playback->channels);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set samplerate
-  unsigned int val = playback->sample_rate;
-  int dir = 0;
-  rc = snd_pcm_hw_params_set_rate_near(playback->pcm, params, &val, &dir);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  // Set sample format: if specified, use it; otherwise pick preferred format
-  // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
-  // F64_LE (src/alsa_backend/utils.rs:433-456)
-  rc = alsa_apply_format(playback->pcm, params, playback->has_format,
-                         playback->requested_format, &playback->format);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Requested or supported ALSA format not available");
-    goto error_cleanup;
-  }
-
-  // Set access mode, buffersize and periods
-  // (src/alsa_backend/device.rs:475-480)
-  rc = snd_pcm_hw_params_set_access(playback->pcm, params,
-                                    SND_PCM_ACCESS_RW_INTERLEAVED);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  if (alsa_apply_buffer_size(playback->pcm, params, playback->chunk_size, 1.0,
-                             &playback->bufsize) < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set ALSA buffer size");
-    goto error_cleanup;
-  }
-
-  if (alsa_apply_period_size(playback->pcm, params, playback->bufsize,
-                             &playback->period) < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set ALSA period size");
-    goto error_cleanup;
-  }
-
-  rc = snd_pcm_hw_params(playback->pcm, params);
-  if (rc < 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    goto error_cleanup;
-  }
-
-  if (snd_pcm_hw_params_can_pause(params)) {
-    playback->can_pause = true;
-    logger_debug(&g_logger, "Playback device supports pausing the stream");
-  } else {
-    playback->can_pause = false;
   }
 
   // Set software parameters (src/alsa_backend/device.rs:483-491)
@@ -411,21 +244,10 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  snd_pcm_sw_params_t* sw_params;
-  snd_pcm_sw_params_alloca(&sw_params);
-  rc = snd_pcm_sw_params_current(playback->pcm, sw_params);
-  if (rc >= 0) {
-    // start on first write of any size (buffermanager.rs:248)
-    snd_pcm_sw_params_set_start_threshold(playback->pcm, sw_params, 1);
-    // avail_min = chunksize (buffermanager.rs:120)
-    snd_pcm_sw_params_set_avail_min(playback->pcm, sw_params,
-                                    (snd_pcm_uframes_t)playback->chunk_size);
-    rc = snd_pcm_sw_params(playback->pcm, sw_params);
-    if (rc < 0) {
-      logger_warn(&g_logger, "Failed to set ALSA software parameters: %s",
-                  snd_strerror(rc));
-    }
-  }
+  // start on first write of any size (buffermanager.rs:248), avail_min =
+  // chunksize
+  alsa_device_configure_sw(playback->pcm,
+                           (snd_pcm_uframes_t)playback->chunk_size, 1);
 
   size_t sample_size = alsa_format_sample_size(playback->format);
 
@@ -461,52 +283,44 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
 
   // Search for UAC2 gadget pitch control: "Playback Pitch 1000000"
   // (src/alsa_backend/device.rs:530-544)
-  snd_pcm_info_t* pcm_info;
-  snd_pcm_info_alloca(&pcm_info);
-  if (snd_pcm_info(playback->pcm, pcm_info) >= 0) {
-    int card = snd_pcm_info_get_card(pcm_info);
-    if (card >= 0) {
-      char ctl_name[32];
-      snprintf(ctl_name, sizeof(ctl_name), "hw:%d", card);
-
-      snd_hctl_t* hctl = NULL;
-      if (snd_hctl_open(&hctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && hctl) {
-        snd_hctl_nonblock(hctl, 1);
-        if (snd_hctl_load(hctl) >= 0) {
-          pthread_mutex_lock(&playback->mixer_mutex);
-          playback->hctl = hctl;
-
-          int dev_idx = snd_pcm_info_get_device(pcm_info);
-          int subdev_idx = snd_pcm_info_get_subdevice(pcm_info);
-
-          playback->hctl_pitch_elem =
-              alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
-                             "Playback Pitch 1000000", NULL);
-          if (playback->hctl_pitch_elem) {
-            logger_info(&g_logger, "Playback device supports rate adjust");
-          }
-          pthread_mutex_unlock(&playback->mixer_mutex);
-        } else {
-          snd_hctl_close(hctl);
+  char ctl_name[32];
+  int dev_idx = 0;
+  int subdev_idx = 0;
+  if (alsa_device_get_card_ctl_name(playback->pcm, ctl_name, sizeof(ctl_name),
+                                    &dev_idx, &subdev_idx)) {
+    snd_hctl_t* hctl = NULL;
+    if (snd_hctl_open(&hctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && hctl) {
+      snd_hctl_nonblock(hctl, 1);
+      if (snd_hctl_load(hctl) >= 0) {
+        pthread_mutex_lock(&playback->mixer_mutex);
+        playback->hctl = hctl;
+        playback->hctl_pitch_elem =
+            alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                           "Playback Pitch 1000000", NULL);
+        if (playback->hctl_pitch_elem) {
+          logger_info(&g_logger, "Playback device supports rate adjust");
         }
+        pthread_mutex_unlock(&playback->mixer_mutex);
+      } else {
+        snd_hctl_close(hctl);
       }
+    }
 
-      snd_mixer_t* mixer = NULL;
-      if (snd_mixer_open(&mixer, 0) >= 0) {
-        if (snd_mixer_attach(mixer, ctl_name) >= 0 &&
-            snd_mixer_selem_register(mixer, NULL, NULL) >= 0 &&
-            snd_mixer_load(mixer) >= 0) {
-          pthread_mutex_lock(&playback->mixer_mutex);
-          playback->mixer = mixer;
+    snd_mixer_t* mixer = NULL;
+    if (snd_mixer_open(&mixer, 0) >= 0) {
+      if (snd_mixer_attach(mixer, ctl_name) >= 0 &&
+          snd_mixer_selem_register(mixer, NULL, NULL) >= 0 &&
+          snd_mixer_load(mixer) >= 0) {
+        pthread_mutex_lock(&playback->mixer_mutex);
+        playback->mixer = mixer;
 
-          snd_mixer_selem_id_t* sid;
-          snd_mixer_selem_id_alloca(&sid);
-          snd_mixer_selem_id_set_name(sid, "Playback Pitch 1000000");
-          playback->pitch_elem = snd_mixer_find_selem(mixer, sid);
-          pthread_mutex_unlock(&playback->mixer_mutex);
-        } else {
-          snd_mixer_close(mixer);
-        }
+        snd_mixer_selem_id_t* sid;
+        snd_mixer_selem_id_alloca(&sid);
+        snd_mixer_selem_id_set_name(sid, "Playback Pitch 1000000");
+        playback->pitch_elem = snd_mixer_find_selem(mixer, sid);
+        pthread_mutex_unlock(&playback->mixer_mutex);
+      } else {
+        snd_mixer_close(mixer);
       }
     }
   }

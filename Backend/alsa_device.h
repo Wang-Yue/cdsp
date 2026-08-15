@@ -229,6 +229,108 @@ void alsa_elem_write_as_bool(snd_hctl_elem_t* elem, bool value);
 void alsa_elem_write_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
                                   double db_val);
 
+/**
+ * @brief Opens an ALSA PCM device and configures all hardware parameters.
+ *
+ * Matches open_pcm / apply_hw_params in upstream CamillaDSP
+ * (src/alsa_backend/device.rs:416-480).
+ *
+ * @param pcm Pointer to receive the opened snd_pcm_t handle.
+ * @param device_name ALSA device name (e.g., "hw:0,0", "default").
+ * @param stream SND_PCM_STREAM_PLAYBACK or SND_PCM_STREAM_CAPTURE.
+ * @param channels Number of channels.
+ * @param sample_rate Target sample rate in Hz.
+ * @param has_format True if a specific sample format was requested.
+ * @param requested_format Requested format if has_format is true.
+ * @param chunk_size Chunk size in frames.
+ * @param resampling_ratio Resampling ratio (pipeline rate / device rate,
+ * or 1.0).
+ * @param out_format Pointer to receive applied ALSA format.
+ * @param out_bufsize Pointer to receive applied buffer size in frames.
+ * @param out_period Pointer to receive applied period size in frames.
+ * @param out_can_pause Pointer to receive whether device supports pausing.
+ * @param out_error_msg Buffer to receive error message on failure (optional).
+ * @param error_msg_len Size of out_error_msg buffer.
+ * @return 0 on success, or negative ALSA error code on failure.
+ */
+int alsa_device_open_and_configure_hw(
+    snd_pcm_t** pcm, const char* device_name, snd_pcm_stream_t stream,
+    int channels, unsigned int sample_rate, bool has_format,
+    alsa_sample_format_t requested_format, size_t chunk_size,
+    double resampling_ratio, snd_pcm_format_t* out_format,
+    snd_pcm_uframes_t* out_bufsize, snd_pcm_uframes_t* out_period,
+    bool* out_can_pause, char* out_error_msg, size_t error_msg_len);
+
+/**
+ * @brief Configures ALSA software parameters on an opened PCM handle.
+ *
+ * Matches sw_params setup in upstream CamillaDSP
+ * (src/alsa_backend/device.rs:483-491 & buffermanager.rs).
+ *
+ * @param pcm Pointer to the ALSA PCM handle.
+ * @param avail_min Minimum available frames before waking poll/read/write.
+ * @param start_threshold Buffer frames threshold to start playback/capture.
+ * @return 0 on success, or negative ALSA error code on failure.
+ */
+int alsa_device_configure_sw(snd_pcm_t* pcm, snd_pcm_uframes_t avail_min,
+                             snd_pcm_uframes_t start_threshold);
+
+/**
+ * @brief Extracts the control card name (e.g. "hw:0") from an opened PCM
+ * device.
+ *
+ * @param pcm Pointer to the ALSA PCM handle.
+ * @param out_ctl_name Buffer to receive card name string.
+ * @param max_len Size of out_ctl_name buffer.
+ * @param out_dev_idx Pointer to receive PCM device index (optional).
+ * @param out_subdev_idx Pointer to receive PCM subdevice index (optional).
+ * @return True on success, false on failure.
+ */
+bool alsa_device_get_card_ctl_name(snd_pcm_t* pcm, char* out_ctl_name,
+                                   size_t max_len, int* out_dev_idx,
+                                   int* out_subdev_idx);
+
+/**
+ * @brief Primes ALSA device delay with silence frames to reach the target
+ * level.
+ *
+ * Matches prime_playback_delay in upstream CamillaDSP
+ * (src/alsa_backend/threaded_device.rs:122-207).
+ *
+ * @param pcm Pointer to the ALSA PCM handle.
+ * @param target_level Target buffer level in frames.
+ * @param bufsize Total device buffer size in frames.
+ * @param sample_rate Sample rate in Hz.
+ * @param blockalign Frame size in bytes (channels * sample_size).
+ * @param queued_frames Frames already queued.
+ * @param silence_buf Pre-allocated buffer filled with silence/zeros.
+ * @param silence_buf_size Size of silence_buf in bytes.
+ * @return True on success, false on failure.
+ */
+bool alsa_device_prime_delay(snd_pcm_t* pcm, size_t target_level,
+                             snd_pcm_uframes_t bufsize, int sample_rate,
+                             size_t blockalign, size_t queued_frames,
+                             const void* silence_buf, size_t silence_buf_size);
+
+/**
+ * @brief Calculates SPSC ring buffer frame capacity for threaded ALSA playback.
+ */
+static inline size_t alsa_playback_ring_capacity_frames(size_t target_level,
+                                                        size_t chunk_size) {
+  size_t base = target_level > 3 * chunk_size ? target_level : 3 * chunk_size;
+  return base + 4 * chunk_size;
+}
+
+/**
+ * @brief Calculates SPSC ring buffer frame capacity for threaded ALSA capture.
+ */
+static inline size_t alsa_capture_ring_capacity_frames(
+    size_t chunk_size, snd_pcm_uframes_t period) {
+  size_t base =
+      3 * chunk_size > (size_t)period ? 3 * chunk_size : (size_t)period;
+  return base + 4 * chunk_size;
+}
+
 #endif  // ENABLE_ALSA
 
 #endif  // CLIB_BACKEND_ALSA_DEVICE_H
