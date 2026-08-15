@@ -1200,4 +1200,129 @@ TEST(StrictValidationRejectMissingSamplerate) {
   ASSERT_TRUE(config == NULL);
 }
 
+TEST(StrictValidationRejectUnknownRootField) {
+  const char* json =
+      "{\n"
+      "    \"unknown_root\": 123,\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown field 'unknown_root'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectUnknownDevicesField) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"invalid_device_key\": true,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown field 'invalid_device_key'") !=
+              NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectUnknownResamplerField) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"resampler\": {\"type\": \"AsyncPoly\", \"profile\": "
+      "\"Fast\"},\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown field 'profile'") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectUnknownFilterField) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"g1\": {\"type\": \"Gain\", \"parameters\": {\"gain\": 0.0, "
+      "\"invalid_gain_param\": 123}}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown field 'invalid_gain_param'") !=
+              NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(StrictValidationRejectUnknownPipelineField) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\"g1\": {\"type\": \"Gain\", \"parameters\": "
+      "{\"gain\": 0.0}}},\n"
+      "    \"pipeline\": [{\"type\": \"Filter\", \"name\": \"g1\", "
+      "\"channel\": 0, \"invalid_pipe_field\": 1}]\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown field 'invalid_pipe_field'") !=
+              NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
 TEST_MAIN()

@@ -4088,7 +4088,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
            "        \"samplerate\": 8000,\n"
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 16,\n"
-           "        \"silence_threshold_db\": -40.0,\n"
+           "        \"silence_threshold\": -40.0,\n"
            "        \"silence_timeout_s\": 0.2,\n"
            "        \"capture\": {\n"
            "            \"type\": \"RawFile\",\n"

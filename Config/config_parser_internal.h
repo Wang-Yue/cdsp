@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "Config/cJSON.h"
@@ -96,6 +97,46 @@ static inline bool parse_json_double(const cJSON* obj, const char* key,
     return true;
   }
   return false;
+}
+
+#include "Config/config_error.h"
+
+/**
+ * @brief Validates that all keys in a cJSON object are present in an allowed
+ * list.
+ *
+ * @param obj The cJSON object to inspect.
+ * @param allowed_keys A NULL-terminated array of allowed key string literals.
+ * @param section_name Name of the section or object for error reporting.
+ * @param err Optional config_error_t to populate if an unknown key is found.
+ * @return 0 if all keys are allowed, -1 if an unknown key is encountered.
+ */
+static inline int validate_unknown_fields(const cJSON* obj,
+                                          const char* const allowed_keys[],
+                                          const char* section_name,
+                                          config_error_t* err) {
+  if (!obj || !cJSON_IsObject(obj)) return 0;
+  const cJSON* child = NULL;
+  cJSON_ArrayForEach(child, obj) {
+    if (!child->string) continue;
+    bool found = false;
+    for (size_t i = 0; allowed_keys[i] != NULL; i++) {
+      if (strcmp(child->string, allowed_keys[i]) == 0) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      if (err) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "unknown field '%s' in %s", child->string,
+                 section_name ? section_name : "object");
+        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+      }
+      return -1;
+    }
+  }
+  return 0;
 }
 
 #endif  // CDSP_CONFIG_PARSER_INTERNAL_H

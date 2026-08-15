@@ -11,15 +11,68 @@
 #include "Config/engine_config_types.h"
 #include "Config/resampler_config_types.h"
 
-static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
-  if (!cJSON_IsObject(res_obj)) return;
+static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
+                           config_error_t* err) {
+  if (!cJSON_IsObject(res_obj)) return 0;
   resampler_config_t* res = &devices->resampler;
   devices->has_resampler = true;
 
   char str_buf[64];
   if (parse_json_str(res_obj, "type", str_buf, sizeof(str_buf))) {
     res->type = resampler_type_from_string(str_buf);
+  } else {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "missing field 'type' in resampler");
+    return -1;
   }
+
+  switch (res->type) {
+    case RESAMPLER_TYPE_ASYNC_SINC: {
+      static const char* const allowed_sinc_keys[] = {"type",
+                                                      "profile",
+                                                      "interpolation",
+                                                      "sinc_len",
+                                                      "oversampling_factor",
+                                                      "window",
+                                                      "f_cutoff",
+                                                      NULL};
+      if (validate_unknown_fields(res_obj, allowed_sinc_keys,
+                                  "AsyncSinc resampler", err) != 0) {
+        return -1;
+      }
+      break;
+    }
+    case RESAMPLER_TYPE_ASYNC_POLY: {
+      static const char* const allowed_poly_keys[] = {"type", "interpolation",
+                                                      NULL};
+      if (validate_unknown_fields(res_obj, allowed_poly_keys,
+                                  "AsyncPoly resampler", err) != 0) {
+        return -1;
+      }
+      break;
+    }
+    case RESAMPLER_TYPE_SYNCHRONOUS: {
+      static const char* const allowed_sync_keys[] = {"type", NULL};
+      if (validate_unknown_fields(res_obj, allowed_sync_keys,
+                                  "Synchronous resampler", err) != 0) {
+        return -1;
+      }
+      break;
+    }
+    case RESAMPLER_TYPE_SLIP: {
+      static const char* const allowed_slip_keys[] = {"type", NULL};
+      if (validate_unknown_fields(res_obj, allowed_slip_keys, "Slip resampler",
+                                  err) != 0) {
+        return -1;
+      }
+      break;
+    }
+    default:
+      config_error_set(err, CONFIG_ERR_PARSE, "unknown resampler type '%s'",
+                       str_buf);
+      return -1;
+  }
+
   res->has_profile =
       parse_json_str(res_obj, "profile", res->profile, sizeof(res->profile));
   res->has_interpolation = parse_json_str(
@@ -37,6 +90,7 @@ static void parse_resampler(const cJSON* res_obj, devices_config_t* devices) {
   if (parse_json_double(res_obj, "f_cutoff", &res->f_cutoff)) {
     res->has_f_cutoff = (res->f_cutoff > 0.0);
   }
+  return 0;
 }
 
 typedef struct {
@@ -170,6 +224,109 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
   } else if (strcmp(type_str, "WavFile") == 0) {
     cap->is_wav = true;
     cap->has_is_wav = true;
+  }
+
+  if (strcmp(type_str, "RawFile") == 0) {
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "filename",
+                                          "format",
+                                          "skip_bytes",
+                                          "read_bytes",
+                                          "extra_samples",
+                                          "labels",
+                                          "channel_labels",
+#ifdef CDSP_TEST
+                                          "realtime",
+#endif
+                                          NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "RawFile capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "WavFile") == 0) {
+    static const char* const allowed[] = {"type",
+                                          "filename",
+                                          "extra_samples",
+                                          "labels",
+                                          "channel_labels",
+                                          "bypass_dop",
+                                          "dop_cutoff_hz",
+#ifdef CDSP_TEST
+                                          "realtime",
+#endif
+                                          NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "WavFile capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "Stdin") == 0) {
+    static const char* const allowed[] = {
+        "type",       "channels",   "format", "extra_samples",
+        "skip_bytes", "read_bytes", "labels", "channel_labels",
+#ifdef CDSP_TEST
+        "realtime",
+#endif
+        NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "Stdin capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "SignalGenerator") == 0) {
+    static const char* const allowed[] = {
+        "type",     "channels", "signal", "labels", "channel_labels",
+#ifdef CDSP_TEST
+        "realtime",
+#endif
+        NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "SignalGenerator capture",
+                                err) != 0)
+      return -1;
+    cJSON* sig = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
+    if (sig && cJSON_IsObject(sig)) {
+      static const char* const allowed_sig[] = {"type", "freq", "level", NULL};
+      if (validate_unknown_fields(sig, allowed_sig, "SignalGenerator signal",
+                                  err) != 0)
+        return -1;
+    }
+  } else if (strcmp(type_str, "CoreAudio") == 0) {
+    static const char* const allowed[] = {
+        "type",           "channels",   "device",        "format", "labels",
+        "channel_labels", "bypass_dop", "dop_cutoff_hz", NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "CoreAudio capture", err) !=
+        0)
+      return -1;
+  } else if (strcmp(type_str, "Alsa") == 0) {
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "device",
+                                          "format",
+                                          "labels",
+                                          "channel_labels",
+                                          "retry_on_error",
+                                          "stop_on_inactive",
+                                          "link_volume_control",
+                                          "link_mute_control",
+                                          "threaded",
+                                          "bypass_dop",
+                                          "dop_cutoff_hz",
+                                          NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "Alsa capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "PipeWire") == 0) {
+    static const char* const allowed[] = {
+        "type",      "channels",         "format",
+        "node_name", "node_description", "node_group_name",
+        "labels",    "channel_labels",   "autoconnect_to",
+        NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "PipeWire capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "Wasapi") == 0) {
+    static const char* const allowed[] = {
+        "type",     "channels", "device", "format",         "exclusive",
+        "loopback", "polling",  "labels", "channel_labels", NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "Wasapi capture", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "Asio") == 0) {
+    static const char* const allowed[] = {
+        "type",   "channels",       "device", "format",
+        "labels", "channel_labels", NULL};
+    if (validate_unknown_fields(cap_obj, allowed, "Asio capture", err) != 0)
+      return -1;
   }
 
   parse_json_int(cap_obj, "channels", &cap->channels);
@@ -610,6 +767,81 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     return -1;
   }
 
+  if (strcmp(type_str, "File") == 0) {
+    static const char* const allowed[] = {
+        "type",       "channels", "filename", "format",
+        "wav_header", "use_rf64", "labels",   "channel_labels",
+#ifdef CDSP_TEST
+        "realtime",
+#endif
+        NULL};
+    if (validate_unknown_fields(play_obj, allowed, "File playback", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "Stdout") == 0) {
+    static const char* const allowed[] = {
+        "type",     "channels", "format",         "wav_header",
+        "use_rf64", "labels",   "channel_labels",
+#ifdef CDSP_TEST
+        "realtime",
+#endif
+        NULL};
+    if (validate_unknown_fields(play_obj, allowed, "Stdout playback", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "CoreAudio") == 0) {
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "device",
+                                          "format",
+                                          "exclusive",
+                                          "labels",
+                                          "channel_labels",
+                                          "output_dop",
+                                          "dsd_encoder_filter",
+                                          NULL};
+    if (validate_unknown_fields(play_obj, allowed, "CoreAudio playback", err) !=
+        0)
+      return -1;
+  } else if (strcmp(type_str, "Alsa") == 0) {
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "device",
+                                          "format",
+                                          "labels",
+                                          "channel_labels",
+                                          "retry_on_error",
+                                          "stop_on_inactive",
+                                          "link_volume_control",
+                                          "link_mute_control",
+                                          "threaded",
+                                          "output_dop",
+                                          "dsd_encoder_filter",
+                                          NULL};
+    if (validate_unknown_fields(play_obj, allowed, "Alsa playback", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "PipeWire") == 0) {
+    static const char* const allowed[] = {
+        "type",      "channels",         "format",
+        "node_name", "node_description", "node_group_name",
+        "labels",    "channel_labels",   "autoconnect_to",
+        NULL};
+    if (validate_unknown_fields(play_obj, allowed, "PipeWire playback", err) !=
+        0)
+      return -1;
+  } else if (strcmp(type_str, "Wasapi") == 0) {
+    static const char* const allowed[] = {"type",   "channels",       "device",
+                                          "format", "exclusive",      "polling",
+                                          "labels", "channel_labels", NULL};
+    if (validate_unknown_fields(play_obj, allowed, "Wasapi playback", err) != 0)
+      return -1;
+  } else if (strcmp(type_str, "Asio") == 0) {
+    static const char* const allowed[] = {
+        "type",   "channels",       "device",     "format",
+        "labels", "channel_labels", "output_dop", "dsd_encoder_filter",
+        NULL};
+    if (validate_unknown_fields(play_obj, allowed, "Asio playback", err) != 0)
+      return -1;
+  }
+
   parse_json_int(play_obj, "channels", &play->channels);
   play->has_device =
       parse_json_str(play_obj, "device", play->device, sizeof(play->device));
@@ -869,6 +1101,31 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     config_error_set(err, CONFIG_ERR_PARSE, "devices must be an object");
     return -1;
   }
+
+  static const char* const allowed_devices_keys[] = {"samplerate",
+                                                     "chunksize",
+                                                     "queuelimit",
+                                                     "silence_threshold",
+                                                     "silence_timeout_s",
+                                                     "capture",
+                                                     "playback",
+                                                     "enable_rate_adjust",
+                                                     "target_level",
+                                                     "adjust_interval_s",
+                                                     "resampler",
+                                                     "capture_samplerate",
+                                                     "stop_on_rate_change",
+                                                     "rate_measure_interval_s",
+                                                     "volume_ramp_time_ms",
+                                                     "volume_limit",
+                                                     "multithreaded",
+                                                     "worker_threads",
+                                                     NULL};
+  if (validate_unknown_fields(dev_obj, allowed_devices_keys, "devices", err) !=
+      0) {
+    return -1;
+  }
+
   devices_config_t* dev = &config->devices;
 
   int val_int = 0;
@@ -931,7 +1188,9 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
 
   cJSON* res_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "resampler");
   if (res_obj) {
-    parse_resampler(res_obj, dev);
+    if (parse_resampler(res_obj, dev, err) != 0) {
+      return -1;
+    }
   }
 
   cJSON* cap_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "capture");

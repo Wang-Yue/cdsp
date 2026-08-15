@@ -253,6 +253,8 @@ int dsp_config_parse_json_with_dir_and_overrides(
     return -1;
   }
 
+  *out_config = NULL;
+
   dsp_config_t* config = (dsp_config_t*)calloc(1, sizeof(dsp_config_t));
   if (!config) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
@@ -267,6 +269,18 @@ int dsp_config_parse_json_with_dir_and_overrides(
                      "Failed to parse JSON (syntax error or invalid JSON)");
     logger_error(&g_logger,
                  "Config parsing failed: Syntax error or invalid JSON");
+    return -1;
+  }
+
+  static const char* const allowed_root_keys[] = {
+      "title",  "description", "devices",  "filters",
+      "mixers", "processors",  "pipeline", NULL};
+  if (validate_unknown_fields(root, allowed_root_keys, "root configuration",
+                              err) != 0) {
+    cJSON_Delete(root);
+    dsp_config_free(config);
+    logger_error(&g_logger, "Config parsing failed: %s",
+                 err ? err->message : "unknown field in root");
     return -1;
   }
 

@@ -43,6 +43,13 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
       return -1;
     }
 
+    static const char* const allowed_filter_keys[] = {"type", "description",
+                                                      "parameters", NULL};
+    if (validate_unknown_fields(filter_child, allowed_filter_keys,
+                                "filter definition", err) != 0) {
+      return -1;
+    }
+
     filter_config_t* f_conf = &nf->filter;
 
     cJSON* type = cJSON_GetObjectItemCaseSensitive(filter_child, "type");
@@ -62,6 +69,11 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
       cJSON* item;
       switch (f_conf->type) {
         case FILTER_TYPE_GAIN: {
+          static const char* const allowed[] = {"gain", "scale", "inverted",
+                                                "mute", NULL};
+          if (validate_unknown_fields(params, allowed, "Gain filter parameters",
+                                      err) != 0)
+            return -1;
           gain_config_t* gp = &f_conf->parameters.gain;
           gp->has_gain = parse_json_double(params, "gain", &gp->gain);
           char str_buf[64];
@@ -85,6 +97,11 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_VOLUME: {
+          static const char* const allowed[] = {"ramp_time_ms", "limit",
+                                                "fader", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Volume filter parameters", err) != 0)
+            return -1;
           volume_config_t* vp = &f_conf->parameters.volume;
           vp->has_ramp_time_ms =
               parse_json_double(params, "ramp_time_ms", &vp->ramp_time_ms);
@@ -102,6 +119,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_LOUDNESS: {
+          static const char* const allowed[] = {
+              "reference_level", "high_boost", "low_boost",
+              "attenuate_mid",   "fader",      NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Loudness filter parameters", err) != 0)
+            return -1;
           loudness_config_t* lp = &f_conf->parameters.loudness;
           lp->has_reference_level = parse_json_double(params, "reference_level",
                                                       &lp->reference_level);
@@ -123,6 +146,17 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_BIQUAD: {
+          static const char* const allowed[] = {
+              "type",     "freq",      "gain",
+              "q",        "bandwidth", "slope",
+              "a1",       "a2",        "b0",
+              "b1",       "b2",        "freq_z",
+              "freq_p",   "q_p",       "normalize_at_dc",
+              "freq_act", "q_act",     "freq_target",
+              "q_target", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Biquad filter parameters", err) != 0)
+            return -1;
           biquad_config_t* bp = &f_conf->parameters.biquad;
           item = cJSON_GetObjectItemCaseSensitive(params, "type");
           if (cJSON_IsString(item) && item->valuestring) {
@@ -188,6 +222,11 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_DELAY: {
+          static const char* const allowed[] = {"delay", "delay_unit",
+                                                "subsample", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Delay filter parameters", err) != 0)
+            return -1;
           delay_config_t* dp = &f_conf->parameters.delay;
           parse_json_double(params, "delay", &dp->delay);
           char unit_buf[64];
@@ -219,6 +258,13 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_CONV: {
+          static const char* const allowed[] = {
+              "type",    "values", "filename",         "format",
+              "channel", "length", "skip_bytes_lines", "read_bytes_lines",
+              NULL};
+          if (validate_unknown_fields(params, allowed, "Conv filter parameters",
+                                      err) != 0)
+            return -1;
           convolution_config_t* cp = &f_conf->parameters.conv;
           char type_buf[64];
           if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
@@ -247,6 +293,14 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_BIQUAD_COMBO: {
+          static const char* const allowed[] = {
+              "type", "freq",     "order",    "gain",  "fls", "qls",
+              "gls",  "fp1",      "qp1",      "gp1",   "fp2", "qp2",
+              "gp2",  "fp3",      "qp3",      "gp3",   "fhs", "qhs",
+              "ghs",  "freq_min", "freq_max", "gains", NULL};
+          if (validate_unknown_fields(
+                  params, allowed, "BiquadCombo filter parameters", err) != 0)
+            return -1;
           biquad_combo_config_t* bcp = &f_conf->parameters.biquad_combo;
           item = cJSON_GetObjectItemCaseSensitive(params, "type");
           if (cJSON_IsString(item) && item->valuestring) {
@@ -310,6 +364,10 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_DIFF_EQ: {
+          static const char* const allowed[] = {"a", "b", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "DiffEq filter parameters", err) != 0)
+            return -1;
           diffeq_config_t* dep = &f_conf->parameters.diff_eq;
           cJSON* a_arr = cJSON_GetObjectItemCaseSensitive(params, "a");
           dep->a = parse_double_array(a_arr, &dep->a_count);
@@ -318,6 +376,11 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_DITHER: {
+          static const char* const allowed[] = {"type", "bits", "amplitude",
+                                                NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Dither filter parameters", err) != 0)
+            return -1;
           dither_config_t* dp = &f_conf->parameters.dither;
           char type_buf[64];
           if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
@@ -372,12 +435,24 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_CLIPPER: {
+          static const char* const allowed[] = {"clip_limit", "soft_clip",
+                                                NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "Clipper filter parameters", err) != 0)
+            return -1;
           clipper_config_t* lp = &f_conf->parameters.clipper;
           parse_json_double(params, "clip_limit", &lp->clip_limit);
           parse_json_bool(params, "soft_clip", &lp->soft_clip);
           break;
         }
         case FILTER_TYPE_LOOKAHEAD_LIMITER: {
+          static const char* const allowed[] = {"limit",        "attack",
+                                                "release",      "attack_unit",
+                                                "release_unit", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "LookaheadLimiter filter parameters",
+                                      err) != 0)
+            return -1;
           lookahead_limiter_config_t* llp =
               &f_conf->parameters.lookahead_limiter;
           parse_json_double(params, "limit", &llp->limit);
@@ -472,6 +547,13 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
       return -1;
     }
 
+    static const char* const allowed_proc_keys[] = {"type", "description",
+                                                    "parameters", NULL};
+    if (validate_unknown_fields(proc_child, allowed_proc_keys,
+                                "processor definition", err) != 0) {
+      return -1;
+    }
+
     processor_config_t* p_conf = &np->processor;
 
     cJSON* type = cJSON_GetObjectItemCaseSensitive(proc_child, "type");
@@ -489,6 +571,22 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
     if (cJSON_IsObject(params)) {
       switch (p_conf->type) {
         case PROCESSOR_TYPE_COMPRESSOR: {
+          static const char* const allowed[] = {"channels",
+                                                "monitor_channels",
+                                                "process_channels",
+                                                "attack",
+                                                "attack_unit",
+                                                "release",
+                                                "release_unit",
+                                                "threshold",
+                                                "factor",
+                                                "makeup_gain",
+                                                "soft_clip",
+                                                "clip_limit",
+                                                NULL};
+          if (validate_unknown_fields(
+                  params, allowed, "Compressor processor parameters", err) != 0)
+            return -1;
           compressor_config_t* cp = &p_conf->parameters.compressor;
           parse_json_int(params, "channels", &cp->channels);
           parse_json_double(params, "attack", &cp->attack);
@@ -557,6 +655,15 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           break;
         }
         case PROCESSOR_TYPE_NOISE_GATE: {
+          static const char* const allowed[] = {
+              "channels",         "monitor_channels",
+              "process_channels", "attack",
+              "attack_unit",      "release",
+              "release_unit",     "threshold",
+              "attenuation",      NULL};
+          if (validate_unknown_fields(
+                  params, allowed, "NoiseGate processor parameters", err) != 0)
+            return -1;
           noise_gate_config_t* ng = &p_conf->parameters.noise_gate;
           parse_json_int(params, "channels", &ng->channels);
           parse_json_double(params, "attack", &ng->attack);
@@ -620,6 +727,12 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           break;
         }
         case PROCESSOR_TYPE_RACE: {
+          static const char* const allowed[] = {
+              "channels",        "channel_a",  "channel_b",   "delay",
+              "subsample_delay", "delay_unit", "attenuation", NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "RACE processor parameters", err) != 0)
+            return -1;
           race_config_t* rp = &p_conf->parameters.race;
           parse_json_double(params, "attenuation", &rp->attenuation);
           parse_json_double(params, "delay", &rp->delay);
@@ -661,6 +774,15 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           break;
         }
         case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: {
+          static const char* const allowed[] = {
+              "channels", "monitor_channels", "process_channels",
+              "limit",    "attack",           "attack_unit",
+              "release",  "release_unit",     "delay_processed_only",
+              NULL};
+          if (validate_unknown_fields(params, allowed,
+                                      "LookaheadLimiter processor parameters",
+                                      err) != 0)
+            return -1;
           lookahead_limiter_processor_config_t* lp =
               &p_conf->parameters.lookahead_limiter;
           parse_json_int(params, "channels", &lp->channels);

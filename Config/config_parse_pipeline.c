@@ -32,6 +32,15 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
                        "Pipeline step must be an object");
       return -1;
     }
+
+    static const char* const allowed_step_keys[] = {
+        "type",     "name",     "names",       "channel",
+        "channels", "bypassed", "description", NULL};
+    if (validate_unknown_fields(step_obj, allowed_step_keys, "pipeline step",
+                                err) != 0) {
+      return -1;
+    }
+
     pipeline_step_config_t* step = &config->pipeline[s];
 
     char type_str[64];

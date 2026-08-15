@@ -42,6 +42,14 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
       return -1;
     }
 
+    static const char* const allowed_mixer_keys[] = {
+        "channels", "channels_in", "channels_out", "mapping", "description",
+        "labels",   NULL};
+    if (validate_unknown_fields(mixer_child, allowed_mixer_keys,
+                                "mixer definition", err) != 0) {
+      return -1;
+    }
+
     mixer_config_t* m_conf = &nm->mixer;
 
     parse_json_str(mixer_child, "description", m_conf->description,
@@ -53,6 +61,11 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
     cJSON* channels_obj =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "channels");
     if (cJSON_IsObject(channels_obj)) {
+      static const char* const allowed_channels_keys[] = {"in", "out", NULL};
+      if (validate_unknown_fields(channels_obj, allowed_channels_keys,
+                                  "mixer channels", err) != 0) {
+        return -1;
+      }
       parse_json_size_t(channels_obj, "in", &m_conf->channels_in);
       parse_json_size_t(channels_obj, "out", &m_conf->channels_out);
     } else {
@@ -75,6 +88,12 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
       for (int mp = 0; mp < map_size; mp++) {
         cJSON* map_el = cJSON_GetArrayItem(mapping_arr, mp);
         if (cJSON_IsObject(map_el)) {
+          static const char* const allowed_mapping_keys[] = {"dest", "sources",
+                                                             "mute", NULL};
+          if (validate_unknown_fields(map_el, allowed_mapping_keys,
+                                      "mixer mapping item", err) != 0) {
+            return -1;
+          }
           mixer_mapping_t* mapping = &m_conf->mapping[mp];
           parse_json_size_t(map_el, "dest", &mapping->dest);
           parse_json_bool(map_el, "mute", &mapping->mute);
@@ -95,6 +114,12 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
             for (int s = 0; s < src_size; s++) {
               cJSON* src_el = cJSON_GetArrayItem(sources_arr, s);
               if (cJSON_IsObject(src_el)) {
+                static const char* const allowed_src_keys[] = {
+                    "channel", "gain", "inverted", "mute", "scale", NULL};
+                if (validate_unknown_fields(src_el, allowed_src_keys,
+                                            "mixer source item", err) != 0) {
+                  return -1;
+                }
                 mixer_source_t* src = &mapping->sources[s];
                 parse_json_size_t(src_el, "channel", &src->channel);
                 src->has_gain = parse_json_double(src_el, "gain", &src->gain);
