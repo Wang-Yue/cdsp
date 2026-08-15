@@ -424,6 +424,116 @@ static inline double pcm_sample_decode_dsd_u8(uint8_t u8) {
 }
 
 /**
+ * @brief Encode a normalized double sample to a 16-bit DSD byte pair in
+ * little-endian byte order.
+ *
+ * @param val Input double sample in [-1.0, 1.0].
+ * @param dst Target 2-byte buffer.
+ */
+static inline void pcm_sample_encode_dsd_u16_le_bytes(double val,
+                                                      uint8_t* dst) {
+  uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
+  dst[0] = (uint8_t)(u16 & 0xFF);
+  dst[1] = (uint8_t)((u16 >> 8) & 0xFF);
+}
+
+/**
+ * @brief Decode a 2-byte little-endian 16-bit DSD buffer to a normalized double
+ * sample.
+ *
+ * @param src Source 2-byte buffer.
+ * @return Normalized double sample in [-1.0, 1.0].
+ */
+static inline double pcm_sample_decode_dsd_u16_le_bytes(const uint8_t* src) {
+  uint16_t u16 = (uint16_t)src[0] | ((uint16_t)src[1] << 8);
+  return pcm_sample_decode_s16((int16_t)u16);
+}
+
+/**
+ * @brief Encode a normalized double sample to a 16-bit DSD byte pair in
+ * big-endian byte order.
+ *
+ * @param val Input double sample in [-1.0, 1.0].
+ * @param dst Target 2-byte buffer.
+ */
+static inline void pcm_sample_encode_dsd_u16_be_bytes(double val,
+                                                      uint8_t* dst) {
+  uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
+  dst[0] = (uint8_t)((u16 >> 8) & 0xFF);
+  dst[1] = (uint8_t)(u16 & 0xFF);
+}
+
+/**
+ * @brief Decode a 2-byte big-endian 16-bit DSD buffer to a normalized double
+ * sample.
+ *
+ * @param src Source 2-byte buffer.
+ * @return Normalized double sample in [-1.0, 1.0].
+ */
+static inline double pcm_sample_decode_dsd_u16_be_bytes(const uint8_t* src) {
+  uint16_t u16 = ((uint16_t)src[0] << 8) | (uint16_t)src[1];
+  return pcm_sample_decode_s16((int16_t)u16);
+}
+
+/**
+ * @brief Encode a normalized sample containing 32 raw DSD bits into a 4-byte
+ * buffer in little-endian byte order.
+ *
+ * @param val The double-precision sample containing packed 32 DSD bits.
+ * @param dst Target 4-byte buffer.
+ */
+static inline void pcm_sample_encode_dsd_u32_le_bytes(double val,
+                                                      uint8_t* dst) {
+  uint32_t u32 = pcm_sample_u32_from_f32((float)val);
+  dst[0] = (uint8_t)(u32 & 0xFF);
+  dst[1] = (uint8_t)((u32 >> 8) & 0xFF);
+  dst[2] = (uint8_t)((u32 >> 16) & 0xFF);
+  dst[3] = (uint8_t)((u32 >> 24) & 0xFF);
+}
+
+/**
+ * @brief Decode a 4-byte little-endian buffer containing 32 raw DSD bits into
+ * a normalized double sample.
+ *
+ * @param src Source 4-byte buffer.
+ * @return Normalized double sample containing packed 32 DSD bits.
+ */
+static inline double pcm_sample_decode_dsd_u32_le_bytes(const uint8_t* src) {
+  uint32_t u32 = (uint32_t)src[0] | ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+  return pcm_sample_decode_dsd_u32(u32);
+}
+
+/**
+ * @brief Encode a normalized sample containing 32 raw DSD bits into a 4-byte
+ * buffer in big-endian byte order.
+ *
+ * @param val The double-precision sample containing packed 32 DSD bits.
+ * @param dst Target 4-byte buffer.
+ */
+static inline void pcm_sample_encode_dsd_u32_be_bytes(double val,
+                                                      uint8_t* dst) {
+  uint32_t u32 = pcm_sample_u32_from_f32((float)val);
+  dst[0] = (uint8_t)((u32 >> 24) & 0xFF);
+  dst[1] = (uint8_t)((u32 >> 16) & 0xFF);
+  dst[2] = (uint8_t)((u32 >> 8) & 0xFF);
+  dst[3] = (uint8_t)(u32 & 0xFF);
+}
+
+/**
+ * @brief Decode a 4-byte big-endian buffer containing 32 raw DSD bits into a
+ * normalized double sample.
+ *
+ * @param src Source 4-byte buffer.
+ * @return Normalized double sample containing packed 32 DSD bits.
+ */
+static inline double pcm_sample_decode_dsd_u32_be_bytes(const uint8_t* src) {
+  uint32_t u32 = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+                 ((uint32_t)src[2] << 8) | (uint32_t)src[3];
+  return pcm_sample_decode_dsd_u32(u32);
+}
+
+/**
  * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes
  * (MSB bit order).
  *

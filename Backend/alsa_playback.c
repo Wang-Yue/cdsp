@@ -545,55 +545,39 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE) {
-    uint16_t* dst = (uint16_t*)playback->interleaved_buf;
+    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = src_channels[c][f];
-        uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
-#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        u16 = __builtin_bswap16(u16);
-#endif
-        dst[f * playback->channels + c] = u16;
+        size_t off = (f * (size_t)playback->channels + c) * 2;
+        pcm_sample_encode_dsd_u16_le_bytes(val, &dst[off]);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    uint16_t* dst = (uint16_t*)playback->interleaved_buf;
+    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = src_channels[c][f];
-        uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        u16 = __builtin_bswap16(u16);
-#endif
-        dst[f * playback->channels + c] = u16;
+        size_t off = (f * (size_t)playback->channels + c) * 2;
+        pcm_sample_encode_dsd_u16_be_bytes(val, &dst[off]);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE) {
-    uint32_t* dst = (uint32_t*)playback->interleaved_buf;
+    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = src_channels[c][f];
-        uint32_t u32 = pcm_sample_u32_from_f32((float)val);
-#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        u32 = __builtin_bswap32(u32);
-#endif
-        dst[f * playback->channels + c] = u32;
+        size_t off = (f * (size_t)playback->channels + c) * 4;
+        pcm_sample_encode_dsd_u32_le_bytes(val, &dst[off]);
       }
     }
   } else if (playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
-    uint32_t* dst = (uint32_t*)playback->interleaved_buf;
+    uint8_t* dst = (uint8_t*)playback->interleaved_buf;
     for (size_t f = 0; f < total_frames; f++) {
       for (size_t c = 0; c < (size_t)playback->channels; c++) {
         double val = src_channels[c][f];
-        uint32_t u32 = pcm_sample_u32_from_f32((float)val);
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        u32 = __builtin_bswap32(u32);
-#endif
-        dst[f * playback->channels + c] = u32;
+        size_t off = (f * (size_t)playback->channels + c) * 4;
+        pcm_sample_encode_dsd_u32_be_bytes(val, &dst[off]);
       }
     }
   }

@@ -1105,8 +1105,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         size_t offset = (f * capture->channels + c) * 2;
-        uint16_t u16 = (uint16_t)src[offset] | ((uint16_t)src[offset + 1] << 8);
-        dst_channels[c][f] = pcm_sample_decode_s16((int16_t)u16);
+        dst_channels[c][f] = pcm_sample_decode_dsd_u16_le_bytes(&src[offset]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_DSD_U16_BE) {
@@ -1114,8 +1113,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         size_t offset = (f * capture->channels + c) * 2;
-        uint16_t u16 = ((uint16_t)src[offset] << 8) | (uint16_t)src[offset + 1];
-        dst_channels[c][f] = pcm_sample_decode_s16((int16_t)u16);
+        dst_channels[c][f] = pcm_sample_decode_dsd_u16_be_bytes(&src[offset]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_DSD_U32_LE) {
@@ -1123,11 +1121,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         size_t offset = (f * capture->channels + c) * 4;
-        uint32_t u32 = (uint32_t)src[offset] |
-                       ((uint32_t)src[offset + 1] << 8) |
-                       ((uint32_t)src[offset + 2] << 16) |
-                       ((uint32_t)src[offset + 3] << 24);
-        dst_channels[c][f] = pcm_sample_decode_dsd_u32(u32);
+        dst_channels[c][f] = pcm_sample_decode_dsd_u32_le_bytes(&src[offset]);
       }
     }
   } else if (capture->format == SND_PCM_FORMAT_DSD_U32_BE) {
@@ -1135,10 +1129,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     for (size_t f = 0; f < read_frames; f++) {
       for (size_t c = 0; c < (size_t)capture->channels; c++) {
         size_t offset = (f * capture->channels + c) * 4;
-        uint32_t u32 =
-            ((uint32_t)src[offset] << 24) | ((uint32_t)src[offset + 1] << 16) |
-            ((uint32_t)src[offset + 2] << 8) | (uint32_t)src[offset + 3];
-        dst_channels[c][f] = pcm_sample_decode_dsd_u32(u32);
+        dst_channels[c][f] = pcm_sample_decode_dsd_u32_be_bytes(&src[offset]);
       }
     }
   }

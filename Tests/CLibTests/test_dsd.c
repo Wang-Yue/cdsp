@@ -1075,12 +1075,9 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk_in, c)[f];
-        uint16_t u16 = (uint16_t)pcm_sample_encode_s16(val);
         size_t off = (f * (size_t)channels + (size_t)c) * 2;
-        hw_buf_le[off] = (uint8_t)(u16 & 0xFF);
-        hw_buf_le[off + 1] = (uint8_t)((u16 >> 8) & 0xFF);
-        hw_buf_be[off] = (uint8_t)((u16 >> 8) & 0xFF);
-        hw_buf_be[off + 1] = (uint8_t)(u16 & 0xFF);
+        pcm_sample_encode_dsd_u16_le_bytes(val, &hw_buf_le[off]);
+        pcm_sample_encode_dsd_u16_be_bytes(val, &hw_buf_be[off]);
       }
     }
 
@@ -1088,14 +1085,10 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         size_t off = (f * (size_t)channels + (size_t)c) * 2;
-        uint16_t u16_le =
-            (uint16_t)hw_buf_le[off] | ((uint16_t)hw_buf_le[off + 1] << 8);
-        uint16_t u16_be =
-            ((uint16_t)hw_buf_be[off] << 8) | (uint16_t)hw_buf_be[off + 1];
         audio_chunk_get_channel(chunk_out_le, c)[f] =
-            pcm_sample_decode_s16((int16_t)u16_le);
+            pcm_sample_decode_dsd_u16_le_bytes(&hw_buf_le[off]);
         audio_chunk_get_channel(chunk_out_be, c)[f] =
-            pcm_sample_decode_s16((int16_t)u16_be);
+            pcm_sample_decode_dsd_u16_be_bytes(&hw_buf_be[off]);
       }
     }
 
@@ -1138,17 +1131,9 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk_in, c)[f];
-        uint32_t u32 = pcm_sample_u32_from_f32((float)val);
         size_t off = (f * (size_t)channels + (size_t)c) * 4;
-        hw_buf_le[off] = (uint8_t)(u32 & 0xFF);
-        hw_buf_le[off + 1] = (uint8_t)((u32 >> 8) & 0xFF);
-        hw_buf_le[off + 2] = (uint8_t)((u32 >> 16) & 0xFF);
-        hw_buf_le[off + 3] = (uint8_t)((u32 >> 24) & 0xFF);
-
-        hw_buf_be[off] = (uint8_t)((u32 >> 24) & 0xFF);
-        hw_buf_be[off + 1] = (uint8_t)((u32 >> 16) & 0xFF);
-        hw_buf_be[off + 2] = (uint8_t)((u32 >> 8) & 0xFF);
-        hw_buf_be[off + 3] = (uint8_t)(u32 & 0xFF);
+        pcm_sample_encode_dsd_u32_le_bytes(val, &hw_buf_le[off]);
+        pcm_sample_encode_dsd_u32_be_bytes(val, &hw_buf_be[off]);
       }
     }
 
@@ -1156,18 +1141,10 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
     for (size_t f = 0; f < frames; f++) {
       for (int c = 0; c < channels; c++) {
         size_t off = (f * (size_t)channels + (size_t)c) * 4;
-        uint32_t u32_le = (uint32_t)hw_buf_le[off] |
-                          ((uint32_t)hw_buf_le[off + 1] << 8) |
-                          ((uint32_t)hw_buf_le[off + 2] << 16) |
-                          ((uint32_t)hw_buf_le[off + 3] << 24);
-        uint32_t u32_be = ((uint32_t)hw_buf_be[off] << 24) |
-                          ((uint32_t)hw_buf_be[off + 1] << 16) |
-                          ((uint32_t)hw_buf_be[off + 2] << 8) |
-                          (uint32_t)hw_buf_be[off + 3];
         audio_chunk_get_channel(chunk_out_le, c)[f] =
-            pcm_sample_decode_dsd_u32(u32_le);
+            pcm_sample_decode_dsd_u32_le_bytes(&hw_buf_le[off]);
         audio_chunk_get_channel(chunk_out_be, c)[f] =
-            pcm_sample_decode_dsd_u32(u32_be);
+            pcm_sample_decode_dsd_u32_be_bytes(&hw_buf_be[off]);
       }
     }
 
