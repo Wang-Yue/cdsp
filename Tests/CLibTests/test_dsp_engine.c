@@ -1826,7 +1826,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
       core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
   if (dev_id == 0 || out_dev_id == 0) {
     printf(
-        "⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole devices not found\n");
+        "⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole "
+        "devices not found\n");
     if (lock_fd >= 0) {
       flock(lock_fd, LOCK_UN);
       close(lock_fd);
@@ -1842,7 +1843,15 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 
   core_audio_device_set_nominal_sample_rate(dev_id, (double)init_sr);
   core_audio_device_set_nominal_sample_rate(out_dev_id, (double)init_sr);
-  cdsp_sleep_ms(250);
+  for (int retry = 0; retry < 50; retry++) {
+    double r1 = 0, r2 = 0;
+    core_audio_device_get_nominal_sample_rate(dev_id, &r1);
+    core_audio_device_get_nominal_sample_rate(out_dev_id, &r2);
+    if (fabs(r1 - (double)init_sr) < 1.0 && fabs(r2 - (double)init_sr) < 1.0)
+      break;
+    cdsp_sleep_ms(20);
+  }
+  cdsp_sleep_ms(100);
 
   printf(
       "ℹ️ debug: initial capture device nominal rate is %d Hz, will change to "
@@ -1930,7 +1939,15 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 
   // Ensure playback device is also set to target_sr before restart
   core_audio_device_set_nominal_sample_rate(out_dev_id, (double)target_sr);
-  cdsp_sleep_ms(250);
+  for (int retry = 0; retry < 50; retry++) {
+    double current = 0;
+    if (core_audio_device_get_nominal_sample_rate(out_dev_id, &current) &&
+        fabs(current - (double)target_sr) < 1.0) {
+      break;
+    }
+    cdsp_sleep_ms(20);
+  }
+  cdsp_sleep_ms(100);
 
   // 4. Re-configure the engine for target_sr and verify it restarts and runs
   // smoothly
@@ -1982,7 +1999,14 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   // Restore the hardware nominal rates to initial state
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
   core_audio_device_set_nominal_sample_rate(out_dev_id, initial_rate);
-  cdsp_sleep_ms(250);
+  for (int retry = 0; retry < 50; retry++) {
+    double r1 = 0, r2 = 0;
+    core_audio_device_get_nominal_sample_rate(dev_id, &r1);
+    core_audio_device_get_nominal_sample_rate(out_dev_id, &r2);
+    if (fabs(r1 - initial_rate) < 1.0 && fabs(r2 - initial_rate) < 1.0) break;
+    cdsp_sleep_ms(20);
+  }
+  cdsp_sleep_ms(100);
 
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_UN);
@@ -2015,7 +2039,15 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
 
   core_audio_device_set_nominal_sample_rate(in_dev_id, (double)init_sr);
   core_audio_device_set_nominal_sample_rate(dev_id, (double)init_sr);
-  cdsp_sleep_ms(250);
+  for (int retry = 0; retry < 50; retry++) {
+    double r1 = 0, r2 = 0;
+    core_audio_device_get_nominal_sample_rate(in_dev_id, &r1);
+    core_audio_device_get_nominal_sample_rate(dev_id, &r2);
+    if (fabs(r1 - (double)init_sr) < 1.0 && fabs(r2 - (double)init_sr) < 1.0)
+      break;
+    cdsp_sleep_ms(20);
+  }
+  cdsp_sleep_ms(100);
 
   printf(
       "ℹ️ debug: initial playback device nominal rate is %d Hz, will change to "
@@ -2124,7 +2156,15 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
 
   if (in_dev_id != 0) {
     core_audio_device_set_nominal_sample_rate(in_dev_id, (double)target_sr);
-    cdsp_sleep_ms(250);
+    for (int retry = 0; retry < 50; retry++) {
+      double current = 0;
+      if (core_audio_device_get_nominal_sample_rate(in_dev_id, &current) &&
+          fabs(current - (double)target_sr) < 1.0) {
+        break;
+      }
+      cdsp_sleep_ms(20);
+    }
+    cdsp_sleep_ms(100);
   }
 
   engine = dsp_engine_create();
@@ -2155,7 +2195,17 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
     core_audio_device_set_nominal_sample_rate(in_dev_id, initial_rate);
   }
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
-  cdsp_sleep_ms(250);
+  for (int retry = 0; retry < 50; retry++) {
+    double r1 = 0, r2 = 0;
+    if (in_dev_id != 0)
+      core_audio_device_get_nominal_sample_rate(in_dev_id, &r1);
+    core_audio_device_get_nominal_sample_rate(dev_id, &r2);
+    if ((in_dev_id == 0 || fabs(r1 - initial_rate) < 1.0) &&
+        fabs(r2 - initial_rate) < 1.0)
+      break;
+    cdsp_sleep_ms(20);
+  }
+  cdsp_sleep_ms(100);
 
   if (lock_fd >= 0) {
     flock(lock_fd, LOCK_UN);

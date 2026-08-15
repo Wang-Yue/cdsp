@@ -962,20 +962,22 @@ static bool file_playback_open(void* ctx, backend_error_t* err) {
   }
 
   if (playback->is_wav) {
-    if (playback->is_seekable) {
-      size_t header_size = playback->use_rf64 ? 80 : 44;
-      uint8_t zero_header[80];
-      memset(zero_header, 0, header_size);
-      fwrite(zero_header, 1, header_size, playback->f);
-    } else {
-      if (playback->use_rf64) {
-        logger_warn(&g_logger,
-                    "RF64 WAV output requires a seekable file, writing a "
-                    "streaming WAV header instead");
-      }
+    if (!playback->is_seekable && playback->use_rf64) {
+      logger_warn(&g_logger,
+                  "RF64 WAV output requires a seekable file, writing a "
+                  "streaming WAV header instead");
       write_wav_header_to_file(playback->f, playback->channels,
                                playback->format, playback->sample_rate,
                                0xFFFFFFFF, false);
+    } else {
+      if (playback->use_rf64) {
+        write_rf64_header_to_file(playback->f, playback->channels,
+                                  playback->format, playback->sample_rate, 0);
+      } else {
+        write_wav_header_to_file(playback->f, playback->channels,
+                                 playback->format, playback->sample_rate,
+                                 0xFFFFFFFF, playback->is_seekable);
+      }
     }
   }
 

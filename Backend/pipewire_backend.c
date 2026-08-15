@@ -125,13 +125,15 @@ static void on_capture_process(void* data) {
   if (!b) return;
 
   struct spa_buffer* buf = b->buffer;
-  const uint8_t* src = (const uint8_t*)buf->datas[0].data;
-  if (src) {
-    size_t offset = buf->datas[0].chunk->offset;
+  if (buf && buf->n_datas > 0 && buf->datas[0].data && buf->datas[0].chunk) {
     size_t size = buf->datas[0].chunk->size;
+    if (size > 0) {
+      const uint8_t* src = (const uint8_t*)buf->datas[0].data;
+      size_t offset = buf->datas[0].chunk->offset;
 
-    spsc_byte_ring_buffer_write(c->ring, src + offset, size);
-    if (c->semaphore) cdsp_sem_signal(c->semaphore);
+      spsc_byte_ring_buffer_write(c->ring, src + offset, size);
+      if (c->semaphore) cdsp_sem_signal(c->semaphore);
+    }
   }
 
   pw_stream_queue_buffer(c->stream, b);

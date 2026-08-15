@@ -281,8 +281,7 @@ static inline double pcm_sample_decode_s24_4_lj_bytes(const uint8_t* src) {
  * @return Encoded 32-bit float value.
  */
 static inline float pcm_sample_encode_f32(double val) {
-  val = pcm_clamp_sample(val);
-  return (float)val;
+  return isfinite(val) ? (float)val : 0.0f;
 }
 
 /**
@@ -360,7 +359,7 @@ static inline double pcm_sample_decode_dsd_u32(uint32_t bits) {
  * @return Clamped 64-bit float value.
  */
 static inline double pcm_sample_encode_f64(double val) {
-  return pcm_clamp_sample(val);
+  return isfinite(val) ? val : 0.0;
 }
 
 /**

@@ -712,7 +712,7 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->chunksize = val_int > 0 ? (size_t)val_int : 0;
   }
   if (parse_json_int(dev_obj, "queuelimit", &dev->queuelimit)) {
-    dev->has_queuelimit = (dev->queuelimit > 0);
+    dev->has_queuelimit = true;
   }
   dev->has_enable_rate_adjust =
       parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);

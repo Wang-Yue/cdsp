@@ -349,7 +349,7 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
     goto cleanup;
   }
   capture->opened_device_id = dev_id;
-  if (dev_id != 0 && capture->device_name[0]) {
+  if (dev_id != 0) {
     // Bind the AudioUnit to the discovered HAL Device ID.
     AudioUnitSetProperty(capture->audio_unit,
                          kAudioOutputUnitProperty_CurrentDevice,

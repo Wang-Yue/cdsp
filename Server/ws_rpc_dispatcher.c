@@ -431,6 +431,12 @@ static bool server_handle_adjust_volume_fader(websocket_server_t* server,
     return true;
   }
 
+  if (max_vol < min_vol) {
+    reply_error(cmd_name, "InvalidValueError",
+                "Max volume must be bigger than min volume", ds);
+    return true;
+  }
+
   double current = cdsp_get_fader_volume(server->engine, fader);
   double new_vol = current + delta;
   if (new_vol < min_vol) new_vol = min_vol;
@@ -852,6 +858,13 @@ static void handle_cmd_subscribe_signal_levels(websocket_server_t* server,
 static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
                                           int client_idx, const char* cmd_name,
                                           cJSON* root, dyn_string_t* ds) {
+  if (!server || !server->engine ||
+      cdsp_get_state(server->engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+    reply_error(cmd_name, "ProcessingNotRunningError",
+                "Processing is not running", ds);
+    return;
+  }
+
   bool is_capture = true;
   uint32_t channel = (uint32_t)-1;
   double min_freq = 20.0;
@@ -1755,14 +1768,26 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
 }
 
 static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
-                                    const char* cmd_name, cJSON* arg,
+                                    const char* cmd_name, cJSON* root,
                                     dyn_string_t* ds) {
   (void)client_idx;
+  if (!server || !server->engine ||
+      cdsp_get_state(server->engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+    reply_error(cmd_name, "ProcessingNotRunningError",
+                "Processing is not running", ds);
+    return;
+  }
+
   bool is_capture = true;
   uint32_t channel = (uint32_t)-1;
   double min_freq = 20.0;
   double max_freq = 20000.0;
   uint32_t n_bins = 1024;
+
+  cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
+  if (!arg || !cJSON_IsObject(arg)) {
+    arg = root;
+  }
 
   if (!arg || !cJSON_IsObject(arg)) {
     reply_error(cmd_name, "InvalidRequestError",
