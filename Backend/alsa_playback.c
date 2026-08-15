@@ -60,15 +60,6 @@ struct alsa_playback {
   bool has_pending_rate;
 };
 
-static inline bool alsa_is_dsd_format(snd_pcm_format_t format) {
-  if (format == SND_PCM_FORMAT_DSD_U8) return true;
-  if (format == SND_PCM_FORMAT_DSD_U16_LE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U16_BE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U32_LE) return true;
-  if (format == SND_PCM_FORMAT_DSD_U32_BE) return true;
-  return false;
-}
-
 // Sleep for the target delay matching
 // PlaybackBufferManager::sleep_for_target_delay in upstream
 // (src/alsa_backend/buffermanager.rs:227-234)
@@ -138,63 +129,9 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   // Set sample format: if specified, use it; otherwise pick preferred format
   // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
   // F64_LE (src/alsa_backend/utils.rs:433-456)
-  snd_pcm_format_t formats[11];
-  size_t num_formats = 0;
-  if (playback->has_format) {
-    if (playback->requested_format == ALSA_SAMPLE_FORMAT_S16_LE) {
-      formats[0] = SND_PCM_FORMAT_S16_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_S24_3_LE) {
-      formats[0] = SND_PCM_FORMAT_S24_3LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_S24_4_LE) {
-      formats[0] = SND_PCM_FORMAT_S24_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_S32_LE) {
-      formats[0] = SND_PCM_FORMAT_S32_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_F32_LE) {
-      formats[0] = SND_PCM_FORMAT_FLOAT_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_F64_LE) {
-      formats[0] = SND_PCM_FORMAT_FLOAT64_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U8) {
-      formats[0] = SND_PCM_FORMAT_DSD_U8;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U16_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_BE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U16_BE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U32_LE;
-      num_formats = 1;
-    } else if (playback->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U32_BE;
-      num_formats = 1;
-    }
-  } else {
-    formats[0] = SND_PCM_FORMAT_S32_LE;
-    formats[1] = SND_PCM_FORMAT_S24_3LE;
-    formats[2] = SND_PCM_FORMAT_S24_LE;
-    formats[3] = SND_PCM_FORMAT_S16_LE;
-    formats[4] = SND_PCM_FORMAT_FLOAT_LE;
-    formats[5] = SND_PCM_FORMAT_FLOAT64_LE;
-    num_formats = 6;
-  }
-
-  bool format_ok = false;
-  for (size_t i = 0; i < num_formats; i++) {
-    rc = snd_pcm_hw_params_set_format(playback->pcm, params, formats[i]);
-    if (rc >= 0) {
-      playback->format = formats[i];
-      format_ok = true;
-      break;
-    }
-  }
-  if (!format_ok) {
+  rc = alsa_apply_format(playback->pcm, params, playback->has_format,
+                         playback->requested_format, &playback->format);
+  if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Requested or supported ALSA format not available");
@@ -271,24 +208,7 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  size_t sample_size = 4;
-  if (playback->format == SND_PCM_FORMAT_S16_LE) {
-    sample_size = 2;
-  } else if (playback->format == SND_PCM_FORMAT_S24_3LE) {
-    sample_size = 3;
-  } else if (playback->format == SND_PCM_FORMAT_S24_LE) {
-    sample_size = 4;
-  } else if (playback->format == SND_PCM_FORMAT_FLOAT64_LE) {
-    sample_size = 8;
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U8) {
-    sample_size = 1;
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U16_LE ||
-             playback->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    sample_size = 2;
-  } else if (playback->format == SND_PCM_FORMAT_DSD_U32_LE ||
-             playback->format == SND_PCM_FORMAT_DSD_U32_BE) {
-    sample_size = 4;
-  }
+  size_t sample_size = alsa_format_sample_size(playback->format);
 
   playback->bytes_per_sample = sample_size;
   playback->blockalign = (size_t)playback->channels * sample_size;
@@ -340,14 +260,9 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
           int dev_idx = snd_pcm_info_get_device(pcm_info);
           int subdev_idx = snd_pcm_info_get_subdevice(pcm_info);
 
-          snd_ctl_elem_id_t* id;
-          snd_ctl_elem_id_alloca(&id);
-          snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_PCM);
-          snd_ctl_elem_id_set_device(id, dev_idx >= 0 ? dev_idx : 0);
-          snd_ctl_elem_id_set_subdevice(id, subdev_idx >= 0 ? subdev_idx : 0);
-          snd_ctl_elem_id_set_name(id, "Playback Pitch 1000000");
-
-          playback->hctl_pitch_elem = snd_hctl_find_elem(hctl, id);
+          playback->hctl_pitch_elem =
+              alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                             "Playback Pitch 1000000", NULL);
           if (playback->hctl_pitch_elem) {
             logger_info(&g_logger, "Playback device supports rate adjust");
           }
@@ -831,10 +746,7 @@ static void alsa_playback_set_pitch(void* ctx, double multiplier) {
   pthread_mutex_lock(&playback->mixer_mutex);
   long value = (long)round(1000000.0 / multiplier);
   if (playback->hctl_pitch_elem) {
-    snd_ctl_elem_value_t* elem_val;
-    snd_ctl_elem_value_alloca(&elem_val);
-    snd_ctl_elem_value_set_integer(elem_val, 0, value);
-    snd_hctl_elem_write(playback->hctl_pitch_elem, elem_val);
+    alsa_elem_write_as_int(playback->hctl_pitch_elem, value);
   } else if (playback->pitch_elem) {
     if (snd_mixer_selem_has_playback_volume(playback->pitch_elem)) {
       snd_mixer_selem_set_playback_volume_all(playback->pitch_elem, value);

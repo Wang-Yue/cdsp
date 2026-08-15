@@ -12,6 +12,187 @@ static const logger_t g_alsa_dev_logger = {"dsp.backend.alsa"};
 
 pthread_mutex_t g_alsa_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+bool alsa_is_dsd_format(snd_pcm_format_t format) {
+  if (format == SND_PCM_FORMAT_DSD_U8) return true;
+  if (format == SND_PCM_FORMAT_DSD_U16_LE) return true;
+  if (format == SND_PCM_FORMAT_DSD_U16_BE) return true;
+  if (format == SND_PCM_FORMAT_DSD_U32_LE) return true;
+  if (format == SND_PCM_FORMAT_DSD_U32_BE) return true;
+  return false;
+}
+
+size_t alsa_format_sample_size(snd_pcm_format_t format) {
+  if (format == SND_PCM_FORMAT_DSD_U8) {
+    return 1;
+  }
+  if (format == SND_PCM_FORMAT_S16_LE || format == SND_PCM_FORMAT_DSD_U16_LE ||
+      format == SND_PCM_FORMAT_DSD_U16_BE) {
+    return 2;
+  }
+  if (format == SND_PCM_FORMAT_S24_3LE) {
+    return 3;
+  }
+  if (format == SND_PCM_FORMAT_FLOAT64_LE) {
+    return 8;
+  }
+  return 4;
+}
+
+snd_pcm_format_t alsa_sample_format_to_pcm_format(alsa_sample_format_t fmt) {
+  switch (fmt) {
+    case ALSA_SAMPLE_FORMAT_S16_LE:
+      return SND_PCM_FORMAT_S16_LE;
+    case ALSA_SAMPLE_FORMAT_S24_3_LE:
+      return SND_PCM_FORMAT_S24_3LE;
+    case ALSA_SAMPLE_FORMAT_S24_4_LE:
+      return SND_PCM_FORMAT_S24_LE;
+    case ALSA_SAMPLE_FORMAT_S32_LE:
+      return SND_PCM_FORMAT_S32_LE;
+    case ALSA_SAMPLE_FORMAT_F32_LE:
+      return SND_PCM_FORMAT_FLOAT_LE;
+    case ALSA_SAMPLE_FORMAT_F64_LE:
+      return SND_PCM_FORMAT_FLOAT64_LE;
+    case ALSA_SAMPLE_FORMAT_DSD_U8:
+      return SND_PCM_FORMAT_DSD_U8;
+    case ALSA_SAMPLE_FORMAT_DSD_U16_LE:
+      return SND_PCM_FORMAT_DSD_U16_LE;
+    case ALSA_SAMPLE_FORMAT_DSD_U16_BE:
+      return SND_PCM_FORMAT_DSD_U16_BE;
+    case ALSA_SAMPLE_FORMAT_DSD_U32_LE:
+      return SND_PCM_FORMAT_DSD_U32_LE;
+    case ALSA_SAMPLE_FORMAT_DSD_U32_BE:
+      return SND_PCM_FORMAT_DSD_U32_BE;
+    default:
+      return SND_PCM_FORMAT_UNKNOWN;
+  }
+}
+
+int alsa_apply_format(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp, bool has_format,
+                      alsa_sample_format_t requested_format,
+                      snd_pcm_format_t* out_format) {
+  snd_pcm_format_t formats[6];
+  size_t num_formats = 0;
+  if (has_format) {
+    snd_pcm_format_t pcm_fmt =
+        alsa_sample_format_to_pcm_format(requested_format);
+    if (pcm_fmt != SND_PCM_FORMAT_UNKNOWN) {
+      formats[0] = pcm_fmt;
+      num_formats = 1;
+    }
+  } else {
+    formats[0] = SND_PCM_FORMAT_S32_LE;
+    formats[1] = SND_PCM_FORMAT_S24_3LE;
+    formats[2] = SND_PCM_FORMAT_S24_LE;
+    formats[3] = SND_PCM_FORMAT_S16_LE;
+    formats[4] = SND_PCM_FORMAT_FLOAT_LE;
+    formats[5] = SND_PCM_FORMAT_FLOAT64_LE;
+    num_formats = 6;
+  }
+
+  for (size_t i = 0; i < num_formats; i++) {
+    int rc = snd_pcm_hw_params_set_format(pcm, hwp, formats[i]);
+    if (rc >= 0) {
+      if (out_format) *out_format = formats[i];
+      return 0;
+    }
+  }
+  return -EINVAL;
+}
+
+snd_hctl_elem_t* alsa_find_elem(snd_hctl_t* hctl, snd_ctl_elem_iface_t iface,
+                                int device, int subdevice, const char* name,
+                                unsigned int* out_numid) {
+  if (!hctl || !name || !name[0]) return NULL;
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_ctl_elem_id_set_interface(id, iface);
+  if (device >= 0) snd_ctl_elem_id_set_device(id, (unsigned int)device);
+  if (subdevice >= 0)
+    snd_ctl_elem_id_set_subdevice(id, (unsigned int)subdevice);
+  snd_ctl_elem_id_set_name(id, name);
+
+  snd_hctl_elem_t* elem = snd_hctl_find_elem(hctl, id);
+  if (elem) {
+    snd_ctl_elem_id_t* found_id;
+    snd_ctl_elem_id_alloca(&found_id);
+    snd_hctl_elem_get_id(elem, found_id);
+    if (out_numid) *out_numid = snd_ctl_elem_id_get_numid(found_id);
+    logger_debug(&g_alsa_dev_logger, "Found element with name %s and numid %u",
+                 name, out_numid ? *out_numid : 0);
+  }
+  return elem;
+}
+
+bool alsa_elem_read_as_int(snd_hctl_elem_t* elem, long* out_val) {
+  if (!elem) return false;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  if (snd_hctl_elem_read(elem, val) >= 0) {
+    if (out_val) *out_val = snd_ctl_elem_value_get_integer(val, 0);
+    return true;
+  }
+  return false;
+}
+
+bool alsa_elem_read_as_bool(snd_hctl_elem_t* elem, bool* out_val) {
+  if (!elem) return false;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  if (snd_hctl_elem_read(elem, val) >= 0) {
+    if (out_val) *out_val = (snd_ctl_elem_value_get_boolean(val, 0) != 0);
+    return true;
+  }
+  return false;
+}
+
+bool alsa_elem_read_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
+                                 double* out_db) {
+  if (!ctl || !elem) return false;
+  long intval = 0;
+  if (!alsa_elem_read_as_int(elem, &intval)) return false;
+
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_hctl_elem_get_id(elem, id);
+
+  long db_gain = 0;
+  if (snd_ctl_convert_to_dB(ctl, id, intval, &db_gain) >= 0) {
+    if (out_db) *out_db = (double)db_gain / 100.0;
+    return true;
+  }
+  return false;
+}
+
+void alsa_elem_write_as_int(snd_hctl_elem_t* elem, long value) {
+  if (!elem) return;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  snd_ctl_elem_value_set_integer(val, 0, value);
+  snd_hctl_elem_write(elem, val);
+}
+
+void alsa_elem_write_as_bool(snd_hctl_elem_t* elem, bool value) {
+  if (!elem) return;
+  snd_ctl_elem_value_t* val;
+  snd_ctl_elem_value_alloca(&val);
+  snd_ctl_elem_value_set_boolean(val, 0, value ? 1 : 0);
+  snd_hctl_elem_write(elem, val);
+}
+
+void alsa_elem_write_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
+                                  double db_val) {
+  if (!ctl || !elem) return;
+  snd_ctl_elem_id_t* id;
+  snd_ctl_elem_id_alloca(&id);
+  snd_hctl_elem_get_id(elem, id);
+
+  long intval = 0;
+  if (snd_ctl_convert_from_dB(ctl, id, (long)(db_val * 100.0), &intval, -1) >=
+      0) {
+    alsa_elem_write_as_int(elem, intval);
+  }
+}
+
 // Calculate a power-of-two buffer size that is large enough to accommodate any
 // changes due to resampling, and at least 4 times the minimum period size to
 // avoid random broken pipes. (buffermanager.rs:34-44)

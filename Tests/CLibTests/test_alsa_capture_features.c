@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "Audio/audio_chunk.h"
+#include "Backend/alsa_capabilities.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
@@ -172,6 +173,17 @@ TEST(ALSACapture_DynamicRateChange_HCtlMonitoring) {
       snd_ctl_elem_remove(ctl, id);
     }
     snd_ctl_close(ctl);
+  }
+}
+
+TEST(ALSACapabilities_Describe_Probe) {
+  device_error_t err;
+  audio_device_descriptor_t* desc =
+      alsa_capabilities_describe("hw:Loopback,0,0", false, &err);
+  if (desc) {
+    ASSERT_STR_EQ(desc->name, "hw:Loopback,0,0");
+    ASSERT_TRUE(desc->capability_sets_count >= 1);
+    free_audio_device_descriptor(desc);
   }
 }
 

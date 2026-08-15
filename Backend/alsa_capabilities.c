@@ -273,11 +273,16 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
       // Check formats matching list_formats in upstream
       // (src/alsa_backend/utils.rs:408-431)
       const snd_pcm_format_t test_fmts[] = {
-          SND_PCM_FORMAT_S16_LE,   SND_PCM_FORMAT_S24_LE,
-          SND_PCM_FORMAT_S24_3LE,  SND_PCM_FORMAT_S32_LE,
-          SND_PCM_FORMAT_FLOAT_LE, SND_PCM_FORMAT_FLOAT64_LE};
-      const char* fmt_names[] = {"S16_LE", "S24_4_LE", "S24_3_LE",
-                                 "S32_LE", "F32_LE",   "F64_LE"};
+          SND_PCM_FORMAT_S16_LE,     SND_PCM_FORMAT_S24_LE,
+          SND_PCM_FORMAT_S24_3LE,    SND_PCM_FORMAT_S32_LE,
+          SND_PCM_FORMAT_FLOAT_LE,   SND_PCM_FORMAT_FLOAT64_LE,
+          SND_PCM_FORMAT_DSD_U8,     SND_PCM_FORMAT_DSD_U16_LE,
+          SND_PCM_FORMAT_DSD_U16_BE, SND_PCM_FORMAT_DSD_U32_LE,
+          SND_PCM_FORMAT_DSD_U32_BE};
+      const char* fmt_names[] = {"S16_LE",     "S24_4_LE",   "S24_3_LE",
+                                 "S32_LE",     "F32_LE",     "F64_LE",
+                                 "DSD_U8",     "DSD_U16_LE", "DSD_U16_BE",
+                                 "DSD_U32_LE", "DSD_U32_BE"};
       const size_t num_test_fmts = sizeof(test_fmts) / sizeof(test_fmts[0]);
 
       samplerate_capability_t* rate_cap = &cap->samplerates[rate_idx];

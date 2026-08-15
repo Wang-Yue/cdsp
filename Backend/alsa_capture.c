@@ -73,108 +73,6 @@ struct alsa_capture {
   _Atomic bool stopped;
 };
 
-// Helper to look up an ALSA control element matching find_elem in upstream
-// (src/alsa_backend/utils.rs:758-780)
-static snd_hctl_elem_t* find_elem(snd_hctl_t* hctl, snd_ctl_elem_iface_t iface,
-                                  int device, int subdevice, const char* name,
-                                  unsigned int* out_numid) {
-  if (!hctl || !name || !name[0]) return NULL;
-  snd_ctl_elem_id_t* id;
-  snd_ctl_elem_id_alloca(&id);
-  snd_ctl_elem_id_set_interface(id, iface);
-  if (device >= 0) snd_ctl_elem_id_set_device(id, (unsigned int)device);
-  if (subdevice >= 0)
-    snd_ctl_elem_id_set_subdevice(id, (unsigned int)subdevice);
-  snd_ctl_elem_id_set_name(id, name);
-
-  snd_hctl_elem_t* elem = snd_hctl_find_elem(hctl, id);
-  if (elem) {
-    snd_ctl_elem_id_t* found_id;
-    snd_ctl_elem_id_alloca(&found_id);
-    snd_hctl_elem_get_id(elem, found_id);
-    if (out_numid) *out_numid = snd_ctl_elem_id_get_numid(found_id);
-    logger_debug(&g_logger, "Found element with name %s and numid %u", name,
-                 out_numid ? *out_numid : 0);
-  }
-  return elem;
-}
-
-// Read element as integer (utils.rs:473-478)
-static bool elem_read_as_int(snd_hctl_elem_t* elem, long* out_val) {
-  if (!elem) return false;
-  snd_ctl_elem_value_t* val;
-  snd_ctl_elem_value_alloca(&val);
-  if (snd_hctl_elem_read(elem, val) >= 0) {
-    if (out_val) *out_val = snd_ctl_elem_value_get_integer(val, 0);
-    return true;
-  }
-  return false;
-}
-
-// Read element as boolean (utils.rs:480-485)
-static bool elem_read_as_bool(snd_hctl_elem_t* elem, bool* out_val) {
-  if (!elem) return false;
-  snd_ctl_elem_value_t* val;
-  snd_ctl_elem_value_alloca(&val);
-  if (snd_hctl_elem_read(elem, val) >= 0) {
-    if (out_val) *out_val = (snd_ctl_elem_value_get_boolean(val, 0) != 0);
-    return true;
-  }
-  return false;
-}
-
-// Read volume in dB (utils.rs:487-493)
-static bool elem_read_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
-                                   double* out_db) {
-  if (!ctl || !elem) return false;
-  long intval = 0;
-  if (!elem_read_as_int(elem, &intval)) return false;
-
-  snd_ctl_elem_id_t* id;
-  snd_ctl_elem_id_alloca(&id);
-  snd_hctl_elem_get_id(elem, id);
-
-  long db_gain = 0;
-  if (snd_ctl_convert_to_dB(ctl, id, intval, &db_gain) >= 0) {
-    if (out_db) *out_db = (double)db_gain / 100.0;
-    return true;
-  }
-  return false;
-}
-
-// Write element as integer (utils.rs:506-511)
-static void elem_write_as_int(snd_hctl_elem_t* elem, long value) {
-  if (!elem) return;
-  snd_ctl_elem_value_t* val;
-  snd_ctl_elem_value_alloca(&val);
-  snd_ctl_elem_value_set_integer(val, 0, value);
-  snd_hctl_elem_write(elem, val);
-}
-
-// Write element as boolean (utils.rs:513-518)
-static void elem_write_as_bool(snd_hctl_elem_t* elem, bool value) {
-  if (!elem) return;
-  snd_ctl_elem_value_t* val;
-  snd_ctl_elem_value_alloca(&val);
-  snd_ctl_elem_value_set_boolean(val, 0, value ? 1 : 0);
-  snd_hctl_elem_write(elem, val);
-}
-
-// Write volume in dB (utils.rs:495-504)
-static void elem_write_volume_in_db(snd_ctl_t* ctl, snd_hctl_elem_t* elem,
-                                    double db_val) {
-  if (!ctl || !elem) return;
-  snd_ctl_elem_id_t* id;
-  snd_ctl_elem_id_alloca(&id);
-  snd_hctl_elem_get_id(elem, id);
-
-  long intval = 0;
-  if (snd_ctl_convert_from_dB(ctl, id, (long)(db_val * 100.0), &intval, -1) >=
-      0) {
-    elem_write_as_int(elem, intval);
-  }
-}
-
 // Initialize ALSA control elements matching find_elements in upstream
 // (src/alsa_backend/utils.rs:723-756 & src/alsa_backend/device.rs:788-846)
 static void alsa_capture_init_controls(alsa_capture_t* capture) {
@@ -211,15 +109,15 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
 
       // Look up pitch control: PCM Rate Shift 100000 / Capture Pitch 1000000
       capture->hctl_pitch_elem =
-          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
-                    "PCM Rate Shift 100000", NULL);
+          alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                         "PCM Rate Shift 100000", NULL);
       if (capture->hctl_pitch_elem) {
         capture->pitch_is_loopback = true;
         logger_info(&g_logger, "Capture device supports rate adjust");
       } else {
         capture->hctl_pitch_elem =
-            find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
-                      "Capture Pitch 1000000", NULL);
+            alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                           "Capture Pitch 1000000", NULL);
         if (capture->hctl_pitch_elem) {
           capture->pitch_is_loopback = false;
           logger_info(&g_logger, "Capture device supports rate adjust");
@@ -228,11 +126,12 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
 
       // Look up PCM Slave Active (loopback active)
       capture->hctl_loopback_active_elem =
-          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
-                    "PCM Slave Active", &capture->loopback_active_numid);
+          alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                         "PCM Slave Active", &capture->loopback_active_numid);
       if (capture->hctl_loopback_active_elem) {
         bool active = false;
-        if (elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
+        if (alsa_elem_read_as_bool(capture->hctl_loopback_active_elem,
+                                   &active)) {
           if (!active) {
             if (capture->stop_on_inactive) {
               atomic_store_explicit(&capture->is_inactive, true,
@@ -247,11 +146,11 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
 
       // Look up Capture Rate (gadget rate)
       capture->hctl_rate_elem =
-          find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
-                    "Capture Rate", &capture->gadget_rate_numid);
+          alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
+                         "Capture Rate", &capture->gadget_rate_numid);
       if (capture->hctl_rate_elem) {
         long rate = 0;
-        if (elem_read_as_int(capture->hctl_rate_elem, &rate)) {
+        if (alsa_elem_read_as_int(capture->hctl_rate_elem, &rate)) {
           if (rate == 0) {
             if (capture->stop_on_inactive) {
               atomic_store_explicit(&capture->is_inactive, true,
@@ -270,13 +169,13 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
 
       // Look up Mixer Volume Control
       if (capture->link_volume_control[0]) {
-        capture->hctl_volume_elem =
-            find_elem(hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
-                      capture->link_volume_control, &capture->volume_numid);
+        capture->hctl_volume_elem = alsa_find_elem(
+            hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
+            capture->link_volume_control, &capture->volume_numid);
         if (capture->hctl_volume_elem && capture->ctl) {
           double vol_db = 0.0;
-          if (elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
-                                     &vol_db)) {
+          if (alsa_elem_read_volume_in_db(capture->ctl,
+                                          capture->hctl_volume_elem, &vol_db)) {
             logger_info(&g_logger, "Using initial volume from Alsa: %.2f dB",
                         vol_db);
             capture->linked_volume_value = vol_db;
@@ -291,11 +190,11 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
       // Look up Mixer Mute Control
       if (capture->link_mute_control[0]) {
         capture->hctl_mute_elem =
-            find_elem(hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
-                      capture->link_mute_control, &capture->mute_numid);
+            alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_MIXER, -1, -1,
+                           capture->link_mute_control, &capture->mute_numid);
         if (capture->hctl_mute_elem) {
           bool active = false;
-          if (elem_read_as_bool(capture->hctl_mute_elem, &active)) {
+          if (alsa_elem_read_as_bool(capture->hctl_mute_elem, &active)) {
             logger_info(&g_logger, "Using initial active switch from Alsa: %d",
                         active);
             capture->linked_mute_value = !active;
@@ -329,8 +228,8 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
                    target_vol);
     }
     if (capture->linked_volume_value != target_vol) {
-      elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
-                              target_vol);
+      alsa_elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                   target_vol);
       capture->linked_volume_value = target_vol;
     }
   }
@@ -340,7 +239,7 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
     if (capture->linked_mute_value != target_mute) {
       logger_debug(&g_logger, "Updating linked switch control to %d",
                    !target_mute);
-      elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
+      alsa_elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
       capture->linked_mute_value = target_mute;
     }
   }
@@ -368,7 +267,7 @@ static void alsa_capture_process_events(alsa_capture_t* capture) {
     if (capture->hctl_loopback_active_elem &&
         numid == capture->loopback_active_numid) {
       bool active = false;
-      if (elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
+      if (alsa_elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
         logger_debug(&g_logger, "Loopback active: %d", active);
         if (!active) {
           if (capture->stop_on_inactive) {
@@ -388,7 +287,7 @@ static void alsa_capture_process_events(alsa_capture_t* capture) {
     // Gadget rate event
     if (capture->hctl_rate_elem && numid == capture->gadget_rate_numid) {
       long rate = 0;
-      if (elem_read_as_int(capture->hctl_rate_elem, &rate)) {
+      if (alsa_elem_read_as_int(capture->hctl_rate_elem, &rate)) {
         logger_debug(&g_logger, "Gadget rate: %ld", rate);
         if (rate == 0) {
           if (capture->stop_on_inactive) {
@@ -417,8 +316,8 @@ static void alsa_capture_process_events(alsa_capture_t* capture) {
     // Volume control event
     if (capture->hctl_volume_elem && numid == capture->volume_numid) {
       double vol_db = 0.0;
-      if (elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
-                                 &vol_db)) {
+      if (alsa_elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                      &vol_db)) {
         logger_debug(&g_logger,
                      "Alsa volume change event, set main fader to %.2f dB",
                      vol_db);
@@ -433,7 +332,7 @@ static void alsa_capture_process_events(alsa_capture_t* capture) {
     // Mute control event
     if (capture->hctl_mute_elem && numid == capture->mute_numid) {
       bool active = false;
-      if (elem_read_as_bool(capture->hctl_mute_elem, &active)) {
+      if (alsa_elem_read_as_bool(capture->hctl_mute_elem, &active)) {
         logger_debug(&g_logger, "Alsa mute change event, set mute state to %d",
                      !active);
         capture->linked_mute_value = !active;
@@ -506,63 +405,9 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   // Set sample format: if specified, use it; otherwise pick preferred format
   // in descending order: S32_LE -> S24_3_LE -> S24_4_LE -> S16_LE -> F32_LE ->
   // F64_LE (src/alsa_backend/utils.rs:433-456)
-  snd_pcm_format_t formats[11];
-  size_t num_formats = 0;
-  if (capture->has_format) {
-    if (capture->requested_format == ALSA_SAMPLE_FORMAT_S16_LE) {
-      formats[0] = SND_PCM_FORMAT_S16_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_S24_3_LE) {
-      formats[0] = SND_PCM_FORMAT_S24_3LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_S24_4_LE) {
-      formats[0] = SND_PCM_FORMAT_S24_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_S32_LE) {
-      formats[0] = SND_PCM_FORMAT_S32_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_F32_LE) {
-      formats[0] = SND_PCM_FORMAT_FLOAT_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_F64_LE) {
-      formats[0] = SND_PCM_FORMAT_FLOAT64_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U8) {
-      formats[0] = SND_PCM_FORMAT_DSD_U8;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_LE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U16_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U16_BE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U16_BE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_LE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U32_LE;
-      num_formats = 1;
-    } else if (capture->requested_format == ALSA_SAMPLE_FORMAT_DSD_U32_BE) {
-      formats[0] = SND_PCM_FORMAT_DSD_U32_BE;
-      num_formats = 1;
-    }
-  } else {
-    formats[0] = SND_PCM_FORMAT_S32_LE;
-    formats[1] = SND_PCM_FORMAT_S24_3LE;
-    formats[2] = SND_PCM_FORMAT_S24_LE;
-    formats[3] = SND_PCM_FORMAT_S16_LE;
-    formats[4] = SND_PCM_FORMAT_FLOAT_LE;
-    formats[5] = SND_PCM_FORMAT_FLOAT64_LE;
-    num_formats = 6;
-  }
-
-  bool format_ok = false;
-  for (size_t i = 0; i < num_formats; i++) {
-    rc = snd_pcm_hw_params_set_format(capture->pcm, params, formats[i]);
-    if (rc >= 0) {
-      capture->format = formats[i];
-      format_ok = true;
-      break;
-    }
-  }
-  if (!format_ok) {
+  rc = alsa_apply_format(capture->pcm, params, capture->has_format,
+                         capture->requested_format, &capture->format);
+  if (rc < 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Requested or supported ALSA format not available");
@@ -640,18 +485,7 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  size_t sample_size = 4;
-  if (capture->format == SND_PCM_FORMAT_S16_LE ||
-      capture->format == SND_PCM_FORMAT_DSD_U16_LE ||
-      capture->format == SND_PCM_FORMAT_DSD_U16_BE) {
-    sample_size = 2;
-  } else if (capture->format == SND_PCM_FORMAT_S24_3LE) {
-    sample_size = 3;
-  } else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE) {
-    sample_size = 8;
-  } else if (capture->format == SND_PCM_FORMAT_DSD_U8) {
-    sample_size = 1;
-  }
+  size_t sample_size = alsa_format_sample_size(capture->format);
 
   // Size buffer generously to accommodate dynamic resampling buffer needs
   // (src/alsa_backend/device.rs:863 & buffermanager.rs:157)
@@ -773,17 +607,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     snd_pcm_start(capture->pcm);
   }
 
-  size_t sample_bytes = 4;
-  if (capture->format == SND_PCM_FORMAT_S16_LE ||
-      capture->format == SND_PCM_FORMAT_DSD_U16_LE ||
-      capture->format == SND_PCM_FORMAT_DSD_U16_BE)
-    sample_bytes = 2;
-  else if (capture->format == SND_PCM_FORMAT_S24_3LE)
-    sample_bytes = 3;
-  else if (capture->format == SND_PCM_FORMAT_FLOAT64_LE)
-    sample_bytes = 8;
-  else if (capture->format == SND_PCM_FORMAT_DSD_U8)
-    sample_bytes = 1;
+  size_t sample_bytes = alsa_format_sample_size(capture->format);
   size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
 
   double millis_per_chunk =
@@ -1211,7 +1035,7 @@ static void alsa_capture_set_pitch(void* ctx, double multiplier) {
     } else {
       value = (long)round(multiplier * 1000000.0);
     }
-    elem_write_as_int(capture->hctl_pitch_elem, value);
+    alsa_elem_write_as_int(capture->hctl_pitch_elem, value);
   }
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
