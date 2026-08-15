@@ -1190,9 +1190,8 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
       for (int c = 0; c < channels; c++) {
         double val = audio_chunk_get_channel(chunk_in, c)[f];
         size_t off = (f * (size_t)channels + (size_t)c) * 4;
-        pcm_sample_encode_dsd_u32_bytes((float)val, &asio_buf_msb[off]);
-        pcm_sample_encode_dsd_u32_reversed_bytes((float)val,
-                                                 &asio_buf_lsb[off]);
+        pcm_sample_encode_dsd_u32_be_bytes(val, &asio_buf_msb[off]);
+        pcm_sample_encode_dsd_u32_reversed_bytes(val, &asio_buf_lsb[off]);
       }
     }
 
@@ -1201,7 +1200,7 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
       for (int c = 0; c < channels; c++) {
         size_t off = (f * (size_t)channels + (size_t)c) * 4;
         audio_chunk_get_channel(chunk_out_msb, c)[f] =
-            pcm_sample_decode_dsd_u32_bytes(&asio_buf_msb[off]);
+            pcm_sample_decode_dsd_u32_be_bytes(&asio_buf_msb[off]);
         audio_chunk_get_channel(chunk_out_lsb, c)[f] =
             pcm_sample_decode_dsd_u32_reversed_bytes(&asio_buf_lsb[off]);
       }

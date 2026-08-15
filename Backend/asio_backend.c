@@ -1894,9 +1894,9 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
           break;
         case ASIO_SAMPLE_FORMAT_DSD_INT8:
           if (playback->is_lsb) {
-            pcm_sample_encode_dsd_u32_reversed_bytes((float)sample, dst);
+            pcm_sample_encode_dsd_u32_reversed_bytes(sample, dst);
           } else {
-            pcm_sample_encode_dsd_u32_bytes((float)sample, dst);
+            pcm_sample_encode_dsd_u32_be_bytes(sample, dst);
           }
           break;
         default:
@@ -2355,7 +2355,7 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           if (capture->is_lsb) {
             sample = pcm_sample_decode_dsd_u32_reversed_bytes(src);
           } else {
-            sample = pcm_sample_decode_dsd_u32_bytes(src);
+            sample = pcm_sample_decode_dsd_u32_be_bytes(src);
           }
           break;
         default:

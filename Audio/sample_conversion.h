@@ -535,58 +535,18 @@ static inline double pcm_sample_decode_dsd_u32_be_bytes(const uint8_t* src) {
 
 /**
  * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes
- * (MSB bit order).
+ * with bit order reversed per byte (LSB bit order).
  *
  * @param val The double-precision sample containing packed 32 DSD bits.
  * @param dst Target 4-byte buffer.
  */
-static inline void pcm_sample_encode_dsd_u32_bytes(float val, uint8_t* dst) {
-  uint32_t u32;
-  memcpy(&u32, &val, sizeof(uint32_t));
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint32_t swapped = __builtin_bswap32(u32);
-#else
-  uint32_t swapped = u32;
-#endif
-  memcpy(dst, &swapped, sizeof(uint32_t));
-}
-
-/**
- * @brief Encode 32 oversampled DSD bits from a normalized sample into 4 bytes
- * with bit order reversed per byte (LSB bit order).
- *
- * @param val The single-precision sample containing packed 32 DSD bits.
- * @param dst Target 4-byte buffer.
- */
-static inline void pcm_sample_encode_dsd_u32_reversed_bytes(float val,
+static inline void pcm_sample_encode_dsd_u32_reversed_bytes(double val,
                                                             uint8_t* dst) {
-  uint32_t u32;
-  memcpy(&u32, &val, sizeof(uint32_t));
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint32_t swapped = __builtin_bswap32(u32);
-#else
-  uint32_t swapped = u32;
-#endif
-  uint8_t* bytes = (uint8_t*)&swapped;
-  dst[0] = pcm_reverse_bits_u8(bytes[0]);
-  dst[1] = pcm_reverse_bits_u8(bytes[1]);
-  dst[2] = pcm_reverse_bits_u8(bytes[2]);
-  dst[3] = pcm_reverse_bits_u8(bytes[3]);
-}
-
-/**
- * @brief Decode 4 bytes (MSB bit order) into a double sample containing 32 raw
- * DSD bits.
- *
- * @param src Source 4-byte buffer.
- * @return Normalized double sample containing packed 32 DSD bits.
- */
-static inline double pcm_sample_decode_dsd_u32_bytes(const uint8_t* src) {
-  uint32_t u32 = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
-                 ((uint32_t)src[2] << 8) | (uint32_t)src[3];
-  return pcm_sample_decode_dsd_u32(u32);
+  pcm_sample_encode_dsd_u32_be_bytes(val, dst);
+  dst[0] = pcm_reverse_bits_u8(dst[0]);
+  dst[1] = pcm_reverse_bits_u8(dst[1]);
+  dst[2] = pcm_reverse_bits_u8(dst[2]);
+  dst[3] = pcm_reverse_bits_u8(dst[3]);
 }
 
 /**

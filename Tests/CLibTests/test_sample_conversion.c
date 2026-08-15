@@ -156,38 +156,44 @@ TEST(SampleConversion_DSD_U32_RoundTrip) {
       ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
     }
 
-    float val_f = (float)decoded;
-    uint8_t buf_msb[4];
-    pcm_sample_encode_dsd_u32_bytes(val_f, buf_msb);
+    // BE bytes
+    uint8_t buf_be[4];
+    pcm_sample_encode_dsd_u32_be_bytes(decoded, buf_be);
 
-    // Convert back from bytes to double sample
-    double dec_msb = pcm_sample_decode_dsd_u32_bytes(buf_msb);
-    ASSERT_NEAR(decoded, dec_msb, 1e-15);
+    // Convert back from BE bytes to double sample
+    double dec_be = pcm_sample_decode_dsd_u32_be_bytes(buf_be);
+    ASSERT_NEAR(decoded, dec_be, 1e-15);
 
-    // Convert back from bytes to u32 bits
-    uint32_t val_msb_bits;
-    memcpy(&val_msb_bits, buf_msb, sizeof(uint32_t));
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    uint32_t val_msb_host = __builtin_bswap32(val_msb_bits);
-#else
-    uint32_t val_msb_host = val_msb_bits;
-#endif
-    ASSERT_EQ(patterns[i], val_msb_host);
+    // Convert back from BE bytes to u32 bits
+    uint32_t val_be_host = ((uint32_t)buf_be[0] << 24) |
+                           ((uint32_t)buf_be[1] << 16) |
+                           ((uint32_t)buf_be[2] << 8) | (uint32_t)buf_be[3];
+    ASSERT_EQ(patterns[i], val_be_host);
 
-    // LSB reversed bytes
+    // LE bytes
+    uint8_t buf_le[4];
+    pcm_sample_encode_dsd_u32_le_bytes(decoded, buf_le);
+    double dec_le = pcm_sample_decode_dsd_u32_le_bytes(buf_le);
+    ASSERT_NEAR(decoded, dec_le, 1e-15);
+
+    uint32_t val_le_host = (uint32_t)buf_le[0] | ((uint32_t)buf_le[1] << 8) |
+                           ((uint32_t)buf_le[2] << 16) |
+                           ((uint32_t)buf_le[3] << 24);
+    ASSERT_EQ(patterns[i], val_le_host);
+
+    // LSB reversed bytes (ASIO LSB)
     uint8_t buf_lsb[4];
-    pcm_sample_encode_dsd_u32_reversed_bytes(val_f, buf_lsb);
+    pcm_sample_encode_dsd_u32_reversed_bytes(decoded, buf_lsb);
 
     // Convert back from LSB bytes to double sample
     double dec_lsb = pcm_sample_decode_dsd_u32_reversed_bytes(buf_lsb);
     ASSERT_NEAR(decoded, dec_lsb, 1e-15);
 
-    // Check that LSB bytes are indeed bit-reversed versions of MSB bytes
-    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[0]), buf_lsb[0]);
-    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[1]), buf_lsb[1]);
-    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[2]), buf_lsb[2]);
-    ASSERT_EQ(pcm_reverse_bits_u8(buf_msb[3]), buf_lsb[3]);
+    // Check that LSB bytes are indeed bit-reversed versions of BE bytes
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_be[0]), buf_lsb[0]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_be[1]), buf_lsb[1]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_be[2]), buf_lsb[2]);
+    ASSERT_EQ(pcm_reverse_bits_u8(buf_be[3]), buf_lsb[3]);
   }
 }
 
