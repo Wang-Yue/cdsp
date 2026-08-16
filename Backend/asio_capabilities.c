@@ -118,17 +118,22 @@ static const GUID g_IID_IASIO_VAL = {
     0x11d2,
     {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
 
-typedef struct {
-  long FormatType;
-  double SampleRate;
-  long Flags;
-  char reserved[512];
-} ASIOIoFormat;
+// ASIO DSD Future Selectors (Steinberg ASIO SDK 2.3)
+#define kAsioSetIoFormat 0x23111961L
+#define kAsioGetIoFormat 0x23111983L
+#define kAsioCanDoIoFormat 0x23112004L
+#define ASE_SUCCESS 0x3f4847a0L
 
-#define kAsioCanDoIoFormat 0x23111961
-#define kAsioSetIoFormat 0x23111962
-#define kASIOFormatDSD 1
-#define ASE_SUCCESS 0x3f484722
+typedef enum {
+  kASIOFormatInvalid = -1,
+  kASIOFormatPCM = 0,
+  kASIOFormatDSD = 1
+} ASIOSampleFormatType;
+
+typedef struct {
+  ASIOSampleFormatType FormatType;
+  char future[512 - sizeof(ASIOSampleFormatType)];
+} ASIOIoFormat;
 
 #define STANDARD_RATES_COUNT 17
 static const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
@@ -403,15 +408,14 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   }
 
   // Supported rates probe (lines 1242-1247)
-  size_t supported_rates_indices[STANDARD_RATES_COUNT];
-  size_t supported_rates_count = 0;
+  bool pcm_rate_supported[STANDARD_RATES_COUNT] = {false};
   for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
     if (iasio->lpVtbl->canSampleRate(iasio, (double)STANDARD_RATES[r]) == 0) {
-      supported_rates_indices[supported_rates_count++] = r;
+      pcm_rate_supported[r] = true;
     }
   }
 
-  // Probe native sample format (lines 1249-1260)
+  // 2. Probe native sample format (lines 1249-1260)
   ASIOChannelInfo chan_info = {0};
   chan_info.channel = 0;
   chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
@@ -435,7 +439,8 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     goto error_cleanup;
   }
 
-  // Check whether Native DSD is supported by the ASIO driver
+  // 3. Check whether Native DSD is supported by the ASIO driver and probe DSD
+  // rates in DSD mode
   ASIOIoFormat dsd_format = {0};
   dsd_format.FormatType = kASIOFormatDSD;
   bool supports_dsd = false;
@@ -449,6 +454,19 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     if (fut_res == (ASIOError)ASE_SUCCESS || fut_res == 0 || fut_res == 1) {
       supports_dsd = true;
     }
+  }
+
+  bool dsd_rate_supported[STANDARD_RATES_COUNT] = {false};
+  if (supports_dsd) {
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
+    for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
+      double raw_dsd_rate = (double)STANDARD_RATES[r] * 32.0;
+      if (iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate) == 0) {
+        dsd_rate_supported[r] = true;
+      }
+    }
+    // Switch back
+    iasio->lpVtbl->setSampleRate(iasio, 44100.0);
   }
 
   // Get channel count (lines 1262-1274)
@@ -468,6 +486,14 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
 
   long target_channels = is_capture ? num_inputs : num_outputs;
 
+  // Count total supported unique rates
+  size_t total_rates = 0;
+  for (size_t i = 0; i < STANDARD_RATES_COUNT; i++) {
+    if (pcm_rate_supported[i] || dsd_rate_supported[i]) {
+      total_rates++;
+    }
+  }
+
   desc =
       (audio_device_descriptor_t*)calloc(1, sizeof(audio_device_descriptor_t));
   if (!desc) {
@@ -477,7 +503,7 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   snprintf(desc->name, sizeof(desc->name), "%s", target_dev_name);
 
   // Filter 0 channels or empty supported rates (lines 1283-1292)
-  if (target_channels <= 0 || supported_rates_count == 0) {
+  if (target_channels <= 0 || total_rates == 0) {
     desc->capability_sets_count = 0;
     desc->capability_sets = NULL;
     if (com_initialized) CoUninitialize();
@@ -502,24 +528,32 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
 
   channel_capability_t* cap = &set->capabilities[0];
   cap->channels = (int)target_channels;
-  cap->samplerates_count = supported_rates_count;
+  cap->samplerates_count = total_rates;
   cap->samplerates = (samplerate_capability_t*)calloc(
-      supported_rates_count, sizeof(samplerate_capability_t));
+      total_rates, sizeof(samplerate_capability_t));
   if (!cap->samplerates) {
     goto error_cleanup;
   }
 
-  for (size_t i = 0; i < supported_rates_count; i++) {
-    samplerate_capability_t* rate_cap = &cap->samplerates[i];
-    rate_cap->samplerate = (int)STANDARD_RATES[supported_rates_indices[i]];
+  size_t out_idx = 0;
+  for (size_t i = 0; i < STANDARD_RATES_COUNT; i++) {
+    bool is_pcm = pcm_rate_supported[i];
+    bool is_dsd = dsd_rate_supported[i];
+    if (!is_pcm && !is_dsd) continue;
 
-    size_t n_fmts = (strcmp(fmt_str, "DSD_INT8") != 0) ? 2 : 1;
+    samplerate_capability_t* rate_cap = &cap->samplerates[out_idx++];
+    rate_cap->samplerate = (int)STANDARD_RATES[i];
+
+    size_t n_fmts = (is_pcm ? 1 : 0) + (is_dsd ? 1 : 0);
     rate_cap->formats_count = n_fmts;
     rate_cap->formats = (char**)calloc(n_fmts, sizeof(char*));
     if (rate_cap->formats) {
-      rate_cap->formats[0] = strdup(fmt_str);
-      if (n_fmts > 1) {
-        rate_cap->formats[1] = strdup("DSD_INT8");
+      size_t f_idx = 0;
+      if (is_pcm) {
+        rate_cap->formats[f_idx++] = strdup(fmt_str);
+      }
+      if (is_dsd) {
+        rate_cap->formats[f_idx++] = strdup("DSD_INT8");
       }
     }
   }
