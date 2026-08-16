@@ -21,6 +21,13 @@ AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::
     : QObject(parent), m_engine(engine), m_settings(settings) {
     loadSavedConfigs();
     m_isInitializing = false;
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+            if (!validateSampleRates()) {
+                emit configChanged();
+            }
+        });
+    }
     startDeviceChangeListener();
     fetchDevices();
 }
