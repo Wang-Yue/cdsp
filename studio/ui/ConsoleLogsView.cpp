@@ -119,6 +119,7 @@ void ConsoleLogsView::setupUi() {
     m_table->setHorizontalHeaderLabels({"Timestamp", "Message"});
     m_table->horizontalHeader()->setVisible(false);
     m_table->verticalHeader()->setVisible(false);
+    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_table->setColumnWidth(0, 70);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -129,7 +130,7 @@ void ConsoleLogsView::setupUi() {
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setFrameShape(QFrame::NoFrame);
     m_table->setStyleSheet("QTableWidget { background-color: transparent; border: none; outline: none; }"
-                           "QTableWidget::item { padding: 3px 0px; }");
+                           "QTableWidget::item { padding: 2px 0px; }");
 
     scrollLayout->addWidget(m_table);
     mainLayout->addWidget(scrollContainer);
@@ -167,7 +168,6 @@ void ConsoleLogsView::refreshLogs() {
         m_table->setItem(row, 0, timeItem);
         m_table->setItem(row, 1, msgItem);
     }
-    m_table->resizeRowsToContents();
     if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
         m_table->scrollToBottom();
     }
@@ -194,8 +194,6 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
 
     m_table->setItem(row, 0, timeItem);
     m_table->setItem(row, 1, msgItem);
-
-    m_table->resizeRowToContents(row);
 
     constexpr int kMaxTableRows = 2000;
     while (m_table->rowCount() > kMaxTableRows) {
