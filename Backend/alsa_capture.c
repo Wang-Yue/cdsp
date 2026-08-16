@@ -567,11 +567,12 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   alsa_capture_process_events(capture);
 
   if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
-    logger_debug(&g_logger,
-                 "Capture source inactive and stop_on_inactive is enabled, "
-                 "stopping capture");
+    logger_info(&g_logger,
+                "Capture source inactive and stop_on_inactive is enabled, "
+                "stopping capture");
     if (err) {
-      backend_error_init(err, BACKEND_ERROR_NONE, "Capture source inactive");
+      backend_error_init(err, BACKEND_ERROR_READ_EOF,
+                         "Capture source inactive");
     }
     return false;
   }
@@ -738,7 +739,7 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           if (atomic_load_explicit(&capture->is_inactive,
                                    memory_order_acquire)) {
             if (err) {
-              backend_error_init(err, BACKEND_ERROR_NONE,
+              backend_error_init(err, BACKEND_ERROR_READ_EOF,
                                  "Capture source inactive");
             }
             return false;
