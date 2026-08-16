@@ -457,15 +457,15 @@ void MainWindow::setupMenuBar() {
     connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
     fileMenu->addAction(settingsAct);
 
-    auto aboutAct = new QAction("About CamillaDSP Monitor", this);
+    auto aboutAct = new QAction("About CDSP Monitor", this);
     aboutAct->setMenuRole(QAction::AboutRole);
     connect(aboutAct, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "About CamillaDSP Monitor",
-                           "CamillaDSP Monitor\n\nA cross-platform Qt audio DSP monitoring and pipeline controller.");
+        QMessageBox::about(this, "About CDSP Monitor",
+                           "CDSP Monitor\n\nA cross-platform Qt audio DSP monitoring and pipeline controller.");
     });
     fileMenu->addAction(aboutAct);
 
-    auto quitAct = new QAction("Quit CamillaDSP Monitor", this);
+    auto quitAct = new QAction("Quit CDSP Monitor", this);
     quitAct->setShortcuts({QKeySequence("Cmd+Q"), QKeySequence("Ctrl+Q")});
     quitAct->setMenuRole(QAction::QuitRole);
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
@@ -585,9 +585,9 @@ void MainWindow::setupMenuBar() {
 
     // 5. Help Menu
     auto helpMenu = bar->addMenu("&Help");
-    auto helpAct = new QAction("CamillaDSP Monitor Help", this);
+    auto helpAct = new QAction("CDSP Monitor Help", this);
     connect(helpAct, &QAction::triggered,
-            [this]() { QDesktopServices::openUrl(QUrl("https://github.com/HSAudio/CamillaDSP")); });
+            [this]() { QDesktopServices::openUrl(QUrl("https://https://github.com/Wang-Yue/Monitor-Qt")); });
     helpMenu->addAction(helpAct);
 }
 
@@ -598,7 +598,7 @@ void MainWindow::setupTrayIcon() {
 
     m_trayIcon = new QSystemTrayIcon(this);
     m_trayIcon->setIcon(AppIcon::getAppIcon());
-    m_trayIcon->setToolTip("CamillaDSP Monitor");
+    m_trayIcon->setToolTip("CDSP Monitor");
 
     m_trayMenu = new QMenu(this);
 
@@ -625,7 +625,7 @@ void MainWindow::setupTrayIcon() {
 
     m_trayMenu->addSeparator();
 
-    auto quitAct = m_trayMenu->addAction("Quit CamillaDSP Monitor");
+    auto quitAct = m_trayMenu->addAction("Quit CDSP Monitor");
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
 
     m_trayIcon->setContextMenu(m_trayMenu);

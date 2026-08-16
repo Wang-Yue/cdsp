@@ -760,7 +760,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     pwNameLbl->setFixedWidth(130);
     pwNameBox->addWidget(pwNameLbl);
     m_capPwNodeNameEdit = new QLineEdit(m_capPipeWireRow);
-    m_capPwNodeNameEdit->setPlaceholderText("e.g. CamillaDSP");
+    m_capPwNodeNameEdit->setPlaceholderText("e.g. CDSP");
     connect(m_capPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -773,7 +773,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     pwDescLbl->setFixedWidth(130);
     pwDescBox->addWidget(pwDescLbl);
     m_capPwNodeDescEdit = new QLineEdit(m_capPipeWireRow);
-    m_capPwNodeDescEdit->setPlaceholderText("e.g. CamillaDSP Capture");
+    m_capPwNodeDescEdit->setPlaceholderText("e.g. CDSP Capture");
     connect(m_capPwNodeDescEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -1236,7 +1236,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     pwPbNameLbl->setFixedWidth(130);
     pwPbNameBox->addWidget(pwPbNameLbl);
     m_pbPwNodeNameEdit = new QLineEdit(m_pbPipeWireRow);
-    m_pbPwNodeNameEdit->setPlaceholderText("e.g. CamillaDSP");
+    m_pbPwNodeNameEdit->setPlaceholderText("e.g. CDSP");
     connect(m_pbPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -1249,7 +1249,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     pwPbDescLbl->setFixedWidth(130);
     pwPbDescBox->addWidget(pwPbDescLbl);
     m_pbPwNodeDescEdit = new QLineEdit(m_pbPipeWireRow);
-    m_pbPwNodeDescEdit->setPlaceholderText("e.g. CamillaDSP Playback");
+    m_pbPwNodeDescEdit->setPlaceholderText("e.g. CDSP Playback");
     connect(m_pbPwNodeDescEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();

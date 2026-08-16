@@ -24,7 +24,7 @@ public:
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     app.setStyle(new AppStyle(app.style()));
-    app.setApplicationName("CamillaDSP Monitor - Qt");
+    app.setApplicationName("CDSP Monitor - Qt");
     app.setOrganizationName("DSPMonitor");
     app.setOrganizationDomain("dspmonitor.io");
     app.setQuitOnLastWindowClosed(false);
