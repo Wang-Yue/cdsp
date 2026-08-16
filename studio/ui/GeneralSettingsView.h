@@ -41,6 +41,9 @@ private:
     QSlider* m_silenceTimeoutSlider;
     QLabel* m_silenceTimeoutLabel;
 
+    class QCheckBox* m_closeToTrayCheck;
+    class QCheckBox* m_minimizeToTrayCheck;
+
     void setupUi();
 };
 

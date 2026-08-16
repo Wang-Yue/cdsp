@@ -1,5 +1,6 @@
 #include "ui/GeneralSettingsView.h"
 
+#include <QCheckBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -174,6 +175,33 @@ void GeneralSettingsView::setupUi() {
     silenceForm->addRow(silenceSubLbl);
 
     mainLayout->addWidget(silenceGroup);
+
+    // System Tray Group
+    auto trayGroup = new QGroupBox("System Tray", this);
+    auto trayLayout = new QVBoxLayout(trayGroup);
+    trayLayout->setSpacing(8);
+
+    m_closeToTrayCheck = new QCheckBox("Close window to system tray", trayGroup);
+    m_closeToTrayCheck->setChecked(m_settings ? m_settings->closeToTray : true);
+    connect(m_closeToTrayCheck, &QCheckBox::toggled, [this](bool checked) {
+        if (m_settings) {
+            m_settings->closeToTray = checked;
+            m_settings->savePreferences();
+        }
+    });
+    trayLayout->addWidget(m_closeToTrayCheck);
+
+    m_minimizeToTrayCheck = new QCheckBox("Minimize window to system tray", trayGroup);
+    m_minimizeToTrayCheck->setChecked(m_settings ? m_settings->minimizeToTray : false);
+    connect(m_minimizeToTrayCheck, &QCheckBox::toggled, [this](bool checked) {
+        if (m_settings) {
+            m_settings->minimizeToTray = checked;
+            m_settings->savePreferences();
+        }
+    });
+    trayLayout->addWidget(m_minimizeToTrayCheck);
+
+    mainLayout->addWidget(trayGroup);
     mainLayout->addStretch();
 }
 
@@ -185,6 +213,17 @@ void GeneralSettingsView::refreshUi() {
         m_darkThemeRadio->setChecked(m_settings->darkMode);
         m_lightThemeRadio->blockSignals(false);
         m_darkThemeRadio->blockSignals(false);
+
+        if (m_closeToTrayCheck) {
+            m_closeToTrayCheck->blockSignals(true);
+            m_closeToTrayCheck->setChecked(m_settings->closeToTray);
+            m_closeToTrayCheck->blockSignals(false);
+        }
+        if (m_minimizeToTrayCheck) {
+            m_minimizeToTrayCheck->blockSignals(true);
+            m_minimizeToTrayCheck->setChecked(m_settings->minimizeToTray);
+            m_minimizeToTrayCheck->blockSignals(false);
+        }
 
         if (!m_silenceThresholdSlider->isSliderDown()) {
             m_silenceThresholdSlider->blockSignals(true);

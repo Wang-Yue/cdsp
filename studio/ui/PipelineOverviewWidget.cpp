@@ -865,7 +865,8 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveLeftBtn->setStyleSheet(
                 QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
                         "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; margin: 0px; text-align: center; }")
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; "
+                        "margin: 0px; text-align: center; }")
                     .arg(StyleTheme::textPrimary().name())
                     .arg(StyleTheme::textSecondary().name()));
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
@@ -885,7 +886,8 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveRightBtn->setStyleSheet(
                 QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
                         "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; margin: 0px; text-align: center; }")
+                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; "
+                        "margin: 0px; text-align: center; }")
                     .arg(StyleTheme::textPrimary().name())
                     .arg(StyleTheme::textSecondary().name()));
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
@@ -903,8 +905,9 @@ void PipelineOverviewWidget::rebuildOverview() {
             deleteBtn->setFixedSize(24, 22);
             deleteBtn->setToolTip("Delete stage");
             deleteBtn->setCursor(Qt::PointingHandCursor);
-            deleteBtn->setStyleSheet("QPushButton { background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: none; "
-                                     "border-radius: 4px; font-size: 11px; padding: 0px; margin: 0px; text-align: center; }");
+            deleteBtn->setStyleSheet(
+                "QPushButton { background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: none; "
+                "border-radius: 4px; font-size: 11px; padding: 0px; margin: 0px; text-align: center; }");
             connect(deleteBtn, &QPushButton::clicked, [this, stageId = stage.id]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->deleteStage(stageId);

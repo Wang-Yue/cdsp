@@ -175,7 +175,7 @@ include_directories(
 )
 
 # Collect source files
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h")
+file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h" "src/*.qrc")
 
 add_executable(MonitorQt WIN32 ${SOURCES})
 

@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+#include "utils/AppIcon.h"
 #include "utils/CrashHandler.h"
 
 #include <QApplication>
@@ -29,6 +30,7 @@ int main(int argc, char* argv[]) {
     app.setOrganizationName("DSPMonitor");
     app.setOrganizationDomain("dspmonitor.io");
     app.setQuitOnLastWindowClosed(false);
+    app.setWindowIcon(AppIcon::getAppIcon());
 
     // Enable high DPI scaling
     QSurfaceFormat format;
@@ -36,6 +38,7 @@ int main(int argc, char* argv[]) {
     QSurfaceFormat::setDefaultFormat(format);
 
     MainWindow window;
+    window.setWindowIcon(AppIcon::getAppIcon());
     window.show();
 
     return app.exec();

@@ -19,6 +19,7 @@
 #include "ui/StyleTheme.h"
 #include "ui/VectorScopeView.h"
 #include "ui/VisualizerDetailViews.h"
+#include "utils/AppIcon.h"
 
 #include <QAbstractButton>
 #include <QAbstractSpinBox>
@@ -26,6 +27,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -154,6 +156,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     resize(1100, 780);
     setMinimumSize(960, 680);
     setWindowTitle("DSP Monitor");
+    setWindowIcon(AppIcon::getAppIcon());
 
     setupUi();
     setupMenuBar();
@@ -589,8 +592,13 @@ void MainWindow::setupMenuBar() {
 }
 
 void MainWindow::setupTrayIcon() {
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        return;
+    }
+
     m_trayIcon = new QSystemTrayIcon(this);
-    m_trayIcon->setIcon(QIcon::fromTheme("audio-card", QIcon(":/icons/app.png")));
+    m_trayIcon->setIcon(AppIcon::getAppIcon());
+    m_trayIcon->setToolTip("CamillaDSP Monitor");
 
     m_trayMenu = new QMenu(this);
 
@@ -621,6 +629,23 @@ void MainWindow::setupTrayIcon() {
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
 
     m_trayIcon->setContextMenu(m_trayMenu);
+
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+            if (isHidden() || isMinimized()) {
+                if (m_miniPlayer && m_miniPlayer->isVisible()) {
+                    m_miniPlayer->hide();
+                }
+                showNormal();
+                raise();
+                activateWindow();
+            } else {
+                raise();
+                activateWindow();
+            }
+        }
+    });
+
     m_trayIcon->show();
 
     updateTrayMenu();
@@ -755,7 +780,21 @@ void MainWindow::setupShortcuts() {
 }
 
 void MainWindow::changeEvent(QEvent* event) {
+    if (event->type() == QEvent::WindowStateChange) {
+        if (isMinimized() && m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible()) {
+            hide();
+        }
+    }
     QMainWindow::changeEvent(event);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (m_settings && m_settings->closeToTray && m_trayIcon && m_trayIcon->isVisible()) {
+        hide();
+        event->ignore();
+    } else {
+        event->accept();
+    }
 }
 
 void MainWindow::toggleMute() {
