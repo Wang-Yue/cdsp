@@ -186,14 +186,18 @@ void GeneralSettingsView::refreshUi() {
         m_lightThemeRadio->blockSignals(false);
         m_darkThemeRadio->blockSignals(false);
 
-        m_silenceThresholdSlider->blockSignals(true);
-        m_silenceThresholdSlider->setValue(m_settings->silenceThreshold);
-        m_silenceThresholdSlider->blockSignals(false);
+        if (!m_silenceThresholdSlider->isSliderDown()) {
+            m_silenceThresholdSlider->blockSignals(true);
+            m_silenceThresholdSlider->setValue(m_settings->silenceThreshold);
+            m_silenceThresholdSlider->blockSignals(false);
+        }
         m_silenceThresholdLabel->setText(QString("%1 dB").arg(m_settings->silenceThreshold));
 
-        m_silenceTimeoutSlider->blockSignals(true);
-        m_silenceTimeoutSlider->setValue(m_settings->silenceTimeout);
-        m_silenceTimeoutSlider->blockSignals(false);
+        if (!m_silenceTimeoutSlider->isSliderDown()) {
+            m_silenceTimeoutSlider->blockSignals(true);
+            m_silenceTimeoutSlider->setValue(m_settings->silenceTimeout);
+            m_silenceTimeoutSlider->blockSignals(false);
+        }
         if (m_settings->silenceTimeout == 0) {
             m_silenceTimeoutLabel->setText("Disabled");
         } else {
@@ -203,9 +207,11 @@ void GeneralSettingsView::refreshUi() {
 
     if (m_monitoring) {
         int pollRate = static_cast<int>(m_monitoring->pollingRate());
-        m_pollingRateSlider->blockSignals(true);
-        m_pollingRateSlider->setValue(pollRate);
-        m_pollingRateSlider->blockSignals(false);
+        if (!m_pollingRateSlider->isSliderDown()) {
+            m_pollingRateSlider->blockSignals(true);
+            m_pollingRateSlider->setValue(pollRate);
+            m_pollingRateSlider->blockSignals(false);
+        }
         m_pollingRateLabel->setText(QString("%1 Hz").arg(pollRate));
     }
 }

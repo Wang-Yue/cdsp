@@ -790,9 +790,11 @@ void MainWindow::updateMuteDisplay() {
 
 void MainWindow::updateVolumeDisplay() {
     float gain = m_settings->getVolume(Fader::Main);
-    m_headerVolumeSlider->blockSignals(true);
-    m_headerVolumeSlider->setValue(static_cast<int>(std::round(gain * 2.0f)));
-    m_headerVolumeSlider->blockSignals(false);
+    if (!m_headerVolumeSlider->isSliderDown()) {
+        m_headerVolumeSlider->blockSignals(true);
+        m_headerVolumeSlider->setValue(static_cast<int>(std::round(gain * 2.0f)));
+        m_headerVolumeSlider->blockSignals(false);
+    }
 
     m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
     m_gainValueLabel->setProperty("clipping", gain > 0.0f);
@@ -1210,9 +1212,8 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
                 if (stageTypeToCategory(st) == cat) {
                     QAction* act = catMenu->addAction(QString::fromStdString(stageTypeToString(st)));
                     connect(act, &QAction::triggered, [this, st]() {
-                        m_pipeline->addStage(st);
-                        size_t newIdx = m_pipeline->stages.size() - 1;
-                        m_lastActiveTag = QString("stage_%1").arg(newIdx);
+                        QUuid newId = m_pipeline->addStage(st);
+                        m_lastActiveTag = QString("stage_%1").arg(newId.toString());
                         handleNavigationTag(m_lastActiveTag);
                     });
                 }
@@ -1369,12 +1370,14 @@ void MainWindow::onPipelineChanged() {
         tagStillValid = true;
     }
 
-    // 2. Destroy ALL cached detail views of dynamic pipeline components to avoid stale indices or data
+    // 2. Destroy cached detail views of dynamic pipeline components EXCEPT the currently active view
     QList<QString> keysToDestroy;
     for (auto it = m_pageCache.begin(); it != m_pageCache.end(); ++it) {
         QString k = it.key();
         if (k.startsWith("stage_") || k.startsWith("eq_") || k.startsWith("conv_")) {
-            keysToDestroy.append(k);
+            if (!tagStillValid || k != m_lastActiveTag) {
+                keysToDestroy.append(k);
+            }
         }
     }
     for (const auto& key : keysToDestroy) {
@@ -1392,7 +1395,9 @@ void MainWindow::onPipelineChanged() {
 
     // 4. Retain current active view if valid; show placeholder if deleted
     if (tagStillValid) {
-        handleNavigationTag(m_lastActiveTag);
+        if (!m_pageCache.contains(m_lastActiveTag) || !m_pageCache[m_lastActiveTag]) {
+            handleNavigationTag(m_lastActiveTag);
+        }
     } else {
         if (m_unavailableWidget) {
             m_centralStack->removeWidget(m_unavailableWidget);

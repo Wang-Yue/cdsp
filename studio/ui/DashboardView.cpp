@@ -97,9 +97,11 @@ void DashboardView::updateFaderUi() {
         float vol = s->getVolume(row.fader);
         bool muted = s->getMuted(row.fader);
 
-        row.slider->blockSignals(true);
-        row.slider->setValue(static_cast<int>(std::round(vol * 2.0f)));
-        row.slider->blockSignals(false);
+        if (!row.slider->isSliderDown()) {
+            row.slider->blockSignals(true);
+            row.slider->setValue(static_cast<int>(std::round(vol * 2.0f)));
+            row.slider->blockSignals(false);
+        }
 
         row.gainValueLabel->setText(QString::asprintf("%+.1f dB", vol));
         if (vol > 0.0f) {

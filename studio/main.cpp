@@ -2,50 +2,33 @@
 #include "utils/CrashHandler.h"
 
 #include <QApplication>
-#include <QEvent>
-#include <QMouseEvent>
-#include <QSlider>
-#include <QStyle>
+#include <QProxyStyle>
 #include <QSurfaceFormat>
-#include <algorithm>
-#include <cmath>
 
-class ClickableSliderFilter : public QObject {
+class AppStyle : public QProxyStyle {
 public:
-    explicit ClickableSliderFilter(QObject* parent = nullptr) : QObject(parent) {}
+    using QProxyStyle::QProxyStyle;
 
-protected:
-    bool eventFilter(QObject* obj, QEvent* event) override {
-        auto slider = qobject_cast<QSlider*>(obj);
-        if (slider && slider->isEnabled()) {
-            if (event->type() == QEvent::MouseButtonPress) {
-                auto me = static_cast<QMouseEvent*>(event);
-                if (me->button() == Qt::LeftButton) {
-                    int val = 0;
-                    if (slider->orientation() == Qt::Horizontal) {
-                        val = QStyle::sliderValueFromPosition(slider->minimum(), slider->maximum(), me->pos().x(),
-                                                              slider->width(), slider->invertedAppearance());
-                    } else {
-                        val = QStyle::sliderValueFromPosition(slider->minimum(), slider->maximum(),
-                                                              slider->height() - me->pos().y(), slider->height(),
-                                                              slider->invertedAppearance());
-                    }
-                    slider->setValue(val);
-                }
-            }
+    int styleHint(StyleHint hint, const QStyleOption* option = nullptr, const QWidget* widget = nullptr,
+                  QStyleHintReturn* returnData = nullptr) const override {
+        if (hint == SH_Slider_AbsoluteSetButtons) {
+            return Qt::LeftButton | Qt::MiddleButton;
         }
-        return QObject::eventFilter(obj, event);
+        if (hint == SH_Slider_PageSetButtons) {
+            return Qt::NoButton;
+        }
+        return QProxyStyle::styleHint(hint, option, widget, returnData);
     }
 };
 
 int main(int argc, char* argv[]) {
     installCrashHandler();
     QApplication app(argc, argv);
+    app.setStyle(new AppStyle(app.style()));
     app.setApplicationName("CamillaDSP Monitor - Qt");
     app.setOrganizationName("DSPMonitor");
     app.setOrganizationDomain("dspmonitor.io");
     app.setQuitOnLastWindowClosed(false);
-    app.installEventFilter(new ClickableSliderFilter(&app));
 
     // Enable high DPI scaling
     QSurfaceFormat format;
