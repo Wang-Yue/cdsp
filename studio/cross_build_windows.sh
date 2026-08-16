@@ -25,11 +25,15 @@ QT_HOST_PATH="${QT_HOST_PATH:-/Users/wangyue/Qt6.8.2/6.8.2/macos}"
 ENABLE_FFTW="${ENABLE_FFTW:-ON}"
 USE_LIBDISPATCH="${USE_LIBDISPATCH:-ON}"
 
+NPROC="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
+export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
+
 echo "=== Cross-compiling Monitor-Qt for Windows (x86_64 MinGW) on Mac ==="
 echo "Options:      WASAPI=1, ASIO=1, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${USE_LIBDISPATCH}"
 echo "Compiler:     ${CROSS_PREFIX}gcc / ${CROSS_PREFIX}g++"
 echo "Toolchain:    $TOOLCHAIN_FILE"
 echo "Build Dir:    $BUILD_DIR"
+echo "Jobs:         $NPROC"
 
 CMAKE_ARGS=(
     -B "$BUILD_DIR"
@@ -52,8 +56,7 @@ fi
 
 cmake "${CMAKE_ARGS[@]}"
 
-NPROC=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
-cmake --build "$BUILD_DIR" -j"$NPROC" "$@"
+cmake --build "$BUILD_DIR" --parallel "$NPROC" "$@"
 
 echo "✅ Windows compilation complete: $BUILD_DIR/MonitorQt.exe"
 

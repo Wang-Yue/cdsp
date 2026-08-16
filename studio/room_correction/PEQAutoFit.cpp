@@ -190,8 +190,8 @@ static std::optional<BiquadParameters> seedPeak(const std::vector<double>& resid
     return p;
 }
 
-static std::optional<BiquadParameters> seedShelf(BiquadType type, std::pair<double, double> edgeBand, double cornerHz,
-                                                 const std::vector<double>& residual,
+static std::optional<BiquadParameters> seedShelf(BiquadType type, const std::pair<double, double>& edgeBand,
+                                                 double cornerHz, const std::vector<double>& residual,
                                                  const std::vector<double>& frequencies,
                                                  const PEQAutoFitOptions& options) {
     std::vector<double> samples;

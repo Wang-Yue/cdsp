@@ -24,11 +24,15 @@ fi
 ENABLE_FFTW="${ENABLE_FFTW:-ON}"
 USE_LIBDISPATCH="${USE_LIBDISPATCH:-ON}"
 
+NPROC="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
+export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
+
 echo "=== Cross-compiling Monitor-Qt for Raspberry Pi (aarch64) on Mac ==="
 echo "Matching cdsp options: ALSA=1, PIPEWIRE=1, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${USE_LIBDISPATCH}"
 echo "Sysroot:   $SYSROOT"
 echo "Toolchain: $TOOLCHAIN_FILE"
 echo "Build Dir: $BUILD_DIR"
+echo "Jobs:      $NPROC"
 
 cmake -B "$BUILD_DIR" -S "$PROJECT_DIR" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
@@ -36,7 +40,6 @@ cmake -B "$BUILD_DIR" -S "$PROJECT_DIR" \
     -DENABLE_FFTW="$ENABLE_FFTW" \
     -DUSE_LIBDISPATCH="$USE_LIBDISPATCH"
 
-NPROC=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
-cmake --build "$BUILD_DIR" -j"$NPROC" "$@"
+cmake --build "$BUILD_DIR" --parallel "$NPROC" "$@"
 
 echo "✅ Raspberry Pi cross-compilation complete: $BUILD_DIR/MonitorQt"
