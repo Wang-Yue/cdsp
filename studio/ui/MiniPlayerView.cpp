@@ -18,6 +18,14 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
+#if defined(Q_OS_WIN)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <windowsx.h>
+#endif
+
 #ifdef Q_OS_MAC
 #include <objc/message.h>
 #include <objc/runtime.h>
@@ -56,6 +64,18 @@ static void setMacFloatingPanelProperties(QWidget* widget) {
     }
 }
 #endif
+
+static void enableMouseTrackingRecursively(QWidget* w, QObject* filter) {
+    if (!w)
+        return;
+    w->setMouseTracking(true);
+    w->installEventFilter(filter);
+    for (QObject* child : w->children()) {
+        if (QWidget* childW = qobject_cast<QWidget*>(child)) {
+            enableMouseTrackingRecursively(childW, filter);
+        }
+    }
+}
 
 MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
                                std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
@@ -115,8 +135,74 @@ Fader MiniPlayerView::currentFader() const {
     return Fader::Main;
 }
 
+MiniPlayerView::ResizeEdge MiniPlayerView::hitTestBorder(const QPoint& globalPos) const {
+    QPoint pos = mapFromGlobal(globalPos);
+    int x = pos.x();
+    int y = pos.y();
+    int w = width();
+    int h = height();
+
+    if (x < -3 || x > w + 3 || y < -3 || y > h + 3) {
+        return ResizeEdge::None;
+    }
+
+    const int border = 8;
+    int edgeFlags = 0;
+
+    if (x <= border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Left);
+    if (x >= w - border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Right);
+    if (y <= border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Top);
+    if (y >= h - border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Bottom);
+
+    return static_cast<ResizeEdge>(edgeFlags);
+}
+
+void MiniPlayerView::updateResizeCursor(ResizeEdge edge) {
+    switch (edge) {
+    case ResizeEdge::Left:
+    case ResizeEdge::Right:
+        setCursor(Qt::SizeHorCursor);
+        break;
+    case ResizeEdge::Top:
+    case ResizeEdge::Bottom:
+        setCursor(Qt::SizeVerCursor);
+        break;
+    case ResizeEdge::TopLeft:
+    case ResizeEdge::BottomRight:
+        setCursor(Qt::SizeFDiagCursor);
+        break;
+    case ResizeEdge::TopRight:
+    case ResizeEdge::BottomLeft:
+        setCursor(Qt::SizeBDiagCursor);
+        break;
+    default:
+        unsetCursor();
+        break;
+    }
+}
+
+void MiniPlayerView::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    QSettings settings;
+    settings.setValue("MiniPlayer/geometry", saveGeometry());
+}
+
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
+        ResizeEdge edge = hitTestBorder(event->globalPosition().toPoint());
+        if (edge != ResizeEdge::None) {
+            m_isResizing = true;
+            m_activeResizeEdge = edge;
+            m_dragStartGeometry = geometry();
+            m_dragStartPos = event->globalPosition().toPoint();
+            event->accept();
+            return;
+        }
+
         QWidget* child = childAt(event->position().toPoint());
         if (!child || (!qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child))) {
             m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
@@ -129,9 +215,44 @@ void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
 }
 
 void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
+    QPoint globalPos = event->globalPosition().toPoint();
+
+    if (m_isResizing) {
+        QPoint delta = globalPos - m_dragStartPos;
+        QRect newGeom = m_dragStartGeometry;
+
+        int minW = minimumWidth();
+        int maxW = maximumWidth();
+        int minH = minimumHeight();
+        int maxH = maximumHeight();
+
+        int edgeVal = static_cast<int>(m_activeResizeEdge);
+
+        if (edgeVal & static_cast<int>(ResizeEdge::Left)) {
+            int newW = qBound(minW, m_dragStartGeometry.width() - delta.x(), maxW);
+            newGeom.setLeft(m_dragStartGeometry.right() - newW + 1);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Right)) {
+            int newW = qBound(minW, m_dragStartGeometry.width() + delta.x(), maxW);
+            newGeom.setWidth(newW);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Top)) {
+            int newH = qBound(minH, m_dragStartGeometry.height() - delta.y(), maxH);
+            newGeom.setTop(m_dragStartGeometry.bottom() - newH + 1);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Bottom)) {
+            int newH = qBound(minH, m_dragStartGeometry.height() + delta.y(), maxH);
+            newGeom.setHeight(newH);
+        }
+
+        setGeometry(newGeom);
+        event->accept();
+        return;
+    }
+
     if (m_isDragging && (event->buttons() & Qt::LeftButton)) {
-        QPoint newPos = event->globalPosition().toPoint() - m_dragPosition;
-        if (auto screen = QGuiApplication::screenAt(event->globalPosition().toPoint())) {
+        QPoint newPos = globalPos - m_dragPosition;
+        if (auto screen = QGuiApplication::screenAt(globalPos)) {
             QRect screenGeom = screen->availableGeometry();
             int minX = screenGeom.left() - width() + 30;
             int maxX = screenGeom.right() - 30;
@@ -144,11 +265,27 @@ void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+
+    // Hover state: update cursor
+    ResizeEdge edge = hitTestBorder(globalPos);
+    updateResizeCursor(edge);
+
     QWidget::mouseMoveEvent(event);
 }
 
 void MiniPlayerView::mouseReleaseEvent(QMouseEvent* event) {
-    m_isDragging = false;
+    if (m_isResizing) {
+        m_isResizing = false;
+        m_activeResizeEdge = ResizeEdge::None;
+        QSettings settings;
+        settings.setValue("MiniPlayer/geometry", saveGeometry());
+    }
+    if (m_isDragging) {
+        m_isDragging = false;
+        QSettings settings;
+        settings.setValue("MiniPlayer/geometry", saveGeometry());
+    }
+    updateResizeCursor(hitTestBorder(event->globalPosition().toPoint()));
     QWidget::mouseReleaseEvent(event);
 }
 
@@ -163,6 +300,9 @@ void MiniPlayerView::enterEvent(QEnterEvent* event) {
 }
 
 void MiniPlayerView::leaveEvent(QEvent* event) {
+    if (!m_isResizing && !m_isDragging) {
+        unsetCursor();
+    }
     QWidget::leaveEvent(event);
     if (m_headerOpacityEffect) {
         auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
@@ -325,6 +465,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
     layout->addWidget(outChip);
 
     layout->addStretch();
+    enableMouseTrackingRecursively(m_pipelineMiniCard, this);
 }
 
 void MiniPlayerView::updateModeButtonStyles(int activeIndex) {
@@ -535,22 +676,7 @@ void MiniPlayerView::setupUi() {
     mainLayout->addWidget(m_viewStack);
     updateEngineStatus(m_dsp->status);
 
-    topBarWidget->installEventFilter(this);
-    m_viewStack->installEventFilter(this);
-    if (pipeScroll)
-        pipeScroll->installEventFilter(this);
-    if (m_pipelineMiniCard)
-        m_pipelineMiniCard->installEventFilter(this);
-    if (m_spectrumView)
-        m_spectrumView->installEventFilter(this);
-    if (m_metersView)
-        m_metersView->installEventFilter(this);
-    if (m_analogVUView)
-        m_analogVUView->installEventFilter(this);
-    if (m_spectrogramView)
-        m_spectrogramView->installEventFilter(this);
-    if (m_vectorScopeView)
-        m_vectorScopeView->installEventFilter(this);
+    enableMouseTrackingRecursively(this, this);
 
     onFaderChanged(0);
 }
@@ -620,8 +746,121 @@ bool MiniPlayerView::eventFilter(QObject* watched, QEvent* event) {
                 return true;
             }
         }
+    } else if (event->type() == QEvent::MouseMove) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (m_isResizing || m_isDragging) {
+            mouseMoveEvent(mouseEv);
+            return true;
+        }
+        ResizeEdge edge = hitTestBorder(mouseEv->globalPosition().toPoint());
+        if (edge != ResizeEdge::None) {
+            updateResizeCursor(edge);
+        } else {
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                unsetCursor();
+            }
+        }
+    } else if (event->type() == QEvent::MouseButtonPress) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            ResizeEdge edge = hitTestBorder(mouseEv->globalPosition().toPoint());
+            if (edge != ResizeEdge::None) {
+                m_isResizing = true;
+                m_activeResizeEdge = edge;
+                m_dragStartGeometry = geometry();
+                m_dragStartPos = mouseEv->globalPosition().toPoint();
+                return true;
+            }
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                m_dragPosition = mouseEv->globalPosition().toPoint() - frameGeometry().topLeft();
+                m_isDragging = true;
+                return true;
+            }
+        }
+    } else if (event->type() == QEvent::MouseButtonRelease) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            if (m_isResizing || m_isDragging) {
+                mouseReleaseEvent(mouseEv);
+                return true;
+            }
+        }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+bool MiniPlayerView::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
+#if defined(Q_OS_WIN)
+    if (eventType == "windows_generic_MSG") {
+        MSG* msg = static_cast<MSG*>(message);
+        if (msg->message == WM_NCHITTEST) {
+            POINT pt = {GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+            RECT winRect;
+            GetWindowRect(reinterpret_cast<HWND>(winId()), &winRect);
+
+            int x = pt.x - winRect.left;
+            int y = pt.y - winRect.top;
+            int w = winRect.right - winRect.left;
+            int h = winRect.bottom - winRect.top;
+
+            const int border = 8;
+            bool left = (x <= border);
+            bool right = (x >= w - border);
+            bool top = (y <= border);
+            bool bottom = (y >= h - border);
+
+            if (top && left) {
+                *result = HTTOPLEFT;
+                return true;
+            }
+            if (top && right) {
+                *result = HTTOPRIGHT;
+                return true;
+            }
+            if (bottom && left) {
+                *result = HTBOTTOMLEFT;
+                return true;
+            }
+            if (bottom && right) {
+                *result = HTBOTTOMRIGHT;
+                return true;
+            }
+            if (left) {
+                *result = HTLEFT;
+                return true;
+            }
+            if (right) {
+                *result = HTRIGHT;
+                return true;
+            }
+            if (top) {
+                *result = HTTOP;
+                return true;
+            }
+            if (bottom) {
+                *result = HTBOTTOM;
+                return true;
+            }
+
+            QPoint localPos = mapFromGlobal(QPoint(pt.x, pt.y));
+            QWidget* child = childAt(localPos);
+            if (child && (qobject_cast<QAbstractButton*>(child) || qobject_cast<QAbstractSlider*>(child))) {
+                *result = HTCLIENT;
+                return true;
+            }
+
+            *result = HTCAPTION;
+            return true;
+        } else if (msg->message == WM_NCLBUTTONDBLCLK) {
+            closeAndRestoreMain();
+            *result = 0;
+            return true;
+        }
+    }
+#endif
+    return QWidget::nativeEvent(eventType, message, result);
 }
 
 void MiniPlayerView::refreshMeters() {

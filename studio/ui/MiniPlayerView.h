@@ -31,6 +31,7 @@ signals:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -40,6 +41,7 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
 private slots:
     void refreshMeters();
@@ -48,12 +50,29 @@ private slots:
     void closeAndRestoreMain();
 
 private:
+    enum class ResizeEdge {
+        None = 0,
+        Left = 1,
+        Right = 2,
+        Top = 4,
+        Bottom = 8,
+        TopLeft = 4 | 1,
+        TopRight = 4 | 2,
+        BottomLeft = 8 | 1,
+        BottomRight = 8 | 2
+    };
+
     std::shared_ptr<DSPEngineController> m_dsp;
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
 
     QPoint m_dragPosition;
     bool m_isDragging = false;
+    bool m_isResizing = false;
+    ResizeEdge m_activeResizeEdge = ResizeEdge::None;
+    QRect m_dragStartGeometry;
+    QPoint m_dragStartPos;
+
     QGraphicsOpacityEffect* m_headerOpacityEffect = nullptr;
     QPushButton* m_playStopBtn = nullptr;
     QPushButton* m_muteBtn = nullptr;
@@ -74,6 +93,8 @@ private:
     void setupUi();
     void buildMiniPipelineUi();
     void updateModeButtonStyles(int activeIndex);
+    ResizeEdge hitTestBorder(const QPoint& globalPos) const;
+    void updateResizeCursor(ResizeEdge edge);
 };
 
 #endif // MINI_PLAYER_VIEW_H
