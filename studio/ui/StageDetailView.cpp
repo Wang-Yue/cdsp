@@ -4,7 +4,6 @@
 
 #include <QButtonGroup>
 #include <QFormLayout>
-#include <QGraphicsOpacityEffect>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -404,14 +403,7 @@ void StageDetailView::setupUi() {
         if (m_stageIndex < m_pipeline->stages.size()) {
             m_pipeline->stages[m_stageIndex].isEnabled = checked;
             if (m_optionsContainer) {
-                m_optionsContainer->setEnabled(true);
-                if (!checked) {
-                    auto opacityEffect = new QGraphicsOpacityEffect(m_optionsContainer);
-                    opacityEffect->setOpacity(0.5);
-                    m_optionsContainer->setGraphicsEffect(opacityEffect);
-                } else {
-                    m_optionsContainer->setGraphicsEffect(nullptr);
-                }
+                m_optionsContainer->setEnabled(checked);
             }
             applyConfig();
         }
@@ -476,8 +468,10 @@ void StageDetailView::buildStageOptionsUi() {
     auto containerLayout = qobject_cast<QVBoxLayout*>(m_optionsContainer->layout());
     QLayoutItem* item;
     while ((item = containerLayout->takeAt(0)) != nullptr) {
-        if (item->widget())
+        if (item->widget()) {
+            item->widget()->hide();
             item->widget()->deleteLater();
+        }
         delete item;
     }
 
@@ -485,14 +479,7 @@ void StageDetailView::buildStageOptionsUi() {
         return;
     auto& stage = m_pipeline->stages[m_stageIndex];
 
-    m_optionsContainer->setEnabled(true);
-    if (!stage.isEnabled) {
-        auto opacityEffect = new QGraphicsOpacityEffect(m_optionsContainer);
-        opacityEffect->setOpacity(0.5);
-        m_optionsContainer->setGraphicsEffect(opacityEffect);
-    } else {
-        m_optionsContainer->setGraphicsEffect(nullptr);
-    }
+    m_optionsContainer->setEnabled(stage.isEnabled);
 
     int hwChannels =
         (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
@@ -748,13 +735,6 @@ void StageDetailView::buildStageOptionsUi() {
         presetVBox->setSpacing(10);
 
         presetGroup->setEnabled(!stage.cxCustomEnabled);
-        if (stage.cxCustomEnabled) {
-            auto opacityEffect = new QGraphicsOpacityEffect(presetGroup);
-            opacityEffect->setOpacity(0.5);
-            presetGroup->setGraphicsEffect(opacityEffect);
-        } else {
-            presetGroup->setGraphicsEffect(nullptr);
-        }
 
         auto levelHBox = new QHBoxLayout();
         levelHBox->setSpacing(16);

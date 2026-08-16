@@ -4,7 +4,6 @@
 #include "ui/StyleTheme.h"
 
 #include <QFormLayout>
-#include <QGraphicsOpacityEffect>
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
@@ -175,13 +174,6 @@ void ResamplerDetailView::updateVisibility() {
     if (m_contentWidget && m_settings) {
         bool enabled = m_settings->resamplerEnabled;
         m_contentWidget->setEnabled(enabled);
-        if (!enabled) {
-            auto opacityEffect = new QGraphicsOpacityEffect(m_contentWidget);
-            opacityEffect->setOpacity(0.5);
-            m_contentWidget->setGraphicsEffect(opacityEffect);
-        } else {
-            m_contentWidget->setGraphicsEffect(nullptr);
-        }
     }
 }
 
