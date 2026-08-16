@@ -170,19 +170,6 @@ struct AudioDeviceDescriptor {
     bool operator!=(const AudioDeviceDescriptor& other) const { return !(*this == other); }
 };
 
-#if !defined(ENABLE_COREAUDIO) && !defined(ENABLE_WASAPI) && !defined(ENABLE_ASIO) && !defined(ENABLE_ALSA) &&         \
-    !defined(ENABLE_PIPEWIRE)
-#if defined(__APPLE__) || defined(Q_OS_MAC)
-#define ENABLE_COREAUDIO 1
-#elif defined(_WIN32) || defined(Q_OS_WIN)
-#define ENABLE_WASAPI 1
-#define ENABLE_ASIO 1
-#elif defined(__linux__) || defined(Q_OS_LINUX)
-#define ENABLE_ALSA 1
-#define ENABLE_PIPEWIRE 1
-#endif
-#endif
-
 enum class AudioBackendType {
 #if defined(ENABLE_COREAUDIO)
     CoreAudio,
