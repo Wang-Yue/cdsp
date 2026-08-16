@@ -704,6 +704,13 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     form->addRow("", m_capAlsaStopInactiveCheck);
 
+    m_capAlsaThreadedCheck = new QCheckBox("Threaded Ring Buffer Mode", w);
+    connect(m_capAlsaThreadedCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_capAlsaThreadedCheck);
+
     m_capAlsaLinkVolRow = new QWidget(w);
     auto capVolLayout = new QHBoxLayout(m_capAlsaLinkVolRow);
     capVolLayout->setContentsMargins(0, 0, 0, 0);
@@ -1203,6 +1210,13 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_pbWasapiPollingCheck);
 
+    m_pbAlsaThreadedCheck = new QCheckBox("Threaded Ring Buffer Mode", w);
+    connect(m_pbAlsaThreadedCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_pbAlsaThreadedCheck);
+
     m_pbPipeWireRow = new QWidget(w);
     auto pbPwLayout = new QVBoxLayout(m_pbPipeWireRow);
     pbPwLayout->setContentsMargins(0, 0, 0, 0);
@@ -1624,6 +1638,8 @@ void DevicePickerView::refreshUi() {
     m_capWasapiPollingCheck->setVisible(isCapWasapi);
     m_capAlsaStopInactiveCheck->setChecked(m_devices->captureConfig.stopOnInactive);
     m_capAlsaStopInactiveCheck->setVisible(isCapAlsa);
+    m_capAlsaThreadedCheck->setChecked(m_devices->captureConfig.threaded);
+    m_capAlsaThreadedCheck->setVisible(isCapAlsa);
     m_capAlsaLinkVolRow->setVisible(isCapAlsa);
     m_capAlsaLinkMuteRow->setVisible(isCapAlsa);
     if (m_capAlsaLinkVolumeEdit->text().toStdString() != m_devices->captureConfig.linkVolumeControl) {
@@ -1798,6 +1814,14 @@ void DevicePickerView::refreshUi() {
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
 
+    bool isPbAlsa = false;
+#if defined(ENABLE_ALSA)
+    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
+        isPbAlsa = true;
+#endif
+    m_pbAlsaThreadedCheck->setVisible(isPbAlsa);
+    m_pbAlsaThreadedCheck->setChecked(m_devices->playbackConfig.threaded);
+
     m_pbPipeWireRow->setVisible(isPbPw);
     if (m_pbPwNodeNameEdit->text().toStdString() != m_devices->playbackConfig.nodeName) {
         m_pbPwNodeNameEdit->blockSignals(true);
@@ -1951,6 +1975,7 @@ void DevicePickerView::applySettings() {
 
         pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
         pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
+        pbCfg.threaded = m_pbAlsaThreadedCheck->isChecked();
         if (m_pbPwNodeNameEdit)
             pbCfg.nodeName = m_pbPwNodeNameEdit->text().toStdString();
         if (m_pbPwNodeDescEdit)
@@ -2038,6 +2063,7 @@ void DevicePickerView::applySettings() {
         capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
         capCfg.polling = m_capWasapiPollingCheck->isChecked();
         capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
+        capCfg.threaded = m_capAlsaThreadedCheck->isChecked();
         if (m_capAlsaLinkVolumeEdit)
             capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
         if (m_capAlsaLinkMuteEdit)

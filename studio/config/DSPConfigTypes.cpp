@@ -1223,6 +1223,8 @@ ALSACaptureConfig ALSACaptureConfig::fromJson(const QJsonObject& json) {
         cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
     if (json.contains("link_mute_control"))
         cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
+    if (json.contains("threaded"))
+        cfg.threaded = json["threaded"].toBool();
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -1244,6 +1246,8 @@ QJsonObject ALSACaptureConfig::toJson() const {
         obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
     if (linkMuteControl.has_value())
         obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
+    if (threaded.has_value())
+        obj["threaded"] = threaded.value();
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)
@@ -1261,6 +1265,8 @@ ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.device = json["device"].toString().toStdString();
     if (json.contains("format"))
         cfg.format = json["format"].toString().toStdString();
+    if (json.contains("threaded"))
+        cfg.threaded = json["threaded"].toBool();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
@@ -1280,6 +1286,8 @@ QJsonObject ALSAPlaybackConfig::toJson() const {
         obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
+    if (threaded.has_value())
+        obj["threaded"] = threaded.value();
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())

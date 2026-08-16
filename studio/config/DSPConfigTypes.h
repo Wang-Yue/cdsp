@@ -455,6 +455,7 @@ struct ALSACaptureConfig {
     std::optional<bool> stopOnInactive;
     std::optional<std::string> linkVolumeControl;
     std::optional<std::string> linkMuteControl;
+    std::optional<bool> threaded;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static ALSACaptureConfig fromJson(const QJsonObject& json);
@@ -462,7 +463,7 @@ struct ALSACaptureConfig {
     bool operator==(const ALSACaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format &&
                stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
+               linkMuteControl == o.linkMuteControl && threaded == o.threaded && channelLabels == o.channelLabels;
     }
     bool operator!=(const ALSACaptureConfig& o) const { return !(*this == o); }
 };
@@ -471,6 +472,7 @@ struct ALSAPlaybackConfig {
     int channels = 2;
     std::optional<std::string> device;
     std::optional<std::string> format;
+    std::optional<bool> threaded;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
@@ -478,8 +480,8 @@ struct ALSAPlaybackConfig {
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ALSAPlaybackConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
-               dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+        return channels == o.channels && device == o.device && format == o.format && threaded == o.threaded &&
+               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };

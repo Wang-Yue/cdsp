@@ -30,6 +30,7 @@ struct DeviceConfig {
     bool loopback = false;
     bool polling = false;
     bool stopOnInactive = false;
+    bool threaded = false;
     std::string linkVolumeControl;
     std::string linkMuteControl;
     bool bypassDoP = true;
