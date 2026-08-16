@@ -393,11 +393,6 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
-        pb.alsa.stopOnInactive = stopOnInactive;
-        if (!linkVolumeControl.empty())
-            pb.alsa.linkVolumeControl = linkVolumeControl;
-        if (!linkMuteControl.empty())
-            pb.alsa.linkMuteControl = linkMuteControl;
         pb.alsa.outputDoP = outputDoP;
         pb.alsa.dsdEncoderFilter = dsdEncoderFilter;
         break;

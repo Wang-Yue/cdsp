@@ -1261,12 +1261,6 @@ ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.device = json["device"].toString().toStdString();
     if (json.contains("format"))
         cfg.format = json["format"].toString().toStdString();
-    if (json.contains("stop_on_inactive"))
-        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
-    if (json.contains("link_volume_control"))
-        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
-    if (json.contains("link_mute_control"))
-        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
     if (json.contains("output_dop"))
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
@@ -1286,12 +1280,6 @@ QJsonObject ALSAPlaybackConfig::toJson() const {
         obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
-    if (stopOnInactive.has_value())
-        obj["stop_on_inactive"] = stopOnInactive.value();
-    if (linkVolumeControl.has_value())
-        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
-    if (linkMuteControl.has_value())
-        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())

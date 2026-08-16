@@ -141,11 +141,6 @@ private:
     QCheckBox* m_exclusiveModeCheck = nullptr;
     QLabel* m_exclusiveModeHint = nullptr;
     QCheckBox* m_pbWasapiPollingCheck = nullptr;
-    QCheckBox* m_pbAlsaStopInactiveCheck = nullptr;
-    QWidget* m_pbAlsaLinkVolRow = nullptr;
-    QLineEdit* m_pbAlsaLinkVolumeEdit = nullptr;
-    QWidget* m_pbAlsaLinkMuteRow = nullptr;
-    QLineEdit* m_pbAlsaLinkMuteEdit = nullptr;
     QWidget* m_pbPipeWireRow = nullptr;
     QLineEdit* m_pbPwNodeNameEdit = nullptr;
     QLineEdit* m_pbPwNodeDescEdit = nullptr;

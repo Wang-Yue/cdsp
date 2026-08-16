@@ -1203,43 +1203,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_pbWasapiPollingCheck);
 
-    m_pbAlsaStopInactiveCheck = new QCheckBox("Stop Streams When Inactive", w);
-    connect(m_pbAlsaStopInactiveCheck, &QCheckBox::toggled, [this](bool) {
-        if (!m_isRefreshing)
-            applySettings();
-    });
-    form->addRow("", m_pbAlsaStopInactiveCheck);
-
-    m_pbAlsaLinkVolRow = new QWidget(w);
-    auto pbVolLayout = new QHBoxLayout(m_pbAlsaLinkVolRow);
-    pbVolLayout->setContentsMargins(0, 0, 0, 0);
-    auto pbVolLbl = new QLabel("Link Volume Control", m_pbAlsaLinkVolRow);
-    pbVolLbl->setFixedWidth(130);
-    pbVolLayout->addWidget(pbVolLbl);
-    m_pbAlsaLinkVolumeEdit = new QLineEdit(m_pbAlsaLinkVolRow);
-    m_pbAlsaLinkVolumeEdit->setPlaceholderText("e.g. Master");
-    connect(m_pbAlsaLinkVolumeEdit, &QLineEdit::textChanged, [this](const QString&) {
-        if (!m_isRefreshing)
-            applySettings();
-    });
-    pbVolLayout->addWidget(m_pbAlsaLinkVolumeEdit);
-    form->addRow("", m_pbAlsaLinkVolRow);
-
-    m_pbAlsaLinkMuteRow = new QWidget(w);
-    auto pbMuteLayout = new QHBoxLayout(m_pbAlsaLinkMuteRow);
-    pbMuteLayout->setContentsMargins(0, 0, 0, 0);
-    auto pbMuteLbl = new QLabel("Link Mute Control", m_pbAlsaLinkMuteRow);
-    pbMuteLbl->setFixedWidth(130);
-    pbMuteLayout->addWidget(pbMuteLbl);
-    m_pbAlsaLinkMuteEdit = new QLineEdit(m_pbAlsaLinkMuteRow);
-    m_pbAlsaLinkMuteEdit->setPlaceholderText("e.g. Master");
-    connect(m_pbAlsaLinkMuteEdit, &QLineEdit::textChanged, [this](const QString&) {
-        if (!m_isRefreshing)
-            applySettings();
-    });
-    pbMuteLayout->addWidget(m_pbAlsaLinkMuteEdit);
-    form->addRow("", m_pbAlsaLinkMuteRow);
-
     m_pbPipeWireRow = new QWidget(w);
     auto pbPwLayout = new QVBoxLayout(m_pbPipeWireRow);
     pbPwLayout->setContentsMargins(0, 0, 0, 0);
@@ -1835,26 +1798,6 @@ void DevicePickerView::refreshUi() {
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
 
-    bool isPbAlsa = false;
-#if defined(ENABLE_ALSA)
-    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
-        isPbAlsa = true;
-#endif
-    m_pbAlsaStopInactiveCheck->setVisible(isPbAlsa);
-    m_pbAlsaStopInactiveCheck->setChecked(m_devices->playbackConfig.stopOnInactive);
-    m_pbAlsaLinkVolRow->setVisible(isPbAlsa);
-    m_pbAlsaLinkMuteRow->setVisible(isPbAlsa);
-    if (m_pbAlsaLinkVolumeEdit->text().toStdString() != m_devices->playbackConfig.linkVolumeControl) {
-        m_pbAlsaLinkVolumeEdit->blockSignals(true);
-        m_pbAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkVolumeControl));
-        m_pbAlsaLinkVolumeEdit->blockSignals(false);
-    }
-    if (m_pbAlsaLinkMuteEdit->text().toStdString() != m_devices->playbackConfig.linkMuteControl) {
-        m_pbAlsaLinkMuteEdit->blockSignals(true);
-        m_pbAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkMuteControl));
-        m_pbAlsaLinkMuteEdit->blockSignals(false);
-    }
-
     m_pbPipeWireRow->setVisible(isPbPw);
     if (m_pbPwNodeNameEdit->text().toStdString() != m_devices->playbackConfig.nodeName) {
         m_pbPwNodeNameEdit->blockSignals(true);
@@ -2008,11 +1951,6 @@ void DevicePickerView::applySettings() {
 
         pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
         pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
-        pbCfg.stopOnInactive = m_pbAlsaStopInactiveCheck->isChecked();
-        if (m_pbAlsaLinkVolumeEdit)
-            pbCfg.linkVolumeControl = m_pbAlsaLinkVolumeEdit->text().toStdString();
-        if (m_pbAlsaLinkMuteEdit)
-            pbCfg.linkMuteControl = m_pbAlsaLinkMuteEdit->text().toStdString();
         if (m_pbPwNodeNameEdit)
             pbCfg.nodeName = m_pbPwNodeNameEdit->text().toStdString();
         if (m_pbPwNodeDescEdit)

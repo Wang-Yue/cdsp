@@ -471,9 +471,6 @@ struct ALSAPlaybackConfig {
     int channels = 2;
     std::optional<std::string> device;
     std::optional<std::string> format;
-    std::optional<bool> stopOnInactive;
-    std::optional<std::string> linkVolumeControl;
-    std::optional<std::string> linkMuteControl;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
     std::vector<std::string> channelLabels;
@@ -481,9 +478,7 @@ struct ALSAPlaybackConfig {
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ALSAPlaybackConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format &&
-               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && outputDoP == o.outputDoP &&
+        return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
                dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
