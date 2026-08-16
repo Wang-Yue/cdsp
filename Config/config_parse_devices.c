@@ -317,14 +317,15 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
   } else if (strcmp(type_str, "Wasapi") == 0) {
     static const char* const allowed[] = {
-        "type",     "channels", "device", "format",         "exclusive",
-        "loopback", "polling",  "labels", "channel_labels", NULL};
+        "type",           "channels",   "device",        "format",
+        "exclusive",      "loopback",   "polling",       "labels",
+        "channel_labels", "bypass_dop", "dop_cutoff_hz", NULL};
     if (validate_unknown_fields(cap_obj, allowed, "Wasapi capture", err) != 0)
       return -1;
   } else if (strcmp(type_str, "Asio") == 0) {
     static const char* const allowed[] = {
-        "type",   "channels",       "device", "format",
-        "labels", "channel_labels", NULL};
+        "type",           "channels",   "device",        "format", "labels",
+        "channel_labels", "bypass_dop", "dop_cutoff_hz", NULL};
     if (validate_unknown_fields(cap_obj, allowed, "Asio capture", err) != 0)
       return -1;
   }
@@ -828,9 +829,12 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
         0)
       return -1;
   } else if (strcmp(type_str, "Wasapi") == 0) {
-    static const char* const allowed[] = {"type",   "channels",       "device",
-                                          "format", "exclusive",      "polling",
-                                          "labels", "channel_labels", NULL};
+    static const char* const allowed[] = {"type",       "channels",
+                                          "device",     "format",
+                                          "exclusive",  "polling",
+                                          "labels",     "channel_labels",
+                                          "output_dop", "dsd_encoder_filter",
+                                          NULL};
     if (validate_unknown_fields(play_obj, allowed, "Wasapi playback", err) != 0)
       return -1;
   } else if (strcmp(type_str, "Asio") == 0) {
