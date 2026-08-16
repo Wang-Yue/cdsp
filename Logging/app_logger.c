@@ -23,6 +23,8 @@ struct app_logger_s {
   _Atomic bool is_started;
   pthread_t worker_thread;
   pthread_mutex_t worker_mutex;
+  cdsp_log_callback_t callback;
+  void* callback_user_data;
 };
 
 /// Process-wide log-level gate. Stored as an atomic uint8_t so the
@@ -304,9 +306,21 @@ static void* worker_thread_func(void* arg) {
         log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
         format_log_message(formatted_msg, sizeof(formatted_msg), rec.message,
                            args);
-        printf("[%s] %s: %s\n", lvl_str, rec.label ? rec.label : "",
-               formatted_msg);
-        fflush(stdout);
+
+        cdsp_log_callback_t cb = NULL;
+        void* cb_ctx = NULL;
+        pthread_mutex_lock(&logger->worker_mutex);
+        cb = logger->callback;
+        cb_ctx = logger->callback_user_data;
+        pthread_mutex_unlock(&logger->worker_mutex);
+
+        if (cb) {
+          cb(rec.level, rec.label ? rec.label : "", formatted_msg, cb_ctx);
+        } else {
+          printf("[%s] %s: %s\n", lvl_str, rec.label ? rec.label : "",
+                 formatted_msg);
+          fflush(stdout);
+        }
       } else {
         break;
       }
@@ -320,6 +334,7 @@ static void free_logger_internal(app_logger_t* logger) {
   cdsp_sem_destroy(logger->semaphore);
   free(logger->storage);
   free(logger->sequences);
+  pthread_mutex_destroy(&logger->worker_mutex);
   free(logger);
 }
 
@@ -362,6 +377,15 @@ void app_logger_init(void) { (void)app_logger_get_shared(); }
 app_logger_t* app_logger_get_shared(void) {
   pthread_once(&g_logger_once, init_shared_logger);
   return g_shared_logger;
+}
+
+void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data) {
+  app_logger_t* logger = app_logger_get_shared();
+  if (!logger) return;
+  pthread_mutex_lock(&logger->worker_mutex);
+  logger->callback = callback;
+  logger->callback_user_data = user_data;
+  pthread_mutex_unlock(&logger->worker_mutex);
 }
 
 void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,

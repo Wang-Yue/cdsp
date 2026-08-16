@@ -153,6 +153,52 @@ void cdsp_set_log_level(const char* level_str) {
   app_logger_set_level(log_level_from_string(level_str));
 }
 
+static cdsp_log_callback_fn g_pub_log_cb = NULL;
+static void* g_pub_log_ctx = NULL;
+
+static void internal_pub_log_adapter(log_level_t level, const char* label,
+                                     const char* message, void* user_data) {
+  (void)user_data;
+  if (g_pub_log_cb) {
+    const char* lvl_str;
+    switch (level) {
+      case LOG_LEVEL_OFF:
+        lvl_str = "OFF";
+        break;
+      case LOG_LEVEL_ERROR:
+        lvl_str = "ERROR";
+        break;
+      case LOG_LEVEL_WARN:
+        lvl_str = "WARN";
+        break;
+      case LOG_LEVEL_INFO:
+        lvl_str = "INFO";
+        break;
+      case LOG_LEVEL_DEBUG:
+        lvl_str = "DEBUG";
+        break;
+      case LOG_LEVEL_TRACE:
+        lvl_str = "TRACE";
+        break;
+      default:
+        lvl_str = "UNKNOWN";
+        break;
+    }
+    g_pub_log_cb(lvl_str, label ? label : "", message ? message : "",
+                 g_pub_log_ctx);
+  }
+}
+
+void cdsp_set_log_callback(cdsp_log_callback_fn callback, void* user_data) {
+  g_pub_log_cb = callback;
+  g_pub_log_ctx = user_data;
+  if (callback) {
+    app_logger_set_callback(internal_pub_log_adapter, NULL);
+  } else {
+    app_logger_set_callback(NULL, NULL);
+  }
+}
+
 void cdsp_stop(dsp_engine_t* engine) {
   if (engine && engine->stop) {
     engine->stop(engine->ctx);

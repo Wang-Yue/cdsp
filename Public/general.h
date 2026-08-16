@@ -66,6 +66,24 @@ CDSP_API void cdsp_engine_poll(dsp_engine_t* engine);
 CDSP_API void cdsp_set_log_level(const char* level_str);
 
 /**
+ * @brief Log callback signature for the public API.
+ * @param level Log severity level as a string (e.g. "INFO", "WARN", "ERROR").
+ * @param label Component label (e.g. "dsp.engine").
+ * @param message Formatted log message string.
+ * @param user_data User context pointer.
+ */
+typedef void (*cdsp_log_callback_fn)(const char* level, const char* label,
+                                     const char* message, void* user_data);
+
+/**
+ * @brief Register a global log callback to receive log messages.
+ * @param callback Callback function, or NULL to restore default stdout logging.
+ * @param user_data User context pointer passed to callback.
+ */
+CDSP_API void cdsp_set_log_callback(cdsp_log_callback_fn callback,
+                                    void* user_data);
+
+/**
  * @brief Stop processing and put the engine in an inactive state.
  * @param engine Pointer to the engine.
  */

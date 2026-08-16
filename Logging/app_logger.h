@@ -147,6 +147,28 @@ log_level_t app_logger_get_level(void);
 void app_logger_set_level(log_level_t level);
 
 /**
+ * @brief Log callback signature.
+ *
+ * @param level Log severity level.
+ * @param label Component label (never NULL).
+ * @param message Fully formatted log message string (never NULL).
+ * @param user_data User-provided context pointer.
+ */
+typedef void (*cdsp_log_callback_t)(log_level_t level, const char* label,
+                                    const char* message, void* user_data);
+
+/**
+ * @brief Sets a custom callback to receive log messages.
+ *
+ * If callback is non-NULL, logs will be dispatched to this callback on the
+ * background logging thread instead of printing to stdout.
+ *
+ * @param callback The callback function to invoke for each log record.
+ * @param user_data User data passed to the callback.
+ */
+void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data);
+
+/**
  * @brief Logs a message using the specified logger.
  *
  * @param logger Pointer to the logger instance.
