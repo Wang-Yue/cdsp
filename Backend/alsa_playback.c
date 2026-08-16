@@ -198,7 +198,8 @@ static void* alsa_playback_inner_thread_func(void* arg) {
           logger_warn(&g_logger, "PB: Playback interrupted, no data available");
           playback_interrupted = true;
         }
-        // Matching play_buffer in threaded_device.rs: wait for PCM readiness before writing
+        // Matching play_buffer in threaded_device.rs: wait for PCM readiness
+        // before writing
         snd_pcm_wait(playback->pcm, 20);
         snd_pcm_writei(playback->pcm, playback->zero_stall_buf,
                        playback->chunk_size);
@@ -575,9 +576,6 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
         playback->device_stalled = false;
       }
       if (written == remaining_frames) {
-        logger_trace(&g_logger,
-                     "PB: wrote %zu frames to playback device as requested",
-                     written);
         break;
       } else {
         logger_trace(&g_logger,

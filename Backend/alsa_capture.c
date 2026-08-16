@@ -669,9 +669,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
     uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
     if (timeout_millis < 20) timeout_millis = 20;
-
-    logger_trace(&g_logger, "Capture pcmdevice.wait with timeout %u ms",
-                 timeout_millis);
     uint32_t remaining_timeout_millis = timeout_millis;
 
     while (true) {
@@ -828,8 +825,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     if (rc > 0) {
       size_t frames_read = (size_t)rc;
       if (frames_read == frames_req) {
-        logger_trace(&g_logger, "Capture read %zu frames as requested",
-                     frames_read);
         break;
       } else {
         logger_warn(&g_logger,
