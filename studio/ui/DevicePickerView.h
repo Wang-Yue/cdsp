@@ -24,21 +24,21 @@
  * @brief DevicePickerView - Audio device selection and backend configuration UI.
  *
  * Backend Option Support Matrix:
- * ┌─────────────┬──────────┬──────────────┬────────────┬────────────┬────────┬────────┬───────────┬─────────┬───────────┬──────────┬───────────┐
- * │ Backend     │ Mode     │ Device List  │ Dev Chans  │ Stream Chs │ Rate   │ Format │ Exclusive │ Polling │ ALSA Link │ PipeWire │ DoP & SDM │
- * │             │          │ & Warnings   │ (Hardware) │            │        │        │ (Hog)     │ (WASAPI)│ Vol / Mute│ Nodes    │ Filters   │
- * ├─────────────┼──────────┼──────────────┼────────────┼────────────┼────────┼────────┼───────────┼─────────┼───────────┼──────────┼───────────┤
- * │ CoreAudio   │ Capture  │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
- * │ CoreAudio   │ Playback │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   NO    │    NO     │    NO    │  YES (C)  │
- * │ WASAPI      │ Capture  │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
- * │ WASAPI      │ Playback │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
- * │ ASIO        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
- * │ ALSA        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    YES    │    NO    │  YES (C)  │
- * │ PipeWire    │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │   NO   │    NO     │   NO    │    NO     │   YES    │    NO     │
- * │ RawFile     │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │ In-File│    NO     │   NO    │    NO     │    NO    │    NO     │
- * │ WavFile     │ Cap / Pb │      NO      │     NO     │NO(Cap)/Y(Pb│   NO   │   NO   │    NO     │   NO    │    NO     │    NO    │    NO     │
- * │ SignalGen   │ Capture  │      NO      │     NO     │    YES     │   NO   │   NO   │    NO     │   NO    │    NO     │    NO    │    NO     │
- * └─────────────┴──────────┴──────────────┴────────────┴────────────┴────────┴────────┴───────────┴─────────┴───────────┴──────────┴───────────┘
+ * ┌─────────────┬──────────┬──────────────┬────────────┬────────────┬────────┬──────────────┬───────────┬─────────┬───────────┬──────────┬───────────┐
+ * │ Backend     │ Mode     │ Device List  │ Dev Chans  │ Stream Chs │ Rate   │ Format       │ Exclusive │ Polling │ ALSA Link │ PipeWire │ DoP & SDM │
+ * │             │          │ & Warnings   │ (Hardware) │            │        │ (Bit-depth)  │ (Hog)     │ (WASAPI)│ Vol / Mute│ Nodes    │ Filters   │
+ * ├─────────────┼──────────┼──────────────┼────────────┼────────────┼────────┼──────────────┼───────────┼─────────┼───────────┼──────────┼───────────┤
+ * │ CoreAudio   │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ CoreAudio   │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ WASAPI      │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
+ * │ WASAPI      │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
+ * │ ASIO        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ ALSA        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    YES    │    NO    │  YES (C)  │
+ * │ PipeWire    │ Cap / Pb │      NO      │     NO     │    YES     │  YES   │      NO      │    NO     │   NO    │    NO     │   YES    │    NO     │
+ * │ RawFile     │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │     YES      │    NO     │   NO    │    NO     │    NO    │    NO     │
+ * │ WavFile     │ Cap / Pb │      NO      │     NO     │NO(Cap)/Y(Pb│   NO   │ NO(Cap)/Y(Pb)│    NO     │   NO    │    NO     │    NO    │    NO     │
+ * │ SignalGen   │ Capture  │      NO      │     NO     │    YES     │   NO   │      NO      │    NO     │   NO    │    NO     │    NO    │    NO     │
+ * └─────────────┴──────────┴──────────────┴────────────┴────────────┴────────┴──────────────┴───────────┴─────────┴───────────┴──────────┴───────────┘
  * Note: Native DSD is selected directly via the `format` option on supported backends (e.g. ALSA / ASIO).
  */
 /* clang-format on */

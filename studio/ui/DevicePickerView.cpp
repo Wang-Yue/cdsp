@@ -893,7 +893,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 
         m_capRawFileFormatCombo = new QComboBox(w);
         m_capRawFileFormatCombo->addItems(
-            {"S16_LE", "S24_3_LE", "S24_4_RJ_LE", "S24_4_LJ_LE", "S32_LE", "F32_LE", "F64_LE"});
+            {"S16_LE", "S24_3_LE", "S24_4_LJ_LE", "S24_4_RJ_LE", "S32_LE", "F32_LE", "F64_LE"});
         connect(m_capRawFileFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
             if (m_isRefreshing)
                 return;
