@@ -7,6 +7,8 @@ cd "$PROJECT_DIR"
 CROSS_PREFIX="${CROSS_COMPILE:-x86_64-w64-mingw32-}"
 BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build-windows}"
 TOOLCHAIN_FILE="${TOOLCHAIN_FILE:-$PROJECT_DIR/cmake/windows-toolchain.cmake}"
+ZIP_NAME="${ZIP_NAME:-MonitorQt-Windows-x86_64.zip}"
+ZIP_OUT="${ZIP_OUT:-$BUILD_DIR/$ZIP_NAME}"
 
 # MinGW compiler check
 if ! command -v "${CROSS_PREFIX}g++" >/dev/null 2>&1; then
@@ -162,4 +164,37 @@ while [ "$COPIED_NEW" -eq 1 ]; do
     done
 done
 
-echo "✅ Windows build and deployment complete in $BUILD_DIR"
+# ==============================================================================
+# Create Standalone Windows Distribution Zip Package
+# ==============================================================================
+echo "=== Packaging Standalone Windows Release ==="
+
+STAGE_DIR="$BUILD_DIR/dist/MonitorQt"
+rm -rf "$BUILD_DIR/dist"
+mkdir -p "$STAGE_DIR"
+
+# Copy executable and all runtime DLLs
+cp "$BUILD_DIR/MonitorQt.exe" "$STAGE_DIR/"
+cp "$BUILD_DIR"/*.dll "$STAGE_DIR/" 2>/dev/null || true
+
+# Copy Qt plugins
+if [ -d "$BUILD_DIR/platforms" ]; then
+    cp -r "$BUILD_DIR/platforms" "$STAGE_DIR/"
+fi
+if [ -d "$BUILD_DIR/styles" ]; then
+    cp -r "$BUILD_DIR/styles" "$STAGE_DIR/"
+fi
+if [ -d "$BUILD_DIR/tls" ]; then
+    cp -r "$BUILD_DIR/tls" "$STAGE_DIR/"
+fi
+
+# Build clean zip archive
+rm -f "$ZIP_OUT"
+(cd "$BUILD_DIR/dist" && zip -r -q -9 "$ZIP_OUT" MonitorQt)
+
+ZIP_SIZE=$(du -h "$ZIP_OUT" | awk '{print $1}')
+echo "=============================================================================="
+echo "🎉 Windows Release Package Ready!"
+echo "📦 Zip Archive: $ZIP_OUT ($ZIP_SIZE)"
+echo "🚀 Extract and run 'MonitorQt/MonitorQt.exe' on any 64-bit Windows machine."
+echo "=============================================================================="
