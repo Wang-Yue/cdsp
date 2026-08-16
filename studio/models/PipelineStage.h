@@ -32,6 +32,7 @@ enum class StageType {
     Gain,
     Delay,
     LookaheadLimiter,
+    LookaheadLimiterProc,
     Clipper,
     Volume,
     MatrixMixer,
@@ -116,6 +117,7 @@ public:
     TimeUnit lookaheadAttackUnit = TimeUnit::ms;
     double lookaheadRelease = 100.0;
     TimeUnit lookaheadReleaseUnit = TimeUnit::ms;
+    bool lookaheadDelayProcessedOnly = false;
 
     int mixerChannelsIn = 2;
     int mixerChannelsOut = 2;

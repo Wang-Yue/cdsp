@@ -49,6 +49,8 @@ std::string stageTypeToString(StageType type) {
         return "Delay";
     case StageType::LookaheadLimiter:
         return "Lookahead Limiter";
+    case StageType::LookaheadLimiterProc:
+        return "Lookahead Limiter (Proc)";
     case StageType::Clipper:
         return "Clipper";
     case StageType::Volume:
@@ -102,6 +104,8 @@ StageType stringToStageType(const std::string& str) {
         return StageType::Delay;
     if (str == "Lookahead Limiter" || str == "lookaheadLimiter" || str == "lookaheadlimiter")
         return StageType::LookaheadLimiter;
+    if (str == "Lookahead Limiter (Proc)" || str == "lookaheadLimiterProc" || str == "lookaheadlimiterproc")
+        return StageType::LookaheadLimiterProc;
     if (str == "Clipper" || str == "clipper")
         return StageType::Clipper;
     if (str == "Volume" || str == "volume")
@@ -122,14 +126,31 @@ StageType stringToStageType(const std::string& str) {
         return StageType::BiquadCombo;
 
     QString cleanInput = QString::fromStdString(str).remove(" ").remove("/").remove("-").remove("_").toLower();
-    for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
-                         StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
-                         StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
-                         StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
-                         StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
-                         StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
-                         StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
-                         StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
+    for (StageType st : {StageType::Balance,
+                         StageType::Width,
+                         StageType::MSProc,
+                         StageType::PhaseInvert,
+                         StageType::Crossfeed,
+                         StageType::SplitWidth,
+                         StageType::EQ,
+                         StageType::GraphicEQ,
+                         StageType::Convolution,
+                         StageType::Loudness,
+                         StageType::Emphasis,
+                         StageType::DCProtection,
+                         StageType::Gain,
+                         StageType::Delay,
+                         StageType::LookaheadLimiter,
+                         StageType::LookaheadLimiterProc,
+                         StageType::Clipper,
+                         StageType::Volume,
+                         StageType::MatrixMixer,
+                         StageType::Compressor,
+                         StageType::NoiseGate,
+                         StageType::RACE,
+                         StageType::Dither,
+                         StageType::DiffEq,
+                         StageType::BiquadCombo}) {
         QString targetStr =
             QString::fromStdString(stageTypeToString(st)).remove(" ").remove("/").remove("-").remove("_").toLower();
         if (targetStr == cleanInput)
@@ -158,6 +179,7 @@ StageCategory stageTypeToCategory(StageType type) {
     case StageType::Compressor:
     case StageType::NoiseGate:
     case StageType::RACE:
+    case StageType::LookaheadLimiterProc:
         return StageCategory::Processors;
     case StageType::Balance:
     case StageType::Width:
@@ -206,6 +228,8 @@ std::string stageTypeToIcon(StageType type) {
         return "⏱️";
     case StageType::LookaheadLimiter:
         return "🧱";
+    case StageType::LookaheadLimiterProc:
+        return "🛡️";
     case StageType::MatrixMixer:
         return "🔳";
     case StageType::Compressor:
@@ -522,6 +546,7 @@ QJsonObject PipelineStage::toJson() const {
     obj["lookaheadAttackUnit"] = QString::fromStdString(timeUnitToString(lookaheadAttackUnit));
     obj["lookaheadRelease"] = lookaheadRelease;
     obj["lookaheadReleaseUnit"] = QString::fromStdString(timeUnitToString(lookaheadReleaseUnit));
+    obj["lookaheadDelayProcessedOnly"] = lookaheadDelayProcessedOnly;
 
     obj["mixerChannelsIn"] = mixerChannelsIn;
     obj["mixerChannelsOut"] = mixerChannelsOut;
@@ -705,6 +730,8 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.lookaheadRelease = json["lookaheadRelease"].toDouble();
     if (json.contains("lookaheadReleaseUnit"))
         s.lookaheadReleaseUnit = stringToTimeUnit(json["lookaheadReleaseUnit"].toString().toStdString());
+    if (json.contains("lookaheadDelayProcessedOnly"))
+        s.lookaheadDelayProcessedOnly = json["lookaheadDelayProcessedOnly"].toBool();
 
     if (json.contains("mixerChannelsIn"))
         s.mixerChannelsIn = json["mixerChannelsIn"].toInt();
@@ -1433,6 +1460,26 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         p.noiseGateParams.releaseUnit = stage.gateReleaseUnit;
         p.noiseGateParams.threshold = stage.gateThreshold;
         p.noiseGateParams.attenuation = stage.gateAttenuation;
+        res.processors[prefix] = p;
+
+        res.steps.push_back(PipelineStep{PipelineStepType::Processor, std::nullopt, {}, prefix, {}, std::nullopt});
+        break;
+    }
+
+    case StageType::LookaheadLimiterProc: {
+        if (chList.empty())
+            break;
+        ProcessorConfig p;
+        p.type = ProcessorType::LookaheadLimiter;
+        p.lookaheadParams.channels = channelCount;
+        p.lookaheadParams.monitorChannels = monitorList.empty() ? chList : monitorList;
+        p.lookaheadParams.processChannels = chList;
+        p.lookaheadParams.limit = stage.lookaheadLimit;
+        p.lookaheadParams.attack = stage.lookaheadAttack;
+        p.lookaheadParams.attackUnit = stage.lookaheadAttackUnit;
+        p.lookaheadParams.release = stage.lookaheadRelease;
+        p.lookaheadParams.releaseUnit = stage.lookaheadReleaseUnit;
+        p.lookaheadParams.delayProcessedOnly = stage.lookaheadDelayProcessedOnly;
         res.processors[prefix] = p;
 
         res.steps.push_back(PipelineStep{PipelineStepType::Processor, std::nullopt, {}, prefix, {}, std::nullopt});

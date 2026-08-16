@@ -674,6 +674,8 @@ std::string processorTypeToString(ProcessorType t) {
         return "NoiseGate";
     case ProcessorType::RACE:
         return "RACE";
+    case ProcessorType::LookaheadLimiter:
+        return "LookaheadLimiter";
     }
     return "Compressor";
 }
@@ -683,6 +685,8 @@ ProcessorType stringToProcessorType(const std::string& str) {
         return ProcessorType::NoiseGate;
     if (str == "RACE")
         return ProcessorType::RACE;
+    if (str == "LookaheadLimiter")
+        return ProcessorType::LookaheadLimiter;
     return ProcessorType::Compressor;
 }
 
@@ -802,8 +806,6 @@ CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json)
         cfg.device = json["device"].toString().toStdString();
     if (json.contains("format"))
         cfg.format = json["format"].toString().toStdString();
-    if (json.contains("exclusive"))
-        cfg.exclusive = json["exclusive"].toBool();
     if (json.contains("bypass_dop"))
         cfg.bypassDoP = json["bypass_dop"].toBool();
     if (json.contains("dop_cutoff_hz"))
@@ -2381,6 +2383,58 @@ QJsonObject RACEParameters::toJson() const {
     return obj;
 }
 
+LookaheadLimiterProcessorParameters LookaheadLimiterProcessorParameters::fromJson(const QJsonObject& json) {
+    LookaheadLimiterProcessorParameters p;
+    if (json.contains("channels"))
+        p.channels = json["channels"].toInt();
+    if (json.contains("monitor_channels")) {
+        for (const auto& val : json["monitor_channels"].toArray())
+            p.monitorChannels.push_back(val.toInt());
+    }
+    if (json.contains("process_channels")) {
+        for (const auto& val : json["process_channels"].toArray())
+            p.processChannels.push_back(val.toInt());
+    }
+    if (json.contains("limit"))
+        p.limit = json["limit"].toDouble();
+    if (json.contains("attack"))
+        p.attack = json["attack"].toDouble();
+    if (json.contains("attack_unit"))
+        p.attackUnit = stringToTimeUnit(json["attack_unit"].toString().toStdString());
+    if (json.contains("release"))
+        p.release = json["release"].toDouble();
+    if (json.contains("release_unit"))
+        p.releaseUnit = stringToTimeUnit(json["release_unit"].toString().toStdString());
+    if (json.contains("delay_processed_only"))
+        p.delayProcessedOnly = json["delay_processed_only"].toBool();
+    return p;
+}
+
+QJsonObject LookaheadLimiterProcessorParameters::toJson() const {
+    QJsonObject obj;
+    obj["channels"] = channels;
+    if (!monitorChannels.empty()) {
+        QJsonArray arr;
+        for (int c : monitorChannels)
+            arr.append(c);
+        obj["monitor_channels"] = arr;
+    }
+    if (!processChannels.empty()) {
+        QJsonArray arr;
+        for (int c : processChannels)
+            arr.append(c);
+        obj["process_channels"] = arr;
+    }
+    obj["limit"] = limit;
+    obj["attack"] = attack;
+    obj["attack_unit"] = QString::fromStdString(timeUnitToString(attackUnit));
+    obj["release"] = release;
+    obj["release_unit"] = QString::fromStdString(timeUnitToString(releaseUnit));
+    if (delayProcessedOnly.has_value())
+        obj["delay_processed_only"] = delayProcessedOnly.value();
+    return obj;
+}
+
 ProcessorConfig ProcessorConfig::fromJson(const QJsonObject& json) {
     ProcessorConfig p;
     p.type = stringToProcessorType(json["type"].toString().toStdString());
@@ -2394,6 +2448,9 @@ ProcessorConfig ProcessorConfig::fromJson(const QJsonObject& json) {
         break;
     case ProcessorType::RACE:
         p.raceParams = RACEParameters::fromJson(pObj);
+        break;
+    case ProcessorType::LookaheadLimiter:
+        p.lookaheadParams = LookaheadLimiterProcessorParameters::fromJson(pObj);
         break;
     }
     return p;
@@ -2412,6 +2469,9 @@ QJsonObject ProcessorConfig::toJson() const {
         break;
     case ProcessorType::RACE:
         pObj = raceParams.toJson();
+        break;
+    case ProcessorType::LookaheadLimiter:
+        pObj = lookaheadParams.toJson();
         break;
     }
     obj["parameters"] = pObj;

@@ -296,7 +296,6 @@ struct CoreAudioCaptureConfig {
     int channels = 2;
     std::optional<std::string> device;
     std::optional<std::string> format;
-    std::optional<bool> exclusive;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
     std::vector<std::string> channelLabels;
@@ -304,8 +303,8 @@ struct CoreAudioCaptureConfig {
     static CoreAudioCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const CoreAudioCaptureConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
-               bypassDoP == o.bypassDoP && dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+        return channels == o.channels && device == o.device && format == o.format && bypassDoP == o.bypassDoP &&
+               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
     }
     bool operator!=(const CoreAudioCaptureConfig& o) const { return !(*this == o); }
 };
@@ -1053,7 +1052,7 @@ struct MixerConfig {
     bool operator!=(const MixerConfig& o) const { return !(*this == o); }
 };
 
-enum class ProcessorType { Compressor, NoiseGate, RACE };
+enum class ProcessorType { Compressor, NoiseGate, RACE, LookaheadLimiter };
 std::string processorTypeToString(ProcessorType t);
 ProcessorType stringToProcessorType(const std::string& str);
 
@@ -1121,17 +1120,39 @@ struct RACEParameters {
     bool operator!=(const RACEParameters& o) const { return !(*this == o); }
 };
 
+struct LookaheadLimiterProcessorParameters {
+    int channels = 2;
+    std::vector<int> monitorChannels;
+    std::vector<int> processChannels;
+    double limit = 0.0;
+    double attack = 5.0;
+    TimeUnit attackUnit = TimeUnit::ms;
+    double release = 100.0;
+    TimeUnit releaseUnit = TimeUnit::ms;
+    std::optional<bool> delayProcessedOnly;
+    QJsonObject toJson() const;
+    static LookaheadLimiterProcessorParameters fromJson(const QJsonObject& json);
+
+    bool operator==(const LookaheadLimiterProcessorParameters& o) const {
+        return channels == o.channels && monitorChannels == o.monitorChannels && processChannels == o.processChannels &&
+               limit == o.limit && attack == o.attack && attackUnit == o.attackUnit && release == o.release &&
+               releaseUnit == o.releaseUnit && delayProcessedOnly == o.delayProcessedOnly;
+    }
+    bool operator!=(const LookaheadLimiterProcessorParameters& o) const { return !(*this == o); }
+};
+
 struct ProcessorConfig {
     ProcessorType type = ProcessorType::Compressor;
     CompressorParameters compressorParams;
     NoiseGateParameters noiseGateParams;
     RACEParameters raceParams;
+    LookaheadLimiterProcessorParameters lookaheadParams;
     QJsonObject toJson() const;
     static ProcessorConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ProcessorConfig& o) const {
         return type == o.type && compressorParams == o.compressorParams && noiseGateParams == o.noiseGateParams &&
-               raceParams == o.raceParams;
+               raceParams == o.raceParams && lookaheadParams == o.lookaheadParams;
     }
     bool operator!=(const ProcessorConfig& o) const { return !(*this == o); }
 };
