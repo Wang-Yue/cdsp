@@ -36,6 +36,15 @@ std::vector<int> DeviceConfig::supportedChannels() const {
 }
 
 std::vector<int> DeviceConfig::supportedRates() const {
+#if defined(ENABLE_PIPEWIRE)
+    if (backend == AudioBackendType::PipeWire) {
+        return {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
+    }
+#endif
+    if (backend == AudioBackendType::SignalGenerator) {
+        return {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
+    }
+
     const auto* set = findActiveCapabilitySet(capabilities, exclusive);
     if (!set || set->capabilities.empty())
         return {};
@@ -146,6 +155,15 @@ std::vector<std::string> DeviceConfig::supportedFormats() const {
 
 DeviceConfig DeviceConfig::enforced() const {
     DeviceConfig res = *this;
+#if defined(ENABLE_PIPEWIRE)
+    if (res.backend == AudioBackendType::PipeWire) {
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
+        res.format = defaultFormatForBackend(AudioBackendType::PipeWire);
+        res.capabilities = AudioDeviceDescriptor();
+        return res;
+    }
+#endif
     if (isHardwareBackend(res.backend)) {
         auto chs = res.supportedChannels();
         if (!chs.empty()) {

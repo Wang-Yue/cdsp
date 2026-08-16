@@ -269,7 +269,7 @@ double AudioDeviceManager::latencyMs() const {
 }
 
 bool AudioDeviceManager::devicesAvailable() const {
-    if (isHardwareBackend(captureConfig.backend)) {
+    if (backendHasDeviceList(captureConfig.backend)) {
         if (auto name = captureConfig.deviceName()) {
             if (!name.value().empty()) {
                 bool found = false;
@@ -284,7 +284,7 @@ bool AudioDeviceManager::devicesAvailable() const {
             }
         }
     }
-    if (isHardwareBackend(playbackConfig.backend)) {
+    if (backendHasDeviceList(playbackConfig.backend)) {
         if (auto name = playbackConfig.deviceName()) {
             if (!name.value().empty()) {
                 bool found = false;
@@ -317,10 +317,10 @@ void AudioDeviceManager::fetchDevices() {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
     };
-    std::string capBackendLower = isHardwareBackend(captureConfig.backend)
+    std::string capBackendLower = backendHasDeviceList(captureConfig.backend)
                                       ? toLowerStr(audioBackendTypeToString(captureConfig.backend))
                                       : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
-    std::string pbBackendLower = isHardwareBackend(playbackConfig.backend)
+    std::string pbBackendLower = backendHasDeviceList(playbackConfig.backend)
                                      ? toLowerStr(audioBackendTypeToString(playbackConfig.backend))
                                      : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
 
@@ -335,7 +335,7 @@ void AudioDeviceManager::fetchDevices() {
 
             // Safe fallback logic: if configured hardware device is disconnected/unplugged, fallback to default
             // hardware device ("")
-            if (isHardwareBackend(captureConfig.backend)) {
+            if (backendHasDeviceList(captureConfig.backend)) {
                 if (auto name = captureConfig.deviceName()) {
                     if (!name.value().empty()) {
                         bool found = false;
@@ -355,7 +355,7 @@ void AudioDeviceManager::fetchDevices() {
                 }
             }
 
-            if (isHardwareBackend(playbackConfig.backend)) {
+            if (backendHasDeviceList(playbackConfig.backend)) {
                 if (auto name = playbackConfig.deviceName()) {
                     if (!name.value().empty()) {
                         bool found = false;
@@ -397,8 +397,8 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
     std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
     std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
 
-    bool isCapHw = isHardwareBackend(captureConfig.backend);
-    bool isPbHw = isHardwareBackend(playbackConfig.backend);
+    bool isCapHw = backendHasDeviceCapabilities(captureConfig.backend);
+    bool isPbHw = backendHasDeviceCapabilities(playbackConfig.backend);
 
     m_capabilitiesWatcher.setFuture(
         QtConcurrent::run([this, engine, version, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {

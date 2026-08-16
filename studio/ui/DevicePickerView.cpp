@@ -1577,8 +1577,12 @@ void DevicePickerView::refreshUi() {
         m_capDevChannelsSpin->setValue(m_devices->captureConfig.deviceChannels);
     }
 
-    int capDevCh = m_devices->captureConfig.deviceChannels;
-    m_capStreamChannelsSpin->setRange(1, std::max(1, capDevCh));
+    if (isCapPw) {
+        m_capStreamChannelsSpin->setRange(1, 32);
+    } else {
+        int capDevCh = m_devices->captureConfig.deviceChannels;
+        m_capStreamChannelsSpin->setRange(1, std::max(1, capDevCh));
+    }
     m_capStreamChannelsSpin->setValue(m_devices->captureConfig.channels);
 
     // Capture Sample Rate
@@ -1771,8 +1775,12 @@ void DevicePickerView::refreshUi() {
         m_pbDevChannelsSpin->setValue(m_devices->playbackConfig.deviceChannels);
     }
 
-    int pbDevCh = m_devices->playbackConfig.deviceChannels;
-    m_pbStreamChannelsSpin->setRange(1, std::max(1, pbDevCh));
+    if (isPbPw) {
+        m_pbStreamChannelsSpin->setRange(1, 32);
+    } else {
+        int pbDevCh = m_devices->playbackConfig.deviceChannels;
+        m_pbStreamChannelsSpin->setRange(1, std::max(1, pbDevCh));
+    }
     m_pbStreamChannelsSpin->setValue(m_devices->playbackConfig.channels);
 
     // Playback Sample Rate
@@ -1976,21 +1984,30 @@ void DevicePickerView::applySettings() {
     }
 
     if (isHardwareBackend(pbCfg.backend)) {
-        auto pbSuppCh = pbCfg.supportedChannels();
-        if (!pbSuppCh.empty() && m_pbDevChannelsCombo->currentIndex() >= 0) {
-            pbCfg.deviceChannels = m_pbDevChannelsCombo->currentData().toInt();
-        } else {
-            pbCfg.deviceChannels = m_pbDevChannelsSpin->value();
-        }
-        pbCfg.channels = m_pbStreamChannelsSpin->value();
+#if defined(ENABLE_PIPEWIRE)
+        if (pbCfg.backend == AudioBackendType::PipeWire) {
+            pbCfg.channels = m_pbStreamChannelsSpin->value();
+            pbCfg.deviceChannels = pbCfg.channels;
+            pbCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
+        } else
+#endif
+        {
+            auto pbSuppCh = pbCfg.supportedChannels();
+            if (!pbSuppCh.empty() && m_pbDevChannelsCombo->currentIndex() >= 0) {
+                pbCfg.deviceChannels = m_pbDevChannelsCombo->currentData().toInt();
+            } else {
+                pbCfg.deviceChannels = m_pbDevChannelsSpin->value();
+            }
+            pbCfg.channels = m_pbStreamChannelsSpin->value();
 
-        if (m_pbRateCombo->currentIndex() >= 0) {
-            pbCfg.sampleRate = m_pbRateCombo->currentData().toInt();
-        }
+            if (m_pbRateCombo->currentIndex() >= 0) {
+                pbCfg.sampleRate = m_pbRateCombo->currentData().toInt();
+            }
 
-        auto pbFormats = pbCfg.supportedFormats();
-        if (!pbFormats.empty() && m_pbFormatCombo->isVisible()) {
-            pbCfg.format = m_pbFormatCombo->currentText().toStdString();
+            auto pbFormats = pbCfg.supportedFormats();
+            if (!pbFormats.empty() && m_pbFormatCombo->isVisible()) {
+                pbCfg.format = m_pbFormatCombo->currentText().toStdString();
+            }
         }
 
         pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
@@ -2046,23 +2063,32 @@ void DevicePickerView::applySettings() {
     }
 
     if (isHardwareBackend(capCfg.backend)) {
-        auto capSuppCh = capCfg.supportedChannels();
-        if (!capSuppCh.empty() && m_capDevChannelsCombo->currentIndex() >= 0) {
-            capCfg.deviceChannels = m_capDevChannelsCombo->currentData().toInt();
-        } else {
-            capCfg.deviceChannels = m_capDevChannelsSpin->value();
-        }
-        capCfg.channels = m_capStreamChannelsSpin->value();
+#if defined(ENABLE_PIPEWIRE)
+        if (capCfg.backend == AudioBackendType::PipeWire) {
+            capCfg.channels = m_capStreamChannelsSpin->value();
+            capCfg.deviceChannels = capCfg.channels;
+            capCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
+        } else
+#endif
+        {
+            auto capSuppCh = capCfg.supportedChannels();
+            if (!capSuppCh.empty() && m_capDevChannelsCombo->currentIndex() >= 0) {
+                capCfg.deviceChannels = m_capDevChannelsCombo->currentData().toInt();
+            } else {
+                capCfg.deviceChannels = m_capDevChannelsSpin->value();
+            }
+            capCfg.channels = m_capStreamChannelsSpin->value();
 
-        if (m_settings->resamplerEnabled && m_capRateCombo->isVisible() && m_capRateCombo->currentIndex() >= 0) {
-            capCfg.sampleRate = m_capRateCombo->currentData().toInt();
-        } else if (!m_settings->resamplerEnabled) {
-            capCfg.sampleRate = pbCfg.sampleRate;
-        }
+            if (m_settings->resamplerEnabled && m_capRateCombo->isVisible() && m_capRateCombo->currentIndex() >= 0) {
+                capCfg.sampleRate = m_capRateCombo->currentData().toInt();
+            } else if (!m_settings->resamplerEnabled) {
+                capCfg.sampleRate = pbCfg.sampleRate;
+            }
 
-        auto capFormats = capCfg.supportedFormats();
-        if (!capFormats.empty() && m_capFormatCombo->isVisible()) {
-            capCfg.format = m_capFormatCombo->currentText().toStdString();
+            auto capFormats = capCfg.supportedFormats();
+            if (!capFormats.empty() && m_capFormatCombo->isVisible()) {
+                capCfg.format = m_capFormatCombo->currentText().toStdString();
+            }
         }
 
         capCfg.bypassDoP = m_bypassDoPCheck->isChecked();

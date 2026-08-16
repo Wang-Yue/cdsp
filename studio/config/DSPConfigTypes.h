@@ -231,6 +231,46 @@ inline bool isHardwareBackend(AudioBackendType type) {
     }
 }
 
+inline bool backendHasDeviceList(AudioBackendType type) {
+    switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+#endif
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool backendHasDeviceCapabilities(AudioBackendType type) {
+    switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+#endif
+        return true;
+    default:
+        return false;
+    }
+}
+
 std::string audioBackendTypeToString(AudioBackendType type);
 AudioBackendType stringToAudioBackendType(const std::string& str);
 
