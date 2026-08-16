@@ -450,21 +450,20 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
 
                 if (isCapHw) {
                     std::string name = newCapture.deviceName().value_or("");
-                    auto it = m_captureDeviceConfigs.find(name);
-                    if (it != m_captureDeviceConfigs.end()) {
-                        DeviceConfig saved = it->second;
-                        saved.capabilities = newCapture.capabilities;
-                        saved.backend = newCapture.backend;
-                        newCapture = saved;
-                    }
                     std::string origId = newCapture.capabilities.name;
-                    if (capDesc.has_value()) {
+                    if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
                         newCapture.capabilities = capDesc.value();
                     } else {
-                        newCapture.capabilities = AudioDeviceDescriptor();
+                        auto it = m_captureDeviceConfigs.find(name);
+                        if (it != m_captureDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
+                            newCapture.capabilities = it->second.capabilities;
+                        }
                     }
-                    if (!origId.empty()) {
+                    if (!origId.empty() && newCapture.capabilities.name.empty()) {
                         newCapture.capabilities.name = origId;
+                    }
+                    if (!name.empty() && !newCapture.capabilities.capability_sets.empty()) {
+                        m_captureDeviceConfigs[name] = newCapture;
                     }
                 } else {
                     newCapture.capabilities = AudioDeviceDescriptor();
@@ -472,21 +471,20 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
 
                 if (isPbHw) {
                     std::string name = newPlayback.deviceName().value_or("");
-                    auto it = m_playbackDeviceConfigs.find(name);
-                    if (it != m_playbackDeviceConfigs.end()) {
-                        DeviceConfig saved = it->second;
-                        saved.capabilities = newPlayback.capabilities;
-                        saved.backend = newPlayback.backend;
-                        newPlayback = saved;
-                    }
                     std::string origId = newPlayback.capabilities.name;
-                    if (pbDesc.has_value()) {
+                    if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
                         newPlayback.capabilities = pbDesc.value();
                     } else {
-                        newPlayback.capabilities = AudioDeviceDescriptor();
+                        auto it = m_playbackDeviceConfigs.find(name);
+                        if (it != m_playbackDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
+                            newPlayback.capabilities = it->second.capabilities;
+                        }
                     }
-                    if (!origId.empty()) {
+                    if (!origId.empty() && newPlayback.capabilities.name.empty()) {
                         newPlayback.capabilities.name = origId;
+                    }
+                    if (!name.empty() && !newPlayback.capabilities.capability_sets.empty()) {
+                        m_playbackDeviceConfigs[name] = newPlayback;
                     }
                 } else {
                     newPlayback.capabilities = AudioDeviceDescriptor();
