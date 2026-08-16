@@ -9,13 +9,6 @@
 #include <algorithm>
 #include <set>
 
-#if defined(__APPLE__) || defined(Q_OS_MAC)
-#include <CoreAudio/AudioHardware.h>
-
-static AudioObjectPropertyAddress s_devicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
-                                                      kAudioObjectPropertyElementMain};
-#endif
-
 AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings,
                                        QObject* parent)
     : QObject(parent), m_engine(engine), m_settings(settings) {
@@ -79,19 +72,6 @@ void AudioDeviceManager::startDeviceChangeListener() {
 
     m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, handleDeviceChange);
     m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, handleDeviceChange);
-
-#if defined(__APPLE__) || defined(Q_OS_MAC)
-    AudioObjectPropertyListenerBlock listener = Block_copy(^(UInt32, const AudioObjectPropertyAddress*) {
-      QMetaObject::invokeMethod(this, handleDeviceChange);
-    });
-    OSStatus err = AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress,
-                                                       dispatch_get_main_queue(), listener);
-    if (err == noErr) {
-        m_coreAudioListenerBlock = (void*)listener;
-    } else {
-        Block_release(listener);
-    }
-#endif
 }
 
 void AudioDeviceManager::stopDeviceChangeListener() {
@@ -106,16 +86,6 @@ void AudioDeviceManager::stopDeviceChangeListener() {
         disconnect(m_outputsConnection);
         m_outputsConnection = {};
     }
-
-#if defined(__APPLE__) || defined(Q_OS_MAC)
-    if (m_coreAudioListenerBlock) {
-        AudioObjectPropertyListenerBlock listener = (AudioObjectPropertyListenerBlock)m_coreAudioListenerBlock;
-        AudioObjectRemovePropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress, dispatch_get_main_queue(),
-                                               listener);
-        Block_release(listener);
-        m_coreAudioListenerBlock = nullptr;
-    }
-#endif
 }
 
 void AudioDeviceManager::loadSavedConfigs() {

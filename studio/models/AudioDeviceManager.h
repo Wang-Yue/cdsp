@@ -75,8 +75,6 @@ private:
     bool m_isFetchingDevices = false;
     qint64 m_lastFetchFinishedTime = 0;
 
-    void* m_coreAudioListenerBlock = nullptr;
-
     uint64_t m_fetchDevicesVersion = 0;
     uint64_t m_capabilityRequestVersion = 0;
 
