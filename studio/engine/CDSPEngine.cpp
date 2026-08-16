@@ -302,3 +302,30 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
 void CDSPEngine::setLogLevel(const std::string& levelStr) {
     cdsp_set_log_level(levelStr.c_str());
 }
+
+static CDSPEngine::LogCallback s_logCallback = nullptr;
+static std::mutex s_logMutex;
+
+static void onCdspLogBridge(const char* level, const char* label, const char* message, void* user_data) {
+    (void)user_data;
+    CDSPEngine::LogCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(s_logMutex);
+        cb = s_logCallback;
+    }
+    if (cb) {
+        cb(level ? level : "", label ? label : "", message ? message : "");
+    }
+}
+
+void CDSPEngine::setLogCallback(LogCallback callback) {
+    {
+        std::lock_guard<std::mutex> lock(s_logMutex);
+        s_logCallback = std::move(callback);
+    }
+    if (s_logCallback) {
+        cdsp_set_log_callback(onCdspLogBridge, nullptr);
+    } else {
+        cdsp_set_log_callback(nullptr, nullptr);
+    }
+}

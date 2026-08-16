@@ -5,6 +5,7 @@
 
 #include <bitset>
 #include <complex>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,9 @@ extern "C" {
 
 class CDSPEngine {
 public:
+    using LogCallback =
+        std::function<void(const std::string& level, const std::string& label, const std::string& message)>;
+
     CDSPEngine();
     ~CDSPEngine();
 
@@ -56,6 +60,7 @@ public:
                                                                bool isCapture) const;
 
     void setLogLevel(const std::string& levelStr);
+    static void setLogCallback(LogCallback callback);
 
 private:
     dsp_engine_t* m_engine = nullptr;

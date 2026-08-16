@@ -7,10 +7,7 @@
 #include <mutex>
 #include <vector>
 
-#include <thread>
-
 enum class LogLevel { Off, Error, Warn, Info, Debug, Trace };
-
 
 QString logLevelToString(LogLevel level);
 LogLevel stringToLogLevel(const QString& str);
@@ -28,6 +25,7 @@ class LogManager : public QObject {
 
 public:
     explicit LogManager(QObject* parent = nullptr);
+    ~LogManager() override;
     static LogManager* instance();
 
     void setEngine(CDSPEngine* engine);
@@ -36,6 +34,8 @@ public:
 
     void appendLog(LogLevel level, const QString& message);
     void appendLog(const QString& message);
+    void onCdspLog(LogLevel level, const QString& component, const QString& message);
+
     std::vector<LogEntry> logs() const;
     void clear();
 
@@ -49,16 +49,6 @@ private:
     LogLevel m_logLevel = LogLevel::Info;
     std::vector<LogEntry> m_entries;
     size_t m_maxEntries = 2000;
-
-    void setupCapture();
-    void readPipeLoop(int readFd, LogLevel defaultLevel);
-    void processCapturedLine(const std::string& line, LogLevel defaultLevel);
-
-    int m_stdoutPipe[2] = {-1, -1};
-    int m_stderrPipe[2] = {-1, -1};
-    std::thread m_stdoutThread;
-    std::thread m_stderrThread;
-    bool m_capturing = false;
 };
 
 Q_DECLARE_METATYPE(LogEntry)
