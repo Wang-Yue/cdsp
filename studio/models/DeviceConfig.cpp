@@ -167,14 +167,20 @@ DeviceConfig DeviceConfig::enforced() const {
     if (isHardwareBackend(res.backend)) {
         auto chs = res.supportedChannels();
         if (!chs.empty()) {
-            auto it = std::find_if(chs.begin(), chs.end(), [&res](int c) { return c >= res.channels; });
-            if (it != chs.end()) {
-                res.deviceChannels = *it;
-            } else {
-                int maxPhys = *std::max_element(chs.begin(), chs.end());
-                res.channels = maxPhys;
-                res.deviceChannels = maxPhys;
+            bool devChValid = (std::find(chs.begin(), chs.end(), res.deviceChannels) != chs.end()) &&
+                              (res.deviceChannels >= res.channels);
+            if (!devChValid) {
+                auto it = std::find_if(chs.begin(), chs.end(), [&res](int c) { return c >= res.channels; });
+                if (it != chs.end()) {
+                    res.deviceChannels = *it;
+                } else {
+                    int maxPhys = *std::max_element(chs.begin(), chs.end());
+                    res.channels = maxPhys;
+                    res.deviceChannels = maxPhys;
+                }
             }
+        } else {
+            res.deviceChannels = std::max(1, std::min(32, std::max(res.deviceChannels, res.channels)));
         }
         res.channels = std::max(1, std::min(res.deviceChannels, res.channels));
 
