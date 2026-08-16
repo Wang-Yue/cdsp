@@ -146,30 +146,6 @@ LogLevel rawByteToLogLevel(uint8_t rawByte) {
     }
 }
 
-std::string sampleFormatToString(SampleFormat fmt) {
-    switch (fmt) {
-    case SampleFormat::S16:
-        return "S16";
-    case SampleFormat::S24:
-        return "S24";
-    case SampleFormat::S32:
-        return "S32";
-    case SampleFormat::F32:
-        return "F32";
-    }
-    return "S16";
-}
-
-SampleFormat stringToSampleFormat(const std::string& str) {
-    if (str == "S24")
-        return SampleFormat::S24;
-    if (str == "S32")
-        return SampleFormat::S32;
-    if (str == "F32")
-        return SampleFormat::F32;
-    return SampleFormat::S16;
-}
-
 std::string audioBackendTypeToString(AudioBackendType type) {
     switch (type) {
 #if defined(ENABLE_COREAUDIO)

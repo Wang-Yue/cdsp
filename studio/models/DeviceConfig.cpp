@@ -93,36 +93,6 @@ static int formatPriority(const std::string& fmt) {
     return 0;
 }
 
-std::string DeviceConfig::defaultFormatForBackend(AudioBackendType backend) {
-    switch (backend) {
-#if defined(ENABLE_COREAUDIO)
-    case AudioBackendType::CoreAudio:
-        return "F32";
-#endif
-#if defined(ENABLE_WASAPI)
-    case AudioBackendType::WASAPI:
-        return "F32";
-#endif
-#if defined(ENABLE_ASIO)
-    case AudioBackendType::ASIO:
-        return "S32_LE";
-#endif
-#if defined(ENABLE_ALSA)
-    case AudioBackendType::ALSA:
-        return "S32_LE";
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AudioBackendType::PipeWire:
-        return "F32_LE";
-#endif
-    case AudioBackendType::RawFile:
-    case AudioBackendType::WavFile:
-        return "S16_LE";
-    default:
-        return "F32";
-    }
-}
-
 std::vector<std::string> DeviceConfig::supportedFormats() const {
     const auto* set = findActiveCapabilitySet(capabilities, exclusive);
     if (!set || set->capabilities.empty())
@@ -159,7 +129,6 @@ DeviceConfig DeviceConfig::enforced() const {
     if (res.backend == AudioBackendType::PipeWire) {
         res.channels = std::max(1, std::min(32, res.channels));
         res.deviceChannels = res.channels;
-        res.format = defaultFormatForBackend(AudioBackendType::PipeWire);
         res.capabilities = AudioDeviceDescriptor();
         return res;
     }
@@ -194,8 +163,6 @@ DeviceConfig DeviceConfig::enforced() const {
             if (std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
                 res.format = fmts[0];
             }
-        } else {
-            res.format = defaultFormatForBackend(res.backend);
         }
     } else if (res.backend == AudioBackendType::WavFile) {
         if (!res.filename.empty()) {

@@ -74,7 +74,6 @@ struct DeviceConfig {
     std::vector<std::string> supportedFormats() const;
 
     DeviceConfig enforced() const;
-    static std::string defaultFormatForBackend(AudioBackendType backend);
     static int bestRate(const std::vector<int>& rates, int currentRate);
     static std::optional<std::pair<int, int>> parseWavHeader(const std::string& path);
 

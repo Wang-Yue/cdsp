@@ -1956,7 +1956,6 @@ void DevicePickerView::applySettings() {
             if (m_pbRateCombo->currentIndex() >= 0) {
                 pbCfg.sampleRate = m_pbRateCombo->currentData().toInt();
             }
-            pbCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
         } else
 #endif
         {
@@ -2036,7 +2035,6 @@ void DevicePickerView::applySettings() {
             } else if (!m_settings->resamplerEnabled) {
                 capCfg.sampleRate = pbCfg.sampleRate;
             }
-            capCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
         } else
 #endif
         {

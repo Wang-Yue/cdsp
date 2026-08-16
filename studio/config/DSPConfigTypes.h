@@ -30,10 +30,6 @@ LogLevel stdStringToLogLevel(const std::string& str);
 uint8_t logLevelToRawByte(LogLevel level);
 LogLevel rawByteToLogLevel(uint8_t rawByte);
 
-enum class SampleFormat { S16, S24, S32, F32 };
-std::string sampleFormatToString(SampleFormat fmt);
-SampleFormat stringToSampleFormat(const std::string& str);
-
 enum class AudioBackendErrorType {
     ConfigParse,
     CommandSend,
