@@ -464,25 +464,54 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
 void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
                             const char* msg, const char* str) {
   if (!logger || !msg || !str || level > app_logger_get_level()) return;
-  const char* lvl_str;
-  switch (level) {
-    case LOG_LEVEL_ERROR:
-      lvl_str = "ERROR";
-      break;
-    case LOG_LEVEL_WARN:
-      lvl_str = "WARN";
-      break;
-    case LOG_LEVEL_DEBUG:
-      lvl_str = "DEBUG";
-      break;
-    case LOG_LEVEL_TRACE:
-      lvl_str = "TRACE";
-      break;
-    default:
-      lvl_str = "INFO";
-      break;
+
+  app_logger_t* shared = app_logger_get_shared();
+  cdsp_log_callback_t cb = NULL;
+  void* cb_ctx = NULL;
+  if (shared) {
+    pthread_mutex_lock(&shared->worker_mutex);
+    cb = shared->callback;
+    cb_ctx = shared->callback_user_data;
+    pthread_mutex_unlock(&shared->worker_mutex);
   }
-  printf("[%s] %s: %s %s\n", lvl_str, logger->label ? logger->label : "", msg,
-         str);
-  fflush(stdout);
+
+  size_t msg_len = strlen(msg);
+  size_t str_len = strlen(str);
+  size_t full_len = msg_len + 1 + str_len + 1;
+  char* full_msg = (char*)malloc(full_len);
+  if (full_msg) {
+    snprintf(full_msg, full_len, "%s %s", msg, str);
+  }
+
+  const char* label = (logger && logger->label) ? logger->label : "";
+  const char* out_str = full_msg ? full_msg : msg;
+
+  if (cb) {
+    cb(level, label, out_str, cb_ctx);
+  } else {
+    const char* lvl_str;
+    switch (level) {
+      case LOG_LEVEL_ERROR:
+        lvl_str = "ERROR";
+        break;
+      case LOG_LEVEL_WARN:
+        lvl_str = "WARN";
+        break;
+      case LOG_LEVEL_DEBUG:
+        lvl_str = "DEBUG";
+        break;
+      case LOG_LEVEL_TRACE:
+        lvl_str = "TRACE";
+        break;
+      default:
+        lvl_str = "INFO";
+        break;
+    }
+    printf("[%s] %s: %s\n", lvl_str, label, out_str);
+    fflush(stdout);
+  }
+
+  if (full_msg) {
+    free(full_msg);
+  }
 }
