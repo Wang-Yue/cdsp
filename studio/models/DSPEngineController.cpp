@@ -179,7 +179,7 @@ void DSPEngineController::stopEngine() {
     lastStopReason = ProcessingStopReason();
     emit statusChanged(status);
     emit statusUpdated(status, lastStopReason);
-    LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine stopped.");
+    AppLogger::info("DSPEngineController", "DSP Engine stopped.");
 }
 
 void DSPEngineController::applyConfig() {
@@ -210,13 +210,13 @@ void DSPEngineController::applyConfigAsync() {
     if (ok) {
         lastErrorMessage.clear();
         emit configApplied();
-        LogManager::instance()->appendLog(LogLevel::Info, "DSP Engine configuration applied successfully.");
+        AppLogger::info("DSPEngineController", "DSP Engine configuration applied successfully.");
     } else {
         lastErrorMessage = err;
         lastStopReason.type = StopReasonType::UnknownError;
         lastStopReason.message = err;
         emit statusUpdated(status, lastStopReason);
-        LogManager::instance()->appendLog(LogLevel::Error, QString::fromStdString("Apply config failed: " + err));
+        AppLogger::error("DSPEngineController", QString::fromStdString("Apply config failed: " + err));
     }
 }
 

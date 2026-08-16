@@ -51,6 +51,13 @@ private:
     size_t m_maxEntries = 2000;
 };
 
-Q_DECLARE_METATYPE(LogEntry)
+namespace AppLogger {
+void log(LogLevel level, const QString& component, const QString& message);
+void info(const QString& component, const QString& message);
+void warn(const QString& component, const QString& message);
+void error(const QString& component, const QString& message);
+void debug(const QString& component, const QString& message);
+void trace(const QString& component, const QString& message);
+} // namespace AppLogger
 
 #endif // LOG_MANAGER_H

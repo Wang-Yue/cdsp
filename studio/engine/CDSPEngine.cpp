@@ -2,6 +2,10 @@
 
 #include <cstring>
 #include <iostream>
+#include <mutex>
+
+static CDSPEngine::LogCallback s_logCallback = nullptr;
+static std::mutex s_logMutex;
 
 CDSPEngine::CDSPEngine() {
     m_engine = cdsp_engine_create();
@@ -255,7 +259,10 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
             cdsp_free_device_capabilities(desc);
         }
         if (devErr.type != CDSP_DEVICE_ERROR_NONE) {
-            std::cerr << "[CDSPEngine] Device capabilities error: " << devErr.message << std::endl;
+            std::lock_guard<std::mutex> lock(s_logMutex);
+            if (s_logCallback) {
+                s_logCallback("ERROR", "CDSPEngine", std::string("Device capabilities error: ") + devErr.message);
+            }
         }
         return std::nullopt;
     }
@@ -302,9 +309,6 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
 void CDSPEngine::setLogLevel(const std::string& levelStr) {
     cdsp_set_log_level(levelStr.c_str());
 }
-
-static CDSPEngine::LogCallback s_logCallback = nullptr;
-static std::mutex s_logMutex;
 
 static void onCdspLogBridge(const char* level, const char* label, const char* message, void* user_data) {
     (void)user_data;

@@ -94,7 +94,7 @@ void LogManager::appendLog(const QString& message) {
 void LogManager::onCdspLog(LogLevel level, const QString& component, const QString& message) {
     QString fullMsg;
     if (!component.isEmpty()) {
-        fullMsg = QString("[%1] %2: %3").arg(logLevelToString(level).toUpper(), component, message);
+        fullMsg = QString("[%1] [%2] %3").arg(logLevelToString(level).toUpper(), component, message);
     } else {
         fullMsg = QString("[%1] %2").arg(logLevelToString(level).toUpper(), message);
     }
@@ -113,3 +113,37 @@ void LogManager::clear() {
     }
     emit logsCleared();
 }
+
+namespace AppLogger {
+void log(LogLevel level, const QString& component, const QString& message) {
+    QString formatted;
+    if (!component.isEmpty()) {
+        formatted = QString("[%1] [%2] %3").arg(logLevelToString(level).toUpper(), component, message);
+    } else {
+        formatted = QString("[%1] %2").arg(logLevelToString(level).toUpper(), message);
+    }
+    if (LogManager::instance()) {
+        LogManager::instance()->appendLog(level, formatted);
+    }
+}
+
+void info(const QString& component, const QString& message) {
+    log(LogLevel::Info, component, message);
+}
+
+void warn(const QString& component, const QString& message) {
+    log(LogLevel::Warn, component, message);
+}
+
+void error(const QString& component, const QString& message) {
+    log(LogLevel::Error, component, message);
+}
+
+void debug(const QString& component, const QString& message) {
+    log(LogLevel::Debug, component, message);
+}
+
+void trace(const QString& component, const QString& message) {
+    log(LogLevel::Trace, component, message);
+}
+} // namespace AppLogger

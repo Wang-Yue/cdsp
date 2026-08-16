@@ -231,9 +231,9 @@ void MonitoringController::poll() {
 
 void MonitoringController::handleStateUpdate(ProcessingState state, const ProcessingStopReason& stopReason) {
     bool stateChanged = (state != m_currentStatus);
-    bool stopReasonChanged = (stopReason.type != m_lastStopReason.type ||
-                              stopReason.message != m_lastStopReason.message ||
-                              stopReason.formatChangeRate != m_lastStopReason.formatChangeRate);
+    bool stopReasonChanged =
+        (stopReason.type != m_lastStopReason.type || stopReason.message != m_lastStopReason.message ||
+         stopReason.formatChangeRate != m_lastStopReason.formatChangeRate);
 
     if (stateChanged) {
         m_currentStatus = state;
@@ -270,18 +270,15 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
         case StopReasonType::Done:
             break;
         case StopReasonType::CaptureError:
-            LogManager::instance()->appendLog(
-                LogLevel::Error, QString::fromStdString("[MonitoringController] Capture error: " + stopReason.message));
+            AppLogger::error("MonitoringController", QString::fromStdString("Capture error: " + stopReason.message));
             break;
         case StopReasonType::PlaybackError:
-            LogManager::instance()->appendLog(
-                LogLevel::Error, QString::fromStdString("[MonitoringController] Playback error: " + stopReason.message));
+            AppLogger::error("MonitoringController", QString::fromStdString("Playback error: " + stopReason.message));
             break;
         case StopReasonType::CaptureFormatChange: {
             int newRate = stopReason.formatChangeRate;
-            LogManager::instance()->appendLog(
-                LogLevel::Warn,
-                QString("[MonitoringController] Capture format change detected, switching to %1 Hz").arg(newRate));
+            AppLogger::info("MonitoringController",
+                            QString("Capture format change detected, switching to %1 Hz").arg(newRate));
             if (m_settings && m_settings->resamplerEnabled) {
                 if (m_devices) {
                     DeviceConfig newCfg = m_devices->captureConfig;
@@ -303,9 +300,8 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
         }
         case StopReasonType::PlaybackFormatChange: {
             int newRate = stopReason.formatChangeRate;
-            LogManager::instance()->appendLog(
-                LogLevel::Warn,
-                QString("[MonitoringController] Playback format change detected, switching to %1 Hz").arg(newRate));
+            AppLogger::info("MonitoringController",
+                            QString("Playback format change detected, switching to %1 Hz").arg(newRate));
             if (m_devices) {
                 DeviceConfig newCfg = m_devices->playbackConfig;
                 newCfg.sampleRate = newRate;
@@ -318,8 +314,7 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
             break;
         }
         case StopReasonType::UnknownError: {
-            LogManager::instance()->appendLog(
-                LogLevel::Error, QString::fromStdString("[MonitoringController] Unknown error: " + stopReason.message));
+            AppLogger::error("MonitoringController", QString::fromStdString("Unknown error: " + stopReason.message));
             break;
         }
         }

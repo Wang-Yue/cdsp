@@ -1,6 +1,7 @@
 #include "models/AudioDeviceManager.h"
 
-#include <QDebug>
+#include "models/LogManager.h"
+
 #include <QJsonDocument>
 #include <QMediaDevices>
 #include <QSettings>
@@ -51,17 +52,17 @@ void AudioDeviceManager::refreshDevices() {
 void AudioDeviceManager::startDeviceChangeListener() {
     stopDeviceChangeListener();
     m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this]() {
-        qDebug() << "[AudioDeviceManager] Qt audio input device change detected, refreshing devices...";
+        AppLogger::info("AudioDeviceManager", "Qt audio input device change detected, refreshing devices...");
         refreshDevices();
     });
     m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
-        qDebug() << "[AudioDeviceManager] Qt audio output device change detected, refreshing devices...";
+        AppLogger::info("AudioDeviceManager", "Qt audio output device change detected, refreshing devices...");
         refreshDevices();
     });
 
 #if defined(__APPLE__) || defined(Q_OS_MAC)
     AudioObjectPropertyListenerBlock listener = Block_copy(^(UInt32, const AudioObjectPropertyAddress*) {
-      qDebug() << "[AudioDeviceManager] CoreAudio hardware devices changed, refreshing list...";
+      AppLogger::info("AudioDeviceManager", "CoreAudio hardware devices changed, refreshing list...");
       QMetaObject::invokeMethod(this, [this]() { refreshDevices(); });
     });
     OSStatus err = AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress,
@@ -346,9 +347,10 @@ void AudioDeviceManager::fetchDevices() {
                             }
                         }
                         if (!found) {
-                            qDebug() << "[AudioDeviceManager] Configured capture device"
-                                     << QString::fromStdString(name.value())
-                                     << "is disconnected/missing. Falling back to default input device.";
+                            AppLogger::warn("AudioDeviceManager",
+                                            QString("Configured capture device %1 is disconnected/missing. Falling "
+                                                    "back to default input device.")
+                                                .arg(QString::fromStdString(name.value())));
                             captureConfig.setDeviceName("");
                         }
                     }
@@ -366,9 +368,10 @@ void AudioDeviceManager::fetchDevices() {
                             }
                         }
                         if (!found) {
-                            qDebug() << "[AudioDeviceManager] Configured playback device"
-                                     << QString::fromStdString(name.value())
-                                     << "is disconnected/missing. Falling back to default output device.";
+                            AppLogger::warn("AudioDeviceManager",
+                                            QString("Configured playback device %1 is disconnected/missing. Falling "
+                                                    "back to default output device.")
+                                                .arg(QString::fromStdString(name.value())));
                             playbackConfig.setDeviceName("");
                         }
                     }
