@@ -118,6 +118,18 @@ static const GUID g_IID_IASIO_VAL = {
     0x11d2,
     {0x98, 0xbc, 0x00, 0x00, 0xf8, 0x75, 0xac, 0x12}};
 
+typedef struct {
+  long FormatType;
+  double SampleRate;
+  long Flags;
+  char reserved[512];
+} ASIOIoFormat;
+
+#define kAsioCanDoIoFormat 0x23111961
+#define kAsioSetIoFormat 0x23111962
+#define kASIOFormatDSD 1
+#define ASE_SUCCESS 0x3f484722
+
 #define STANDARD_RATES_COUNT 17
 static const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
     5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
@@ -423,6 +435,22 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     goto error_cleanup;
   }
 
+  // Check whether Native DSD is supported by the ASIO driver
+  ASIOIoFormat dsd_format = {0};
+  dsd_format.FormatType = kASIOFormatDSD;
+  bool supports_dsd = false;
+  if (chan_info.type == ASIOTSDSDInt8LSB ||
+      chan_info.type == ASIOTSDSDInt8MSB ||
+      chan_info.type == ASIOTSDSDInt8NER8) {
+    supports_dsd = true;
+  } else if (iasio->lpVtbl->future) {
+    ASIOError fut_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioCanDoIoFormat, &dsd_format);
+    if (fut_res == (ASIOError)ASE_SUCCESS || fut_res == 0 || fut_res == 1) {
+      supports_dsd = true;
+    }
+  }
+
   // Get channel count (lines 1262-1274)
   long num_inputs = 0, num_outputs = 0;
   if (iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs) != 0) {
@@ -484,10 +512,15 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
   for (size_t i = 0; i < supported_rates_count; i++) {
     samplerate_capability_t* rate_cap = &cap->samplerates[i];
     rate_cap->samplerate = (int)STANDARD_RATES[supported_rates_indices[i]];
-    rate_cap->formats_count = 1;
-    rate_cap->formats = (char**)calloc(1, sizeof(char*));
+
+    size_t n_fmts = (strcmp(fmt_str, "DSD_INT8") != 0) ? 2 : 1;
+    rate_cap->formats_count = n_fmts;
+    rate_cap->formats = (char**)calloc(n_fmts, sizeof(char*));
     if (rate_cap->formats) {
       rate_cap->formats[0] = strdup(fmt_str);
+      if (n_fmts > 1) {
+        rate_cap->formats[1] = strdup("DSD_INT8");
+      }
     }
   }
 
