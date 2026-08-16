@@ -428,10 +428,14 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                         saved.backend = newCapture.backend;
                         newCapture = saved;
                     }
+                    std::string origId = newCapture.capabilities.name;
                     if (capDesc.has_value()) {
                         newCapture.capabilities = capDesc.value();
                     } else {
                         newCapture.capabilities = AudioDeviceDescriptor();
+                    }
+                    if (!origId.empty()) {
+                        newCapture.capabilities.name = origId;
                     }
                 } else {
                     newCapture.capabilities = AudioDeviceDescriptor();
@@ -446,10 +450,14 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
                         saved.backend = newPlayback.backend;
                         newPlayback = saved;
                     }
+                    std::string origId = newPlayback.capabilities.name;
                     if (pbDesc.has_value()) {
                         newPlayback.capabilities = pbDesc.value();
                     } else {
                         newPlayback.capabilities = AudioDeviceDescriptor();
+                    }
+                    if (!origId.empty()) {
+                        newPlayback.capabilities.name = origId;
                     }
                 } else {
                     newPlayback.capabilities = AudioDeviceDescriptor();

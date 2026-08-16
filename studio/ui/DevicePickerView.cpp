@@ -464,7 +464,7 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
     warningWidget->hide();
     containerWidget->show();
 
-    bool defaultSelected = !selectedDeviceName.has_value();
+    bool defaultSelected = !selectedDeviceName.has_value() || selectedDeviceName.value().empty();
     auto defaultRow = new DeviceRowWidget(
         "System Default", defaultSelected,
         [this, isCapture]() {
@@ -490,7 +490,8 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
     listLayout->addWidget(div);
 
     for (const auto& dev : devices) {
-        bool isSelected = selectedDeviceName.has_value() && (selectedDeviceName.value() == dev.id);
+        bool isSelected = selectedDeviceName.has_value() && !selectedDeviceName.value().empty() &&
+                          (selectedDeviceName.value() == dev.id || selectedDeviceName.value() == dev.name);
         std::string devId = dev.id;
         std::string devDisplay = dev.name;
         auto row = new DeviceRowWidget(
@@ -1532,19 +1533,32 @@ static int getPbStackIndex(AudioBackendType backend) {
 void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
+    bool isCapPw = false;
+#if defined(ENABLE_PIPEWIRE)
+    if (m_devices->captureConfig.backend == AudioBackendType::PipeWire)
+        isCapPw = true;
+#endif
+
     // 1. Refresh Capture Devices List & CoreAudio controls
-    populateDeviceList(m_capDeviceListLayout, m_capWarningWidget, m_capDeviceListContainer, m_devices->captureDevices,
-                       m_devices->captureConfig.deviceName(), true);
+    if (!isCapPw) {
+        populateDeviceList(m_capDeviceListLayout, m_capWarningWidget, m_capDeviceListContainer,
+                           m_devices->captureDevices, m_devices->captureConfig.deviceName(), true);
+    } else {
+        m_capWarningWidget->hide();
+        m_capDeviceListContainer->hide();
+    }
 
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
     if (capBackendIdx >= 0) {
+        m_capBackendCombo->blockSignals(true);
         m_capBackendCombo->setCurrentIndex(capBackendIdx);
+        m_capBackendCombo->blockSignals(false);
     }
     m_capStack->setCurrentIndex(getCapStackIndex(m_devices->captureConfig.backend));
 
     // Capture Channels (Device Channels combo vs spinbox)
     auto capSuppCh = m_devices->captureConfig.supportedChannels();
-    if (!capSuppCh.empty()) {
+    if (!capSuppCh.empty() && !isCapPw) {
         m_capDevChannelsCombo->show();
         m_capDevChannelsSpin->hide();
         m_capDevChannelsCombo->blockSignals(true);
@@ -1558,7 +1572,7 @@ void DevicePickerView::refreshUi() {
         m_capDevChannelsCombo->blockSignals(false);
     } else {
         m_capDevChannelsCombo->hide();
-        m_capDevChannelsSpin->show();
+        m_capDevChannelsSpin->setVisible(!isCapPw);
         m_capDevChannelsSpin->setValue(m_devices->captureConfig.deviceChannels);
     }
 
@@ -1567,7 +1581,10 @@ void DevicePickerView::refreshUi() {
     m_capStreamChannelsSpin->setValue(m_devices->captureConfig.channels);
 
     // Capture Sample Rate
-    if (m_settings->resamplerEnabled) {
+    if (isCapPw) {
+        m_capRateCombo->hide();
+        m_capRateLabel->hide();
+    } else if (m_settings->resamplerEnabled) {
         m_capRateCombo->show();
         m_capRateLabel->hide();
         m_capRateCombo->blockSignals(true);
@@ -1587,25 +1604,30 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture Sample Format
-    auto capFormats = m_devices->captureConfig.supportedFormats();
-    if (!capFormats.empty()) {
-        m_capFormatCombo->show();
-        m_capFormatLabel->hide();
-        m_capFormatCombo->blockSignals(true);
-        m_capFormatCombo->clear();
-        for (const auto& fmt : capFormats) {
-            m_capFormatCombo->addItem(QString::fromStdString(fmt));
-        }
-        m_capFormatCombo->setCurrentText(QString::fromStdString(m_devices->captureConfig.format));
-        m_capFormatCombo->blockSignals(false);
-    } else {
+    if (isCapPw) {
         m_capFormatCombo->hide();
-        m_capFormatLabel->show();
-        m_capFormatLabel->setText(QString::fromStdString(m_devices->captureConfig.format));
+        m_capFormatLabel->hide();
+    } else {
+        auto capFormats = m_devices->captureConfig.supportedFormats();
+        if (!capFormats.empty()) {
+            m_capFormatCombo->show();
+            m_capFormatLabel->hide();
+            m_capFormatCombo->blockSignals(true);
+            m_capFormatCombo->clear();
+            for (const auto& fmt : capFormats) {
+                m_capFormatCombo->addItem(QString::fromStdString(fmt));
+            }
+            m_capFormatCombo->setCurrentText(QString::fromStdString(m_devices->captureConfig.format));
+            m_capFormatCombo->blockSignals(false);
+        } else {
+            m_capFormatCombo->hide();
+            m_capFormatLabel->show();
+            m_capFormatLabel->setText(QString::fromStdString(m_devices->captureConfig.format));
+        }
     }
 
     // Capture DoP
-    bool capDopVisible = !m_devices->isRustEngine();
+    bool capDopVisible = !m_devices->isRustEngine() && !isCapPw;
     m_capDopDivider->setVisible(capDopVisible);
     m_bypassDoPCheck->setVisible(capDopVisible);
     m_capDopCutoffRow->setVisible(capDopVisible);
@@ -1637,29 +1659,56 @@ void DevicePickerView::refreshUi() {
     m_capAlsaStopInactiveCheck->setVisible(isCapAlsa);
     m_capAlsaLinkVolRow->setVisible(isCapAlsa);
     m_capAlsaLinkMuteRow->setVisible(isCapAlsa);
-    m_capAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->captureConfig.linkVolumeControl));
-    m_capAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->captureConfig.linkMuteControl));
+    if (m_capAlsaLinkVolumeEdit->text().toStdString() != m_devices->captureConfig.linkVolumeControl) {
+        m_capAlsaLinkVolumeEdit->blockSignals(true);
+        m_capAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->captureConfig.linkVolumeControl));
+        m_capAlsaLinkVolumeEdit->blockSignals(false);
+    }
+    if (m_capAlsaLinkMuteEdit->text().toStdString() != m_devices->captureConfig.linkMuteControl) {
+        m_capAlsaLinkMuteEdit->blockSignals(true);
+        m_capAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->captureConfig.linkMuteControl));
+        m_capAlsaLinkMuteEdit->blockSignals(false);
+    }
 
-    bool isCapPw = false;
-#if defined(ENABLE_PIPEWIRE)
-    if (m_devices->captureConfig.backend == AudioBackendType::PipeWire)
-        isCapPw = true;
-#endif
     m_capPipeWireRow->setVisible(isCapPw);
-    m_capPwNodeNameEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeName));
-    m_capPwNodeDescEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeDescription));
-    m_capPwNodeGroupEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeGroupName));
-    m_capPwAutoconnectEdit->setText(QString::fromStdString(m_devices->captureConfig.autoconnectTo));
+    if (m_capPwNodeNameEdit->text().toStdString() != m_devices->captureConfig.nodeName) {
+        m_capPwNodeNameEdit->blockSignals(true);
+        m_capPwNodeNameEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeName));
+        m_capPwNodeNameEdit->blockSignals(false);
+    }
+    if (m_capPwNodeDescEdit->text().toStdString() != m_devices->captureConfig.nodeDescription) {
+        m_capPwNodeDescEdit->blockSignals(true);
+        m_capPwNodeDescEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeDescription));
+        m_capPwNodeDescEdit->blockSignals(false);
+    }
+    if (m_capPwNodeGroupEdit->text().toStdString() != m_devices->captureConfig.nodeGroupName) {
+        m_capPwNodeGroupEdit->blockSignals(true);
+        m_capPwNodeGroupEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeGroupName));
+        m_capPwNodeGroupEdit->blockSignals(false);
+    }
+    if (m_capPwAutoconnectEdit->text().toStdString() != m_devices->captureConfig.autoconnectTo) {
+        m_capPwAutoconnectEdit->blockSignals(true);
+        m_capPwAutoconnectEdit->setText(QString::fromStdString(m_devices->captureConfig.autoconnectTo));
+        m_capPwAutoconnectEdit->blockSignals(false);
+    }
 
     // 2. Refresh Capture File & Generator Views
-    m_capRawFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
+    if (m_capRawFilePathEdit->text().toStdString() != m_devices->captureConfig.filename) {
+        m_capRawFilePathEdit->blockSignals(true);
+        m_capRawFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
+        m_capRawFilePathEdit->blockSignals(false);
+    }
     m_capRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->captureConfig.fileFormat));
     m_capRawFileChannelsSpin->setValue(m_devices->captureConfig.channels);
     m_capRawSkipBytesSpin->setValue(m_devices->captureConfig.skipBytes);
     m_capRawReadBytesSpin->setValue(m_devices->captureConfig.readBytes);
     m_capRawExtraSamplesSpin->setValue(m_devices->captureConfig.extraSamples);
 
-    m_capWavFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
+    if (m_capWavFilePathEdit->text().toStdString() != m_devices->captureConfig.filename) {
+        m_capWavFilePathEdit->blockSignals(true);
+        m_capWavFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
+        m_capWavFilePathEdit->blockSignals(false);
+    }
     m_capWavSkipBytesSpin->setValue(m_devices->captureConfig.skipBytes);
     m_capWavReadBytesSpin->setValue(m_devices->captureConfig.readBytes);
     m_capWavExtraSamplesSpin->setValue(m_devices->captureConfig.extraSamples);
@@ -1676,18 +1725,31 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    populateDeviceList(m_pbDeviceListLayout, m_pbWarningWidget, m_pbDeviceListContainer, m_devices->playbackDevices,
-                       m_devices->playbackConfig.deviceName(), false);
+    bool isPbPw = false;
+#if defined(ENABLE_PIPEWIRE)
+    if (m_devices->playbackConfig.backend == AudioBackendType::PipeWire)
+        isPbPw = true;
+#endif
+
+    if (!isPbPw) {
+        populateDeviceList(m_pbDeviceListLayout, m_pbWarningWidget, m_pbDeviceListContainer, m_devices->playbackDevices,
+                           m_devices->playbackConfig.deviceName(), false);
+    } else {
+        m_pbWarningWidget->hide();
+        m_pbDeviceListContainer->hide();
+    }
 
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
     if (pbBackendIdx >= 0) {
+        m_pbBackendCombo->blockSignals(true);
         m_pbBackendCombo->setCurrentIndex(pbBackendIdx);
+        m_pbBackendCombo->blockSignals(false);
     }
     m_pbStack->setCurrentIndex(getPbStackIndex(m_devices->playbackConfig.backend));
 
     // Playback Channels (Device Channels combo vs spinbox)
     auto pbSuppCh = m_devices->playbackConfig.supportedChannels();
-    if (!pbSuppCh.empty()) {
+    if (!pbSuppCh.empty() && !isPbPw) {
         m_pbDevChannelsCombo->show();
         m_pbDevChannelsSpin->hide();
         m_pbDevChannelsCombo->blockSignals(true);
@@ -1701,7 +1763,7 @@ void DevicePickerView::refreshUi() {
         m_pbDevChannelsCombo->blockSignals(false);
     } else {
         m_pbDevChannelsCombo->hide();
-        m_pbDevChannelsSpin->show();
+        m_pbDevChannelsSpin->setVisible(!isPbPw);
         m_pbDevChannelsSpin->setValue(m_devices->playbackConfig.deviceChannels);
     }
 
@@ -1710,40 +1772,59 @@ void DevicePickerView::refreshUi() {
     m_pbStreamChannelsSpin->setValue(m_devices->playbackConfig.channels);
 
     // Playback Sample Rate
-    m_pbRateCombo->blockSignals(true);
-    m_pbRateCombo->clear();
-    auto pbRates = m_devices->playbackRateOptions();
-    for (int r : pbRates) {
-        m_pbRateCombo->addItem(formatSampleRate(r), r);
+    if (isPbPw) {
+        m_pbRateCombo->hide();
+    } else {
+        m_pbRateCombo->show();
+        m_pbRateCombo->blockSignals(true);
+        m_pbRateCombo->clear();
+        auto pbRates = m_devices->playbackRateOptions();
+        for (int r : pbRates) {
+            m_pbRateCombo->addItem(formatSampleRate(r), r);
+        }
+        int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
+        if (pbRateIdx >= 0)
+            m_pbRateCombo->setCurrentIndex(pbRateIdx);
+        m_pbRateCombo->blockSignals(false);
     }
-    int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
-    if (pbRateIdx >= 0)
-        m_pbRateCombo->setCurrentIndex(pbRateIdx);
-    m_pbRateCombo->blockSignals(false);
 
     // Playback Sample Format
-    auto pbFormats = m_devices->playbackConfig.supportedFormats();
-    if (!pbFormats.empty()) {
-        m_pbFormatCombo->show();
-        m_pbFormatLabel->hide();
-        m_pbFormatCombo->blockSignals(true);
-        m_pbFormatCombo->clear();
-        for (const auto& fmt : pbFormats) {
-            m_pbFormatCombo->addItem(QString::fromStdString(fmt));
-        }
-        m_pbFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.format));
-        m_pbFormatCombo->blockSignals(false);
-    } else {
+    if (isPbPw) {
         m_pbFormatCombo->hide();
-        m_pbFormatLabel->show();
-        m_pbFormatLabel->setText(QString::fromStdString(m_devices->playbackConfig.format));
+        m_pbFormatLabel->hide();
+    } else {
+        auto pbFormats = m_devices->playbackConfig.supportedFormats();
+        if (!pbFormats.empty()) {
+            m_pbFormatCombo->show();
+            m_pbFormatLabel->hide();
+            m_pbFormatCombo->blockSignals(true);
+            m_pbFormatCombo->clear();
+            for (const auto& fmt : pbFormats) {
+                m_pbFormatCombo->addItem(QString::fromStdString(fmt));
+            }
+            m_pbFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.format));
+            m_pbFormatCombo->blockSignals(false);
+        } else {
+            m_pbFormatCombo->hide();
+            m_pbFormatLabel->show();
+            m_pbFormatLabel->setText(QString::fromStdString(m_devices->playbackConfig.format));
+        }
     }
 
-    m_exclusiveModeCheck->setChecked(m_devices->playbackConfig.exclusive);
     bool isPbWasapi = false;
 #if defined(ENABLE_WASAPI)
     isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
 #endif
+    bool isPbCoreAudio = false;
+#if defined(ENABLE_COREAUDIO)
+    isPbCoreAudio = (m_devices->playbackConfig.backend == AudioBackendType::CoreAudio);
+#endif
+
+    bool pbExclusiveVisible = isPbWasapi || isPbCoreAudio;
+    m_exclusiveModeCheck->setVisible(pbExclusiveVisible);
+    m_exclusiveModeHint->setVisible(pbExclusiveVisible);
+    m_exclusiveModeCheck->setChecked(m_devices->playbackConfig.exclusive);
+
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
 
@@ -1756,21 +1837,40 @@ void DevicePickerView::refreshUi() {
     m_pbAlsaStopInactiveCheck->setChecked(m_devices->playbackConfig.stopOnInactive);
     m_pbAlsaLinkVolRow->setVisible(isPbAlsa);
     m_pbAlsaLinkMuteRow->setVisible(isPbAlsa);
-    m_pbAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkVolumeControl));
-    m_pbAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkMuteControl));
+    if (m_pbAlsaLinkVolumeEdit->text().toStdString() != m_devices->playbackConfig.linkVolumeControl) {
+        m_pbAlsaLinkVolumeEdit->blockSignals(true);
+        m_pbAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkVolumeControl));
+        m_pbAlsaLinkVolumeEdit->blockSignals(false);
+    }
+    if (m_pbAlsaLinkMuteEdit->text().toStdString() != m_devices->playbackConfig.linkMuteControl) {
+        m_pbAlsaLinkMuteEdit->blockSignals(true);
+        m_pbAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkMuteControl));
+        m_pbAlsaLinkMuteEdit->blockSignals(false);
+    }
 
-    bool isPbPw = false;
-#if defined(ENABLE_PIPEWIRE)
-    if (m_devices->playbackConfig.backend == AudioBackendType::PipeWire)
-        isPbPw = true;
-#endif
     m_pbPipeWireRow->setVisible(isPbPw);
-    m_pbPwNodeNameEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeName));
-    m_pbPwNodeDescEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeDescription));
-    m_pbPwNodeGroupEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeGroupName));
-    m_pbPwAutoconnectEdit->setText(QString::fromStdString(m_devices->playbackConfig.autoconnectTo));
+    if (m_pbPwNodeNameEdit->text().toStdString() != m_devices->playbackConfig.nodeName) {
+        m_pbPwNodeNameEdit->blockSignals(true);
+        m_pbPwNodeNameEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeName));
+        m_pbPwNodeNameEdit->blockSignals(false);
+    }
+    if (m_pbPwNodeDescEdit->text().toStdString() != m_devices->playbackConfig.nodeDescription) {
+        m_pbPwNodeDescEdit->blockSignals(true);
+        m_pbPwNodeDescEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeDescription));
+        m_pbPwNodeDescEdit->blockSignals(false);
+    }
+    if (m_pbPwNodeGroupEdit->text().toStdString() != m_devices->playbackConfig.nodeGroupName) {
+        m_pbPwNodeGroupEdit->blockSignals(true);
+        m_pbPwNodeGroupEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeGroupName));
+        m_pbPwNodeGroupEdit->blockSignals(false);
+    }
+    if (m_pbPwAutoconnectEdit->text().toStdString() != m_devices->playbackConfig.autoconnectTo) {
+        m_pbPwAutoconnectEdit->blockSignals(true);
+        m_pbPwAutoconnectEdit->setText(QString::fromStdString(m_devices->playbackConfig.autoconnectTo));
+        m_pbPwAutoconnectEdit->blockSignals(false);
+    }
 
-    bool pbDopVisible = !m_devices->isRustEngine();
+    bool pbDopVisible = !m_devices->isRustEngine() && !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
     m_pbDopDivider->setVisible(pbDopVisible);
     m_outputDoPCheck->setVisible(pbDopVisible);
     m_pbSdmFilterRow->setVisible(pbDopVisible);
@@ -1796,15 +1896,21 @@ void DevicePickerView::refreshUi() {
     updateDoPCapability();
 
     // 4. Refresh Playback File View
-    if (m_pbRawFilePathEdit)
+    if (m_pbRawFilePathEdit && m_pbRawFilePathEdit->text().toStdString() != m_devices->playbackConfig.filename) {
+        m_pbRawFilePathEdit->blockSignals(true);
         m_pbRawFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+        m_pbRawFilePathEdit->blockSignals(false);
+    }
     if (m_pbRawFileFormatCombo)
         m_pbRawFileFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.fileFormat));
     if (m_pbRawFileChannelsSpin)
         m_pbRawFileChannelsSpin->setValue(m_devices->playbackConfig.channels);
 
-    if (m_pbWavFilePathEdit)
+    if (m_pbWavFilePathEdit && m_pbWavFilePathEdit->text().toStdString() != m_devices->playbackConfig.filename) {
+        m_pbWavFilePathEdit->blockSignals(true);
         m_pbWavFilePathEdit->setText(QString::fromStdString(m_devices->playbackConfig.filename));
+        m_pbWavFilePathEdit->blockSignals(false);
+    }
     if (m_pbWavFileFormatCombo) {
         QString fmt = QString::fromStdString(m_devices->playbackConfig.fileFormat);
         if (fmt == "S24_4_RJ_LE") {
@@ -1869,75 +1975,7 @@ void DevicePickerView::applySettings() {
         m_settings->workerThreads = m_workerThreadsSpin->value();
     m_settings->savePreferences();
 
-    // 2. Capture settings
-    DeviceConfig capCfg = m_devices->captureConfig;
-    if (m_capBackendCombo->currentIndex() >= 0) {
-        capCfg.backend = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
-    }
-
-    if (isHardwareBackend(capCfg.backend)) {
-        auto capSuppCh = capCfg.supportedChannels();
-        if (!capSuppCh.empty() && m_capDevChannelsCombo->currentIndex() >= 0) {
-            capCfg.deviceChannels = m_capDevChannelsCombo->currentData().toInt();
-        } else {
-            capCfg.deviceChannels = m_capDevChannelsSpin->value();
-        }
-        capCfg.channels = m_capStreamChannelsSpin->value();
-
-        if (m_settings->resamplerEnabled && m_capRateCombo->isVisible() && m_capRateCombo->currentIndex() >= 0) {
-            capCfg.sampleRate = m_capRateCombo->currentData().toInt();
-        }
-
-        auto capFormats = capCfg.supportedFormats();
-        if (!capFormats.empty() && m_capFormatCombo->isVisible()) {
-            capCfg.format = m_capFormatCombo->currentText().toStdString();
-        }
-
-        capCfg.bypassDoP = m_bypassDoPCheck->isChecked();
-        if (m_dopCutoffCombo->currentIndex() >= 0) {
-            capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
-        }
-        capCfg.exclusive = m_capWasapiExclusiveCheck->isChecked();
-        capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
-        capCfg.polling = m_capWasapiPollingCheck->isChecked();
-        capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
-        if (m_capAlsaLinkVolumeEdit)
-            capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
-        if (m_capAlsaLinkMuteEdit)
-            capCfg.linkMuteControl = m_capAlsaLinkMuteEdit->text().toStdString();
-        if (m_capPwNodeNameEdit)
-            capCfg.nodeName = m_capPwNodeNameEdit->text().toStdString();
-        if (m_capPwNodeDescEdit)
-            capCfg.nodeDescription = m_capPwNodeDescEdit->text().toStdString();
-        if (m_capPwNodeGroupEdit)
-            capCfg.nodeGroupName = m_capPwNodeGroupEdit->text().toStdString();
-        if (m_capPwAutoconnectEdit)
-            capCfg.autoconnectTo = m_capPwAutoconnectEdit->text().toStdString();
-    } else if (capCfg.backend == AudioBackendType::RawFile) {
-        capCfg.filename = m_capRawFilePathEdit->text().toStdString();
-        capCfg.fileFormat = m_capRawFileFormatCombo->currentText().toStdString();
-        capCfg.channels = m_capRawFileChannelsSpin->value();
-        capCfg.deviceChannels = capCfg.channels;
-        capCfg.skipBytes = m_capRawSkipBytesSpin->value();
-        capCfg.readBytes = m_capRawReadBytesSpin->value();
-        capCfg.extraSamples = m_capRawExtraSamplesSpin->value();
-        capCfg.isWav = false;
-    } else if (capCfg.backend == AudioBackendType::WavFile) {
-        capCfg.filename = m_capWavFilePathEdit->text().toStdString();
-        capCfg.skipBytes = m_capWavSkipBytesSpin->value();
-        capCfg.readBytes = m_capWavReadBytesSpin->value();
-        capCfg.extraSamples = m_capWavExtraSamplesSpin->value();
-        capCfg.isWav = true;
-    } else if (capCfg.backend == AudioBackendType::SignalGenerator) {
-        capCfg.generatorType = m_genTypeCombo->currentText().toStdString();
-        capCfg.channels = m_genChannelsSpin->value();
-        capCfg.deviceChannels = capCfg.channels;
-        capCfg.generatorFreq = m_genFreqSpin->value();
-        capCfg.generatorLevel = m_genLevelSpin->value();
-    }
-    m_devices->setCaptureConfig(capCfg);
-
-    // 3. Playback settings
+    // 2. Playback settings (resolved first so capture can sync sample rate if non-resampling)
     DeviceConfig pbCfg = m_devices->playbackConfig;
     if (m_pbBackendCombo->currentIndex() >= 0) {
         pbCfg.backend = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());
@@ -2008,8 +2046,77 @@ void DevicePickerView::applySettings() {
     }
     m_devices->setPlaybackConfig(pbCfg);
 
+    // 3. Capture settings
+    DeviceConfig capCfg = m_devices->captureConfig;
+    if (m_capBackendCombo->currentIndex() >= 0) {
+        capCfg.backend = static_cast<AudioBackendType>(m_capBackendCombo->currentData().toInt());
+    }
+
+    if (isHardwareBackend(capCfg.backend)) {
+        auto capSuppCh = capCfg.supportedChannels();
+        if (!capSuppCh.empty() && m_capDevChannelsCombo->currentIndex() >= 0) {
+            capCfg.deviceChannels = m_capDevChannelsCombo->currentData().toInt();
+        } else {
+            capCfg.deviceChannels = m_capDevChannelsSpin->value();
+        }
+        capCfg.channels = m_capStreamChannelsSpin->value();
+
+        if (m_settings->resamplerEnabled && m_capRateCombo->isVisible() && m_capRateCombo->currentIndex() >= 0) {
+            capCfg.sampleRate = m_capRateCombo->currentData().toInt();
+        } else if (!m_settings->resamplerEnabled) {
+            capCfg.sampleRate = pbCfg.sampleRate;
+        }
+
+        auto capFormats = capCfg.supportedFormats();
+        if (!capFormats.empty() && m_capFormatCombo->isVisible()) {
+            capCfg.format = m_capFormatCombo->currentText().toStdString();
+        }
+
+        capCfg.bypassDoP = m_bypassDoPCheck->isChecked();
+        if (m_dopCutoffCombo->currentIndex() >= 0) {
+            capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
+        }
+        capCfg.exclusive = m_capWasapiExclusiveCheck->isChecked();
+        capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
+        capCfg.polling = m_capWasapiPollingCheck->isChecked();
+        capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
+        if (m_capAlsaLinkVolumeEdit)
+            capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
+        if (m_capAlsaLinkMuteEdit)
+            capCfg.linkMuteControl = m_capAlsaLinkMuteEdit->text().toStdString();
+        if (m_capPwNodeNameEdit)
+            capCfg.nodeName = m_capPwNodeNameEdit->text().toStdString();
+        if (m_capPwNodeDescEdit)
+            capCfg.nodeDescription = m_capPwNodeDescEdit->text().toStdString();
+        if (m_capPwNodeGroupEdit)
+            capCfg.nodeGroupName = m_capPwNodeGroupEdit->text().toStdString();
+        if (m_capPwAutoconnectEdit)
+            capCfg.autoconnectTo = m_capPwAutoconnectEdit->text().toStdString();
+    } else if (capCfg.backend == AudioBackendType::RawFile) {
+        capCfg.filename = m_capRawFilePathEdit->text().toStdString();
+        capCfg.fileFormat = m_capRawFileFormatCombo->currentText().toStdString();
+        capCfg.channels = m_capRawFileChannelsSpin->value();
+        capCfg.deviceChannels = capCfg.channels;
+        capCfg.skipBytes = m_capRawSkipBytesSpin->value();
+        capCfg.readBytes = m_capRawReadBytesSpin->value();
+        capCfg.extraSamples = m_capRawExtraSamplesSpin->value();
+        capCfg.isWav = false;
+    } else if (capCfg.backend == AudioBackendType::WavFile) {
+        capCfg.filename = m_capWavFilePathEdit->text().toStdString();
+        capCfg.skipBytes = m_capWavSkipBytesSpin->value();
+        capCfg.readBytes = m_capWavReadBytesSpin->value();
+        capCfg.extraSamples = m_capWavExtraSamplesSpin->value();
+        capCfg.isWav = true;
+    } else if (capCfg.backend == AudioBackendType::SignalGenerator) {
+        capCfg.generatorType = m_genTypeCombo->currentText().toStdString();
+        capCfg.channels = m_genChannelsSpin->value();
+        capCfg.deviceChannels = capCfg.channels;
+        capCfg.generatorFreq = m_genFreqSpin->value();
+        capCfg.generatorLevel = m_genLevelSpin->value();
+    }
+    m_devices->setCaptureConfig(capCfg);
+
     m_devices->setExclusiveMode(m_exclusiveModeCheck->isChecked());
-    m_devices->refreshDeviceCapabilities();
     if (m_devices->onConfigChanged) {
         m_devices->onConfigChanged();
     }
