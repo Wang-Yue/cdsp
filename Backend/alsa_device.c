@@ -394,7 +394,28 @@ int alsa_device_open_and_configure_hw(
     bool* out_can_pause, char* out_error_msg, size_t error_msg_len) {
   if (!pcm || !device_name) return -EINVAL;
 
-  int rc = snd_pcm_open(pcm, device_name, stream, SND_PCM_NONBLOCK);
+  char clean_dev[256];
+  snprintf(clean_dev, sizeof(clean_dev), "%s",
+           device_name[0] ? device_name : "default");
+  char* paren = strstr(clean_dev, " (");
+  if (paren) {
+    *paren = '\0';
+  } else if (clean_dev[0] != '\0' && clean_dev[0] != '(') {
+    char* single_paren = strchr(clean_dev, '(');
+    if (single_paren) {
+      *single_paren = '\0';
+    }
+  }
+  size_t dlen = strlen(clean_dev);
+  while (dlen > 0 &&
+         (clean_dev[dlen - 1] == ' ' || clean_dev[dlen - 1] == '\t')) {
+    clean_dev[--dlen] = '\0';
+  }
+  if (clean_dev[0] == '\0') {
+    snprintf(clean_dev, sizeof(clean_dev), "default");
+  }
+
+  int rc = snd_pcm_open(pcm, clean_dev, stream, SND_PCM_NONBLOCK);
   if (rc < 0) {
     if (out_error_msg && error_msg_len > 0) {
       snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));

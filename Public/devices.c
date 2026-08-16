@@ -33,9 +33,30 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
       return false;
     }
     for (int i = 0; i < count; i++) {
-      snprintf(list[i].identifier, sizeof(list[i].identifier), "%.255s",
-               devs[i].name);
-      snprintf(list[i].name, sizeof(list[i].name), "%.255s", devs[i].name);
+      const char* raw = devs[i].name;
+      const char* paren = strstr(raw, " (");
+      if (paren) {
+        size_t id_len = (size_t)(paren - raw);
+        if (id_len >= sizeof(list[i].identifier)) {
+          id_len = sizeof(list[i].identifier) - 1;
+        }
+        memcpy(list[i].identifier, raw, id_len);
+        list[i].identifier[id_len] = '\0';
+
+        const char* desc_start = paren + 2;
+        size_t desc_len = strlen(desc_start);
+        if (desc_len > 0 && desc_start[desc_len - 1] == ')') {
+          desc_len--;
+        }
+        if (desc_len >= sizeof(list[i].name)) {
+          desc_len = sizeof(list[i].name) - 1;
+        }
+        memcpy(list[i].name, desc_start, desc_len);
+        list[i].name[desc_len] = '\0';
+      } else {
+        snprintf(list[i].identifier, sizeof(list[i].identifier), "%.255s", raw);
+        snprintf(list[i].name, sizeof(list[i].name), "%.255s", raw);
+      }
       list[i].has_name = true;
     }
     *out_devices = list;

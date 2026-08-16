@@ -150,14 +150,39 @@ int alsa_capabilities_available_device_names(bool is_capture,
   return count;
 }
 
+static void alsa_sanitize_device_name(const char* in_name, char* out_name,
+                                      size_t out_len) {
+  if (!in_name || in_name[0] == '\0') {
+    snprintf(out_name, out_len, "default");
+    return;
+  }
+  snprintf(out_name, out_len, "%s", in_name);
+  char* paren = strstr(out_name, " (");
+  if (paren) {
+    *paren = '\0';
+  } else if (out_name[0] != '\0' && out_name[0] != '(') {
+    char* single_paren = strchr(out_name, '(');
+    if (single_paren) {
+      *single_paren = '\0';
+    }
+  }
+  size_t len = strlen(out_name);
+  while (len > 0 && (out_name[len - 1] == ' ' || out_name[len - 1] == '\t')) {
+    out_name[--len] = '\0';
+  }
+  if (out_name[0] == '\0') {
+    snprintf(out_name, out_len, "default");
+  }
+}
+
 // Queries ALSA device capabilities matching get_device_capabilities in upstream
 // (src/alsa_backend/utils.rs:165-253)
 audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
-  if (!device_name || device_name[0] == '\0') {
-    device_name = "default";
-  }
+  char clean_dev[256];
+  alsa_sanitize_device_name(device_name, clean_dev, sizeof(clean_dev));
+
   pthread_mutex_lock(&g_alsa_mutex);
   audio_device_descriptor_t* desc =
       (audio_device_descriptor_t*)calloc(1, sizeof(audio_device_descriptor_t));
@@ -168,12 +193,13 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
     pthread_mutex_unlock(&g_alsa_mutex);
     return NULL;
   }
-  snprintf(desc->name, sizeof(desc->name), "%s", device_name);
+  snprintf(desc->name, sizeof(desc->name), "%s",
+           (device_name && device_name[0]) ? device_name : clean_dev);
 
   snd_pcm_stream_t stream =
       is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
   snd_pcm_t* pcm = NULL;
-  int open_res = snd_pcm_open(&pcm, device_name, stream, SND_PCM_NONBLOCK);
+  int open_res = snd_pcm_open(&pcm, clean_dev, stream, SND_PCM_NONBLOCK);
   if (open_res < 0) {
     if (err) {
       if (open_res == -EBUSY) {
