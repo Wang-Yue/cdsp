@@ -18,53 +18,6 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
-#if defined(Q_OS_WIN)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <windowsx.h>
-#endif
-
-#ifdef Q_OS_MAC
-#include <objc/message.h>
-#include <objc/runtime.h>
-
-template <typename Target, typename... Args>
-static void safeSendObjcMsg(Target target, const char* selName, Args... args) {
-    if (!target)
-        return;
-    SEL sel = sel_registerName(selName);
-    SEL respondsSel = sel_registerName("respondsToSelector:");
-    auto respondsFunc = reinterpret_cast<bool (*)(Target, SEL, SEL)>(objc_msgSend);
-    if (respondsFunc(target, respondsSel, sel)) {
-        auto sendFunc = reinterpret_cast<void (*)(Target, SEL, Args...)>(objc_msgSend);
-        sendFunc(target, sel, args...);
-    }
-}
-
-static void setMacFloatingPanelProperties(QWidget* widget) {
-    if (auto window = widget->windowHandle()) {
-        void* view = reinterpret_cast<void*>(window->winId());
-        if (view) {
-            void* nsWindow = reinterpret_cast<void* (*)(void*, SEL)>(objc_msgSend)(view, sel_registerName("window"));
-            if (nsWindow) {
-                unsigned long behavior = (1UL << 0) | (1UL << 8) | (1UL << 6);
-                safeSendObjcMsg(nsWindow, "setCollectionBehavior:", behavior);
-                safeSendObjcMsg(nsWindow, "setLevel:", 1000L);
-                safeSendObjcMsg(nsWindow, "setMovableByWindowBackground:", true);
-                safeSendObjcMsg(nsWindow, "setHidesOnDeactivate:", false);
-                safeSendObjcMsg(nsWindow, "setBecomesKeyOnlyIfNeeded:", true);
-                safeSendObjcMsg(nsWindow, "setTitlebarAppearsTransparent:", true);
-                safeSendObjcMsg(nsWindow, "setTitleVisibility:", 1L);
-                safeSendObjcMsg(nsWindow, "setHasShadow:", true);
-                safeSendObjcMsg(nsWindow, "setFloatingPanel:", true);
-            }
-        }
-    }
-}
-#endif
-
 static void enableMouseTrackingRecursively(QWidget* w, QObject* filter) {
     if (!w)
         return;
@@ -105,9 +58,6 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
 
 void MiniPlayerView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-#ifdef Q_OS_MAC
-    setMacFloatingPanelProperties(this);
-#endif
     QSettings settings;
     if (settings.contains("MiniPlayer/geometry")) {
         restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
@@ -789,78 +739,6 @@ bool MiniPlayerView::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QWidget::eventFilter(watched, event);
-}
-
-bool MiniPlayerView::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
-#if defined(Q_OS_WIN)
-    if (eventType == "windows_generic_MSG") {
-        MSG* msg = static_cast<MSG*>(message);
-        if (msg->message == WM_NCHITTEST) {
-            POINT pt = {GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
-            RECT winRect;
-            GetWindowRect(reinterpret_cast<HWND>(winId()), &winRect);
-
-            int x = pt.x - winRect.left;
-            int y = pt.y - winRect.top;
-            int w = winRect.right - winRect.left;
-            int h = winRect.bottom - winRect.top;
-
-            const int border = 8;
-            bool left = (x <= border);
-            bool right = (x >= w - border);
-            bool top = (y <= border);
-            bool bottom = (y >= h - border);
-
-            if (top && left) {
-                *result = HTTOPLEFT;
-                return true;
-            }
-            if (top && right) {
-                *result = HTTOPRIGHT;
-                return true;
-            }
-            if (bottom && left) {
-                *result = HTBOTTOMLEFT;
-                return true;
-            }
-            if (bottom && right) {
-                *result = HTBOTTOMRIGHT;
-                return true;
-            }
-            if (left) {
-                *result = HTLEFT;
-                return true;
-            }
-            if (right) {
-                *result = HTRIGHT;
-                return true;
-            }
-            if (top) {
-                *result = HTTOP;
-                return true;
-            }
-            if (bottom) {
-                *result = HTBOTTOM;
-                return true;
-            }
-
-            QPoint localPos = mapFromGlobal(QPoint(pt.x, pt.y));
-            QWidget* child = childAt(localPos);
-            if (child && (qobject_cast<QAbstractButton*>(child) || qobject_cast<QAbstractSlider*>(child))) {
-                *result = HTCLIENT;
-                return true;
-            }
-
-            *result = HTCAPTION;
-            return true;
-        } else if (msg->message == WM_NCLBUTTONDBLCLK) {
-            closeAndRestoreMain();
-            *result = 0;
-            return true;
-        }
-    }
-#endif
-    return QWidget::nativeEvent(eventType, message, result);
 }
 
 void MiniPlayerView::refreshMeters() {
