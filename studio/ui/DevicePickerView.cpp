@@ -1586,11 +1586,8 @@ void DevicePickerView::refreshUi() {
     m_capStreamChannelsSpin->setValue(m_devices->captureConfig.channels);
 
     // Capture Sample Rate
-    m_capRateRow->setVisible(!isCapPw);
-    if (isCapPw) {
-        m_capRateCombo->hide();
-        m_capRateLabel->hide();
-    } else if (m_settings->resamplerEnabled) {
+    m_capRateRow->show();
+    if (m_settings->resamplerEnabled) {
         m_capRateCombo->show();
         m_capRateLabel->hide();
         m_capRateCombo->blockSignals(true);
@@ -1784,22 +1781,18 @@ void DevicePickerView::refreshUi() {
     m_pbStreamChannelsSpin->setValue(m_devices->playbackConfig.channels);
 
     // Playback Sample Rate
-    m_pbRateRow->setVisible(!isPbPw);
-    if (isPbPw) {
-        m_pbRateCombo->hide();
-    } else {
-        m_pbRateCombo->show();
-        m_pbRateCombo->blockSignals(true);
-        m_pbRateCombo->clear();
-        auto pbRates = m_devices->playbackRateOptions();
-        for (int r : pbRates) {
-            m_pbRateCombo->addItem(formatSampleRate(r), r);
-        }
-        int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
-        if (pbRateIdx >= 0)
-            m_pbRateCombo->setCurrentIndex(pbRateIdx);
-        m_pbRateCombo->blockSignals(false);
+    m_pbRateRow->show();
+    m_pbRateCombo->show();
+    m_pbRateCombo->blockSignals(true);
+    m_pbRateCombo->clear();
+    auto pbRates = m_devices->playbackRateOptions();
+    for (int r : pbRates) {
+        m_pbRateCombo->addItem(formatSampleRate(r), r);
     }
+    int pbRateIdx = m_pbRateCombo->findData(m_devices->playbackConfig.sampleRate);
+    if (pbRateIdx >= 0)
+        m_pbRateCombo->setCurrentIndex(pbRateIdx);
+    m_pbRateCombo->blockSignals(false);
 
     // Playback Sample Format
     m_pbFormatRow->setVisible(!isPbPw);
@@ -1988,6 +1981,9 @@ void DevicePickerView::applySettings() {
         if (pbCfg.backend == AudioBackendType::PipeWire) {
             pbCfg.channels = m_pbStreamChannelsSpin->value();
             pbCfg.deviceChannels = pbCfg.channels;
+            if (m_pbRateCombo->currentIndex() >= 0) {
+                pbCfg.sampleRate = m_pbRateCombo->currentData().toInt();
+            }
             pbCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
         } else
 #endif
@@ -2067,6 +2063,11 @@ void DevicePickerView::applySettings() {
         if (capCfg.backend == AudioBackendType::PipeWire) {
             capCfg.channels = m_capStreamChannelsSpin->value();
             capCfg.deviceChannels = capCfg.channels;
+            if (m_settings->resamplerEnabled && m_capRateCombo->isVisible() && m_capRateCombo->currentIndex() >= 0) {
+                capCfg.sampleRate = m_capRateCombo->currentData().toInt();
+            } else if (!m_settings->resamplerEnabled) {
+                capCfg.sampleRate = pbCfg.sampleRate;
+            }
             capCfg.format = DeviceConfig::defaultFormatForBackend(AudioBackendType::PipeWire);
         } else
 #endif
