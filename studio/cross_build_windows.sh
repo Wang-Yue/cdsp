@@ -1,0 +1,165 @@
+#!/bin/bash
+set -e
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_DIR"
+
+CROSS_PREFIX="${CROSS_COMPILE:-x86_64-w64-mingw32-}"
+BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build-windows}"
+TOOLCHAIN_FILE="${TOOLCHAIN_FILE:-$PROJECT_DIR/cmake/windows-toolchain.cmake}"
+
+# MinGW compiler check
+if ! command -v "${CROSS_PREFIX}g++" >/dev/null 2>&1; then
+    echo "❌ Error: Cross-compiler ${CROSS_PREFIX}g++ not found in PATH."
+    echo "On macOS, you can install MinGW with: brew install mingw-w64"
+    exit 1
+fi
+
+# Windows Qt prefix and macOS Host Qt path
+WIN_QT_DIR="${WIN_QT_DIR:-/Users/wangyue/Qt6-Win/6.5.2/mingw_64}"
+QT_HOST_PATH="${QT_HOST_PATH:-/Users/wangyue/Qt6.8.2/6.8.2/macos}"
+
+# Options matching cdsp (ASIO, WASAPI, FFTW & LIBDISPATCH)
+ENABLE_FFTW="${ENABLE_FFTW:-ON}"
+USE_LIBDISPATCH="${USE_LIBDISPATCH:-ON}"
+
+echo "=== Cross-compiling Monitor-Qt for Windows (x86_64 MinGW) on Mac ==="
+echo "Options:      WASAPI=1, ASIO=1, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${USE_LIBDISPATCH}"
+echo "Compiler:     ${CROSS_PREFIX}gcc / ${CROSS_PREFIX}g++"
+echo "Toolchain:    $TOOLCHAIN_FILE"
+echo "Build Dir:    $BUILD_DIR"
+
+CMAKE_ARGS=(
+    -B "$BUILD_DIR"
+    -S "$PROJECT_DIR"
+    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
+    -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_FFTW="$ENABLE_FFTW"
+    -DUSE_LIBDISPATCH="$USE_LIBDISPATCH"
+)
+
+if [ -d "$WIN_QT_DIR" ]; then
+    echo "Windows Qt:   $WIN_QT_DIR"
+    CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$WIN_QT_DIR")
+fi
+
+if [ -d "$QT_HOST_PATH" ]; then
+    echo "Host Qt:      $QT_HOST_PATH"
+    CMAKE_ARGS+=("-DQT_HOST_PATH=$QT_HOST_PATH")
+fi
+
+cmake "${CMAKE_ARGS[@]}"
+
+NPROC=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+cmake --build "$BUILD_DIR" -j"$NPROC" "$@"
+
+echo "✅ Windows compilation complete: $BUILD_DIR/MonitorQt.exe"
+
+# ==============================================================================
+# Windows Runtime & Qt Dependencies Deployment
+# ==============================================================================
+echo "=== Deploying Windows Dependencies in $BUILD_DIR ==="
+
+SEARCH_DIRS=()
+if [ -d "$WIN_QT_DIR/bin" ]; then
+    SEARCH_DIRS+=("$WIN_QT_DIR/bin")
+fi
+
+for p in \
+    /opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/x86_64-w64-mingw32/bin \
+    /opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/bin \
+    /usr/x86_64-w64-mingw32/bin \
+    /usr/lib/gcc/x86_64-w64-mingw32/* \
+    /$MSYSTEM/bin \
+    /mingw64/bin \
+    /ucrt64/bin \
+    /clang64/bin
+do
+    if [ -d "$p" ]; then
+        SEARCH_DIRS+=("$p")
+    fi
+done
+
+is_system_dll() {
+    local name=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+    case "$name" in
+        advapi32.dll|avrt.dll|comctl32.dll|comdlg32.dll|crypt32.dll|d3d9.dll|d3d11.dll|dxgi.dll|\
+        dbghelp.dll|dwmapi.dll|gdi32.dll|imm32.dll|iphlpapi.dll|kernel32.dll|ksuser.dll|ksguid.dll|\
+        mpr.dll|msvcrt.dll|netapi32.dll|ntdll.dll|ole32.dll|oleaut32.dll|psapi.dll|rpcrt4.dll|\
+        secur32.dll|setupapi.dll|shell32.dll|shlwapi.dll|user32.dll|userenv.dll|uxtheme.dll|\
+        version.dll|winhttp.dll|wininet.dll|winmm.dll|ws2_32.dll|wldap32.dll|wtsapi32.dll|\
+        api-ms-win-*.dll|ext-ms-*.dll)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+get_imports() {
+    local target="$1"
+    if command -v x86_64-w64-mingw32-objdump >/dev/null 2>&1; then
+        x86_64-w64-mingw32-objdump -p "$target" 2>/dev/null | grep -i "DLL Name:" | awk '{print $3}'
+    elif command -v llvm-objdump >/dev/null 2>&1; then
+        llvm-objdump -p "$target" 2>/dev/null | grep -i "DLL Name:" | awk '{print $3}'
+    elif command -v objdump >/dev/null 2>&1; then
+        objdump -p "$target" 2>/dev/null | grep -i "DLL Name:" | awk '{print $3}'
+    elif command -v ldd >/dev/null 2>&1; then
+        ldd "$target" 2>/dev/null | awk '{print $1}'
+    fi
+}
+
+# Deploy essential Qt plugins
+if [ -d "$WIN_QT_DIR/plugins" ]; then
+    if [ -f "$WIN_QT_DIR/plugins/platforms/qwindows.dll" ]; then
+        mkdir -p "$BUILD_DIR/platforms"
+        if [ ! -f "$BUILD_DIR/platforms/qwindows.dll" ]; then
+            echo "📦 Copying Qt platform plugin: platforms/qwindows.dll"
+            cp "$WIN_QT_DIR/plugins/platforms/qwindows.dll" "$BUILD_DIR/platforms/"
+        fi
+    fi
+    if [ -d "$WIN_QT_DIR/plugins/styles" ]; then
+        mkdir -p "$BUILD_DIR/styles"
+        cp -u "$WIN_QT_DIR/plugins/styles/"*.dll "$BUILD_DIR/styles/" 2>/dev/null || cp "$WIN_QT_DIR/plugins/styles/"*.dll "$BUILD_DIR/styles/" 2>/dev/null || true
+    fi
+    if [ -d "$WIN_QT_DIR/plugins/tls" ]; then
+        mkdir -p "$BUILD_DIR/tls"
+        cp -u "$WIN_QT_DIR/plugins/tls/"*.dll "$BUILD_DIR/tls/" 2>/dev/null || cp "$WIN_QT_DIR/plugins/tls/"*.dll "$BUILD_DIR/tls/" 2>/dev/null || true
+    fi
+fi
+
+# Iteratively copy missing dynamic dependencies
+COPIED_NEW=1
+while [ "$COPIED_NEW" -eq 1 ]; do
+    COPIED_NEW=0
+    ALL_BINARIES=$(find "$BUILD_DIR" -type f \( -name "*.exe" -o -name "*.dll" \))
+    
+    for bin in $ALL_BINARIES; do
+        for dep in $(get_imports "$bin"); do
+            if is_system_dll "$dep"; then
+                continue
+            fi
+            
+            if [ -f "$BUILD_DIR/$dep" ]; then
+                continue
+            fi
+            
+            FOUND=""
+            for dir in "${SEARCH_DIRS[@]}"; do
+                if [ -f "$dir/$dep" ]; then
+                    FOUND="$dir/$dep"
+                    break
+                fi
+            done
+            
+            if [ -n "$FOUND" ]; then
+                echo "📦 Copying dependency: $dep"
+                cp "$FOUND" "$BUILD_DIR/"
+                COPIED_NEW=1
+            fi
+        done
+    done
+done
+
+echo "✅ Windows build and deployment complete in $BUILD_DIR"
