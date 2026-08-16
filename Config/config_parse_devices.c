@@ -803,20 +803,11 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
         0)
       return -1;
   } else if (strcmp(type_str, "Alsa") == 0) {
-    static const char* const allowed[] = {"type",
-                                          "channels",
-                                          "device",
-                                          "format",
-                                          "labels",
-                                          "channel_labels",
-                                          "retry_on_error",
-                                          "stop_on_inactive",
-                                          "link_volume_control",
-                                          "link_mute_control",
-                                          "threaded",
-                                          "output_dop",
-                                          "dsd_encoder_filter",
-                                          NULL};
+    static const char* const allowed[] = {
+        "type",     "channels",   "device",
+        "format",   "labels",     "channel_labels",
+        "threaded", "output_dop", "dsd_encoder_filter",
+        NULL};
     if (validate_unknown_fields(play_obj, allowed, "Alsa playback", err) != 0)
       return -1;
   } else if (strcmp(type_str, "PipeWire") == 0) {
