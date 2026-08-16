@@ -34,7 +34,8 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
     }
     for (int i = 0; i < count; i++) {
       const char* raw = devs[i].name;
-      const char* paren = strstr(raw, " (");
+      bool is_alsa = (strcasecmp(backend, "alsa") == 0);
+      const char* paren = is_alsa ? strstr(raw, " (") : NULL;
       if (paren) {
         size_t id_len = (size_t)(paren - raw);
         if (id_len >= sizeof(list[i].identifier)) {

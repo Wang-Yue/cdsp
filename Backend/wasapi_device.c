@@ -730,7 +730,7 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
       PropVariantInit(&var);
       hr_prop =
           IPropertyStore_GetValue(properties, &PKEY_Device_FriendlyName, &var);
-      if (SUCCEEDED(hr_prop) && var.vt == VT_LPWSTR) {
+      if (SUCCEEDED(hr_prop) && var.vt == VT_LPWSTR && var.pwszVal) {
         char friendly_name[256] = {0};
         wcstombs(friendly_name, var.pwszVal, sizeof(friendly_name) - 1);
         friendly_name[sizeof(friendly_name) - 1] = '\0';
