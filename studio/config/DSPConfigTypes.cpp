@@ -1328,8 +1328,6 @@ QJsonObject PipeWireCaptureConfig::toJson() const {
     QJsonObject obj;
     obj["type"] = "PipeWire";
     obj["channels"] = channels;
-    if (format.has_value())
-        obj["format"] = QString::fromStdString(format.value());
     if (nodeName.has_value())
         obj["node_name"] = QString::fromStdString(nodeName.value());
     if (nodeDescription.has_value())
@@ -1351,10 +1349,6 @@ PipeWirePlaybackConfig PipeWirePlaybackConfig::fromJson(const QJsonObject& json)
     PipeWirePlaybackConfig cfg;
     if (json.contains("channels"))
         cfg.channels = json["channels"].toInt();
-    if (json.contains("device"))
-        cfg.device = json["device"].toString().toStdString();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
     if (json.contains("node_name"))
         cfg.nodeName = json["node_name"].toString().toStdString();
     if (json.contains("node_description"))
@@ -1374,8 +1368,6 @@ QJsonObject PipeWirePlaybackConfig::toJson() const {
     QJsonObject obj;
     obj["type"] = "PipeWire";
     obj["channels"] = channels;
-    if (format.has_value())
-        obj["format"] = QString::fromStdString(format.value());
     if (nodeName.has_value())
         obj["node_name"] = QString::fromStdString(nodeName.value());
     if (nodeDescription.has_value())

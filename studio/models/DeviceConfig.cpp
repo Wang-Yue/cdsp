@@ -67,17 +67,51 @@ std::vector<int> DeviceConfig::supportedRates() const {
 }
 
 static int formatPriority(const std::string& fmt) {
-    if (fmt == "S32")
+    if (fmt == "S32" || fmt == "S32_LE" || fmt == "S32_BE")
+        return 7;
+    if (fmt == "S24" || fmt == "S24_4_LE" || fmt == "S24_4_BE" || fmt == "S24_4_LJ_LE" || fmt == "S24_4_RJ_LE")
+        return 6;
+    if (fmt == "S24_3_LE" || fmt == "S24_3_BE")
+        return 5;
+    if (fmt == "S16" || fmt == "S16_LE" || fmt == "S16_BE")
         return 4;
-    if (fmt == "S24")
+    if (fmt == "F32" || fmt == "F32_LE" || fmt == "F32_BE")
         return 3;
-    if (fmt == "S16")
+    if (fmt == "F64" || fmt == "F64_LE" || fmt == "F64_BE")
         return 2;
-    if (fmt == "F32")
+    if (fmt.rfind("DSD", 0) == 0)
         return 1;
-    if (fmt == "F64")
-        return 0;
-    return -1;
+    return 0;
+}
+
+std::string DeviceConfig::defaultFormatForBackend(AudioBackendType backend) {
+    switch (backend) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+        return "F32";
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+        return "F32";
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+        return "S32_LE";
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+        return "S32_LE";
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AudioBackendType::PipeWire:
+        return "F32_LE";
+#endif
+    case AudioBackendType::RawFile:
+    case AudioBackendType::WavFile:
+        return "S16_LE";
+    default:
+        return "F32";
+    }
 }
 
 std::vector<std::string> DeviceConfig::supportedFormats() const {
@@ -132,8 +166,12 @@ DeviceConfig DeviceConfig::enforced() const {
         }
 
         auto fmts = res.supportedFormats();
-        if (!fmts.empty() && std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
-            res.format = fmts[0];
+        if (!fmts.empty()) {
+            if (std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
+                res.format = fmts[0];
+            }
+        } else {
+            res.format = defaultFormatForBackend(res.backend);
         }
     } else if (res.backend == AudioBackendType::WavFile) {
         if (!res.filename.empty()) {
