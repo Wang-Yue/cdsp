@@ -58,7 +58,7 @@ std::optional<WavHeaderInfo> ConvCoefficientLoader::parseWavHeader(const std::st
             break;
         }
 
-        file.seekg(chunkDataPos + static_cast<std::streamoff>(chunkSize));
+        file.seekg(chunkDataPos + static_cast<std::streamoff>(chunkSize + (chunkSize % 2)));
     }
 
     if (foundFmt && foundData)
