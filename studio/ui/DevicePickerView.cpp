@@ -699,6 +699,93 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     form->addRow("", m_capAlsaStopInactiveCheck);
 
+    m_capAlsaLinkVolRow = new QWidget(w);
+    auto capVolLayout = new QHBoxLayout(m_capAlsaLinkVolRow);
+    capVolLayout->setContentsMargins(0, 0, 0, 0);
+    auto capVolLbl = new QLabel("Link Volume Control", m_capAlsaLinkVolRow);
+    capVolLbl->setFixedWidth(130);
+    capVolLayout->addWidget(capVolLbl);
+    m_capAlsaLinkVolumeEdit = new QLineEdit(m_capAlsaLinkVolRow);
+    m_capAlsaLinkVolumeEdit->setPlaceholderText("e.g. Master");
+    connect(m_capAlsaLinkVolumeEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    capVolLayout->addWidget(m_capAlsaLinkVolumeEdit);
+    form->addRow("", m_capAlsaLinkVolRow);
+
+    m_capAlsaLinkMuteRow = new QWidget(w);
+    auto capMuteLayout = new QHBoxLayout(m_capAlsaLinkMuteRow);
+    capMuteLayout->setContentsMargins(0, 0, 0, 0);
+    auto capMuteLbl = new QLabel("Link Mute Control", m_capAlsaLinkMuteRow);
+    capMuteLbl->setFixedWidth(130);
+    capMuteLayout->addWidget(capMuteLbl);
+    m_capAlsaLinkMuteEdit = new QLineEdit(m_capAlsaLinkMuteRow);
+    m_capAlsaLinkMuteEdit->setPlaceholderText("e.g. Master");
+    connect(m_capAlsaLinkMuteEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    capMuteLayout->addWidget(m_capAlsaLinkMuteEdit);
+    form->addRow("", m_capAlsaLinkMuteRow);
+
+    m_capPipeWireRow = new QWidget(w);
+    auto capPwLayout = new QVBoxLayout(m_capPipeWireRow);
+    capPwLayout->setContentsMargins(0, 0, 0, 0);
+    capPwLayout->setSpacing(8);
+
+    auto pwNameBox = new QHBoxLayout();
+    auto pwNameLbl = new QLabel("Node Name", m_capPipeWireRow);
+    pwNameLbl->setFixedWidth(130);
+    pwNameBox->addWidget(pwNameLbl);
+    m_capPwNodeNameEdit = new QLineEdit(m_capPipeWireRow);
+    m_capPwNodeNameEdit->setPlaceholderText("e.g. CamillaDSP");
+    connect(m_capPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwNameBox->addWidget(m_capPwNodeNameEdit);
+    capPwLayout->addLayout(pwNameBox);
+
+    auto pwDescBox = new QHBoxLayout();
+    auto pwDescLbl = new QLabel("Node Description", m_capPipeWireRow);
+    pwDescLbl->setFixedWidth(130);
+    pwDescBox->addWidget(pwDescLbl);
+    m_capPwNodeDescEdit = new QLineEdit(m_capPipeWireRow);
+    m_capPwNodeDescEdit->setPlaceholderText("e.g. CamillaDSP Capture");
+    connect(m_capPwNodeDescEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwDescBox->addWidget(m_capPwNodeDescEdit);
+    capPwLayout->addLayout(pwDescBox);
+
+    auto pwGroupBox = new QHBoxLayout();
+    auto pwGroupLbl = new QLabel("Node Group", m_capPipeWireRow);
+    pwGroupLbl->setFixedWidth(130);
+    pwGroupBox->addWidget(pwGroupLbl);
+    m_capPwNodeGroupEdit = new QLineEdit(m_capPipeWireRow);
+    connect(m_capPwNodeGroupEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwGroupBox->addWidget(m_capPwNodeGroupEdit);
+    capPwLayout->addLayout(pwGroupBox);
+
+    auto pwAutoBox = new QHBoxLayout();
+    auto pwAutoLbl = new QLabel("Autoconnect To", m_capPipeWireRow);
+    pwAutoLbl->setFixedWidth(130);
+    pwAutoBox->addWidget(pwAutoLbl);
+    m_capPwAutoconnectEdit = new QLineEdit(m_capPipeWireRow);
+    connect(m_capPwAutoconnectEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwAutoBox->addWidget(m_capPwAutoconnectEdit);
+    capPwLayout->addLayout(pwAutoBox);
+
+    form->addRow("", m_capPipeWireRow);
+
     return w;
 }
 
@@ -1107,6 +1194,100 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     form->addRow("", m_pbWasapiPollingCheck);
 
+    m_pbAlsaStopInactiveCheck = new QCheckBox("Stop Streams When Inactive", w);
+    connect(m_pbAlsaStopInactiveCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    form->addRow("", m_pbAlsaStopInactiveCheck);
+
+    m_pbAlsaLinkVolRow = new QWidget(w);
+    auto pbVolLayout = new QHBoxLayout(m_pbAlsaLinkVolRow);
+    pbVolLayout->setContentsMargins(0, 0, 0, 0);
+    auto pbVolLbl = new QLabel("Link Volume Control", m_pbAlsaLinkVolRow);
+    pbVolLbl->setFixedWidth(130);
+    pbVolLayout->addWidget(pbVolLbl);
+    m_pbAlsaLinkVolumeEdit = new QLineEdit(m_pbAlsaLinkVolRow);
+    m_pbAlsaLinkVolumeEdit->setPlaceholderText("e.g. Master");
+    connect(m_pbAlsaLinkVolumeEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pbVolLayout->addWidget(m_pbAlsaLinkVolumeEdit);
+    form->addRow("", m_pbAlsaLinkVolRow);
+
+    m_pbAlsaLinkMuteRow = new QWidget(w);
+    auto pbMuteLayout = new QHBoxLayout(m_pbAlsaLinkMuteRow);
+    pbMuteLayout->setContentsMargins(0, 0, 0, 0);
+    auto pbMuteLbl = new QLabel("Link Mute Control", m_pbAlsaLinkMuteRow);
+    pbMuteLbl->setFixedWidth(130);
+    pbMuteLayout->addWidget(pbMuteLbl);
+    m_pbAlsaLinkMuteEdit = new QLineEdit(m_pbAlsaLinkMuteRow);
+    m_pbAlsaLinkMuteEdit->setPlaceholderText("e.g. Master");
+    connect(m_pbAlsaLinkMuteEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pbMuteLayout->addWidget(m_pbAlsaLinkMuteEdit);
+    form->addRow("", m_pbAlsaLinkMuteRow);
+
+    m_pbPipeWireRow = new QWidget(w);
+    auto pbPwLayout = new QVBoxLayout(m_pbPipeWireRow);
+    pbPwLayout->setContentsMargins(0, 0, 0, 0);
+    pbPwLayout->setSpacing(8);
+
+    auto pwPbNameBox = new QHBoxLayout();
+    auto pwPbNameLbl = new QLabel("Node Name", m_pbPipeWireRow);
+    pwPbNameLbl->setFixedWidth(130);
+    pwPbNameBox->addWidget(pwPbNameLbl);
+    m_pbPwNodeNameEdit = new QLineEdit(m_pbPipeWireRow);
+    m_pbPwNodeNameEdit->setPlaceholderText("e.g. CamillaDSP");
+    connect(m_pbPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwPbNameBox->addWidget(m_pbPwNodeNameEdit);
+    pbPwLayout->addLayout(pwPbNameBox);
+
+    auto pwPbDescBox = new QHBoxLayout();
+    auto pwPbDescLbl = new QLabel("Node Description", m_pbPipeWireRow);
+    pwPbDescLbl->setFixedWidth(130);
+    pwPbDescBox->addWidget(pwPbDescLbl);
+    m_pbPwNodeDescEdit = new QLineEdit(m_pbPipeWireRow);
+    m_pbPwNodeDescEdit->setPlaceholderText("e.g. CamillaDSP Playback");
+    connect(m_pbPwNodeDescEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwPbDescBox->addWidget(m_pbPwNodeDescEdit);
+    pbPwLayout->addLayout(pwPbDescBox);
+
+    auto pwPbGroupBox = new QHBoxLayout();
+    auto pwPbGroupLbl = new QLabel("Node Group", m_pbPipeWireRow);
+    pwPbGroupLbl->setFixedWidth(130);
+    pwPbGroupBox->addWidget(pwPbGroupLbl);
+    m_pbPwNodeGroupEdit = new QLineEdit(m_pbPipeWireRow);
+    connect(m_pbPwNodeGroupEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwPbGroupBox->addWidget(m_pbPwNodeGroupEdit);
+    pbPwLayout->addLayout(pwPbGroupBox);
+
+    auto pwPbAutoBox = new QHBoxLayout();
+    auto pwPbAutoLbl = new QLabel("Autoconnect To", m_pbPipeWireRow);
+    pwPbAutoLbl->setFixedWidth(130);
+    pwPbAutoBox->addWidget(pwPbAutoLbl);
+    m_pbPwAutoconnectEdit = new QLineEdit(m_pbPipeWireRow);
+    connect(m_pbPwAutoconnectEdit, &QLineEdit::textChanged, [this](const QString&) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    pwPbAutoBox->addWidget(m_pbPwAutoconnectEdit);
+    pbPwLayout->addLayout(pwPbAutoBox);
+
+    form->addRow("", m_pbPipeWireRow);
+
     m_pbDopDivider = new QFrame(w);
     m_pbDopDivider->setFrameShape(QFrame::HLine);
     m_pbDopDivider->setFrameShadow(QFrame::Sunken);
@@ -1448,9 +1629,27 @@ void DevicePickerView::refreshUi() {
 #endif
     m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive);
     m_capWasapiExclusiveCheck->setVisible(isCapWasapi);
+    m_capWasapiLoopbackCheck->setChecked(m_devices->captureConfig.loopback);
     m_capWasapiLoopbackCheck->setVisible(isCapWasapi);
+    m_capWasapiPollingCheck->setChecked(m_devices->captureConfig.polling);
     m_capWasapiPollingCheck->setVisible(isCapWasapi);
+    m_capAlsaStopInactiveCheck->setChecked(m_devices->captureConfig.stopOnInactive);
     m_capAlsaStopInactiveCheck->setVisible(isCapAlsa);
+    m_capAlsaLinkVolRow->setVisible(isCapAlsa);
+    m_capAlsaLinkMuteRow->setVisible(isCapAlsa);
+    m_capAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->captureConfig.linkVolumeControl));
+    m_capAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->captureConfig.linkMuteControl));
+
+    bool isCapPw = false;
+#if defined(ENABLE_PIPEWIRE)
+    if (m_devices->captureConfig.backend == AudioBackendType::PipeWire)
+        isCapPw = true;
+#endif
+    m_capPipeWireRow->setVisible(isCapPw);
+    m_capPwNodeNameEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeName));
+    m_capPwNodeDescEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeDescription));
+    m_capPwNodeGroupEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeGroupName));
+    m_capPwAutoconnectEdit->setText(QString::fromStdString(m_devices->captureConfig.autoconnectTo));
 
     // 2. Refresh Capture File & Generator Views
     m_capRawFilePathEdit->setText(QString::fromStdString(m_devices->captureConfig.filename));
@@ -1546,6 +1745,30 @@ void DevicePickerView::refreshUi() {
     isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
 #endif
     m_pbWasapiPollingCheck->setVisible(isPbWasapi);
+    m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
+
+    bool isPbAlsa = false;
+#if defined(ENABLE_ALSA)
+    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
+        isPbAlsa = true;
+#endif
+    m_pbAlsaStopInactiveCheck->setVisible(isPbAlsa);
+    m_pbAlsaStopInactiveCheck->setChecked(m_devices->playbackConfig.stopOnInactive);
+    m_pbAlsaLinkVolRow->setVisible(isPbAlsa);
+    m_pbAlsaLinkMuteRow->setVisible(isPbAlsa);
+    m_pbAlsaLinkVolumeEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkVolumeControl));
+    m_pbAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->playbackConfig.linkMuteControl));
+
+    bool isPbPw = false;
+#if defined(ENABLE_PIPEWIRE)
+    if (m_devices->playbackConfig.backend == AudioBackendType::PipeWire)
+        isPbPw = true;
+#endif
+    m_pbPipeWireRow->setVisible(isPbPw);
+    m_pbPwNodeNameEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeName));
+    m_pbPwNodeDescEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeDescription));
+    m_pbPwNodeGroupEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeGroupName));
+    m_pbPwAutoconnectEdit->setText(QString::fromStdString(m_devices->playbackConfig.autoconnectTo));
 
     bool pbDopVisible = !m_devices->isRustEngine();
     m_pbDopDivider->setVisible(pbDopVisible);
@@ -1675,6 +1898,21 @@ void DevicePickerView::applySettings() {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
         capCfg.exclusive = m_capWasapiExclusiveCheck->isChecked();
+        capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
+        capCfg.polling = m_capWasapiPollingCheck->isChecked();
+        capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
+        if (m_capAlsaLinkVolumeEdit)
+            capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
+        if (m_capAlsaLinkMuteEdit)
+            capCfg.linkMuteControl = m_capAlsaLinkMuteEdit->text().toStdString();
+        if (m_capPwNodeNameEdit)
+            capCfg.nodeName = m_capPwNodeNameEdit->text().toStdString();
+        if (m_capPwNodeDescEdit)
+            capCfg.nodeDescription = m_capPwNodeDescEdit->text().toStdString();
+        if (m_capPwNodeGroupEdit)
+            capCfg.nodeGroupName = m_capPwNodeGroupEdit->text().toStdString();
+        if (m_capPwAutoconnectEdit)
+            capCfg.autoconnectTo = m_capPwAutoconnectEdit->text().toStdString();
     } else if (capCfg.backend == AudioBackendType::RawFile) {
         capCfg.filename = m_capRawFilePathEdit->text().toStdString();
         capCfg.fileFormat = m_capRawFileFormatCombo->currentText().toStdString();
@@ -1724,6 +1962,20 @@ void DevicePickerView::applySettings() {
         }
 
         pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
+        pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
+        pbCfg.stopOnInactive = m_pbAlsaStopInactiveCheck->isChecked();
+        if (m_pbAlsaLinkVolumeEdit)
+            pbCfg.linkVolumeControl = m_pbAlsaLinkVolumeEdit->text().toStdString();
+        if (m_pbAlsaLinkMuteEdit)
+            pbCfg.linkMuteControl = m_pbAlsaLinkMuteEdit->text().toStdString();
+        if (m_pbPwNodeNameEdit)
+            pbCfg.nodeName = m_pbPwNodeNameEdit->text().toStdString();
+        if (m_pbPwNodeDescEdit)
+            pbCfg.nodeDescription = m_pbPwNodeDescEdit->text().toStdString();
+        if (m_pbPwNodeGroupEdit)
+            pbCfg.nodeGroupName = m_pbPwNodeGroupEdit->text().toStdString();
+        if (m_pbPwAutoconnectEdit)
+            pbCfg.autoconnectTo = m_pbPwAutoconnectEdit->text().toStdString();
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
         pbCfg.outputDSD = m_outputDSDCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {

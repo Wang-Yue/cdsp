@@ -153,10 +153,13 @@ struct ChannelCapability {
 };
 
 struct DeviceCapabilitySet {
+    std::string mode;
     std::vector<ChannelCapability> capabilities;
     QJsonObject toJson() const;
     static DeviceCapabilitySet fromJson(const QJsonObject& json);
-    bool operator==(const DeviceCapabilitySet& other) const { return capabilities == other.capabilities; }
+    bool operator==(const DeviceCapabilitySet& other) const {
+        return mode == other.mode && capabilities == other.capabilities;
+    }
     bool operator!=(const DeviceCapabilitySet& other) const { return !(*this == other); }
 };
 

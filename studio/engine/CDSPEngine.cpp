@@ -267,6 +267,7 @@ CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string&
         for (size_t i = 0; i < desc->capability_sets_count; ++i) {
             const auto& cSet = desc->capability_sets[i];
             DeviceCapabilitySet setRes;
+            setRes.mode = cSet.mode;
             if (cSet.capabilities) {
                 for (size_t j = 0; j < cSet.capabilities_count; ++j) {
                     const auto& chCap = cSet.capabilities[j];

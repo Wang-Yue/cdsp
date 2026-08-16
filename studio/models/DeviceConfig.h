@@ -27,6 +27,11 @@ struct DeviceConfig {
     int sampleRate = 48000;
     std::string format = "F32";
     bool exclusive = false;
+    bool loopback = false;
+    bool polling = false;
+    bool stopOnInactive = false;
+    std::string linkVolumeControl;
+    std::string linkMuteControl;
     bool bypassDoP = true;
     double dopCutoffHz = 20000.0;
     bool outputDoP = false;

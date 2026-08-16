@@ -7,30 +7,48 @@
 #include <fstream>
 #include <set>
 
+static const DeviceCapabilitySet* findActiveCapabilitySet(const AudioDeviceDescriptor& desc, bool exclusive) {
+    if (desc.capability_sets.empty())
+        return nullptr;
+    if (exclusive) {
+        for (const auto& set : desc.capability_sets) {
+            if (set.mode == "Exclusive")
+                return &set;
+        }
+    } else {
+        for (const auto& set : desc.capability_sets) {
+            if (set.mode == "Shared")
+                return &set;
+        }
+    }
+    return &desc.capability_sets[0];
+}
+
 std::vector<int> DeviceConfig::supportedChannels() const {
-    if (capabilities.capability_sets.empty())
+    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    if (!set || set->capabilities.empty())
         return {};
     std::set<int> chs;
-    for (const auto& cap : capabilities.capability_sets[0].capabilities) {
+    for (const auto& cap : set->capabilities) {
         chs.insert(cap.channels);
     }
     return std::vector<int>(chs.begin(), chs.end());
 }
 
 std::vector<int> DeviceConfig::supportedRates() const {
-    if (capabilities.capability_sets.empty())
+    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    if (!set || set->capabilities.empty())
         return {};
-    const auto& set = capabilities.capability_sets[0];
 
     const ChannelCapability* selectedCap = nullptr;
-    for (const auto& cap : set.capabilities) {
+    for (const auto& cap : set->capabilities) {
         if (cap.channels == deviceChannels) {
             selectedCap = &cap;
             break;
         }
     }
-    if (!selectedCap && !set.capabilities.empty()) {
-        selectedCap = &set.capabilities[0];
+    if (!selectedCap && !set->capabilities.empty()) {
+        selectedCap = &set->capabilities[0];
     }
 
     std::set<int> rates;
@@ -39,7 +57,7 @@ std::vector<int> DeviceConfig::supportedRates() const {
             rates.insert(sr.samplerate);
         }
     } else {
-        for (const auto& cap : set.capabilities) {
+        for (const auto& cap : set->capabilities) {
             for (const auto& sr : cap.samplerates) {
                 rates.insert(sr.samplerate);
             }
@@ -63,19 +81,19 @@ static int formatPriority(const std::string& fmt) {
 }
 
 std::vector<std::string> DeviceConfig::supportedFormats() const {
-    if (capabilities.capability_sets.empty())
+    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    if (!set || set->capabilities.empty())
         return {};
-    const auto& set = capabilities.capability_sets[0];
 
     const ChannelCapability* selectedCap = nullptr;
-    for (const auto& cap : set.capabilities) {
+    for (const auto& cap : set->capabilities) {
         if (cap.channels == deviceChannels) {
             selectedCap = &cap;
             break;
         }
     }
-    if (!selectedCap && !set.capabilities.empty()) {
-        selectedCap = &set.capabilities[0];
+    if (!selectedCap && !set->capabilities.empty()) {
+        selectedCap = &set->capabilities[0];
     }
 
     std::vector<std::string> fmts;
@@ -212,6 +230,8 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.wasapi.device = deviceName();
         cap.wasapi.format = format;
         cap.wasapi.exclusive = exclusive;
+        cap.wasapi.loopback = loopback;
+        cap.wasapi.polling = polling;
         cap.wasapi.bypassDoP = bypassDoP;
         cap.wasapi.dopCutoffHz = dopCutoffHz;
         break;
@@ -230,6 +250,11 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.alsa.channels = channels;
         cap.alsa.device = deviceName();
         cap.alsa.format = format;
+        cap.alsa.stopOnInactive = stopOnInactive;
+        if (!linkVolumeControl.empty())
+            cap.alsa.linkVolumeControl = linkVolumeControl;
+        if (!linkMuteControl.empty())
+            cap.alsa.linkMuteControl = linkMuteControl;
         break;
 #endif
 #if defined(ENABLE_PIPEWIRE)
@@ -288,6 +313,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.wasapi.device = deviceName();
         pb.wasapi.format = format;
         pb.wasapi.exclusive = exclusive;
+        pb.wasapi.polling = polling;
         pb.wasapi.outputDoP = outputDoP;
         pb.wasapi.dsdEncoderFilter = dsdEncoderFilter;
         break;
@@ -307,6 +333,11 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
+        pb.alsa.stopOnInactive = stopOnInactive;
+        if (!linkVolumeControl.empty())
+            pb.alsa.linkVolumeControl = linkVolumeControl;
+        if (!linkMuteControl.empty())
+            pb.alsa.linkMuteControl = linkMuteControl;
         pb.alsa.outputDSD = outputDSD;
         break;
 #endif
@@ -349,6 +380,13 @@ QJsonObject DeviceConfig::toJson() const {
     obj["sampleRate"] = sampleRate;
     obj["format"] = QString::fromStdString(format);
     obj["exclusive"] = exclusive;
+    obj["loopback"] = loopback;
+    obj["polling"] = polling;
+    obj["stopOnInactive"] = stopOnInactive;
+    if (!linkVolumeControl.empty())
+        obj["linkVolumeControl"] = QString::fromStdString(linkVolumeControl);
+    if (!linkMuteControl.empty())
+        obj["linkMuteControl"] = QString::fromStdString(linkMuteControl);
     obj["bypassDoP"] = bypassDoP;
     obj["dopCutoffHz"] = dopCutoffHz;
     obj["outputDoP"] = outputDoP;
@@ -389,6 +427,16 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.format = json["format"].toString().toStdString();
     if (json.contains("exclusive"))
         cfg.exclusive = json["exclusive"].toBool();
+    if (json.contains("loopback"))
+        cfg.loopback = json["loopback"].toBool();
+    if (json.contains("polling"))
+        cfg.polling = json["polling"].toBool();
+    if (json.contains("stopOnInactive"))
+        cfg.stopOnInactive = json["stopOnInactive"].toBool();
+    if (json.contains("linkVolumeControl"))
+        cfg.linkVolumeControl = json["linkVolumeControl"].toString().toStdString();
+    if (json.contains("linkMuteControl"))
+        cfg.linkMuteControl = json["linkMuteControl"].toString().toStdString();
     if (json.contains("bypassDoP"))
         cfg.bypassDoP = json["bypassDoP"].toBool();
     if (json.contains("dopCutoffHz"))
@@ -438,11 +486,13 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
 bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
-           exclusive == other.exclusive && bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz &&
-           outputDoP == other.outputDoP && outputDSD == other.outputDSD && dsdEncoderFilter == other.dsdEncoderFilter &&
-           filename == other.filename && fileFormat == other.fileFormat && isWav == other.isWav &&
-           useRf64 == other.useRf64 && skipBytes == other.skipBytes && readBytes == other.readBytes &&
-           extraSamples == other.extraSamples && generatorType == other.generatorType &&
+           exclusive == other.exclusive && loopback == other.loopback && polling == other.polling &&
+           stopOnInactive == other.stopOnInactive && linkVolumeControl == other.linkVolumeControl &&
+           linkMuteControl == other.linkMuteControl && bypassDoP == other.bypassDoP &&
+           dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP && outputDSD == other.outputDSD &&
+           dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
+           isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
+           readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&
            generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel &&
            nodeName == other.nodeName && nodeDescription == other.nodeDescription &&
            nodeGroupName == other.nodeGroupName && autoconnectTo == other.autoconnectTo;

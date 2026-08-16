@@ -84,15 +84,22 @@ private:
     QComboBox* m_pbBackendCombo = nullptr;
     QStackedWidget* m_pbStack = nullptr;
 
-    // Capture WASAPI / ASIO / ALSA
+    // Capture WASAPI / ASIO / ALSA / PipeWire
     QCheckBox* m_capWasapiExclusiveCheck = nullptr;
     QCheckBox* m_capWasapiLoopbackCheck = nullptr;
     QCheckBox* m_capWasapiPollingCheck = nullptr;
     QCheckBox* m_capAlsaStopInactiveCheck = nullptr;
+    QWidget* m_capAlsaLinkVolRow = nullptr;
     QLineEdit* m_capAlsaLinkVolumeEdit = nullptr;
+    QWidget* m_capAlsaLinkMuteRow = nullptr;
     QLineEdit* m_capAlsaLinkMuteEdit = nullptr;
+    QWidget* m_capPipeWireRow = nullptr;
+    QLineEdit* m_capPwNodeNameEdit = nullptr;
+    QLineEdit* m_capPwNodeDescEdit = nullptr;
+    QLineEdit* m_capPwNodeGroupEdit = nullptr;
+    QLineEdit* m_capPwAutoconnectEdit = nullptr;
 
-    // Playback CoreAudio / WASAPI / ASIO / ALSA
+    // Playback CoreAudio / WASAPI / ASIO / ALSA / PipeWire
     QWidget* m_pbWarningWidget = nullptr;
     QWidget* m_pbDeviceListContainer = nullptr;
     QVBoxLayout* m_pbDeviceListLayout = nullptr;
@@ -106,8 +113,15 @@ private:
     QLabel* m_exclusiveModeHint = nullptr;
     QCheckBox* m_pbWasapiPollingCheck = nullptr;
     QCheckBox* m_pbAlsaStopInactiveCheck = nullptr;
+    QWidget* m_pbAlsaLinkVolRow = nullptr;
     QLineEdit* m_pbAlsaLinkVolumeEdit = nullptr;
+    QWidget* m_pbAlsaLinkMuteRow = nullptr;
     QLineEdit* m_pbAlsaLinkMuteEdit = nullptr;
+    QWidget* m_pbPipeWireRow = nullptr;
+    QLineEdit* m_pbPwNodeNameEdit = nullptr;
+    QLineEdit* m_pbPwNodeDescEdit = nullptr;
+    QLineEdit* m_pbPwNodeGroupEdit = nullptr;
+    QLineEdit* m_pbPwAutoconnectEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
     QFrame* m_pbDopDivider = nullptr;
     QCheckBox* m_outputDSDCheck = nullptr;

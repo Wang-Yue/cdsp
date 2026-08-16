@@ -732,6 +732,8 @@ QJsonObject ChannelCapability::toJson() const {
 
 DeviceCapabilitySet DeviceCapabilitySet::fromJson(const QJsonObject& json) {
     DeviceCapabilitySet set;
+    if (json.contains("mode"))
+        set.mode = json["mode"].toString().toStdString();
     if (json.contains("capabilities")) {
         for (const auto& c : json["capabilities"].toArray())
             set.capabilities.push_back(ChannelCapability::fromJson(c.toObject()));
@@ -741,6 +743,8 @@ DeviceCapabilitySet DeviceCapabilitySet::fromJson(const QJsonObject& json) {
 
 QJsonObject DeviceCapabilitySet::toJson() const {
     QJsonObject obj;
+    if (!mode.empty())
+        obj["mode"] = QString::fromStdString(mode);
     QJsonArray capArr;
     for (const auto& c : capabilities)
         capArr.append(c.toJson());
