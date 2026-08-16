@@ -34,15 +34,19 @@ static void test_log_callback(log_level_t level, const char* label,
 
 TEST(AppLoggerCallback) {
   g_test_callback_count = 0;
+  g_last_level = LOG_LEVEL_OFF;
+  memset(g_last_label, 0, sizeof(g_last_label));
+  memset(g_last_message, 0, sizeof(g_last_message));
+
   app_logger_set_level(LOG_LEVEL_DEBUG);
   app_logger_set_callback(test_log_callback, &g_test_callback_count);
 
   logger_t log = logger_create("test.callback");
   logger_debug(&log, "Testing callback with value %d", 123);
 
-  // Sleep slightly to let background logger thread process
-  struct timespec ts = {0, 50000000};  // 50ms
-  nanosleep(&ts, NULL);
+  // Flush background logger and join worker thread to guarantee message
+  // processed
+  app_logger_flush_and_stop(app_logger_get_shared());
 
   ASSERT_TRUE(g_test_callback_count >= 1);
   ASSERT_EQ(LOG_LEVEL_DEBUG, g_last_level);
