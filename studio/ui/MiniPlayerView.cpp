@@ -761,9 +761,7 @@ void MiniPlayerView::refreshMeters() {
         break;
     case 3: // Analog VU
         if (m_analogVUView) {
-            float left = !st.playbackPeak.empty() ? st.playbackPeak[0] : -60.0f;
-            float right = st.playbackPeak.size() > 1 ? st.playbackPeak[1] : left;
-            m_analogVUView->setLevelDB(left, right);
+            m_analogVUView->setLevels(st.playbackRms);
         }
         break;
     case 4: // Spectrogram

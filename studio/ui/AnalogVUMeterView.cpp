@@ -4,6 +4,7 @@
 
 #include <QEvent>
 #include <QFont>
+#include <QFontMetrics>
 #include <QLinearGradient>
 #include <QPainterPath>
 #include <QRadialGradient>
@@ -14,32 +15,48 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(160);
+// MARK: - Single AnalogVUMeter Implementation
 
-    m_physicsTimer = new QTimer(this);
-    connect(m_physicsTimer, &QTimer::timeout, this, &AnalogVUMeterView::updateNeedlePhysics);
-    m_physicsTimer->start(16); // ~60 FPS
+AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent)
+    : QWidget(parent), m_channelIndex(channelIndex), m_settings(settings) {
+    setAttribute(Qt::WA_TranslucentBackground);
+    setStyleSheet("background: transparent;");
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMinimumSize(80, 80);
 }
 
-void AnalogVUMeterView::showEvent(QShowEvent* event) {
-    QWidget::showEvent(event);
-    if (m_levelState)
-        m_levelState->visibilityCount++;
+void AnalogVUMeter::setLevel(float dbFS) {
+    if (std::abs(m_levelDb - dbFS) > 0.01f) {
+        m_levelDb = dbFS;
+        update();
+    }
 }
 
-void AnalogVUMeterView::hideEvent(QHideEvent* event) {
-    QWidget::hideEvent(event);
-    if (m_levelState && m_levelState->visibilityCount > 0)
-        m_levelState->visibilityCount--;
-}
-
-void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
+void AnalogVUMeter::setVUSettings(const VUSettings& settings) {
     m_settings = settings;
+    m_cachedScale = 0.0f;
     update();
 }
 
-float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
+void AnalogVUMeter::setGainCalibration(float gainDb) {
+    m_gainCalibrationDb = gainDb;
+    update();
+}
+
+void AnalogVUMeter::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    m_cachedScale = 0.0f;
+}
+
+QSize AnalogVUMeter::sizeHint() const {
+    return QSize(220, 160);
+}
+
+QSize AnalogVUMeter::minimumSizeHint() const {
+    return QSize(80, 80);
+}
+
+float AnalogVUMeter::computeAngleForLevel(float dbFS) const {
     double level = static_cast<double>(dbFS);
     double refLevel = -18.0; // 0 VU = -18 dBFS (matches SwiftUI refLevel)
     double vu = level - refLevel;
@@ -55,109 +72,45 @@ float AnalogVUMeterView::computeAngleForLevel(float dbFS) const {
     return static_cast<float>(startAngle + clippedNorm * totalSpan);
 }
 
-void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
-    m_leftDB = leftDB;
-    m_rightDB = rightDB;
-    update();
-}
+void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, float scale) {
+    qreal dpr = devicePixelRatioF();
+    pixmap = QPixmap(size * dpr);
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
 
-void AnalogVUMeterView::changeEvent(QEvent* event) {
-    QWidget::changeEvent(event);
-    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
-        update();
-    }
-}
-
-void AnalogVUMeterView::paintEvent(QPaintEvent* event) {
-    Q_UNUSED(event);
-    QPainter p(this);
+    QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
 
-    int w = width();
-    int h = height();
-
-    size_t chCount = 2;
-    if (m_levelState && !m_levelState->playbackRms.empty()) {
-        chCount = std::max(static_cast<size_t>(1), m_levelState->playbackRms.size());
-    }
-
-    int spacing = 16;
-    int meterWidth = (w - static_cast<int>(chCount + 1) * spacing) / static_cast<int>(chCount);
-    meterWidth = std::max(40, meterWidth);
-
-    for (size_t i = 0; i < chCount; ++i) {
-        float levelDb = -100.0f;
-        if (m_levelState && i < m_levelState->playbackRms.size()) {
-            levelDb = m_levelState->playbackRms[i];
-        } else {
-            levelDb = (i == 0) ? m_leftDB : m_rightDB;
-        }
-
-        float angle = -35.0f;
-        if (i < m_currentAngles.size()) {
-            angle = m_currentAngles[i];
-        } else {
-            angle = computeAngleForLevel(levelDb);
-        }
-
-        int xPos = spacing + static_cast<int>(i) * (meterWidth + spacing);
-        QRect totalRect(xPos, 4, meterWidth, h - 8);
-
-        float scale = totalRect.height() / 160.0f;
-        drawSingleVU(p, totalRect, angle, QString::number(i + 1), scale);
-    }
-}
-
-void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float angleDeg, const QString& label,
-                                     float scale) {
-    if (totalRect.width() < 20 || totalRect.height() < 20)
-        return;
-
-    p.save();
-
-    QRect innerRect = totalRect.adjusted(static_cast<int>(4 * scale), static_cast<int>(4 * scale),
-                                         -static_cast<int>(4 * scale), -static_cast<int>(4 * scale));
-    int vSpacing = static_cast<int>(6 * scale);
-
-    QFont labelFont("sans-serif", static_cast<int>(std::max(8.0, 11.0 * scale)), QFont::Black);
-    QFontMetrics labelFm(labelFont);
-    int labelHeight = labelFm.height();
-
-    QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), innerRect.height() - labelHeight - vSpacing);
-    QRect labelRect(innerRect.left(), dialRect.bottom() + vSpacing, innerRect.width(), labelHeight);
-
-    QColor bulbAmberColor, bulbHotSpotColor, needleColor, arcColor, percentageMarksColor, redZoneColor;
-    bool isDark = StyleTheme::isDark();
-
-    if (m_settings.theme == VUTheme::VintageAmber) {
-        bulbAmberColor = QColor(255, 209, 102);   // Color(red: 1.0, green: 0.82, blue: 0.40)
-        bulbHotSpotColor = QColor(255, 250, 224); // Color(red: 1.0, green: 0.98, blue: 0.88)
-        needleColor = isDark ? QColor(255, 255, 255, 230) : QColor(0, 0, 0, 230);          // .primary.opacity(0.9)
-        arcColor = isDark ? QColor(255, 255, 255, 153) : QColor(0, 0, 0, 153);             // .primary.opacity(0.6)
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 102) : QColor(0, 0, 0, 102); // .primary.opacity(0.4)
-        redZoneColor = QColor(255, 0, 0, 204);                                             // .red.opacity(0.8)
-    } else if (m_settings.theme == VUTheme::DarkStealth) {
-        bulbAmberColor = QColor(0, 0, 0, 102);                                           // Color.black.opacity(0.4)
-        bulbHotSpotColor = QColor(255, 255, 255, 38);                                    // Color.white.opacity(0.15)
-        needleColor = QColor(255, 255, 255);                                             // .white
-        arcColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);             // .primary.opacity(0.3)
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51); // .primary.opacity(0.2)
-        redZoneColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);       // .primary.opacity(0.5)
-    } else {                                                                             // Warm Tube
-        bulbAmberColor = QColor(242, 115, 26);   // Color(red: 0.95, green: 0.45, blue: 0.1)
-        bulbHotSpotColor = QColor(255, 204, 77); // Color(red: 1.0, green: 0.8, blue: 0.3)
-        needleColor = QColor(38, 38, 38);        // Color(red: 0.15, green: 0.15, blue: 0.15)
-        arcColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);           // .primary.opacity(0.5)
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76); // .primary.opacity(0.3)
-        redZoneColor = QColor(217, 51, 26, 204); // Color(red: 0.85, green: 0.2, blue: 0.1).opacity(0.8)
-    }
-
+    QRect dialRect(0, 0, size.width(), size.height());
     double w = dialRect.width();
     double h = dialRect.height();
 
-    QPointF center(dialRect.left() + w / 2.0, dialRect.top() + h * m_settings.pivotY);
+    QColor bulbAmberColor, bulbHotSpotColor, arcColor, percentageMarksColor, redZoneColor;
+    bool isDark = StyleTheme::isDark();
+
+    if (m_settings.theme == VUTheme::VintageAmber) {
+        bulbAmberColor = QColor(255, 209, 102);
+        bulbHotSpotColor = QColor(255, 250, 224);
+        arcColor = isDark ? QColor(255, 255, 255, 153) : QColor(0, 0, 0, 153);
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 102) : QColor(0, 0, 0, 102);
+        redZoneColor = QColor(255, 0, 0, 204);
+    } else if (m_settings.theme == VUTheme::DarkStealth) {
+        bulbAmberColor = QColor(0, 0, 0, 102);
+        bulbHotSpotColor = QColor(255, 255, 255, 38);
+        arcColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51);
+        redZoneColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);
+    } else { // Warm Tube
+        bulbAmberColor = QColor(242, 115, 26);
+        bulbHotSpotColor = QColor(255, 204, 77);
+        arcColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);
+        percentageMarksColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);
+        redZoneColor = QColor(217, 51, 26, 204);
+    }
+
+    QPointF center(w / 2.0, h * m_settings.pivotY);
     double radius = h * m_settings.radiusScale;
-    double baseH = dialRect.top() + h;
+    double baseH = h;
 
     p.save();
     QPainterPath clipPath;
@@ -166,7 +119,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
 
     // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
-        QRadialGradient amberGlow(QPointF(dialRect.left() + w / 2.0, baseH + 10 * scale), h * 1.6);
+        QRadialGradient amberGlow(QPointF(w / 2.0, baseH + 10 * scale), h * 1.6);
         QColor ambColor = bulbAmberColor;
         ambColor.setAlphaF(m_settings.ambientGlow);
         amberGlow.setColorAt(0.0, ambColor);
@@ -178,7 +131,7 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
 
     // 2. HOT SPOT
     if (m_settings.hotSpotAlpha > 0) {
-        QRadialGradient hotSpot(QPointF(dialRect.left() + w / 2.0, baseH + 5 * scale), h * 0.4);
+        QRadialGradient hotSpot(QPointF(w / 2.0, baseH + 5 * scale), h * 0.4);
         QColor hsColor = bulbHotSpotColor;
         hsColor.setAlphaF(m_settings.hotSpotAlpha);
         hotSpot.setColorAt(0.0, hsColor);
@@ -276,9 +229,9 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
 
     // 6. Glass Surface Reflection
     QLinearGradient glassGrad(dialRect.topLeft(), dialRect.bottomRight());
-    glassGrad.setColorAt(0.0, QColor(255, 255, 255, 64)); // white 0.25 opacity
-    glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));  // clear
-    glassGrad.setColorAt(1.0, QColor(0, 0, 0, 13));       // black 0.05 opacity
+    glassGrad.setColorAt(0.0, QColor(255, 255, 255, 64));
+    glassGrad.setColorAt(0.5, QColor(255, 255, 255, 0));
+    glassGrad.setColorAt(1.0, QColor(0, 0, 0, 13));
     p.fillRect(dialRect, glassGrad);
 
     // 7. ADDITIVE LIGHT WASH
@@ -288,78 +241,255 @@ void AnalogVUMeterView::drawSingleVU(QPainter& p, const QRect& totalRect, float 
         p.fillRect(dialRect, lwColor);
     }
 
-    // 8. Perfected Needle (rendered on top of dial face multi-layer shaders)
-    double nAngRad = (angleDeg - 90.0) * M_PI / 180.0;
-    double nR = radius + m_settings.needleExtension * scale;
-    QPointF ne(center.x() + std::cos(nAngRad) * nR, center.y() + std::sin(nAngRad) * nR);
-
-    p.setPen(QPen(needleColor, 1.2 * scale));
-    p.drawLine(center, ne);
-
-    p.restore(); // Restore clip region
+    p.restore(); // Restore clip
 
     // Dial Box Outer Border Stroke & Corner Radius
     QPainterPath boxPath;
     boxPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setPen(QPen(isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51), 1.2 * scale));
     p.drawPath(boxPath);
+}
 
-    // Channel Label (Positioned below the dial box)
+void AnalogVUMeter::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    int w = width();
+    int h = height();
+    if (w < 20 || h < 20)
+        return;
+
+    // Aspect ratio 1.6:1
+    constexpr double targetAspect = 1.6;
+    double currentAspect = static_cast<double>(w) / static_cast<double>(h);
+    int meterW = w;
+    int meterH = h;
+
+    if (currentAspect > targetAspect) {
+        meterH = h;
+        meterW = static_cast<int>(meterH * targetAspect);
+    } else {
+        meterW = w;
+        meterH = static_cast<int>(meterW / targetAspect);
+    }
+
+    int meterX = (w - meterW) / 2;
+    int meterY = (h - meterH) / 2;
+    QRect totalRect(meterX, meterY, meterW, meterH);
+
+    float scale = static_cast<float>(meterH) / 160.0f;
+
+    QRect innerRect = totalRect.adjusted(static_cast<int>(4 * scale), static_cast<int>(4 * scale),
+                                         -static_cast<int>(4 * scale), -static_cast<int>(4 * scale));
+    int vSpacing = static_cast<int>(6 * scale);
+
+    QFont labelFont("sans-serif", static_cast<int>(std::max(8.0, 11.0 * scale)), QFont::Black);
+    QFontMetrics labelFm(labelFont);
+    int labelHeight = labelFm.height();
+
+    QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), innerRect.height() - labelHeight - vSpacing);
+    QRect labelRect(innerRect.left(), dialRect.bottom() + vSpacing, innerRect.width(), labelHeight);
+
+    bool isDark = StyleTheme::isDark();
+    if (m_cachedDialPixmap.isNull() || m_cachedDialSize != dialRect.size() ||
+        std::abs(m_cachedScale - scale) > 0.001f || m_cachedTheme != m_settings.theme || m_cachedIsDark != isDark) {
+        renderDialBackground(m_cachedDialPixmap, dialRect.size(), scale);
+        m_cachedDialSize = dialRect.size();
+        m_cachedScale = scale;
+        m_cachedTheme = m_settings.theme;
+        m_cachedIsDark = isDark;
+    }
+
+    // 1. Draw cached dial background
+    p.drawPixmap(dialRect.topLeft(), m_cachedDialPixmap);
+
+    // 2. Needle Color
+    QColor needleColor;
+    if (m_settings.theme == VUTheme::VintageAmber) {
+        needleColor = isDark ? QColor(255, 255, 255, 230) : QColor(0, 0, 0, 230);
+    } else if (m_settings.theme == VUTheme::DarkStealth) {
+        needleColor = QColor(255, 255, 255);
+    } else {
+        needleColor = QColor(38, 38, 38);
+    }
+
+    // 3. Draw Needle
+    p.save();
+    QPainterPath clipPath;
+    clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
+    p.setClipPath(clipPath);
+
+    double dw = dialRect.width();
+    double dh = dialRect.height();
+    QPointF center(dialRect.left() + dw / 2.0, dialRect.top() + dh * m_settings.pivotY);
+    double radius = dh * m_settings.radiusScale;
+    float angleDeg = computeAngleForLevel(m_levelDb + m_gainCalibrationDb);
+    double nAngRad = (angleDeg - 90.0) * M_PI / 180.0;
+    double nR = radius + m_settings.needleExtension * scale;
+    QPointF ne(center.x() + std::cos(nAngRad) * nR, center.y() + std::sin(nAngRad) * nR);
+
+    p.setPen(QPen(needleColor, 1.2 * scale));
+    p.drawLine(center, ne);
+    p.restore();
+
+    // 4. Channel Label
     p.setFont(labelFont);
     QColor lblColor = StyleTheme::textSecondary();
     lblColor.setAlphaF(lblColor.alphaF() * 0.8);
     p.setPen(lblColor);
-    p.drawText(labelRect, Qt::AlignCenter, label);
-
-    p.restore();
+    p.drawText(labelRect, Qt::AlignCenter, QString::number(m_channelIndex + 1));
 }
 
-void AnalogVUMeterView::updateNeedlePhysics() {
-    size_t chCount = 2;
+// MARK: - AnalogVUMeterView Implementation
+
+AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
+    setAttribute(Qt::WA_TranslucentBackground);
+    setStyleSheet("background: transparent;");
+
+    auto rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+
+    m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setAttribute(Qt::WA_TranslucentBackground);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scrollArea->setStyleSheet(
+        "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }");
+    if (m_scrollArea->viewport()) {
+        m_scrollArea->viewport()->setAttribute(Qt::WA_TranslucentBackground);
+        m_scrollArea->viewport()->setStyleSheet("background: transparent;");
+    }
+
+    m_canvasWidget = new QWidget(m_scrollArea);
+    m_canvasWidget->setAttribute(Qt::WA_TranslucentBackground);
+    m_canvasWidget->setStyleSheet("background: transparent;");
+    m_canvasLayout = new QHBoxLayout(m_canvasWidget);
+    m_canvasLayout->setContentsMargins(0, 0, 0, 0);
+    m_canvasLayout->setSpacing(16);
+
+    m_scrollArea->setWidget(m_canvasWidget);
+    rootLayout->addWidget(m_scrollArea);
+
+    updateChannelMeters();
+}
+
+AnalogVUMeterView::~AnalogVUMeterView() {
+    if (m_levelState && m_levelState->visibilityCount > 0) {
+        m_levelState->visibilityCount--;
+    }
+}
+
+void AnalogVUMeterView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_levelState)
+        m_levelState->visibilityCount++;
+}
+
+void AnalogVUMeterView::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_levelState && m_levelState->visibilityCount > 0)
+        m_levelState->visibilityCount--;
+}
+
+void AnalogVUMeterView::setLevelState(LevelState* levelState) {
+    if (m_levelState == levelState)
+        return;
+    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
+        m_levelState->visibilityCount--;
+    m_levelState = levelState;
+    if (isVisible() && m_levelState)
+        m_levelState->visibilityCount++;
+    updateChannelMeters();
+}
+
+void AnalogVUMeterView::setLevels(const std::vector<float>& levels) {
+    m_levels = levels;
+    updateChannelMeters();
+}
+
+void AnalogVUMeterView::setLevelDB(float leftDB, float rightDB) {
+    setLevels({leftDB, rightDB});
+}
+
+void AnalogVUMeterView::setVUSettings(const VUSettings& settings) {
+    m_settings = settings;
+    for (auto* m : m_meters) {
+        m->setVUSettings(settings);
+    }
+}
+
+void AnalogVUMeterView::setGainCalibration(float gainDb) {
+    m_gainCalibrationDb = gainDb;
+    for (auto* m : m_meters) {
+        m->setGainCalibration(gainDb);
+    }
+}
+
+void AnalogVUMeterView::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
+        for (auto* m : m_meters) {
+            m->update();
+        }
+    }
+}
+
+QSize AnalogVUMeterView::sizeHint() const {
+    return QSize(360, 200);
+}
+
+QSize AnalogVUMeterView::minimumSizeHint() const {
+    return QSize(160, 120);
+}
+
+void AnalogVUMeterView::updateChannelMeters() {
+    std::vector<float> levels;
     if (m_levelState && !m_levelState->playbackRms.empty()) {
-        chCount = std::max(static_cast<size_t>(1), m_levelState->playbackRms.size());
+        levels = m_levelState->playbackRms;
+    } else if (!m_levels.empty()) {
+        levels = m_levels;
+    } else {
+        levels = {-100.0f, -100.0f};
     }
 
-    if (m_currentAngles.size() != chCount) {
-        m_currentAngles.resize(chCount, -35.0f);
-        m_velocities.resize(chCount, 0.0f);
+    size_t count = std::max(static_cast<size_t>(1), levels.size());
+
+    // Adjust meter widget count
+    while (m_meters.size() < count) {
+        int idx = static_cast<int>(m_meters.size());
+        auto* meter = new AnalogVUMeter(idx, m_settings, m_canvasWidget);
+        meter->setGainCalibration(m_gainCalibrationDb);
+        m_canvasLayout->addWidget(meter);
+        m_meters.push_back(meter);
+    }
+    while (m_meters.size() > count) {
+        auto* meter = m_meters.back();
+        m_meters.pop_back();
+        m_canvasLayout->removeWidget(meter);
+        delete meter;
     }
 
-    float dt = 0.016f; // ~60 FPS time step
-    bool needsUpdate = false;
-
-    for (size_t i = 0; i < chCount; ++i) {
-        float levelDb = -100.0f;
-        if (m_levelState && i < m_levelState->playbackRms.size()) {
-            levelDb = m_levelState->playbackRms[i];
-        } else {
-            levelDb = (i == 0) ? m_leftDB : m_rightDB;
+    // Set sizing policies matching SwiftUI
+    if (count <= 4) {
+        m_canvasLayout->setAlignment(Qt::Alignment());
+        for (size_t i = 0; i < count; ++i) {
+            m_meters[i]->setMinimumWidth(0);
+            m_meters[i]->setMaximumWidth(QWIDGETSIZE_MAX);
+            m_meters[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            m_meters[i]->setLevel(levels[i]);
+            m_meters[i]->setChannelIndex(static_cast<int>(i));
         }
-
-        // Apply gain calibration offset
-        levelDb += m_gainCalibrationDb;
-
-        float targetAngle = computeAngleForLevel(levelDb);
-        float diff = targetAngle - m_currentAngles[i];
-
-        // Second-order spring-damper dynamics
-        // K = 180.0 (spring coefficient), D = 22.0 (damping ratio ~ 0.8)
-        float springForce = diff * 180.0f;
-        float dampingForce = m_velocities[i] * 22.0f;
-        float accel = springForce - dampingForce;
-
-        m_velocities[i] += accel * dt;
-        m_currentAngles[i] += m_velocities[i] * dt;
-
-        // Dial physical limits (allow a bit of overshoot beyond -35 and +35)
-        m_currentAngles[i] = std::clamp(m_currentAngles[i], -45.0f, 45.0f);
-
-        if (std::abs(m_velocities[i]) > 0.01f || std::abs(diff) > 0.01f) {
-            needsUpdate = true;
+    } else {
+        m_canvasLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        for (size_t i = 0; i < count; ++i) {
+            m_meters[i]->setFixedWidth(220);
+            m_meters[i]->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+            m_meters[i]->setLevel(levels[i]);
+            m_meters[i]->setChannelIndex(static_cast<int>(i));
         }
-    }
-
-    if (needsUpdate) {
-        update();
     }
 }

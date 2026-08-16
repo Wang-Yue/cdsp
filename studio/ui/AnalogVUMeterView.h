@@ -4,61 +4,86 @@
 #include "models/LevelState.h"
 #include "ui/VUSettings.h"
 
+#include <QHBoxLayout>
 #include <QPainter>
-#include <QTimer>
+#include <QPixmap>
+#include <QScrollArea>
 #include <QWidget>
+#include <vector>
+
+class AnalogVUMeter : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent = nullptr);
+
+    void setChannelIndex(int idx) {
+        m_channelIndex = idx;
+        update();
+    }
+    void setLevel(float dbFS);
+    void setVUSettings(const VUSettings& settings);
+    void setGainCalibration(float gainDb);
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
+private:
+    int m_channelIndex = 0;
+    float m_levelDb = -100.0f;
+    float m_gainCalibrationDb = 0.0f;
+    VUSettings m_settings;
+
+    QPixmap m_cachedDialPixmap;
+    QSize m_cachedDialSize;
+    float m_cachedScale = 0.0f;
+    VUTheme m_cachedTheme = VUTheme::VintageAmber;
+    bool m_cachedIsDark = false;
+
+    float computeAngleForLevel(float dbFS) const;
+    void renderDialBackground(QPixmap& pixmap, const QSize& size, float scale);
+};
 
 class AnalogVUMeterView : public QWidget {
     Q_OBJECT
 
 public:
     explicit AnalogVUMeterView(QWidget* parent = nullptr);
+    ~AnalogVUMeterView() override;
 
-    void setLevelState(LevelState* levelState) {
-        if (m_levelState == levelState)
-            return;
-        if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
-            m_levelState->visibilityCount--;
-        m_levelState = levelState;
-        if (isVisible() && m_levelState)
-            m_levelState->visibilityCount++;
-    }
+    void setLevelState(LevelState* levelState);
+    void setLevels(const std::vector<float>& levels);
     void setLevelDB(float leftDB, float rightDB);
     void setVUSettings(const VUSettings& settings);
     VUSettings vuSettings() const { return m_settings; }
 
-    void setGainCalibration(float gainDb) {
-        m_gainCalibrationDb = gainDb;
-        update();
-    }
+    void setGainCalibration(float gainDb);
     float gainCalibration() const { return m_gainCalibrationDb; }
 
-    QSize sizeHint() const override { return QSize(360, 220); }
-    QSize minimumSizeHint() const override { return QSize(200, 160); }
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
     void changeEvent(QEvent* event) override;
 
 private:
     LevelState* m_levelState = nullptr;
-    float m_leftDB = -60.0f;
-    float m_rightDB = -60.0f;
-    float m_gainCalibrationDb = 0.0f; // Gain calibration knob offset (-12 to +12 dB)
-
+    std::vector<float> m_levels;
+    float m_gainCalibrationDb = 0.0f;
     VUSettings m_settings;
 
-    float computeAngleForLevel(float dbFS) const;
-    void drawSingleVU(QPainter& p, const QRect& totalRect, float angle, const QString& label, float scale);
+    QScrollArea* m_scrollArea = nullptr;
+    QWidget* m_canvasWidget = nullptr;
+    QHBoxLayout* m_canvasLayout = nullptr;
+    std::vector<AnalogVUMeter*> m_meters;
 
-    QTimer* m_physicsTimer = nullptr;
-    std::vector<float> m_currentAngles;
-    std::vector<float> m_velocities;
-
-private slots:
-    void updateNeedlePhysics();
+    void updateChannelMeters();
 };
 
 #endif // ANALOG_VU_METER_VIEW_H

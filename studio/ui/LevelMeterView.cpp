@@ -5,6 +5,7 @@
 
 #include <QHBoxLayout>
 #include <QPainterPath>
+#include <QScrollArea>
 #include <QSizePolicy>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -247,24 +248,36 @@ public:
     explicit CompactMultiChannelMeter(bool isPlayback, QWidget* parent = nullptr)
         : QWidget(parent), m_isPlayback(isPlayback) {
         setFixedHeight(6);
-        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     }
     void setLevelState(LevelState* levelState) {
         if (m_levelState == levelState)
             return;
         m_levelState = levelState;
-        updateGeometry();
+        updateLayoutAndGeometry();
         update();
     }
-    QSize sizeHint() const override {
+    size_t getCount() const {
         if (!m_levelState)
-            return QSize(0, 6);
-        size_t count = m_isPlayback ? m_levelState->playbackRms.size() : m_levelState->captureRms.size();
+            return 2;
+        size_t count = m_isPlayback ? m_levelState->playbackPeak.size() : m_levelState->capturePeak.size();
         if (count == 0)
-            count = 2; // default
+            count = m_isPlayback ? m_levelState->playbackChannelCount : m_levelState->captureChannelCount;
+        return (count > 0) ? count : 2;
+    }
+    void updateLayoutAndGeometry() {
+        size_t count = getCount();
         int barW = (count > 4) ? 40 : 80;
         int spacing = 4;
-        int totalWidth = static_cast<int>((barW + spacing) * count - spacing);
+        int totalWidth = (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
+        setFixedWidth(totalWidth);
+        updateGeometry();
+    }
+    QSize sizeHint() const override {
+        size_t count = getCount();
+        int barW = (count > 4) ? 40 : 80;
+        int spacing = 4;
+        int totalWidth = (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
         return QSize(totalWidth, 6);
     }
 
@@ -276,7 +289,7 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
 
-        size_t count = m_isPlayback ? m_levelState->playbackRms.size() : m_levelState->captureRms.size();
+        size_t count = getCount();
         if (count == 0)
             return;
 
@@ -318,9 +331,9 @@ public:
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(6);
 
-        // We leave 12px spacing on the left for the icon which we draw in paintEvent
+        // 14px space on left for icon
         auto spacer = new QWidget(this);
-        spacer->setFixedWidth(12);
+        spacer->setFixedWidth(14);
         layout->addWidget(spacer);
 
         m_meter = new CompactMultiChannelMeter(isPlayback, this);
@@ -328,9 +341,23 @@ public:
         layout->addWidget(m_meter);
 
         setFixedHeight(16);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        updateWidth();
     }
-    void setLevelState(LevelState* levelState) { m_meter->setLevelState(levelState); }
+    void setLevelState(LevelState* levelState) {
+        m_meter->setLevelState(levelState);
+        updateWidth();
+    }
+    void updateWidth() {
+        if (m_meter) {
+            m_meter->updateLayoutAndGeometry();
+            int totalW = 14 + 6 + m_meter->width();
+            setFixedWidth(totalW);
+            updateGeometry();
+        }
+    }
     void updateMeters() {
+        updateWidth();
         update();
         if (m_meter)
             m_meter->update();
@@ -365,13 +392,30 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     layout->setContentsMargins(12, 4, 12, 4);
     layout->setSpacing(16);
 
+    auto scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    scroll->setFixedHeight(28);
+
+    auto container = new QWidget(scroll);
+    auto containerLayout = new QHBoxLayout(container);
+    containerLayout->setContentsMargins(0, 0, 0, 0);
+    containerLayout->setSpacing(16);
+
     LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
 
-    m_captureGroup = new MeterGroupWidget(false, levelState, this);
-    m_playbackGroup = new MeterGroupWidget(true, levelState, this);
+    m_captureGroup = new MeterGroupWidget(false, levelState, container);
+    m_playbackGroup = new MeterGroupWidget(true, levelState, container);
 
-    layout->addWidget(m_captureGroup);
-    layout->addWidget(m_playbackGroup);
+    containerLayout->addWidget(m_captureGroup);
+    containerLayout->addWidget(m_playbackGroup);
+    containerLayout->addStretch();
+
+    scroll->setWidget(container);
+    layout->addWidget(scroll, 1);
 
     m_statusDot = new QWidget(this);
     m_statusDot->setFixedSize(8, 8);
@@ -381,7 +425,6 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     m_statusLabel->setFont(QFont("sans-serif", 10, QFont::Bold));
     m_statusLabel->setStyleSheet("color: #8e8e93;");
 
-    layout->addStretch();
     layout->addWidget(m_statusDot);
     layout->addWidget(m_statusLabel);
 

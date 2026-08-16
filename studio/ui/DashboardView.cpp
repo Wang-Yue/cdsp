@@ -316,7 +316,7 @@ void DashboardView::setupUi() {
 
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
     m_analogVUView->setLevelState(&m_monitoring->levelState);
-    m_analogVUView->setFixedHeight(220);
+    m_analogVUView->setFixedHeight(200);
     vuLayout->addWidget(m_analogVUView);
 
     int curThemeIdx = m_vuThemeCombo->findData(static_cast<int>(m_analogVUView->vuSettings().theme));
@@ -388,10 +388,8 @@ void DashboardView::refreshMeters() {
     if (m_playbackMeters)
         m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "");
 
-    float leftDB = !st.playbackRms.empty() ? st.playbackRms[0] : -60.0f;
-    float rightDB = st.playbackRms.size() > 1 ? st.playbackRms[1] : leftDB;
     if (m_analogVUView)
-        m_analogVUView->setLevelDB(leftDB, rightDB);
+        m_analogVUView->setLevels(st.playbackRms);
 
     if (m_spectrumEngine && m_spectrumView)
         m_spectrumView->setSpectrum(m_spectrumEngine->data);
