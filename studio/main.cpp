@@ -1,6 +1,5 @@
 #include "ui/MainWindow.h"
 #include "utils/AppIcon.h"
-#include "utils/CrashHandler.h"
 
 #include <QApplication>
 #include <QProxyStyle>
@@ -23,7 +22,6 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    installCrashHandler();
     QApplication app(argc, argv);
     app.setStyle(new AppStyle(app.style()));
     app.setApplicationName("CamillaDSP Monitor - Qt");

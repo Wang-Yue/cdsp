@@ -42,7 +42,7 @@ if(APPLE)
     set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
     add_compile_definitions(ENABLE_COREAUDIO ENABLE_ACCELERATE)
 elseif(WIN32)
-    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid dbghelp avrt)
+    set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid avrt)
     add_compile_definitions(ENABLE_WASAPI ENABLE_ASIO _WIN32 COBJMACROS UNICODE _UNICODE _USE_MATH_DEFINES)
 
     if(ENABLE_FFTW)
