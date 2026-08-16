@@ -7,7 +7,6 @@
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
-#include <QProcess>
 #include <QScrollArea>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -265,16 +264,11 @@ void ConvolutionPresetDetailView::refreshUi() {
 
             auto openBtn = new QPushButton("📁", m_filesContainer);
             openBtn->setFlat(true);
-            openBtn->setToolTip("Reveal in Finder");
+            openBtn->setToolTip("Show in Folder");
             openBtn->setStyleSheet(QString("QPushButton { border: none; background: transparent; color: %1; }")
                                        .arg(StyleTheme::textSecondary().name()));
-            connect(openBtn, &QPushButton::clicked, [p]() {
-#ifdef Q_OS_MAC
-                QProcess::execute("/usr/bin/open", QStringList() << "-R" << p);
-#else
-                QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath()));
-#endif
-            });
+            connect(openBtn, &QPushButton::clicked,
+                    [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
             fileRow->addWidget(openBtn);
 
             filesLayout->addLayout(fileRow);

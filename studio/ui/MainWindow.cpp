@@ -461,7 +461,7 @@ void MainWindow::setupMenuBar() {
     aboutAct->setMenuRole(QAction::AboutRole);
     connect(aboutAct, &QAction::triggered, [this]() {
         QMessageBox::about(this, "About CamillaDSP Monitor",
-                           "CamillaDSP Monitor\n\nA macOS / Qt audio DSP monitoring and pipeline controller.");
+                           "CamillaDSP Monitor\n\nA cross-platform Qt audio DSP monitoring and pipeline controller.");
     });
     fileMenu->addAction(aboutAct);
 
@@ -1445,7 +1445,12 @@ void MainWindow::onPipelineChanged() {
         m_unavailableWidget = new QWidget(this);
         auto layout = new QVBoxLayout(m_unavailableWidget);
         auto lblTitle = new QLabel("Item Deleted", m_unavailableWidget);
-        lblTitle->setFont(QFont("-apple-system", 18, QFont::Bold));
+        {
+            QFont font = lblTitle->font();
+            font.setPointSize(18);
+            font.setBold(true);
+            lblTitle->setFont(font);
+        }
         lblTitle->setAlignment(Qt::AlignCenter);
         auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", m_unavailableWidget);
         lblDesc->setProperty("secondary", true);
