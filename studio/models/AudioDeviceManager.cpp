@@ -36,12 +36,16 @@ AudioDeviceManager::~AudioDeviceManager() {
 }
 
 AudioBackendType AudioDeviceManager::defaultHardwareBackend() {
-#if defined(__APPLE__) || defined(Q_OS_MAC)
+#if defined(ENABLE_COREAUDIO)
     return AudioBackendType::CoreAudio;
-#elif defined(_WIN32) || defined(Q_OS_WIN)
+#elif defined(ENABLE_WASAPI)
     return AudioBackendType::WASAPI;
-#else
+#elif defined(ENABLE_ALSA)
     return AudioBackendType::ALSA;
+#elif defined(ENABLE_PIPEWIRE)
+    return AudioBackendType::PipeWire;
+#else
+    return AudioBackendType::RawFile;
 #endif
 }
 
