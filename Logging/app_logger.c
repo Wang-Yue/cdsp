@@ -23,6 +23,7 @@ struct app_logger_s {
   _Atomic bool is_started;
   pthread_t worker_thread;
   pthread_mutex_t worker_mutex;
+  pthread_mutex_t callback_mutex;
   cdsp_log_callback_t callback;
   void* callback_user_data;
 };
@@ -250,11 +251,8 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
  */
 static void* worker_thread_func(void* arg) {
   app_logger_t* logger = (app_logger_t*)arg;
-  while (!atomic_load_explicit(&logger->should_exit, memory_order_acquire)) {
+  while (true) {
     cdsp_sem_wait(logger->semaphore);
-    if (atomic_load_explicit(&logger->should_exit, memory_order_acquire)) {
-      // Drain remaining records before exiting
-    }
 
     while (true) {
       // Load current read index. Relaxed is sufficient because the sequence
@@ -309,10 +307,10 @@ static void* worker_thread_func(void* arg) {
 
         cdsp_log_callback_t cb = NULL;
         void* cb_ctx = NULL;
-        pthread_mutex_lock(&logger->worker_mutex);
+        pthread_mutex_lock(&logger->callback_mutex);
         cb = logger->callback;
         cb_ctx = logger->callback_user_data;
-        pthread_mutex_unlock(&logger->worker_mutex);
+        pthread_mutex_unlock(&logger->callback_mutex);
 
         if (cb) {
           cb(rec.level, rec.label ? rec.label : "", formatted_msg, cb_ctx);
@@ -325,6 +323,10 @@ static void* worker_thread_func(void* arg) {
         break;
       }
     }
+
+    if (atomic_load_explicit(&logger->should_exit, memory_order_acquire)) {
+      break;
+    }
   }
   return NULL;
 }
@@ -335,6 +337,7 @@ static void free_logger_internal(app_logger_t* logger) {
   free(logger->storage);
   free(logger->sequences);
   pthread_mutex_destroy(&logger->worker_mutex);
+  pthread_mutex_destroy(&logger->callback_mutex);
   free(logger);
 }
 
@@ -368,6 +371,7 @@ static void init_shared_logger(void) {
   atomic_init(&g_shared_logger->is_started, true);
   g_shared_logger->semaphore = cdsp_sem_create();
   pthread_mutex_init(&g_shared_logger->worker_mutex, NULL);
+  pthread_mutex_init(&g_shared_logger->callback_mutex, NULL);
   pthread_create(&g_shared_logger->worker_thread, NULL, worker_thread_func,
                  g_shared_logger);
 }
@@ -382,10 +386,10 @@ app_logger_t* app_logger_get_shared(void) {
 void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data) {
   app_logger_t* logger = app_logger_get_shared();
   if (!logger) return;
-  pthread_mutex_lock(&logger->worker_mutex);
+  pthread_mutex_lock(&logger->callback_mutex);
   logger->callback = callback;
   logger->callback_user_data = user_data;
-  pthread_mutex_unlock(&logger->worker_mutex);
+  pthread_mutex_unlock(&logger->callback_mutex);
 }
 
 void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
@@ -469,10 +473,10 @@ void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
   cdsp_log_callback_t cb = NULL;
   void* cb_ctx = NULL;
   if (shared) {
-    pthread_mutex_lock(&shared->worker_mutex);
+    pthread_mutex_lock(&shared->callback_mutex);
     cb = shared->callback;
     cb_ctx = shared->callback_user_data;
-    pthread_mutex_unlock(&shared->worker_mutex);
+    pthread_mutex_unlock(&shared->callback_mutex);
   }
 
   size_t msg_len = strlen(msg);
