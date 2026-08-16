@@ -8,6 +8,7 @@
 #include <QFutureWatcher>
 #include <QMediaDevices>
 #include <QObject>
+#include <QTimer>
 #include <map>
 #include <memory>
 #include <string>
@@ -70,6 +71,9 @@ private:
     QMediaDevices m_mediaDevices;
     QMetaObject::Connection m_inputsConnection;
     QMetaObject::Connection m_outputsConnection;
+    QTimer* m_deviceChangeDebounceTimer = nullptr;
+    bool m_isFetchingDevices = false;
+    qint64 m_lastFetchFinishedTime = 0;
 
     void* m_coreAudioListenerBlock = nullptr;
 

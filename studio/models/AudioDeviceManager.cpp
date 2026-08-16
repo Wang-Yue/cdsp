@@ -51,19 +51,31 @@ void AudioDeviceManager::refreshDevices() {
 
 void AudioDeviceManager::startDeviceChangeListener() {
     stopDeviceChangeListener();
-    m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this]() {
-        AppLogger::info("AudioDeviceManager", "Qt audio input device change detected, refreshing devices...");
-        refreshDevices();
-    });
-    m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
-        AppLogger::info("AudioDeviceManager", "Qt audio output device change detected, refreshing devices...");
-        refreshDevices();
-    });
+
+    if (!m_deviceChangeDebounceTimer) {
+        m_deviceChangeDebounceTimer = new QTimer(this);
+        m_deviceChangeDebounceTimer->setSingleShot(true);
+        connect(m_deviceChangeDebounceTimer, &QTimer::timeout, this, [this]() {
+            if (!m_isFetchingDevices && (QDateTime::currentMSecsSinceEpoch() - m_lastFetchFinishedTime >= 1500)) {
+                AppLogger::info("AudioDeviceManager", "Audio device change detected, refreshing devices...");
+                refreshDevices();
+            }
+        });
+    }
+
+    auto handleDeviceChange = [this]() {
+        if (m_isFetchingDevices || (QDateTime::currentMSecsSinceEpoch() - m_lastFetchFinishedTime < 1500)) {
+            return;
+        }
+        m_deviceChangeDebounceTimer->start(1200);
+    };
+
+    m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, handleDeviceChange);
+    m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, handleDeviceChange);
 
 #if defined(__APPLE__) || defined(Q_OS_MAC)
     AudioObjectPropertyListenerBlock listener = Block_copy(^(UInt32, const AudioObjectPropertyAddress*) {
-      AppLogger::info("AudioDeviceManager", "CoreAudio hardware devices changed, refreshing list...");
-      QMetaObject::invokeMethod(this, [this]() { refreshDevices(); });
+      QMetaObject::invokeMethod(this, handleDeviceChange);
     });
     OSStatus err = AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &s_devicesAddress,
                                                        dispatch_get_main_queue(), listener);
@@ -76,6 +88,9 @@ void AudioDeviceManager::startDeviceChangeListener() {
 }
 
 void AudioDeviceManager::stopDeviceChangeListener() {
+    if (m_deviceChangeDebounceTimer) {
+        m_deviceChangeDebounceTimer->stop();
+    }
     if (m_inputsConnection) {
         disconnect(m_inputsConnection);
         m_inputsConnection = {};
@@ -333,10 +348,13 @@ void AudioDeviceManager::fetchDevices() {
                                      ? toLowerStr(audioBackendTypeToString(playbackConfig.backend))
                                      : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
 
+    m_isFetchingDevices = true;
     m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, version, capBackendLower, pbBackendLower]() {
         auto cap = engine->getAvailableDevices(capBackendLower, true);
         auto pb = engine->getAvailableDevices(pbBackendLower, false);
         QMetaObject::invokeMethod(this, [this, version, cap, pb]() {
+            m_isFetchingDevices = false;
+            m_lastFetchFinishedTime = QDateTime::currentMSecsSinceEpoch();
             if (version != m_fetchDevicesVersion)
                 return;
             captureDevices = cap;
