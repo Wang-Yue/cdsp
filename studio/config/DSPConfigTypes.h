@@ -172,7 +172,7 @@ struct AudioDeviceDescriptor {
 };
 
 #if !defined(ENABLE_COREAUDIO) && !defined(ENABLE_WASAPI) && !defined(ENABLE_ASIO) && !defined(ENABLE_ALSA) &&         \
-    !defined(ENABLE_PULSEAUDIO) && !defined(ENABLE_PIPEWIRE)
+    !defined(ENABLE_PIPEWIRE)
 #if defined(__APPLE__) || defined(Q_OS_MAC)
 #define ENABLE_COREAUDIO 1
 #elif defined(_WIN32) || defined(Q_OS_WIN)
@@ -180,7 +180,6 @@ struct AudioDeviceDescriptor {
 #define ENABLE_ASIO 1
 #elif defined(__linux__) || defined(Q_OS_LINUX)
 #define ENABLE_ALSA 1
-#define ENABLE_PULSEAUDIO 1
 #define ENABLE_PIPEWIRE 1
 #endif
 #endif
@@ -197,9 +196,6 @@ enum class AudioBackendType {
 #endif
 #if defined(ENABLE_ALSA)
     ALSA,
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    PulseAudio,
 #endif
 #if defined(ENABLE_PIPEWIRE)
     PipeWire,
@@ -222,9 +218,6 @@ inline bool isHardwareBackend(AudioBackendType type) {
 #endif
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
 #endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
@@ -454,46 +447,6 @@ struct ALSAPlaybackConfig {
 };
 #endif
 
-#if defined(ENABLE_PULSEAUDIO)
-struct PulseAudioCaptureConfig {
-    int channels = 2;
-    std::optional<std::string> device;
-    std::optional<std::string> format;
-    std::optional<bool> stopOnInactive;
-    std::optional<std::string> linkVolumeControl;
-    std::optional<std::string> linkMuteControl;
-    std::vector<std::string> channelLabels;
-    QJsonObject toJson() const;
-    static PulseAudioCaptureConfig fromJson(const QJsonObject& json);
-
-    bool operator==(const PulseAudioCaptureConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format &&
-               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
-    }
-    bool operator!=(const PulseAudioCaptureConfig& o) const { return !(*this == o); }
-};
-
-struct PulseAudioPlaybackConfig {
-    int channels = 2;
-    std::optional<std::string> device;
-    std::optional<std::string> format;
-    std::optional<bool> stopOnInactive;
-    std::optional<std::string> linkVolumeControl;
-    std::optional<std::string> linkMuteControl;
-    std::vector<std::string> channelLabels;
-    QJsonObject toJson() const;
-    static PulseAudioPlaybackConfig fromJson(const QJsonObject& json);
-
-    bool operator==(const PulseAudioPlaybackConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format &&
-               stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && channelLabels == o.channelLabels;
-    }
-    bool operator!=(const PulseAudioPlaybackConfig& o) const { return !(*this == o); }
-};
-#endif
-
 #if defined(ENABLE_PIPEWIRE)
 struct PipeWireCaptureConfig {
     int channels = 2;
@@ -621,9 +574,6 @@ struct CaptureDeviceConfig {
 #if defined(ENABLE_ALSA)
     ALSACaptureConfig alsa;
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    PulseAudioCaptureConfig pulseAudio;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     PipeWireCaptureConfig pipeWire;
 #endif
@@ -647,10 +597,6 @@ struct CaptureDeviceConfig {
 #if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
             return alsa.device;
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-        case AudioBackendType::PulseAudio:
-            return pulseAudio.device;
 #endif
 #if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
@@ -681,9 +627,6 @@ struct CaptureDeviceConfig {
 #endif
 #if defined(ENABLE_ALSA)
                alsa == o.alsa &&
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-               pulseAudio == o.pulseAudio &&
 #endif
 #if defined(ENABLE_PIPEWIRE)
                pipeWire == o.pipeWire &&
@@ -717,9 +660,6 @@ struct PlaybackDeviceConfig {
 #if defined(ENABLE_ALSA)
     ALSAPlaybackConfig alsa;
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    PulseAudioPlaybackConfig pulseAudio;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     PipeWirePlaybackConfig pipeWire;
 #endif
@@ -742,10 +682,6 @@ struct PlaybackDeviceConfig {
 #if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
             return alsa.device;
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-        case AudioBackendType::PulseAudio:
-            return pulseAudio.device;
 #endif
 #if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
@@ -774,9 +710,6 @@ struct PlaybackDeviceConfig {
 #endif
 #if defined(ENABLE_ALSA)
                alsa == o.alsa &&
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-               pulseAudio == o.pulseAudio &&
 #endif
 #if defined(ENABLE_PIPEWIRE)
                pipeWire == o.pipeWire &&

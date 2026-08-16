@@ -232,13 +232,6 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.alsa.format = format;
         break;
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        cap.pulseAudio.channels = channels;
-        cap.pulseAudio.device = deviceName();
-        cap.pulseAudio.format = format;
-        break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cap.pipeWire.channels = channels;
@@ -315,13 +308,6 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.device = deviceName();
         pb.alsa.format = format;
         pb.alsa.outputDSD = outputDSD;
-        break;
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        pb.pulseAudio.channels = channels;
-        pb.pulseAudio.device = deviceName();
-        pb.pulseAudio.format = format;
         break;
 #endif
 #if defined(ENABLE_PIPEWIRE)

@@ -178,19 +178,15 @@ std::string audioBackendTypeToString(AudioBackendType type) {
 #endif
 #if defined(ENABLE_WASAPI)
     case AudioBackendType::WASAPI:
-        return "WASAPI";
+        return "Wasapi";
 #endif
 #if defined(ENABLE_ASIO)
     case AudioBackendType::ASIO:
-        return "ASIO";
+        return "Asio";
 #endif
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
-        return "ALSA";
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        return "PulseAudio";
+        return "Alsa";
 #endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
@@ -225,10 +221,6 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
 #if defined(ENABLE_ALSA)
     if (lowerStr == "alsa")
         return AudioBackendType::ALSA;
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    if (lowerStr == "pulseaudio" || lowerStr == "pulse")
-        return AudioBackendType::PulseAudio;
 #endif
 #if defined(ENABLE_PIPEWIRE)
     if (lowerStr == "pipewire")
@@ -828,8 +820,6 @@ QJsonObject CoreAudioCaptureConfig::toJson() const {
         obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
-    if (exclusive.has_value())
-        obj["exclusive"] = exclusive.value();
     if (bypassDoP.has_value())
         obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value())
@@ -1056,7 +1046,7 @@ WASAPICaptureConfig WASAPICaptureConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject WASAPICaptureConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "WASAPI";
+    obj["type"] = "Wasapi";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1106,7 +1096,7 @@ WASAPIPlaybackConfig WASAPIPlaybackConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject WASAPIPlaybackConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "WASAPI";
+    obj["type"] = "Wasapi";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1152,7 +1142,7 @@ ASIOCaptureConfig ASIOCaptureConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject ASIOCaptureConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "ASIO";
+    obj["type"] = "Asio";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1194,7 +1184,7 @@ ASIOPlaybackConfig ASIOPlaybackConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject ASIOPlaybackConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "ASIO";
+    obj["type"] = "Asio";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1202,8 +1192,6 @@ QJsonObject ASIOPlaybackConfig::toJson() const {
         obj["format"] = QString::fromStdString(format.value());
     if (outputDoP.has_value())
         obj["output_dop"] = outputDoP.value();
-    if (outputDSD.has_value())
-        obj["output_dsd"] = outputDSD.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
     if (!channelLabels.empty()) {
@@ -1240,7 +1228,7 @@ ALSACaptureConfig ALSACaptureConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject ALSACaptureConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "ALSA";
+    obj["type"] = "Alsa";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1286,99 +1274,7 @@ ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject ALSAPlaybackConfig::toJson() const {
     QJsonObject obj;
-    obj["type"] = "ALSA";
-    obj["channels"] = channels;
-    if (device.has_value() && !device.value().empty())
-        obj["device"] = QString::fromStdString(device.value());
-    if (format.has_value())
-        obj["format"] = QString::fromStdString(format.value());
-    if (stopOnInactive.has_value())
-        obj["stop_on_inactive"] = stopOnInactive.value();
-    if (linkVolumeControl.has_value())
-        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
-    if (linkMuteControl.has_value())
-        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
-    if (outputDSD.has_value())
-        obj["output_dsd"] = outputDSD.value();
-    if (!channelLabels.empty()) {
-        QJsonArray arr;
-        for (const auto& l : channelLabels)
-            arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
-    }
-    return obj;
-}
-#endif
-
-#if defined(ENABLE_PULSEAUDIO)
-PulseAudioCaptureConfig PulseAudioCaptureConfig::fromJson(const QJsonObject& json) {
-    PulseAudioCaptureConfig cfg;
-    if (json.contains("channels"))
-        cfg.channels = json["channels"].toInt();
-    if (json.contains("device"))
-        cfg.device = json["device"].toString().toStdString();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
-    if (json.contains("stop_on_inactive"))
-        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
-    if (json.contains("link_volume_control"))
-        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
-    if (json.contains("link_mute_control"))
-        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
-    }
-    return cfg;
-}
-
-QJsonObject PulseAudioCaptureConfig::toJson() const {
-    QJsonObject obj;
-    obj["type"] = "PulseAudio";
-    obj["channels"] = channels;
-    if (device.has_value() && !device.value().empty())
-        obj["device"] = QString::fromStdString(device.value());
-    if (format.has_value())
-        obj["format"] = QString::fromStdString(format.value());
-    if (stopOnInactive.has_value())
-        obj["stop_on_inactive"] = stopOnInactive.value();
-    if (linkVolumeControl.has_value())
-        obj["link_volume_control"] = QString::fromStdString(linkVolumeControl.value());
-    if (linkMuteControl.has_value())
-        obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
-    if (!channelLabels.empty()) {
-        QJsonArray arr;
-        for (const auto& l : channelLabels)
-            arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
-    }
-    return obj;
-}
-
-PulseAudioPlaybackConfig PulseAudioPlaybackConfig::fromJson(const QJsonObject& json) {
-    PulseAudioPlaybackConfig cfg;
-    if (json.contains("channels"))
-        cfg.channels = json["channels"].toInt();
-    if (json.contains("device"))
-        cfg.device = json["device"].toString().toStdString();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
-    if (json.contains("stop_on_inactive"))
-        cfg.stopOnInactive = json["stop_on_inactive"].toBool();
-    if (json.contains("link_volume_control"))
-        cfg.linkVolumeControl = json["link_volume_control"].toString().toStdString();
-    if (json.contains("link_mute_control"))
-        cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
-    }
-    return cfg;
-}
-
-QJsonObject PulseAudioPlaybackConfig::toJson() const {
-    QJsonObject obj;
-    obj["type"] = "PulseAudio";
+    obj["type"] = "Alsa";
     obj["channels"] = channels;
     if (device.has_value() && !device.value().empty())
         obj["device"] = QString::fromStdString(device.value());
@@ -1428,8 +1324,6 @@ QJsonObject PipeWireCaptureConfig::toJson() const {
     QJsonObject obj;
     obj["type"] = "PipeWire";
     obj["channels"] = channels;
-    if (device.has_value() && !device.value().empty())
-        obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
     if (nodeName.has_value())
@@ -1476,8 +1370,6 @@ QJsonObject PipeWirePlaybackConfig::toJson() const {
     QJsonObject obj;
     obj["type"] = "PipeWire";
     obj["channels"] = channels;
-    if (device.has_value() && !device.value().empty())
-        obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
     if (nodeName.has_value())
@@ -1523,11 +1415,6 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
         cfg.alsa = ALSACaptureConfig::fromJson(json);
         break;
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        cfg.pulseAudio = PulseAudioCaptureConfig::fromJson(json);
-        break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cfg.pipeWire = PipeWireCaptureConfig::fromJson(json);
@@ -1563,10 +1450,6 @@ QJsonObject CaptureDeviceConfig::toJson() const {
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         return alsa.toJson();
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        return pulseAudio.toJson();
 #endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
@@ -1607,11 +1490,6 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
         cfg.alsa = ALSAPlaybackConfig::fromJson(json);
         break;
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        cfg.pulseAudio = PulseAudioPlaybackConfig::fromJson(json);
-        break;
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
         cfg.pipeWire = PipeWirePlaybackConfig::fromJson(json);
@@ -1644,10 +1522,6 @@ QJsonObject PlaybackDeviceConfig::toJson() const {
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
         return alsa.toJson();
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-        return pulseAudio.toJson();
 #endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
@@ -1684,18 +1558,23 @@ ResamplerConfig ResamplerConfig::fromJson(const QJsonObject& json) {
 QJsonObject ResamplerConfig::toJson() const {
     QJsonObject obj;
     obj["type"] = QString::fromStdString(resamplerTypeToString(type));
-    if (profile.has_value())
-        obj["profile"] = QString::fromStdString(profile.value());
-    if (interpolation.has_value())
-        obj["interpolation"] = QString::fromStdString(interpolation.value());
-    if (sincLen.has_value())
-        obj["sinc_len"] = sincLen.value();
-    if (oversamplingFactor.has_value())
-        obj["oversampling_factor"] = oversamplingFactor.value();
-    if (window.has_value())
-        obj["window"] = QString::fromStdString(window.value());
-    if (fCutoff.has_value())
-        obj["f_cutoff"] = fCutoff.value();
+    if (type == ResamplerType::AsyncSinc) {
+        if (profile.has_value())
+            obj["profile"] = QString::fromStdString(profile.value());
+        if (interpolation.has_value())
+            obj["interpolation"] = QString::fromStdString(interpolation.value());
+        if (sincLen.has_value())
+            obj["sinc_len"] = sincLen.value();
+        if (oversamplingFactor.has_value())
+            obj["oversampling_factor"] = oversamplingFactor.value();
+        if (window.has_value())
+            obj["window"] = QString::fromStdString(window.value());
+        if (fCutoff.has_value())
+            obj["f_cutoff"] = fCutoff.value();
+    } else if (type == ResamplerType::AsyncPoly) {
+        if (interpolation.has_value())
+            obj["interpolation"] = QString::fromStdString(interpolation.value());
+    }
     return obj;
 }
 
@@ -1930,8 +1809,6 @@ QJsonObject DelayParameters::toJson() const {
     QJsonObject obj;
     obj["delay"] = delay;
     obj["delay_unit"] = QString::fromStdString(delayUnitToString(delayUnit));
-    if (unit.has_value())
-        obj["unit"] = QString::fromStdString(delayUnitToString(unit.value()));
     if (subsample.has_value())
         obj["subsample"] = subsample.value();
     return obj;

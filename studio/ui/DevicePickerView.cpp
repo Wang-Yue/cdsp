@@ -123,9 +123,6 @@ void DevicePickerView::setupUi() {
 #if defined(ENABLE_ALSA)
     m_capBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    m_capBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
-#endif
 #if defined(ENABLE_PIPEWIRE)
     m_capBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
@@ -146,9 +143,6 @@ void DevicePickerView::setupUi() {
 #endif
 #if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-        case AudioBackendType::PulseAudio:
 #endif
 #if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
@@ -217,9 +211,6 @@ void DevicePickerView::setupUi() {
 #if defined(ENABLE_ALSA)
     m_pbBackendCombo->addItem("ALSA", static_cast<int>(AudioBackendType::ALSA));
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    m_pbBackendCombo->addItem("PulseAudio", static_cast<int>(AudioBackendType::PulseAudio));
-#endif
 #if defined(ENABLE_PIPEWIRE)
     m_pbBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
@@ -239,9 +230,6 @@ void DevicePickerView::setupUi() {
 #endif
 #if defined(ENABLE_ALSA)
         case AudioBackendType::ALSA:
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-        case AudioBackendType::PulseAudio:
 #endif
 #if defined(ENABLE_PIPEWIRE)
         case AudioBackendType::PipeWire:
@@ -1318,9 +1306,6 @@ static int getCapStackIndex(AudioBackendType backend) {
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
 #endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
-#endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
 #endif
@@ -1348,9 +1333,6 @@ static int getPbStackIndex(AudioBackendType backend) {
 #endif
 #if defined(ENABLE_ALSA)
     case AudioBackendType::ALSA:
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    case AudioBackendType::PulseAudio:
 #endif
 #if defined(ENABLE_PIPEWIRE)
     case AudioBackendType::PipeWire:
@@ -1462,10 +1444,6 @@ void DevicePickerView::refreshUi() {
     bool isCapAlsa = false;
 #if defined(ENABLE_ALSA)
     if (m_devices->captureConfig.backend == AudioBackendType::ALSA)
-        isCapAlsa = true;
-#endif
-#if defined(ENABLE_PULSEAUDIO)
-    if (m_devices->captureConfig.backend == AudioBackendType::PulseAudio)
         isCapAlsa = true;
 #endif
     m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive);

@@ -84,18 +84,15 @@ private:
     QComboBox* m_pbBackendCombo = nullptr;
     QStackedWidget* m_pbStack = nullptr;
 
-    // Capture WASAPI / ASIO / ALSA / Pulse
+    // Capture WASAPI / ASIO / ALSA
     QCheckBox* m_capWasapiExclusiveCheck = nullptr;
     QCheckBox* m_capWasapiLoopbackCheck = nullptr;
     QCheckBox* m_capWasapiPollingCheck = nullptr;
     QCheckBox* m_capAlsaStopInactiveCheck = nullptr;
     QLineEdit* m_capAlsaLinkVolumeEdit = nullptr;
     QLineEdit* m_capAlsaLinkMuteEdit = nullptr;
-    QCheckBox* m_capPulseStopInactiveCheck = nullptr;
-    QLineEdit* m_capPulseLinkVolumeEdit = nullptr;
-    QLineEdit* m_capPulseLinkMuteEdit = nullptr;
 
-    // Playback CoreAudio / WASAPI / ASIO / ALSA / Pulse
+    // Playback CoreAudio / WASAPI / ASIO / ALSA
     QWidget* m_pbWarningWidget = nullptr;
     QWidget* m_pbDeviceListContainer = nullptr;
     QVBoxLayout* m_pbDeviceListLayout = nullptr;
@@ -111,9 +108,6 @@ private:
     QCheckBox* m_pbAlsaStopInactiveCheck = nullptr;
     QLineEdit* m_pbAlsaLinkVolumeEdit = nullptr;
     QLineEdit* m_pbAlsaLinkMuteEdit = nullptr;
-    QCheckBox* m_pbPulseStopInactiveCheck = nullptr;
-    QLineEdit* m_pbPulseLinkVolumeEdit = nullptr;
-    QLineEdit* m_pbPulseLinkMuteEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
     QFrame* m_pbDopDivider = nullptr;
     QCheckBox* m_outputDSDCheck = nullptr;
