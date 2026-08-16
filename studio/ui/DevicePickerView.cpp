@@ -567,9 +567,9 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
         });
     });
 
-    auto devChLbl = new QLabel("Device Channels", w);
-    devChLbl->setFixedWidth(110);
-    chBox->addWidget(devChLbl);
+    m_capDevChannelsLabel = new QLabel("Device Channels", w);
+    m_capDevChannelsLabel->setFixedWidth(110);
+    chBox->addWidget(m_capDevChannelsLabel);
     chBox->addWidget(m_capDevChannelsCombo);
     chBox->addWidget(m_capDevChannelsSpin);
 
@@ -590,45 +590,49 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     chBox->addStretch();
     form->addRow("", chBox);
 
-    auto rateBox = new QHBoxLayout();
-    auto rateLbl = new QLabel("Sample Rate", w);
+    m_capRateRow = new QWidget(w);
+    auto rateBox = new QHBoxLayout(m_capRateRow);
+    rateBox->setContentsMargins(0, 0, 0, 0);
+    auto rateLbl = new QLabel("Sample Rate", m_capRateRow);
     rateLbl->setFixedWidth(100);
     rateBox->addWidget(rateLbl);
 
-    m_capRateCombo = new QComboBox(w);
+    m_capRateCombo = new QComboBox(m_capRateRow);
     connect(m_capRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
-    m_capRateLabel = new QLabel(w);
+    m_capRateLabel = new QLabel(m_capRateRow);
     m_capRateLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
 
     rateBox->addWidget(m_capRateCombo);
     rateBox->addWidget(m_capRateLabel);
     rateBox->addStretch();
-    form->addRow("", rateBox);
+    form->addRow("", m_capRateRow);
 
-    auto fmtBox = new QHBoxLayout();
-    auto fmtLbl = new QLabel("Format", w);
+    m_capFormatRow = new QWidget(w);
+    auto fmtBox = new QHBoxLayout(m_capFormatRow);
+    fmtBox->setContentsMargins(0, 0, 0, 0);
+    auto fmtLbl = new QLabel("Format", m_capFormatRow);
     fmtLbl->setFixedWidth(100);
     fmtBox->addWidget(fmtLbl);
 
-    m_capFormatCombo = new QComboBox(w);
+    m_capFormatCombo = new QComboBox(m_capFormatRow);
     connect(m_capFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
-    m_capFormatLabel = new QLabel(w);
+    m_capFormatLabel = new QLabel(m_capFormatRow);
     m_capFormatLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
 
     fmtBox->addWidget(m_capFormatCombo);
     fmtBox->addWidget(m_capFormatLabel);
     fmtBox->addStretch();
-    form->addRow("", fmtBox);
+    form->addRow("", m_capFormatRow);
 
     m_capDopDivider = new QFrame(w);
     m_capDopDivider->setFrameShape(QFrame::HLine);
@@ -1114,9 +1118,9 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
         });
     });
 
-    auto devChLbl = new QLabel("Device Channels", w);
-    devChLbl->setFixedWidth(110);
-    chBox->addWidget(devChLbl);
+    m_pbDevChannelsLabel = new QLabel("Device Channels", w);
+    m_pbDevChannelsLabel->setFixedWidth(110);
+    chBox->addWidget(m_pbDevChannelsLabel);
     chBox->addWidget(m_pbDevChannelsCombo);
     chBox->addWidget(m_pbDevChannelsSpin);
 
@@ -1137,12 +1141,14 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     chBox->addStretch();
     form->addRow("", chBox);
 
-    auto rateBox = new QHBoxLayout();
-    auto rateLbl = new QLabel("Sample Rate", w);
+    m_pbRateRow = new QWidget(w);
+    auto rateBox = new QHBoxLayout(m_pbRateRow);
+    rateBox->setContentsMargins(0, 0, 0, 0);
+    auto rateLbl = new QLabel("Sample Rate", m_pbRateRow);
     rateLbl->setFixedWidth(100);
     rateBox->addWidget(rateLbl);
 
-    m_pbRateCombo = new QComboBox(w);
+    m_pbRateCombo = new QComboBox(m_pbRateRow);
     connect(m_pbRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
@@ -1153,27 +1159,29 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     rateBox->addWidget(m_pbRateCombo);
     rateBox->addStretch();
-    form->addRow("", rateBox);
+    form->addRow("", m_pbRateRow);
 
-    auto fmtBox = new QHBoxLayout();
-    auto fmtLbl = new QLabel("Format", w);
+    m_pbFormatRow = new QWidget(w);
+    auto fmtBox = new QHBoxLayout(m_pbFormatRow);
+    fmtBox->setContentsMargins(0, 0, 0, 0);
+    auto fmtLbl = new QLabel("Format", m_pbFormatRow);
     fmtLbl->setFixedWidth(100);
     fmtBox->addWidget(fmtLbl);
 
-    m_pbFormatCombo = new QComboBox(w);
+    m_pbFormatCombo = new QComboBox(m_pbFormatRow);
     connect(m_pbFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
-    m_pbFormatLabel = new QLabel(w);
+    m_pbFormatLabel = new QLabel(m_pbFormatRow);
     m_pbFormatLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
 
     fmtBox->addWidget(m_pbFormatCombo);
     fmtBox->addWidget(m_pbFormatLabel);
     fmtBox->addStretch();
-    form->addRow("", fmtBox);
+    form->addRow("", m_pbFormatRow);
 
     m_exclusiveModeCheck = new QCheckBox("Exclusive Mode (Hog)", w);
     connect(m_exclusiveModeCheck, &QCheckBox::toggled, [this](bool) {
@@ -1303,14 +1311,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
         updateDoPCapability();
     });
     form->addRow("", m_outputDoPCheck);
-
-    m_outputDSDCheck = new QCheckBox("Output Native DSD (output_dsd)", w);
-    connect(m_outputDSDCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    form->addRow("", m_outputDSDCheck);
 
     m_pbSdmFilterRow = new QWidget(w);
     auto sdmLayout = new QHBoxLayout(m_pbSdmFilterRow);
@@ -1557,6 +1557,7 @@ void DevicePickerView::refreshUi() {
     m_capStack->setCurrentIndex(getCapStackIndex(m_devices->captureConfig.backend));
 
     // Capture Channels (Device Channels combo vs spinbox)
+    m_capDevChannelsLabel->setVisible(!isCapPw);
     auto capSuppCh = m_devices->captureConfig.supportedChannels();
     if (!capSuppCh.empty() && !isCapPw) {
         m_capDevChannelsCombo->show();
@@ -1581,6 +1582,7 @@ void DevicePickerView::refreshUi() {
     m_capStreamChannelsSpin->setValue(m_devices->captureConfig.channels);
 
     // Capture Sample Rate
+    m_capRateRow->setVisible(!isCapPw);
     if (isCapPw) {
         m_capRateCombo->hide();
         m_capRateLabel->hide();
@@ -1604,6 +1606,7 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture Sample Format
+    m_capFormatRow->setVisible(!isCapPw);
     if (isCapPw) {
         m_capFormatCombo->hide();
         m_capFormatLabel->hide();
@@ -1627,7 +1630,7 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture DoP
-    bool capDopVisible = !m_devices->isRustEngine() && !isCapPw;
+    bool capDopVisible = !m_devices->isRustEngine() && !isCapPw && isHardwareBackend(m_devices->captureConfig.backend);
     m_capDopDivider->setVisible(capDopVisible);
     m_bypassDoPCheck->setVisible(capDopVisible);
     m_capDopCutoffRow->setVisible(capDopVisible);
@@ -1748,6 +1751,7 @@ void DevicePickerView::refreshUi() {
     m_pbStack->setCurrentIndex(getPbStackIndex(m_devices->playbackConfig.backend));
 
     // Playback Channels (Device Channels combo vs spinbox)
+    m_pbDevChannelsLabel->setVisible(!isPbPw);
     auto pbSuppCh = m_devices->playbackConfig.supportedChannels();
     if (!pbSuppCh.empty() && !isPbPw) {
         m_pbDevChannelsCombo->show();
@@ -1772,6 +1776,7 @@ void DevicePickerView::refreshUi() {
     m_pbStreamChannelsSpin->setValue(m_devices->playbackConfig.channels);
 
     // Playback Sample Rate
+    m_pbRateRow->setVisible(!isPbPw);
     if (isPbPw) {
         m_pbRateCombo->hide();
     } else {
@@ -1789,6 +1794,7 @@ void DevicePickerView::refreshUi() {
     }
 
     // Playback Sample Format
+    m_pbFormatRow->setVisible(!isPbPw);
     if (isPbPw) {
         m_pbFormatCombo->hide();
         m_pbFormatLabel->hide();
@@ -1876,18 +1882,6 @@ void DevicePickerView::refreshUi() {
     m_pbSdmFilterRow->setVisible(pbDopVisible);
 
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
-
-    bool supportsNativeDSD = false;
-#if defined(ENABLE_ALSA)
-    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
-        supportsNativeDSD = true;
-#endif
-#if defined(ENABLE_ASIO)
-    if (m_devices->playbackConfig.backend == AudioBackendType::ASIO)
-        supportsNativeDSD = true;
-#endif
-    m_outputDSDCheck->setVisible(supportsNativeDSD);
-    m_outputDSDCheck->setChecked(m_devices->playbackConfig.outputDSD);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));
     if (filterIdx >= 0)
@@ -2015,7 +2009,6 @@ void DevicePickerView::applySettings() {
         if (m_pbPwAutoconnectEdit)
             pbCfg.autoconnectTo = m_pbPwAutoconnectEdit->text().toStdString();
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
-        pbCfg.outputDSD = m_outputDSDCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {
             pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
         }

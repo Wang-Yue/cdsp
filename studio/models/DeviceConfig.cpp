@@ -257,7 +257,6 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
-        cap.coreAudio.exclusive = exclusive;
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;
@@ -362,7 +361,6 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.asio.device = deviceName();
         pb.asio.format = format;
         pb.asio.outputDoP = outputDoP;
-        pb.asio.outputDSD = outputDSD;
         pb.asio.dsdEncoderFilter = dsdEncoderFilter;
         break;
 #endif
@@ -376,7 +374,8 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
             pb.alsa.linkVolumeControl = linkVolumeControl;
         if (!linkMuteControl.empty())
             pb.alsa.linkMuteControl = linkMuteControl;
-        pb.alsa.outputDSD = outputDSD;
+        pb.alsa.outputDoP = outputDoP;
+        pb.alsa.dsdEncoderFilter = dsdEncoderFilter;
         break;
 #endif
 #if defined(ENABLE_PIPEWIRE)
@@ -428,7 +427,6 @@ QJsonObject DeviceConfig::toJson() const {
     obj["bypassDoP"] = bypassDoP;
     obj["dopCutoffHz"] = dopCutoffHz;
     obj["outputDoP"] = outputDoP;
-    obj["outputDSD"] = outputDSD;
     obj["dsdEncoderFilter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter));
     obj["filename"] = QString::fromStdString(filename);
     obj["fileFormat"] = QString::fromStdString(fileFormat);
@@ -481,8 +479,6 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
     if (json.contains("outputDoP"))
         cfg.outputDoP = json["outputDoP"].toBool();
-    if (json.contains("outputDSD"))
-        cfg.outputDSD = json["outputDSD"].toBool();
     if (json.contains("dsdEncoderFilter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsdEncoderFilter"].toString().toStdString());
     if (json.contains("filename"))
@@ -527,7 +523,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
            exclusive == other.exclusive && loopback == other.loopback && polling == other.polling &&
            stopOnInactive == other.stopOnInactive && linkVolumeControl == other.linkVolumeControl &&
            linkMuteControl == other.linkMuteControl && bypassDoP == other.bypassDoP &&
-           dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP && outputDSD == other.outputDSD &&
+           dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
            isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
            readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&

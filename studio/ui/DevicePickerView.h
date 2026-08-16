@@ -19,6 +19,29 @@
 #include <QWidget>
 #include <memory>
 
+/* clang-format off */
+/**
+ * @brief DevicePickerView - Audio device selection and backend configuration UI.
+ *
+ * Backend Option Support Matrix:
+ * ┌─────────────┬──────────┬──────────────┬────────────┬────────────┬────────┬────────┬───────────┬─────────┬───────────┬──────────┬───────────┐
+ * │ Backend     │ Mode     │ Device List  │ Dev Chans  │ Stream Chs │ Rate   │ Format │ Exclusive │ Polling │ ALSA Link │ PipeWire │ DoP & SDM │
+ * │             │          │ & Warnings   │ (Hardware) │            │        │        │ (Hog)     │ (WASAPI)│ Vol / Mute│ Nodes    │ Filters   │
+ * ├─────────────┼──────────┼──────────────┼────────────┼────────────┼────────┼────────┼───────────┼─────────┼───────────┼──────────┼───────────┤
+ * │ CoreAudio   │ Capture  │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ CoreAudio   │ Playback │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ WASAPI      │ Capture  │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
+ * │ WASAPI      │ Playback │     YES      │    YES     │    YES     │  YES   │  YES   │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
+ * │ ASIO        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
+ * │ ALSA        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │  YES   │    NO     │   NO    │    YES    │    NO    │  YES (C)  │
+ * │ PipeWire    │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │   NO   │    NO     │   NO    │    NO     │   YES    │    NO     │
+ * │ RawFile     │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │ In-File│    NO     │   NO    │    NO     │    NO    │    NO     │
+ * │ WavFile     │ Cap / Pb │      NO      │     NO     │NO(Cap)/Y(Pb│   NO   │   NO   │    NO     │   NO    │    NO     │    NO    │    NO     │
+ * │ SignalGen   │ Capture  │      NO      │     NO     │    YES     │   NO   │   NO   │    NO     │   NO    │    NO     │    NO    │    NO     │
+ * └─────────────┴──────────┴──────────────┴────────────┴────────────┴────────┴────────┴───────────┴─────────┴───────────┴──────────┴───────────┘
+ * Note: Native DSD is selected directly via the `format` option on supported backends (e.g. ALSA / ASIO).
+ */
+/* clang-format on */
 class DevicePickerView : public QWidget {
     Q_OBJECT
     Q_DISABLE_COPY(DevicePickerView)
@@ -44,11 +67,14 @@ private:
     QWidget* m_capWarningWidget = nullptr;
     QWidget* m_capDeviceListContainer = nullptr;
     QVBoxLayout* m_capDeviceListLayout = nullptr;
+    QLabel* m_capDevChannelsLabel = nullptr;
     QComboBox* m_capDevChannelsCombo = nullptr;
     QSpinBox* m_capDevChannelsSpin = nullptr;
     QSpinBox* m_capStreamChannelsSpin = nullptr;
+    QWidget* m_capRateRow = nullptr;
     QComboBox* m_capRateCombo = nullptr;
     QLabel* m_capRateLabel = nullptr;
+    QWidget* m_capFormatRow = nullptr;
     QComboBox* m_capFormatCombo = nullptr;
     QLabel* m_capFormatLabel = nullptr;
     QCheckBox* m_bypassDoPCheck = nullptr;
@@ -103,10 +129,13 @@ private:
     QWidget* m_pbWarningWidget = nullptr;
     QWidget* m_pbDeviceListContainer = nullptr;
     QVBoxLayout* m_pbDeviceListLayout = nullptr;
+    QLabel* m_pbDevChannelsLabel = nullptr;
     QComboBox* m_pbDevChannelsCombo = nullptr;
     QSpinBox* m_pbDevChannelsSpin = nullptr;
     QSpinBox* m_pbStreamChannelsSpin = nullptr;
+    QWidget* m_pbRateRow = nullptr;
     QComboBox* m_pbRateCombo = nullptr;
+    QWidget* m_pbFormatRow = nullptr;
     QComboBox* m_pbFormatCombo = nullptr;
     QLabel* m_pbFormatLabel = nullptr;
     QCheckBox* m_exclusiveModeCheck = nullptr;
@@ -124,7 +153,6 @@ private:
     QLineEdit* m_pbPwAutoconnectEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
     QFrame* m_pbDopDivider = nullptr;
-    QCheckBox* m_outputDSDCheck = nullptr;
     QLabel* m_sdmFilterLabel = nullptr;
     QComboBox* m_sdmFilterCombo = nullptr;
     QWidget* m_pbSdmFilterRow = nullptr;

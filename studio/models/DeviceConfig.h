@@ -35,7 +35,6 @@ struct DeviceConfig {
     bool bypassDoP = true;
     double dopCutoffHz = 20000.0;
     bool outputDoP = false;
-    bool outputDSD = false;
     SDMFilter dsdEncoderFilter = SDMFilter::SDM6;
 
     // File Backend Settings
