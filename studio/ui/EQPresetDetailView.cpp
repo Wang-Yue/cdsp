@@ -24,6 +24,19 @@ EQPresetDetailView::EQPresetDetailView(EQPreset preset, std::shared_ptr<Pipeline
     : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
     refreshUi();
+
+    if (m_pipeline) {
+        connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, [this]() {
+            if (m_diagramWidget)
+                m_diagramWidget->update();
+        });
+    }
+    if (m_dspController && m_dspController->settings()) {
+        connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this, [this]() {
+            if (m_diagramWidget)
+                m_diagramWidget->update();
+        });
+    }
 }
 
 void EQPresetDetailView::setPreset(const EQPreset& preset) {

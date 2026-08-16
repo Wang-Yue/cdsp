@@ -13,14 +13,73 @@ EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);
 }
 
+EQDiagramWidget::~EQDiagramWidget() {
+    if (isVisible() && m_showAnalyzer && m_spectrum && m_spectrum->visibilityCount > 0) {
+        m_spectrum->visibilityCount--;
+    }
+}
+
+void EQDiagramWidget::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_showAnalyzer && m_spectrum) {
+        m_spectrum->visibilityCount++;
+    }
+}
+
+void EQDiagramWidget::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_showAnalyzer && m_spectrum && m_spectrum->visibilityCount > 0) {
+        m_spectrum->visibilityCount--;
+    }
+}
+
 void EQDiagramWidget::setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum) {
     if (m_spectrum) {
+        if (isVisible() && m_showAnalyzer && m_spectrum->visibilityCount > 0) {
+            m_spectrum->visibilityCount--;
+        }
         disconnect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
     }
     m_spectrum = spectrum;
     if (m_spectrum) {
+        if (isVisible() && m_showAnalyzer) {
+            m_spectrum->visibilityCount++;
+        }
         connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
     }
+    update();
+}
+
+void EQDiagramWidget::setShowAnalyzer(bool show) {
+    if (m_showAnalyzer != show) {
+        if (isVisible() && m_spectrum) {
+            if (show)
+                m_spectrum->visibilityCount++;
+            else if (m_spectrum->visibilityCount > 0)
+                m_spectrum->visibilityCount--;
+        }
+        m_showAnalyzer = show;
+        update();
+    }
+}
+
+void EQDiagramWidget::setShowLoudnessContour(bool show) {
+    m_showLoudnessContour = show;
+    update();
+}
+
+void EQDiagramWidget::setAudioSettings(std::shared_ptr<AudioSettings> settings) {
+    m_audioSettings = settings;
+    update();
+}
+
+void EQDiagramWidget::setReferenceOverlay(const EQReferenceOverlayData& overlay) {
+    m_overlay = overlay;
+    update();
+}
+
+void EQDiagramWidget::setPipelineStore(std::shared_ptr<PipelineStore> store) {
+    m_pipelineStore = store;
     update();
 }
 

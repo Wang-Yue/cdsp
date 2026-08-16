@@ -27,30 +27,16 @@ class EQDiagramWidget : public QWidget {
 
 public:
     explicit EQDiagramWidget(QWidget* parent = nullptr);
+    ~EQDiagramWidget() override;
 
     void setPreset(const EQPreset& preset, int sampleRate = 48000);
     void setSelectedBandIndex(int index);
     void setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum);
-    void setAudioSettings(std::shared_ptr<AudioSettings> settings) {
-        m_audioSettings = settings;
-        update();
-    }
-    void setReferenceOverlay(const EQReferenceOverlayData& overlay) {
-        m_overlay = overlay;
-        update();
-    }
-    void setPipelineStore(std::shared_ptr<PipelineStore> store) {
-        m_pipelineStore = store;
-        update();
-    }
-    void setShowAnalyzer(bool show) {
-        m_showAnalyzer = show;
-        update();
-    }
-    void setShowLoudnessContour(bool show) {
-        m_showLoudnessContour = show;
-        update();
-    }
+    void setAudioSettings(std::shared_ptr<AudioSettings> settings);
+    void setReferenceOverlay(const EQReferenceOverlayData& overlay);
+    void setPipelineStore(std::shared_ptr<PipelineStore> store);
+    void setShowAnalyzer(bool show);
+    void setShowLoudnessContour(bool show);
 
     static QColor bandColor(int index);
 
@@ -66,6 +52,8 @@ public:
     std::function<void(int index)> onBandDeleted;
 
 protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
