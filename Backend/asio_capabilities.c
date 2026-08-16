@@ -461,7 +461,8 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
     for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
       double raw_dsd_rate = (double)STANDARD_RATES[r] * 32.0;
-      if (iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate) == 0) {
+      if (raw_dsd_rate >= 2822400.0 &&
+          iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate) == 0) {
         dsd_rate_supported[r] = true;
       }
     }
