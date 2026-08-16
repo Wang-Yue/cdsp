@@ -171,10 +171,12 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     if (m_isInitializing)
         return;
     DeviceConfig enforced = config.enforced();
-    bool devChanged =
-        (enforced.deviceName() != captureConfig.deviceName() || enforced.backend != captureConfig.backend);
+    bool backendChanged = (enforced.backend != captureConfig.backend);
+    bool devChanged = (enforced.deviceName() != captureConfig.deviceName() || backendChanged);
 
-    if (!devChanged) {
+    if (backendChanged) {
+        enforced.setDeviceName("");
+    } else if (!devChanged) {
         std::string name = enforced.deviceName().value_or("");
         m_captureDeviceConfigs[name] = enforced;
     }
@@ -182,7 +184,9 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     captureConfig = enforced;
     saveConfigs();
 
-    if (devChanged) {
+    if (backendChanged) {
+        fetchDevices();
+    } else if (devChanged) {
         refreshDeviceCapabilities();
     } else {
         bool rateChanged = validateSampleRates();
@@ -198,10 +202,12 @@ void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
     if (m_isInitializing)
         return;
     DeviceConfig enforced = config.enforced();
-    bool devChanged =
-        (enforced.deviceName() != playbackConfig.deviceName() || enforced.backend != playbackConfig.backend);
+    bool backendChanged = (enforced.backend != playbackConfig.backend);
+    bool devChanged = (enforced.deviceName() != playbackConfig.deviceName() || backendChanged);
 
-    if (!devChanged) {
+    if (backendChanged) {
+        enforced.setDeviceName("");
+    } else if (!devChanged) {
         std::string name = enforced.deviceName().value_or("");
         m_playbackDeviceConfigs[name] = enforced;
     }
@@ -209,7 +215,9 @@ void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
     playbackConfig = enforced;
     saveConfigs();
 
-    if (devChanged) {
+    if (backendChanged) {
+        fetchDevices();
+    } else if (devChanged) {
         refreshDeviceCapabilities();
     } else {
         bool rateChanged = validateSampleRates();
