@@ -493,7 +493,12 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
         bool isSelected = selectedDeviceName.has_value() && !selectedDeviceName.value().empty() &&
                           (selectedDeviceName.value() == dev.id || selectedDeviceName.value() == dev.name);
         std::string devId = dev.id;
-        std::string devDisplay = dev.name;
+        std::string devDisplay;
+        if (dev.id.empty() || dev.id == dev.name) {
+            devDisplay = dev.name;
+        } else {
+            devDisplay = dev.id + " (" + dev.name + ")";
+        }
         auto row = new DeviceRowWidget(
             QString::fromStdString(devDisplay), isSelected,
             [this, isCapture, devId]() {
