@@ -70,8 +70,13 @@ public:
         setAttribute(Qt::WA_StyledBackground, true);
         setStyleSheet("QWidget { background: transparent; }");
 
+        setFixedHeight(26);
+        if (m_item) {
+            m_item->setSizeHint(0, QSize(0, 26));
+        }
+
         auto layout = new QHBoxLayout(this);
-        layout->setContentsMargins(4, 2, 8, 2);
+        layout->setContentsMargins(4, 0, 8, 0);
         layout->setSpacing(6);
 
         m_label = new QLabel(title, this);
@@ -986,8 +991,10 @@ void MainWindow::refreshSidebarItems() {
     audioGroup->setExpanded(true);
     auto devItem = new QTreeWidgetItem(audioGroup, {"🔊 Devices"});
     devItem->setData(0, Qt::UserRole, "devices");
+    devItem->setSizeHint(0, QSize(0, 26));
     auto dashItem = new QTreeWidgetItem(audioGroup, {"🎛️ Dashboard"});
     dashItem->setData(0, Qt::UserRole, "dashboard");
+    dashItem->setSizeHint(0, QSize(0, 26));
 
     // 2. Monitoring Section
     auto monGroup = new QTreeWidgetItem(m_sidebarTree, {"Monitoring"});
@@ -1050,6 +1057,7 @@ void MainWindow::refreshSidebarItems() {
 
     auto logsItem = new QTreeWidgetItem(monGroup, {"📝 Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
+    logsItem->setSizeHint(0, QSize(0, 26));
 
     // 3. Pipeline Section
     auto pipeGroup = new QTreeWidgetItem(m_sidebarTree, {"Pipeline"});
@@ -1124,6 +1132,7 @@ void MainWindow::refreshSidebarItems() {
 
     auto addStageItem = new QTreeWidgetItem(pipeGroup, {"➕ Add Stage…"});
     addStageItem->setData(0, Qt::UserRole, "add_stage");
+    addStageItem->setSizeHint(0, QSize(0, 26));
 
     // 4. Convolution Section
     auto convGroup = new QTreeWidgetItem(m_sidebarTree, {"Convolution"});
@@ -1131,12 +1140,15 @@ void MainWindow::refreshSidebarItems() {
     for (const auto& conv : m_pipeline->convPresets) {
         auto cItem = new QTreeWidgetItem(convGroup, {QString("🌊 %1").arg(QString::fromStdString(conv.name))});
         cItem->setData(0, Qt::UserRole, QString("conv_%1").arg(conv.id.toString()));
+        cItem->setSizeHint(0, QSize(0, 26));
     }
     auto impConvItem = new QTreeWidgetItem(convGroup, {"📥 Import IR File(s)…"});
     impConvItem->setData(0, Qt::UserRole, "import_conv");
+    impConvItem->setSizeHint(0, QSize(0, 26));
 
     auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️ Room Correction"});
     roomItem->setData(0, Qt::UserRole, "room_correction");
+    roomItem->setSizeHint(0, QSize(0, 26));
 
     // 5. EQ Presets Section
     auto eqGroup = new QTreeWidgetItem(m_sidebarTree, {"EQ Presets"});
@@ -1144,13 +1156,17 @@ void MainWindow::refreshSidebarItems() {
     for (const auto& eq : m_pipeline->eqPresets) {
         auto eItem = new QTreeWidgetItem(eqGroup, {QString("🎛️ %1").arg(QString::fromStdString(eq.name))});
         eItem->setData(0, Qt::UserRole, QString("eq_%1").arg(eq.id.toString()));
+        eItem->setSizeHint(0, QSize(0, 26));
     }
     auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕ Add"});
     addEqItem->setData(0, Qt::UserRole, "add_eq");
+    addEqItem->setSizeHint(0, QSize(0, 26));
     auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧 Oratory"});
     oratoryItem->setData(0, Qt::UserRole, "oratory_eq");
+    oratoryItem->setSizeHint(0, QSize(0, 26));
     auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🔍 AutoEQ"});
     autoEqItem->setData(0, Qt::UserRole, "auto_eq");
+    autoEqItem->setSizeHint(0, QSize(0, 26));
 
     m_sidebarTree->blockSignals(false);
 }

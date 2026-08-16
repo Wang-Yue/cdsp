@@ -45,7 +45,8 @@ public:
                 gridline-color: #e5e5ea;
             }
             QTreeWidget::item, QListWidget::item, QTableWidget::item {
-                padding: 6px 8px;
+                padding: 4px 8px;
+                min-height: 24px;
                 border-radius: 4px;
                 color: #000000;
             }
@@ -439,7 +440,8 @@ public:
                 gridline-color: #2c2d3a;
             }
             QTreeWidget::item, QListWidget::item, QTableWidget::item {
-                padding: 6px 8px;
+                padding: 4px 8px;
+                min-height: 24px;
                 border-radius: 4px;
                 color: #ffffff;
             }

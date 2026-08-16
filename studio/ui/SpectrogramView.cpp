@@ -160,7 +160,8 @@ void SpectrogramView::updateBuffer(const std::deque<SpectrumData>& history, cons
 
     // Draw new data at m_currentX
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    drawFrame(painter, lastFrame, marginL + m_currentX, stripWidth, drawHeight, m_engine ? m_engine->nBins : 200);
+    drawFrame(painter, lastFrame, marginL + m_currentX, std::max(1.0, std::ceil(stripWidth)), drawHeight,
+              m_engine ? m_engine->nBins : 200);
 
     // Advance cursor
     m_currentX += stripWidth;
@@ -184,8 +185,9 @@ void SpectrogramView::drawFrame(QPainter& painter, const SpectrumData& frame, do
             continue;
 
         QColor color = colorForDB(db, m_palette);
-        double y = drawHeight - (j + 1) * barHeight;
-        painter.fillRect(QRectF(x, y, width, barHeight), color);
+        double y0 = drawHeight - (j + 1) * barHeight;
+        double y1 = drawHeight - j * barHeight;
+        painter.fillRect(QRectF(x, y0, width, y1 - y0 + 0.5), color);
     }
 }
 
@@ -318,7 +320,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         if (leftPartWidth > 0) {
             p.save();
             p.setClipRect(marginL, 0, leftPartWidth, h);
-            p.drawImage(marginL - m_currentX, 0, m_bufferImage);
+            p.drawImage(QPointF(-m_currentX, 0), m_bufferImage);
             p.restore();
         }
 
@@ -326,7 +328,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         if (rightPartWidth > 0) {
             p.save();
             p.setClipRect(marginL + leftPartWidth, 0, rightPartWidth, h);
-            p.drawImage(w - m_currentX, 0, m_bufferImage);
+            p.drawImage(QPointF(drawWidth - m_currentX, 0), m_bufferImage);
             p.restore();
         }
 

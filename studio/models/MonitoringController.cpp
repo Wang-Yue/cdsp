@@ -208,10 +208,8 @@ void MonitoringController::poll() {
         if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq,
                                   m_spectrogramEngine->maxFreq, m_spectrogramEngine->nBins, spectroData)) {
             m_spectrogramEngine->pushSpectrum(spectroData);
-        } else {
-            m_spectrogramEngine->reset();
         }
-    } else if (m_spectrogramEngine) {
+    } else if (m_spectrogramEngine && m_currentStatus == ProcessingState::Inactive) {
         m_spectrogramEngine->reset();
     }
 
