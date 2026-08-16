@@ -63,12 +63,11 @@ echo "✅ Windows compilation complete: $BUILD_DIR/MonitorQt.exe"
 echo "=== Deploying Windows Dependencies in $BUILD_DIR ==="
 
 SEARCH_DIRS=()
-if [ -d "$WIN_QT_DIR/bin" ]; then
-    SEARCH_DIRS+=("$WIN_QT_DIR/bin")
-fi
 
+# Prioritize active MinGW toolchain directories (contains modern libwinpthread with clock_gettime64, libdispatch, libfftw, etc.)
 for p in \
     /opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/x86_64-w64-mingw32/bin \
+    /opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/x86_64-w64-mingw32/lib \
     /opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/bin \
     /usr/x86_64-w64-mingw32/bin \
     /usr/lib/gcc/x86_64-w64-mingw32/* \
@@ -81,6 +80,10 @@ do
         SEARCH_DIRS+=("$p")
     fi
 done
+
+if [ -d "$WIN_QT_DIR/bin" ]; then
+    SEARCH_DIRS+=("$WIN_QT_DIR/bin")
+fi
 
 is_system_dll() {
     local name=$(echo "$1" | tr '[:upper:]' '[:lower:]')
