@@ -31,6 +31,7 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     int m_channelIndex = 0;
@@ -76,6 +77,7 @@ private:
     std::vector<float> m_levels;
     float m_gainCalibrationDb = 0.0f;
     VUSettings m_settings;
+    size_t m_currentChannelCount = 0;
 
     QScrollArea* m_scrollArea = nullptr;
     QWidget* m_canvasWidget = nullptr;

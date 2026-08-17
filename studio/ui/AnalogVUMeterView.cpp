@@ -22,6 +22,8 @@ AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidg
 }
 
 void AnalogVUMeter::setLevel(float dbFS) {
+    if (std::isnan(dbFS))
+        dbFS = -100.0f;
     if (std::abs(m_levelDb - dbFS) > 0.01f) {
         m_levelDb = dbFS;
         update();
@@ -44,6 +46,14 @@ void AnalogVUMeter::resizeEvent(QResizeEvent* event) {
     m_cachedScale = 0.0f;
 }
 
+void AnalogVUMeter::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
+        m_cachedScale = 0.0f;
+        update();
+    }
+}
+
 QSize AnalogVUMeter::sizeHint() const {
     return QSize(220, 160);
 }
@@ -53,6 +63,8 @@ QSize AnalogVUMeter::minimumSizeHint() const {
 }
 
 float AnalogVUMeter::computeAngleForLevel(float dbFS) const {
+    if (std::isnan(dbFS))
+        dbFS = -100.0f;
     double level = static_cast<double>(dbFS);
     double refLevel = -18.0; // 0 VU = -18 dBFS (matches SwiftUI refLevel)
     double vu = level - refLevel;
@@ -69,6 +81,9 @@ float AnalogVUMeter::computeAngleForLevel(float dbFS) const {
 }
 
 void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, float scale) {
+    if (size.width() <= 0 || size.height() <= 0)
+        return;
+
     qreal dpr = devicePixelRatioF();
     pixmap = QPixmap(size * dpr);
     pixmap.setDevicePixelRatio(dpr);
@@ -77,7 +92,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
 
-    QRect dialRect(0, 0, size.width(), size.height());
+    QRectF dialRect(0, 0, size.width(), size.height());
     double w = dialRect.width();
     double h = dialRect.height();
 
@@ -233,9 +248,11 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     p.restore(); // Restore clip
 
     // Dial Box Outer Border Stroke & Corner Radius
+    double strokeW = 1.2 * scale;
+    QRectF strokeRect = dialRect.adjusted(strokeW / 2.0, strokeW / 2.0, -strokeW / 2.0, -strokeW / 2.0);
     QPainterPath boxPath;
-    boxPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
-    p.setPen(QPen(palette().color(QPalette::Mid), 1.2 * scale));
+    boxPath.addRoundedRect(strokeRect, 6 * scale, 6 * scale);
+    p.setPen(QPen(palette().color(QPalette::Mid), strokeW));
     p.drawPath(boxPath);
 }
 
@@ -277,11 +294,16 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
     QFontMetrics labelFm(labelFont);
     int labelHeight = labelFm.height();
 
-    QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), innerRect.height() - labelHeight - vSpacing);
+    int dialH = innerRect.height() - labelHeight - vSpacing;
+    if (innerRect.width() < 10 || dialH < 10)
+        return;
+
+    QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), dialH);
     QRect labelRect(innerRect.left(), dialRect.bottom() + vSpacing, innerRect.width(), labelHeight);
 
     if (m_cachedDialPixmap.isNull() || m_cachedDialSize != dialRect.size() ||
-        std::abs(m_cachedScale - scale) > 0.001f || m_cachedTheme != m_settings.theme) {
+        std::abs(m_cachedScale - scale) > 0.001f || m_cachedTheme != m_settings.theme ||
+        !qFuzzyCompare(m_cachedDialPixmap.devicePixelRatioF(), devicePixelRatioF())) {
         renderDialBackground(m_cachedDialPixmap, dialRect.size(), scale);
         m_cachedDialSize = dialRect.size();
         m_cachedScale = scale;
@@ -338,7 +360,7 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     m_canvasWidget = new QWidget(m_scrollArea);
     m_canvasLayout = new QHBoxLayout(m_canvasWidget);
@@ -352,7 +374,7 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
 }
 
 AnalogVUMeterView::~AnalogVUMeterView() {
-    if (m_levelState && m_levelState->visibilityCount > 0) {
+    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0) {
         m_levelState->visibilityCount--;
     }
 }
@@ -422,15 +444,21 @@ QSize AnalogVUMeterView::minimumSizeHint() const {
 
 void AnalogVUMeterView::updateChannelMeters() {
     std::vector<float> levels;
-    if (m_levelState && !m_levelState->playbackRms.empty()) {
-        levels = m_levelState->playbackRms;
-    } else if (!m_levels.empty()) {
+    if (m_levelState) {
+        std::lock_guard<std::mutex> lock(m_levelState->mutex);
+        if (!m_levelState->playbackRms.empty()) {
+            levels = m_levelState->playbackRms;
+        }
+    }
+    if (levels.empty() && !m_levels.empty()) {
         levels = m_levels;
-    } else {
+    }
+    if (levels.empty()) {
         levels = {-100.0f, -100.0f};
     }
 
     size_t count = std::max(static_cast<size_t>(1), levels.size());
+    bool countChanged = (m_currentChannelCount != count || m_meters.size() != count);
 
     // Adjust meter widget count
     while (m_meters.size() < count) {
@@ -439,31 +467,39 @@ void AnalogVUMeterView::updateChannelMeters() {
         meter->setGainCalibration(m_gainCalibrationDb);
         m_canvasLayout->addWidget(meter);
         m_meters.push_back(meter);
+        countChanged = true;
     }
     while (m_meters.size() > count) {
         auto* meter = m_meters.back();
         m_meters.pop_back();
         m_canvasLayout->removeWidget(meter);
         delete meter;
+        countChanged = true;
     }
 
-    // Set sizing policies matching SwiftUI
-    if (count <= 4) {
-        m_canvasLayout->setAlignment(Qt::Alignment());
-        for (size_t i = 0; i < count; ++i) {
-            m_meters[i]->setMinimumWidth(0);
-            m_meters[i]->setMaximumWidth(QWIDGETSIZE_MAX);
-            m_meters[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-            m_meters[i]->setLevel(levels[i]);
-            m_meters[i]->setChannelIndex(static_cast<int>(i));
+    // Set sizing policies matching SwiftUI only when channel count changes
+    if (countChanged) {
+        m_currentChannelCount = count;
+        if (count <= 4) {
+            m_canvasLayout->setAlignment(Qt::Alignment());
+            for (size_t i = 0; i < count; ++i) {
+                m_meters[i]->setMinimumWidth(0);
+                m_meters[i]->setMaximumWidth(QWIDGETSIZE_MAX);
+                m_meters[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                m_meters[i]->setChannelIndex(static_cast<int>(i));
+            }
+        } else {
+            m_canvasLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            for (size_t i = 0; i < count; ++i) {
+                m_meters[i]->setFixedWidth(220);
+                m_meters[i]->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+                m_meters[i]->setChannelIndex(static_cast<int>(i));
+            }
         }
-    } else {
-        m_canvasLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        for (size_t i = 0; i < count; ++i) {
-            m_meters[i]->setFixedWidth(220);
-            m_meters[i]->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-            m_meters[i]->setLevel(levels[i]);
-            m_meters[i]->setChannelIndex(static_cast<int>(i));
-        }
+    }
+
+    // Fast path: update levels on existing meters without layout invalidation
+    for (size_t i = 0; i < count; ++i) {
+        m_meters[i]->setLevel(levels[i]);
     }
 }
