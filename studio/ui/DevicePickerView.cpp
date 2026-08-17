@@ -322,19 +322,6 @@ void DevicePickerView::setupUi() {
 
     mainLayout->addWidget(procGroup);
 
-    // Bottom Action Buttons
-    auto btnBox = new QHBoxLayout();
-    auto refreshBtn = new QPushButton(tr("Refresh Devices"), container);
-    connect(refreshBtn, &QPushButton::clicked, [this]() { m_devices->fetchDevices(); });
-    btnBox->addWidget(refreshBtn);
-
-    btnBox->addStretch();
-
-    auto applyBtn = new QPushButton(tr("Apply Hardware Settings"), container);
-    connect(applyBtn, &QPushButton::clicked, this, &DevicePickerView::applySettings);
-    btnBox->addWidget(applyBtn);
-
-    mainLayout->addLayout(btnBox);
     scroll->setWidget(container);
 
     synchronizeFormLabels({m_capBackendForm, m_capCoreAudioForm, m_capRawFileForm, m_capWavFileForm, m_capGenForm,
