@@ -1,7 +1,5 @@
 #include "ui/GroupDelayPlotWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QPainter>
@@ -14,9 +12,6 @@ GroupDelayPlotWidget::GroupDelayPlotWidget(QWidget* parent) : QWidget(parent) {
 
     m_exportBtn = new QPushButton("Export Image…", this);
     m_exportBtn->setFixedSize(110, 26);
-    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
-                               "#555; border-radius: 4px; font-size: 11px; }"
-                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
     connect(m_exportBtn, &QPushButton::clicked, this, &GroupDelayPlotWidget::onExport);
 }
 
@@ -83,10 +78,10 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double h = height();
 
     // Background
-    painter.fillRect(rect(), StyleTheme::cardBg());
+    painter.fillRect(rect(), palette().color(QPalette::Base));
 
     if (!m_session || !m_session->measuredFR.has_value()) {
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response data available for Group Delay plot.");
         return;
@@ -97,11 +92,11 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double scaleMs = autoScaleMs(fr, gd);
 
     // Grid lines - Center Line (0 ms)
-    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
+    painter.setPen(QPen(palette().color(QPalette::Mid), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
     // Axis Labels
-    painter.setPen(StyleTheme::textSecondary());
+    painter.setPen(palette().color(QPalette::PlaceholderText));
     painter.setFont(QFont("Monospace", 9));
     painter.drawText(QRectF(12, 4, 80, 16), Qt::AlignLeft, QString("+%1 ms").arg(scaleMs, 0, 'f', 1));
     painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
@@ -110,16 +105,16 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     // Frequency Grid Lines
     for (double f : {20.0, 100.0, 1000.0, 10000.0}) {
         double x = freqToX(f, w);
-        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
+        painter.setPen(QPen(palette().color(QPalette::Mid), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         QString label =
             (f >= 1000.0) ? QString("%1k").arg(static_cast<int>(f / 1000.0)) : QString::number(static_cast<int>(f));
         double labelX = std::max(4.0, std::min(w - 30.0, x - 12.0));
         painter.drawText(QRectF(labelX, h - 18, 25, 14), Qt::AlignCenter, label);
     }
 
-    // Group Delay Curve (Color.blue #007aff / QColor(0, 122, 255), lineWidth 1.2)
+    // Group Delay Curve
     QPainterPath gdPath;
     bool started = false;
     size_t bins = fr.bins();
@@ -140,15 +135,15 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
+    QColor curveColor = palette().color(QPalette::Highlight);
+    painter.setPen(QPen(curveColor, 1.2));
     painter.drawPath(gdPath);
 
     // Legend
-    painter.fillRect(QRect(w - 280, 10, 140, 26),
-                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
-    painter.setPen(QPen(QColor(0, 122, 255), 1.5));
+    painter.fillRect(QRect(w - 280, 10, 140, 26), palette().color(QPalette::Window));
+    painter.setPen(QPen(curveColor, 1.5));
     painter.drawLine(w - 272, 23, w - 247, 23);
-    painter.setPen(StyleTheme::textPrimary());
+    painter.setPen(palette().color(QPalette::Text));
     painter.setFont(QFont("sans-serif", 9));
     painter.drawText(w - 239, 27, "Group Delay (ms)");
 }

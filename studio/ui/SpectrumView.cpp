@@ -1,7 +1,5 @@
 #include "ui/SpectrumView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFontDatabase>
 #include <QMouseEvent>
 #include <QPainterPath>
@@ -148,7 +146,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     p.setRenderHint(QPainter::Antialiasing);
 
     if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
-        p.fillRect(rect(), StyleTheme::cardBg());
+        p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
     int w = width();
@@ -171,7 +169,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     monoFont.setPointSize(8);
     p.setFont(monoFont);
 
-    QColor gridPenCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+    QColor gridPenCol = palette().color(QPalette::Mid);
 
     double dbStep = (maxDB - minDB) > 60.0f ? 20.0 : 12.0;
     for (double db = maxDB; db >= minDB; db -= dbStep) {
@@ -181,7 +179,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(marginL, y, w, y);
 
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter,
                    QString("%1").arg(static_cast<int>(db)));
     }
@@ -204,12 +202,12 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawLine(x, marginT, x, marginT + plotH);
 
         // Tick mark
-        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
+        p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
         p.drawLine(x, marginT + plotH, x, marginT + plotH + 4);
 
         // Label
         p.setFont(freqFont);
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
     }
@@ -252,7 +250,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         if (m_peakHoldDecayRate > 0.001f && i < m_peakHold.size() && m_peakHold[i] > 0.001f) {
             float peakNormY = m_peakHold[i];
             double peakY = marginT + plotH - static_cast<double>(peakNormY * plotH);
-            p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 240) : QColor(30, 30, 30, 240), 1.8));
+            p.setPen(QPen(palette().color(QPalette::Text), 1.8));
             p.drawLine(QPointF(x - barW / 2.0, peakY), QPointF(x + barW / 2.0, peakY));
         }
     }

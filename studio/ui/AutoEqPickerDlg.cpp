@@ -1,7 +1,5 @@
 #include "ui/AutoEqPickerDlg.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -46,7 +44,6 @@ void AutoEqPickerDlg::setupUi() {
     auto divider = new QFrame(this);
     divider->setFrameShape(QFrame::HLine);
     divider->setFrameShadow(QFrame::Sunken);
-    divider->setStyleSheet("color: #d1d1d6;");
     mainLayout->addWidget(divider);
 
     // List and Overlay Stack
@@ -82,7 +79,6 @@ void AutoEqPickerDlg::setupUi() {
 
     m_overlaySubtitle = new QLabel(m_overlayWidget);
     m_overlaySubtitle->setFont(QFont("sans-serif", 11));
-    m_overlaySubtitle->setStyleSheet("color: #8e8e93;");
     m_overlaySubtitle->setWordWrap(true);
     m_overlaySubtitle->setAlignment(Qt::AlignCenter);
 
@@ -175,7 +171,6 @@ void AutoEqPickerDlg::onSearchTextChanged(const QString& text) {
         QFont monoFont("monospace", 9);
         monoFont.setStyleHint(QFont::Monospace);
         pathLbl->setFont(monoFont);
-        pathLbl->setStyleSheet("color: #8e8e93;");
         QString fullPath = QString::fromStdString(entry.path);
         pathLbl->setText(QFontMetrics(monoFont).elidedText(fullPath, Qt::ElideLeft, 440));
         pathLbl->setToolTip(fullPath);
@@ -199,27 +194,21 @@ void AutoEqPickerDlg::updateUiState() {
     if (m_isLoading) {
         m_overlayWidget->show();
         m_overlayWidget->raise();
-        m_overlayWidget->setStyleSheet("background-color: transparent;");
         m_overlayTitle->setText("Loading database...");
         m_overlaySubtitle->setText("");
     } else if (m_isImporting) {
         m_overlayWidget->show();
         m_overlayWidget->raise();
-        QColor bg = StyleTheme::windowBg();
-        m_overlayWidget->setStyleSheet(
-            QString("background-color: rgba(%1, %2, %3, 192);").arg(bg.red()).arg(bg.green()).arg(bg.blue()));
         m_overlayTitle->setText("Importing EQ profile...");
         m_overlaySubtitle->setText("");
     } else if (!m_errorMessage.isEmpty()) {
         m_overlayWidget->show();
         m_overlayWidget->raise();
-        m_overlayWidget->setStyleSheet("background-color: transparent;");
         m_overlayTitle->setText("Error ⚠️");
         m_overlaySubtitle->setText(m_errorMessage);
     } else if (m_listWidget->count() == 0) {
         m_overlayWidget->show();
         m_overlayWidget->raise();
-        m_overlayWidget->setStyleSheet("background-color: transparent;");
         m_overlayTitle->setText("No Results");
         m_overlaySubtitle->setText("Check the spelling or try a new search.");
     } else {

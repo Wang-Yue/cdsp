@@ -16,9 +16,6 @@ class ConsoleLogsView : public QWidget {
 public:
     explicit ConsoleLogsView(QWidget* parent = nullptr);
 
-protected:
-    void showEvent(QShowEvent* event) override;
-
 private slots:
     void refreshLogs();
     void onLogAppended(const LogEntry& entry);
@@ -33,7 +30,6 @@ private:
     QPushButton* m_clearBtn = nullptr;
 
     void setupUi();
-    void updateTheme();
 };
 
 #endif // CONSOLE_LOGS_VIEW_H

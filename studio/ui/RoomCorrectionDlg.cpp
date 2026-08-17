@@ -1,7 +1,6 @@
 #include "ui/RoomCorrectionDlg.h"
 
 #include "room_correction/CalibrationCurve.h"
-#include "ui/StyleTheme.h"
 
 #include <QEventLoop>
 #include <QFileDialog>
@@ -59,11 +58,9 @@ void RoomCorrectionDlg::setupUi() {
     statusLayout->setSpacing(8);
 
     auto infoIcon = new QLabel("ℹ", statusBar);
-    infoIcon->setStyleSheet("color: #888; font-size: 12px;");
     statusLayout->addWidget(infoIcon);
 
     m_statusLabel = new QLabel("Ready.", statusBar);
-    m_statusLabel->setStyleSheet("color: #aaa; font-size: 11px;");
     statusLayout->addWidget(m_statusLabel, 1);
 
     mainLayout->addWidget(statusBar);
@@ -81,8 +78,6 @@ QWidget* RoomCorrectionDlg::createHeaderToolbar() {
     auto closeBtn = new QToolButton(toolbar);
     closeBtn->setText("✕");
     closeBtn->setToolTip("Close");
-    closeBtn->setStyleSheet(
-        "QToolButton { border: none; font-size: 16px; color: #888; } QToolButton:hover { color: #fff; }");
     connect(closeBtn, &QToolButton::clicked, this, &QDialog::accept);
     layout->addWidget(closeBtn);
 
@@ -130,8 +125,6 @@ QWidget* RoomCorrectionDlg::createHeaderToolbar() {
     m_sidebarToggleBtn = new QToolButton(toolbar);
     m_sidebarToggleBtn->setText("▤");
     m_sidebarToggleBtn->setToolTip("Toggle Sidebar");
-    m_sidebarToggleBtn->setStyleSheet(
-        "QToolButton { border: none; font-size: 16px; color: #aaa; } QToolButton:hover { color: #fff; }");
     connect(m_sidebarToggleBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::toggleSidebar);
     layout->addWidget(m_sidebarToggleBtn);
 
@@ -184,7 +177,6 @@ QWidget* RoomCorrectionDlg::createMainArea() {
     posBarLayout->setSpacing(10);
 
     auto posLabel = new QLabel("Positions", m_positionsContainer);
-    posLabel->setStyleSheet("font-weight: bold; font-size: 11px; color: #888;");
     posBarLayout->addWidget(posLabel);
 
     auto scrollArea = new QScrollArea(m_positionsContainer);
@@ -205,7 +197,6 @@ QWidget* RoomCorrectionDlg::createMainArea() {
     posBarLayout->addWidget(scrollArea, 1);
 
     m_subwooferAssistBtn = new QPushButton("Subwoofer Assist", m_positionsContainer);
-    m_subwooferAssistBtn->setStyleSheet("QPushButton { font-size: 11px; padding: 4px 8px; }");
     connect(m_subwooferAssistBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onComputeSubwoofer);
     m_subwooferAssistBtn->setVisible(false);
     posBarLayout->addWidget(m_subwooferAssistBtn);
@@ -309,7 +300,6 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     audioLayout->addWidget(new QLabel("Calibration File", audioBox));
     auto calRow = new QHBoxLayout();
     m_calPathLabel = new QLabel("None loaded", audioBox);
-    m_calPathLabel->setStyleSheet("color: #888; font-size: 11px;");
     calRow->addWidget(m_calPathLabel, 1);
 
     m_loadCalBtn = new QPushButton("Load…", audioBox);
@@ -460,8 +450,6 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     peqLayout->addLayout(peqForm);
 
     m_generatePeqBtn = new QPushButton("✨ Generate PEQ", peqBox);
-    m_generatePeqBtn->setStyleSheet(
-        "QPushButton { background-color: #007acc; color: white; font-weight: bold; padding: 6px; }");
     connect(m_generatePeqBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onRunFit);
     peqLayout->addWidget(m_generatePeqBtn);
 
@@ -505,7 +493,6 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     auto blendHeader = new QHBoxLayout();
     blendHeader->addWidget(new QLabel("Phase Blend", m_phaseBlendContainer));
     m_phaseBlendValueLabel = new QLabel("Linear-phase", m_phaseBlendContainer);
-    m_phaseBlendValueLabel->setStyleSheet("font-weight: bold; font-size: 11px;");
     blendHeader->addWidget(m_phaseBlendValueLabel, 0, Qt::AlignRight);
     blendLayout->addLayout(blendHeader);
 
@@ -540,10 +527,6 @@ QWidget* RoomCorrectionDlg::createSidebar() {
 
 QWidget* RoomCorrectionDlg::createSidebarSection(const QString& title, QWidget* content) {
     auto group = new QGroupBox(title, this);
-    group->setStyleSheet("QGroupBox { font-weight: bold; font-size: 10px; color: #888; text-transform: uppercase; "
-                         "background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); "
-                         "border-radius: 8px; margin-top: 6px; padding: 10px; } "
-                         "QGroupBox::title { subcontrol-origin: margin; left: 8px; top: 0px; padding: 0 4px; }");
     auto layout = new QVBoxLayout(group);
     layout->setContentsMargins(6, 12, 6, 6);
     layout->addWidget(content);

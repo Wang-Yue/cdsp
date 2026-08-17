@@ -1,7 +1,5 @@
 #include "ui/WaterfallPlotWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFileDialog>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
@@ -190,23 +188,25 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     // Rounded background
     QPainterPath borderPath;
     borderPath.addRoundedRect(plotRect, 8.0, 8.0);
-    p.fillPath(borderPath, StyleTheme::cardBg());
+    p.fillPath(borderPath, palette().color(QPalette::Base));
+
+    QColor borderCol = palette().color(QPalette::Mid);
 
     if (m_isComputing) {
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.setFont(QFont("sans-serif", 12));
         p.drawText(plotRect, Qt::AlignCenter, "Computing CSD Waterfall STFT Slices…");
-        p.setPen(QPen(StyleTheme::border(), 1.0));
+        p.setPen(QPen(borderCol, 1.0));
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(plotRect, 8.0, 8.0);
         return;
     }
 
     if (m_slices.empty()) {
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.setFont(QFont("sans-serif", 12));
         p.drawText(plotRect, Qt::AlignCenter, "No measurement data available to generate Waterfall.");
-        p.setPen(QPen(StyleTheme::border(), 1.0));
+        p.setPen(QPen(borderCol, 1.0));
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(plotRect, 8.0, 8.0);
         return;
@@ -282,8 +282,7 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
             fillPath.lineTo(shiftX, h - shiftY);
             fillPath.closeSubpath();
 
-            QColor maskColor = StyleTheme::cardBg();
-            maskColor.setAlpha(242); // ~0.95 opacity
+            QColor maskColor = palette().color(QPalette::Base);
             p.fillPath(fillPath, maskColor);
 
             double hue = 0.6 - 0.5 * (1.0 - progress);
@@ -296,7 +295,7 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
     p.restore();
 
     // Draw the rounded border overlay
-    p.setPen(QPen(StyleTheme::border(), 1.0));
+    p.setPen(QPen(borderCol, 1.0));
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(plotRect, 8.0, 8.0);
 }

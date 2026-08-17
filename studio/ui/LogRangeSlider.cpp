@@ -1,7 +1,5 @@
 #include "ui/LogRangeSlider.h"
 
-#include "ui/StyleTheme.h"
-
 #include <algorithm>
 #include <cmath>
 
@@ -71,20 +69,22 @@ void LogRangeSlider::paintEvent(QPaintEvent* event) {
     int w = width() - 2 * margin;
 
     // Track background
-    p.setPen(QPen(StyleTheme::trackBg(), 4, Qt::SolidLine, Qt::RoundCap));
+    QColor trackBg = palette().color(QPalette::Mid);
+    p.setPen(QPen(trackBg, 4, Qt::SolidLine, Qt::RoundCap));
     p.drawLine(margin, yMid, margin + w, yMid);
 
     // Selected active range track
     int xMin = freqToPos(m_minFreq);
     int xMax = freqToPos(m_maxFreq);
 
-    p.setPen(QPen(StyleTheme::accent(), 4, Qt::SolidLine, Qt::RoundCap));
+    QColor highlightCol = palette().color(QPalette::Highlight);
+    p.setPen(QPen(highlightCol, 4, Qt::SolidLine, Qt::RoundCap));
     p.drawLine(xMin, yMid, xMax, yMid);
 
-    // Min and Max Handles (White circle with blue outline matching SwiftUI)
+    // Min and Max Handles
     auto drawHandle = [&](int x) {
-        p.setPen(QPen(StyleTheme::accent(), 2));
-        p.setBrush(QColor("#ffffff"));
+        p.setPen(QPen(highlightCol, 2));
+        p.setBrush(palette().color(QPalette::Base));
         p.drawEllipse(QPoint(x, yMid), 8, 8);
     };
 

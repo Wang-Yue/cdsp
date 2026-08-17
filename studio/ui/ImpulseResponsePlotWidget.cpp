@@ -1,7 +1,5 @@
 #include "ui/ImpulseResponsePlotWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QPainter>
@@ -14,9 +12,6 @@ ImpulseResponsePlotWidget::ImpulseResponsePlotWidget(QWidget* parent) : QWidget(
 
     m_exportBtn = new QPushButton("Export Image…", this);
     m_exportBtn->setFixedSize(110, 26);
-    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
-                               "#555; border-radius: 4px; font-size: 11px; }"
-                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
     connect(m_exportBtn, &QPushButton::clicked, this, &ImpulseResponsePlotWidget::onExport);
 }
 
@@ -59,10 +54,10 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     double h = height();
 
     // Background
-    painter.fillRect(rect(), StyleTheme::cardBg());
+    painter.fillRect(rect(), palette().color(QPalette::Base));
 
     if (!m_session || !m_session->measuredIR.has_value()) {
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No impulse response data available.");
         return;
@@ -84,16 +79,16 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     peakAbs *= 1.05;
 
     // Zero line (y = 0 horizontal line at h / 2)
-    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
+    painter.setPen(QPen(palette().color(QPalette::Mid), 1.0));
     painter.drawLine(QPointF(0, h / 2.0), QPointF(w, h / 2.0));
 
     // Zero-time vertical line (peak line t=0)
     double xPeak = w * static_cast<double>(static_cast<int>(zeroIdx) - lo) / static_cast<double>(hi - lo);
-    painter.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0));
+    painter.setPen(QPen(palette().color(QPalette::Mid), 1.0));
     painter.drawLine(QPointF(xPeak, 0), QPointF(xPeak, h));
 
     // Normalized Amplitude Y axis [-1.0, +1.0] Labels
-    painter.setPen(StyleTheme::textSecondary());
+    painter.setPen(palette().color(QPalette::PlaceholderText));
     painter.setFont(QFont("Monospace", 9));
     painter.drawText(QRectF(12, 4, 60, 16), Qt::AlignLeft, "+1.0");
     painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0.0");
@@ -116,17 +111,18 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
+    QColor curveColor = palette().color(QPalette::Highlight);
+    painter.setPen(QPen(curveColor, 1.2));
     painter.drawPath(irPath);
 
     // Peak Marker Dot at (xPeak, yPeak)
-    painter.setBrush(QColor(0, 122, 255));
+    painter.setBrush(curveColor);
     painter.setPen(QPen(Qt::white, 1.0));
     painter.drawEllipse(QPointF(xPeak, yPeak), 3.5, 3.5);
 
     // Time-axis Ticks (-50ms, -25ms, 0ms, +25ms, +50ms)
     std::vector<double> ticks = {-halfMs, -halfMs / 2.0, 0.0, halfMs / 2.0, halfMs};
-    painter.setPen(StyleTheme::textSecondary());
+    painter.setPen(palette().color(QPalette::PlaceholderText));
     for (double ms : ticks) {
         int sampleOffset = static_cast<int>((ms / 1000.0) * static_cast<double>(ir.sampleRate));
         int idx = static_cast<int>(zeroIdx) + sampleOffset;
@@ -139,11 +135,10 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     }
 
     // Legend
-    painter.fillRect(QRect(w - 280, 10, 150, 26),
-                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
-    painter.setPen(QPen(QColor(0, 122, 255), 2));
+    painter.fillRect(QRect(w - 280, 10, 150, 26), palette().color(QPalette::Window));
+    painter.setPen(QPen(curveColor, 2));
     painter.drawLine(w - 272, 23, w - 247, 23);
-    painter.setPen(StyleTheme::textPrimary());
+    painter.setPen(palette().color(QPalette::Text));
     painter.setFont(QFont("sans-serif", 9));
     painter.drawText(w - 239, 27, "Impulse Response");
 }

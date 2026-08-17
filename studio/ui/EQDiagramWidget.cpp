@@ -1,7 +1,5 @@
 #include "ui/EQDiagramWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QContextMenuEvent>
 #include <QLinearGradient>
 #include <QMenu>
@@ -134,7 +132,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     int h = height();
 
     // Card background
-    painter.fillRect(rect(), StyleTheme::cardBg());
+    painter.fillRect(rect(), palette().color(QPalette::Base));
 
     // 1. Live Spectrum Analyzer Background Overlay
     if (m_showAnalyzer && m_spectrum && !m_spectrum->data.magnitudes.empty()) {
@@ -181,35 +179,33 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         }
     }
 
-    // Grid Lines (Solid 0.5px lines with 0.06 opacity matching SwiftUI)
+    // Grid Lines
     painter.setFont(QFont("monospace", 9));
-    QColor gridPenColor = StyleTheme::textPrimary();
-    gridPenColor.setAlpha(15); // 0.06 opacity (15/255)
+    QColor gridPenColor = palette().color(QPalette::Mid);
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         if (db == 0.0)
             continue; // 0 dB line drawn separately
         double y = dbToY(db, h);
         painter.setPen(QPen(gridPenColor, 0.5, Qt::SolidLine));
         painter.drawLine(0, y, w, y);
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.drawText(28, y - 4, QString("%1 dB").arg(static_cast<int>(db)));
     }
     for (double f : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         double x = freqToX(f, w);
         painter.setPen(QPen(gridPenColor, 0.5, Qt::SolidLine));
         painter.drawLine(x, 0, x, h);
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         QString label = (f >= 1000.0) ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
         painter.drawText(x - 10, h - 8, label);
     }
 
-    // 0 dB Baseline (Solid 1.0px line with 0.2 opacity matching SwiftUI)
-    QColor zeroDbPenColor = StyleTheme::textPrimary();
-    zeroDbPenColor.setAlpha(51); // 0.20 opacity (51/255)
+    // 0 dB Baseline
+    QColor zeroDbPenColor = palette().color(QPalette::Mid);
     painter.setPen(QPen(zeroDbPenColor, 1.0, Qt::SolidLine));
     double zeroY = dbToY(0.0, h);
     painter.drawLine(0, zeroY, w, zeroY);
-    painter.setPen(StyleTheme::textSecondary());
+    painter.setPen(palette().color(QPalette::PlaceholderText));
     painter.drawText(28, zeroY - 4, "0 dB");
 
     // Reference Target & Measured Frequency Response Curves Overlay
@@ -244,7 +240,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                 else
                     targetPath.lineTo(x, y);
             }
-            QPen targetPen(StyleTheme::textSecondary(), 1.2);
+            QPen targetPen(palette().color(QPalette::PlaceholderText), 1.2);
             targetPen.setDashPattern({4, 3});
             painter.setPen(targetPen);
             painter.drawPath(targetPath);
@@ -305,7 +301,6 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         QColor c = bandColor(static_cast<int>(i));
         bool isSelected = (static_cast<int>(i) == m_selectedIndex);
         bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
-        c.setAlpha(isSelected ? 255 : (isHovered ? 140 : 89));
         painter.setPen(QPen(c, isSelected ? 2.0 : (isHovered ? 1.5 : 1.0)));
         painter.drawPath(path);
     }
@@ -365,7 +360,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             totalPath.lineTo(x, y);
         }
     }
-    painter.setPen(QPen(StyleTheme::accent(), 2.5));
+    painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5));
     painter.drawPath(totalPath);
 
     // Draggable Band Handles & Highlight Rings

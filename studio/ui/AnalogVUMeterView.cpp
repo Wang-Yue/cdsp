@@ -1,7 +1,5 @@
 #include "ui/AnalogVUMeterView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
@@ -19,8 +17,6 @@
 
 AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent)
     : QWidget(parent), m_channelIndex(channelIndex), m_settings(settings) {
-    setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet("background: transparent;");
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(80, 80);
 }
@@ -86,26 +82,27 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     double h = dialRect.height();
 
     QColor bulbAmberColor, bulbHotSpotColor, arcColor, percentageMarksColor, redZoneColor;
-    bool isDark = StyleTheme::isDark();
+    QColor textCol = palette().color(QPalette::Text);
+    QColor subtextCol = palette().color(QPalette::PlaceholderText);
 
     if (m_settings.theme == VUTheme::VintageAmber) {
         bulbAmberColor = QColor(255, 209, 102);
         bulbHotSpotColor = QColor(255, 250, 224);
-        arcColor = isDark ? QColor(255, 255, 255, 153) : QColor(0, 0, 0, 153);
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 102) : QColor(0, 0, 0, 102);
-        redZoneColor = QColor(255, 0, 0, 204);
+        arcColor = textCol;
+        percentageMarksColor = subtextCol;
+        redZoneColor = QColor(255, 0, 0);
     } else if (m_settings.theme == VUTheme::DarkStealth) {
-        bulbAmberColor = QColor(0, 0, 0, 102);
-        bulbHotSpotColor = QColor(255, 255, 255, 38);
-        arcColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51);
-        redZoneColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);
+        bulbAmberColor = QColor(0, 0, 0);
+        bulbHotSpotColor = QColor(255, 255, 255);
+        arcColor = textCol;
+        percentageMarksColor = subtextCol;
+        redZoneColor = QColor(255, 59, 48);
     } else { // Warm Tube
         bulbAmberColor = QColor(242, 115, 26);
         bulbHotSpotColor = QColor(255, 204, 77);
-        arcColor = isDark ? QColor(255, 255, 255, 128) : QColor(0, 0, 0, 128);
-        percentageMarksColor = isDark ? QColor(255, 255, 255, 76) : QColor(0, 0, 0, 76);
-        redZoneColor = QColor(217, 51, 26, 204);
+        arcColor = textCol;
+        percentageMarksColor = subtextCol;
+        redZoneColor = QColor(217, 51, 26);
     }
 
     QPointF center(w / 2.0, h * m_settings.pivotY);
@@ -116,27 +113,26 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     QPainterPath clipPath;
     clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setClipPath(clipPath);
+    p.fillRect(dialRect, palette().color(QPalette::Base));
 
     // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
         QRadialGradient amberGlow(QPointF(w / 2.0, baseH + 10 * scale), h * 1.6);
-        QColor ambColor = bulbAmberColor;
-        ambColor.setAlphaF(m_settings.ambientGlow);
-        amberGlow.setColorAt(0.0, ambColor);
-        ambColor.setAlphaF(0.0);
-        amberGlow.setColorAt(0.8, ambColor);
-        amberGlow.setColorAt(1.0, ambColor);
+        int ambAlpha = static_cast<int>(m_settings.ambientGlow * 255);
+        amberGlow.setColorAt(0.0,
+                             QColor(bulbAmberColor.red(), bulbAmberColor.green(), bulbAmberColor.blue(), ambAlpha));
+        amberGlow.setColorAt(0.8, QColor(bulbAmberColor.red(), bulbAmberColor.green(), bulbAmberColor.blue(), 0));
+        amberGlow.setColorAt(1.0, QColor(bulbAmberColor.red(), bulbAmberColor.green(), bulbAmberColor.blue(), 0));
         p.fillRect(dialRect, amberGlow);
     }
 
     // 2. HOT SPOT
     if (m_settings.hotSpotAlpha > 0) {
         QRadialGradient hotSpot(QPointF(w / 2.0, baseH + 5 * scale), h * 0.4);
-        QColor hsColor = bulbHotSpotColor;
-        hsColor.setAlphaF(m_settings.hotSpotAlpha);
-        hotSpot.setColorAt(0.0, hsColor);
-        hsColor.setAlphaF(0.0);
-        hotSpot.setColorAt(1.0, hsColor);
+        int hsAlpha = static_cast<int>(m_settings.hotSpotAlpha * 255);
+        hotSpot.setColorAt(0.0,
+                           QColor(bulbHotSpotColor.red(), bulbHotSpotColor.green(), bulbHotSpotColor.blue(), hsAlpha));
+        hotSpot.setColorAt(1.0, QColor(bulbHotSpotColor.red(), bulbHotSpotColor.green(), bulbHotSpotColor.blue(), 0));
         p.fillRect(dialRect, hotSpot);
     }
 
@@ -167,10 +163,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
         QPointF e(center.x() + cosA * eR, center.y() + sinA * eR);
 
         QColor color = m.vu >= 0 ? redZoneColor : arcColor;
-        QColor tickColor = color;
-        tickColor.setAlphaF(color.alphaF() * 0.7);
-
-        p.setPen(QPen(tickColor, 1.8 * scale));
+        p.setPen(QPen(color, 1.8 * scale));
         p.drawLine(s, e);
 
         double lR = radius + 18 * scale;
@@ -180,9 +173,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
         p.translate(lp);
         p.rotate(angDeg);
         p.setFont(vintageFont);
-        QColor textColor = color;
-        textColor.setAlphaF(color.alphaF() * 0.6);
-        p.setPen(textColor);
+        p.setPen(color);
         p.drawText(QRectF(-15 * scale, -8 * scale, 30 * scale, 16 * scale), Qt::AlignCenter, m.text);
         p.restore();
     }
@@ -201,9 +192,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
         double eR = radius - 7 * scale;
         QPointF e(center.x() + cosA * eR, center.y() + sinA * eR);
 
-        QColor pTickColor = percentageMarksColor;
-        pTickColor.setAlphaF(percentageMarksColor.alphaF() * 0.4);
-        p.setPen(QPen(pTickColor, 1.0 * scale));
+        p.setPen(QPen(percentageMarksColor, 1.0 * scale));
         p.drawLine(s, e);
 
         double lR = radius - 18 * scale;
@@ -213,7 +202,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
         p.translate(lp);
         p.rotate(angDeg);
         p.setFont(vintageFont);
-        p.setPen(pTickColor);
+        p.setPen(percentageMarksColor);
         p.drawText(QRectF(-15 * scale, -8 * scale, 30 * scale, 16 * scale), Qt::AlignCenter, QString::number(pct));
         p.restore();
     }
@@ -236,8 +225,8 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
 
     // 7. ADDITIVE LIGHT WASH
     if (m_settings.lightWash > 0) {
-        QColor lwColor = bulbAmberColor;
-        lwColor.setAlphaF(m_settings.lightWash);
+        int lwAlpha = static_cast<int>(m_settings.lightWash * 255);
+        QColor lwColor(bulbAmberColor.red(), bulbAmberColor.green(), bulbAmberColor.blue(), lwAlpha);
         p.fillRect(dialRect, lwColor);
     }
 
@@ -246,7 +235,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     // Dial Box Outer Border Stroke & Corner Radius
     QPainterPath boxPath;
     boxPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
-    p.setPen(QPen(isDark ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 51), 1.2 * scale));
+    p.setPen(QPen(palette().color(QPalette::Mid), 1.2 * scale));
     p.drawPath(boxPath);
 }
 
@@ -291,23 +280,21 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
     QRect dialRect(innerRect.left(), innerRect.top(), innerRect.width(), innerRect.height() - labelHeight - vSpacing);
     QRect labelRect(innerRect.left(), dialRect.bottom() + vSpacing, innerRect.width(), labelHeight);
 
-    bool isDark = StyleTheme::isDark();
     if (m_cachedDialPixmap.isNull() || m_cachedDialSize != dialRect.size() ||
-        std::abs(m_cachedScale - scale) > 0.001f || m_cachedTheme != m_settings.theme || m_cachedIsDark != isDark) {
+        std::abs(m_cachedScale - scale) > 0.001f || m_cachedTheme != m_settings.theme) {
         renderDialBackground(m_cachedDialPixmap, dialRect.size(), scale);
         m_cachedDialSize = dialRect.size();
         m_cachedScale = scale;
         m_cachedTheme = m_settings.theme;
-        m_cachedIsDark = isDark;
     }
 
     // 1. Draw cached dial background
     p.drawPixmap(dialRect.topLeft(), m_cachedDialPixmap);
 
     // 2. Needle Color
-    QColor needleColor;
+    QColor needleColor = palette().color(QPalette::Text);
     if (m_settings.theme == VUTheme::VintageAmber) {
-        needleColor = isDark ? QColor(255, 255, 255, 230) : QColor(0, 0, 0, 230);
+        // use palette Text
     } else if (m_settings.theme == VUTheme::DarkStealth) {
         needleColor = QColor(255, 255, 255);
     } else {
@@ -335,8 +322,7 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 
     // 4. Channel Label
     p.setFont(labelFont);
-    QColor lblColor = StyleTheme::textSecondary();
-    lblColor.setAlphaF(lblColor.alphaF() * 0.8);
+    QColor lblColor = palette().color(QPalette::PlaceholderText);
     p.setPen(lblColor);
     p.drawText(labelRect, Qt::AlignCenter, QString::number(m_channelIndex + 1));
 }
@@ -344,29 +330,17 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 // MARK: - AnalogVUMeterView Implementation
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
-    setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet("background: transparent;");
-
     auto rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
     m_scrollArea = new QScrollArea(this);
-    m_scrollArea->setAttribute(Qt::WA_TranslucentBackground);
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setStyleSheet(
-        "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }");
-    if (m_scrollArea->viewport()) {
-        m_scrollArea->viewport()->setAttribute(Qt::WA_TranslucentBackground);
-        m_scrollArea->viewport()->setStyleSheet("background: transparent;");
-    }
 
     m_canvasWidget = new QWidget(m_scrollArea);
-    m_canvasWidget->setAttribute(Qt::WA_TranslucentBackground);
-    m_canvasWidget->setStyleSheet("background: transparent;");
     m_canvasLayout = new QHBoxLayout(m_canvasWidget);
     m_canvasLayout->setContentsMargins(0, 0, 0, 0);
     m_canvasLayout->setSpacing(16);

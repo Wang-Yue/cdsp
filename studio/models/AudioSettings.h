@@ -58,7 +58,6 @@ public:
     double rateMeasureInterval = 1.0;
     bool multithreaded = false;
     int workerThreads = 0;
-    bool darkMode = false;
 
     bool showLevelMetersInDashboard = true;
     bool showSpectrumInDashboard = true;

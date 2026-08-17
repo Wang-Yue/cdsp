@@ -18,6 +18,8 @@
 class QDragEnterEvent;
 class QDropEvent;
 
+class QFrame;
+
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT
 
@@ -58,9 +60,9 @@ private:
     QLineEdit* m_nameEdit;
     QLineEdit* m_kindEdit;
     QVBoxLayout* m_itemListLayout;
-    QWidget* m_emptyStateWidget;
+    QFrame* m_emptyStateWidget;
     QLabel* m_warningLabel;
-    QWidget* m_errorWidget;
+    QFrame* m_errorWidget;
     QLabel* m_errorLabel;
     QPushButton* m_importBtn;
     QPushButton* m_cancelBtn;

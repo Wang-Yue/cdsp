@@ -1,7 +1,6 @@
 #include "ui/ConvolutionIRPlot.h"
 
 #include "models/ConvCoefficientLoader.h"
-#include "ui/StyleTheme.h"
 
 #include <QPainterPath>
 #include <algorithm>
@@ -51,19 +50,19 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     QPainterPath bgPath;
     bgPath.addRoundedRect(rect(), 6, 6);
     p.setClipPath(bgPath);
-    p.fillRect(rect(), palette().base().color());
+    p.fillRect(rect(), palette().color(QPalette::Base));
 
     int plotTop = 4;
     if (!m_title.empty()) {
         p.setFont(QFont("sans-serif", 10, QFont::Bold));
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(8, 18, QString::fromStdString(m_title));
         plotTop = 24;
     }
 
     if (!m_errorMsg.empty()) {
         p.setFont(QFont("sans-serif", 11));
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(8, plotTop + 16, QString::fromStdString(m_errorMsg));
         return;
     }
@@ -74,9 +73,8 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
     int plotH = h - plotTop - 4;
     int midY = plotTop + plotH / 2;
 
-    // Zero baseline (0.18 opacity = 46 alpha)
-    QColor baselineCol = StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46);
-    p.setPen(QPen(baselineCol, 1, Qt::SolidLine));
+    // Zero baseline
+    p.setPen(QPen(palette().color(QPalette::Mid), 1, Qt::SolidLine));
     p.drawLine(0, midY, w, midY);
 
     double maxVal = 1e-9;
@@ -98,6 +96,6 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
             waveformPath.lineTo(x, y);
     }
 
-    p.setPen(QPen(QColor(0, 122, 255), 1.0));
+    p.setPen(QPen(palette().color(QPalette::Highlight), 1.0));
     p.drawPath(waveformPath);
 }

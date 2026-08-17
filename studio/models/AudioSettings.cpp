@@ -179,7 +179,6 @@ void AudioSettings::loadPreferences() {
     workerThreads = s.value("workerThreads", 0).toInt();
     if (workerThreads < 0)
         workerThreads = 0;
-    darkMode = s.value("darkMode", false).toBool();
     autoStartEngine = s.value("autoStartEngine", false).toBool();
     logLevel = s.value("logLevel", 2).toInt();
     closeToTray = s.value("closeToTray", true).toBool();
@@ -230,7 +229,6 @@ void AudioSettings::savePreferences() {
     s.setValue("rateMeasureInterval", rateMeasureInterval);
     s.setValue("multithreaded", multithreaded);
     s.setValue("workerThreads", workerThreads);
-    s.setValue("darkMode", darkMode);
     s.setValue("autoStartEngine", autoStartEngine);
     s.setValue("logLevel", logLevel);
     s.setValue("closeToTray", closeToTray);

@@ -1,7 +1,6 @@
 #include "ui/DashboardView.h"
 
 #include "models/PipelineStage.h"
-#include "ui/StyleTheme.h"
 
 #include <QComboBox>
 #include <QFont>
@@ -104,29 +103,11 @@ void DashboardView::updateFaderUi() {
         }
 
         row.gainValueLabel->setText(QString::asprintf("%+.1f dB", vol));
-        if (vol > 0.0f) {
-            row.gainValueLabel->setStyleSheet(
-                "font-family: monospace; font-weight: bold; color: #ff3b30; min-width: 70px; max-width: 70px;");
-        } else {
-            row.gainValueLabel->setStyleSheet(
-                QString("font-family: monospace; font-weight: bold; color: %1; min-width: 70px; max-width: 70px;")
-                    .arg(StyleTheme::textPrimary().name()));
-        }
 
         row.muteBtn->blockSignals(true);
         row.muteBtn->setChecked(muted);
         row.muteBtn->blockSignals(false);
-
-        if (muted) {
-            row.muteBtn->setText("🔇");
-            row.muteBtn->setStyleSheet("background-color: transparent; color: #ff3b30; border: none; font-size: 16px; "
-                                       "font-weight: bold; padding: 0px; margin: 0px;");
-        } else {
-            row.muteBtn->setText("🔊");
-            row.muteBtn->setStyleSheet(QString("background-color: transparent; color: %1; border: none; font-size: "
-                                               "16px; padding: 0px; margin: 0px;")
-                                           .arg(StyleTheme::textPrimary().name()));
-        }
+        row.muteBtn->setText(muted ? "🔇" : "🔊");
     }
 }
 
@@ -147,49 +128,18 @@ void DashboardView::setupUi() {
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(20);
 
-    QString cardStyle =
-        QString("QGroupBox { "
-                "  background-color: %1; "
-                "  border: 1px solid %2; "
-                "  border-radius: 12px; "
-                "  margin-top: 0px; "
-                "  padding: 14px; "
-                "} "
-                "QGroupBox::title { "
-                "  subcontrol-origin: margin; "
-                "  subcontrol-position: top left; "
-                "  padding: 0 4px; "
-                "  color: %3; "
-                "  font-weight: bold; "
-                "}")
-            .arg(StyleTheme::cardBg().name(), StyleTheme::border().name(), StyleTheme::textPrimary().name());
-
     // 1. Signal Chain Overview Card
     m_pipelineOverviewWidget = new PipelineOverviewWidget(m_dspController, container);
-    m_pipelineOverviewWidget->setStyleSheet(cardStyle);
     mainLayout->addWidget(m_pipelineOverviewWidget);
 
     // 2. Detailed DSP Signal Graph Card
     m_signalGraphCard = new DSPDetailedSignalGraphCard(m_dspController, container);
-    m_signalGraphCard->setStyleSheet(cardStyle);
     mainLayout->addWidget(m_signalGraphCard);
 
     // 3. Level Meters Card (Title: "Levels" with "RMS / Peak" on right, "Capture" & "Playback" subheaders)
-    m_levelMetersGroup = new QGroupBox(container);
-    m_levelMetersGroup->setStyleSheet(cardStyle);
+    m_levelMetersGroup = new QGroupBox("Levels", container);
     auto levelCardLayout = new QVBoxLayout(m_levelMetersGroup);
     levelCardLayout->setSpacing(12);
-
-    auto levelHeader = new QHBoxLayout();
-    auto levelTitle = new QLabel("Levels", m_levelMetersGroup);
-    levelTitle->setFont(QFont("", 13, QFont::Bold));
-    auto levelSub = new QLabel("RMS / Peak", m_levelMetersGroup);
-    levelSub->setFont(QFont("", 11, QFont::Normal));
-    levelSub->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
-    levelHeader->addWidget(levelTitle);
-    levelHeader->addStretch();
-    levelHeader->addWidget(levelSub);
-    levelCardLayout->addLayout(levelHeader);
 
     auto levelColumnsLayout = new QHBoxLayout();
     levelColumnsLayout->setSpacing(24);
@@ -199,7 +149,6 @@ void DashboardView::setupUi() {
     capCol->setSpacing(8);
     auto capLbl = new QLabel("Capture", m_levelMetersGroup);
     capLbl->setFont(QFont("", 12, QFont::Medium));
-    capLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_captureMeters = new LevelMeterView(m_levelMetersGroup);
     m_captureMeters->setLevelState(&m_monitoring->levelState);
     m_captureMeters->setIsCapture(true);
@@ -212,7 +161,6 @@ void DashboardView::setupUi() {
     pbCol->setSpacing(8);
     auto pbLbl = new QLabel("Playback", m_levelMetersGroup);
     pbLbl->setFont(QFont("", 12, QFont::Medium));
-    pbLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
     m_playbackMeters->setLevelState(&m_monitoring->levelState);
     m_playbackMeters->setIsCapture(false);
@@ -226,14 +174,9 @@ void DashboardView::setupUi() {
     mainLayout->addWidget(m_levelMetersGroup);
 
     // 4. Volume Faders Card (All 5 fader rows simultaneously)
-    m_faderGroup = new QGroupBox(container);
-    m_faderGroup->setStyleSheet(cardStyle);
+    m_faderGroup = new QGroupBox("Volume Faders", container);
     auto faderVLayout = new QVBoxLayout(m_faderGroup);
     faderVLayout->setSpacing(16);
-
-    auto faderTitle = new QLabel("Volume Faders", m_faderGroup);
-    faderTitle->setFont(QFont("", 13, QFont::Bold));
-    faderVLayout->addWidget(faderTitle);
 
     auto faderRowsVLayout = new QVBoxLayout();
     faderRowsVLayout->setSpacing(12);
@@ -259,9 +202,7 @@ void DashboardView::setupUi() {
 
         auto muteBtn = new QPushButton("🔊", m_faderGroup);
         muteBtn->setCheckable(true);
-        muteBtn->setFixedSize(24, 28);
-        muteBtn->setFlat(true);
-        muteBtn->setCursor(Qt::PointingHandCursor);
+        muteBtn->setFixedSize(28, 28);
 
         auto slider = new QSlider(Qt::Horizontal, m_faderGroup);
         slider->setRange(-120, 40); // -60.0 dB to +20.0 dB
@@ -297,15 +238,11 @@ void DashboardView::setupUi() {
     mainLayout->addWidget(m_faderGroup);
 
     // 5. Analog VU Card
-    m_analogVUGroup = new QGroupBox(container);
-    m_analogVUGroup->setStyleSheet(cardStyle);
+    m_analogVUGroup = new QGroupBox("Analog VU", container);
     auto vuLayout = new QVBoxLayout(m_analogVUGroup);
     vuLayout->setSpacing(12);
 
     auto vuHeaderBox = new QHBoxLayout();
-    auto vuTitle = new QLabel("Analog VU", m_analogVUGroup);
-    vuTitle->setFont(QFont("", 13, QFont::Bold));
-    vuHeaderBox->addWidget(vuTitle);
     vuHeaderBox->addStretch();
     m_vuThemeCombo = new QComboBox(m_analogVUGroup);
     m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
@@ -336,39 +273,27 @@ void DashboardView::setupUi() {
     mainLayout->addWidget(m_analogVUGroup);
 
     // 6. Spectrum Card
-    m_spectrumGroup = new QGroupBox(container);
-    m_spectrumGroup->setStyleSheet(cardStyle);
+    m_spectrumGroup = new QGroupBox("Spectrum", container);
     auto specLayout = new QVBoxLayout(m_spectrumGroup);
     specLayout->setSpacing(12);
-    auto specTitle = new QLabel("Spectrum", m_spectrumGroup);
-    specTitle->setFont(QFont("", 13, QFont::Bold));
-    specLayout->addWidget(specTitle);
     m_spectrumView = new SpectrumView(m_spectrumEngine, m_spectrumGroup);
     m_spectrumView->setFixedHeight(160);
     specLayout->addWidget(m_spectrumView);
     mainLayout->addWidget(m_spectrumGroup);
 
     // 7. Spectrogram Card
-    m_spectrogramGroup = new QGroupBox(container);
-    m_spectrogramGroup->setStyleSheet(cardStyle);
+    m_spectrogramGroup = new QGroupBox("Spectroscope", container);
     auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
     spectroLayout->setSpacing(12);
-    auto spectroTitle = new QLabel("Spectroscope", m_spectrogramGroup);
-    spectroTitle->setFont(QFont("", 13, QFont::Bold));
-    spectroLayout->addWidget(spectroTitle);
     m_spectrogramView = new SpectrogramView(m_spectrogramEngine, m_spectrogramGroup);
     m_spectrogramView->setFixedHeight(480);
     spectroLayout->addWidget(m_spectrogramView);
     mainLayout->addWidget(m_spectrogramGroup);
 
     // 8. Vector Scope Card
-    m_vectorScopeGroup = new QGroupBox(container);
-    m_vectorScopeGroup->setStyleSheet(cardStyle);
+    m_vectorScopeGroup = new QGroupBox("Vector Scope", container);
     auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
     vecLayout->setSpacing(12);
-    auto vecTitle = new QLabel("Vector Scope", m_vectorScopeGroup);
-    vecTitle->setFont(QFont("", 13, QFont::Bold));
-    vecLayout->addWidget(vecTitle);
     m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, m_vectorScopeGroup);
     m_vectorScopeView->setFixedHeight(700);
     vecLayout->addWidget(m_vectorScopeView);

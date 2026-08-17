@@ -1,7 +1,5 @@
 #include "ui/DevicePickerView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QFrame>
@@ -22,14 +20,14 @@ public:
     DeviceRowWidget(const QString& name, bool isSelected, std::function<void()> onSelect, QWidget* parent = nullptr)
         : QFrame(parent), m_onSelect(onSelect) {
         setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_Hover, true);
+        setFrameShape(isSelected ? QFrame::StyledPanel : QFrame::NoFrame);
+        setFrameShadow(QFrame::Sunken);
 
         auto layout = new QHBoxLayout(this);
         layout->setContentsMargins(8, 6, 8, 6);
         layout->setSpacing(8);
 
         auto leftCheck = new QLabel(isSelected ? "●" : "○", this);
-        leftCheck->setStyleSheet(isSelected ? "color: #007af5; font-size: 13px;" : "color: #8e8e93; font-size: 13px;");
         leftCheck->setFixedWidth(16);
         layout->addWidget(leftCheck);
 
@@ -38,24 +36,13 @@ public:
             QFont f = textLbl->font();
             f.setBold(true);
             textLbl->setFont(f);
-            textLbl->setStyleSheet("color: #007af5;");
-        } else {
-            textLbl->setStyleSheet("color: #1c1c1e;");
         }
         layout->addWidget(textLbl);
         layout->addStretch();
 
         if (isSelected) {
             auto rightCheck = new QLabel("✓", this);
-            rightCheck->setStyleSheet("color: #007af5; font-weight: bold; font-size: 12px;");
             layout->addWidget(rightCheck);
-        }
-
-        if (isSelected) {
-            setStyleSheet("DeviceRowWidget { background-color: rgba(0, 122, 245, 0.08); border-radius: 4px; }");
-        } else {
-            setStyleSheet("DeviceRowWidget { background-color: transparent; border-radius: 4px; }"
-                          "DeviceRowWidget:hover { background-color: rgba(0, 0, 0, 0.04); }");
         }
     }
 
@@ -106,7 +93,6 @@ void DevicePickerView::setupUi() {
 
     auto capHeaderLabel = new QLabel("🎤  Capture (Input)", capGroup);
     capHeaderLabel->setFont(QFont("sans-serif", 13, QFont::Bold));
-    capHeaderLabel->setStyleSheet("color: #007af5;");
     capLayout->addWidget(capHeaderLabel);
 
     auto capBackendBox = new QHBoxLayout();
@@ -176,7 +162,6 @@ void DevicePickerView::setupUi() {
     auto capDiv = new QFrame(capGroup);
     capDiv->setFrameShape(QFrame::HLine);
     capDiv->setFrameShadow(QFrame::Sunken);
-    capDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
     capLayout->addWidget(capDiv);
 
     m_capStack = new QStackedWidget(capGroup);
@@ -194,7 +179,6 @@ void DevicePickerView::setupUi() {
 
     auto pbHeaderLabel = new QLabel("🔊  Playback (Output)", pbGroup);
     pbHeaderLabel->setFont(QFont("sans-serif", 13, QFont::Bold));
-    pbHeaderLabel->setStyleSheet("color: #34c759;");
     pbLayout->addWidget(pbHeaderLabel);
 
     auto pbBackendBox = new QHBoxLayout();
@@ -263,7 +247,6 @@ void DevicePickerView::setupUi() {
     auto pbDiv = new QFrame(pbGroup);
     pbDiv->setFrameShape(QFrame::HLine);
     pbDiv->setFrameShadow(QFrame::Sunken);
-    pbDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
     pbLayout->addWidget(pbDiv);
 
     m_pbStack = new QStackedWidget(pbGroup);
@@ -297,7 +280,6 @@ void DevicePickerView::setupUi() {
     chunkLayout->addWidget(m_chunkSizeCombo);
 
     m_latencyLabel = new QLabel(procGroup);
-    m_latencyLabel->setStyleSheet("color: #8e8e93; font-style: italic;");
     connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
@@ -322,13 +304,11 @@ void DevicePickerView::setupUi() {
     procForm->addRow("", m_enableRateAdjustCheck);
 
     m_rateAdjustSub = new QLabel("Compensate for clock drift between capture and playback devices", procGroup);
-    m_rateAdjustSub->setStyleSheet("color: #8e8e93; font-size: 11px;");
     procForm->addRow("", m_rateAdjustSub);
 
     auto procDiv = new QFrame(procGroup);
     procDiv->setFrameShape(QFrame::HLine);
     procDiv->setFrameShadow(QFrame::Sunken);
-    procDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 8px; margin-bottom: 8px;");
     procForm->addRow("", procDiv);
 
     auto qlLayout = new QHBoxLayout();
@@ -425,8 +405,6 @@ void DevicePickerView::setupUi() {
     btnBox->addStretch();
 
     auto applyBtn = new QPushButton("Apply Hardware Settings", container);
-    applyBtn->setStyleSheet(
-        "background-color: #007af5; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;");
     connect(applyBtn, &QPushButton::clicked, this, &DevicePickerView::applySettings);
     btnBox->addWidget(applyBtn);
 
@@ -490,7 +468,6 @@ void DevicePickerView::populateDeviceList(QVBoxLayout* listLayout, QWidget* warn
     auto div = new QFrame(containerWidget);
     div->setFrameShape(QFrame::HLine);
     div->setFrameShadow(QFrame::Sunken);
-    div->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
     listLayout->addWidget(div);
 
     for (const auto& dev : devices) {
@@ -532,9 +509,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     auto warnLayout = new QHBoxLayout(m_capWarningWidget);
     warnLayout->setContentsMargins(0, 4, 0, 4);
     auto warnIcon = new QLabel("⚠️", m_capWarningWidget);
-    warnIcon->setStyleSheet("font-size: 16px; color: #ff9500;");
     auto warnText = new QLabel("No devices found", m_capWarningWidget);
-    warnText->setStyleSheet("color: #8e8e93; font-weight: 500;");
     warnLayout->addWidget(warnIcon);
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
@@ -614,7 +589,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
 
     m_capRateLabel = new QLabel(m_capRateRow);
-    m_capRateLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
+    m_capRateLabel->setFont(QFont("monospace", 11));
 
     rateBox->addWidget(m_capRateCombo);
     rateBox->addWidget(m_capRateLabel);
@@ -636,7 +611,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
 
     m_capFormatLabel = new QLabel(m_capFormatRow);
-    m_capFormatLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
+    m_capFormatLabel->setFont(QFont("monospace", 11));
 
     fmtBox->addWidget(m_capFormatCombo);
     fmtBox->addWidget(m_capFormatLabel);
@@ -646,7 +621,6 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capDopDivider = new QFrame(w);
     m_capDopDivider->setFrameShape(QFrame::HLine);
     m_capDopDivider->setFrameShadow(QFrame::Sunken);
-    m_capDopDivider->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
     form->addRow("", m_capDopDivider);
 
     m_bypassDoPCheck = new QCheckBox("Bypass DoP Detection", w);
@@ -682,7 +656,6 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     form->addRow("", m_capDopCutoffRow);
 
     m_dopCutoffHint = new QLabel("Lower cutoff = higher SINAD; higher cutoff preserves more ultrasonic content", w);
-    m_dopCutoffHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_dopCutoffHint);
 
     m_capWasapiExclusiveCheck = new QCheckBox("WASAPI Exclusive Mode", w);
@@ -842,13 +815,11 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         form->addRow("", fileBox);
 
         auto noteLbl = new QLabel("Sample rate, format, and channel count are parsed from the file header", w);
-        noteLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         form->addRow("", noteLbl);
 
         auto wavExtrasDiv = new QFrame(w);
         wavExtrasDiv->setFrameShape(QFrame::HLine);
         wavExtrasDiv->setFrameShadow(QFrame::Sunken);
-        wavExtrasDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
         form->addRow("", wavExtrasDiv);
 
         m_capWavSkipBytesSpin = new QSpinBox(w);
@@ -931,7 +902,6 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         auto rawExtrasDiv = new QFrame(w);
         rawExtrasDiv->setFrameShape(QFrame::HLine);
         rawExtrasDiv->setFrameShadow(QFrame::Sunken);
-        rawExtrasDiv->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
         form->addRow("", rawExtrasDiv);
 
         m_capRawSkipBytesSpin = new QSpinBox(w);
@@ -1090,9 +1060,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     auto warnLayout = new QHBoxLayout(m_pbWarningWidget);
     warnLayout->setContentsMargins(0, 4, 0, 4);
     auto warnIcon = new QLabel("⚠️", m_pbWarningWidget);
-    warnIcon->setStyleSheet("font-size: 16px; color: #ff9500;");
     auto warnText = new QLabel("No devices found", m_pbWarningWidget);
-    warnText->setStyleSheet("color: #8e8e93; font-weight: 500;");
     warnLayout->addWidget(warnIcon);
     warnLayout->addWidget(warnText);
     warnLayout->addStretch();
@@ -1192,7 +1160,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
 
     m_pbFormatLabel = new QLabel(m_pbFormatRow);
-    m_pbFormatLabel->setStyleSheet("font-family: monospace; color: #8e8e93; font-size: 13px;");
+    m_pbFormatLabel->setFont(QFont("monospace", 11));
 
     fmtBox->addWidget(m_pbFormatCombo);
     fmtBox->addWidget(m_pbFormatLabel);
@@ -1209,7 +1177,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     m_exclusiveModeHint =
         new QLabel("Takes exclusive access to the output device, preventing other apps from using it", w);
-    m_exclusiveModeHint->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_exclusiveModeHint);
 
     m_pbWasapiPollingCheck = new QCheckBox("WASAPI Polling Mode", w);
@@ -1286,7 +1253,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbDopDivider = new QFrame(w);
     m_pbDopDivider->setFrameShape(QFrame::HLine);
     m_pbDopDivider->setFrameShadow(QFrame::Sunken);
-    m_pbDopDivider->setStyleSheet("background-color: #e5e5ea; max-height: 1px; margin-top: 4px; margin-bottom: 4px;");
     form->addRow("", m_pbDopDivider);
 
     m_outputDoPCheck = new QCheckBox("Output DoP (DSD-over-PCM)", w);
@@ -1326,7 +1292,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     form->addRow("", m_pbSdmFilterRow);
 
     m_pbDopHintLabel = new QLabel("Sample rate must be a DSD carrier rate to enable DoP output", w);
-    m_pbDopHintLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     form->addRow("", m_pbDopHintLabel);
 
     return w;

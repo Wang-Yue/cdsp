@@ -1,7 +1,6 @@
 #include "ui/ResamplerDetailView.h"
 
 #include "config/DSPConfigTypes.h"
-#include "ui/StyleTheme.h"
 
 #include <QFormLayout>
 #include <QGroupBox>
@@ -135,7 +134,6 @@ void ResamplerDetailView::setupUi() {
     ratesForm->addRow("Playback:", m_pbRateLabel);
 
     m_ratioLabel = new QLabel("Conversion ratio: 1.0884", ratesGroup);
-    m_ratioLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     ratesForm->addRow("", m_ratioLabel);
 
     contentLayout->addWidget(ratesGroup);
@@ -143,7 +141,6 @@ void ResamplerDetailView::setupUi() {
     auto footnoteLbl = new QLabel(
         "Resamples audio between capture and playback sample rates. Configure sample rates in the Devices page.",
         m_contentWidget);
-    footnoteLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     footnoteLbl->setWordWrap(true);
     contentLayout->addWidget(footnoteLbl);
 

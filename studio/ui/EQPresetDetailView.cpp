@@ -2,7 +2,6 @@
 
 #include "ui/AutoEqPickerDlg.h"
 #include "ui/OratoryPresetPickerDlg.h"
-#include "ui/StyleTheme.h"
 
 #include <QAction>
 #include <QApplication>
@@ -87,9 +86,6 @@ void EQPresetDetailView::setupUi() {
     m_modeTabBar->addTab("🎛️ Form");
     m_modeTabBar->addTab("📄 CSV");
     m_modeTabBar->setDrawBase(false);
-    m_modeTabBar->setStyleSheet("QTabBar::tab { background: #2c2c2e; color: #8e8e93; padding: 6px 14px; border-radius: "
-                                "6px; font-weight: bold; margin-right: 4px; }"
-                                "QTabBar::tab:selected { background: #007af5; color: white; }");
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_modeStack->setCurrentIndex(idx);
         if (idx == 2) {
@@ -307,9 +303,6 @@ void EQPresetDetailView::setupUi() {
     formModeLayout->addLayout(formPreampBar);
 
     m_bandsTable = new QTableWidget(this);
-    m_bandsTable->setStyleSheet(
-        "QTableWidget::item { padding: 4px 8px; }"
-        "QHeaderView::section { padding: 4px 8px; font-weight: bold; background: palette(alternate-base); }");
     m_bandsTable->setColumnCount(7);
     m_bandsTable->setHorizontalHeaderLabels(
         {"Enable", "#", "Type", "Frequency (Hz)", "Gain (dB)", "Q Factor / Slope", "Action"});
@@ -344,7 +337,6 @@ void EQPresetDetailView::setupUi() {
     auto csvTitleLbl = new QLabel("AutoEq / EqualizerAPO format", csvWidget);
     csvTitleLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
     auto csvSubLbl = new QLabel("Edit and Apply, or paste from AutoEq output", csvWidget);
-    csvSubLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
     csvTitleVBox->addWidget(csvTitleLbl);
     csvTitleVBox->addWidget(csvSubLbl);
 
@@ -364,15 +356,13 @@ void EQPresetDetailView::setupUi() {
     csvHeaderLayout->addWidget(refreshCsvBtn);
 
     auto applyCsvBtn = new QPushButton("Apply", csvWidget);
-    applyCsvBtn->setStyleSheet(
-        "background-color: #007af5; color: white; font-weight: bold; padding: 6px 16px; border-radius: 6px;");
+    applyCsvBtn->setDefault(true);
     connect(applyCsvBtn, &QPushButton::clicked, this, &EQPresetDetailView::onApplyCSV);
     csvHeaderLayout->addWidget(applyCsvBtn);
 
     csvLayout->addLayout(csvHeaderLayout);
 
     m_csvErrorLabel = new QLabel(csvWidget);
-    m_csvErrorLabel->setStyleSheet("color: #ff3b30; font-size: 11px; font-weight: bold;");
     m_csvErrorLabel->hide();
     csvLayout->addWidget(m_csvErrorLabel);
 
@@ -708,45 +698,24 @@ void EQPresetDetailView::updateBandChipsBar() {
         QColor color = EQDiagramWidget::bandColor(bandIdx);
         bool isSelected = (bandIdx == activeIdx);
 
-        auto chip = new QWidget(m_bandChipsWidget);
-        chip->setCursor(Qt::PointingHandCursor);
+        auto chip = new QFrame(m_bandChipsWidget);
+        chip->setFrameShape(isSelected ? QFrame::Panel : QFrame::StyledPanel);
+        chip->setFrameShadow(isSelected ? QFrame::Sunken : QFrame::Raised);
         chip->setContextMenuPolicy(Qt::CustomContextMenu);
-
-        QString bgStyle;
-        if (isSelected) {
-            bgStyle =
-                QString(
-                    "background-color: rgba(%1, %2, %3, 50); border: 1.5px solid rgb(%1, %2, %3); border-radius: 6px;")
-                    .arg(color.red())
-                    .arg(color.green())
-                    .arg(color.blue());
-        } else {
-            bgStyle = QString("background-color: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 6px;");
-        }
-        chip->setStyleSheet(bgStyle);
 
         auto chipHBox = new QHBoxLayout(chip);
         chipHBox->setContentsMargins(8, 4, 8, 4);
         chipHBox->setSpacing(6);
-
-        // Colored circle indicator
-        auto dot = new QWidget(chip);
-        dot->setFixedSize(8, 8);
-        dot->setStyleSheet(QString("background-color: %1; border-radius: 4px;").arg(color.name()));
-        chipHBox->addWidget(dot, 0, Qt::AlignVCenter);
 
         // Text Content
         auto textVBox = new QVBoxLayout();
         textVBox->setContentsMargins(0, 0, 0, 0);
         textVBox->setSpacing(1);
 
-        QString textCol = b.isEnabled ? "#ffffff" : "#8e8e93";
-
         // Line 1: #Index Type
         auto titleLbl = new QLabel(
             QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToString(b.type))), chip);
-        titleLbl->setStyleSheet(
-            QString("color: %1; font-weight: %2; font-size: 11px;").arg(textCol).arg(isSelected ? "bold" : "normal"));
+        titleLbl->setFont(QFont("", 10, isSelected ? QFont::Bold : QFont::Normal));
         textVBox->addWidget(titleLbl);
 
         // Line 2: Freq & Gain / Q
@@ -775,7 +744,7 @@ void EQPresetDetailView::updateBandChipsBar() {
             }
 
             auto valLbl = new QLabel(valText, chip);
-            valLbl->setStyleSheet(QString("color: %1; font-family: monospace; font-size: 10px;").arg(textCol));
+            valLbl->setFont(QFont("monospace", 10));
             textVBox->addWidget(valLbl);
         }
 

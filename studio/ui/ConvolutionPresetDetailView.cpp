@@ -1,7 +1,5 @@
 #include "ui/ConvolutionPresetDetailView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QFrame>
@@ -34,7 +32,6 @@ void ConvolutionPresetDetailView::setupUi() {
 
     auto iconLbl = new QLabel("🔍〰", headerWidget);
     iconLbl->setFont(QFont("sans-serif", 16));
-    iconLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::accent().name()));
     headerLayout->addWidget(iconLbl);
 
     m_nameEdit = new QLineEdit(headerWidget);
@@ -51,7 +48,6 @@ void ConvolutionPresetDetailView::setupUi() {
     headerLayout->addStretch();
 
     auto delBtn = new QPushButton("🗑 Delete", headerWidget);
-    delBtn->setStyleSheet("QPushButton { color: #ff3b30; font-weight: bold; }");
     connect(delBtn, &QPushButton::clicked, this, &ConvolutionPresetDetailView::onDeleteClicked);
     headerLayout->addWidget(delBtn);
 
@@ -68,7 +64,6 @@ void ConvolutionPresetDetailView::setupUi() {
     scroll->setFrameShape(QFrame::NoFrame);
 
     auto container = new QWidget(scroll);
-    container->setStyleSheet(QString("background-color: %1;").arg(StyleTheme::cardBg().name()));
     auto mainLayout = new QVBoxLayout(container);
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(16);
@@ -83,7 +78,6 @@ void ConvolutionPresetDetailView::setupUi() {
         auto row = new QHBoxLayout();
         auto keyLbl = new QLabel(key, container);
         keyLbl->setFixedWidth(130);
-        keyLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
         row->addWidget(keyLbl);
 
         valueLbl = new QLabel(container);
@@ -112,7 +106,6 @@ void ConvolutionPresetDetailView::setupUi() {
     rateBox->setContentsMargins(0, 0, 0, 0);
 
     auto prevLbl = new QLabel("Preview rate", m_rateBoxWidget);
-    prevLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::textSecondary().name()));
     rateBox->addWidget(prevLbl);
 
     m_ratePreviewCombo = new QComboBox(m_rateBoxWidget);
@@ -145,8 +138,6 @@ void ConvolutionPresetDetailView::setupUi() {
     irLayout->addWidget(m_irPlot);
 
     m_noIrLabel = new QLabel(irGroup);
-    m_noIrLabel->setStyleSheet(
-        QString("color: %1; font-size: 13px; padding: 8px;").arg(StyleTheme::textSecondary().name()));
     m_noIrLabel->setVisible(false);
     irLayout->addWidget(m_noIrLabel);
 
@@ -253,7 +244,6 @@ void ConvolutionPresetDetailView::refreshUi() {
             auto rateLbl = new QLabel(QString("%1 Hz").arg(r), m_filesContainer);
             rateLbl->setFixedWidth(80);
             rateLbl->setFont(QFont("monospace", 11));
-            rateLbl->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
             fileRow->addWidget(rateLbl);
 
             auto pathLbl = new QLabel(m_filesContainer);
@@ -265,8 +255,6 @@ void ConvolutionPresetDetailView::refreshUi() {
             auto openBtn = new QPushButton("📁", m_filesContainer);
             openBtn->setFlat(true);
             openBtn->setToolTip("Show in Folder");
-            openBtn->setStyleSheet(QString("QPushButton { border: none; background: transparent; color: %1; }")
-                                       .arg(StyleTheme::textSecondary().name()));
             connect(openBtn, &QPushButton::clicked,
                     [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
             fileRow->addWidget(openBtn);

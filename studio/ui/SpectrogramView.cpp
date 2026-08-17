@@ -1,7 +1,5 @@
 #include "ui/SpectrogramView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFontDatabase>
 #include <QPainterPath>
 #include <QResizeEvent>
@@ -283,23 +281,20 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
             g = 0.0f;
             b = 0.0f;
         }
-        return QColor(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255),
-                      static_cast<int>(alpha * 255));
+        return QColor(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255));
     }
     }
 
-    if (norm < 0.2f) {
-        color.setAlphaF(norm / 0.2f);
-    }
     return color;
 }
+
 void SpectrogramView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
     if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
-        p.fillRect(rect(), StyleTheme::cardBg());
+        p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
     if (m_history.empty())
@@ -339,12 +334,12 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             p.restore();
         }
 
-        // Draw Frequency Y-axis labels & grid lines (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
+        // Draw Frequency Y-axis labels & grid lines
         QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         monoFont.setPointSize(8);
         p.setFont(monoFont);
 
-        QColor gridPenCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+        QColor gridPenCol = palette().color(QPalette::Mid);
 
         for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
             double frac = (std::log10(target) - logMin) / (logMax - logMin);
@@ -353,7 +348,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
             p.drawLine(marginL, y, w, y);
 
-            p.setPen(StyleTheme::textSecondary());
+            p.setPen(palette().color(QPalette::PlaceholderText));
             QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
             p.drawText(2, y + 4, label);
         }
@@ -364,7 +359,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
             p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
             p.drawLine(x, 0, x, plotH);
 
-            p.setPen(StyleTheme::textSecondary());
+            p.setPen(palette().color(QPalette::PlaceholderText));
             p.drawText(x - 8, h - 4, QString("%1s").arg(sec));
         }
 
@@ -386,7 +381,7 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
         m_3dImage = QImage(size, QImage::Format_ARGB32_Premultiplied);
     }
 
-    m_3dImage.fill(StyleTheme::cardBg());
+    m_3dImage.fill(palette().color(QPalette::Base));
     if (history.size() < 2)
         return;
 
@@ -420,7 +415,8 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
     size_t targetSlices = std::min<size_t>(count, 28);
 
     // 1. Draw 3D floor grid lines (Time Grid Lines)
-    p.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
+    QColor gridPen = palette().color(QPalette::Mid);
+    p.setPen(QPen(gridPen, 0.5));
     for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
         QPolygonF timeGrid;
         timeGrid.reserve(static_cast<int>(targetSlices));
@@ -468,12 +464,9 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
         edgePoly.reserve(static_cast<int>(drawBins));
 
         // Solid opaque background brush (no alpha-blending on CPU rasterizer)
-        QBrush fillBrush(StyleTheme::cardBg());
+        QBrush fillBrush(palette().color(QPalette::Base));
 
-        QColor startColor(0, 122, 255, 76); // Blue 30%
-        QColor endColor(0, 122, 255, 255);  // Accent Blue 100%
-        int sr = startColor.red(), sg = startColor.green(), sb = startColor.blue(), sa = startColor.alpha();
-        int er = endColor.red(), eg = endColor.green(), eb = endColor.blue(), ea = endColor.alpha();
+        QColor curveColor = palette().color(QPalette::Highlight);
 
         for (size_t s = 0; s < targetSlices; ++s) {
             size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;
@@ -516,13 +509,7 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
             // Smooth antialiased wireframe stroke
             p.setRenderHint(QPainter::Antialiasing, true);
             p.setBrush(Qt::NoBrush);
-            float tf = static_cast<float>(t);
-            int r = sr + static_cast<int>(tf * (er - sr));
-            int g = sg + static_cast<int>(tf * (eg - sg));
-            int b = sb + static_cast<int>(tf * (eb - sb));
-            int a = sa + static_cast<int>(tf * (ea - sa));
-
-            p.setPen(QPen(QColor(r, g, b, a), 1.5));
+            p.setPen(QPen(curveColor, 1.5));
             p.drawPolyline(edgePoly);
         }
     }
@@ -531,7 +518,7 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     monoFont.setPointSize(8);
     p.setFont(monoFont);
-    p.setPen(StyleTheme::textSecondary());
+    p.setPen(palette().color(QPalette::PlaceholderText));
     for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
         double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
         double xFlat = leftPadding + binFrac * drawWidth;

@@ -1,7 +1,5 @@
 #include "ui/StageDetailView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QButtonGroup>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -47,7 +45,7 @@ void VSliderWidget::paintEvent(QPaintEvent* event) {
 
     // Track background
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(200, 200, 200, 100));
+    painter.setBrush(palette().color(QPalette::Mid));
     painter.drawRoundedRect(centerX - trackW / 2, topY, trackW, trackHeight, trackW / 2, trackW / 2);
 
     // Current value knob Y
@@ -61,17 +59,17 @@ void VSliderWidget::paintEvent(QPaintEvent* event) {
     int activeHeight = std::abs(knobY - centerY);
 
     if (activeHeight > 0) {
-        painter.setBrush(QColor(0, 122, 255));
+        painter.setBrush(palette().color(QPalette::Highlight));
         painter.drawRoundedRect(centerX - trackW / 2, activeTop, trackW, activeHeight, trackW / 2, trackW / 2);
     }
 
     // Center 0 dB tick line (drawn over active fill track for visibility)
-    painter.setPen(QPen(QColor(140, 140, 140), 1));
+    painter.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
     painter.drawLine(centerX - 6, centerY, centerX + 6, centerY);
 
     // Knob Circle
-    painter.setBrush(Qt::white);
-    painter.setPen(QPen(QColor(0, 122, 255), 1.5));
+    painter.setBrush(palette().color(QPalette::Base));
+    painter.setPen(QPen(palette().color(QPalette::Highlight), 1.5));
     painter.drawEllipse(QPoint(centerX, knobY), knobR, knobR);
 }
 
@@ -133,7 +131,6 @@ QHBoxLayout* createSliderRow(const QString& labelText, QSlider* slider, QLabel* 
 
     auto nameLbl = new QLabel(labelText);
     nameLbl->setFixedWidth(labelWidth);
-    nameLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
     layout->addWidget(nameLbl);
 
     layout->addWidget(slider);
@@ -154,7 +151,6 @@ QFrame* createHDivider() {
     auto line = new QFrame();
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
-    line->setStyleSheet("color: rgba(142, 142, 147, 0.3);");
     return line;
 }
 
@@ -178,7 +174,6 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
     bool isConnected = (srcPtr != nullptr);
 
     if (isConnected) {
-        cellWidget->setStyleSheet("QWidget { background: rgba(0, 122, 255, 0.05); border-radius: 4px; }");
         auto vBox = new QVBoxLayout(cellWidget);
         vBox->setContentsMargins(0, 0, 0, 0);
         vBox->setSpacing(0);
@@ -187,8 +182,6 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         auto checkBtn = new QPushButton("☑", cellWidget);
         checkBtn->setFixedSize(90, 24);
         checkBtn->setFlat(true);
-        checkBtn->setStyleSheet(
-            "QPushButton { color: #007aff; font-size: 12px; font-weight: bold; border: none; padding: 0px; }");
         checkBtn->setToolTip("Disconnect Source");
         connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
@@ -216,8 +209,6 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         gainEdit->setAlignment(Qt::AlignCenter);
         gainEdit->setFont(QFont("monospace", 10));
         gainEdit->setText(QString::number(srcPtr->gainValue(), 'f', 1));
-        gainEdit->setStyleSheet("QLineEdit { background: palette(base); color: palette(text); border: 1px solid "
-                                "rgba(142, 142, 147, 0.3); border-radius: 4px; padding: 1px; }");
         connect(gainEdit, &QLineEdit::editingFinished, [this, dest, src, gainEdit]() {
             bool ok = false;
             double val = gainEdit->text().toDouble(&ok);
@@ -248,11 +239,8 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         bool inv = srcPtr->inverted.value_or(false);
         auto invBtn = new QPushButton("Ø", cellWidget);
         invBtn->setFixedSize(20, 18);
+        invBtn->setFlat(true);
         invBtn->setToolTip("Invert Phase");
-        invBtn->setStyleSheet(inv ? "QPushButton { background: transparent; color: #ff9500; border-radius: 3px; "
-                                    "font-weight: bold; font-size: 10px; padding: 0; border: none; }"
-                                  : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; "
-                                    "font-weight: bold; font-size: 10px; padding: 0; border: none; }");
         connect(invBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
             if (!st)
@@ -275,12 +263,8 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         bool muted = srcPtr->mute.value_or(false);
         auto muteBtn = new QPushButton(muted ? "🔇" : "🔊", cellWidget);
         muteBtn->setFixedSize(20, 18);
+        muteBtn->setFlat(true);
         muteBtn->setToolTip("Mute Source");
-        muteBtn->setStyleSheet(
-            muted ? "QPushButton { background: transparent; color: #ff3b30; border-radius: 3px; font-size: 8px; "
-                    "padding: 0; border: none; }"
-                  : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; font-size: 8px; "
-                    "padding: 0; border: none; }");
         connect(muteBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
             if (!st)
@@ -303,12 +287,8 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         GainScale sc = srcPtr->scale.value_or(GainScale::dB);
         auto scaleBtn = new QPushButton(sc == GainScale::dB ? "dB" : "lin", cellWidget);
         scaleBtn->setFixedSize(24, 18);
+        scaleBtn->setFlat(true);
         scaleBtn->setToolTip("Toggle Gain Scale (dB / Linear)");
-        scaleBtn->setStyleSheet(sc == GainScale::linear
-                                    ? "QPushButton { background: transparent; color: #007aff; border-radius: 3px; "
-                                      "font-size: 8px; font-weight: bold; padding: 0; border: none; }"
-                                    : "QPushButton { background: transparent; color: #8e8e93; border-radius: 3px; "
-                                      "font-size: 8px; font-weight: bold; padding: 0; border: none; }");
         connect(scaleBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
             if (!st)
@@ -332,14 +312,12 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         innerVBox->addLayout(btnHBox);
         vBox->addLayout(innerVBox);
     } else {
-        cellWidget->setStyleSheet("QWidget { background: transparent; }");
         auto vBox = new QVBoxLayout(cellWidget);
         vBox->setContentsMargins(0, 0, 0, 0);
 
         auto checkBtn = new QPushButton("☐", cellWidget);
         checkBtn->setFixedSize(90, 80);
         checkBtn->setFlat(true);
-        checkBtn->setStyleSheet("QPushButton { color: #8e8e93; font-size: 12px; border: none; }");
         checkBtn->setToolTip("Connect Source");
         connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
@@ -546,7 +524,6 @@ void StageDetailView::buildStageOptionsUi() {
             auto descLbl = new QLabel("This stereo stage will process the selected Left and Right channels. All other "
                                       "channels will pass through unaffected.",
                                       chanGroup);
-            descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
             chanLayout->addWidget(descLbl);
         } else {
             auto pillsLayout = new QHBoxLayout();
@@ -558,19 +535,7 @@ void StageDetailView::buildStageOptionsUi() {
                 bool isSelected = std::find(stage.channels.begin(), stage.channels.end(), c) != stage.channels.end();
                 btn->setChecked(isSelected);
 
-                auto updateBtnStyle = [btn](bool checked) {
-                    if (checked) {
-                        btn->setStyleSheet("background-color: #007aff; color: white; font-weight: bold; border-radius: "
-                                           "4px; border: none; padding: 0px; margin: 0px;");
-                    } else {
-                        btn->setStyleSheet(
-                            "background-color: rgba(142, 142, 147, 0.15); color: palette(text); "
-                            "font-weight: bold; border-radius: 4px; border: none; padding: 0px; margin: 0px;");
-                    }
-                };
-                updateBtnStyle(isSelected);
-
-                connect(btn, &QPushButton::clicked, [this, c, btn, updateBtnStyle]() {
+                connect(btn, &QPushButton::clicked, [this, c, btn]() {
                     auto st = currentStage();
                     if (!st)
                         return;
@@ -586,7 +551,6 @@ void StageDetailView::buildStageOptionsUi() {
                         st->channels.push_back(c);
                         btn->setChecked(true);
                     }
-                    updateBtnStyle(btn->isChecked());
                     applyConfig();
                 });
                 pillsLayout->addWidget(btn);
@@ -695,7 +659,6 @@ void StageDetailView::buildStageOptionsUi() {
         widthVBox->addLayout(infoHBox);
 
         auto descLbl = new QLabel(QString::fromStdString(stage.widthDescription()), widthGroup);
-        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         widthVBox->addWidget(descLbl);
 
         connect(widthSlider, &QSlider::valueChanged, [this, &stage, pctLbl, descLbl](int val) {
@@ -713,7 +676,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto msGroup = new QGroupBox("Mid/Side Processing", m_optionsContainer);
         auto msBox = new QVBoxLayout(msGroup);
         auto msLbl = new QLabel("Encodes stereo to Mid (L+R) and Side (L-R) signals at -6.02 dB.", msGroup);
-        msLbl->setStyleSheet("color: #8e8e93; font-size: 12px;");
         msBox->addWidget(msLbl);
         containerLayout->addWidget(msGroup);
         break;
@@ -723,7 +685,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto piGroup = new QGroupBox("Phase Inversion", m_optionsContainer);
         auto piBox = new QVBoxLayout(piGroup);
         auto piLbl = new QLabel("Inverts the phase (polarity) of all selected channels.", piGroup);
-        piLbl->setStyleSheet("color: #8e8e93; font-size: 12px;");
         piBox->addWidget(piLbl);
         containerLayout->addWidget(piGroup);
         break;
@@ -740,7 +701,6 @@ void StageDetailView::buildStageOptionsUi() {
         levelHBox->setSpacing(16);
         auto levelLbl = new QLabel("Level", presetGroup);
         levelLbl->setFixedWidth(90);
-        levelLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         levelHBox->addWidget(levelLbl);
 
         auto levelCombo = new QComboBox(presetGroup);
@@ -791,7 +751,6 @@ void StageDetailView::buildStageOptionsUi() {
                                         .arg(presetDb, 0, 'f', 1)
                                         .arg(QString::fromStdString(crossfeedLevelDescription(stage.crossfeedLevel))),
                                     presetGroup);
-        detailLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         presetVBox->addWidget(detailLbl);
 
         containerLayout->addWidget(presetGroup);
@@ -916,7 +875,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto crossDesc = new QLabel("Frequencies below this crossover will remain centered (mono-summed), while "
                                     "frequencies above this point will be widened.",
                                     crossGroup);
-        crossDesc->setStyleSheet("color: #8e8e93; font-size: 11px;");
         crossVBox->addWidget(crossDesc);
 
         connect(crossSlider, &QSlider::valueChanged, [this, &stage, crossLbl](int val) {
@@ -974,7 +932,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto highDesc = new QLabel("Adjusts the stereo width of frequencies above the crossover point. 0% is full "
                                    "mono, 100% is normal stereo, and 150%+ is enhanced width.",
                                    highGroup);
-        highDesc->setStyleSheet("color: #8e8e93; font-size: 11px;");
         highVBox->addWidget(highDesc);
 
         connect(highSlider, &QSlider::valueChanged, [this, &stage, highPctLbl](int val) {
@@ -989,7 +946,6 @@ void StageDetailView::buildStageOptionsUi() {
     case StageType::EQ: {
         if (m_pipeline->eqPresets.empty()) {
             auto noEqLbl = new QLabel("No EQ presets yet. Create one in the sidebar.", m_optionsContainer);
-            noEqLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
             containerLayout->addWidget(noEqLbl);
         } else {
             auto eqGroup = new QGroupBox("EQ Preset", m_optionsContainer);
@@ -999,7 +955,6 @@ void StageDetailView::buildStageOptionsUi() {
             eqHBox->setSpacing(16);
             auto presetLbl = new QLabel("Preset", eqGroup);
             presetLbl->setFixedWidth(90);
-            presetLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
             eqHBox->addWidget(presetLbl);
 
             auto eqCombo = new QComboBox(eqGroup);
@@ -1051,7 +1006,6 @@ void StageDetailView::buildStageOptionsUi() {
         if (m_pipeline->convPresets.empty()) {
             auto noConvLbl = new QLabel(
                 "No convolution presets yet. Open Room Correction → Generate FIR to create one.", m_optionsContainer);
-            noConvLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
             containerLayout->addWidget(noConvLbl);
         } else {
             auto convGroup = new QGroupBox("Convolution Preset", m_optionsContainer);
@@ -1061,7 +1015,6 @@ void StageDetailView::buildStageOptionsUi() {
             convHBox->setSpacing(16);
             auto presetLbl = new QLabel("Preset", convGroup);
             presetLbl->setFixedWidth(90);
-            presetLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
             convHBox->addWidget(presetLbl);
 
             auto convCombo = new QComboBox(convGroup);
@@ -1117,7 +1070,6 @@ void StageDetailView::buildStageOptionsUi() {
                                                   .arg(effectiveRate)
                                                   .arg(it->latencyMilliseconds(effectiveRate), 0, 'f', 1),
                                               convGroup);
-                    metaLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
                     convVBox->addWidget(metaLbl);
 
                     std::string irPath = it->irPath(effectiveRate);
@@ -1182,7 +1134,6 @@ void StageDetailView::buildStageOptionsUi() {
         faderHBox->setSpacing(16);
         auto faderLbl = new QLabel("Fader", loudGroup);
         faderLbl->setFixedWidth(90);
-        faderLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         faderHBox->addWidget(faderLbl);
 
         auto faderCombo = new QComboBox(loudGroup);
@@ -1217,7 +1168,6 @@ void StageDetailView::buildStageOptionsUi() {
         modeHBox->setSpacing(16);
         auto modeLbl = new QLabel("Mode", empGroup);
         modeLbl->setFixedWidth(90);
-        modeLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         modeHBox->addWidget(modeLbl);
 
         auto modeCombo = new QComboBox(empGroup);
@@ -1234,7 +1184,6 @@ void StageDetailView::buildStageOptionsUi() {
         empVBox->addLayout(modeHBox);
 
         auto descLbl = new QLabel(QString::fromStdString(emphasisModeDescription(stage.emphasisMode)), empGroup);
-        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         empVBox->addWidget(descLbl);
 
         containerLayout->addWidget(empGroup);
@@ -1247,7 +1196,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto dcpLbl = new QLabel(
             "First-order highpass at 7 Hz — removes DC offset and subsonic content on all selected channels.",
             dcpGroup);
-        dcpLbl->setStyleSheet("color: #8e8e93; font-size: 12px;");
         dcpVBox->addWidget(dcpLbl);
         containerLayout->addWidget(dcpGroup);
         break;
@@ -1315,7 +1263,6 @@ void StageDetailView::buildStageOptionsUi() {
         unitHBox->setSpacing(16);
         auto unitLbl = new QLabel("Unit", delayGroup);
         unitLbl->setFixedWidth(90);
-        unitLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         unitHBox->addWidget(unitLbl);
 
         auto unitCombo = new QComboBox(delayGroup);
@@ -1401,7 +1348,6 @@ void StageDetailView::buildStageOptionsUi() {
         faderHBox->setSpacing(16);
         auto faderLbl = new QLabel("Fader", volGroup);
         faderLbl->setFixedWidth(90);
-        faderLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         faderHBox->addWidget(faderLbl);
 
         auto faderCombo = new QComboBox(volGroup);
@@ -1534,18 +1480,14 @@ void StageDetailView::buildStageOptionsUi() {
         auto inBox = new QVBoxLayout();
         inBox->setSpacing(4);
         auto inLblHeader = new QLabel("Input Channels", m_optionsContainer);
-        inLblHeader->setStyleSheet("color: #8e8e93; font-size: 11px;");
         inBox->addWidget(inLblHeader);
         auto inLabel = new QLabel(QString("%1 Channels (Auto)").arg(incomingChannels), m_optionsContainer);
-        inLabel->setStyleSheet("QLabel { background: rgba(128, 128, 128, 0.15); padding: 5px 10px; border-radius: 6px; "
-                               "color: #8e8e93; font-size: 13px; }");
         inBox->addWidget(inLabel);
         dimHBox->addLayout(inBox);
 
         auto outBox = new QVBoxLayout();
         outBox->setSpacing(4);
         auto outLblHeader = new QLabel("Output Channels", m_optionsContainer);
-        outLblHeader->setStyleSheet("color: #8e8e93; font-size: 11px;");
         outBox->addWidget(outLblHeader);
         auto outCombo = new QComboBox(m_optionsContainer);
         outCombo->setFixedWidth(140);
@@ -1590,7 +1532,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto cornerBtn = table->findChild<QAbstractButton*>();
         if (cornerBtn) {
             cornerBtn->setText("Out \\ In");
-            cornerBtn->setStyleSheet("font-size: 11px; font-weight: bold; color: palette(text);");
         }
 
         for (int r = 0; r < rows; ++r) {
@@ -1707,7 +1648,6 @@ void StageDetailView::buildStageOptionsUi() {
         monHBox->setSpacing(16);
         auto monLbl = new QLabel("Monitor Ch", compGroup);
         monLbl->setFixedWidth(90);
-        monLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         monHBox->addWidget(monLbl);
 
         auto monScroll = new QScrollArea(compGroup);
@@ -1727,10 +1667,6 @@ void StageDetailView::buildStageOptionsUi() {
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(
-                isSelected ? "background: #007aff; color: white; border-radius: 4px; border: none; font-weight: bold;"
-                           : "background: rgba(142, 142, 147, 0.15); color: palette(text); border-radius: 4px; border: "
-                             "none; font-weight: bold;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {
@@ -1864,7 +1800,6 @@ void StageDetailView::buildStageOptionsUi() {
         monHBox->setSpacing(16);
         auto monLbl = new QLabel("Monitor Ch", gateGroup);
         monLbl->setFixedWidth(90);
-        monLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         monHBox->addWidget(monLbl);
 
         auto monScroll = new QScrollArea(gateGroup);
@@ -1884,10 +1819,6 @@ void StageDetailView::buildStageOptionsUi() {
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            btn->setStyleSheet(
-                isSelected ? "background: #007aff; color: white; border-radius: 4px; border: none; font-weight: bold;"
-                           : "background: rgba(142, 142, 147, 0.15); color: palette(text); border-radius: 4px; border: "
-                             "none; font-weight: bold;");
             connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
                 auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
                 if (it != stage.monitorChannels.end()) {
@@ -1922,7 +1853,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto descLbl = new QLabel("Receiver Active Crosstalk Cancellation (RACE) implements a 3D audio effect for "
                                   "speaker playback by canceling acoustic crosstalk between two channels.",
                                   raceGroup);
-        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         descLbl->setWordWrap(true);
         raceVBox->addWidget(descLbl);
 
@@ -1930,7 +1860,6 @@ void StageDetailView::buildStageOptionsUi() {
         unitHBox->setSpacing(16);
         auto unitLbl = new QLabel("Delay Unit", raceGroup);
         unitLbl->setFixedWidth(90);
-        unitLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         unitHBox->addWidget(unitLbl);
 
         auto unitCombo = new QComboBox(raceGroup);
@@ -2040,7 +1969,6 @@ void StageDetailView::buildStageOptionsUi() {
         typeHBox->setSpacing(16);
         auto typeLbl = new QLabel("Type", ditherGroup);
         typeLbl->setFixedWidth(90);
-        typeLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         typeHBox->addWidget(typeLbl);
 
         auto typeCombo = new QComboBox(ditherGroup);
@@ -2134,7 +2062,6 @@ void StageDetailView::buildStageOptionsUi() {
         bitsHBox->setSpacing(16);
         auto bitsLbl = new QLabel("Bit Depth", ditherGroup);
         bitsLbl->setFixedWidth(90);
-        bitsLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         bitsHBox->addWidget(bitsLbl);
 
         auto bitsCombo = new QComboBox(ditherGroup);
@@ -2181,14 +2108,12 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto descLbl = new QLabel(
             "Direct form II IIR filter coefficients. Specify as comma-separated lists of decimal numbers.", deGroup);
-        descLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         descLbl->setWordWrap(true);
         deVBox->addWidget(descLbl);
 
         auto bBox = new QVBoxLayout();
         bBox->setSpacing(4);
         auto bLbl = new QLabel("Feedforward Coefficients (b)", deGroup);
-        bLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         bBox->addWidget(bLbl);
         auto bEdit = new QLineEdit(QString::fromStdString(stage.diffEqB), deGroup);
         bEdit->setPlaceholderText("e.g. 1.0, 0.5, 0.25");
@@ -2205,7 +2130,6 @@ void StageDetailView::buildStageOptionsUi() {
         auto aBox = new QVBoxLayout();
         aBox->setSpacing(4);
         auto aLbl = new QLabel("Feedback Coefficients (a)", deGroup);
-        aLbl->setStyleSheet("color: #8e8e93; font-size: 11px;");
         aBox->addWidget(aLbl);
         auto aEdit = new QLineEdit(QString::fromStdString(stage.diffEqA), deGroup);
         aEdit->setPlaceholderText("e.g. 1.0, -0.5, 0.1");
@@ -2232,7 +2156,6 @@ void StageDetailView::buildStageOptionsUi() {
         typeHBox->setSpacing(16);
         auto typeLbl = new QLabel("Combo Type", comboGroup);
         typeLbl->setFixedWidth(90);
-        typeLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
         typeHBox->addWidget(typeLbl);
 
         auto typeCombo = new QComboBox(comboGroup);
@@ -2284,7 +2207,6 @@ void StageDetailView::buildStageOptionsUi() {
             orderHBox->setSpacing(16);
             auto orderLbl = new QLabel("Filter Order", comboGroup);
             orderLbl->setFixedWidth(90);
-            orderLbl->setStyleSheet("color: #8e8e93; font-size: 13px;");
             orderHBox->addWidget(orderLbl);
 
             auto orderCombo = new QComboBox(comboGroup);
@@ -2328,13 +2250,9 @@ void StageDetailView::buildStageOptionsUi() {
             auto peqGroup = new QGroupBox("5-Point Parametric EQ", comboGroup);
             auto peqGrid = new QGridLayout(peqGroup);
             auto hdr1 = new QLabel("Band", peqGroup);
-            hdr1->setStyleSheet("color: #8e8e93; font-size: 11px;");
             auto hdr2 = new QLabel("Frequency (Hz)", peqGroup);
-            hdr2->setStyleSheet("color: #8e8e93; font-size: 11px;");
             auto hdr3 = new QLabel("Gain (dB)", peqGroup);
-            hdr3->setStyleSheet("color: #8e8e93; font-size: 11px;");
             auto hdr4 = new QLabel("Q", peqGroup);
-            hdr4->setStyleSheet("color: #8e8e93; font-size: 11px;");
             peqGrid->addWidget(hdr1, 0, 0);
             peqGrid->addWidget(hdr2, 0, 1);
             peqGrid->addWidget(hdr3, 0, 2);
@@ -2345,7 +2263,6 @@ void StageDetailView::buildStageOptionsUi() {
                                                     std::function<void(PipelineStage*, double)> setG,
                                                     std::function<void(PipelineStage*, double)> setQ) {
                 auto nameLbl = new QLabel(name, peqGroup);
-                nameLbl->setStyleSheet("font-size: 11px;");
                 peqGrid->addWidget(nameLbl, r, 0);
 
                 auto fSpin = new QDoubleSpinBox(peqGroup);
@@ -2429,7 +2346,6 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto rangeBox = new QVBoxLayout();
         auto rangeHdr = new QLabel("Frequency Range", geqGroup);
-        rangeHdr->setStyleSheet("color: #8e8e93; font-size: 11px;");
         rangeBox->addWidget(rangeHdr);
         auto rangeHBox = new QHBoxLayout();
         auto minEdit = new QLineEdit(QString::number(stage.graphicEQFreqMin), geqGroup);
@@ -2455,7 +2371,6 @@ void StageDetailView::buildStageOptionsUi() {
 
         auto bandsBox = new QVBoxLayout();
         auto bandsHdr = new QLabel("Bands", geqGroup);
-        bandsHdr->setStyleSheet("color: #8e8e93; font-size: 11px;");
         bandsBox->addWidget(bandsHdr);
         auto spinBands = new QSpinBox(geqGroup);
         spinBands->setRange(2, 64);
@@ -2525,7 +2440,6 @@ void StageDetailView::buildStageOptionsUi() {
             gainValLbl->setFont(QFont("monospace", 9));
             gainValLbl->setFixedWidth(35);
             gainValLbl->setAlignment(Qt::AlignCenter);
-            gainValLbl->setStyleSheet("color: #8e8e93;");
             bVBox->addWidget(gainValLbl);
 
             auto slider = new VSliderWidget(stage.graphicEQGains[b], -40.0, 40.0, bankContainer);

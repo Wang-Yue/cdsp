@@ -31,41 +31,6 @@ void GeneralSettingsView::setupUi() {
     mainLayout->setContentsMargins(24, 24, 24, 24);
     mainLayout->setSpacing(16);
 
-    // Appearance Group (Theme Switching: Light / Dark)
-    auto appGroup = new QGroupBox("Appearance", this);
-    auto appForm = new QFormLayout(appGroup);
-
-    auto themeBox = new QHBoxLayout();
-    auto themeTitleLabel = new QLabel("Theme Mode", appGroup);
-    themeTitleLabel->setFixedWidth(120);
-    themeBox->addWidget(themeTitleLabel);
-
-    m_lightThemeRadio = new QRadioButton("Light Mode", appGroup);
-    m_darkThemeRadio = new QRadioButton("Dark Mode", appGroup);
-
-    themeBox->addWidget(m_lightThemeRadio);
-    themeBox->addWidget(m_darkThemeRadio);
-    themeBox->addStretch();
-
-    appForm->addRow(themeBox);
-
-    auto themeBtnGroup = new QButtonGroup(this);
-    themeBtnGroup->addButton(m_lightThemeRadio, 0);
-    themeBtnGroup->addButton(m_darkThemeRadio, 1);
-
-    connect(themeBtnGroup, &QButtonGroup::idClicked, [this](int id) {
-        if (m_settings) {
-            bool isDark = (id == 1);
-            if (m_settings->darkMode != isDark) {
-                m_settings->darkMode = isDark;
-                m_settings->savePreferences();
-                emit m_settings->settingsChanged();
-            }
-        }
-    });
-
-    mainLayout->addWidget(appGroup);
-
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
     auto pollForm = new QFormLayout(pollGroup);
@@ -88,7 +53,6 @@ void GeneralSettingsView::setupUi() {
     pollForm->addRow(pollBox);
 
     auto pollSubLbl = new QLabel("Adjust the frequency of UI updates for meters and spectrum.", pollGroup);
-    pollSubLbl->setProperty("secondary", true);
     {
         QFont font = pollSubLbl->font();
         font.setPointSize(11);
@@ -166,7 +130,6 @@ void GeneralSettingsView::setupUi() {
 
     auto silenceSubLbl =
         new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
-    silenceSubLbl->setProperty("secondary", true);
     {
         QFont font = silenceSubLbl->font();
         font.setPointSize(11);
@@ -207,13 +170,6 @@ void GeneralSettingsView::setupUi() {
 
 void GeneralSettingsView::refreshUi() {
     if (m_settings) {
-        m_lightThemeRadio->blockSignals(true);
-        m_darkThemeRadio->blockSignals(true);
-        m_lightThemeRadio->setChecked(!m_settings->darkMode);
-        m_darkThemeRadio->setChecked(m_settings->darkMode);
-        m_lightThemeRadio->blockSignals(false);
-        m_darkThemeRadio->blockSignals(false);
-
         if (m_closeToTrayCheck) {
             m_closeToTrayCheck->blockSignals(true);
             m_closeToTrayCheck->setChecked(m_settings->closeToTray);

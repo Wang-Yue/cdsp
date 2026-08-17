@@ -1,7 +1,5 @@
 #include "ui/ConsoleLogsView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QClipboard>
 #include <QFontDatabase>
 #include <QFrame>
@@ -21,30 +19,13 @@ ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
     refreshLogs();
 }
 
-void ConsoleLogsView::showEvent(QShowEvent* event) {
-    QWidget::showEvent(event);
-    updateTheme();
-}
-
-void ConsoleLogsView::updateTheme() {
-    if (m_headerWidget) {
-        QString headerBg = StyleTheme::windowBg().name();
-        m_headerWidget->setStyleSheet(QString("QWidget#HeaderWidget { background-color: %1; }").arg(headerBg));
-    }
-    QString cardBg = StyleTheme::cardBg().name();
-    setStyleSheet(QString("ConsoleLogsView { background-color: %1; }").arg(cardBg));
-}
-
 void ConsoleLogsView::setupUi() {
-    setObjectName("ConsoleLogsView");
-
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // 1. Top Toolbar Header Container (Window Background Color)
+    // 1. Top Toolbar Header Container
     m_headerWidget = new QWidget(this);
-    m_headerWidget->setObjectName("HeaderWidget");
 
     auto topToolbar = new QHBoxLayout(m_headerWidget);
     topToolbar->setContentsMargins(16, 16, 16, 16);
@@ -100,15 +81,13 @@ void ConsoleLogsView::setupUi() {
 
     mainLayout->addWidget(m_headerWidget);
 
-    // 2. Divider Line (1px height)
+    // 2. Divider Line
     auto divider = new QFrame(this);
     divider->setFrameShape(QFrame::HLine);
-    divider->setFrameShadow(QFrame::Plain);
-    divider->setFixedHeight(1);
-    divider->setStyleSheet(QString("background-color: %1; border: none;").arg(StyleTheme::border().name()));
+    divider->setFrameShadow(QFrame::Sunken);
     mainLayout->addWidget(divider);
 
-    // 3. Scroll Container / Log Table Area (Control Background Color)
+    // 3. Scroll Container / Log Table Area
     auto scrollContainer = new QWidget(this);
     auto scrollLayout = new QVBoxLayout(scrollContainer);
     scrollLayout->setContentsMargins(16, 16, 16, 16);
@@ -128,14 +107,9 @@ void ConsoleLogsView::setupUi() {
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_table->setFrameShape(QFrame::NoFrame);
-    m_table->setStyleSheet("QTableWidget { background-color: transparent; border: none; outline: none; }"
-                           "QTableWidget::item { padding: 2px 0px; }");
 
     scrollLayout->addWidget(m_table);
     mainLayout->addWidget(scrollContainer);
-
-    updateTheme();
 }
 
 void ConsoleLogsView::refreshLogs() {
@@ -149,7 +123,7 @@ void ConsoleLogsView::refreshLogs() {
     auto bodyMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     bodyMono.setPointSize(13);
 
-    QColor secondaryColor = StyleTheme::textSecondary();
+    QColor secondaryColor = palette().color(QPalette::PlaceholderText);
 
     auto entries = LogManager::instance()->logs();
     for (const auto& entry : entries) {
@@ -185,7 +159,7 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
 
     auto timeItem = new QTableWidgetItem(entry.timestamp.toString("HH:mm:ss"));
     timeItem->setFont(captionMono);
-    timeItem->setForeground(StyleTheme::textSecondary());
+    timeItem->setForeground(palette().color(QPalette::PlaceholderText));
     timeItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
 
     auto msgItem = new QTableWidgetItem(entry.message);

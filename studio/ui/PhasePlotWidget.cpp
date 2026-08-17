@@ -1,7 +1,5 @@
 #include "ui/PhasePlotWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QMessageBox>
@@ -16,9 +14,6 @@ PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
     m_unwrapBtn = new QPushButton("Unwrap Phase", this);
     m_unwrapBtn->setCheckable(true);
     m_unwrapBtn->setFixedSize(110, 26);
-    m_unwrapBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
-                               "#555; border-radius: 4px; font-size: 11px; }"
-                               "QPushButton:checked { background: #007acc; color: white; border-color: #0099ff; }");
 
     connect(m_unwrapBtn, &QPushButton::toggled, [this](bool checked) {
         m_unwrapPhase = checked;
@@ -28,9 +23,6 @@ PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
 
     m_exportBtn = new QPushButton("Export Image…", this);
     m_exportBtn->setFixedSize(110, 26);
-    m_exportBtn->setStyleSheet("QPushButton { background: rgba(50, 50, 50, 0.7); color: #e0e0e0; border: 1px solid "
-                               "#555; border-radius: 4px; font-size: 11px; }"
-                               "QPushButton:hover { background: rgba(80, 80, 80, 0.8); }");
     connect(m_exportBtn, &QPushButton::clicked, this, &PhasePlotWidget::onExport);
 }
 
@@ -133,10 +125,10 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     int h = height();
 
     // Background
-    painter.fillRect(rect(), StyleTheme::cardBg());
+    painter.fillRect(rect(), palette().color(QPalette::Base));
 
     if (!m_session || !m_session->measuredFR.has_value()) {
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.setFont(QFont("sans-serif", 12));
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response available for Phase plot.");
         return;
@@ -152,9 +144,9 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     // Draw Grid Lines (Frequency ticks: 20, 100, 1000, 10000 Hz)
     for (double f : {20.0, 100.0, 1000.0, 10000.0}) {
         double x = freqToX(f, w);
-        painter.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
+        painter.setPen(QPen(palette().color(QPalette::Mid), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.setFont(QFont("Monospace", 9));
         QString label =
             (f >= 1000.0) ? QString("%1k").arg(static_cast<int>(f / 1000.0)) : QString::number(static_cast<int>(f));
@@ -169,16 +161,16 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     for (int deg = startDeg; deg <= endDeg; deg += static_cast<int>(degStep)) {
         double y = h * (1.0 - (static_cast<double>(deg) - minDeg) / spanDeg);
         if (y >= 0 && y <= h) {
-            painter.setPen(deg == 0 ? QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1.0)
-                                    : QPen(StyleTheme::gridPenColor(), 0.5));
+            painter.setPen(deg == 0 ? QPen(palette().color(QPalette::Mid), 1.0)
+                                    : QPen(palette().color(QPalette::Mid), 0.5));
             painter.drawLine(QPointF(0, y), QPointF(w, y));
-            painter.setPen(StyleTheme::textSecondary());
+            painter.setPen(palette().color(QPalette::PlaceholderText));
             painter.setFont(QFont("Monospace", 9));
             painter.drawText(QRectF(8, y - 12, 60, 14), Qt::AlignLeft | Qt::AlignVCenter, QString::number(deg) + "°");
         }
     }
 
-    // Measured Phase Path (Blue Color.blue #007aff / QColor(0, 122, 255), width 1.2)
+    // Measured Phase Path
     QPainterPath measuredPath;
     bool started = false;
     size_t bins = fr.bins();
@@ -200,10 +192,11 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
         }
     }
 
-    painter.setPen(QPen(QColor(0, 122, 255), 1.2));
+    QColor measuredColor = palette().color(QPalette::Highlight);
+    painter.setPen(QPen(measuredColor, 1.2));
     painter.drawPath(measuredPath);
 
-    // Corrected Phase Path (Orange Color.orange #ff9500 / QColor(255, 149, 0), width 1.6) if preset exists
+    // Corrected Phase Path
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
         const auto& preset = m_session->correctionPreset.value();
         QPainterPath correctedPath;
@@ -236,18 +229,17 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     // Legend
     int legendHeight =
         (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) ? 42 : 24;
-    painter.fillRect(QRect(w - 315, 8, 180, legendHeight),
-                     StyleTheme::isDark() ? QColor(0, 0, 0, 150) : QColor(245, 245, 247, 210));
+    painter.fillRect(QRect(w - 315, 8, 180, legendHeight), palette().color(QPalette::Window));
     painter.setFont(QFont("Monospace", 9));
-    painter.setPen(QPen(QColor(0, 122, 255), 1.5));
+    painter.setPen(QPen(measuredColor, 1.5));
     painter.drawLine(w - 307, 18, w - 289, 18);
-    painter.setPen(StyleTheme::textSecondary());
+    painter.setPen(palette().color(QPalette::PlaceholderText));
     painter.drawText(w - 283, 21, "Measured");
 
     if (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) {
         painter.setPen(QPen(QColor(255, 149, 0), 1.6));
         painter.drawLine(w - 307, 34, w - 289, 34);
-        painter.setPen(StyleTheme::textSecondary());
+        painter.setPen(palette().color(QPalette::PlaceholderText));
         painter.drawText(w - 283, 37, "Corrected (measured + EQ)");
     }
 }

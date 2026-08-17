@@ -1,7 +1,5 @@
 #include "ui/PipelineOverviewWidget.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QAction>
 #include <QEvent>
 #include <QFrame>
@@ -60,10 +58,7 @@ void PipelineOverviewWidget::setupUi() {
     m_headerTitle->setFont(QFont("", 13, QFont::Bold));
     topTitleRow->addWidget(m_headerTitle);
 
-    m_warningBadge = new QLabel("Broken Chain", this);
-    m_warningBadge->setStyleSheet("background-color: rgba(255, 59, 48, 0.15); color: #ff3b30; border: 1px solid "
-                                  "rgba(255, 59, 48, 0.4); border-radius: 4px; padding: 2px 6px; font-size: 10px; "
-                                  "font-weight: bold;");
+    m_warningBadge = new QLabel("⚠️ Broken Chain", this);
     m_warningBadge->setVisible(false);
     topTitleRow->addWidget(m_warningBadge);
     topTitleRow->addStretch();
@@ -71,34 +66,21 @@ void PipelineOverviewWidget::setupUi() {
     titleVBox->addLayout(topTitleRow);
 
     m_statsLabel = new QLabel(this);
-    m_statsLabel->setStyleSheet("color: #8e8e93; font-size: 11px;");
     titleVBox->addWidget(m_statsLabel);
 
     headerBox->addLayout(titleVBox, 1);
 
     // Categorized Add Stage Menu Button
     m_addStageBtn = new QPushButton("Add Stage…", this);
-    m_addStageBtn->setCursor(Qt::PointingHandCursor);
-    m_addStageBtn->setStyleSheet("background: rgba(0, 122, 255, 0.15); color: #007aff; border: none; "
-                                 "border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;");
     headerBox->addWidget(m_addStageBtn, 0, Qt::AlignVCenter);
 
     buildAddStageMenu();
 
     // Details Toggle Button
     m_toggleDetailsBtn = new QPushButton("Hide Elementary Steps", this);
-    m_toggleDetailsBtn->setCursor(Qt::PointingHandCursor);
-    m_toggleDetailsBtn->setStyleSheet("background: rgba(0, 122, 255, 0.15); color: #007aff; border: none; "
-                                      "border-radius: 12px; padding: 4px 10px; font-size: 11px; font-weight: bold;");
     connect(m_toggleDetailsBtn, &QPushButton::clicked, [this]() {
         m_showElementaryDetails = !m_showElementaryDetails;
         m_toggleDetailsBtn->setText(m_showElementaryDetails ? "Hide Elementary Steps" : "Show Elementary Steps");
-        m_toggleDetailsBtn->setStyleSheet(
-            m_showElementaryDetails
-                ? "background: rgba(0, 122, 255, 0.15); color: #007aff; border: none; border-radius: 12px; padding: "
-                  "4px 10px; font-size: 11px; font-weight: bold;"
-                : "background: rgba(142, 142, 147, 0.15); color: #8e8e93; border: none; border-radius: 12px; padding: "
-                  "4px 10px; font-size: 11px; font-weight: bold;");
         rebuildOverview();
     });
     headerBox->addWidget(m_toggleDetailsBtn, 0, Qt::AlignVCenter);
@@ -111,7 +93,7 @@ void PipelineOverviewWidget::setupUi() {
     legendRow->setSpacing(8);
 
     auto legendTitle = new QLabel("Channel Signal Wires:", this);
-    legendTitle->setStyleSheet("color: #8e8e93; font-size: 10px; font-weight: bold;");
+    legendTitle->setFont(QFont("", 10, QFont::Bold));
     legendRow->addWidget(legendTitle);
 
     m_legendContainerWidget = new QWidget(this);
@@ -144,14 +126,9 @@ void PipelineOverviewWidget::buildAddStageMenu() {
         return;
 
     auto menu = new QMenu(m_addStageBtn);
-    menu->setStyleSheet("QMenu { background-color: #1c1c1e; color: #ffffff; border: 1px solid #3a3a3c; border-radius: "
-                        "8px; padding: 4px; }"
-                        "QMenu::item { padding: 6px 20px; border-radius: 4px; font-size: 11px; }"
-                        "QMenu::item:selected { background-color: #007aff; color: #ffffff; }");
 
     auto addCategorySubMenu = [this, menu](const QString& categoryName, const std::vector<StageType>& types) {
         auto subMenu = menu->addMenu(categoryName);
-        subMenu->setStyleSheet(menu->styleSheet());
         for (StageType type : types) {
             QString name = QString::fromStdString(stageTypeToString(type));
             QString iconStr = QString::fromStdString(stageTypeToIcon(type));
@@ -182,7 +159,7 @@ void PipelineOverviewWidget::buildAddStageMenu() {
     m_addStageBtn->setMenu(menu);
 }
 
-QIcon PipelineOverviewWidget::createChannelDotIcon(int ch, bool hovered) const {
+QIcon PipelineOverviewWidget::createChannelDotIcon(int ch, bool /*hovered*/) const {
     QColor col = channelColor(ch);
     QPixmap px(8, 8);
     px.fill(Qt::transparent);
@@ -210,7 +187,6 @@ void PipelineOverviewWidget::rebuildLegendBar(int maxChannels) {
 
     for (int ch = 0; ch < maxChannels; ++ch) {
         auto pillBtn = new QPushButton(QString("Ch %1").arg(ch + 1), m_legendContainerWidget);
-        pillBtn->setCursor(Qt::PointingHandCursor);
         pillBtn->installEventFilter(this);
         updateLegendPillStyle(pillBtn, ch, false);
         m_legendBarLayout->addWidget(pillBtn);
@@ -225,22 +201,6 @@ void PipelineOverviewWidget::updateLegendPillStyle(QObject* obj, int ch, bool ho
 
     btn->setIcon(createChannelDotIcon(ch, hovered));
     btn->setIconSize(QSize(8, 8));
-
-    QColor col = channelColor(ch);
-    if (hovered) {
-        btn->setStyleSheet(
-            QString(
-                "QPushButton { background: rgba(%1, %2, %3, 0.15); color: rgb(%1, %2, %3); border: 1px solid rgba(%1, "
-                "%2, %3, 0.4); "
-                "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold; font-family: monospace; }")
-                .arg(col.red())
-                .arg(col.green())
-                .arg(col.blue()));
-    } else {
-        btn->setStyleSheet(QString(
-            "QPushButton { background: rgba(128, 128, 128, 0.08); color: #8e8e93; border: none; "
-            "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold; font-family: monospace; }"));
-    }
 }
 
 bool PipelineOverviewWidget::eventFilter(QObject* watched, QEvent* event) {
@@ -332,7 +292,6 @@ void PipelineOverviewWidget::paintCanvasWires(QWidget* canvasWidget) {
     for (int ch = 0; ch < maxCh; ++ch) {
         bool isHighlighted = (!m_hoveredChannel.has_value() || m_hoveredChannel.value() == ch);
         QColor col = channelColor(ch);
-        col.setAlpha(isHighlighted ? 115 : 30);
         QPen pen(col, isHighlighted ? 2.5 : 1.0, Qt::SolidLine);
         painter.setPen(pen);
 
@@ -539,14 +498,10 @@ void PipelineOverviewWidget::rebuildOverview() {
         connLine->setFrameShape(QFrame::HLine);
         connLine->setFixedHeight(2);
         connLine->setFixedWidth(24);
-        connLine->setStyleSheet(isMismatch ? "background: rgba(255, 59, 48, 0.8);"
-                                           : "background: rgba(0, 122, 255, 0.6);");
         arrowHBox->addWidget(connLine);
 
         auto arrowLabel = new QLabel(isMismatch ? "⚠️" : "›", connWidget);
         arrowLabel->setAlignment(Qt::AlignCenter);
-        arrowLabel->setStyleSheet(isMismatch ? "color: #ff3b30; font-size: 10px; font-weight: bold;"
-                                             : "color: rgba(0, 122, 255, 0.8); font-size: 10px; font-weight: bold;");
         arrowHBox->addWidget(arrowLabel);
         connVBox->addLayout(arrowHBox);
 
@@ -561,11 +516,6 @@ void PipelineOverviewWidget::rebuildOverview() {
 
         auto tagLabel = new QLabel(labelText, connWidget);
         tagLabel->setAlignment(Qt::AlignCenter);
-        tagLabel->setStyleSheet(
-            isMismatch ? "background: rgba(255, 59, 48, 0.15); color: #ff3b30; font-size: 8px; font-weight: bold; "
-                         "padding: 1px 4px; border-radius: 3px; font-family: monospace;"
-                       : "background: rgba(128, 128, 128, 0.12); color: #8e8e93; font-size: 8px; font-weight: bold; "
-                         "padding: 1px 4px; border-radius: 3px; font-family: monospace;");
         connVBox->addWidget(tagLabel);
 
         m_canvasLayout->addWidget(connWidget, 0, Qt::AlignVCenter);
@@ -573,17 +523,11 @@ void PipelineOverviewWidget::rebuildOverview() {
 
     // Helper: Build Graph Node Card Box
     auto createNodeCard = [this, isRunning](const QString& title, const QString& subtitle, const QString& iconStr,
-                                            const QString& colorHex, bool isActive, bool isWarning = false) {
-        auto card = new QWidget(m_canvasWidget);
-        card->setObjectName("GraphNodeCard");
+                                            const QString& /*colorHex*/, bool /*isActive*/, bool isWarning = false) {
+        auto card = new QFrame(m_canvasWidget);
+        card->setFrameShape(QFrame::StyledPanel);
+        card->setFrameShadow(QFrame::Sunken);
         card->setFixedWidth(210);
-        card->setStyleSheet(
-            QString("QWidget#GraphNodeCard { background: %1; border: %2 solid %3; border-radius: 10px; }")
-                .arg(isWarning ? "rgba(255, 59, 48, 0.08)"
-                               : (isActive ? QString("rgba(%1, 0.06)").arg(colorHex) : "rgba(142, 142, 147, 0.04)"))
-                .arg(isWarning ? "1.5px" : "1.0px")
-                .arg(isWarning ? "#ff3b30"
-                               : (isActive ? QString("rgba(%1, 0.25)").arg(colorHex) : "rgba(142, 142, 147, 0.15)")));
 
         auto cardLayout = new QVBoxLayout(card);
         cardLayout->setContentsMargins(10, 10, 10, 10);
@@ -596,22 +540,15 @@ void PipelineOverviewWidget::rebuildOverview() {
         auto iconDot = new QLabel(iconStr, card);
         iconDot->setFixedSize(26, 26);
         iconDot->setAlignment(Qt::AlignCenter);
-        iconDot->setStyleSheet(
-            QString("background: %1; border-radius: 13px; font-size: 12px;")
-                .arg(isWarning ? "rgba(255, 59, 48, 0.2)"
-                               : (isActive ? QString("rgba(%1, 0.2)").arg(colorHex) : "rgba(142, 142, 147, 0.15)")));
         headerRow->addWidget(iconDot);
 
         auto titleVBox = new QVBoxLayout();
         titleVBox->setSpacing(1);
         auto titleLbl = new QLabel(title, card);
         titleLbl->setFont(QFont("", 12, QFont::Bold));
-        titleLbl->setStyleSheet(isWarning ? "color: #ff3b30;"
-                                          : QString("color: %1;").arg(StyleTheme::textPrimary().name()));
         titleVBox->addWidget(titleLbl);
 
         auto subLbl = new QLabel(subtitle, card);
-        subLbl->setStyleSheet(QString("color: %1; font-size: 10px;").arg(StyleTheme::textSecondary().name()));
         titleVBox->addWidget(subLbl);
 
         headerRow->addLayout(titleVBox, 1);
@@ -626,22 +563,13 @@ void PipelineOverviewWidget::rebuildOverview() {
 
     auto capInfoLbl =
         new QLabel(QString("Channels: %1 • %2").arg(captureCh).arg(formatSampleRate(captureRate)), capCard);
-    capInfoLbl->setStyleSheet("color: #8e8e93; font-size: 10px;");
     capLayout->addWidget(capInfoLbl);
 
     auto capPillsHBox = new QHBoxLayout();
     capPillsHBox->setSpacing(3);
     for (int c = 0; c < captureCh; ++c) {
-        QColor col = channelColor(c);
         auto pill = new QLabel(QString::number(c + 1), capCard);
         pill->setAlignment(Qt::AlignCenter);
-        pill->setStyleSheet(
-            QString(
-                "background: rgba(%1, %2, %3, 0.18); color: rgb(%1, %2, %3); border: 1px solid rgba(%1, %2, %3, 0.3); "
-                "font-size: 9px; font-weight: bold; border-radius: 8px; padding: 2px 6px;")
-                .arg(col.red())
-                .arg(col.green())
-                .arg(col.blue()));
         capPillsHBox->addWidget(pill);
     }
     capPillsHBox->addStretch();
@@ -659,7 +587,6 @@ void PipelineOverviewWidget::rebuildOverview() {
 
         auto resampSub = new QLabel(
             QString("All %1 channels\nTarget: %2").arg(captureCh).arg(formatSampleRate(captureRate)), resampCard);
-        resampSub->setStyleSheet("color: #8e8e93; font-size: 10px; font-family: monospace;");
         resampLayout->addWidget(resampSub);
 
         m_canvasLayout->addWidget(resampCard);
@@ -694,13 +621,10 @@ void PipelineOverviewWidget::rebuildOverview() {
             // Add Stage Bypass Dot button in header row
             auto headerLayout = qobject_cast<QHBoxLayout*>(stLayout->itemAt(0)->layout());
             if (headerLayout) {
-                auto bypassDotBtn = new QPushButton(stCard);
-                bypassDotBtn->setFixedSize(8, 8);
-                bypassDotBtn->setCursor(Qt::PointingHandCursor);
+                auto bypassDotBtn = new QPushButton(active ? "🟢" : "⚪", stCard);
+                bypassDotBtn->setFixedSize(16, 16);
+                bypassDotBtn->setFlat(true);
                 bypassDotBtn->setToolTip(active ? "Click to disable stage" : "Click to enable stage");
-                bypassDotBtn->setStyleSheet(
-                    active ? QString("background: rgb(%1); border-radius: 4px; border: none;").arg(colorHex)
-                           : "background: rgba(142, 142, 147, 0.3); border-radius: 4px; border: none;");
                 connect(bypassDotBtn, &QPushButton::clicked, [this, i]() {
                     if (m_dspController && m_dspController->pipelineStore()) {
                         m_dspController->pipelineStore()->stages[i].isEnabled =
@@ -716,27 +640,21 @@ void PipelineOverviewWidget::rebuildOverview() {
             auto chBadge = new QLabel(inCh != outCh ? QString(" ⚙️ %1 In ➔ %2 Out ").arg(inCh).arg(outCh)
                                                     : QString(" ⚙️ %1 Ch ").arg(inCh),
                                       stCard);
-            chBadge->setStyleSheet("background: rgba(128, 128, 128, 0.12); color: auto; font-size: 10px; font-weight: "
-                                   "500; border-radius: 4px; padding: 2px 4px;");
             stLayout->addWidget(chBadge);
 
             // Elementary Steps breakdown
             if (m_showElementaryDetails && active) {
                 auto divider = new QFrame(stCard);
                 divider->setFrameShape(QFrame::HLine);
-                divider->setStyleSheet("background: rgba(128, 128, 128, 0.2); height: 1px;");
+                divider->setFrameShadow(QFrame::Sunken);
                 stLayout->addWidget(divider);
 
                 auto stepsRes = StageBuilders::buildStage(stage, captureRate, inCh, eqMap, convMap);
 
                 for (const auto& step : stepsRes.steps) {
-                    QString sColorHex = stepTypeColorHex(step.type);
-                    auto stepWidget = new QWidget(stCard);
-                    stepWidget->setObjectName("ElementaryStepWidget");
-                    stepWidget->setStyleSheet(
-                        QString("QWidget#ElementaryStepWidget { background: rgba(%1, 0.08); border-radius: 6px; "
-                                "border: 1px solid rgba(%1, 0.2); }")
-                            .arg(sColorHex));
+                    auto stepWidget = new QFrame(stCard);
+                    stepWidget->setFrameShape(QFrame::Box);
+                    stepWidget->setFrameShadow(QFrame::Plain);
                     auto stepVBox = new QVBoxLayout(stepWidget);
                     stepVBox->setContentsMargins(6, 4, 6, 4);
                     stepVBox->setSpacing(2);
@@ -753,7 +671,6 @@ void PipelineOverviewWidget::rebuildOverview() {
                         icon = "💻";
 
                     auto iconLbl = new QLabel(icon, stepWidget);
-                    iconLbl->setStyleSheet(QString("font-size: 9px; color: rgb(%1);").arg(sColorHex));
                     stepHeader->addWidget(iconLbl);
 
                     QString stepTitle = stepTypeTitle(step.type);
@@ -783,9 +700,6 @@ void PipelineOverviewWidget::rebuildOverview() {
                     if (chList.size() == static_cast<size_t>(inCh) && inCh > 4) {
                         auto chTag = new QLabel("All", stepWidget);
                         chTag->setAlignment(Qt::AlignCenter);
-                        chTag->setStyleSheet(
-                            "background: rgba(142, 142, 147, 0.15); color: #8e8e93; font-size: 8px; font-weight: bold; "
-                            "border-radius: 3px; padding: 1px 3px;");
                         chTagsBox->addWidget(chTag);
                     } else if (chList.size() > 4) {
                         bool isContiguous = true;
@@ -803,21 +717,11 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                         auto chTag = new QLabel(labelText, stepWidget);
                         chTag->setAlignment(Qt::AlignCenter);
-                        chTag->setStyleSheet(
-                            "background: rgba(142, 142, 147, 0.15); color: #8e8e93; font-size: 8px; font-weight: bold; "
-                            "border-radius: 3px; padding: 1px 3px;");
                         chTagsBox->addWidget(chTag);
                     } else {
                         for (int ch : chList) {
-                            QColor col = channelColor(ch);
                             auto chTag = new QLabel(QString::number(ch + 1), stepWidget);
                             chTag->setAlignment(Qt::AlignCenter);
-                            chTag->setStyleSheet(
-                                QString("background: rgba(%1, %2, %3, 0.2); color: rgb(%1, %2, %3); font-size: 8px; "
-                                        "font-weight: bold; border-radius: 3px; padding: 1px 3px;")
-                                    .arg(col.red())
-                                    .arg(col.green())
-                                    .arg(col.blue()));
                             chTagsBox->addWidget(chTag);
                         }
                     }
@@ -832,19 +736,15 @@ void PipelineOverviewWidget::rebuildOverview() {
                             itemHBox->setSpacing(4);
 
                             auto dotLbl = new QLabel("•", stepWidget);
-                            dotLbl->setStyleSheet(QString("color: rgba(%1, 0.8); font-size: 8px;").arg(sColorHex));
                             itemHBox->addWidget(dotLbl);
 
                             auto nLbl = new QLabel(readableFilterName(rawN, stage), stepWidget);
-                            nLbl->setStyleSheet("color: #8e8e93; font-size: 9px; font-family: monospace;");
                             itemHBox->addWidget(nLbl, 1);
 
                             stepVBox->addLayout(itemHBox);
                         }
                     } else if (step.name.has_value()) {
                         auto nLbl = new QLabel(readableMixerOrProcessorName(step.name.value(), stage), stepWidget);
-                        nLbl->setStyleSheet(
-                            "color: #8e8e93; font-size: 9px; font-family: monospace; padding-left: 12px;");
                         stepVBox->addWidget(nLbl);
                     }
 
@@ -861,14 +761,6 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveLeftBtn->setFixedSize(24, 22);
             moveLeftBtn->setToolTip("Move stage left");
             moveLeftBtn->setEnabled(i > 0);
-            moveLeftBtn->setCursor(i > 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
-            moveLeftBtn->setStyleSheet(
-                QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
-                        "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; "
-                        "margin: 0px; text-align: center; }")
-                    .arg(StyleTheme::textPrimary().name())
-                    .arg(StyleTheme::textSecondary().name()));
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->moveStage(static_cast<int>(i), static_cast<int>(i - 1));
@@ -882,14 +774,6 @@ void PipelineOverviewWidget::rebuildOverview() {
             moveRightBtn->setFixedSize(24, 22);
             moveRightBtn->setToolTip("Move stage right");
             moveRightBtn->setEnabled(i + 1 < pipe->stages.size());
-            moveRightBtn->setCursor(i + 1 < pipe->stages.size() ? Qt::PointingHandCursor : Qt::ArrowCursor);
-            moveRightBtn->setStyleSheet(
-                QString("QPushButton { background: rgba(142, 142, 147, 0.15); color: %1; border: none; border-radius: "
-                        "4px; font-size: 10px; padding: 0px; margin: 0px; text-align: center; }"
-                        "QPushButton:disabled { background: rgba(142, 142, 147, 0.05); color: %2; padding: 0px; "
-                        "margin: 0px; text-align: center; }")
-                    .arg(StyleTheme::textPrimary().name())
-                    .arg(StyleTheme::textSecondary().name()));
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->moveStage(static_cast<int>(i), static_cast<int>(i + 1));
@@ -904,10 +788,6 @@ void PipelineOverviewWidget::rebuildOverview() {
             auto deleteBtn = new QPushButton("🗑", stCard);
             deleteBtn->setFixedSize(24, 22);
             deleteBtn->setToolTip("Delete stage");
-            deleteBtn->setCursor(Qt::PointingHandCursor);
-            deleteBtn->setStyleSheet(
-                "QPushButton { background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: none; "
-                "border-radius: 4px; font-size: 11px; padding: 0px; margin: 0px; text-align: center; }");
             connect(deleteBtn, &QPushButton::clicked, [this, stageId = stage.id]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->deleteStage(stageId);
@@ -928,10 +808,6 @@ void PipelineOverviewWidget::rebuildOverview() {
                     if (!senderWidget)
                         return;
                     QMenu menu(senderWidget);
-                    menu.setStyleSheet("QMenu { background-color: #1c1c1e; color: #ffffff; border: 1px solid #3a3a3c; "
-                                       "border-radius: 8px; padding: 4px; }"
-                                       "QMenu::item { padding: 6px 20px; border-radius: 4px; font-size: 11px; }"
-                                       "QMenu::item:selected { background-color: #007aff; color: #ffffff; }");
 
                     auto toggleAct = menu.addAction("Toggle Enabled");
                     connect(toggleAct, &QAction::triggered, [this, i]() {
@@ -998,28 +874,18 @@ void PipelineOverviewWidget::rebuildOverview() {
     if (isOutputMismatch) {
         auto warnLbl =
             new QLabel(QString("Got %1 ch, Device expects %2 ch").arg(finalOutputCh).arg(playbackCh), playCard);
-        warnLbl->setStyleSheet("color: #ff3b30; font-size: 9px; font-weight: bold;");
         playLayout->addWidget(warnLbl);
     }
 
     auto playInfoLbl =
         new QLabel(QString("Channels: %1 • %2").arg(playbackCh).arg(formatSampleRate(playbackRate)), playCard);
-    playInfoLbl->setStyleSheet("color: #8e8e93; font-size: 10px;");
     playLayout->addWidget(playInfoLbl);
 
     auto playPillsHBox = new QHBoxLayout();
     playPillsHBox->setSpacing(3);
     for (int c = 0; c < playbackCh; ++c) {
-        QColor col = channelColor(c);
         auto pill = new QLabel(QString::number(c + 1), playCard);
         pill->setAlignment(Qt::AlignCenter);
-        pill->setStyleSheet(
-            QString(
-                "background: rgba(%1, %2, %3, 0.18); color: rgb(%1, %2, %3); border: 1px solid rgba(%1, %2, %3, 0.3); "
-                "font-size: 9px; font-weight: bold; border-radius: 8px; padding: 2px 6px;")
-                .arg(col.red())
-                .arg(col.green())
-                .arg(col.blue()));
         playPillsHBox->addWidget(pill);
     }
     playPillsHBox->addStretch();

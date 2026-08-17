@@ -1,7 +1,5 @@
 #include "ui/MiniPlayerView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QGraphicsOpacityEffect>

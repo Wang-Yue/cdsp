@@ -1,7 +1,5 @@
 #include "ui/DSPDetailedSignalGraphCard.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QPainterPath>
 #include <algorithm>
 #include <cmath>
@@ -436,7 +434,6 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
     painter.setRenderHint(QPainter::TextAntialiasing, true);
 
     qreal originY = height() / 2.0 + m_titleHeaderHeight / 2.0;
-    bool isDarkTheme = StyleTheme::isDark();
 
     // 1. Render Container Boxes (Layer 1)
     for (const auto& box : m_boxes) {
@@ -475,15 +472,15 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
 
         QRectF boxRect(boxCenterX - boxW / 2.0, boxCenterY - boxH / 2.0, boxW, boxH);
 
-        QPen boxPen(isDarkTheme ? QColor(255, 255, 255, 46) : QColor(0, 0, 0, 46), 1, Qt::CustomDashLine);
+        QPen boxPen(palette().color(QPalette::Mid), 1, Qt::CustomDashLine);
         boxPen.setDashPattern({4, 3});
         painter.setPen(boxPen);
-        painter.setBrush(isDarkTheme ? QColor(255, 255, 255, 8) : QColor(0, 0, 0, 8));
+        painter.setBrush(Qt::NoBrush);
         painter.drawRoundedRect(boxRect, 10, 10);
 
         // Stage Title Header above Box
         painter.setFont(QFont("monospace", 11, QFont::Bold));
-        painter.setPen(StyleTheme::accent());
+        painter.setPen(palette().color(QPalette::Highlight));
         painter.drawText(QRectF(boxRect.left() - 40, boxRect.top() - 22, boxW + 80, 20), Qt::AlignCenter, box.label);
     }
 
@@ -530,7 +527,7 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         if (!arrow.label.isEmpty()) {
             QPointF midPoint(p0.x() + dx * 0.65, p0.y() + (p1.y() - p0.y()) * 0.65);
             painter.setFont(QFont("monospace", 8, QFont::DemiBold));
-            painter.setPen(StyleTheme::textSecondary());
+            painter.setPen(palette().color(QPalette::PlaceholderText));
             painter.drawText(QRectF(midPoint.x() - 35, midPoint.y() - 14, 70, 28), Qt::AlignCenter, arrow.label);
         }
     }
@@ -541,20 +538,20 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         QRectF bRect(pos.x() - b.width / 2.0, pos.y() - b.height / 2.0, b.width, b.height);
 
         if (b.isChannelPort) {
-            painter.setBrush(QColor(0, 122, 255, 31));
-            painter.setPen(QPen(QColor(0, 122, 255, 77), 1));
+            painter.setBrush(palette().color(QPalette::Highlight).lighter(180));
+            painter.setPen(QPen(palette().color(QPalette::Highlight), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
             painter.setFont(QFont("monospace", 11, QFont::Bold));
-            painter.setPen(QColor("#007aff"));
+            painter.setPen(palette().color(QPalette::Highlight));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         } else if (!b.label.isEmpty()) {
-            painter.setBrush(isDarkTheme ? QColor(40, 40, 40) : QColor(255, 255, 255));
-            painter.setPen(QPen(isDarkTheme ? QColor(255, 255, 255, 64) : QColor(0, 0, 0, 64), 1));
+            painter.setBrush(palette().color(QPalette::Base));
+            painter.setPen(QPen(palette().color(QPalette::Mid), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
             painter.setFont(QFont("monospace", 10, QFont::DemiBold));
-            painter.setPen(StyleTheme::textPrimary());
+            painter.setPen(palette().color(QPalette::Text));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         }
     }
@@ -646,10 +643,6 @@ void DSPDetailedSignalGraphCard::setupUi() {
     topRow->addWidget(titleLbl);
 
     m_resetLayoutBtn = new QPushButton("Reset Layout", this);
-    m_resetLayoutBtn->setCursor(Qt::PointingHandCursor);
-    m_resetLayoutBtn->setStyleSheet("QPushButton { background: rgba(128, 128, 128, 0.12); color: auto; border: none; "
-                                    "border-radius: 10px; padding: 3px 8px; font-size: 10px; font-weight: bold; } "
-                                    "QPushButton:hover { background: rgba(128, 128, 128, 0.22); }");
     m_resetLayoutBtn->setVisible(false);
     topRow->addWidget(m_resetLayoutBtn);
     topRow->addStretch();
@@ -658,11 +651,6 @@ void DSPDetailedSignalGraphCard::setupUi() {
     headerBox->addLayout(titleVBox, 1);
 
     m_activeStagesBadge = new QLabel(this);
-    bool isDarkTheme = StyleTheme::isDark();
-    m_activeStagesBadge->setStyleSheet(QString("background: %1; color: %2; border-radius: 10px; "
-                                               "padding: 3px 8px; font-size: 10px; font-weight: bold;")
-                                           .arg(isDarkTheme ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.06)")
-                                           .arg(isDarkTheme ? "#8e8e93" : "#6c6c70"));
     headerBox->addWidget(m_activeStagesBadge, 0, Qt::AlignVCenter);
 
     rootLayout->addLayout(headerBox);
@@ -699,11 +687,6 @@ void DSPDetailedSignalGraphCard::updateCard() {
 
     if (m_activeStagesBadge) {
         m_activeStagesBadge->setText(QString("%1 Active Stages").arg(activeCount));
-        bool isDarkTheme = StyleTheme::isDark();
-        m_activeStagesBadge->setStyleSheet(QString("background: %1; color: %2; border-radius: 10px; "
-                                                   "padding: 3px 8px; font-size: 10px; font-weight: bold;")
-                                               .arg(isDarkTheme ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.06)")
-                                               .arg(isDarkTheme ? "#8e8e93" : "#6c6c70"));
     }
 
     if (m_canvas) {

@@ -44,7 +44,6 @@ private slots:
     void onEngineStatusChanged(ProcessingState state);
     void toggleMiniPlayer();
     void toggleMute();
-    void updateTheme();
     void updateMuteDisplay();
     void updateVolumeDisplay();
     void updateStatusBar();
@@ -100,8 +99,6 @@ private:
     QAction* m_actAutoEqPreset = nullptr;
     QAction* m_actStartStop = nullptr;
     QAction* m_actMute = nullptr;
-    QAction* m_actThemeLight = nullptr;
-    QAction* m_actThemeDark = nullptr;
 
     QMap<QString, QWidget*> m_pageCache;
     QWidget* m_unavailableWidget = nullptr;

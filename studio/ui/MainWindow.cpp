@@ -16,7 +16,6 @@
 #include "ui/SpectrogramView.h"
 #include "ui/SpectrumView.h"
 #include "ui/StageDetailView.h"
-#include "ui/StyleTheme.h"
 #include "ui/VectorScopeView.h"
 #include "ui/VisualizerDetailViews.h"
 #include "utils/AppIcon.h"
@@ -68,10 +67,6 @@ public:
                            std::function<void(bool)> onToggle, std::function<void()> onRowClick,
                            QWidget* parent = nullptr)
         : QWidget(parent), m_tree(tree), m_item(item), m_onToggle(onToggle), m_onRowClick(onRowClick) {
-        setAutoFillBackground(false);
-        setAttribute(Qt::WA_StyledBackground, true);
-        setStyleSheet("QWidget { background: transparent; }");
-
         setFixedHeight(26);
         if (m_item) {
             m_item->setSizeHint(0, QSize(0, 26));
@@ -83,7 +78,6 @@ public:
 
         m_label = new QLabel(title, this);
         m_label->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_label->setStyleSheet("QLabel { background: transparent; }");
         layout->addWidget(m_label);
 
         layout->addStretch();
@@ -91,8 +85,6 @@ public:
         m_checkbox = new QCheckBox(this);
         m_checkbox->setFocusPolicy(Qt::NoFocus);
         m_checkbox->setChecked(isChecked);
-        m_checkbox->setStyleSheet(
-            "QCheckBox { background: transparent; } QCheckBox::indicator { width: 14px; height: 14px; }");
         layout->addWidget(m_checkbox);
 
         connect(m_checkbox, &QCheckBox::toggled, this, [this](bool checked) {
@@ -163,7 +155,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setupStatusBar();
     setupTrayIcon();
     setupShortcuts();
-    updateTheme();
 
     // Wire app state callbacks
     m_settings->onChanged = [this]() {
@@ -217,14 +208,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         updateStatusBar();
     });
     connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
-        static bool lastDarkMode = m_settings->darkMode;
         updateMuteDisplay();
         updateVolumeDisplay();
         updateStatusBar();
-        if (m_settings->darkMode != lastDarkMode) {
-            lastDarkMode = m_settings->darkMode;
-            updateTheme();
-        }
     });
 
     m_monitoring->start();
@@ -238,21 +224,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             m_settings->savePreferences();
         }
     });
-}
-
-void MainWindow::updateTheme() {
-    StyleTheme::applyTheme(qApp, m_settings->darkMode ? AppTheme::Dark : AppTheme::Light);
-    if (m_actThemeLight && m_actThemeDark) {
-        m_actThemeLight->blockSignals(true);
-        m_actThemeDark->blockSignals(true);
-        m_actThemeLight->setChecked(!m_settings->darkMode);
-        m_actThemeDark->setChecked(m_settings->darkMode);
-        m_actThemeLight->blockSignals(false);
-        m_actThemeDark->blockSignals(false);
-    }
-    for (QWidget* w : qApp->allWidgets()) {
-        w->update();
-    }
 }
 
 void MainWindow::setupUi() {
@@ -325,7 +296,6 @@ void MainWindow::setupUi() {
     auto line = new QFrame(rightPanel);
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
-    line->setProperty("themeBorder", true);
     rightLayout->addWidget(line);
 
     m_centralStack = new QStackedWidget(rightPanel);
@@ -351,20 +321,10 @@ void MainWindow::setupStatusBar() {
     m_statusStagesLabel = new QLabel("Stages: 0 active", this);
     m_statusActivePresetLabel = new QLabel("Preset: None", this);
     m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
-    m_stopReasonBanner = new QLabel(this);
-    m_statusMuteLabel = new QLabel("Unmuted", this);
-
-    m_statusStateLabel->setProperty("state", "inactive");
-    m_statusSampleRateBadge->setProperty("badge", "sample-rate");
-    m_statusBufferLabel->setProperty("secondary", true);
-    m_statusResamplerLabel->setProperty("secondary", true);
-    m_statusStagesLabel->setProperty("secondary", true);
-    m_statusActivePresetLabel->setProperty("secondary", true);
-    m_statusRuntimeLabel->setProperty("secondary", true);
     m_statusRuntimeLabel->setFont(QFont("monospace"));
-    m_stopReasonBanner->setProperty("banner", "error");
+    m_stopReasonBanner = new QLabel(this);
     m_stopReasonBanner->hide();
-    m_statusMuteLabel->setProperty("muteState", "unmuted");
+    m_statusMuteLabel = new QLabel("Unmuted", this);
 
     bar->addWidget(m_statusStateLabel);
     bar->addWidget(m_statusSampleRateBadge);
@@ -490,38 +450,6 @@ void MainWindow::setupMenuBar() {
     setupViewAct("Analog VU Meter", {QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
     setupViewAct("Console Logs", {QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
     setupViewAct("General Settings", {QKeySequence("Cmd+9"), QKeySequence("Ctrl+9")}, "general_settings");
-
-    viewMenu->addSeparator();
-
-    // Theme Submenu under View
-    auto themeSubMenu = viewMenu->addMenu("Theme");
-    auto themeGroup = new QActionGroup(this);
-
-    m_actThemeLight = new QAction("Light Mode", this);
-    m_actThemeLight->setCheckable(true);
-    m_actThemeLight->setChecked(!m_settings->darkMode);
-    connect(m_actThemeLight, &QAction::triggered, [this]() {
-        if (m_settings->darkMode) {
-            m_settings->darkMode = false;
-            m_settings->savePreferences();
-            emit m_settings->settingsChanged();
-        }
-    });
-    themeGroup->addAction(m_actThemeLight);
-    themeSubMenu->addAction(m_actThemeLight);
-
-    m_actThemeDark = new QAction("Dark Mode", this);
-    m_actThemeDark->setCheckable(true);
-    m_actThemeDark->setChecked(m_settings->darkMode);
-    connect(m_actThemeDark, &QAction::triggered, [this]() {
-        if (!m_settings->darkMode) {
-            m_settings->darkMode = true;
-            m_settings->savePreferences();
-            emit m_settings->settingsChanged();
-        }
-    });
-    themeGroup->addAction(m_actThemeDark);
-    themeSubMenu->addAction(m_actThemeDark);
 
     viewMenu->addSeparator();
 
@@ -807,19 +735,11 @@ void MainWindow::updateMuteDisplay() {
     bool muted = m_settings->getMuted(Fader::Main);
     if (muted) {
         m_toolbarMuteBtn->setText("🔇");
-        m_toolbarMuteBtn->setProperty("muteState", "muted");
         m_statusMuteLabel->setText("MUTED");
-        m_statusMuteLabel->setProperty("muteState", "muted");
     } else {
         m_toolbarMuteBtn->setText("🔊");
-        m_toolbarMuteBtn->setProperty("muteState", "unmuted");
         m_statusMuteLabel->setText("Unmuted");
-        m_statusMuteLabel->setProperty("muteState", "unmuted");
     }
-    m_toolbarMuteBtn->style()->unpolish(m_toolbarMuteBtn);
-    m_toolbarMuteBtn->style()->polish(m_toolbarMuteBtn);
-    m_statusMuteLabel->style()->unpolish(m_statusMuteLabel);
-    m_statusMuteLabel->style()->polish(m_statusMuteLabel);
 
     if (m_trayMuteAction) {
         m_trayMuteAction->setChecked(muted);
@@ -836,40 +756,29 @@ void MainWindow::updateVolumeDisplay() {
     }
 
     m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
-    m_gainValueLabel->setProperty("clipping", gain > 0.0f);
-    m_gainValueLabel->style()->polish(m_gainValueLabel);
 }
 
 void MainWindow::updateStatusBar() {
     QString stateStr;
-    QString statePropVal;
     switch (m_dspController->status) {
     case ProcessingState::Running:
         stateStr = "🟢 Running";
-        statePropVal = "running";
         break;
     case ProcessingState::Starting:
         stateStr = "🟡 Starting";
-        statePropVal = "warning";
         break;
     case ProcessingState::Paused:
         stateStr = "🟡 Paused";
-        statePropVal = "warning";
         break;
     case ProcessingState::Stalled:
         stateStr = "🟡 Stalled";
-        statePropVal = "warning";
         break;
     case ProcessingState::Inactive:
     default:
         stateStr = "🔴 Inactive";
-        statePropVal = "inactive";
         break;
     }
     m_statusStateLabel->setText(stateStr);
-    m_statusStateLabel->setProperty("state", statePropVal);
-    m_statusStateLabel->style()->unpolish(m_statusStateLabel);
-    m_statusStateLabel->style()->polish(m_statusStateLabel);
     m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
     if (m_statusSampleRateBadge) {
         m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
@@ -914,9 +823,6 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     case ProcessingState::Stalled:
         m_startStopBtn->setText("🛑 Stop");
         m_startStopBtn->setToolTip("Stop Engine");
-        m_startStopBtn->setProperty("state", "running");
-        m_startStopBtn->style()->unpolish(m_startStopBtn);
-        m_startStopBtn->style()->polish(m_startStopBtn);
         if (state == ProcessingState::Running) {
             if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
                 m_engineRunTimer.start();
@@ -929,17 +835,11 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     case ProcessingState::Starting:
         m_startStopBtn->setText("⏳ Starting...");
         m_startStopBtn->setToolTip("Starting Engine...");
-        m_startStopBtn->setProperty("state", "warning");
-        m_startStopBtn->style()->unpolish(m_startStopBtn);
-        m_startStopBtn->style()->polish(m_startStopBtn);
         break;
     case ProcessingState::Inactive:
     default:
         m_startStopBtn->setText("▶️ Start");
         m_startStopBtn->setToolTip("Start Engine");
-        m_startStopBtn->setProperty("state", "inactive");
-        m_startStopBtn->style()->unpolish(m_startStopBtn);
-        m_startStopBtn->style()->polish(m_startStopBtn);
         m_runtimeUpdateTimer.stop();
         if (m_statusRuntimeLabel) {
             m_statusRuntimeLabel->setText("Run Time: 00:00:00");
@@ -959,7 +859,6 @@ void MainWindow::setupToolbar() {
 
     m_startStopBtn = new QPushButton("▶️ Start", this);
     m_startStopBtn->setToolTip("Start Engine");
-    m_startStopBtn->setProperty("state", "inactive");
     connect(m_startStopBtn, &QPushButton::clicked, [this]() {
         if (m_dspController->status == ProcessingState::Running || m_dspController->status == ProcessingState::Paused ||
             m_dspController->status == ProcessingState::Stalled) {
@@ -972,13 +871,11 @@ void MainWindow::setupToolbar() {
 
     m_sampleRateBadge = new QLabel("48000 Hz", this);
     m_sampleRateBadge->setFont(QFont("monospace", 11));
-    m_sampleRateBadge->setProperty("secondary", true);
     toolBar->addWidget(m_sampleRateBadge);
 
     m_toolbarMuteBtn = new QPushButton("🔊", this);
     m_toolbarMuteBtn->setToolTip("Toggle Mute");
     m_toolbarMuteBtn->setFlat(true);
-    m_toolbarMuteBtn->setProperty("muteState", "unmuted");
     connect(m_toolbarMuteBtn, &QPushButton::clicked, this, &MainWindow::toggleMute);
     toolBar->addWidget(m_toolbarMuteBtn);
 
@@ -999,7 +896,6 @@ void MainWindow::setupToolbar() {
     m_gainValueLabel = new QLabel("  0.0 dB", this);
     m_gainValueLabel->setFixedWidth(50);
     m_gainValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_gainValueLabel->setProperty("clipping", false);
     updateVolumeDisplay();
     toolBar->addWidget(m_gainValueLabel);
 }
@@ -1453,7 +1349,6 @@ void MainWindow::onPipelineChanged() {
         }
         lblTitle->setAlignment(Qt::AlignCenter);
         auto lblDesc = new QLabel("Select another stage or preset from the sidebar.", m_unavailableWidget);
-        lblDesc->setProperty("secondary", true);
         {
             QFont font = lblDesc->font();
             font.setPointSize(13);

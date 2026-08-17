@@ -1,7 +1,6 @@
 #include "ui/ConvolutionImportDlg.h"
 
 #include "models/ConvCoefficientLoader.h"
-#include "ui/StyleTheme.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -94,7 +93,6 @@ void ConvolutionImportDlg::setupUi() {
     headerBox->addWidget(titleLbl);
 
     auto subtitleLbl = new QLabel("Import files as a unified multi-rate Convolution Preset.", headerWidget);
-    subtitleLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::textSecondary().name()));
     headerBox->addWidget(subtitleLbl);
     outerLayout->addWidget(headerWidget);
 
@@ -147,11 +145,8 @@ void ConvolutionImportDlg::setupUi() {
     fileSectionLayout->addLayout(tableHeader);
 
     // Empty state container
-    m_emptyStateWidget = new QWidget(contentWidget);
-    m_emptyStateWidget->setStyleSheet(
-        QString("QWidget { border: 1px dashed %1; border-radius: 8px; background: transparent; }"
-                "QLabel { border: none; }")
-            .arg(StyleTheme::border().name()));
+    m_emptyStateWidget = new QFrame(contentWidget);
+    m_emptyStateWidget->setFrameShape(QFrame::StyledPanel);
     auto emptyLayout = new QVBoxLayout(m_emptyStateWidget);
     emptyLayout->setContentsMargins(20, 40, 20, 40);
     emptyLayout->setSpacing(12);
@@ -159,13 +154,11 @@ void ConvolutionImportDlg::setupUi() {
     auto emptyIcon = new QLabel("⇣", m_emptyStateWidget);
     emptyIcon->setAlignment(Qt::AlignCenter);
     emptyIcon->setFont(QFont("sans-serif", 24));
-    emptyIcon->setStyleSheet(QString("color: %1;").arg(StyleTheme::textSecondary().name()));
     emptyLayout->addWidget(emptyIcon);
 
     auto emptyText =
         new QLabel("No files selected. Click 'Add File(s)' or drag & drop files to begin.", m_emptyStateWidget);
     emptyText->setAlignment(Qt::AlignCenter);
-    emptyText->setStyleSheet(QString("color: %1; font-size: 13px;").arg(StyleTheme::textSecondary().name()));
     emptyLayout->addWidget(emptyText);
 
     fileSectionLayout->addWidget(m_emptyStateWidget);
@@ -179,7 +172,6 @@ void ConvolutionImportDlg::setupUi() {
     m_warningLabel = new QLabel(this);
     m_warningLabel->setText(
         "⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
-    m_warningLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(StyleTheme::accentOrange().name()));
     m_warningLabel->setVisible(false);
     m_warningLabel->setWordWrap(true);
     fileSectionLayout->addWidget(m_warningLabel);
@@ -187,10 +179,8 @@ void ConvolutionImportDlg::setupUi() {
     contentLayout->addLayout(fileSectionLayout);
 
     // Error banner container
-    m_errorWidget = new QWidget(contentWidget);
-    m_errorWidget->setStyleSheet(QString("QWidget { background-color: rgba(255, 59, 48, 0.1); border-radius: 8px; }"
-                                         "QLabel { background: transparent; color: %1; font-size: 13px; }")
-                                     .arg(StyleTheme::accentRed().name()));
+    m_errorWidget = new QFrame(contentWidget);
+    m_errorWidget->setFrameShape(QFrame::StyledPanel);
     auto errorLayout = new QHBoxLayout(m_errorWidget);
     errorLayout->setContentsMargins(12, 12, 12, 12);
 
@@ -263,11 +253,8 @@ void ConvolutionImportDlg::updateItemsList() {
         static const QStringList formats = {"WAV", "FLOAT64", "FLOAT32", "S16_LE", "S32_LE", "TEXT"};
 
         for (size_t i = 0; i < m_items.size(); ++i) {
-            auto card = new QWidget(this);
-            card->setStyleSheet(QString("QWidget { background-color: %1; border: 1px solid %2; border-radius: 8px; }"
-                                        "QLabel, QComboBox, QSpinBox, QCheckBox, QPushButton { border-radius: 4px; }")
-                                    .arg(StyleTheme::cardBg().name())
-                                    .arg(StyleTheme::border().name()));
+            auto card = new QFrame(this);
+            card->setFrameShape(QFrame::StyledPanel);
 
             auto cardLayout = new QVBoxLayout(card);
             cardLayout->setContentsMargins(12, 12, 12, 12);
@@ -278,18 +265,14 @@ void ConvolutionImportDlg::updateItemsList() {
             QFileInfo fi(m_items[i].filePath);
 
             auto iconLbl = new QLabel(m_items[i].format == "WAV" ? "〰" : "📄", card);
-            iconLbl->setStyleSheet(
-                QString("color: %1; font-size: 14px; border: none;").arg(StyleTheme::accent().name()));
             topRow->addWidget(iconLbl);
 
             auto nameLbl = new QLabel(fi.fileName(), card);
             nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
-            nameLbl->setStyleSheet("border: none;");
             topRow->addWidget(nameLbl, 1);
 
             auto delBtn = new QPushButton("🗑", card);
             delBtn->setFlat(true);
-            delBtn->setStyleSheet("color: #ff3b30; font-size: 14px; border: none; background: transparent;");
             connect(delBtn, &QPushButton::clicked, [this, i]() {
                 m_items.erase(m_items.begin() + i);
                 QMetaObject::invokeMethod(this, [this]() { updateItemsList(); }, Qt::QueuedConnection);
@@ -305,8 +288,6 @@ void ConvolutionImportDlg::updateItemsList() {
 
             // Sample Rate
             auto rateLbl = new QLabel("Sample Rate", card);
-            rateLbl->setStyleSheet(
-                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
             grid->addWidget(rateLbl, 0, 0);
 
             auto rateCombo = new QComboBox(card);
@@ -325,8 +306,6 @@ void ConvolutionImportDlg::updateItemsList() {
 
             // Format
             auto fmtLbl = new QLabel("Format", card);
-            fmtLbl->setStyleSheet(
-                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
             grid->addWidget(fmtLbl, 1, 0);
 
             auto fmtCombo = new QComboBox(card);
@@ -343,8 +322,6 @@ void ConvolutionImportDlg::updateItemsList() {
             // WAV Channel (if WAV)
             if (m_items[i].format == "WAV") {
                 auto chLbl = new QLabel("WAV Channel", card);
-                chLbl->setStyleSheet(
-                    QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
                 grid->addWidget(chLbl, nextRow, 0);
 
                 auto chSpin = new QSpinBox(card);
@@ -361,8 +338,6 @@ void ConvolutionImportDlg::updateItemsList() {
             // Phase Invert Checkbox
             auto phaseCheck = new QCheckBox("Invert Phase", card);
             phaseCheck->setChecked(m_items[i].invertPhase);
-            phaseCheck->setStyleSheet(
-                QString("color: %1; font-size: 11px; border: none;").arg(StyleTheme::textSecondary().name()));
             connect(phaseCheck, &QCheckBox::toggled, [this, i](bool checked) { m_items[i].invertPhase = checked; });
             grid->addWidget(phaseCheck, nextRow, 0, 1, 2);
 

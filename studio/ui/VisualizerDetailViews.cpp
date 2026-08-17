@@ -1,7 +1,5 @@
 #include "ui/VisualizerDetailViews.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
@@ -18,14 +16,7 @@ namespace {
 
 QFrame* createPanelFrame(QWidget* parent) {
     auto frame = new QFrame(parent);
-    bool isDark = StyleTheme::isDark();
-    QString bg = isDark ? "#1c1d24" : "#f2f2f7";
-    QString border = isDark ? "#2c2d3a" : "#d1d1d6";
-    frame->setStyleSheet(QString("QFrame { "
-                                 "   background-color: %1; "
-                                 "   border-top: 1px solid %2; "
-                                 "}")
-                             .arg(bg, border));
+    frame->setFrameShape(QFrame::StyledPanel);
     return frame;
 }
 
@@ -35,32 +26,11 @@ QTabBar* createSegmentedPicker(const QStringList& items, QWidget* parent) {
         tabBar->addTab(item);
     }
     tabBar->setDrawBase(false);
-    bool isDark = StyleTheme::isDark();
-    QString bg = isDark ? "#2c2c2e" : "#e5e5ea";
-    QString fg = isDark ? "#a0a5b5" : "#6c6c70";
-    QString selBg = isDark ? "#007af5" : "#007aff";
-    tabBar->setStyleSheet(QString("QTabBar::tab { "
-                                  "   background: %1; "
-                                  "   color: %2; "
-                                  "   padding: 4px 12px; "
-                                  "   border-radius: 6px; "
-                                  "   font-weight: 600; "
-                                  "   margin-right: 2px; "
-                                  "} "
-                                  "QTabBar::tab:selected { "
-                                  "   background: %3; "
-                                  "   color: #ffffff; "
-                                  "}")
-                              .arg(bg, fg, selBg));
     return tabBar;
 }
 
 QLabel* createCaptionLabel(const QString& text, QWidget* parent) {
-    auto lbl = new QLabel(text, parent);
-    bool isDark = StyleTheme::isDark();
-    QString fg = isDark ? "#a0a5b5" : "#6c6c70";
-    lbl->setStyleSheet(QString("font-size: 11px; font-weight: 500; color: %1;").arg(fg));
-    return lbl;
+    return new QLabel(text, parent);
 }
 
 QLabel* createHeaderTitle(const QString& text, QWidget* parent) {
@@ -79,9 +49,6 @@ QFrame* createDivider(QWidget* parent) {
     auto divider = new QFrame(parent);
     divider->setFrameShape(QFrame::HLine);
     divider->setFrameShadow(QFrame::Sunken);
-    bool isDark = StyleTheme::isDark();
-    divider->setStyleSheet(QString("background-color: %1; border: none; min-height: 1px; max-height: 1px;")
-                               .arg(isDark ? "#2c2d3a" : "#d1d1d6"));
     return divider;
 }
 

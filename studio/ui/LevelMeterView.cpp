@@ -1,7 +1,6 @@
 #include "ui/LevelMeterView.h"
 
 #include "models/MonitoringController.h"
-#include "ui/StyleTheme.h"
 
 #include <QHBoxLayout>
 #include <QPainterPath>
@@ -89,16 +88,15 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    if (!parentWidget() || (!parentWidget()->inherits("QStackedWidget") && !parentWidget()->inherits("QGroupBox"))) {
-        p.fillRect(rect(), StyleTheme::cardBg());
-    }
-
     int w = width();
     int h = height();
 
+    QColor subtextColor = palette().color(QPalette::PlaceholderText);
+    QColor midColor = palette().color(QPalette::Mid);
+
     if (!m_title.isEmpty()) {
         p.setFont(QFont("sans-serif", 11, QFont::Bold));
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::Text));
         p.drawText(16, 24, m_title);
     }
 
@@ -134,22 +132,21 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         QFont chFont("monospace", 10, QFont::Medium);
         chFont.setStyleHint(QFont::Monospace);
         p.setFont(chFont);
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(subtextColor);
         p.drawText(0, y, labelW + 10, barHeight, Qt::AlignCenter, chLabel);
 
         // 2. Track Background with Corner Radius = 3px
         QPainterPath trackPath;
         trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 3, 3);
-        QColor trackBg = StyleTheme::isDark() ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 15);
-        p.fillPath(trackPath, trackBg);
+        p.fillPath(trackPath, midColor);
 
         // 3. Horizontal Center Divider
         int halfH = barHeight / 2;
-        p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 20) : QColor(0, 0, 0, 20), 0.5));
+        p.setPen(QPen(midColor, 0.5));
         p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
 
         // 4. Tick Marks (-48 to 0 dB)
-        p.setPen(QPen(StyleTheme::isDark() ? QColor(255, 255, 255, 50) : QColor(0, 0, 0, 50), 1));
+        p.setPen(QPen(midColor, 1));
         for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
             int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
             int markH = (dbMark == 0) ? barHeight : (barHeight / 2);
@@ -166,7 +163,6 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int rmsW = static_cast<int>(rmsFrac * barW);
         int peakW = static_cast<int>(peakFrac * barW);
 
-        // Level Linear Gradient
         // Level Linear Gradient (Audio Level: green -> yellow -> orange -> red with 0.9 opacity)
         QLinearGradient grad(xStart, y, xStart + barW, y);
         grad.setColorAt(0.00, QColor(0, 255, 0, 230));
@@ -197,20 +193,18 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         QString rmsStr = QString::asprintf("%5.1f", rmsVal);
         QString peakStr = QString::asprintf("%5.1f", peakVal);
 
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::Text));
         p.drawText(xStart + barW + 4, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
 
-        QColor tertiaryColor = StyleTheme::textSecondary();
-        tertiaryColor.setAlphaF(tertiaryColor.alphaF() * 0.6);
-        p.setPen(tertiaryColor);
+        p.setPen(subtextColor);
         p.drawText(xStart + barW + 4, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
     }
 }
 
-static void drawMicIcon(QPainter& p, int x, int y) {
+static void drawMicIcon(QPainter& p, int x, int y, const QPalette& pal) {
     p.save();
     p.translate(x + 6, y + 6); // center inside 12x12
-    p.setPen(QPen(StyleTheme::textSecondary(), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setPen(QPen(pal.color(QPalette::Text), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
 
     QPainterPath mic;
@@ -228,10 +222,10 @@ static void drawMicIcon(QPainter& p, int x, int y) {
     p.restore();
 }
 
-static void drawSpeakerIcon(QPainter& p, int x, int y) {
+static void drawSpeakerIcon(QPainter& p, int x, int y, const QPalette& pal) {
     p.save();
     p.translate(x + 6, y + 6); // center inside 12x12
-    p.setPen(QPen(StyleTheme::textSecondary(), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setPen(QPen(pal.color(QPalette::Text), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
 
     // Outer box
@@ -296,7 +290,7 @@ protected:
         int barW = (count > 4) ? 40 : 80;
         int barH = 6;
         int spacing = 4;
-        QColor trackBg = StyleTheme::isDark() ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 15);
+        QColor trackBg = palette().color(QPalette::Mid);
 
         const auto& peakLevels = m_isPlayback ? m_levelState->playbackPeak : m_levelState->capturePeak;
 
@@ -369,9 +363,9 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         if (m_isPlayback) {
-            drawSpeakerIcon(p, 0, (height() - 12) / 2);
+            drawSpeakerIcon(p, 0, (height() - 12) / 2, palette());
         } else {
-            drawMicIcon(p, 0, (height() - 12) / 2);
+            drawMicIcon(p, 0, (height() - 12) / 2, palette());
         }
     }
 
@@ -386,7 +380,6 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
                                            std::shared_ptr<DSPEngineController> dsp, QWidget* parent)
     : QWidget(parent), m_monitoring(monitoring), m_dsp(dsp) {
     setFixedHeight(36);
-    setStyleSheet("background-color: transparent;");
 
     auto layout = new QHBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 4);
@@ -397,7 +390,6 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
     scroll->setFixedHeight(28);
 
     auto container = new QWidget(scroll);
@@ -419,11 +411,9 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
 
     m_statusDot = new QWidget(this);
     m_statusDot->setFixedSize(8, 8);
-    m_statusDot->setStyleSheet("background-color: #8e8e93; border-radius: 4px;");
 
     m_statusLabel = new QLabel("Inactive", this);
     m_statusLabel->setFont(QFont("sans-serif", 10, QFont::Bold));
-    m_statusLabel->setStyleSheet("color: #8e8e93;");
 
     layout->addWidget(m_statusDot);
     layout->addWidget(m_statusLabel);
@@ -454,30 +444,20 @@ void CompactLevelMeterBar::updateState() {
     ProcessingState st = m_dsp->status;
     switch (st) {
     case ProcessingState::Running:
-        m_statusDot->setStyleSheet("background-color: #34c759; border-radius: 4px;");
         m_statusLabel->setText("Running");
-        m_statusLabel->setStyleSheet("color: #34c759;");
         break;
     case ProcessingState::Paused:
-        m_statusDot->setStyleSheet("background-color: #007aff; border-radius: 4px;");
         m_statusLabel->setText("Paused");
-        m_statusLabel->setStyleSheet("color: #007aff;");
         break;
     case ProcessingState::Stalled:
-        m_statusDot->setStyleSheet("background-color: #ff9500; border-radius: 4px;");
         m_statusLabel->setText("Stalled");
-        m_statusLabel->setStyleSheet("color: #ff9500;");
         break;
     case ProcessingState::Starting:
-        m_statusDot->setStyleSheet("background-color: #ffcc00; border-radius: 4px;");
         m_statusLabel->setText("Starting...");
-        m_statusLabel->setStyleSheet("color: #ffcc00;");
         break;
     case ProcessingState::Inactive:
     default:
-        m_statusDot->setStyleSheet("background-color: #8e8e93; border-radius: 4px;");
         m_statusLabel->setText("Inactive");
-        m_statusLabel->setStyleSheet("color: #8e8e93;");
         break;
     }
 }

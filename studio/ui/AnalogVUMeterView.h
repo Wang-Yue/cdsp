@@ -42,7 +42,6 @@ private:
     QSize m_cachedDialSize;
     float m_cachedScale = 0.0f;
     VUTheme m_cachedTheme = VUTheme::VintageAmber;
-    bool m_cachedIsDark = false;
 
     float computeAngleForLevel(float dbFS) const;
     void renderDialBackground(QPixmap& pixmap, const QSize& size, float scale);

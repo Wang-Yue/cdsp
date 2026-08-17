@@ -1,7 +1,5 @@
 #include "ui/SubwooferAssistDlg.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QFormLayout>
 #include <QFrame>
 #include <QMessageBox>
@@ -11,8 +9,6 @@ SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_
     : QDialog(parent), m_session(session), m_pipeline(pipeline) {
     setWindowTitle("Subwoofer Crossover Assist");
     setFixedWidth(500);
-    setStyleSheet("QDialog { background-color: " + (StyleTheme::isDark() ? QString("#1e1e1e") : QString("#f6f6f6")) +
-                  "; }");
 
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(16, 16, 16, 16);
@@ -21,14 +17,12 @@ SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_
     // Header bar
     auto headerLayout = new QHBoxLayout();
     auto titleLabel = new QLabel("🔊 Subwoofer Crossover Assist", this);
-    titleLabel->setStyleSheet("font-weight: bold; font-size: 13px; color: " +
-                              (StyleTheme::isDark() ? QString("#eee") : QString("#222")) + ";");
+    titleLabel->setFont(QFont("", 13, QFont::Bold));
     headerLayout->addWidget(titleLabel);
 
     headerLayout->addStretch(1);
 
     auto recommendBtn = new QPushButton("✨ Recommend", this);
-    recommendBtn->setStyleSheet("QPushButton { padding: 4px 10px; font-weight: bold; font-size: 11px; }");
     connect(recommendBtn, &QPushButton::clicked, this, &SubwooferAssistDlg::onRecommendClicked);
     headerLayout->addWidget(recommendBtn);
 
@@ -82,14 +76,12 @@ SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_
 
     m_summaryLabel = new QLabel(this);
     m_summaryLabel->setWordWrap(true);
-    m_summaryLabel->setStyleSheet("font-size: 11px; color: #888;");
     resultsLayout->addWidget(m_summaryLabel);
 
     mainLayout->addWidget(m_resultsWidget);
 
     // Action button: Apply delay to pipeline
     m_applyDelayBtn = new QPushButton("Apply Recommended Delay to Pipeline", this);
-    m_applyDelayBtn->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 12px; font-size: 11px; }");
     m_applyDelayBtn->setEnabled(false);
     connect(m_applyDelayBtn, &QPushButton::clicked, this, &SubwooferAssistDlg::onApplyDelayToPipeline);
     mainLayout->addWidget(m_applyDelayBtn);
@@ -147,11 +139,10 @@ QWidget* SubwooferAssistDlg::createMetaCell(const QString& title, QLabel** value
     layout->setSpacing(2);
 
     auto titleLbl = new QLabel(title, cell);
-    titleLbl->setStyleSheet("font-size: 10px; color: #888;");
     layout->addWidget(titleLbl);
 
     auto valLbl = new QLabel("—", cell);
-    valLbl->setStyleSheet("font-family: monospace; font-weight: bold; font-size: 11px;");
+    valLbl->setFont(QFont("monospace", 11, QFont::Bold));
     layout->addWidget(valLbl);
 
     if (valueLabelOut)

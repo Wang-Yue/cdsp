@@ -1,7 +1,5 @@
 #include "ui/VectorScopeView.h"
 
-#include "ui/StyleTheme.h"
-
 #include <QEvent>
 #include <QPainterPath>
 #include <cmath>
@@ -80,16 +78,16 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     if (m_persistenceBuffer.size() != size()) {
         m_persistenceBuffer = QImage(size(), QImage::Format_ARGB32_Premultiplied);
-        m_persistenceBuffer.fill(inMiniPlayer ? QColor(0, 0, 0, 0) : StyleTheme::cardBg());
+        m_persistenceBuffer.fill(inMiniPlayer ? QColor(0, 0, 0, 0) : palette().color(QPalette::Base));
     }
 
     // 1. Phosphor decay: fade existing buffer content slightly toward background
     {
         QPainter bufPainter(&m_persistenceBuffer);
         bufPainter.setRenderHint(QPainter::Antialiasing);
-        QColor fadeColor = inMiniPlayer ? QColor(18, 18, 22) : StyleTheme::cardBg();
+        QColor baseFade = inMiniPlayer ? QColor(18, 18, 22) : palette().color(QPalette::Base);
         int fadeAlpha = static_cast<int>(std::max(1.0f, std::min(255.0f, 255.0f * (1.0f - m_traceDecayRate))));
-        fadeColor.setAlpha(fadeAlpha); // Dynamic alpha buffer decay rate based on traceDecayRate
+        QColor fadeColor(baseFade.red(), baseFade.green(), baseFade.blue(), fadeAlpha);
         bufPainter.fillRect(m_persistenceBuffer.rect(), fadeColor);
 
         // Reticle axes (+M, -M, +S, -S) & Diagonal Corner-to-Corner X grid lines
@@ -99,8 +97,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int centerRadius = std::min(w - 20, drawH) / 2;
         QPoint centerPt(w / 2, topMargin + drawH / 2);
 
-        QColor mainAxisCol = StyleTheme::isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25);
-        QColor diagAxisCol = StyleTheme::isDark() ? QColor(255, 255, 255, 13) : QColor(0, 0, 0, 13);
+        QColor mainAxisCol = palette().color(QPalette::Mid);
+        QColor diagAxisCol = palette().color(QPalette::Mid);
 
         bufPainter.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
         bufPainter.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
@@ -196,7 +194,6 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                     if (t > 0.9f) {
                         float glowSize = particleSize * 2.0f;
                         QColor haloColor = particleColor;
-                        haloColor.setAlphaF(alpha * 0.25f);
                         bufPainter.setBrush(haloColor);
                         bufPainter.drawEllipse(QPointF(px, py), glowSize / 2.0f, glowSize / 2.0f);
                     }
@@ -219,16 +216,17 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barH = 6;
 
         p.setFont(QFont("sans-serif", 8, QFont::Bold));
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(barX - 16, barY + 7, "L");
         p.drawText(barX + barW + 6, barY + 7, "R");
 
-        p.setBrush(StyleTheme::isDark() ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 25));
+        QColor barBg = palette().color(QPalette::Mid);
+        p.setBrush(barBg);
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(barX, barY, barW, barH, 3, 3);
 
         // Center tick mark
-        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
+        p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
         p.drawLine(barX + barW / 2, barY - 2, barX + barW / 2, barY + barH + 2);
 
         // Dynamic Balance Marker
@@ -246,18 +244,19 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barH = 8;
 
         p.setFont(QFont("sans-serif", 8, QFont::Bold));
-        p.setPen(StyleTheme::textSecondary());
+        p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(barX - 22, barY + 8, "-1");
         p.drawText(barX + barW / 2 - 4, barY + 8, "0");
         p.drawText(barX + barW + 4, barY + 8, "+1");
 
-        p.setBrush(StyleTheme::isDark() ? QColor(255, 255, 255, 30) : QColor(0, 0, 0, 30));
+        QColor barBg = palette().color(QPalette::Mid);
+        p.setBrush(barBg);
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(barX, barY, barW, barH, 4, 4);
 
         // Center line (0 correlation)
         int centerX = barX + barW / 2;
-        p.setPen(QPen(StyleTheme::axisLabelPenColor(), 1));
+        p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
         p.drawLine(centerX, barY - 2, centerX, barY + barH + 2);
 
         // Indicator Bar fill from Center (0) to m_phaseCorrSmoothed
