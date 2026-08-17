@@ -382,23 +382,31 @@ private:
 CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
                                            std::shared_ptr<DSPEngineController> dsp, QWidget* parent)
     : QWidget(parent), m_monitoring(monitoring), m_dsp(dsp) {
-    setFixedHeight(36);
+    setFixedHeight(20);
 
     auto layout = new QHBoxLayout(this);
-    layout->setContentsMargins(12, 4, 12, 4);
-    layout->setSpacing(16);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(12);
+    layout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     auto scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setFixedHeight(28);
+    scroll->setFixedHeight(18);
+    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
+                          "QScrollArea > QWidget > QWidget { background: transparent; border: none; }");
+    scroll->viewport()->setAutoFillBackground(false);
+    scroll->viewport()->setAttribute(Qt::WA_TranslucentBackground, true);
 
     auto container = new QWidget(scroll);
+    container->setAutoFillBackground(false);
+    container->setAttribute(Qt::WA_TranslucentBackground, true);
     auto containerLayout = new QHBoxLayout(container);
     containerLayout->setContentsMargins(0, 0, 0, 0);
-    containerLayout->setSpacing(16);
+    containerLayout->setSpacing(12);
+    containerLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
 
@@ -412,26 +420,12 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     scroll->setWidget(container);
     layout->addWidget(scroll, 1);
 
-    m_statusDot = new QWidget(this);
-    m_statusDot->setFixedSize(8, 8);
-
-    m_statusLabel = new QLabel("Inactive", this);
-    QFont statusF = font();
-    statusF.setPointSize(10);
-    statusF.setBold(true);
-    m_statusLabel->setFont(statusF);
-
-    layout->addWidget(m_statusDot);
-    layout->addWidget(m_statusLabel);
-
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
         if (m_captureGroup)
             m_captureGroup->updateMeters();
         if (m_playbackGroup)
             m_playbackGroup->updateMeters();
     });
-    connect(m_dsp.get(), &DSPEngineController::statusChanged, this, [this](ProcessingState) { updateState(); });
-    updateState();
 }
 
 void CompactLevelMeterBar::showEvent(QShowEvent* event) {
@@ -444,26 +438,4 @@ void CompactLevelMeterBar::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
     if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
         m_monitoring->levelState.visibilityCount--;
-}
-
-void CompactLevelMeterBar::updateState() {
-    ProcessingState st = m_dsp->status;
-    switch (st) {
-    case ProcessingState::Running:
-        m_statusLabel->setText("Running");
-        break;
-    case ProcessingState::Paused:
-        m_statusLabel->setText("Paused");
-        break;
-    case ProcessingState::Stalled:
-        m_statusLabel->setText("Stalled");
-        break;
-    case ProcessingState::Starting:
-        m_statusLabel->setText("Starting...");
-        break;
-    case ProcessingState::Inactive:
-    default:
-        m_statusLabel->setText("Inactive");
-        break;
-    }
 }

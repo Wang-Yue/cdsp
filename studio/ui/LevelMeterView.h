@@ -55,7 +55,6 @@ class CompactLevelMeterBar : public QWidget {
 public:
     explicit CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
                                   std::shared_ptr<DSPEngineController> dsp, QWidget* parent = nullptr);
-    void updateState();
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -64,8 +63,6 @@ protected:
 private:
     std::shared_ptr<MonitoringController> m_monitoring;
     std::shared_ptr<DSPEngineController> m_dsp;
-    QLabel* m_statusLabel;
-    QWidget* m_statusDot;
     MeterGroupWidget* m_captureGroup = nullptr;
     MeterGroupWidget* m_playbackGroup = nullptr;
 };

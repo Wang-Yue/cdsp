@@ -13,6 +13,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -54,7 +55,7 @@ void PipelineOverviewWidget::setupUi() {
     m_statsLabel = new QLabel(this);
     toolbarLayout->addWidget(m_statsLabel);
 
-    m_warningBadge = new QLabel("⚠️ Broken Chain", this);
+    m_warningBadge = new QLabel(tr("Broken Chain"), this);
     m_warningBadge->setVisible(false);
     toolbarLayout->addWidget(m_warningBadge);
 
@@ -134,8 +135,7 @@ void PipelineOverviewWidget::buildAddStageMenu() {
         auto subMenu = menu->addMenu(categoryName);
         for (StageType type : types) {
             QString name = QString::fromStdString(stageTypeToString(type));
-            QString iconStr = QString::fromStdString(stageTypeToIcon(type));
-            auto action = subMenu->addAction(QString("%1  %2").arg(iconStr).arg(name));
+            auto action = subMenu->addAction(name);
             connect(action, &QAction::triggered, [this, type]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->addStage(type);
@@ -492,13 +492,13 @@ void PipelineOverviewWidget::rebuildOverview() {
         auto connLayout = new QVBoxLayout(connWidget);
         connLayout->setContentsMargins(0, 0, 0, 0);
 
-        auto arrowLabel = new QLabel(isMismatch ? "⚠️" : "➔", connWidget);
+        auto arrowLabel = new QLabel(isMismatch ? "!" : "➔", connWidget);
         arrowLabel->setAlignment(Qt::AlignCenter);
         connLayout->addWidget(arrowLabel);
 
         QString labelText;
         if (isMismatch) {
-            labelText = QString("%1 ch ❌").arg(fromCh);
+            labelText = QString("%1 ch (Mismatch)").arg(fromCh);
         } else if (fromCh != toCh) {
             labelText = QString("%1➔%2 ch").arg(fromCh).arg(toCh);
         } else {
@@ -513,7 +513,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     };
 
     // Helper: Build Graph Node Card Box
-    auto createNodeCard = [this](const QString& title, const QString& subtitle, const QString& iconStr) {
+    auto createNodeCard = [this](const QString& title, const QString& subtitle, const QString& iconStr = "") {
         auto card = new QFrame(m_canvasWidget);
         card->setFrameShape(QFrame::StyledPanel);
         card->setFixedWidth(220);
@@ -522,9 +522,11 @@ void PipelineOverviewWidget::rebuildOverview() {
 
         // Header Row: Icon + Title & Subtitle
         auto headerRow = new QHBoxLayout();
-        auto iconDot = new QLabel(iconStr, card);
-        iconDot->setAlignment(Qt::AlignCenter);
-        headerRow->addWidget(iconDot);
+        if (!iconStr.isEmpty()) {
+            auto iconDot = new QLabel(iconStr, card);
+            iconDot->setAlignment(Qt::AlignCenter);
+            headerRow->addWidget(iconDot);
+        }
 
         auto titleVBox = new QVBoxLayout();
         auto titleLbl = new QLabel(title, card);
@@ -558,7 +560,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     };
 
     // 1. Capture Input Node
-    auto [capCard, capLayout] = createNodeCard(tr("Input (Capture)"), QString::fromStdString(capDevName), "🎤");
+    auto [capCard, capLayout] = createNodeCard(tr("Input (Capture)"), QString::fromStdString(capDevName));
 
     auto capForm = new QFormLayout();
     capForm->addRow(tr("Channels:"), new QLabel(QString::number(captureCh), capCard));
@@ -574,7 +576,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     // 2. Resampler Node (if active)
     bool resampEnabled = settings ? settings->resamplerEnabled : false;
     if (resampEnabled) {
-        auto [resampCard, resampLayout] = createNodeCard(tr("Resampler"), tr("Synchronous SRC"), "🔄");
+        auto [resampCard, resampLayout] = createNodeCard(tr("Resampler"), tr("Synchronous SRC"));
 
         auto resampForm = new QFormLayout();
         resampForm->addRow(tr("Channels:"), new QLabel(QString("%1 ch").arg(captureCh), resampCard));
@@ -604,14 +606,14 @@ void PipelineOverviewWidget::rebuildOverview() {
             bool active = stage.isEnabled && stage.isActive();
 
             auto [stCard, stLayout] = createNodeCard(QString::fromStdString(stage.name),
-                                                     QString::fromStdString(stageTypeToString(stage.type)),
-                                                     QString::fromStdString(stageTypeToIcon(stage.type)));
+                                                     QString::fromStdString(stageTypeToString(stage.type)));
 
             // Add Stage Bypass Button in header row
             auto headerLayout = qobject_cast<QHBoxLayout*>(stLayout->itemAt(0)->layout());
             if (headerLayout) {
-                auto bypassDotBtn = new QPushButton(active ? "🟢" : "⚪", stCard);
-                bypassDotBtn->setFlat(true);
+                auto bypassDotBtn = new QPushButton(active ? tr("Enabled") : tr("Bypassed"), stCard);
+                bypassDotBtn->setCheckable(true);
+                bypassDotBtn->setChecked(active);
                 bypassDotBtn->setToolTip(active ? tr("Click to disable stage") : tr("Click to enable stage"));
                 connect(bypassDotBtn, &QPushButton::clicked, [this, i]() {
                     if (m_dspController && m_dspController->pipelineStore()) {
@@ -641,17 +643,6 @@ void PipelineOverviewWidget::rebuildOverview() {
                     auto stepVBox = new QVBoxLayout(stepWidget);
 
                     auto stepHeader = new QHBoxLayout();
-
-                    QString icon = "⚙️";
-                    if (step.type == PipelineStepType::Filter)
-                        icon = "🎛️";
-                    else if (step.type == PipelineStepType::Mixer)
-                        icon = "🔀";
-                    else if (step.type == PipelineStepType::Processor)
-                        icon = "💻";
-
-                    auto iconLbl = new QLabel(icon, stepWidget);
-                    stepHeader->addWidget(iconLbl);
 
                     QString stepTitle = stepTypeTitle(step.type);
                     auto titleLbl = new QLabel(stepTitle, stepWidget);
@@ -733,7 +724,8 @@ void PipelineOverviewWidget::rebuildOverview() {
             // Card toolbar: Move Left, Move Right, Delete
             auto stageActionsHBox = new QHBoxLayout();
 
-            auto moveLeftBtn = new QPushButton("◀", stCard);
+            auto moveLeftBtn = new QPushButton(stCard);
+            moveLeftBtn->setIcon(style()->standardIcon(QStyle::SP_ArrowLeft));
             moveLeftBtn->setToolTip(tr("Move stage left"));
             moveLeftBtn->setEnabled(i > 0);
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
@@ -745,7 +737,8 @@ void PipelineOverviewWidget::rebuildOverview() {
             });
             stageActionsHBox->addWidget(moveLeftBtn);
 
-            auto moveRightBtn = new QPushButton("▶", stCard);
+            auto moveRightBtn = new QPushButton(stCard);
+            moveRightBtn->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
             moveRightBtn->setToolTip(tr("Move stage right"));
             moveRightBtn->setEnabled(i + 1 < pipe->stages.size());
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
@@ -759,7 +752,8 @@ void PipelineOverviewWidget::rebuildOverview() {
 
             stageActionsHBox->addStretch();
 
-            auto deleteBtn = new QPushButton("🗑", stCard);
+            auto deleteBtn = new QPushButton(stCard);
+            deleteBtn->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
             deleteBtn->setToolTip(tr("Delete stage"));
             connect(deleteBtn, &QPushButton::clicked, [this, stageId = stage.id]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
@@ -841,7 +835,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     }
 
     // 4. Playback Output Node
-    auto [playCard, playLayout] = createNodeCard(tr("Output (Playback)"), QString::fromStdString(playDevName), "🔊");
+    auto [playCard, playLayout] = createNodeCard(tr("Output (Playback)"), QString::fromStdString(playDevName));
 
     auto playForm = new QFormLayout();
     if (isOutputMismatch) {

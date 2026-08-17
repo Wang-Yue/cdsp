@@ -269,7 +269,8 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         btnHBox->addWidget(invBtn);
 
         bool muted = srcPtr->mute.value_or(false);
-        auto muteBtn = new QPushButton(muted ? "🔇" : "🔊", cellWidget);
+        auto muteBtn = new QPushButton(cellWidget);
+        muteBtn->setIcon(style()->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
         muteBtn->setFixedSize(20, 18);
         muteBtn->setFlat(true);
         muteBtn->setToolTip("Mute Source");

@@ -4,6 +4,7 @@
 
 #include <QComboBox>
 #include <QFont>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -109,7 +110,8 @@ void DashboardView::updateFaderUi() {
         row.muteBtn->blockSignals(true);
         row.muteBtn->setChecked(muted);
         row.muteBtn->blockSignals(false);
-        row.muteBtn->setText(muted ? "🔇" : "🔊");
+        row.muteBtn->setIcon(style()->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
+        row.muteBtn->setText("");
     }
 }
 
@@ -200,7 +202,8 @@ void DashboardView::setupUi() {
         nameFont.setWeight(QFont::Medium);
         nameLbl->setFont(nameFont);
 
-        auto muteBtn = new QPushButton("🔊", m_faderGroup);
+        auto muteBtn = new QPushButton(m_faderGroup);
+        muteBtn->setIcon(style()->standardIcon(QStyle::SP_MediaVolume));
         muteBtn->setCheckable(true);
         muteBtn->setFixedSize(28, 28);
         muteBtn->setToolTip(QString("Mute %1").arg(info.name));
@@ -209,8 +212,8 @@ void DashboardView::setupUi() {
         slider->setRange(-120, 40); // -60.0 dB to +20.0 dB
 
         auto gainLbl = new QLabel(" 0.0 dB", m_faderGroup);
-        QFont monoFont("monospace", 11);
-        monoFont.setStyleHint(QFont::Monospace);
+        QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        monoFont.setPointSize(11);
         gainLbl->setFont(monoFont);
         gainLbl->setFixedWidth(65);
         gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);

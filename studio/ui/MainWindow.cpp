@@ -302,30 +302,13 @@ void MainWindow::setupUi() {
         }
     });
 
-    // Right detail panel with persistent top CompactLevelMeterBar
-    auto rightPanel = new QWidget(m_splitter);
-    rightPanel->setObjectName("RightDetailPanel");
-    rightPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    auto rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(0);
-
-    m_compactMeterBar = new CompactLevelMeterBar(m_monitoring, m_dspController, rightPanel);
-    m_compactMeterBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    rightLayout->addWidget(m_compactMeterBar);
-
-    auto line = new QFrame(rightPanel);
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    rightLayout->addWidget(line);
-
-    m_centralStack = new QStackedWidget(rightPanel);
+    // Central detail stack
+    m_centralStack = new QStackedWidget(m_splitter);
     m_centralStack->setObjectName("CentralStack");
     m_centralStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    rightLayout->addWidget(m_centralStack, 1);
 
     m_splitter->addWidget(m_sidebarTree);
-    m_splitter->addWidget(rightPanel);
+    m_splitter->addWidget(m_centralStack);
     m_splitter->setSizes({260, 840});
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -339,72 +322,23 @@ void MainWindow::setupStatusBar() {
     auto bar = statusBar();
     bar->setSizeGripEnabled(true);
 
-    // Left transient / status indicators
-    m_statusStateLabel = new QLabel("🔴 Inactive", this);
-    m_statusStateLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusStateLabel->setContentsMargins(4, 0, 4, 0);
+    // Left-aligned level meters
+    m_compactMeterBar = new CompactLevelMeterBar(m_monitoring, m_dspController, this);
+    m_compactMeterBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    bar->addWidget(m_compactMeterBar, 1);
 
     m_stopReasonBanner = new QLabel(this);
     m_stopReasonBanner->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     m_stopReasonBanner->setStyleSheet("color: #ff3b30; font-weight: bold; padding: 0 4px;");
     m_stopReasonBanner->hide();
-
-    bar->addWidget(m_statusStateLabel);
     bar->addWidget(m_stopReasonBanner);
 
-    // Permanent right-aligned persistent indicators
-    m_statusSampleRateBadge = new QLabel("48000 Hz", this);
-    m_statusSampleRateBadge->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusSampleRateBadge->setContentsMargins(6, 0, 6, 0);
+    // Right-aligned status indicator with emoji
+    m_statusStateLabel = new QLabel("🔴 Inactive", this);
+    m_statusStateLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    m_statusStateLabel->setContentsMargins(6, 0, 6, 0);
+    bar->addPermanentWidget(m_statusStateLabel);
 
-    m_statusBufferLabel = new QLabel("Buffer: 1024", this);
-    m_statusBufferLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusBufferLabel->setContentsMargins(6, 0, 6, 0);
-
-    m_statusResamplerLabel = new QLabel("Resampler: Off", this);
-    m_statusResamplerLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusResamplerLabel->setContentsMargins(6, 0, 6, 0);
-
-    m_statusStagesLabel = new QLabel("Stages: 0 active", this);
-    m_statusStagesLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusStagesLabel->setContentsMargins(6, 0, 6, 0);
-
-    m_statusActivePresetLabel = new QLabel("Preset: None", this);
-    m_statusActivePresetLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusActivePresetLabel->setContentsMargins(6, 0, 6, 0);
-
-    m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
-    m_statusRuntimeLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    m_statusRuntimeLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusRuntimeLabel->setContentsMargins(6, 0, 6, 0);
-
-    m_statusMuteLabel = new QLabel("Unmuted", this);
-    m_statusMuteLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusMuteLabel->setContentsMargins(6, 0, 6, 0);
-
-    bar->addPermanentWidget(m_statusSampleRateBadge);
-    bar->addPermanentWidget(m_statusBufferLabel);
-    bar->addPermanentWidget(m_statusResamplerLabel);
-    bar->addPermanentWidget(m_statusStagesLabel);
-    bar->addPermanentWidget(m_statusActivePresetLabel);
-    bar->addPermanentWidget(m_statusRuntimeLabel);
-    bar->addPermanentWidget(m_statusMuteLabel);
-
-    connect(&m_runtimeUpdateTimer, &QTimer::timeout, this, [this]() {
-        if (m_dspController && m_dspController->status == ProcessingState::Running) {
-            qint64 secs = m_engineRunTimer.elapsed() / 1000;
-            int h = static_cast<int>(secs / 3600);
-            int m = static_cast<int>((secs % 3600) / 60);
-            int s = static_cast<int>(secs % 60);
-            m_statusRuntimeLabel->setText(QString("Run Time: %1:%2:%3")
-                                              .arg(h, 2, 10, QChar('0'))
-                                              .arg(m, 2, 10, QChar('0'))
-                                              .arg(s, 2, 10, QChar('0')));
-        } else {
-            m_statusRuntimeLabel->setText("Run Time: 00:00:00");
-        }
-    });
-    m_runtimeUpdateTimer.setInterval(1000);
     updateStatusBar();
 }
 
@@ -787,13 +721,8 @@ void MainWindow::toggleMute() {
 
 void MainWindow::updateMuteDisplay() {
     bool muted = m_settings->getMuted(Fader::Main);
-    if (muted) {
-        m_toolbarMuteBtn->setText("🔇");
-        m_statusMuteLabel->setText("MUTED");
-    } else {
-        m_toolbarMuteBtn->setText("🔊");
-        m_statusMuteLabel->setText("Unmuted");
-    }
+    m_toolbarMuteBtn->setIcon(style()->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
+    m_toolbarMuteBtn->setText("");
 
     if (m_trayMuteAction) {
         m_trayMuteAction->setChecked(muted);
@@ -833,40 +762,6 @@ void MainWindow::updateStatusBar() {
         break;
     }
     m_statusStateLabel->setText(stateStr);
-    m_statusBufferLabel->setText(QString("Buffer: %1").arg(m_settings->chunkSize));
-    if (m_statusSampleRateBadge) {
-        m_statusSampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
-    }
-
-    QUuid activeId;
-    for (const auto& stage : m_pipeline->stages) {
-        if (stage.type == StageType::EQ && stage.eqPresetId.has_value()) {
-            activeId = stage.eqPresetId.value();
-            break;
-        }
-    }
-    QString presetName = "None";
-    if (!activeId.isNull()) {
-        for (const auto& eq : m_pipeline->eqPresets) {
-            if (eq.id == activeId) {
-                presetName = QString::fromStdString(eq.name);
-                break;
-            }
-        }
-    }
-    m_statusActivePresetLabel->setText(QString("Preset: %1").arg(presetName));
-    if (m_statusResamplerLabel) {
-        m_statusResamplerLabel->setText(m_settings->resamplerEnabled ? "Resampler: On" : "Resampler: Off");
-    }
-    if (m_statusStagesLabel) {
-        int activeCount = 0;
-        for (const auto& stage : m_pipeline->stages) {
-            if (stage.isEnabled) {
-                activeCount++;
-            }
-        }
-        m_statusStagesLabel->setText(QString("Stages: %1 active").arg(activeCount));
-    }
     updateMuteDisplay();
 }
 
@@ -875,30 +770,20 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
     case ProcessingState::Running:
     case ProcessingState::Paused:
     case ProcessingState::Stalled:
-        m_startStopBtn->setText("🛑 Stop");
+        m_startStopBtn->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+        m_startStopBtn->setText("Stop");
         m_startStopBtn->setToolTip("Stop Engine");
-        if (state == ProcessingState::Running) {
-            if (!m_engineRunTimer.isValid() || m_engineRunTimer.elapsed() == 0) {
-                m_engineRunTimer.start();
-            }
-            m_runtimeUpdateTimer.start();
-        } else {
-            m_runtimeUpdateTimer.stop();
-        }
         break;
     case ProcessingState::Starting:
-        m_startStopBtn->setText("⏳ Starting...");
+        m_startStopBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+        m_startStopBtn->setText("Starting...");
         m_startStopBtn->setToolTip("Starting Engine...");
         break;
     case ProcessingState::Inactive:
     default:
-        m_startStopBtn->setText("▶️ Start");
+        m_startStopBtn->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+        m_startStopBtn->setText("Start");
         m_startStopBtn->setToolTip("Start Engine");
-        m_runtimeUpdateTimer.stop();
-        if (m_statusRuntimeLabel) {
-            m_statusRuntimeLabel->setText("Run Time: 00:00:00");
-        }
-        m_engineRunTimer.invalidate();
         break;
     }
     if (m_sampleRateBadge) {
@@ -914,7 +799,8 @@ void MainWindow::setupToolbar() {
     toolBar->setFloatable(false);
     toolBar->setIconSize(QSize(18, 18));
 
-    m_startStopBtn = new QPushButton("▶️ Start", this);
+    m_startStopBtn = new QPushButton("Start", this);
+    m_startStopBtn->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
     m_startStopBtn->setToolTip("Start Engine (Space)");
     m_startStopBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_startStopBtn->setMinimumWidth(88);
@@ -938,7 +824,8 @@ void MainWindow::setupToolbar() {
 
     toolBar->addSeparator();
 
-    m_toolbarMuteBtn = new QPushButton("🔊", this);
+    m_toolbarMuteBtn = new QPushButton(this);
+    m_toolbarMuteBtn->setIcon(style()->standardIcon(QStyle::SP_MediaVolume));
     m_toolbarMuteBtn->setToolTip("Toggle Mute (M)");
     m_toolbarMuteBtn->setFlat(true);
     m_toolbarMuteBtn->setFixedSize(28, 28);
@@ -1008,10 +895,10 @@ void MainWindow::refreshSidebarItems() {
 
     // 1. Audio Section
     auto audioGroup = makeCategoryItem(m_sidebarTree, "Audio");
-    auto devItem = new QTreeWidgetItem(audioGroup, {"🔊 Devices"});
+    auto devItem = new QTreeWidgetItem(audioGroup, {"Devices"});
     devItem->setData(0, Qt::UserRole, "devices");
     devItem->setSizeHint(0, QSize(0, 26));
-    auto dashItem = new QTreeWidgetItem(audioGroup, {"🎛️ Dashboard"});
+    auto dashItem = new QTreeWidgetItem(audioGroup, {"Dashboard"});
     dashItem->setData(0, Qt::UserRole, "dashboard");
     dashItem->setSizeHint(0, QSize(0, 26));
 
@@ -1021,7 +908,7 @@ void MainWindow::refreshSidebarItems() {
     auto levelsItem = new QTreeWidgetItem(monGroup);
     levelsItem->setData(0, Qt::UserRole, "levels");
     auto levelsW = new SidebarToggleRowWidget(
-        m_sidebarTree, levelsItem, "📊 Level Meters", m_settings->showLevelMetersInDashboard,
+        m_sidebarTree, levelsItem, "Level Meters", m_settings->showLevelMetersInDashboard,
         [this](bool c) {
             m_settings->showLevelMetersInDashboard = c;
             m_settings->savePreferences();
@@ -1032,7 +919,7 @@ void MainWindow::refreshSidebarItems() {
     auto specItem = new QTreeWidgetItem(monGroup);
     specItem->setData(0, Qt::UserRole, "spectrum");
     auto specW = new SidebarToggleRowWidget(
-        m_sidebarTree, specItem, "📈 Spectrum", m_settings->showSpectrumInDashboard,
+        m_sidebarTree, specItem, "Spectrum", m_settings->showSpectrumInDashboard,
         [this](bool c) {
             m_settings->showSpectrumInDashboard = c;
             m_settings->savePreferences();
@@ -1043,7 +930,7 @@ void MainWindow::refreshSidebarItems() {
     auto spectroItem = new QTreeWidgetItem(monGroup);
     spectroItem->setData(0, Qt::UserRole, "spectroscope");
     auto spectroW = new SidebarToggleRowWidget(
-        m_sidebarTree, spectroItem, "🌌 Spectroscope", m_settings->showSpectrogramInDashboard,
+        m_sidebarTree, spectroItem, "Spectroscope Waterfall", m_settings->showSpectrogramInDashboard,
         [this](bool c) {
             m_settings->showSpectrogramInDashboard = c;
             m_settings->savePreferences();
@@ -1054,7 +941,7 @@ void MainWindow::refreshSidebarItems() {
     auto vecItem = new QTreeWidgetItem(monGroup);
     vecItem->setData(0, Qt::UserRole, "vectorscope");
     auto vecW = new SidebarToggleRowWidget(
-        m_sidebarTree, vecItem, "🎯 Vector Scope", m_settings->showVectorScopeInDashboard,
+        m_sidebarTree, vecItem, "Vector Scope", m_settings->showVectorScopeInDashboard,
         [this](bool c) {
             m_settings->showVectorScopeInDashboard = c;
             m_settings->savePreferences();
@@ -1065,7 +952,7 @@ void MainWindow::refreshSidebarItems() {
     auto vuItem = new QTreeWidgetItem(monGroup);
     vuItem->setData(0, Qt::UserRole, "analogVU");
     auto vuW = new SidebarToggleRowWidget(
-        m_sidebarTree, vuItem, "📟 Analog VU", m_settings->showAnalogVUInDashboard,
+        m_sidebarTree, vuItem, "Analog VU", m_settings->showAnalogVUInDashboard,
         [this](bool c) {
             m_settings->showAnalogVUInDashboard = c;
             m_settings->savePreferences();
@@ -1073,7 +960,7 @@ void MainWindow::refreshSidebarItems() {
         [this, vuItem]() { onSidebarItemClicked(vuItem, 0); }, m_sidebarTree);
     m_sidebarTree->setItemWidget(vuItem, 0, vuW);
 
-    auto logsItem = new QTreeWidgetItem(monGroup, {"📝 Console Logs"});
+    auto logsItem = new QTreeWidgetItem(monGroup, {"Console Logs"});
     logsItem->setData(0, Qt::UserRole, "logs");
     logsItem->setSizeHint(0, QSize(0, 26));
 
@@ -1083,7 +970,7 @@ void MainWindow::refreshSidebarItems() {
     auto resItem = new QTreeWidgetItem(pipeGroup);
     resItem->setData(0, Qt::UserRole, "resampler");
     auto resW = new SidebarToggleRowWidget(
-        m_sidebarTree, resItem, "🔄 Resampler", m_settings->resamplerEnabled,
+        m_sidebarTree, resItem, "Resampler", m_settings->resamplerEnabled,
         [this](bool c) {
             m_settings->resamplerEnabled = c;
             m_settings->savePreferences();
@@ -1130,7 +1017,7 @@ void MainWindow::refreshSidebarItems() {
             }
         }
 
-        QString stageTitle = QString("%1 %2").arg(QString::fromStdString(stageTypeToIcon(stage.type))).arg(rawName);
+        QString stageTitle = rawName;
         auto stageW = new SidebarToggleRowWidget(
             m_sidebarTree, sItem, stageTitle, stage.isEnabled,
             [this, stageId](bool c) {
@@ -1147,39 +1034,39 @@ void MainWindow::refreshSidebarItems() {
         m_sidebarTree->setItemWidget(sItem, 0, stageW);
     }
 
-    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"➕ Add Stage…"});
+    auto addStageItem = new QTreeWidgetItem(pipeGroup, {"Add Stage…"});
     addStageItem->setData(0, Qt::UserRole, "add_stage");
     addStageItem->setSizeHint(0, QSize(0, 26));
 
     // 4. Convolution Section
     auto convGroup = makeCategoryItem(m_sidebarTree, "Convolution");
     for (const auto& conv : m_pipeline->convPresets) {
-        auto cItem = new QTreeWidgetItem(convGroup, {QString("🌊 %1").arg(QString::fromStdString(conv.name))});
+        auto cItem = new QTreeWidgetItem(convGroup, {QString::fromStdString(conv.name)});
         cItem->setData(0, Qt::UserRole, QString("conv_%1").arg(conv.id.toString()));
         cItem->setSizeHint(0, QSize(0, 26));
     }
-    auto impConvItem = new QTreeWidgetItem(convGroup, {"📥 Import IR File(s)…"});
+    auto impConvItem = new QTreeWidgetItem(convGroup, {"Import IR File(s)…"});
     impConvItem->setData(0, Qt::UserRole, "import_conv");
     impConvItem->setSizeHint(0, QSize(0, 26));
 
-    auto roomItem = new QTreeWidgetItem(convGroup, {"🎙️ Room Correction"});
+    auto roomItem = new QTreeWidgetItem(convGroup, {"Room Correction"});
     roomItem->setData(0, Qt::UserRole, "room_correction");
     roomItem->setSizeHint(0, QSize(0, 26));
 
     // 5. EQ Presets Section
     auto eqGroup = makeCategoryItem(m_sidebarTree, "EQ Presets");
     for (const auto& eq : m_pipeline->eqPresets) {
-        auto eItem = new QTreeWidgetItem(eqGroup, {QString("🎛️ %1").arg(QString::fromStdString(eq.name))});
+        auto eItem = new QTreeWidgetItem(eqGroup, {QString::fromStdString(eq.name)});
         eItem->setData(0, Qt::UserRole, QString("eq_%1").arg(eq.id.toString()));
         eItem->setSizeHint(0, QSize(0, 26));
     }
-    auto addEqItem = new QTreeWidgetItem(eqGroup, {"➕ Add"});
+    auto addEqItem = new QTreeWidgetItem(eqGroup, {"Add EQ Preset"});
     addEqItem->setData(0, Qt::UserRole, "add_eq");
     addEqItem->setSizeHint(0, QSize(0, 26));
-    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"🎧 Oratory"});
+    auto oratoryItem = new QTreeWidgetItem(eqGroup, {"Oratory Presets"});
     oratoryItem->setData(0, Qt::UserRole, "oratory_eq");
     oratoryItem->setSizeHint(0, QSize(0, 26));
-    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"🔍 AutoEQ"});
+    auto autoEqItem = new QTreeWidgetItem(eqGroup, {"AutoEQ Presets"});
     autoEqItem->setData(0, Qt::UserRole, "auto_eq");
     autoEqItem->setSizeHint(0, QSize(0, 26));
 

@@ -194,62 +194,6 @@ StageCategory stageTypeToCategory(StageType type) {
     return StageCategory::Filters;
 }
 
-std::string stageTypeToIcon(StageType type) {
-    switch (type) {
-    case StageType::Balance:
-        return "🎛️";
-    case StageType::Width:
-        return "↔️";
-    case StageType::MSProc:
-        return "🌊";
-    case StageType::PhaseInvert:
-        return "🔄";
-    case StageType::Crossfeed:
-        return "🎧";
-    case StageType::SplitWidth:
-        return "🔀";
-    case StageType::EQ:
-        return "🎚️";
-    case StageType::GraphicEQ:
-        return "🎛️";
-    case StageType::Convolution:
-        return "🌊";
-    case StageType::Loudness:
-        return "👂";
-    case StageType::Emphasis:
-        return "📈";
-    case StageType::DCProtection:
-        return "⚡";
-    case StageType::Gain:
-        return "➕";
-    case StageType::Volume:
-        return "🔊";
-    case StageType::Delay:
-        return "⏱️";
-    case StageType::LookaheadLimiter:
-        return "🧱";
-    case StageType::LookaheadLimiterProc:
-        return "🛡️";
-    case StageType::MatrixMixer:
-        return "🔳";
-    case StageType::Compressor:
-        return "🗜️";
-    case StageType::NoiseGate:
-        return "🚪";
-    case StageType::RACE:
-        return "🗣️";
-    case StageType::Dither:
-        return "🎲";
-    case StageType::DiffEq:
-        return "📐";
-    case StageType::BiquadCombo:
-        return "🎚️";
-    case StageType::Clipper:
-        return "✂️";
-    }
-    return "🎚️";
-}
-
 std::string crossfeedLevelToString(CrossfeedLevel l) {
     switch (l) {
     case CrossfeedLevel::Off:

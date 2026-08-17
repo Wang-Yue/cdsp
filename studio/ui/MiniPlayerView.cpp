@@ -375,9 +375,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
     if (m_dsp->pipelineStore()) {
         for (const auto& stage : m_dsp->pipelineStore()->stages) {
             addChevron();
-            std::string icon = stageTypeToIcon(stage.type);
-            QString stageTitle =
-                QString("%1 %2").arg(QString::fromStdString(icon)).arg(QString::fromStdString(stage.name));
+            QString stageTitle = QString::fromStdString(stage.name);
             auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
             chip->setCheckable(true);
             chip->setChecked(stage.isEnabled);
@@ -415,7 +413,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
             outDev = QString::fromStdString(*optName);
         }
     }
-    auto outChip = new QLabel(QString("🔊 %1").arg(outDev), m_pipelineMiniCard);
+    auto outChip = new QLabel(outDev, m_pipelineMiniCard);
     outChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     outChip->setStyleSheet(makePillStyle(isRunning, "#34c759"));
     layout->addWidget(outChip);

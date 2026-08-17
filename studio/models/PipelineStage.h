@@ -48,7 +48,6 @@ std::string stageCategoryToString(StageCategory cat);
 std::string stageTypeToString(StageType type);
 StageType stringToStageType(const std::string& str);
 StageCategory stageTypeToCategory(StageType type);
-std::string stageTypeToIcon(StageType type);
 
 enum class CrossfeedLevel { Off, L1, L2, L3, L4, L5 };
 std::string crossfeedLevelToString(CrossfeedLevel l);
