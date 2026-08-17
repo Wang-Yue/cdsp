@@ -12,6 +12,8 @@
 #include <QPen>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
@@ -836,7 +838,35 @@ void PipelineOverviewWidget::rebuildOverview() {
 
     m_canvasLayout->addWidget(playCard);
 
-    m_canvasWidget->adjustSize();
-    int contentH = m_canvasWidget->sizeHint().height();
-    m_scrollArea->setFixedHeight(std::max(110, contentH + 20));
+    updateScrollHeight();
+    QTimer::singleShot(0, this, &PipelineOverviewWidget::updateScrollHeight);
+}
+
+void PipelineOverviewWidget::updateScrollHeight() {
+    if (!m_canvasLayout || !m_scrollArea || !m_canvasWidget)
+        return;
+
+    int maxCardH = 150;
+    for (int i = 0; i < m_canvasLayout->count(); ++i) {
+        auto item = m_canvasLayout->itemAt(i);
+        if (item && item->widget()) {
+            if (item->widget()->layout()) {
+                item->widget()->layout()->activate();
+            }
+            maxCardH = std::max(maxCardH, item->widget()->sizeHint().height());
+        }
+    }
+    m_canvasLayout->activate();
+    int contentH = std::max({maxCardH, m_canvasLayout->sizeHint().height(), m_canvasWidget->sizeHint().height()});
+    int sbH = (m_scrollArea->horizontalScrollBar() && m_scrollArea->horizontalScrollBar()->isVisible())
+                  ? m_scrollArea->horizontalScrollBar()->height()
+                  : 16;
+    m_canvasWidget->setMinimumHeight(contentH);
+    m_scrollArea->setFixedHeight(contentH + sbH + 16);
+}
+
+void PipelineOverviewWidget::showEvent(QShowEvent* event) {
+    QGroupBox::showEvent(event);
+    updateScrollHeight();
+    QTimer::singleShot(0, this, &PipelineOverviewWidget::updateScrollHeight);
 }

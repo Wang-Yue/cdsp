@@ -46,8 +46,10 @@ public:
 
 public slots:
     void rebuildOverview();
+    void updateScrollHeight();
 
 protected:
+    void showEvent(QShowEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:

@@ -109,6 +109,10 @@ public:
 
 public slots:
     void updateCard();
+    void updateScrollHeight();
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private:
     std::shared_ptr<DSPEngineController> m_dspController;

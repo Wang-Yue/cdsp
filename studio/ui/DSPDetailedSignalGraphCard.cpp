@@ -1,6 +1,8 @@
 #include "ui/DSPDetailedSignalGraphCard.h"
 
 #include <QPainterPath>
+#include <QScrollBar>
+#include <QTimer>
 #include <algorithm>
 #include <cmath>
 
@@ -659,11 +661,14 @@ void DSPDetailedSignalGraphCard::setupUi() {
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     m_canvas = new DSPGraphCanvas(m_dspController, m_scrollArea);
     connect(m_canvas, &DSPGraphCanvas::layoutChanged, [this]() {
         if (m_resetLayoutBtn)
             m_resetLayoutBtn->setVisible(m_canvas->hasCustomPositions());
+        updateScrollHeight();
     });
 
     connect(m_resetLayoutBtn, &QPushButton::clicked, [this]() {
@@ -674,6 +679,21 @@ void DSPDetailedSignalGraphCard::setupUi() {
 
     m_scrollArea->setWidget(m_canvas);
     rootLayout->addWidget(m_scrollArea);
+}
+
+void DSPDetailedSignalGraphCard::updateScrollHeight() {
+    if (m_scrollArea && m_canvas) {
+        int sbH = (m_scrollArea->horizontalScrollBar() && m_scrollArea->horizontalScrollBar()->isVisible())
+                      ? m_scrollArea->horizontalScrollBar()->height()
+                      : 16;
+        m_scrollArea->setFixedHeight(m_canvas->height() + sbH + 8);
+    }
+}
+
+void DSPDetailedSignalGraphCard::showEvent(QShowEvent* event) {
+    QGroupBox::showEvent(event);
+    updateScrollHeight();
+    QTimer::singleShot(0, this, &DSPDetailedSignalGraphCard::updateScrollHeight);
 }
 
 void DSPDetailedSignalGraphCard::updateCard() {
@@ -693,9 +713,7 @@ void DSPDetailedSignalGraphCard::updateCard() {
         m_canvas->rebuildGraph();
         if (m_resetLayoutBtn)
             m_resetLayoutBtn->setVisible(m_canvas->hasCustomPositions());
-        if (m_scrollArea) {
-            int targetH = std::clamp(m_canvas->height() + 20, 220, 500);
-            m_scrollArea->setFixedHeight(targetH);
-        }
+        updateScrollHeight();
+        QTimer::singleShot(0, this, &DSPDetailedSignalGraphCard::updateScrollHeight);
     }
 }
