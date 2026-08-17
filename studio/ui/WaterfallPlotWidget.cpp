@@ -194,7 +194,9 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
 
     if (m_isComputing) {
         p.setPen(palette().color(QPalette::PlaceholderText));
-        p.setFont(QFont("sans-serif", 12));
+        QFont msgF = font();
+        msgF.setPointSize(12);
+        p.setFont(msgF);
         p.drawText(plotRect, Qt::AlignCenter, "Computing CSD Waterfall STFT Slices…");
         p.setPen(QPen(borderCol, 1.0));
         p.setBrush(Qt::NoBrush);
@@ -204,7 +206,9 @@ void WaterfallPlotWidget::paintEvent(QPaintEvent* event) {
 
     if (m_slices.empty()) {
         p.setPen(palette().color(QPalette::PlaceholderText));
-        p.setFont(QFont("sans-serif", 12));
+        QFont msgF = font();
+        msgF.setPointSize(12);
+        p.setFont(msgF);
         p.drawText(plotRect, Qt::AlignCenter, "No measurement data available to generate Waterfall.");
         p.setPen(QPen(borderCol, 1.0));
         p.setBrush(Qt::NoBrush);

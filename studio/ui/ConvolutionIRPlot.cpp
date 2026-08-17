@@ -54,14 +54,19 @@ void ConvolutionIRPlot::paintEvent(QPaintEvent* event) {
 
     int plotTop = 4;
     if (!m_title.empty()) {
-        p.setFont(QFont("sans-serif", 10, QFont::Bold));
+        QFont tf = font();
+        tf.setPointSize(10);
+        tf.setBold(true);
+        p.setFont(tf);
         p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(8, 18, QString::fromStdString(m_title));
         plotTop = 24;
     }
 
     if (!m_errorMsg.empty()) {
-        p.setFont(QFont("sans-serif", 11));
+        QFont ef = font();
+        ef.setPointSize(11);
+        p.setFont(ef);
         p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(8, plotTop + 16, QString::fromStdString(m_errorMsg));
         return;

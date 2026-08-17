@@ -1,6 +1,7 @@
 #include "ui/DevicePickerView.h"
 
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -242,7 +243,7 @@ void DevicePickerView::setupUi() {
     m_measureIntervalSlider->setRange(1, 100); // 0.1 to 10.0 s
 
     m_measureIntervalValLabel = new QLabel(procGroup);
-    m_measureIntervalValLabel->setFont(QFont("monospace", 11));
+    m_measureIntervalValLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_measureIntervalValLabel->setMinimumWidth(50);
 
     connect(m_measureIntervalSlider, &QSlider::valueChanged, [this](int val) {
@@ -438,7 +439,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
 
     m_capRateLabel = new QLabel(m_capRateRow);
-    m_capRateLabel->setFont(QFont("monospace", 11));
+    m_capRateLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     rateBox->addWidget(m_capRateCombo);
     rateBox->addWidget(m_capRateLabel);
@@ -457,7 +458,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
 
     m_capFormatLabel = new QLabel(m_capFormatRow);
-    m_capFormatLabel->setFont(QFont("monospace", 11));
+    m_capFormatLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     fmtBox->addWidget(m_capFormatCombo);
     fmtBox->addWidget(m_capFormatLabel);
@@ -899,7 +900,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
 
     m_pbFormatLabel = new QLabel(m_pbFormatRow);
-    m_pbFormatLabel->setFont(QFont("monospace", 11));
+    m_pbFormatLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     fmtBox->addWidget(m_pbFormatCombo);
     fmtBox->addWidget(m_pbFormatLabel);

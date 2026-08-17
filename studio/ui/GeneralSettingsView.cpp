@@ -1,6 +1,7 @@
 #include "ui/GeneralSettingsView.h"
 
 #include <QCheckBox>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -24,12 +25,11 @@ void GeneralSettingsView::showEvent(QShowEvent* event) {
 }
 
 void GeneralSettingsView::setupUi() {
-    setMinimumWidth(450);
-    setMaximumWidth(650);
-
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(24, 24, 24, 24);
     mainLayout->setSpacing(16);
+
+    const QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
@@ -42,7 +42,7 @@ void GeneralSettingsView::setupUi() {
     pollSliderLayout->addWidget(m_pollingRateSlider);
 
     m_pollingRateLabel = new QLabel("30 Hz", pollGroup);
-    m_pollingRateLabel->setFont(QFont("monospace", 11));
+    m_pollingRateLabel->setFont(monoFont);
     m_pollingRateLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_pollingRateLabel->setMinimumWidth(60);
     pollSliderLayout->addWidget(m_pollingRateLabel);
@@ -84,7 +84,7 @@ void GeneralSettingsView::setupUi() {
     threshSliderLayout->addWidget(m_silenceThresholdSlider);
 
     m_silenceThresholdLabel = new QLabel("-60 dB", silenceGroup);
-    m_silenceThresholdLabel->setFont(QFont("monospace", 11));
+    m_silenceThresholdLabel->setFont(monoFont);
     m_silenceThresholdLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_silenceThresholdLabel->setMinimumWidth(60);
     threshSliderLayout->addWidget(m_silenceThresholdLabel);
@@ -104,7 +104,7 @@ void GeneralSettingsView::setupUi() {
     timeoutSliderLayout->addWidget(m_silenceTimeoutSlider);
 
     m_silenceTimeoutLabel = new QLabel("Disabled", silenceGroup);
-    m_silenceTimeoutLabel->setFont(QFont("monospace", 11));
+    m_silenceTimeoutLabel->setFont(monoFont);
     m_silenceTimeoutLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_silenceTimeoutLabel->setMinimumWidth(60);
     timeoutSliderLayout->addWidget(m_silenceTimeoutLabel);

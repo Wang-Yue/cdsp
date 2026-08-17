@@ -1,5 +1,6 @@
 #include "ui/DSPDetailedSignalGraphCard.h"
 
+#include <QFontDatabase>
 #include <QPainterPath>
 #include <QScrollBar>
 #include <QTimer>
@@ -481,7 +482,9 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         painter.drawRoundedRect(boxRect, 10, 10);
 
         // Stage Title Header above Box
-        painter.setFont(QFont("monospace", 11, QFont::Bold));
+        QFont boldMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        boldMono.setBold(true);
+        painter.setFont(boldMono);
         painter.setPen(palette().color(QPalette::Highlight));
         painter.drawText(QRectF(boxRect.left() - 40, boxRect.top() - 22, boxW + 80, 20), Qt::AlignCenter, box.label);
     }
@@ -528,7 +531,9 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
         // Arrow text label
         if (!arrow.label.isEmpty()) {
             QPointF midPoint(p0.x() + dx * 0.65, p0.y() + (p1.y() - p0.y()) * 0.65);
-            painter.setFont(QFont("monospace", 8, QFont::DemiBold));
+            QFont demiMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+            demiMono.setPointSize(8);
+            painter.setFont(demiMono);
             painter.setPen(palette().color(QPalette::PlaceholderText));
             painter.drawText(QRectF(midPoint.x() - 35, midPoint.y() - 14, 70, 28), Qt::AlignCenter, arrow.label);
         }
@@ -544,7 +549,9 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             painter.setPen(QPen(palette().color(QPalette::Highlight), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
-            painter.setFont(QFont("monospace", 11, QFont::Bold));
+            QFont boldMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+            boldMono.setBold(true);
+            painter.setFont(boldMono);
             painter.setPen(palette().color(QPalette::Highlight));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         } else if (!b.label.isEmpty()) {
@@ -552,7 +559,8 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             painter.setPen(QPen(palette().color(QPalette::Mid), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
-            painter.setFont(QFont("monospace", 10, QFont::DemiBold));
+            QFont demiMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+            painter.setFont(demiMono);
             painter.setPen(palette().color(QPalette::Text));
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         }
@@ -641,7 +649,10 @@ void DSPDetailedSignalGraphCard::setupUi() {
 
     auto topRow = new QHBoxLayout();
     auto titleLbl = new QLabel("DSP Signal Processing Graph", this);
-    titleLbl->setFont(QFont("", 13, QFont::Bold));
+    QFont titleFont = font();
+    titleFont.setPointSize(13);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
     topRow->addWidget(titleLbl);
 
     m_resetLayoutBtn = new QPushButton("Reset Layout", this);

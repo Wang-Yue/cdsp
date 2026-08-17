@@ -1,6 +1,7 @@
 #include "ui/EQDiagramWidget.h"
 
 #include <QContextMenuEvent>
+#include <QFontDatabase>
 #include <QLinearGradient>
 #include <QMenu>
 #include <QPainterPath>
@@ -180,7 +181,9 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Grid Lines
-    painter.setFont(QFont("monospace", 9));
+    QFont gridMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    gridMono.setPointSize(9);
+    painter.setFont(gridMono);
     QColor gridPenColor = palette().color(QPalette::Mid);
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         if (db == 0.0)

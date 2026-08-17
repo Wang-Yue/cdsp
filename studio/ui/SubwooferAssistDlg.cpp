@@ -2,6 +2,7 @@
 
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -22,7 +23,10 @@ SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_
     // Header bar
     auto headerLayout = new QHBoxLayout();
     auto titleLabel = new QLabel("Subwoofer Crossover Assist", this);
-    titleLabel->setFont(QFont("", 12, QFont::Bold));
+    QFont titleF = font();
+    titleF.setPointSize(12);
+    titleF.setBold(true);
+    titleLabel->setFont(titleF);
     headerLayout->addWidget(titleLabel);
 
     headerLayout->addStretch(1);
@@ -55,29 +59,32 @@ SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_
     m_resultsGroup = new QGroupBox("Recommendation", this);
     auto resultsLayout = new QGridLayout(m_resultsGroup);
 
+    QFont boldMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    boldMono.setBold(true);
+
     resultsLayout->addWidget(new QLabel("Crossover:", m_resultsGroup), 0, 0);
     m_crossoverValLabel = new QLabel("—", m_resultsGroup);
-    m_crossoverValLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_crossoverValLabel->setFont(boldMono);
     resultsLayout->addWidget(m_crossoverValLabel, 0, 1);
 
     resultsLayout->addWidget(new QLabel("Confidence:", m_resultsGroup), 0, 2);
     m_confidenceValLabel = new QLabel("—", m_resultsGroup);
-    m_confidenceValLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_confidenceValLabel->setFont(boldMono);
     resultsLayout->addWidget(m_confidenceValLabel, 0, 3);
 
     resultsLayout->addWidget(new QLabel("Mains High-Pass:", m_resultsGroup), 1, 0);
     m_mainsHpValLabel = new QLabel("—", m_resultsGroup);
-    m_mainsHpValLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_mainsHpValLabel->setFont(boldMono);
     resultsLayout->addWidget(m_mainsHpValLabel, 1, 1);
 
     resultsLayout->addWidget(new QLabel("Sub Low-Pass:", m_resultsGroup), 1, 2);
     m_subLpValLabel = new QLabel("—", m_resultsGroup);
-    m_subLpValLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_subLpValLabel->setFont(boldMono);
     resultsLayout->addWidget(m_subLpValLabel, 1, 3);
 
     resultsLayout->addWidget(new QLabel("Sub Delay:", m_resultsGroup), 2, 0);
     m_subDelayValLabel = new QLabel("—", m_resultsGroup);
-    m_subDelayValLabel->setFont(QFont("monospace", 11, QFont::Bold));
+    m_subDelayValLabel->setFont(boldMono);
     resultsLayout->addWidget(m_subDelayValLabel, 2, 1);
 
     m_summaryLabel = new QLabel(m_resultsGroup);

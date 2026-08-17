@@ -1,6 +1,7 @@
 #include "ui/StageDetailView.h"
 
 #include <QButtonGroup>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -110,7 +111,9 @@ void RotatedLabel::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setFont(QFont("sans-serif", 9, QFont::Bold));
+    QFont f = font();
+    f.setBold(true);
+    painter.setFont(f);
     painter.setPen(palette().color(QPalette::Text));
 
     painter.translate(width() / 2.0, height() / 2.0);
@@ -135,7 +138,7 @@ QWidget* createSliderField(QSlider* slider, QLabel* valueLabel, QWidget* extraWi
     layout->addWidget(slider);
 
     valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    valueLabel->setFont(QFont("monospace", 11));
+    valueLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     valueLabel->setMinimumWidth(65);
     layout->addWidget(valueLabel);
 
@@ -212,7 +215,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         auto gainEdit = new QLineEdit(cellWidget);
         gainEdit->setFixedWidth(60);
         gainEdit->setAlignment(Qt::AlignCenter);
-        gainEdit->setFont(QFont("monospace", 10));
+        gainEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
         gainEdit->setText(QString::number(srcPtr->gainValue(), 'f', 1));
         connect(gainEdit, &QLineEdit::editingFinished, [this, dest, src, gainEdit]() {
             bool ok = false;
@@ -370,7 +373,10 @@ void StageDetailView::setupUi() {
     // Header Toolbar
     auto headerLayout = new QHBoxLayout();
     m_nameEdit = new QLineEdit(container);
-    m_nameEdit->setFont(QFont("sans-serif", 14, QFont::Bold));
+    QFont nameFont = font();
+    nameFont.setPointSize(14);
+    nameFont.setBold(true);
+    m_nameEdit->setFont(nameFont);
     connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
         if (m_pipeline && m_stageIndex < m_pipeline->stages.size()) {
             m_pipeline->stages[m_stageIndex].name = m_nameEdit->text().toStdString();
@@ -672,7 +678,10 @@ void StageDetailView::buildStageOptionsUi() {
         widthSlider->setValue(static_cast<int>(stage.widthAmount * 100.0));
 
         auto pctLbl = new QLabel(QString("%1%").arg(stage.widthPercent()), widthGroup);
-        pctLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
+        QFont pctFont = font();
+        pctFont.setPointSize(12);
+        pctFont.setBold(true);
+        pctLbl->setFont(pctFont);
 
         addSliderRow(widthForm, "&Width:", widthSlider, pctLbl, widthGroup);
 
@@ -910,7 +919,9 @@ void StageDetailView::buildStageOptionsUi() {
         crossSlider->setValue(static_cast<int>(stage.splitWidthCrossover));
 
         auto crossLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.splitWidthCrossover)), crossGroup);
-        crossLbl->setFont(QFont("sans-serif", 10, QFont::Bold));
+        QFont crossFont = font();
+        crossFont.setBold(true);
+        crossLbl->setFont(crossFont);
 
         addSliderRow(crossForm, "&Crossover:", crossSlider, crossLbl, crossGroup);
 
@@ -936,7 +947,10 @@ void StageDetailView::buildStageOptionsUi() {
         highSlider->setValue(static_cast<int>(stage.splitWidthAmount * 100.0));
 
         auto highPctLbl = new QLabel(QString("%1%").arg(static_cast<int>(stage.splitWidthAmount * 100.0)), highGroup);
-        highPctLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
+        QFont highFont = font();
+        highFont.setPointSize(12);
+        highFont.setBold(true);
+        highPctLbl->setFont(highFont);
 
         addSliderRow(highForm, "&Width:", highSlider, highPctLbl, highGroup);
 
@@ -2374,7 +2388,7 @@ void StageDetailView::buildStageOptionsUi() {
             bVBox->setAlignment(Qt::AlignCenter);
 
             auto gainValLbl = new QLabel(QString("%1").arg(stage.graphicEQGains[b], 0, 'f', 1), bankContainer);
-            gainValLbl->setFont(QFont("monospace", 9));
+            gainValLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
             gainValLbl->setFixedWidth(35);
             gainValLbl->setAlignment(Qt::AlignCenter);
             bVBox->addWidget(gainValLbl);

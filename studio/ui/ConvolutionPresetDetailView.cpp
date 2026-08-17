@@ -2,6 +2,7 @@
 
 #include <QDesktopServices>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -29,7 +30,10 @@ void ConvolutionPresetDetailView::setupUi() {
     headerForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
+    QFont nameFont = font();
+    nameFont.setPointSize(13);
+    nameFont.setBold(true);
+    m_nameEdit->setFont(nameFont);
     m_nameEdit->setPlaceholderText("Preset Name");
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
         if (m_preset.name != text.toStdString()) {
@@ -61,21 +65,23 @@ void ConvolutionPresetDetailView::setupUi() {
     auto detailsForm = new QFormLayout(detailsGroup);
     detailsForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
+    const QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+
     m_kindLabel = new QLabel(detailsGroup);
-    m_kindLabel->setFont(QFont("monospace", 12));
+    m_kindLabel->setFont(monoFont);
     detailsForm->addRow("Kind:", m_kindLabel);
 
     m_tapsLabel = new QLabel(detailsGroup);
-    m_tapsLabel->setFont(QFont("monospace", 12));
+    m_tapsLabel->setFont(monoFont);
     detailsForm->addRow("Taps:", m_tapsLabel);
 
     m_ratesLabel = new QLabel(detailsGroup);
-    m_ratesLabel->setFont(QFont("monospace", 12));
+    m_ratesLabel->setFont(monoFont);
     detailsForm->addRow("Available Rates:", m_ratesLabel);
 
     m_latencyKeyLabel = new QLabel("Latency @ 48k:", detailsGroup);
     m_latencyValueLabel = new QLabel(detailsGroup);
-    m_latencyValueLabel->setFont(QFont("monospace", 12));
+    m_latencyValueLabel->setFont(monoFont);
     detailsForm->addRow(m_latencyKeyLabel, m_latencyValueLabel);
 
     mainLayout->addWidget(detailsGroup);
@@ -206,7 +212,7 @@ void ConvolutionPresetDetailView::refreshUi() {
                 fileRowLayout->setContentsMargins(0, 0, 0, 0);
 
                 auto pathLbl = new QLabel(p, fileRowWidget);
-                pathLbl->setFont(QFont("monospace", 11));
+                pathLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
                 pathLbl->setToolTip(p);
                 fileRowLayout->addWidget(pathLbl, 1);
 

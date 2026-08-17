@@ -1,6 +1,7 @@
 #include "ui/OratoryPresetPickerDlg.h"
 
 #include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -60,7 +61,10 @@ void OratoryPresetPickerDlg::setupUi() {
     auto loadingLayout = new QVBoxLayout(m_loadingWidget);
     loadingLayout->setAlignment(Qt::AlignCenter);
     m_loadingLabel = new QLabel(m_loadingWidget);
-    m_loadingLabel->setFont(QFont("sans-serif", 13, QFont::Bold));
+    QFont bold13 = font();
+    bold13.setPointSize(13);
+    bold13.setBold(true);
+    m_loadingLabel->setFont(bold13);
     m_loadingLabel->setAlignment(Qt::AlignCenter);
     loadingLayout->addWidget(m_loadingLabel);
     m_stackedWidget->addWidget(m_loadingWidget);
@@ -69,11 +73,10 @@ void OratoryPresetPickerDlg::setupUi() {
     m_errorWidget = new QWidget(m_stackedWidget);
     auto errorLayout = new QVBoxLayout(m_errorWidget);
     errorLayout->setAlignment(Qt::AlignCenter);
-    m_errorTitle = new QLabel("Error ⚠️", m_errorWidget);
-    m_errorTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_errorTitle = new QLabel("Error", m_errorWidget);
+    m_errorTitle->setFont(bold13);
     m_errorTitle->setAlignment(Qt::AlignCenter);
     m_errorSubtitle = new QLabel(m_errorWidget);
-    m_errorSubtitle->setFont(QFont("sans-serif", 11));
     m_errorSubtitle->setWordWrap(true);
     m_errorSubtitle->setAlignment(Qt::AlignCenter);
     errorLayout->addWidget(m_errorTitle);
@@ -85,10 +88,9 @@ void OratoryPresetPickerDlg::setupUi() {
     auto emptyLayout = new QVBoxLayout(m_emptyWidget);
     emptyLayout->setAlignment(Qt::AlignCenter);
     m_emptyTitle = new QLabel("No Results", m_emptyWidget);
-    m_emptyTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_emptyTitle->setFont(bold13);
     m_emptyTitle->setAlignment(Qt::AlignCenter);
     m_emptySubtitle = new QLabel("Check the spelling or try a new search.", m_emptyWidget);
-    m_emptySubtitle->setFont(QFont("sans-serif", 11));
     m_emptySubtitle->setWordWrap(true);
     m_emptySubtitle->setAlignment(Qt::AlignCenter);
     emptyLayout->addWidget(m_emptyTitle);
@@ -167,11 +169,13 @@ void OratoryPresetPickerDlg::onSearchTextChanged(const QString& text) {
         itemLayout->setSpacing(2);
 
         auto nameLbl = new QLabel(QString::fromStdString(entry.name), container);
-        nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
+        QFont nameFont = font();
+        nameFont.setBold(true);
+        nameLbl->setFont(nameFont);
 
         auto pathLbl = new QLabel(container);
-        QFont monoFont("monospace", 9);
-        monoFont.setStyleHint(QFont::Monospace);
+        QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        monoFont.setPointSize(9);
         pathLbl->setFont(monoFont);
         QString fullPath = QString::fromStdString(entry.path);
         pathLbl->setText(QFontMetrics(monoFont).elidedText(fullPath, Qt::ElideLeft, 440));

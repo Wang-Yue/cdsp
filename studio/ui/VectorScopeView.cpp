@@ -215,7 +215,10 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barY = 10;
         int barH = 6;
 
-        p.setFont(QFont("sans-serif", 8, QFont::Bold));
+        QFont labelF = font();
+        labelF.setPointSize(8);
+        labelF.setBold(true);
+        p.setFont(labelF);
         p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(barX - 16, barY + 7, "L");
         p.drawText(barX + barW + 6, barY + 7, "R");
@@ -243,7 +246,10 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         int barY = h - 22;
         int barH = 8;
 
-        p.setFont(QFont("sans-serif", 8, QFont::Bold));
+        QFont labelF = font();
+        labelF.setPointSize(8);
+        labelF.setBold(true);
+        p.setFont(labelF);
         p.setPen(palette().color(QPalette::PlaceholderText));
         p.drawText(barX - 22, barY + 8, "-1");
         p.drawText(barX + barW / 2 - 4, barY + 8, "0");

@@ -1,6 +1,7 @@
 #include "ui/GroupDelayPlotWidget.h"
 
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
@@ -82,7 +83,9 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     if (!m_session || !m_session->measuredFR.has_value()) {
         painter.setPen(palette().color(QPalette::PlaceholderText));
-        painter.setFont(QFont("sans-serif", 12));
+        QFont emptyF = font();
+        emptyF.setPointSize(12);
+        painter.setFont(emptyF);
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response data available for Group Delay plot.");
         return;
     }
@@ -97,7 +100,9 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // Axis Labels
     painter.setPen(palette().color(QPalette::PlaceholderText));
-    painter.setFont(QFont("Monospace", 9));
+    QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    monoFont.setPointSize(9);
+    painter.setFont(monoFont);
     painter.drawText(QRectF(12, 4, 80, 16), Qt::AlignLeft, QString("+%1 ms").arg(scaleMs, 0, 'f', 1));
     painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0 ms");
     painter.drawText(QRectF(12, h - 20, 80, 16), Qt::AlignLeft, QString("-%1 ms").arg(scaleMs, 0, 'f', 1));
@@ -144,6 +149,8 @@ void GroupDelayPlotWidget::paintEvent(QPaintEvent* /*event*/) {
     painter.setPen(QPen(curveColor, 1.5));
     painter.drawLine(w - 272, 23, w - 247, 23);
     painter.setPen(palette().color(QPalette::Text));
-    painter.setFont(QFont("sans-serif", 9));
+    QFont legF = font();
+    legF.setPointSize(9);
+    painter.setFont(legF);
     painter.drawText(w - 239, 27, "Group Delay (ms)");
 }

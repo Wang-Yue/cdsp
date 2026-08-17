@@ -306,7 +306,10 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.setPen(QPen(QColor("#ff9500"), 1));
         p.drawRoundedRect(ttX, ttY, ttW, ttH, 5, 5);
 
-        p.setFont(QFont("sans-serif", 8, QFont::Bold));
+        QFont ttF = font();
+        ttF.setPointSize(8);
+        ttF.setBold(true);
+        p.setFont(ttF);
         p.setPen(QColor("#ffffff"));
         p.drawText(QRectF(ttX, ttY, ttW, ttH), Qt::AlignCenter, tooltip);
     }

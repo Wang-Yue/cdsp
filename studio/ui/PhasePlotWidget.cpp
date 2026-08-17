@@ -1,6 +1,7 @@
 #include "ui/PhasePlotWidget.h"
 
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QPainter>
@@ -129,7 +130,9 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     if (!m_session || !m_session->measuredFR.has_value()) {
         painter.setPen(palette().color(QPalette::PlaceholderText));
-        painter.setFont(QFont("sans-serif", 12));
+        QFont emptyF = font();
+        emptyF.setPointSize(12);
+        painter.setFont(emptyF);
         painter.drawText(rect(), Qt::AlignCenter, "No frequency response available for Phase plot.");
         return;
     }
@@ -141,13 +144,16 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     phaseBounds(fr, unwrapped, minDeg, maxDeg);
     double spanDeg = maxDeg - minDeg;
 
+    QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    monoFont.setPointSize(9);
+
     // Draw Grid Lines (Frequency ticks: 20, 100, 1000, 10000 Hz)
     for (double f : {20.0, 100.0, 1000.0, 10000.0}) {
         double x = freqToX(f, w);
         painter.setPen(QPen(palette().color(QPalette::Mid), 0.5));
         painter.drawLine(QPointF(x, 0), QPointF(x, h));
         painter.setPen(palette().color(QPalette::PlaceholderText));
-        painter.setFont(QFont("Monospace", 9));
+        painter.setFont(monoFont);
         QString label =
             (f >= 1000.0) ? QString("%1k").arg(static_cast<int>(f / 1000.0)) : QString::number(static_cast<int>(f));
         double labelX = std::max(4.0, std::min(w - 30.0, x - 12.0));
@@ -165,7 +171,7 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
                                     : QPen(palette().color(QPalette::Mid), 0.5));
             painter.drawLine(QPointF(0, y), QPointF(w, y));
             painter.setPen(palette().color(QPalette::PlaceholderText));
-            painter.setFont(QFont("Monospace", 9));
+            painter.setFont(monoFont);
             painter.drawText(QRectF(8, y - 12, 60, 14), Qt::AlignLeft | Qt::AlignVCenter, QString::number(deg) + "°");
         }
     }
@@ -230,7 +236,7 @@ void PhasePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     int legendHeight =
         (m_session->correctionPreset.has_value() && !m_session->correctionPreset->bands.empty()) ? 42 : 24;
     painter.fillRect(QRect(w - 315, 8, 180, legendHeight), palette().color(QPalette::Window));
-    painter.setFont(QFont("Monospace", 9));
+    painter.setFont(monoFont);
     painter.setPen(QPen(measuredColor, 1.5));
     painter.drawLine(w - 307, 18, w - 289, 18);
     painter.setPen(palette().color(QPalette::PlaceholderText));

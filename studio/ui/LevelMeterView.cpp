@@ -95,7 +95,10 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QColor midColor = palette().color(QPalette::Mid);
 
     if (!m_title.isEmpty()) {
-        p.setFont(QFont("sans-serif", 11, QFont::Bold));
+        QFont titleF = font();
+        titleF.setPointSize(11);
+        titleF.setBold(true);
+        p.setFont(titleF);
         p.setPen(palette().color(QPalette::Text));
         p.drawText(16, 24, m_title);
     }
@@ -413,7 +416,10 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     m_statusDot->setFixedSize(8, 8);
 
     m_statusLabel = new QLabel("Inactive", this);
-    m_statusLabel->setFont(QFont("sans-serif", 10, QFont::Bold));
+    QFont statusF = font();
+    statusF.setPointSize(10);
+    statusF.setBold(true);
+    m_statusLabel->setFont(statusF);
 
     layout->addWidget(m_statusDot);
     layout->addWidget(m_statusLabel);

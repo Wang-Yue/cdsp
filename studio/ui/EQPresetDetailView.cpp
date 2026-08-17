@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -63,7 +64,10 @@ void EQPresetDetailView::setupUi() {
     headerForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
+    QFont nameFont = font();
+    nameFont.setPointSize(13);
+    nameFont.setBold(true);
+    m_nameEdit->setFont(nameFont);
     m_nameEdit->setPlaceholderText("Preset Name");
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
         if (m_isRefreshing)
@@ -239,14 +243,14 @@ void EQPresetDetailView::setupUi() {
 
     chipsBarLayout->addWidget(chipsScroll, 1);
 
-    auto quickAddBtn = new QPushButton("➕ Add", diagramModeWidget);
+    auto quickAddBtn = new QPushButton("Add Band", diagramModeWidget);
     quickAddBtn->setToolTip("Add new EQ filter band");
     connect(quickAddBtn, &QPushButton::clicked, this, &EQPresetDetailView::onAddBand);
     chipsBarLayout->addWidget(quickAddBtn, 0, Qt::AlignVCenter);
 
     diagramModeLayout->addLayout(chipsBarLayout);
 
-    m_tabWidget->addTab(diagramModeWidget, "📈 Diagram");
+    m_tabWidget->addTab(diagramModeWidget, "Diagram");
 
     // Mode 1: Bands Form Mode (Preamp Parameter Form + Bands Table + Add Band Button)
     auto formModeWidget = new QWidget(this);
@@ -301,11 +305,11 @@ void EQPresetDetailView::setupUi() {
     });
     formModeLayout->addWidget(m_bandsTable, 1);
 
-    auto addBandFormBtn = new QPushButton("➕ Add Band", formModeWidget);
+    auto addBandFormBtn = new QPushButton("Add Band", formModeWidget);
     connect(addBandFormBtn, &QPushButton::clicked, this, &EQPresetDetailView::onAddBand);
     formModeLayout->addWidget(addBandFormBtn, 0, Qt::AlignLeft);
 
-    m_tabWidget->addTab(formModeWidget, "🎛️ Form");
+    m_tabWidget->addTab(formModeWidget, "Form");
 
     // Mode 2: EqualizerAPO Text Editor (EQCSVMode)
     auto csvWidget = new QWidget(this);
@@ -315,7 +319,10 @@ void EQPresetDetailView::setupUi() {
 
     auto csvTitleVBox = new QVBoxLayout();
     auto csvTitleLbl = new QLabel("AutoEq / EqualizerAPO format", csvWidget);
-    csvTitleLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
+    QFont titleFont = font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    csvTitleLbl->setFont(titleFont);
     auto csvSubLbl = new QLabel("Edit and Apply, or paste from AutoEq output", csvWidget);
     csvTitleVBox->addWidget(csvTitleLbl);
     csvTitleVBox->addWidget(csvSubLbl);
@@ -347,10 +354,10 @@ void EQPresetDetailView::setupUi() {
     csvLayout->addWidget(m_csvErrorLabel);
 
     m_csvTextEdit = new QTextEdit(csvWidget);
-    m_csvTextEdit->setFont(QFont("monospace", 11));
+    m_csvTextEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     csvLayout->addWidget(m_csvTextEdit, 1);
 
-    m_tabWidget->addTab(csvWidget, "📄 CSV");
+    m_tabWidget->addTab(csvWidget, "CSV");
 
     connect(m_tabWidget, &QTabWidget::currentChanged, [this](int idx) {
         if (idx == 2) {
@@ -690,7 +697,10 @@ void EQPresetDetailView::updateBandChipsBar() {
         // Line 1: #Index Type
         auto titleLbl = new QLabel(
             QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToString(b.type))), chip);
-        titleLbl->setFont(QFont("", 10, isSelected ? QFont::Bold : QFont::Normal));
+        QFont titleF = font();
+        titleF.setPointSize(10);
+        titleF.setBold(isSelected);
+        titleLbl->setFont(titleF);
         textVBox->addWidget(titleLbl);
 
         // Line 2: Freq & Gain / Q
@@ -719,7 +729,7 @@ void EQPresetDetailView::updateBandChipsBar() {
             }
 
             auto valLbl = new QLabel(valText, chip);
-            valLbl->setFont(QFont("monospace", 10));
+            valLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
             textVBox->addWidget(valLbl);
         }
 

@@ -2,6 +2,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -50,7 +51,7 @@ void AnalogVUDetailView::setupUi() {
 
         label = new QLabel(QString::number(curVal / (precision == 1 ? 1.0 : 100.0), 'f', precision), widget);
         label->setFixedWidth(45);
-        label->setFont(QFont("monospace", 11));
+        label->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
         connect(slider, &QSlider::valueChanged, [this, label, precision, onValueChanged](int val) {
             double value = precision == 1 ? val : (val / 100.0);

@@ -2,6 +2,7 @@
 
 #include <QAbstractButton>
 #include <QAbstractSlider>
+#include <QFontDatabase>
 #include <QGraphicsOpacityEffect>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -508,7 +509,9 @@ void MiniPlayerView::setupUi() {
         "5px; }");
 
     m_volValueLabel = new QLabel(QString::asprintf("%+.0f", currentVol), volWidget);
-    m_volValueLabel->setFont(QFont("monospace", 9));
+    QFont mono9 = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono9.setPointSize(9);
+    m_volValueLabel->setFont(mono9);
     m_volValueLabel->setFixedWidth(26);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_volValueLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);

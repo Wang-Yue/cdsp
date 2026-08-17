@@ -32,6 +32,7 @@
 #include <QCursor>
 #include <QDesktopServices>
 #include <QDoubleSpinBox>
+#include <QFontDatabase>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -373,7 +374,7 @@ void MainWindow::setupStatusBar() {
     m_statusActivePresetLabel->setContentsMargins(6, 0, 6, 0);
 
     m_statusRuntimeLabel = new QLabel("Run Time: 00:00:00", this);
-    m_statusRuntimeLabel->setFont(QFont("monospace"));
+    m_statusRuntimeLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_statusRuntimeLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     m_statusRuntimeLabel->setContentsMargins(6, 0, 6, 0);
 
@@ -929,7 +930,7 @@ void MainWindow::setupToolbar() {
     toolBar->addWidget(m_startStopBtn);
 
     m_sampleRateBadge = new QLabel("48000 Hz", this);
-    m_sampleRateBadge->setFont(QFont("monospace", 11));
+    m_sampleRateBadge->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_sampleRateBadge->setAlignment(Qt::AlignCenter);
     m_sampleRateBadge->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_sampleRateBadge->setContentsMargins(8, 2, 8, 2);
@@ -963,7 +964,7 @@ void MainWindow::setupToolbar() {
     toolBar->addWidget(m_headerVolumeSlider);
 
     m_gainValueLabel = new QLabel("  0.0 dB", this);
-    m_gainValueLabel->setFont(QFont("monospace", 10));
+    m_gainValueLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_gainValueLabel->setFixedWidth(55);
     m_gainValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_gainValueLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);

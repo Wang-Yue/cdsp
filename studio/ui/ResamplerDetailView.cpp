@@ -2,6 +2,7 @@
 
 #include "config/DSPConfigTypes.h"
 
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <cmath>
@@ -119,7 +120,7 @@ void ResamplerDetailView::setupUi() {
     m_fCutoffSlider->setRange(50, 99);
 
     m_fCutoffLabel = new QLabel("0.95 × Fs/2", m_fCutoffRowWidget);
-    m_fCutoffLabel->setFont(QFont("monospace", 11));
+    m_fCutoffLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_fCutoffLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_fCutoffLabel->setMinimumWidth(85);
 

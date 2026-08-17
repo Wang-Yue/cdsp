@@ -117,11 +117,13 @@ void ConvolutionImportDlg::setupUi() {
 
     auto tableHeader = new QHBoxLayout();
     auto filesLbl = new QLabel("Impulse Response Files", contentWidget);
-    filesLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
+    QFont f = font();
+    f.setBold(true);
+    filesLbl->setFont(f);
     tableHeader->addWidget(filesLbl);
     tableHeader->addStretch();
 
-    auto addBtn = new QPushButton("+ Add File(s)…", contentWidget);
+    auto addBtn = new QPushButton("Add File(s)…", contentWidget);
     connect(addBtn, &QPushButton::clicked, this, &ConvolutionImportDlg::onAddFilesClicked);
     tableHeader->addWidget(addBtn);
     fileSectionLayout->addLayout(tableHeader);
@@ -133,7 +135,9 @@ void ConvolutionImportDlg::setupUi() {
 
     auto emptyIcon = new QLabel("⇣", m_emptyStateWidget);
     emptyIcon->setAlignment(Qt::AlignCenter);
-    emptyIcon->setFont(QFont("sans-serif", 24));
+    QFont iconF = font();
+    iconF.setPointSize(24);
+    emptyIcon->setFont(iconF);
     emptyLayout->addWidget(emptyIcon);
 
     auto emptyText =
@@ -235,10 +239,13 @@ void ConvolutionImportDlg::updateItemsList() {
             topRow->addWidget(iconLbl);
 
             auto nameLbl = new QLabel(fi.fileName(), card);
-            nameLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
+            QFont nameF = font();
+            nameF.setBold(true);
+            nameLbl->setFont(nameF);
             topRow->addWidget(nameLbl, 1);
 
-            auto delBtn = new QPushButton("🗑", card);
+            auto delBtn = new QPushButton("✕", card);
+            delBtn->setToolTip("Remove this file");
             delBtn->setFlat(true);
             connect(delBtn, &QPushButton::clicked, [this, i]() {
                 m_items.erase(m_items.begin() + i);

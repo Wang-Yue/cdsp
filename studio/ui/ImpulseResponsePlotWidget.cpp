@@ -1,6 +1,7 @@
 #include "ui/ImpulseResponsePlotWidget.h"
 
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
@@ -58,7 +59,9 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     if (!m_session || !m_session->measuredIR.has_value()) {
         painter.setPen(palette().color(QPalette::PlaceholderText));
-        painter.setFont(QFont("sans-serif", 12));
+        QFont emptyF = font();
+        emptyF.setPointSize(12);
+        painter.setFont(emptyF);
         painter.drawText(rect(), Qt::AlignCenter, "No impulse response data available.");
         return;
     }
@@ -89,7 +92,9 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // Normalized Amplitude Y axis [-1.0, +1.0] Labels
     painter.setPen(palette().color(QPalette::PlaceholderText));
-    painter.setFont(QFont("Monospace", 9));
+    QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    monoFont.setPointSize(9);
+    painter.setFont(monoFont);
     painter.drawText(QRectF(12, 4, 60, 16), Qt::AlignLeft, "+1.0");
     painter.drawText(QRectF(12, h / 2.0 - 18, 60, 16), Qt::AlignLeft, "0.0");
     painter.drawText(QRectF(12, h - 20, 60, 16), Qt::AlignLeft, "-1.0");
@@ -139,6 +144,8 @@ void ImpulseResponsePlotWidget::paintEvent(QPaintEvent* /*event*/) {
     painter.setPen(QPen(curveColor, 2));
     painter.drawLine(w - 272, 23, w - 247, 23);
     painter.setPen(palette().color(QPalette::Text));
-    painter.setFont(QFont("sans-serif", 9));
+    QFont legF = font();
+    legF.setPointSize(9);
+    painter.setFont(legF);
     painter.drawText(w - 239, 27, "Impulse Response");
 }
