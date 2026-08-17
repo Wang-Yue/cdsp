@@ -101,26 +101,31 @@ QColor EQDiagramWidget::bandColor(int index) {
 }
 
 double EQDiagramWidget::freqToX(double f, double width) const {
-    double minLog = std::log10(fMin);
-    double maxLog = std::log10(fMax);
+    if (width <= 0.0)
+        return 0.0;
+    double minLog = std::log10(std::max(1.0, fMin));
+    double maxLog = std::log10(std::max(fMin + 1.0, fMax));
     double logF = std::log10(std::max(fMin, f));
     return width * (logF - minLog) / (maxLog - minLog);
 }
 
 double EQDiagramWidget::xToFreq(double x, double width) const {
-    double minLog = std::log10(fMin);
-    double maxLog = std::log10(fMax);
-    double ratio = std::max(0.0, std::min(1.0, x / width));
+    double minLog = std::log10(std::max(1.0, fMin));
+    double maxLog = std::log10(std::max(fMin + 1.0, fMax));
+    double ratio = std::max(0.0, std::min(1.0, width > 0.0 ? (x / width) : 0.0));
     return std::pow(10.0, minLog + ratio * (maxLog - minLog));
 }
 
 double EQDiagramWidget::dbToY(double db, double height) const {
-    double ratio = (db - dbMin) / (dbMax - dbMin);
+    if (height <= 0.0)
+        return 0.0;
+    double denom = (dbMax > dbMin) ? (dbMax - dbMin) : 1.0;
+    double ratio = (db - dbMin) / denom;
     return height * (1.0 - ratio);
 }
 
 double EQDiagramWidget::yToDb(double y, double height) const {
-    double ratio = 1.0 - (y / height);
+    double ratio = 1.0 - (height > 0.0 ? (y / height) : 0.0);
     return dbMin + ratio * (dbMax - dbMin);
 }
 
@@ -131,6 +136,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
     int w = width();
     int h = height();
+    int sampleRate = (m_sampleRate > 0) ? m_sampleRate : 48000;
 
     // Card background
     painter.fillRect(rect(), palette().color(QPalette::Base));
@@ -142,19 +148,24 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         if (!specBands.empty() && specBands.size() == specFreqs.size()) {
             double peakDB = -120.0;
             double sumDB = 0.0;
+            size_t validCount = 0;
             for (float val : specBands) {
+                if (std::isnan(val))
+                    continue;
                 double v = static_cast<double>(val);
                 peakDB = std::max(peakDB, v);
                 sumDB += v;
+                validCount++;
             }
-            double offset = (peakDB < -95.0) ? 0.0 : (sumDB / specBands.size());
+            double offset = (peakDB < -95.0 || validCount == 0) ? 0.0 : (sumDB / static_cast<double>(validCount));
 
             QPainterPath fillPath, strokePath;
             fillPath.moveTo(0, h);
 
             for (size_t i = 0; i < specBands.size(); ++i) {
                 double f = specFreqs[i];
-                double rawDb = static_cast<double>(specBands[i]);
+                float rawVal = specBands[i];
+                double rawDb = std::isnan(rawVal) ? -120.0 : static_cast<double>(rawVal);
                 double dbVal = (peakDB < -95.0) ? rawDb : (rawDb - offset);
                 double dbClamped = std::max(-24.0, std::min(24.0, dbVal));
                 double x = freqToX(f, w);
@@ -271,7 +282,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                 for (size_t i = 0; i < m_overlay.frequencies.size(); ++i) {
                     double f = m_overlay.frequencies[i];
                     double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB +
-                                                                   m_preset.combinedResponse(f, m_sampleRate)));
+                                                                   m_preset.combinedResponse(f, sampleRate)));
                     double x = freqToX(f, w);
                     double y = dbToY(db, h);
                     if (i == 0)
@@ -294,7 +305,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         QPainterPath path;
         for (int x = 0; x <= w; x += 2) {
             double f = xToFreq(x, w);
-            double db = band.response(f, m_sampleRate);
+            double db = band.response(f, sampleRate);
             double y = dbToY(db, h);
             if (x == 0)
                 path.moveTo(x, y);
@@ -355,7 +366,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     QPainterPath totalPath;
     for (int x = 0; x <= w; x += 2) {
         double f = xToFreq(x, w);
-        double db = m_preset.combinedResponse(f, m_sampleRate);
+        double db = m_preset.combinedResponse(f, sampleRate);
         double y = dbToY(db, h);
         if (x == 0) {
             totalPath.moveTo(x, y);
@@ -485,17 +496,20 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
     painter.setFont(font);
     QFontMetrics fm(font);
     int textW = fm.horizontalAdvance(text) + 20;
+    int maxCardW = std::max(60, w - 24);
+    int cardW = std::min(textW, maxCardW);
     int textH = 24;
-    int rectX = std::max(12, w - textW - 12);
+    int rectX = std::max(12, w - cardW - 12);
     int rectY = 10;
 
-    QRect bgRect(rectX, rectY, textW, textH);
+    QRect bgRect(rectX, rectY, cardW, textH);
     painter.setBrush(QColor(20, 20, 25, 200));
     painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0));
     painter.drawRoundedRect(bgRect, 6, 6);
 
     painter.setPen(QColor(240, 240, 245));
-    painter.drawText(bgRect, Qt::AlignCenter, text);
+    QString displayText = (cardW < textW) ? fm.elidedText(text, Qt::ElideMiddle, cardW - 10) : text;
+    painter.drawText(bgRect, Qt::AlignCenter, displayText);
 }
 
 void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
@@ -534,10 +548,12 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
 
         auto toggleAct = menu.addAction(band.isEnabled ? "Disable Band" : "Enable Band");
         connect(toggleAct, &QAction::triggered, [this, hitIndex]() {
-            m_preset.bands[hitIndex].isEnabled = !m_preset.bands[hitIndex].isEnabled;
-            if (onPresetChanged)
-                onPresetChanged();
-            update();
+            if (hitIndex >= 0 && hitIndex < static_cast<int>(m_preset.bands.size())) {
+                m_preset.bands[hitIndex].isEnabled = !m_preset.bands[hitIndex].isEnabled;
+                if (onPresetChanged)
+                    onPresetChanged();
+                update();
+            }
         });
 
         auto typeMenu = menu.addMenu("Change Type");
@@ -548,10 +564,12 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
               EQBandType::AllpassFO, EQBandType::Free, EQBandType::GeneralNotch, EQBandType::LinkwitzTransform}) {
             auto act = typeMenu->addAction(QString::fromStdString(eqBandTypeToString(t)));
             connect(act, &QAction::triggered, [this, hitIndex, t]() {
-                m_preset.bands[hitIndex].type = t;
-                if (onPresetChanged)
-                    onPresetChanged();
-                update();
+                if (hitIndex >= 0 && hitIndex < static_cast<int>(m_preset.bands.size())) {
+                    m_preset.bands[hitIndex].type = t;
+                    if (onPresetChanged)
+                        onPresetChanged();
+                    update();
+                }
             });
         }
 
@@ -623,6 +641,7 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
 
         m_draggingIndex = hitIndex;
         m_selectedIndex = hitIndex;
+        m_lastDragY = static_cast<int>(event->position().y());
         if (onBandSelected)
             onBandSelected(hitIndex);
         update();
@@ -638,8 +657,8 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
 
         if (event->modifiers() & Qt::ShiftModifier) {
             // Shift-Drag Q Tuning based on mouse vertical movement
-            static int lastY = event->position().y();
-            int dy = event->position().y() - lastY;
+            int currentY = static_cast<int>(event->position().y());
+            int dy = currentY - m_lastDragY;
             if (dy != 0 && eqBandTypeHasQ(b.type)) {
                 double factor = std::pow(1.01, -dy);
                 if (b.useSlope) {
@@ -656,8 +675,9 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
                         onBandQChanged(m_draggingIndex, b.q);
                 }
             }
-            lastY = event->position().y();
+            m_lastDragY = currentY;
         } else {
+            m_lastDragY = static_cast<int>(event->position().y());
             double f = xToFreq(event->position().x(), w);
             double db = yToDb(event->position().y(), h);
 

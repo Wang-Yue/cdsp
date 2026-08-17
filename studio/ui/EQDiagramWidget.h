@@ -68,6 +68,7 @@ private:
     int m_selectedIndex = -1;
     int m_draggingIndex = -1;
     int m_hoveredIndex = -1;
+    int m_lastDragY = 0;
 
     bool m_showAnalyzer = true;
     bool m_showLoudnessContour = false;
