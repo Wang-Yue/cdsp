@@ -252,37 +252,10 @@ void DashboardView::setupUi() {
     vuLayout->setContentsMargins(12, 12, 12, 12);
     vuLayout->setSpacing(10);
 
-    auto vuHeaderLayout = new QHBoxLayout();
-    vuHeaderLayout->setSpacing(8);
-    vuHeaderLayout->addStretch();
-
-    auto vuThemeLbl = new QLabel("Theme:", m_analogVUGroup);
-    m_vuThemeCombo = new QComboBox(m_analogVUGroup);
-    m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
-    m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
-    m_vuThemeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
-    vuHeaderLayout->addWidget(vuThemeLbl);
-    vuHeaderLayout->addWidget(m_vuThemeCombo);
-    vuLayout->addLayout(vuHeaderLayout);
-
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
     m_analogVUView->setLevelState(&m_monitoring->levelState);
     m_analogVUView->setFixedHeight(200);
     vuLayout->addWidget(m_analogVUView);
-
-    int curThemeIdx = m_vuThemeCombo->findData(static_cast<int>(m_analogVUView->vuSettings().theme));
-    if (curThemeIdx >= 0) {
-        m_vuThemeCombo->setCurrentIndex(curThemeIdx);
-    }
-
-    connect(m_vuThemeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (!m_analogVUView)
-            return;
-        auto settings = m_analogVUView->vuSettings();
-        settings.theme = static_cast<VUTheme>(m_vuThemeCombo->itemData(idx).toInt());
-        m_analogVUView->setVUSettings(settings);
-        settings.save();
-    });
 
     mainLayout->addWidget(m_analogVUGroup);
 

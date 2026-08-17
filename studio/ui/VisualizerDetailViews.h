@@ -55,6 +55,7 @@ private:
     QLabel* m_hotSpotLbl;
     QSlider* m_lightWashSlider;
     QLabel* m_lightWashLbl;
+    QComboBox* m_vuThemeCombo = nullptr;
 
     void setupUi();
 };

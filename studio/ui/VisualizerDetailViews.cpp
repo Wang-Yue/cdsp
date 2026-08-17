@@ -29,6 +29,32 @@ AnalogVUDetailView::AnalogVUDetailView(std::shared_ptr<MonitoringController> mon
 void AnalogVUDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
+    auto vuHeaderLayout = new QHBoxLayout();
+    vuHeaderLayout->setSpacing(8);
+    vuHeaderLayout->addStretch();
+
+    auto vuThemeLbl = new QLabel(tr("Theme:"), this);
+    m_vuThemeCombo = new QComboBox(this);
+    m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
+    m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
+    m_vuThemeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
+    vuHeaderLayout->addWidget(vuThemeLbl);
+    vuHeaderLayout->addWidget(m_vuThemeCombo);
+    mainLayout->addLayout(vuHeaderLayout);
+
+    int curThemeIdx = m_vuThemeCombo->findData(static_cast<int>(m_settings.theme));
+    if (curThemeIdx >= 0) {
+        m_vuThemeCombo->setCurrentIndex(curThemeIdx);
+    }
+
+    connect(m_vuThemeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (!m_vuMeter)
+            return;
+        m_settings.theme = static_cast<VUTheme>(m_vuThemeCombo->itemData(idx).toInt());
+        m_vuMeter->setVUSettings(m_settings);
+        m_settings.save();
+    });
+
     // VU Meter Display
     m_vuMeter = new AnalogVUMeterView(this);
     if (m_monitoring)
@@ -132,6 +158,14 @@ void AnalogVUDetailView::setupUi() {
 
 void AnalogVUDetailView::resetDefaults() {
     m_settings.reset();
+    if (m_vuThemeCombo) {
+        int themeIdx = m_vuThemeCombo->findData(static_cast<int>(m_settings.theme));
+        if (themeIdx >= 0) {
+            m_vuThemeCombo->blockSignals(true);
+            m_vuThemeCombo->setCurrentIndex(themeIdx);
+            m_vuThemeCombo->blockSignals(false);
+        }
+    }
     m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
     m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
     m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));
@@ -149,6 +183,14 @@ void AnalogVUDetailView::resetDefaults() {
 
 void AnalogVUDetailView::refreshUi() {
     m_settings.load();
+    if (m_vuThemeCombo) {
+        int themeIdx = m_vuThemeCombo->findData(static_cast<int>(m_settings.theme));
+        if (themeIdx >= 0) {
+            m_vuThemeCombo->blockSignals(true);
+            m_vuThemeCombo->setCurrentIndex(themeIdx);
+            m_vuThemeCombo->blockSignals(false);
+        }
+    }
     m_radiusSlider->setValue(static_cast<int>(m_settings.radiusScale * 100));
     m_radiusLbl->setText(QString::number(m_settings.radiusScale, 'f', 2));
     m_pivotYSlider->setValue(static_cast<int>(m_settings.pivotY * 100));

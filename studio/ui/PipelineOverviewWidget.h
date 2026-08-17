@@ -55,7 +55,7 @@ protected:
 private:
     std::shared_ptr<DSPEngineController> m_dspController;
 
-    bool m_showElementaryDetails = true;
+    bool m_showElementaryDetails = false;
     std::optional<int> m_hoveredChannel = std::nullopt;
     int m_lastMaxChannels = 2;
 
