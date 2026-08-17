@@ -12,13 +12,31 @@
 
 LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {}
 
+LevelMeterView::~LevelMeterView() {
+    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0) {
+        m_levelState->visibilityCount--;
+    }
+}
+
+void LevelMeterView::setLevelState(LevelState* levelState) {
+    if (m_levelState == levelState)
+        return;
+    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
+        m_levelState->visibilityCount--;
+    m_levelState = levelState;
+    if (isVisible() && m_levelState)
+        m_levelState->visibilityCount++;
+    update();
+}
+
 QSize LevelMeterView::sizeHint() const {
-    std::vector<float> emptyVec;
-    const std::vector<float>& rmsVec =
-        m_hasExplicitLevels
-            ? m_rms
-            : (m_levelState ? (m_isCapture ? m_levelState->captureRms : m_levelState->playbackRms) : emptyVec);
-    size_t chCount = rmsVec.size();
+    size_t chCount = 2;
+    if (m_hasExplicitLevels) {
+        chCount = m_rms.size();
+    } else if (m_levelState) {
+        std::lock_guard<std::mutex> lock(m_levelState->mutex);
+        chCount = m_isCapture ? m_levelState->captureRms.size() : m_levelState->playbackRms.size();
+    }
     if (chCount == 0)
         chCount = 2;    // Default to 2 channels
     int barHeight = 18; // Match SwiftUI height: 18px per channel
@@ -46,7 +64,7 @@ void LevelMeterView::hideEvent(QHideEvent* event) {
 }
 
 static float normDB(float db) {
-    if (db < -60.0f)
+    if (std::isnan(db) || db < -60.0f)
         return 0.0f;
     if (db > 0.0f)
         return 1.0f;
@@ -103,15 +121,16 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         p.drawText(16, 24, m_title);
     }
 
-    std::vector<float> emptyVec;
-    const std::vector<float>& rmsVec =
-        m_hasExplicitLevels
-            ? m_rms
-            : (m_levelState ? (m_isCapture ? m_levelState->captureRms : m_levelState->playbackRms) : emptyVec);
-    const std::vector<float>& peakVec =
-        m_hasExplicitLevels
-            ? m_peak
-            : (m_levelState ? (m_isCapture ? m_levelState->capturePeak : m_levelState->playbackPeak) : emptyVec);
+    std::vector<float> rmsVec;
+    std::vector<float> peakVec;
+    if (m_hasExplicitLevels) {
+        rmsVec = m_rms;
+        peakVec = m_peak;
+    } else if (m_levelState) {
+        std::lock_guard<std::mutex> lock(m_levelState->mutex);
+        rmsVec = m_isCapture ? m_levelState->captureRms : m_levelState->playbackRms;
+        peakVec = m_isCapture ? m_levelState->capturePeak : m_levelState->playbackPeak;
+    }
 
     size_t chCount = std::max(rmsVec.size(), peakVec.size());
     if (chCount == 0)
@@ -128,6 +147,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int rightMargin = 44;
         int xStart = 28;
         int barW = w - xStart - rightMargin - 12;
+        if (barW < 10)
+            continue;
 
         // 1. Channel Label ("1", "2", "3"...)
         QString chLabel = QString::number(i + 1);
@@ -141,15 +162,18 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         // 2. Track Background with Corner Radius = 3px
         QPainterPath trackPath;
         trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 3, 3);
-        p.fillPath(trackPath, midColor);
+        QColor trackBg = palette().color(QPalette::Dark);
+        p.fillPath(trackPath, trackBg);
 
         // 3. Horizontal Center Divider
         int halfH = barHeight / 2;
-        p.setPen(QPen(midColor, 0.5));
+        QColor dividerColor = palette().color(QPalette::Mid);
+        p.setPen(QPen(dividerColor, 0.5));
         p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
 
         // 4. Tick Marks (-48 to 0 dB)
-        p.setPen(QPen(midColor, 1));
+        QColor tickColor = palette().color(QPalette::Midlight);
+        p.setPen(QPen(tickColor, 1));
         for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
             int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
             int markH = (dbMark == 0) ? barHeight : (barHeight / 2);
@@ -159,6 +183,10 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
 
         float rmsVal = (i < rmsVec.size()) ? rmsVec[i] : -100.0f;
         float peakVal = (i < peakVec.size()) ? peakVec[i] : -100.0f;
+        if (std::isnan(rmsVal))
+            rmsVal = -100.0f;
+        if (std::isnan(peakVal))
+            peakVal = -100.0f;
 
         float rmsFrac = normDB(rmsVal);
         float peakFrac = normDB(peakVal);
@@ -257,6 +285,7 @@ public:
     size_t getCount() const {
         if (!m_levelState)
             return 2;
+        std::lock_guard<std::mutex> lock(m_levelState->mutex);
         size_t count = m_isPlayback ? m_levelState->playbackPeak.size() : m_levelState->capturePeak.size();
         if (count == 0)
             count = m_isPlayback ? m_levelState->playbackChannelCount : m_levelState->captureChannelCount;
@@ -264,6 +293,9 @@ public:
     }
     void updateLayoutAndGeometry() {
         size_t count = getCount();
+        if (count == m_lastCount && width() > 0)
+            return;
+        m_lastCount = count;
         int barW = (count > 4) ? 40 : 80;
         int spacing = 4;
         int totalWidth = (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
@@ -286,6 +318,12 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
 
+        std::vector<float> peakLevels;
+        {
+            std::lock_guard<std::mutex> lock(m_levelState->mutex);
+            peakLevels = m_isPlayback ? m_levelState->playbackPeak : m_levelState->capturePeak;
+        }
+
         size_t count = getCount();
         if (count == 0)
             return;
@@ -294,8 +332,6 @@ protected:
         int barH = 6;
         int spacing = 4;
         QColor trackBg = palette().color(QPalette::Mid);
-
-        const auto& peakLevels = m_isPlayback ? m_levelState->playbackPeak : m_levelState->capturePeak;
 
         for (size_t i = 0; i < count; ++i) {
             int x = static_cast<int>(i * (barW + spacing));
@@ -318,6 +354,7 @@ protected:
 private:
     bool m_isPlayback;
     LevelState* m_levelState = nullptr;
+    size_t m_lastCount = 0;
 };
 
 class MeterGroupWidget : public QWidget {
@@ -347,10 +384,13 @@ public:
     }
     void updateWidth() {
         if (m_meter) {
+            int oldW = m_meter->width();
             m_meter->updateLayoutAndGeometry();
-            int totalW = 14 + 6 + m_meter->width();
-            setFixedWidth(totalW);
-            updateGeometry();
+            if (m_meter->width() != oldW || width() == 0) {
+                int totalW = 14 + 6 + m_meter->width();
+                setFixedWidth(totalW);
+                updateGeometry();
+            }
         }
     }
     void updateMeters() {
@@ -426,6 +466,12 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
         if (m_playbackGroup)
             m_playbackGroup->updateMeters();
     });
+}
+
+CompactLevelMeterBar::~CompactLevelMeterBar() {
+    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
+        m_monitoring->levelState.visibilityCount--;
+    }
 }
 
 void CompactLevelMeterBar::showEvent(QShowEvent* event) {

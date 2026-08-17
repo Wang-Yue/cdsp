@@ -18,16 +18,9 @@ class LevelMeterView : public QWidget {
 
 public:
     explicit LevelMeterView(QWidget* parent = nullptr);
+    ~LevelMeterView() override;
 
-    void setLevelState(LevelState* levelState) {
-        if (m_levelState == levelState)
-            return;
-        if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
-            m_levelState->visibilityCount--;
-        m_levelState = levelState;
-        if (isVisible() && m_levelState)
-            m_levelState->visibilityCount++;
-    }
+    void setLevelState(LevelState* levelState);
     void setIsCapture(bool isCapture) { m_isCapture = isCapture; }
     bool isCapture() const { return m_isCapture; }
     void setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title = "Meters");
@@ -55,6 +48,7 @@ class CompactLevelMeterBar : public QWidget {
 public:
     explicit CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
                                   std::shared_ptr<DSPEngineController> dsp, QWidget* parent = nullptr);
+    ~CompactLevelMeterBar() override;
 
 protected:
     void showEvent(QShowEvent* event) override;
