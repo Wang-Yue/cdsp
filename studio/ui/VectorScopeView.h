@@ -14,6 +14,7 @@ class VectorScopeView : public QWidget {
 public:
     explicit VectorScopeView(QWidget* parent = nullptr);
     explicit VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent = nullptr);
+    ~VectorScopeView() override;
 
     void setEngine(std::shared_ptr<VectorScopeEngine> engine);
     void setSamples(const AudioSamplesData& samples, bool showParticles = false, bool autoScale = true,

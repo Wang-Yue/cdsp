@@ -13,12 +13,22 @@ VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWid
     setEngine(engine);
 }
 
+VectorScopeView::~VectorScopeView() {
+    if (isVisible() && m_engine && m_engine->visibilityCount > 0) {
+        m_engine->visibilityCount--;
+    }
+}
+
 void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
     if (m_engine) {
+        if (isVisible() && m_engine->visibilityCount > 0)
+            m_engine->visibilityCount--;
         disconnect(m_engine.get(), &VectorScopeEngine::updated, this, nullptr);
     }
     m_engine = engine;
     if (m_engine) {
+        if (isVisible())
+            m_engine->visibilityCount++;
         connect(m_engine.get(), &VectorScopeEngine::updated, this, [this]() {
             if (m_engine)
                 setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
@@ -74,41 +84,61 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     if (w < 20 || h < 20)
         return;
 
-    // Allocate / resize offscreen phosphor persistence buffer if needed
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    if (m_persistenceBuffer.size() != size()) {
-        m_persistenceBuffer = QImage(size(), QImage::Format_ARGB32_Premultiplied);
-        m_persistenceBuffer.fill(inMiniPlayer ? QColor(0, 0, 0, 0) : palette().color(QPalette::Base));
+    if (!inMiniPlayer) {
+        p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
-    // 1. Phosphor decay: fade existing buffer content slightly toward background
+    int topMargin = 28;
+    int bottomMargin = 32;
+    int drawH = h - topMargin - bottomMargin;
+    int centerRadius = std::max(10, std::min(w - 30, drawH) / 2);
+    QPoint centerPt(w / 2, topMargin + drawH / 2);
+
+    // 1. Draw Reticle axes (+M, -M, +S, -S, L, R) crisply on main painter p
+    QColor mainAxisCol = palette().color(QPalette::Mid);
+    QColor diagAxisCol = palette().color(QPalette::Mid);
+    QColor labelCol = palette().color(QPalette::PlaceholderText);
+
+    p.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
+    p.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
+    p.drawLine(centerPt.x(), centerPt.y() - centerRadius, centerPt.x(), centerPt.y() + centerRadius);
+
+    int offset = static_cast<int>(centerRadius * 0.7071);
+    p.setPen(QPen(diagAxisCol, 0.5, Qt::SolidLine));
+    p.drawLine(centerPt.x() - offset, centerPt.y() - offset, centerPt.x() + offset, centerPt.y() + offset);
+    p.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
+    p.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
+
+    // Scope polar axis labels
+    QFont axisFont = font();
+    axisFont.setPointSize(7);
+    axisFont.setBold(true);
+    p.setFont(axisFont);
+    p.setPen(labelCol);
+
+    p.drawText(QRect(centerPt.x() - 15, centerPt.y() - centerRadius - 14, 30, 12), Qt::AlignCenter, "+M");
+    p.drawText(QRect(centerPt.x() - 15, centerPt.y() + centerRadius + 2, 30, 12), Qt::AlignCenter, "-M");
+    p.drawText(QRect(centerPt.x() - centerRadius - 20, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "-S");
+    p.drawText(QRect(centerPt.x() + centerRadius + 2, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "+S");
+
+    p.drawText(QRect(centerPt.x() - offset - 14, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "L");
+    p.drawText(QRect(centerPt.x() + offset, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "R");
+
+    // 2. Allocate / resize offscreen phosphor persistence buffer if needed
+    if (m_persistenceBuffer.size() != size()) {
+        m_persistenceBuffer = QImage(size(), QImage::Format_ARGB32_Premultiplied);
+        m_persistenceBuffer.fill(Qt::transparent);
+    }
+
+    // 3. Phosphor decay: fade existing trace content cleanly using DestinationIn
     {
         QPainter bufPainter(&m_persistenceBuffer);
+        bufPainter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        int decayAlpha = static_cast<int>(std::max(0.0f, std::min(255.0f, 255.0f * m_traceDecayRate)));
+        bufPainter.fillRect(m_persistenceBuffer.rect(), QColor(0, 0, 0, decayAlpha));
+        bufPainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         bufPainter.setRenderHint(QPainter::Antialiasing);
-        QColor baseFade = inMiniPlayer ? QColor(18, 18, 22) : palette().color(QPalette::Base);
-        int fadeAlpha = static_cast<int>(std::max(1.0f, std::min(255.0f, 255.0f * (1.0f - m_traceDecayRate))));
-        QColor fadeColor(baseFade.red(), baseFade.green(), baseFade.blue(), fadeAlpha);
-        bufPainter.fillRect(m_persistenceBuffer.rect(), fadeColor);
-
-        // Reticle axes (+M, -M, +S, -S) & Diagonal Corner-to-Corner X grid lines
-        int topMargin = 28;
-        int bottomMargin = 32;
-        int drawH = h - topMargin - bottomMargin;
-        int centerRadius = std::min(w - 20, drawH) / 2;
-        QPoint centerPt(w / 2, topMargin + drawH / 2);
-
-        QColor mainAxisCol = palette().color(QPalette::Mid);
-        QColor diagAxisCol = palette().color(QPalette::Mid);
-
-        bufPainter.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
-        bufPainter.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
-        bufPainter.drawLine(centerPt.x(), centerPt.y() - centerRadius, centerPt.x(), centerPt.y() + centerRadius);
-
-        int offset = static_cast<int>(centerRadius * 0.7071);
-        bufPainter.setPen(QPen(diagAxisCol, 0.5, Qt::SolidLine));
-        bufPainter.drawLine(centerPt.x() - offset, centerPt.y() - offset, centerPt.x() + offset, centerPt.y() + offset);
-        bufPainter.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
-        bufPainter.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
 
         const auto& left = (m_channelL >= 0 && static_cast<size_t>(m_channelL) < m_samples.channels.size())
                                ? m_samples.channels[m_channelL]
@@ -119,13 +149,18 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         size_t count = std::min(left.size(), right.size());
 
         if (count > 0) {
-            // Compute Phase Correlation and Stereo Balance
+            // Compute Phase Correlation and Stereo Balance with NaN sanitization
             double sumLR = 0.0, sumL2 = 0.0, sumR2 = 0.0;
             float maxVal = 0.0f;
 
             for (size_t i = 0; i < count; ++i) {
                 float l = left[i];
                 float r = right[i];
+                if (std::isnan(l))
+                    l = 0.0f;
+                if (std::isnan(r))
+                    r = 0.0f;
+
                 sumLR += static_cast<double>(l) * r;
                 sumL2 += static_cast<double>(l) * l;
                 sumR2 += static_cast<double>(r) * r;
@@ -137,27 +172,45 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
             float rawCorr =
                 (sumL2 > 1e-9 && sumR2 > 1e-9) ? static_cast<float>(sumLR / (std::sqrt(sumL2 * sumR2))) : 1.0f;
+            if (std::isnan(rawCorr))
+                rawCorr = 1.0f;
             rawCorr = std::max(-1.0f, std::min(1.0f, rawCorr));
-            m_phaseCorrSmoothed = m_phaseCorrSmoothed * 0.85f + rawCorr * 0.15f;
+            if (std::isnan(m_phaseCorrSmoothed))
+                m_phaseCorrSmoothed = rawCorr;
+            else
+                m_phaseCorrSmoothed = m_phaseCorrSmoothed * 0.85f + rawCorr * 0.15f;
 
             float rmsL = std::sqrt(static_cast<float>(sumL2 / count));
             float rmsR = std::sqrt(static_cast<float>(sumR2 / count));
             float rawBal = (rmsL + rmsR > 1e-6f) ? (rmsR - rmsL) / (rmsL + rmsR) : 0.0f;
+            if (std::isnan(rawBal))
+                rawBal = 0.0f;
             rawBal = std::max(-1.0f, std::min(1.0f, rawBal));
-            m_balanceSmoothed = m_balanceSmoothed * 0.85f + rawBal * 0.15f;
+            if (std::isnan(m_balanceSmoothed))
+                m_balanceSmoothed = rawBal;
+            else
+                m_balanceSmoothed = m_balanceSmoothed * 0.85f + rawBal * 0.15f;
 
             bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
             float targetAutoScaleFactor = 1.0f;
             if (enableAutoScale && maxVal > 1e-6f && std::isfinite(maxVal)) {
                 targetAutoScaleFactor = std::min(0.90f / maxVal, 32.0f);
             }
-            m_autoScaleFactor = m_autoScaleFactor * 0.95f + targetAutoScaleFactor * 0.05f;
+            if (std::isnan(m_autoScaleFactor))
+                m_autoScaleFactor = targetAutoScaleFactor;
+            else
+                m_autoScaleFactor = m_autoScaleFactor * 0.95f + targetAutoScaleFactor * 0.05f;
 
             if (!m_showParticles) {
                 QPainterPath path;
                 for (size_t i = 0; i < count; ++i) {
                     float l = left[i];
                     float r = right[i];
+                    if (std::isnan(l))
+                        l = 0.0f;
+                    if (std::isnan(r))
+                        r = 0.0f;
+
                     float m = (l + r) * 0.7071f;
                     float s = (l - r) * 0.7071f;
 
@@ -177,6 +230,11 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 for (size_t i = 0; i < count; ++i) {
                     float l = left[i];
                     float r = right[i];
+                    if (std::isnan(l))
+                        l = 0.0f;
+                    if (std::isnan(r))
+                        r = 0.0f;
+
                     float t = (count > 1) ? static_cast<float>(i) / static_cast<float>(count - 1) : 1.0f;
 
                     float m = (l + r) * 0.7071f;
@@ -205,10 +263,10 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         }
     }
 
-    // 2. Draw offscreen buffer with phosphor persistence decay
+    // 4. Draw offscreen buffer with phosphor persistence decay
     p.drawImage(0, 0, m_persistenceBuffer);
 
-    // 3. Draw Dynamic Balance Indicator bar (Top)
+    // 5. Draw Dynamic Balance Indicator bar (Top)
     {
         int barW = std::min(w - 80, 240);
         int barX = (w - barW) / 2;
@@ -233,16 +291,19 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         p.drawLine(barX + barW / 2, barY - 2, barX + barW / 2, barY + barH + 2);
 
         // Dynamic Balance Marker
-        float balPos = barX + barW / 2.0f + m_balanceSmoothed * (barW / 2.0f - 4);
+        float bal = m_balanceSmoothed;
+        if (std::isnan(bal))
+            bal = 0.0f;
+        float balPos = barX + barW / 2.0f + bal * (barW / 2.0f - 4);
         p.setBrush(QColor("#00c6ff"));
         p.setPen(QPen(QColor("#ffffff"), 1));
         p.drawEllipse(QPointF(balPos, barY + barH / 2.0f), 4, 4);
     }
 
-    // 4. Draw Phase Correlation Meter Bar (-1 to +1) (Bottom)
+    // 6. Draw Phase Correlation Meter Bar (-1 to +1) (Bottom)
     {
-        int barW = std::min(w - 80, 260);
-        int barX = (w - barW) / 2;
+        int barW = std::max(60, std::min(w - 110, 240));
+        int barX = (w - barW) / 2 - 12;
         int barY = h - 22;
         int barH = 8;
 
@@ -267,6 +328,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
         // Indicator Bar fill from Center (0) to m_phaseCorrSmoothed
         float corrVal = m_phaseCorrSmoothed;
+        if (std::isnan(corrVal))
+            corrVal = 0.0f;
         int fillW = static_cast<int>(corrVal * (barW / 2.0f));
 
         QColor corrColor;
@@ -287,6 +350,6 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
         // Numeric label
         p.setPen(corrColor);
-        p.drawText(barX + barW + 20, barY + 8, QString("%1%2").arg(corrVal >= 0 ? "+" : "").arg(corrVal, 0, 'f', 2));
+        p.drawText(barX + barW + 24, barY + 8, QString("%1%2").arg(corrVal >= 0 ? "+" : "").arg(corrVal, 0, 'f', 2));
     }
 }
