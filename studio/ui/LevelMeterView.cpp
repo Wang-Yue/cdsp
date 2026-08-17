@@ -421,7 +421,7 @@ private:
 
 CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController> monitoring,
                                            std::shared_ptr<DSPEngineController> dsp, QWidget* parent)
-    : QWidget(parent), m_monitoring(monitoring), m_dsp(dsp) {
+    : QWidget(parent), m_dsp(dsp) {
     setFixedHeight(20);
 
     auto layout = new QHBoxLayout(this);
@@ -448,10 +448,8 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     containerLayout->setSpacing(12);
     containerLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-    LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
-
-    m_captureGroup = new MeterGroupWidget(false, levelState, container);
-    m_playbackGroup = new MeterGroupWidget(true, levelState, container);
+    m_captureGroup = new MeterGroupWidget(false, nullptr, container);
+    m_playbackGroup = new MeterGroupWidget(true, nullptr, container);
 
     containerLayout->addWidget(m_captureGroup);
     containerLayout->addWidget(m_playbackGroup);
@@ -460,17 +458,39 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     scroll->setWidget(container);
     layout->addWidget(scroll, 1);
 
-    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
-        if (m_captureGroup)
-            m_captureGroup->updateMeters();
-        if (m_playbackGroup)
-            m_playbackGroup->updateMeters();
-    });
+    setMonitoring(monitoring);
 }
 
 CompactLevelMeterBar::~CompactLevelMeterBar() {
     if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
         m_monitoring->levelState.visibilityCount--;
+    }
+}
+
+void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> monitoring) {
+    if (m_monitoring == monitoring)
+        return;
+    if (m_monitoring) {
+        if (isVisible() && m_monitoring->levelState.visibilityCount > 0)
+            m_monitoring->levelState.visibilityCount--;
+        disconnect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, nullptr);
+    }
+    m_monitoring = monitoring;
+    LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
+    if (m_captureGroup)
+        m_captureGroup->setLevelState(levelState);
+    if (m_playbackGroup)
+        m_playbackGroup->setLevelState(levelState);
+
+    if (m_monitoring) {
+        if (isVisible())
+            m_monitoring->levelState.visibilityCount++;
+        connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (m_captureGroup)
+                m_captureGroup->updateMeters();
+            if (m_playbackGroup)
+                m_playbackGroup->updateMeters();
+        });
     }
 }
 

@@ -50,6 +50,8 @@ public:
                                   std::shared_ptr<DSPEngineController> dsp, QWidget* parent = nullptr);
     ~CompactLevelMeterBar() override;
 
+    void setMonitoring(std::shared_ptr<MonitoringController> monitoring);
+
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
