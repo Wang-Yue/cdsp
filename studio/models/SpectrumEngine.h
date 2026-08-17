@@ -35,9 +35,12 @@ public:
         emit updated();
     }
 
-    void reset() {
+    bool reset() {
+        if (data.magnitudes.empty() && data.frequencies.empty())
+            return false;
         data = SpectrumData();
         emit updated();
+        return true;
     }
 
     void resetToDefaults() {

@@ -28,9 +28,12 @@ public:
         emit updated();
     }
 
-    void reset() {
+    bool reset() {
+        if (samples.channels.empty())
+            return false;
         samples = AudioSamplesData();
         emit updated();
+        return true;
     }
 
     void resetToDefaults() {

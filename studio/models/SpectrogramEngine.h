@@ -38,9 +38,12 @@ public:
         emit updated();
     }
 
-    void reset() {
+    bool reset() {
+        if (history.empty())
+            return false;
         history.clear();
         emit updated();
+        return true;
     }
 
     void resetToDefaults() {

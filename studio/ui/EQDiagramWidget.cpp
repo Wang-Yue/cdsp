@@ -44,18 +44,29 @@ void EQDiagramWidget::setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum
         if (isVisible() && m_showAnalyzer) {
             m_spectrum->visibilityCount++;
         }
-        connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
+        if (m_showAnalyzer) {
+            connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update),
+                    Qt::UniqueConnection);
+        }
     }
     update();
 }
 
 void EQDiagramWidget::setShowAnalyzer(bool show) {
     if (m_showAnalyzer != show) {
-        if (isVisible() && m_spectrum) {
-            if (show)
-                m_spectrum->visibilityCount++;
-            else if (m_spectrum->visibilityCount > 0)
-                m_spectrum->visibilityCount--;
+        if (m_spectrum) {
+            if (isVisible()) {
+                if (show)
+                    m_spectrum->visibilityCount++;
+                else if (m_spectrum->visibilityCount > 0)
+                    m_spectrum->visibilityCount--;
+            }
+            if (show) {
+                connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update),
+                        Qt::UniqueConnection);
+            } else {
+                disconnect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
+            }
         }
         m_showAnalyzer = show;
         update();
