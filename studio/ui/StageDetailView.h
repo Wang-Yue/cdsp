@@ -72,9 +72,9 @@ private:
     std::shared_ptr<PipelineStore> m_pipeline;
     std::shared_ptr<DSPEngineController> m_dspController;
 
-    QLineEdit* m_nameEdit;
-    QCheckBox* m_enabledCheck;
-    QWidget* m_optionsContainer;
+    QLineEdit* m_nameEdit = nullptr;
+    QCheckBox* m_enabledCheck = nullptr;
+    QWidget* m_optionsContainer = nullptr;
     bool m_isBuildingUi = false;
     bool m_isLocalEditing = false;
 

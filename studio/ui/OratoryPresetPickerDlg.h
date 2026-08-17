@@ -6,11 +6,15 @@
 #include "models/PipelineStore.h"
 
 #include <QDialog>
-#include <QLabel>
-#include <QLineEdit>
-#include <QListWidget>
-#include <QPushButton>
 #include <memory>
+#include <vector>
+
+class QDialogButtonBox;
+class QLabel;
+class QLineEdit;
+class QListWidget;
+class QPushButton;
+class QStackedWidget;
 
 class OratoryPresetPickerDlg : public QDialog {
     Q_OBJECT
@@ -36,14 +40,20 @@ private:
     bool m_isImporting = false;
     QString m_errorMessage;
 
-    QLineEdit* m_searchEdit;
-    QListWidget* m_listWidget;
-    QPushButton* m_refreshBtn;
-    QPushButton* m_cancelBtn;
-
-    QWidget* m_overlayWidget;
-    QLabel* m_overlayTitle;
-    QLabel* m_overlaySubtitle;
+    QLineEdit* m_searchEdit = nullptr;
+    QListWidget* m_listWidget = nullptr;
+    QStackedWidget* m_stackedWidget = nullptr;
+    QWidget* m_loadingWidget = nullptr;
+    QLabel* m_loadingLabel = nullptr;
+    QWidget* m_errorWidget = nullptr;
+    QLabel* m_errorTitle = nullptr;
+    QLabel* m_errorSubtitle = nullptr;
+    QWidget* m_emptyWidget = nullptr;
+    QLabel* m_emptyTitle = nullptr;
+    QLabel* m_emptySubtitle = nullptr;
+    QDialogButtonBox* m_buttonBox = nullptr;
+    QPushButton* m_refreshBtn = nullptr;
+    QPushButton* m_cancelBtn = nullptr;
 
     void setupUi();
     void loadDatabase(bool forceRefresh = false);

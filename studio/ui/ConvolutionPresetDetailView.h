@@ -7,6 +7,8 @@
 #include "ui/ConvolutionIRPlot.h"
 
 #include <QComboBox>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -30,18 +32,20 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     int m_previewRate = 48000;
 
-    QLineEdit* m_nameEdit;
-    QLabel* m_kindLabel;
-    QLabel* m_tapsLabel;
-    QLabel* m_ratesLabel;
-    QLabel* m_latencyKeyLabel;
-    QLabel* m_latencyValueLabel;
+    QLineEdit* m_nameEdit = nullptr;
+    QLabel* m_kindLabel = nullptr;
+    QLabel* m_tapsLabel = nullptr;
+    QLabel* m_ratesLabel = nullptr;
+    QLabel* m_latencyKeyLabel = nullptr;
+    QLabel* m_latencyValueLabel = nullptr;
 
-    QWidget* m_rateBoxWidget;
-    QComboBox* m_ratePreviewCombo;
-    ConvolutionIRPlot* m_irPlot;
-    QLabel* m_noIrLabel;
-    QWidget* m_filesContainer;
+    QWidget* m_rateBoxWidget = nullptr;
+    QComboBox* m_ratePreviewCombo = nullptr;
+    ConvolutionIRPlot* m_irPlot = nullptr;
+    QLabel* m_noIrLabel = nullptr;
+
+    QGroupBox* m_filesGroup = nullptr;
+    QFormLayout* m_filesForm = nullptr;
 
     void setupUi();
 };

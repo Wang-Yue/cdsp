@@ -1,9 +1,14 @@
 #include "ui/OratoryPresetPickerDlg.h"
 
-#include <QFrame>
-#include <QGridLayout>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QPointer>
+#include <QPushButton>
+#include <QStackedWidget>
 #include <QVBoxLayout>
 #include <algorithm>
 
@@ -18,53 +23,25 @@ OratoryPresetPickerDlg::OratoryPresetPickerDlg(std::shared_ptr<PipelineStore> pi
 
 void OratoryPresetPickerDlg::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
 
-    // Top Header: HStack(spacing: 16) with padding 16
-    auto headerWidget = new QWidget(this);
-    auto headerLayout = new QHBoxLayout(headerWidget);
-    headerLayout->setContentsMargins(16, 16, 16, 16);
-    headerLayout->setSpacing(16);
+    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 targets", this);
+    subtitleLbl->setWordWrap(true);
+    mainLayout->addWidget(subtitleLbl);
 
-    auto titleContainer = new QWidget(headerWidget);
-    auto titleLayout = new QVBoxLayout(titleContainer);
-    titleLayout->setContentsMargins(0, 0, 0, 0);
-    titleLayout->setSpacing(2);
-
-    auto headerTitle = new QLabel("Oratory1990 Database", titleContainer);
-    headerTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
-
-    auto subtitleLbl = new QLabel("Hand-measured presets based on Oratory1990 targets", titleContainer);
-    subtitleLbl->setFont(QFont("sans-serif", 10));
-
-    titleLayout->addWidget(headerTitle);
-    titleLayout->addWidget(subtitleLbl);
-
-    titleContainer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-    headerLayout->addWidget(titleContainer);
-
-    m_searchEdit = new QLineEdit(headerWidget);
+    // Search header using QFormLayout
+    auto searchLayout = new QFormLayout();
+    m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Search 0 headphones...");
     m_searchEdit->setClearButtonEnabled(true);
     connect(m_searchEdit, &QLineEdit::textChanged, this, &OratoryPresetPickerDlg::onSearchTextChanged);
-    headerLayout->addWidget(m_searchEdit);
+    searchLayout->addRow("Search:", m_searchEdit);
+    mainLayout->addLayout(searchLayout);
 
-    mainLayout->addWidget(headerWidget);
+    // Stacked widget for list, loading, error, and empty states
+    m_stackedWidget = new QStackedWidget(this);
 
-    // Divider
-    auto divider = new QFrame(this);
-    divider->setFrameShape(QFrame::HLine);
-    divider->setFrameShadow(QFrame::Sunken);
-    mainLayout->addWidget(divider);
-
-    // List and Overlay Stack
-    auto stackWidget = new QWidget(this);
-    auto gridLayout = new QGridLayout(stackWidget);
-    gridLayout->setContentsMargins(0, 0, 0, 0);
-    gridLayout->setSpacing(0);
-
-    m_listWidget = new QListWidget(stackWidget);
+    // 1. List view
+    m_listWidget = new QListWidget(m_stackedWidget);
     m_listWidget->setAlternatingRowColors(false);
     connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem*) {
         if (!m_isImporting) {
@@ -76,47 +53,60 @@ void OratoryPresetPickerDlg::setupUi() {
             onImportClicked();
         }
     });
-    gridLayout->addWidget(m_listWidget, 0, 0);
+    m_stackedWidget->addWidget(m_listWidget);
 
-    // Overlay Widget
-    m_overlayWidget = new QWidget(stackWidget);
-    m_overlayWidget->setAutoFillBackground(true);
-    auto overlayLayout = new QVBoxLayout(m_overlayWidget);
-    overlayLayout->setAlignment(Qt::AlignCenter);
-    overlayLayout->setSpacing(8);
+    // 2. Loading state
+    m_loadingWidget = new QWidget(m_stackedWidget);
+    auto loadingLayout = new QVBoxLayout(m_loadingWidget);
+    loadingLayout->setAlignment(Qt::AlignCenter);
+    m_loadingLabel = new QLabel(m_loadingWidget);
+    m_loadingLabel->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_loadingLabel->setAlignment(Qt::AlignCenter);
+    loadingLayout->addWidget(m_loadingLabel);
+    m_stackedWidget->addWidget(m_loadingWidget);
 
-    m_overlayTitle = new QLabel(m_overlayWidget);
-    m_overlayTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
-    m_overlayTitle->setAlignment(Qt::AlignCenter);
+    // 3. Error state
+    m_errorWidget = new QWidget(m_stackedWidget);
+    auto errorLayout = new QVBoxLayout(m_errorWidget);
+    errorLayout->setAlignment(Qt::AlignCenter);
+    m_errorTitle = new QLabel("Error ⚠️", m_errorWidget);
+    m_errorTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_errorTitle->setAlignment(Qt::AlignCenter);
+    m_errorSubtitle = new QLabel(m_errorWidget);
+    m_errorSubtitle->setFont(QFont("sans-serif", 11));
+    m_errorSubtitle->setWordWrap(true);
+    m_errorSubtitle->setAlignment(Qt::AlignCenter);
+    errorLayout->addWidget(m_errorTitle);
+    errorLayout->addWidget(m_errorSubtitle);
+    m_stackedWidget->addWidget(m_errorWidget);
 
-    m_overlaySubtitle = new QLabel(m_overlayWidget);
-    m_overlaySubtitle->setFont(QFont("sans-serif", 11));
-    m_overlaySubtitle->setWordWrap(true);
-    m_overlaySubtitle->setAlignment(Qt::AlignCenter);
+    // 4. Empty state
+    m_emptyWidget = new QWidget(m_stackedWidget);
+    auto emptyLayout = new QVBoxLayout(m_emptyWidget);
+    emptyLayout->setAlignment(Qt::AlignCenter);
+    m_emptyTitle = new QLabel("No Results", m_emptyWidget);
+    m_emptyTitle->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_emptyTitle->setAlignment(Qt::AlignCenter);
+    m_emptySubtitle = new QLabel("Check the spelling or try a new search.", m_emptyWidget);
+    m_emptySubtitle->setFont(QFont("sans-serif", 11));
+    m_emptySubtitle->setWordWrap(true);
+    m_emptySubtitle->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(m_emptyTitle);
+    emptyLayout->addWidget(m_emptySubtitle);
+    m_stackedWidget->addWidget(m_emptyWidget);
 
-    overlayLayout->addWidget(m_overlayTitle);
-    overlayLayout->addWidget(m_overlaySubtitle);
-    gridLayout->addWidget(m_overlayWidget, 0, 0);
+    mainLayout->addWidget(m_stackedWidget, 1);
 
-    mainLayout->addWidget(stackWidget, 1);
-
-    // Bottom Toolbar / Footer
-    auto toolbarWidget = new QWidget(this);
-    auto toolbarLayout = new QHBoxLayout(toolbarWidget);
-    toolbarLayout->setContentsMargins(16, 12, 16, 12);
-
-    m_cancelBtn = new QPushButton("Cancel", toolbarWidget);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    toolbarLayout->addWidget(m_cancelBtn);
-
-    toolbarLayout->addStretch();
-
-    m_refreshBtn = new QPushButton("Refresh", toolbarWidget);
+    // Button box with standard layout guidelines
+    m_buttonBox = new QDialogButtonBox(this);
+    m_refreshBtn = m_buttonBox->addButton("Refresh", QDialogButtonBox::ActionRole);
     m_refreshBtn->setToolTip("Force refresh database from GitHub");
     connect(m_refreshBtn, &QPushButton::clicked, this, &OratoryPresetPickerDlg::refreshDatabase);
-    toolbarLayout->addWidget(m_refreshBtn);
 
-    mainLayout->addWidget(toolbarWidget);
+    m_cancelBtn = m_buttonBox->addButton(QDialogButtonBox::Cancel);
+    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    mainLayout->addWidget(m_buttonBox);
 
     updateUiState();
 }
@@ -204,27 +194,21 @@ void OratoryPresetPickerDlg::updateUiState() {
     m_listWidget->setEnabled(!m_isLoading && !m_isImporting);
 
     if (m_isLoading) {
-        m_overlayWidget->show();
-        m_overlayWidget->raise();
-        m_overlayTitle->setText("Loading Oratory1990 database...");
-        m_overlaySubtitle->setText("");
+        m_loadingLabel->setText("Loading Oratory1990 database...");
+        m_stackedWidget->setCurrentWidget(m_loadingWidget);
     } else if (m_isImporting) {
-        m_overlayWidget->show();
-        m_overlayWidget->raise();
-        m_overlayTitle->setText("Importing EQ profile...");
-        m_overlaySubtitle->setText("");
+        m_loadingLabel->setText("Importing EQ profile...");
+        m_stackedWidget->setCurrentWidget(m_loadingWidget);
     } else if (!m_errorMessage.isEmpty()) {
-        m_overlayWidget->show();
-        m_overlayWidget->raise();
-        m_overlayTitle->setText("Error ⚠️");
-        m_overlaySubtitle->setText(m_errorMessage);
+        m_errorTitle->setText("Error ⚠️");
+        m_errorSubtitle->setText(m_errorMessage);
+        m_stackedWidget->setCurrentWidget(m_errorWidget);
     } else if (m_listWidget->count() == 0) {
-        m_overlayWidget->show();
-        m_overlayWidget->raise();
-        m_overlayTitle->setText("No Results");
-        m_overlaySubtitle->setText("Check the spelling or try a new search.");
+        m_emptyTitle->setText("No Results");
+        m_emptySubtitle->setText("Check the spelling or try a new search.");
+        m_stackedWidget->setCurrentWidget(m_emptyWidget);
     } else {
-        m_overlayWidget->hide();
+        m_stackedWidget->setCurrentWidget(m_listWidget);
     }
 }
 

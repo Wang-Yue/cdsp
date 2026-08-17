@@ -4,6 +4,8 @@
 
 #include <QComboBox>
 #include <QFont>
+#include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -126,7 +128,7 @@ void DashboardView::setupUi() {
     auto container = new QWidget(scroll);
     auto mainLayout = new QVBoxLayout(container);
     mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(20);
+    mainLayout->setSpacing(16);
 
     // 1. Signal Chain Overview Card
     m_pipelineOverviewWidget = new PipelineOverviewWidget(m_dspController, container);
@@ -136,120 +138,129 @@ void DashboardView::setupUi() {
     m_signalGraphCard = new DSPDetailedSignalGraphCard(m_dspController, container);
     mainLayout->addWidget(m_signalGraphCard);
 
-    // 3. Level Meters Card (Title: "Levels" with "RMS / Peak" on right, "Capture" & "Playback" subheaders)
-    m_levelMetersGroup = new QGroupBox("Levels", container);
+    // 3. Level Meters Card
+    m_levelMetersGroup = new QGroupBox("Level Meters", container);
     auto levelCardLayout = new QVBoxLayout(m_levelMetersGroup);
-    levelCardLayout->setSpacing(12);
+    levelCardLayout->setContentsMargins(12, 12, 12, 12);
+    levelCardLayout->setSpacing(10);
 
-    auto levelColumnsLayout = new QHBoxLayout();
-    levelColumnsLayout->setSpacing(24);
+    auto levelColumnsGrid = new QGridLayout();
+    levelColumnsGrid->setHorizontalSpacing(16);
+    levelColumnsGrid->setVerticalSpacing(8);
 
-    // Capture column
-    auto capCol = new QVBoxLayout();
-    capCol->setSpacing(8);
     auto capLbl = new QLabel("Capture", m_levelMetersGroup);
-    capLbl->setFont(QFont("", 12, QFont::Medium));
+    QFont subHeaderFont = capLbl->font();
+    subHeaderFont.setBold(true);
+    capLbl->setFont(subHeaderFont);
+
+    auto pbLbl = new QLabel("Playback", m_levelMetersGroup);
+    pbLbl->setFont(subHeaderFont);
+
     m_captureMeters = new LevelMeterView(m_levelMetersGroup);
     m_captureMeters->setLevelState(&m_monitoring->levelState);
     m_captureMeters->setIsCapture(true);
-    capCol->addWidget(capLbl);
-    capCol->addWidget(m_captureMeters);
-    capCol->addStretch();
 
-    // Playback column
-    auto pbCol = new QVBoxLayout();
-    pbCol->setSpacing(8);
-    auto pbLbl = new QLabel("Playback", m_levelMetersGroup);
-    pbLbl->setFont(QFont("", 12, QFont::Medium));
     m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
     m_playbackMeters->setLevelState(&m_monitoring->levelState);
     m_playbackMeters->setIsCapture(false);
-    pbCol->addWidget(pbLbl);
-    pbCol->addWidget(m_playbackMeters);
-    pbCol->addStretch();
 
-    levelColumnsLayout->addLayout(capCol);
-    levelColumnsLayout->addLayout(pbCol);
-    levelCardLayout->addLayout(levelColumnsLayout);
+    levelColumnsGrid->addWidget(capLbl, 0, 0);
+    levelColumnsGrid->addWidget(pbLbl, 0, 1);
+    levelColumnsGrid->addWidget(m_captureMeters, 1, 0);
+    levelColumnsGrid->addWidget(m_playbackMeters, 1, 1);
+    levelColumnsGrid->setColumnStretch(0, 1);
+    levelColumnsGrid->setColumnStretch(1, 1);
+
+    levelCardLayout->addLayout(levelColumnsGrid);
     mainLayout->addWidget(m_levelMetersGroup);
 
-    // 4. Volume Faders Card (All 5 fader rows simultaneously)
+    // 4. Volume Faders Card
     m_faderGroup = new QGroupBox("Volume Faders", container);
-    auto faderVLayout = new QVBoxLayout(m_faderGroup);
-    faderVLayout->setSpacing(16);
-
-    auto faderRowsVLayout = new QVBoxLayout();
-    faderRowsVLayout->setSpacing(12);
+    auto faderGridLayout = new QGridLayout(m_faderGroup);
+    faderGridLayout->setContentsMargins(12, 12, 12, 12);
+    faderGridLayout->setHorizontalSpacing(12);
+    faderGridLayout->setVerticalSpacing(8);
 
     struct FaderInfo {
         Fader fader;
         QString name;
     };
-    std::vector<FaderInfo> faders = {{Fader::Main, "Main"},
-                                     {Fader::Aux1, "Aux 1"},
-                                     {Fader::Aux2, "Aux 2"},
-                                     {Fader::Aux3, "Aux 3"},
-                                     {Fader::Aux4, "Aux 4"}};
+    const std::vector<FaderInfo> faders = {{Fader::Main, "Main"},
+                                           {Fader::Aux1, "Aux 1"},
+                                           {Fader::Aux2, "Aux 2"},
+                                           {Fader::Aux3, "Aux 3"},
+                                           {Fader::Aux4, "Aux 4"}};
 
     m_faderRows.clear();
+    int row = 0;
     for (const auto& info : faders) {
-        auto rowLayout = new QHBoxLayout();
-        rowLayout->setSpacing(12);
-
         auto nameLbl = new QLabel(info.name, m_faderGroup);
-        nameLbl->setFixedWidth(80);
-        nameLbl->setFont(QFont("", 12, QFont::Medium));
+        nameLbl->setFixedWidth(70);
+        QFont nameFont = nameLbl->font();
+        nameFont.setWeight(QFont::Medium);
+        nameLbl->setFont(nameFont);
 
         auto muteBtn = new QPushButton("🔊", m_faderGroup);
         muteBtn->setCheckable(true);
         muteBtn->setFixedSize(28, 28);
+        muteBtn->setToolTip(QString("Mute %1").arg(info.name));
 
         auto slider = new QSlider(Qt::Horizontal, m_faderGroup);
         slider->setRange(-120, 40); // -60.0 dB to +20.0 dB
 
         auto gainLbl = new QLabel(" 0.0 dB", m_faderGroup);
-        gainLbl->setFont(QFont("monospace", 12, QFont::Normal));
-        gainLbl->setFixedWidth(70);
+        QFont monoFont("monospace", 11);
+        monoFont.setStyleHint(QFont::Monospace);
+        gainLbl->setFont(monoFont);
+        gainLbl->setFixedWidth(65);
         gainLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
         Fader f = info.fader;
         connect(muteBtn, &QPushButton::clicked, [this, f]() {
-            bool currentMute = m_dspController->settings()->getMuted(f);
-            m_dspController->setFaderMute(f, !currentMute);
-            updateFaderUi();
+            if (m_dspController && m_dspController->settings()) {
+                bool currentMute = m_dspController->settings()->getMuted(f);
+                m_dspController->setFaderMute(f, !currentMute);
+                updateFaderUi();
+            }
         });
 
         connect(slider, &QSlider::valueChanged, [this, f](int val) {
-            float db = val / 2.0f;
-            m_dspController->setFaderVolume(f, db, true);
-            updateFaderUi();
+            if (m_dspController) {
+                float db = val / 2.0f;
+                m_dspController->setFaderVolume(f, db, true);
+                updateFaderUi();
+            }
         });
 
-        rowLayout->addWidget(nameLbl);
-        rowLayout->addWidget(muteBtn);
-        rowLayout->addWidget(slider, 1);
-        rowLayout->addWidget(gainLbl);
-
-        faderRowsVLayout->addLayout(rowLayout);
+        faderGridLayout->addWidget(nameLbl, row, 0);
+        faderGridLayout->addWidget(muteBtn, row, 1);
+        faderGridLayout->addWidget(slider, row, 2);
+        faderGridLayout->addWidget(gainLbl, row, 3);
 
         m_faderRows.push_back({f, nameLbl, muteBtn, slider, gainLbl});
+        ++row;
     }
-    faderVLayout->addLayout(faderRowsVLayout);
+    faderGridLayout->setColumnStretch(2, 1);
     mainLayout->addWidget(m_faderGroup);
 
     // 5. Analog VU Card
     m_analogVUGroup = new QGroupBox("Analog VU", container);
     auto vuLayout = new QVBoxLayout(m_analogVUGroup);
-    vuLayout->setSpacing(12);
+    vuLayout->setContentsMargins(12, 12, 12, 12);
+    vuLayout->setSpacing(10);
 
-    auto vuHeaderBox = new QHBoxLayout();
-    vuHeaderBox->addStretch();
+    auto vuHeaderLayout = new QHBoxLayout();
+    vuHeaderLayout->setSpacing(8);
+    vuHeaderLayout->addStretch();
+
+    auto vuThemeLbl = new QLabel("Theme:", m_analogVUGroup);
     m_vuThemeCombo = new QComboBox(m_analogVUGroup);
     m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
     m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
     m_vuThemeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
-    vuHeaderBox->addWidget(m_vuThemeCombo);
-    vuLayout->addLayout(vuHeaderBox);
+    vuHeaderLayout->addWidget(vuThemeLbl);
+    vuHeaderLayout->addWidget(m_vuThemeCombo);
+    vuLayout->addLayout(vuHeaderLayout);
 
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
     m_analogVUView->setLevelState(&m_monitoring->levelState);
@@ -275,16 +286,18 @@ void DashboardView::setupUi() {
     // 6. Spectrum Card
     m_spectrumGroup = new QGroupBox("Spectrum", container);
     auto specLayout = new QVBoxLayout(m_spectrumGroup);
-    specLayout->setSpacing(12);
+    specLayout->setContentsMargins(12, 12, 12, 12);
+    specLayout->setSpacing(8);
     m_spectrumView = new SpectrumView(m_spectrumEngine, m_spectrumGroup);
     m_spectrumView->setFixedHeight(160);
     specLayout->addWidget(m_spectrumView);
     mainLayout->addWidget(m_spectrumGroup);
 
     // 7. Spectrogram Card
-    m_spectrogramGroup = new QGroupBox("Spectroscope", container);
+    m_spectrogramGroup = new QGroupBox("Spectrogram", container);
     auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
-    spectroLayout->setSpacing(12);
+    spectroLayout->setContentsMargins(12, 12, 12, 12);
+    spectroLayout->setSpacing(8);
     m_spectrogramView = new SpectrogramView(m_spectrogramEngine, m_spectrogramGroup);
     m_spectrogramView->setFixedHeight(480);
     spectroLayout->addWidget(m_spectrogramView);
@@ -293,7 +306,8 @@ void DashboardView::setupUi() {
     // 8. Vector Scope Card
     m_vectorScopeGroup = new QGroupBox("Vector Scope", container);
     auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
-    vecLayout->setSpacing(12);
+    vecLayout->setContentsMargins(12, 12, 12, 12);
+    vecLayout->setSpacing(8);
     m_vectorScopeView = new VectorScopeView(m_vectorScopeEngine, m_vectorScopeGroup);
     m_vectorScopeView->setFixedHeight(700);
     vecLayout->addWidget(m_vectorScopeView);

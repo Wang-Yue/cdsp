@@ -4,6 +4,7 @@
 #include "models/DSPEngineController.h"
 
 #include <QColor>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>

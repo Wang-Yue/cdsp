@@ -8,12 +8,14 @@
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSlider>
-#include <QStackedWidget>
-#include <QTabBar>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QWidget>
@@ -46,26 +48,24 @@ private:
     std::shared_ptr<PipelineStore> m_pipeline;
     std::shared_ptr<DSPEngineController> m_dspController;
 
-    QLineEdit* m_nameEdit;
-    QSlider* m_preampSlider;
-    QDoubleSpinBox* m_preampSpin;
+    QLineEdit* m_nameEdit = nullptr;
+    QSlider* m_preampSlider = nullptr;
+    QDoubleSpinBox* m_preampSpin = nullptr;
     QSlider* m_formPreampSlider = nullptr;
     QDoubleSpinBox* m_formPreampSpin = nullptr;
-    QTabBar* m_modeTabBar;
 
-    QStackedWidget* m_modeStack;
+    QTabWidget* m_tabWidget = nullptr;
 
-    // Mode 0: Diagram
-    EQDiagramWidget* m_diagramWidget;
+    // Tab 0: Diagram
+    EQDiagramWidget* m_diagramWidget = nullptr;
     QWidget* m_bandChipsWidget = nullptr;
     class QHBoxLayout* m_chipLayout = nullptr;
 
-    // Mode 1: Bands Table Form
-    QTableWidget* m_bandsTable;
+    // Tab 1: Bands Table Form
+    QTableWidget* m_bandsTable = nullptr;
 
-    // Mode 2: Raw CSV Text Editor
-    QTextEdit* m_csvTextEdit;
-    QLabel* m_csvStatusLabel;
+    // Tab 2: Raw CSV Text Editor
+    QTextEdit* m_csvTextEdit = nullptr;
     QLabel* m_csvErrorLabel = nullptr;
     QPushButton* m_csvCopyBtn = nullptr;
 

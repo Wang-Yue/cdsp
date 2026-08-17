@@ -2,7 +2,7 @@
 
 #include <QDesktopServices>
 #include <QFileInfo>
-#include <QFrame>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QScrollArea>
@@ -21,42 +21,32 @@ ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset prese
 
 void ConvolutionPresetDetailView::setupUi() {
     auto outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
-    outerLayout->setSpacing(0);
 
     // Header Toolbar
-    auto headerWidget = new QWidget(this);
-    auto headerLayout = new QHBoxLayout(headerWidget);
-    headerLayout->setContentsMargins(16, 16, 16, 16);
-    headerLayout->setSpacing(8);
+    auto headerLayout = new QHBoxLayout();
 
-    auto iconLbl = new QLabel("🔍〰", headerWidget);
-    iconLbl->setFont(QFont("sans-serif", 16));
-    headerLayout->addWidget(iconLbl);
+    auto headerForm = new QFormLayout();
+    headerForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    m_nameEdit = new QLineEdit(headerWidget);
-    m_nameEdit->setFont(QFont("sans-serif", 14, QFont::Bold));
-    m_nameEdit->setMaximumWidth(300);
+    m_nameEdit = new QLineEdit(this);
+    m_nameEdit->setFont(QFont("sans-serif", 13, QFont::Bold));
+    m_nameEdit->setPlaceholderText("Preset Name");
     connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
         if (m_preset.name != text.toStdString()) {
             m_preset.name = text.toStdString();
             m_pipeline->updateConvPreset(m_preset);
         }
     });
-    headerLayout->addWidget(m_nameEdit);
+    headerForm->addRow("Preset Name:", m_nameEdit);
+    headerLayout->addLayout(headerForm);
 
     headerLayout->addStretch();
 
-    auto delBtn = new QPushButton("🗑 Delete", headerWidget);
+    auto delBtn = new QPushButton("Delete Preset", this);
     connect(delBtn, &QPushButton::clicked, this, &ConvolutionPresetDetailView::onDeleteClicked);
     headerLayout->addWidget(delBtn);
 
-    outerLayout->addWidget(headerWidget);
-
-    auto headerDivider = new QFrame(this);
-    headerDivider->setFrameShape(QFrame::HLine);
-    headerDivider->setFrameShadow(QFrame::Sunken);
-    outerLayout->addWidget(headerDivider);
+    outerLayout->addLayout(headerLayout);
 
     // Scroll View
     auto scroll = new QScrollArea(this);
@@ -65,51 +55,40 @@ void ConvolutionPresetDetailView::setupUi() {
 
     auto container = new QWidget(scroll);
     auto mainLayout = new QVBoxLayout(container);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(16);
 
-    // Details Group
-    auto detailsGroup = new QGroupBox("Details", container);
-    auto detailsLayout = new QVBoxLayout(detailsGroup);
-    detailsLayout->setContentsMargins(12, 16, 12, 12);
-    detailsLayout->setSpacing(6);
+    // Preset Properties Group (QFormLayout)
+    auto detailsGroup = new QGroupBox("Preset Properties", container);
+    auto detailsForm = new QFormLayout(detailsGroup);
+    detailsForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    auto addRow = [container, detailsLayout](const QString& key, QLabel*& valueLbl) {
-        auto row = new QHBoxLayout();
-        auto keyLbl = new QLabel(key, container);
-        keyLbl->setFixedWidth(130);
-        row->addWidget(keyLbl);
+    m_kindLabel = new QLabel(detailsGroup);
+    m_kindLabel->setFont(QFont("monospace", 12));
+    detailsForm->addRow("Kind:", m_kindLabel);
 
-        valueLbl = new QLabel(container);
-        valueLbl->setFont(QFont("monospace", 13));
-        row->addWidget(valueLbl);
-        row->addStretch();
-        detailsLayout->addLayout(row);
-        return keyLbl;
-    };
+    m_tapsLabel = new QLabel(detailsGroup);
+    m_tapsLabel->setFont(QFont("monospace", 12));
+    detailsForm->addRow("Taps:", m_tapsLabel);
 
-    addRow("Kind", m_kindLabel);
-    addRow("Taps", m_tapsLabel);
-    addRow("Rates", m_ratesLabel);
-    m_latencyKeyLabel = addRow("Latency @ 48k", m_latencyValueLabel);
+    m_ratesLabel = new QLabel(detailsGroup);
+    m_ratesLabel->setFont(QFont("monospace", 12));
+    detailsForm->addRow("Available Rates:", m_ratesLabel);
+
+    m_latencyKeyLabel = new QLabel("Latency @ 48k:", detailsGroup);
+    m_latencyValueLabel = new QLabel(detailsGroup);
+    m_latencyValueLabel->setFont(QFont("monospace", 12));
+    detailsForm->addRow(m_latencyKeyLabel, m_latencyValueLabel);
 
     mainLayout->addWidget(detailsGroup);
 
     // Impulse Response Group
     auto irGroup = new QGroupBox("Impulse Response", container);
     auto irLayout = new QVBoxLayout(irGroup);
-    irLayout->setContentsMargins(12, 16, 12, 12);
-    irLayout->setSpacing(8);
 
     m_rateBoxWidget = new QWidget(irGroup);
-    auto rateBox = new QHBoxLayout(m_rateBoxWidget);
-    rateBox->setContentsMargins(0, 0, 0, 0);
-
-    auto prevLbl = new QLabel("Preview rate", m_rateBoxWidget);
-    rateBox->addWidget(prevLbl);
+    auto rateBoxForm = new QFormLayout(m_rateBoxWidget);
+    rateBoxForm->setContentsMargins(0, 0, 0, 0);
 
     m_ratePreviewCombo = new QComboBox(m_rateBoxWidget);
-    m_ratePreviewCombo->setMaximumWidth(160);
     connect(m_ratePreviewCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() {
         if (m_ratePreviewCombo->currentIndex() < 0)
             return;
@@ -125,12 +104,10 @@ void ConvolutionPresetDetailView::setupUi() {
             m_noIrLabel->setVisible(true);
         }
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyKeyLabel->setText(QString("Latency @ %1k").arg(m_previewRate / 1000));
+        m_latencyKeyLabel->setText(QString("Latency @ %1k:").arg(m_previewRate / 1000));
         m_latencyValueLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     });
-    rateBox->addWidget(m_ratePreviewCombo);
-    rateBox->addStretch();
-
+    rateBoxForm->addRow("Preview Rate:", m_ratePreviewCombo);
     irLayout->addWidget(m_rateBoxWidget);
 
     m_irPlot = new ConvolutionIRPlot(irGroup);
@@ -143,23 +120,16 @@ void ConvolutionPresetDetailView::setupUi() {
 
     mainLayout->addWidget(irGroup);
 
-    // Files Group
-    auto filesGroup = new QGroupBox("Files", container);
-    auto filesLayout = new QVBoxLayout(filesGroup);
-    filesLayout->setContentsMargins(12, 16, 12, 12);
-    filesLayout->setSpacing(6);
+    // Sample Rate Files Group (QFormLayout)
+    m_filesGroup = new QGroupBox("Sample Rate Files", container);
+    m_filesForm = new QFormLayout(m_filesGroup);
+    m_filesForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    m_filesContainer = new QWidget(filesGroup);
-    m_filesContainer->setLayout(new QVBoxLayout());
-    m_filesContainer->layout()->setContentsMargins(0, 0, 0, 0);
-    m_filesContainer->layout()->setSpacing(6);
-    filesLayout->addWidget(m_filesContainer);
-
-    mainLayout->addWidget(filesGroup);
+    mainLayout->addWidget(m_filesGroup);
     mainLayout->addStretch();
 
     scroll->setWidget(container);
-    outerLayout->addWidget(scroll);
+    outerLayout->addWidget(scroll, 1);
 }
 
 void ConvolutionPresetDetailView::refreshUi() {
@@ -211,55 +181,43 @@ void ConvolutionPresetDetailView::refreshUi() {
             m_noIrLabel->setVisible(true);
         }
         double ms = m_preset.latencyMilliseconds(m_previewRate);
-        m_latencyKeyLabel->setText(QString("Latency @ %1k").arg(m_previewRate / 1000));
+        m_latencyKeyLabel->setText(QString("Latency @ %1k:").arg(m_previewRate / 1000));
         m_latencyValueLabel->setText(ms > 0 ? QString("%1 ms").arg(ms, 0, 'f', 1) : "≈ 0 ms (min-phase)");
     }
 
-    // Populate files list
-    auto filesLayout = qobject_cast<QVBoxLayout*>(m_filesContainer->layout());
-    QLayoutItem* item;
-    while ((item = filesLayout->takeAt(0)) != nullptr) {
-        if (item->layout()) {
-            QLayoutItem* childItem;
-            while ((childItem = item->layout()->takeAt(0)) != nullptr) {
-                if (childItem->widget())
-                    delete childItem->widget();
-                delete childItem;
-            }
-            delete item->layout();
-        } else if (item->widget()) {
+    // Populate files list using QFormLayout
+    while (QLayoutItem* item = m_filesForm->takeAt(0)) {
+        if (item->widget()) {
             delete item->widget();
         }
         delete item;
     }
 
-    for (int r : rates) {
-        std::string pathStr = m_preset.irPath(r);
-        if (!pathStr.empty()) {
-            QString p = QString::fromStdString(pathStr);
-            auto fileRow = new QHBoxLayout();
-            fileRow->setContentsMargins(0, 0, 0, 0);
-            fileRow->setSpacing(8);
+    if (rates.empty()) {
+        auto noFilesLbl = new QLabel("No impulse response files associated.", m_filesGroup);
+        m_filesForm->addRow(noFilesLbl);
+    } else {
+        for (int r : rates) {
+            std::string pathStr = m_preset.irPath(r);
+            if (!pathStr.empty()) {
+                QString p = QString::fromStdString(pathStr);
+                auto fileRowWidget = new QWidget(m_filesGroup);
+                auto fileRowLayout = new QHBoxLayout(fileRowWidget);
+                fileRowLayout->setContentsMargins(0, 0, 0, 0);
 
-            auto rateLbl = new QLabel(QString("%1 Hz").arg(r), m_filesContainer);
-            rateLbl->setFixedWidth(80);
-            rateLbl->setFont(QFont("monospace", 11));
-            fileRow->addWidget(rateLbl);
+                auto pathLbl = new QLabel(p, fileRowWidget);
+                pathLbl->setFont(QFont("monospace", 11));
+                pathLbl->setToolTip(p);
+                fileRowLayout->addWidget(pathLbl, 1);
 
-            auto pathLbl = new QLabel(m_filesContainer);
-            pathLbl->setFont(QFont("monospace", 11));
-            pathLbl->setText(QFontMetrics(pathLbl->font()).elidedText(p, Qt::ElideMiddle, 280));
-            pathLbl->setToolTip(p);
-            fileRow->addWidget(pathLbl, 1);
+                auto openBtn = new QPushButton("Show in Folder", fileRowWidget);
+                openBtn->setToolTip("Open containing folder in file manager");
+                connect(openBtn, &QPushButton::clicked,
+                        [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
+                fileRowLayout->addWidget(openBtn);
 
-            auto openBtn = new QPushButton("📁", m_filesContainer);
-            openBtn->setFlat(true);
-            openBtn->setToolTip("Show in Folder");
-            connect(openBtn, &QPushButton::clicked,
-                    [p]() { QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).absolutePath())); });
-            fileRow->addWidget(openBtn);
-
-            filesLayout->addLayout(fileRow);
+                m_filesForm->addRow(QString("%1 Hz:").arg(r), fileRowWidget);
+            }
         }
     }
 }

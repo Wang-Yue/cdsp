@@ -329,6 +329,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
 
     auto addChevron = [layout, card = m_pipelineMiniCard]() {
         auto label = new QLabel("›", card);
+        label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         label->setStyleSheet("color: rgba(255, 255, 255, 0.3); font-size: 11px; font-weight: bold; border: none; "
                              "background: transparent;");
         layout->addWidget(label);
@@ -343,6 +344,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
         }
     }
     auto inChip = new QLabel(QString("🎤 %1").arg(inDev), m_pipelineMiniCard);
+    inChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     inChip->setStyleSheet(makePillStyle(isRunning, "#007aff"));
     layout->addWidget(inChip);
 
@@ -353,6 +355,8 @@ void MiniPlayerView::buildMiniPipelineUi() {
     auto resampChip = new QPushButton("🔄 Resampler", m_pipelineMiniCard);
     resampChip->setCheckable(true);
     resampChip->setChecked(resampEnabled);
+    resampChip->setCursor(Qt::PointingHandCursor);
+    resampChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     resampChip->setStyleSheet(makePillStyle(resampEnabled));
     connect(resampChip, &QPushButton::clicked, [this, resampChip, makePillStyle]() {
         if (m_settings) {
@@ -376,6 +380,8 @@ void MiniPlayerView::buildMiniPipelineUi() {
             auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
             chip->setCheckable(true);
             chip->setChecked(stage.isEnabled);
+            chip->setCursor(Qt::PointingHandCursor);
+            chip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
             chip->setStyleSheet(makePillStyle(stage.isEnabled));
 
             QUuid id = stage.id;
@@ -409,6 +415,7 @@ void MiniPlayerView::buildMiniPipelineUi() {
         }
     }
     auto outChip = new QLabel(QString("🔊 %1").arg(outDev), m_pipelineMiniCard);
+    outChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     outChip->setStyleSheet(makePillStyle(isRunning, "#34c759"));
     layout->addWidget(outChip);
 
@@ -441,6 +448,7 @@ void MiniPlayerView::setupUi() {
     mainLayout->setSpacing(0);
 
     auto topBarWidget = new QWidget(this);
+    topBarWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto topBar = new QHBoxLayout(topBarWidget);
     topBar->setContentsMargins(8, 4, 8, 4);
     topBar->setSpacing(6);
@@ -452,6 +460,8 @@ void MiniPlayerView::setupUi() {
     // Play / Stop button
     m_playStopBtn = new QPushButton("▶", topBarWidget);
     m_playStopBtn->setFixedSize(18, 18);
+    m_playStopBtn->setCursor(Qt::PointingHandCursor);
+    m_playStopBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_playStopBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
                                  "none; font-size: 10px; padding: 0px; margin: 0px; } "
                                  "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
@@ -465,12 +475,15 @@ void MiniPlayerView::setupUi() {
 
     // Volume Control Row container
     auto volWidget = new QWidget(topBarWidget);
+    volWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto volLayout = new QHBoxLayout(volWidget);
-    volLayout->setContentsMargins(8, 2, 8, 2);
-    volLayout->setSpacing(6);
+    volLayout->setContentsMargins(4, 0, 4, 0);
+    volLayout->setSpacing(4);
 
     m_muteBtn = new QPushButton("🔊", volWidget);
     m_muteBtn->setFixedSize(18, 18);
+    m_muteBtn->setCursor(Qt::PointingHandCursor);
+    m_muteBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_muteBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: none; "
                              "font-size: 10px; padding: 0px; margin: 0px; } "
                              "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
@@ -484,6 +497,8 @@ void MiniPlayerView::setupUi() {
 
     m_volSlider = new QSlider(Qt::Horizontal, volWidget);
     m_volSlider->setRange(-120, 40); // -60 dB to +20 dB
+    m_volSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_volSlider->setMinimumWidth(50);
     float currentVol = m_settings ? m_settings->getVolume(Fader::Main) : 0.0f;
     m_volSlider->setValue(static_cast<int>(currentVol * 2.0f));
     m_volSlider->setStyleSheet(
@@ -494,8 +509,9 @@ void MiniPlayerView::setupUi() {
 
     m_volValueLabel = new QLabel(QString::asprintf("%+.0f", currentVol), volWidget);
     m_volValueLabel->setFont(QFont("monospace", 9));
-    m_volValueLabel->setFixedWidth(25);
+    m_volValueLabel->setFixedWidth(26);
     m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_volValueLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     m_volValueLabel->setStyleSheet(currentVol > 0.0f
                                        ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
                                        : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
@@ -510,75 +526,81 @@ void MiniPlayerView::setupUi() {
                       : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
     });
 
-    volLayout->addWidget(m_volSlider);
+    volLayout->addWidget(m_volSlider, 1);
     volLayout->addWidget(m_volValueLabel);
-    topBar->addWidget(volWidget);
+    topBar->addWidget(volWidget, 1);
 
-    // 6 Mode Icon Buttons matching SwiftUI icons
-    auto pipeBtn = new QPushButton("☍", topBarWidget);
-    auto specBtn = new QPushButton("〰", topBarWidget);
-    auto mtrBtn = new QPushButton("📊", topBarWidget);
-    auto vuBtn = new QPushButton("⏱", topBarWidget);
-    auto sgBtn = new QPushButton("▦", topBarWidget);
-    auto vecBtn = new QPushButton("⚡", topBarWidget);
+    // Mode Switcher Container
+    auto modeSwitcherWidget = new QWidget(topBarWidget);
+    modeSwitcherWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto modeLayout = new QHBoxLayout(modeSwitcherWidget);
+    modeLayout->setContentsMargins(0, 0, 0, 0);
+    modeLayout->setSpacing(2);
+
+    // 6 Mode Icon Buttons
+    auto pipeBtn = new QPushButton("☍", modeSwitcherWidget);
+    auto specBtn = new QPushButton("〰", modeSwitcherWidget);
+    auto mtrBtn = new QPushButton("📊", modeSwitcherWidget);
+    auto vuBtn = new QPushButton("⏱", modeSwitcherWidget);
+    auto sgBtn = new QPushButton("▦", modeSwitcherWidget);
+    auto vecBtn = new QPushButton("⚡", modeSwitcherWidget);
 
     m_modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
 
+    for (auto btn : m_modeBtns) {
+        btn->setFixedSize(18, 18);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        modeLayout->addWidget(btn);
+    }
+
     pipeBtn->setToolTip("Pipeline Overview");
-    pipeBtn->setFixedSize(18, 18);
     connect(pipeBtn, &QPushButton::clicked, [this]() {
         buildMiniPipelineUi();
         m_viewStack->setCurrentIndex(0);
         updateModeButtonStyles(0);
     });
-    topBar->addWidget(pipeBtn);
 
     specBtn->setToolTip("Spectrum Analyzer");
-    specBtn->setFixedSize(18, 18);
     connect(specBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(1);
         updateModeButtonStyles(1);
     });
-    topBar->addWidget(specBtn);
 
     mtrBtn->setToolTip("Level Meters");
-    mtrBtn->setFixedSize(18, 18);
     connect(mtrBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(2);
         updateModeButtonStyles(2);
     });
-    topBar->addWidget(mtrBtn);
 
     vuBtn->setToolTip("Analog VU Meter");
-    vuBtn->setFixedSize(18, 18);
     connect(vuBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(3);
         updateModeButtonStyles(3);
     });
-    topBar->addWidget(vuBtn);
 
     sgBtn->setToolTip("Spectroscope Waterfall");
-    sgBtn->setFixedSize(18, 18);
     connect(sgBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(4);
         updateModeButtonStyles(4);
     });
-    topBar->addWidget(sgBtn);
 
     vecBtn->setToolTip("Vector Scope");
-    vecBtn->setFixedSize(18, 18);
     connect(vecBtn, &QPushButton::clicked, [this]() {
         m_viewStack->setCurrentIndex(5);
         updateModeButtonStyles(5);
     });
-    topBar->addWidget(vecBtn);
 
     updateModeButtonStyles(1); // Default to Spectrum (mode 1) matching SwiftUI default
+
+    topBar->addWidget(modeSwitcherWidget);
 
     mainLayout->addWidget(topBarWidget);
 
     m_viewStack = new QStackedWidget(this);
+    m_viewStack->setObjectName("MiniPlayerViewStack");
     m_viewStack->setContentsMargins(8, 0, 8, 8);
+    m_viewStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_viewStack->setStyleSheet("QStackedWidget { background: transparent; }");
 
     // Mode 0: Mini Pipeline Chips in a QScrollArea
@@ -586,42 +608,51 @@ void MiniPlayerView::setupUi() {
     pipeScroll->setWidgetResizable(true);
     pipeScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     pipeScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pipeScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    pipeScroll->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     pipeScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
 
     m_pipelineMiniCard = new QWidget(pipeScroll);
+    m_pipelineMiniCard->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     m_pipelineMiniCard->setStyleSheet("QWidget { background: transparent; }");
     auto pipeLayout = new QHBoxLayout(m_pipelineMiniCard);
     pipeLayout->setContentsMargins(0, 0, 0, 0);
     pipeLayout->setSpacing(4);
+    pipeLayout->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     buildMiniPipelineUi();
     pipeScroll->setWidget(m_pipelineMiniCard);
     m_viewStack->addWidget(pipeScroll);
 
     // Mode 1: Spectrum
     m_spectrumView = new SpectrumView(m_monitoring ? m_monitoring->spectrumEngine() : nullptr, this);
+    m_spectrumView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_viewStack->addWidget(m_spectrumView);
 
     // Mode 2: Level Meters
     m_metersView = new LevelMeterView(this);
+    m_metersView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     if (m_monitoring)
         m_metersView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_metersView);
 
     // Mode 3: Analog VU
     m_analogVUView = new AnalogVUMeterView(this);
+    m_analogVUView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     if (m_monitoring)
         m_analogVUView->setLevelState(&m_monitoring->levelState);
     m_viewStack->addWidget(m_analogVUView);
 
     // Mode 4: Spectrogram
     m_spectrogramView = new SpectrogramView(m_monitoring ? m_monitoring->spectrogramEngine() : nullptr, this);
+    m_spectrogramView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_viewStack->addWidget(m_spectrogramView);
 
     // Mode 5: Vector Scope
     m_vectorScopeView = new VectorScopeView(m_monitoring ? m_monitoring->vectorScopeEngine() : nullptr, this);
+    m_vectorScopeView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_viewStack->addWidget(m_vectorScopeView);
 
-    mainLayout->addWidget(m_viewStack);
+    mainLayout->addWidget(m_viewStack, 1);
     updateEngineStatus(m_dsp->status);
 
     enableMouseTrackingRecursively(this, this);

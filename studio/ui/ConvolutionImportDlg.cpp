@@ -4,6 +4,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -15,7 +16,10 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMimeData>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QSpinBox>
@@ -78,28 +82,11 @@ void ConvolutionImportDlg::dropEvent(QDropEvent* event) {
 }
 
 void ConvolutionImportDlg::setupUi() {
-    auto outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
-    outerLayout->setSpacing(0);
+    auto mainLayout = new QVBoxLayout(this);
 
-    // Header Block
-    auto headerWidget = new QWidget(this);
-    auto headerBox = new QVBoxLayout(headerWidget);
-    headerBox->setContentsMargins(16, 16, 16, 16);
-    headerBox->setSpacing(4);
-
-    auto titleLbl = new QLabel("Import Impulse Responses", headerWidget);
-    titleLbl->setFont(QFont("sans-serif", 13, QFont::Bold));
-    headerBox->addWidget(titleLbl);
-
-    auto subtitleLbl = new QLabel("Import files as a unified multi-rate Convolution Preset.", headerWidget);
-    headerBox->addWidget(subtitleLbl);
-    outerLayout->addWidget(headerWidget);
-
-    auto topDivider = new QFrame(this);
-    topDivider->setFrameShape(QFrame::HLine);
-    topDivider->setFrameShadow(QFrame::Sunken);
-    outerLayout->addWidget(topDivider);
+    auto subtitleLbl = new QLabel("Import files as a unified multi-rate Convolution Preset.", this);
+    subtitleLbl->setWordWrap(true);
+    mainLayout->addWidget(subtitleLbl);
 
     // Scrollable Central Area
     m_scrollArea = new QScrollArea(this);
@@ -108,14 +95,10 @@ void ConvolutionImportDlg::setupUi() {
 
     auto contentWidget = new QWidget(m_scrollArea);
     auto contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setContentsMargins(16, 16, 16, 16);
-    contentLayout->setSpacing(20);
 
     // GroupBox "Preset Details"
     auto detailsGroup = new QGroupBox("Preset Details", contentWidget);
     auto form = new QFormLayout(detailsGroup);
-    form->setContentsMargins(12, 16, 12, 12);
-    form->setSpacing(12);
 
     m_nameEdit = new QLineEdit(detailsGroup);
     m_nameEdit->setPlaceholderText("e.g., My Custom IR");
@@ -131,11 +114,10 @@ void ConvolutionImportDlg::setupUi() {
 
     // Impulse Response Files Section
     auto fileSectionLayout = new QVBoxLayout();
-    fileSectionLayout->setSpacing(8);
 
     auto tableHeader = new QHBoxLayout();
     auto filesLbl = new QLabel("Impulse Response Files", contentWidget);
-    filesLbl->setFont(QFont("sans-serif", 12, QFont::Bold));
+    filesLbl->setFont(QFont("sans-serif", 11, QFont::Bold));
     tableHeader->addWidget(filesLbl);
     tableHeader->addStretch();
 
@@ -148,8 +130,6 @@ void ConvolutionImportDlg::setupUi() {
     m_emptyStateWidget = new QFrame(contentWidget);
     m_emptyStateWidget->setFrameShape(QFrame::StyledPanel);
     auto emptyLayout = new QVBoxLayout(m_emptyStateWidget);
-    emptyLayout->setContentsMargins(20, 40, 20, 40);
-    emptyLayout->setSpacing(12);
 
     auto emptyIcon = new QLabel("⇣", m_emptyStateWidget);
     emptyIcon->setAlignment(Qt::AlignCenter);
@@ -165,11 +145,10 @@ void ConvolutionImportDlg::setupUi() {
 
     // Item Cards layout
     m_itemListLayout = new QVBoxLayout();
-    m_itemListLayout->setSpacing(12);
     fileSectionLayout->addLayout(m_itemListLayout);
 
     // Warning label for duplicate rates
-    m_warningLabel = new QLabel(this);
+    m_warningLabel = new QLabel(contentWidget);
     m_warningLabel->setText(
         "⚠️ Duplicate sample rates found. Each file in the preset must represent a different sample rate.");
     m_warningLabel->setVisible(false);
@@ -182,7 +161,6 @@ void ConvolutionImportDlg::setupUi() {
     m_errorWidget = new QFrame(contentWidget);
     m_errorWidget->setFrameShape(QFrame::StyledPanel);
     auto errorLayout = new QHBoxLayout(m_errorWidget);
-    errorLayout->setContentsMargins(12, 12, 12, 12);
 
     auto errIcon = new QLabel("🛑", m_errorWidget);
     errorLayout->addWidget(errIcon);
@@ -196,30 +174,21 @@ void ConvolutionImportDlg::setupUi() {
 
     contentLayout->addStretch();
     m_scrollArea->setWidget(contentWidget);
-    outerLayout->addWidget(m_scrollArea);
+    mainLayout->addWidget(m_scrollArea);
 
-    auto bottomDivider = new QFrame(this);
-    bottomDivider->setFrameShape(QFrame::HLine);
-    bottomDivider->setFrameShadow(QFrame::Sunken);
-    outerLayout->addWidget(bottomDivider);
+    // Standard Dialog Button Box
+    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    m_importBtn = m_buttonBox->button(QDialogButtonBox::Ok);
+    if (m_importBtn) {
+        m_importBtn->setText("Import");
+        m_importBtn->setDefault(true);
+    }
+    m_cancelBtn = m_buttonBox->button(QDialogButtonBox::Cancel);
 
-    // Footer Buttons
-    auto footerWidget = new QWidget(this);
-    auto btnLayout = new QHBoxLayout(footerWidget);
-    btnLayout->setContentsMargins(16, 12, 16, 12);
-    btnLayout->setSpacing(12);
-    btnLayout->addStretch();
+    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &ConvolutionImportDlg::onImportClicked);
+    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-    m_cancelBtn = new QPushButton("Cancel", footerWidget);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    btnLayout->addWidget(m_cancelBtn);
-
-    m_importBtn = new QPushButton("Import", footerWidget);
-    m_importBtn->setDefault(true);
-    connect(m_importBtn, &QPushButton::clicked, this, &ConvolutionImportDlg::onImportClicked);
-    btnLayout->addWidget(m_importBtn);
-
-    outerLayout->addWidget(footerWidget);
+    mainLayout->addWidget(m_buttonBox);
 
     updateItemsList();
 }
@@ -257,8 +226,6 @@ void ConvolutionImportDlg::updateItemsList() {
             card->setFrameShape(QFrame::StyledPanel);
 
             auto cardLayout = new QVBoxLayout(card);
-            cardLayout->setContentsMargins(12, 12, 12, 12);
-            cardLayout->setSpacing(8);
 
             // Card Header
             auto topRow = new QHBoxLayout();
@@ -283,8 +250,6 @@ void ConvolutionImportDlg::updateItemsList() {
 
             // Details Grid
             auto grid = new QGridLayout();
-            grid->setContentsMargins(0, 0, 0, 0);
-            grid->setSpacing(8);
 
             // Sample Rate
             auto rateLbl = new QLabel("Sample Rate", card);

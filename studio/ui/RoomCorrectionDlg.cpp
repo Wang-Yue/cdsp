@@ -36,32 +36,18 @@ void RoomCorrectionDlg::setupUi() {
     // Top Header Toolbar
     mainLayout->addWidget(createHeaderToolbar());
 
-    // Horizontal Line Divider
-    auto topDivider = new QFrame(this);
-    topDivider->setFrameShape(QFrame::HLine);
-    topDivider->setFrameShadow(QFrame::Sunken);
-    mainLayout->addWidget(topDivider);
-
-    // Main Content Area (Plots + Positions Bar + Sidebar)
+    // Main Content Area (Plots + Positions Bar + Sidebar in QSplitter)
     mainLayout->addWidget(createMainArea(), 1);
 
-    // Bottom Divider
-    auto bottomDivider = new QFrame(this);
-    bottomDivider->setFrameShape(QFrame::HLine);
-    bottomDivider->setFrameShadow(QFrame::Sunken);
-    mainLayout->addWidget(bottomDivider);
-
     // Bottom Status Bar
-    auto statusBar = new QWidget(this);
-    auto statusLayout = new QHBoxLayout(statusBar);
-    statusLayout->setContentsMargins(12, 6, 12, 6);
-    statusLayout->setSpacing(8);
-
-    auto infoIcon = new QLabel("ℹ", statusBar);
-    statusLayout->addWidget(infoIcon);
-
+    auto statusBar = new QStatusBar(this);
     m_statusLabel = new QLabel("Ready.", statusBar);
-    statusLayout->addWidget(m_statusLabel, 1);
+    statusBar->addWidget(m_statusLabel, 1);
+
+    auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, statusBar);
+    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    statusBar->addPermanentWidget(buttonBox);
 
     mainLayout->addWidget(statusBar);
 
@@ -69,17 +55,9 @@ void RoomCorrectionDlg::setupUi() {
 }
 
 QWidget* RoomCorrectionDlg::createHeaderToolbar() {
-    auto toolbar = new QWidget(this);
-    auto layout = new QHBoxLayout(toolbar);
-    layout->setContentsMargins(12, 8, 12, 8);
-    layout->setSpacing(12);
-
-    // Close button
-    auto closeBtn = new QToolButton(toolbar);
-    closeBtn->setText("✕");
-    closeBtn->setToolTip("Close");
-    connect(closeBtn, &QToolButton::clicked, this, &QDialog::accept);
-    layout->addWidget(closeBtn);
+    auto toolbar = new QToolBar("Room Correction Toolbar", this);
+    toolbar->setMovable(false);
+    toolbar->setFloatable(false);
 
     // Measure Dropdown Menu Button
     m_measureMenuBtn = new QPushButton("Measure ▾", toolbar);
@@ -104,9 +82,11 @@ QWidget* RoomCorrectionDlg::createHeaderToolbar() {
     connect(m_importFrdAction, &QAction::triggered, this, &RoomCorrectionDlg::onImportFRD);
 
     m_measureMenuBtn->setMenu(measureMenu);
-    layout->addWidget(m_measureMenuBtn);
+    toolbar->addWidget(m_measureMenuBtn);
 
-    layout->addStretch(1);
+    auto leftSpacer = new QWidget(toolbar);
+    leftSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(leftSpacer);
 
     // Pane Picker Segmented TabBar
     m_paneTabBar = new QTabBar(toolbar);
@@ -117,28 +97,27 @@ QWidget* RoomCorrectionDlg::createHeaderToolbar() {
     m_paneTabBar->addTab("Group Delay");
     m_paneTabBar->addTab("Waterfall (CSD)");
     connect(m_paneTabBar, &QTabBar::currentChanged, [this](int idx) { m_plotStackedWidget->setCurrentIndex(idx); });
-    layout->addWidget(m_paneTabBar);
+    toolbar->addWidget(m_paneTabBar);
 
-    layout->addStretch(1);
+    auto rightSpacer = new QWidget(toolbar);
+    rightSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(rightSpacer);
 
     // Sidebar Toggle Button
     m_sidebarToggleBtn = new QToolButton(toolbar);
     m_sidebarToggleBtn->setText("▤");
     m_sidebarToggleBtn->setToolTip("Toggle Sidebar");
     connect(m_sidebarToggleBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::toggleSidebar);
-    layout->addWidget(m_sidebarToggleBtn);
+    toolbar->addWidget(m_sidebarToggleBtn);
 
     return toolbar;
 }
 
 QWidget* RoomCorrectionDlg::createMainArea() {
-    auto mainWidget = new QWidget(this);
-    auto mainLayout = new QHBoxLayout(mainWidget);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
+    auto splitter = new QSplitter(Qt::Horizontal, this);
 
-    // Left Panel (Plot Stacked Widget + Divider + Positions Bar)
-    auto leftWidget = new QWidget(mainWidget);
+    // Left Panel (Plot Stacked Widget + Positions Bar)
+    auto leftWidget = new QWidget(splitter);
     auto leftLayout = new QVBoxLayout(leftWidget);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(0);
@@ -165,16 +144,11 @@ QWidget* RoomCorrectionDlg::createMainArea() {
 
     leftLayout->addWidget(m_plotStackedWidget, 1);
 
-    auto posDivider = new QFrame(leftWidget);
-    posDivider->setFrameShape(QFrame::HLine);
-    posDivider->setFrameShadow(QFrame::Sunken);
-    leftLayout->addWidget(posDivider);
-
     // Positions Bar
     m_positionsContainer = new QWidget(leftWidget);
     auto posBarLayout = new QHBoxLayout(m_positionsContainer);
-    posBarLayout->setContentsMargins(12, 6, 12, 6);
-    posBarLayout->setSpacing(10);
+    posBarLayout->setContentsMargins(8, 4, 8, 4);
+    posBarLayout->setSpacing(8);
 
     auto posLabel = new QLabel("Positions", m_positionsContainer);
     posBarLayout->addWidget(posLabel);
@@ -203,20 +177,19 @@ QWidget* RoomCorrectionDlg::createMainArea() {
 
     leftLayout->addWidget(m_positionsContainer);
 
-    mainLayout->addWidget(leftWidget, 1);
-
-    // Vertical Divider before Sidebar
-    auto sideDivider = new QFrame(mainWidget);
-    sideDivider->setFrameShape(QFrame::VLine);
-    sideDivider->setFrameShadow(QFrame::Sunken);
-    mainLayout->addWidget(sideDivider);
+    splitter->addWidget(leftWidget);
 
     // Right Sidebar
     m_sidebarWidget = createSidebar();
-    m_sidebarWidget->setFixedWidth(290);
-    mainLayout->addWidget(m_sidebarWidget);
+    splitter->addWidget(m_sidebarWidget);
 
-    return mainWidget;
+    splitter->setCollapsible(0, false);
+    splitter->setCollapsible(1, false);
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 0);
+    splitter->setSizes({800, 320});
+
+    return splitter;
 }
 
 QWidget* RoomCorrectionDlg::createSidebar() {
@@ -227,50 +200,90 @@ QWidget* RoomCorrectionDlg::createSidebar() {
 
     auto content = new QWidget(scroll);
     auto layout = new QVBoxLayout(content);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(14);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(10);
 
-    // 1. Audio Setup Section
-    auto audioBox = new QWidget(content);
-    auto audioLayout = new QVBoxLayout(audioBox);
-    audioLayout->setContentsMargins(0, 0, 0, 0);
-    audioLayout->setSpacing(6);
+    // 1. Microphone Input GroupBox
+    auto micGroup = new QGroupBox("Microphone Input", content);
+    auto micForm = new QFormLayout(micGroup);
 
-    audioLayout->addWidget(new QLabel("Microphone Input", audioBox));
-    m_micDeviceCombo = new QComboBox(audioBox);
+    m_micDeviceCombo = new QComboBox(micGroup);
     m_micDeviceCombo->addItem("System Default", "");
     connect(m_micDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.selectedMicName = m_micDeviceCombo->itemData(idx).toString().toStdString();
         updateMicChannels();
     });
-    audioLayout->addWidget(m_micDeviceCombo);
+    micForm->addRow("Device:", m_micDeviceCombo);
 
-    m_micChannelCombo = new QComboBox(audioBox);
+    m_micChannelCombo = new QComboBox(micGroup);
     m_micChannelCombo->addItem("Channel 1", 0);
     connect(m_micChannelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             [this](int idx) { m_session.selectedInputChannel = m_micChannelCombo->itemData(idx).toInt(); });
-    audioLayout->addWidget(m_micChannelCombo);
+    micForm->addRow("Channel:", m_micChannelCombo);
 
-    audioLayout->addWidget(new QLabel("Speaker Output", audioBox));
-    m_outputDeviceCombo = new QComboBox(audioBox);
+    layout->addWidget(micGroup);
+
+    // 2. Speaker Output GroupBox
+    auto outputGroup = new QGroupBox("Speaker Output", content);
+    auto outputForm = new QFormLayout(outputGroup);
+
+    m_outputDeviceCombo = new QComboBox(outputGroup);
     m_outputDeviceCombo->addItem("System Default", "");
     connect(m_outputDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.selectedOutputName = m_outputDeviceCombo->itemData(idx).toString().toStdString();
         updateOutputChannels();
     });
-    audioLayout->addWidget(m_outputDeviceCombo);
+    outputForm->addRow("Device:", m_outputDeviceCombo);
 
-    m_outputChannelCombo = new QComboBox(audioBox);
+    m_outputChannelCombo = new QComboBox(outputGroup);
     m_outputChannelCombo->addItem("All channels", -1);
     connect(m_outputChannelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             [this](int idx) { m_session.selectedOutputChannel = m_outputChannelCombo->itemData(idx).toInt(); });
-    audioLayout->addWidget(m_outputChannelCombo);
+    outputForm->addRow("Channel:", m_outputChannelCombo);
 
-    audioLayout->addWidget(new QLabel("Sweep Freq Range & Duration", audioBox));
-    auto sweepForm = new QFormLayout();
-    sweepForm->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(outputGroup);
 
-    m_sweepF1Spin = new QDoubleSpinBox(audioBox);
+    // 3. Calibration Curve GroupBox
+    auto calGroup = new QGroupBox("Calibration Curve", content);
+    auto calForm = new QFormLayout(calGroup);
+
+    auto calRowWidget = new QWidget(calGroup);
+    auto calRow = new QHBoxLayout(calRowWidget);
+    calRow->setContentsMargins(0, 0, 0, 0);
+    m_calPathLabel = new QLabel("None loaded", calRowWidget);
+    calRow->addWidget(m_calPathLabel, 1);
+
+    m_loadCalBtn = new QPushButton("Load…", calRowWidget);
+    connect(m_loadCalBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onLoadCalibration);
+    calRow->addWidget(m_loadCalBtn);
+
+    m_clearCalBtn = new QToolButton(calRowWidget);
+    m_clearCalBtn->setText("✕");
+    m_clearCalBtn->setVisible(false);
+    connect(m_clearCalBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::onClearCalibration);
+    calRow->addWidget(m_clearCalBtn);
+    calForm->addRow("File:", calRowWidget);
+
+    auto expRowWidget = new QWidget(calGroup);
+    auto expRow = new QHBoxLayout(expRowWidget);
+    expRow->setContentsMargins(0, 0, 0, 0);
+    m_exportFrdBtn = new QPushButton("Export FRD", expRowWidget);
+    connect(m_exportFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(false); });
+    expRow->addWidget(m_exportFrdBtn);
+
+    m_exportCalFrdBtn = new QPushButton("Calibrated", expRowWidget);
+    connect(m_exportCalFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(true); });
+    m_exportCalFrdBtn->setEnabled(false);
+    expRow->addWidget(m_exportCalFrdBtn);
+    calForm->addRow("Export:", expRowWidget);
+
+    layout->addWidget(calGroup);
+
+    // 4. Measurement Parameters GroupBox
+    auto sweepGroup = new QGroupBox("Measurement Parameters", content);
+    auto sweepForm = new QFormLayout(sweepGroup);
+
+    m_sweepF1Spin = new QDoubleSpinBox(sweepGroup);
     m_sweepF1Spin->setRange(10.0, 1000.0);
     m_sweepF1Spin->setValue(m_session.sweepF1);
     m_sweepF1Spin->setSuffix(" Hz");
@@ -278,7 +291,7 @@ QWidget* RoomCorrectionDlg::createSidebar() {
             [this](double val) { m_session.sweepF1 = val; });
     sweepForm->addRow("Start Freq:", m_sweepF1Spin);
 
-    m_sweepF2Spin = new QDoubleSpinBox(audioBox);
+    m_sweepF2Spin = new QDoubleSpinBox(sweepGroup);
     m_sweepF2Spin->setRange(1000.0, 96000.0);
     m_sweepF2Spin->setValue(m_session.sweepF2);
     m_sweepF2Spin->setSuffix(" Hz");
@@ -286,7 +299,7 @@ QWidget* RoomCorrectionDlg::createSidebar() {
             [this](double val) { m_session.sweepF2 = val; });
     sweepForm->addRow("End Freq:", m_sweepF2Spin);
 
-    m_sweepDurationSpin = new QDoubleSpinBox(audioBox);
+    m_sweepDurationSpin = new QDoubleSpinBox(sweepGroup);
     m_sweepDurationSpin->setRange(0.1, 30.0);
     m_sweepDurationSpin->setSingleStep(0.5);
     m_sweepDurationSpin->setValue(m_session.sweepDurationSeconds);
@@ -295,44 +308,13 @@ QWidget* RoomCorrectionDlg::createSidebar() {
             [this](double val) { m_session.sweepDurationSeconds = val; });
     sweepForm->addRow("Duration:", m_sweepDurationSpin);
 
-    audioLayout->addLayout(sweepForm);
+    layout->addWidget(sweepGroup);
 
-    audioLayout->addWidget(new QLabel("Calibration File", audioBox));
-    auto calRow = new QHBoxLayout();
-    m_calPathLabel = new QLabel("None loaded", audioBox);
-    calRow->addWidget(m_calPathLabel, 1);
+    // 5. Target Curve GroupBox
+    auto targetGroup = new QGroupBox("Target Curve", content);
+    auto targetForm = new QFormLayout(targetGroup);
 
-    m_loadCalBtn = new QPushButton("Load…", audioBox);
-    connect(m_loadCalBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onLoadCalibration);
-    calRow->addWidget(m_loadCalBtn);
-
-    m_clearCalBtn = new QToolButton(audioBox);
-    m_clearCalBtn->setText("✕");
-    m_clearCalBtn->setVisible(false);
-    connect(m_clearCalBtn, &QToolButton::clicked, this, &RoomCorrectionDlg::onClearCalibration);
-    calRow->addWidget(m_clearCalBtn);
-    audioLayout->addLayout(calRow);
-
-    audioLayout->addWidget(new QLabel("Export Data", audioBox));
-    auto expRow = new QHBoxLayout();
-    m_exportFrdBtn = new QPushButton("Export FRD", audioBox);
-    connect(m_exportFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(false); });
-    expRow->addWidget(m_exportFrdBtn);
-
-    m_exportCalFrdBtn = new QPushButton("Calibrated", audioBox);
-    connect(m_exportCalFrdBtn, &QPushButton::clicked, [this]() { onExportFRD(true); });
-    m_exportCalFrdBtn->setEnabled(false);
-    expRow->addWidget(m_exportCalFrdBtn);
-    audioLayout->addLayout(expRow);
-
-    layout->addWidget(createSidebarSection("Audio Setup", audioBox));
-
-    // 2. Target & Analysis Section
-    auto targetBox = new QWidget(content);
-    auto targetForm = new QFormLayout(targetBox);
-    targetForm->setContentsMargins(0, 0, 0, 0);
-
-    m_targetPresetCombo = new QComboBox(targetBox);
+    m_targetPresetCombo = new QComboBox(targetGroup);
     m_targetPresetCombo->addItems({"Flat (0 dB)", "Brüel & Kjær", "Harman", "Tilt (-1 dB/oct)", "Bass Boost (+4 dB)"});
     m_targetPresetCombo->setCurrentIndex(static_cast<int>(m_session.targetPreset));
     connect(m_targetPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
@@ -340,9 +322,9 @@ QWidget* RoomCorrectionDlg::createSidebar() {
         m_session.targetPreset = static_cast<TargetPreset>(idx);
         m_session.recomputeAverage();
     });
-    targetForm->addRow("Target Curve:", m_targetPresetCombo);
+    targetForm->addRow("Target:", m_targetPresetCombo);
 
-    m_smoothingCombo = new QComboBox(targetBox);
+    m_smoothingCombo = new QComboBox(targetGroup);
     m_smoothingCombo->addItems({"Off", "1/3 oct", "1/6 oct", "1/12 oct", "1/24 oct"});
     m_smoothingCombo->setCurrentIndex(2); // 1/6 oct
     connect(m_smoothingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
@@ -365,9 +347,9 @@ QWidget* RoomCorrectionDlg::createSidebar() {
         }
         refreshSessionUi();
     });
-    targetForm->addRow("Display Smoothing:", m_smoothingCombo);
+    targetForm->addRow("Smoothing:", m_smoothingCombo);
 
-    m_fdwCombo = new QComboBox(targetBox);
+    m_fdwCombo = new QComboBox(targetGroup);
     m_fdwCombo->addItems({"Off", "1 cycle", "5 cycles", "10 cycles", "15 cycles"});
     connect(m_fdwCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         switch (idx) {
@@ -391,24 +373,22 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     });
     targetForm->addRow("FDW (Cycles):", m_fdwCombo);
 
-    layout->addWidget(createSidebarSection("Target & Analysis", targetBox));
+    layout->addWidget(targetGroup);
 
-    // 3. Modal Region Section
-    auto modalBox = new QWidget(content);
-    auto modalLayout = new QVBoxLayout(modalBox);
-    modalLayout->setContentsMargins(0, 0, 0, 0);
-    modalLayout->setSpacing(6);
+    // 6. Modal Region GroupBox
+    auto modalGroup = new QGroupBox("Modal Region", content);
+    auto modalLayout = new QVBoxLayout(modalGroup);
 
-    m_modalModeCheck = new QCheckBox("Apply Constraints", modalBox);
+    m_modalModeCheck = new QCheckBox("Apply Constraints", modalGroup);
     connect(m_modalModeCheck, &QCheckBox::toggled, [this](bool checked) {
         m_session.modalMode = checked;
         m_modalParamsContainer->setVisible(checked);
     });
     modalLayout->addWidget(m_modalModeCheck);
 
-    m_modalParamsContainer = new QWidget(modalBox);
+    m_modalParamsContainer = new QWidget(modalGroup);
     auto modalForm = new QFormLayout(m_modalParamsContainer);
-    modalForm->setContentsMargins(0, 4, 0, 0);
+    modalForm->setContentsMargins(0, 0, 0, 0);
     m_schroederCombo = new QComboBox(m_modalParamsContainer);
     m_schroederCombo->addItems({"100 Hz", "150 Hz", "200 Hz", "250 Hz", "300 Hz", "400 Hz"});
     m_schroederCombo->setCurrentIndex(2); // 200 Hz
@@ -416,7 +396,7 @@ QWidget* RoomCorrectionDlg::createSidebar() {
         const double freqs[] = {100.0, 150.0, 200.0, 250.0, 300.0, 400.0};
         m_session.schroederHz = freqs[idx];
     });
-    modalForm->addRow("Schroeder Corner:", m_schroederCombo);
+    modalForm->addRow("Schroeder:", m_schroederCombo);
 
     m_modalMinQCombo = new QComboBox(m_modalParamsContainer);
     m_modalMinQCombo->addItems({"1.5", "2.0", "2.5", "3.0", "4.0"});
@@ -425,21 +405,19 @@ QWidget* RoomCorrectionDlg::createSidebar() {
         const double qs[] = {1.5, 2.0, 2.5, 3.0, 4.0};
         m_session.modalMinQ = qs[idx];
     });
-    modalForm->addRow("Minimum Q Limit:", m_modalMinQCombo);
+    modalForm->addRow("Min Q Limit:", m_modalMinQCombo);
 
     m_modalParamsContainer->setVisible(false);
     modalLayout->addWidget(m_modalParamsContainer);
 
-    layout->addWidget(createSidebarSection("Modal Region", modalBox));
+    layout->addWidget(modalGroup);
 
-    // 4. PEQ Design Section
-    auto peqBox = new QWidget(content);
-    auto peqLayout = new QVBoxLayout(peqBox);
-    peqLayout->setContentsMargins(0, 0, 0, 0);
-    peqLayout->setSpacing(6);
+    // 7. Target EQ Parameters GroupBox
+    auto peqGroup = new QGroupBox("Target EQ Parameters", content);
+    auto peqLayout = new QVBoxLayout(peqGroup);
 
     auto peqForm = new QFormLayout();
-    m_bandCountCombo = new QComboBox(peqBox);
+    m_bandCountCombo = new QComboBox(peqGroup);
     m_bandCountCombo->addItems({"3 bands", "5 bands", "8 bands", "10 bands", "12 bands", "16 bands", "20 bands"});
     m_bandCountCombo->setCurrentIndex(2); // 8 bands
     connect(m_bandCountCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
@@ -449,24 +427,22 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     peqForm->addRow("Bands Limit:", m_bandCountCombo);
     peqLayout->addLayout(peqForm);
 
-    m_generatePeqBtn = new QPushButton("✨ Generate PEQ", peqBox);
+    m_generatePeqBtn = new QPushButton("✨ Generate PEQ", peqGroup);
     connect(m_generatePeqBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onRunFit);
     peqLayout->addWidget(m_generatePeqBtn);
 
-    m_addToEqPresetsBtn = new QPushButton("➕ Add to EQ Presets", peqBox);
+    m_addToEqPresetsBtn = new QPushButton("➕ Add to EQ Presets", peqGroup);
     connect(m_addToEqPresetsBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onApplyEQToPipeline);
     peqLayout->addWidget(m_addToEqPresetsBtn);
 
-    layout->addWidget(createSidebarSection("Parametric EQ (PEQ)", peqBox));
+    layout->addWidget(peqGroup);
 
-    // 5. FIR Convolution Design Section
-    auto firBox = new QWidget(content);
-    auto firLayout = new QVBoxLayout(firBox);
-    firLayout->setContentsMargins(0, 0, 0, 0);
-    firLayout->setSpacing(6);
+    // 8. FIR Convolution GroupBox
+    auto firGroup = new QGroupBox("FIR Convolution", content);
+    auto firLayout = new QVBoxLayout(firGroup);
 
     auto firForm = new QFormLayout();
-    m_firKindCombo = new QComboBox(firBox);
+    m_firKindCombo = new QComboBox(firGroup);
     m_firKindCombo->addItems({"Min-phase", "Linear-phase", "From measurement"});
     connect(m_firKindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_session.firKind = static_cast<FIRKind>(idx);
@@ -475,17 +451,17 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     });
     firForm->addRow("Filter Type:", m_firKindCombo);
 
-    m_firTapCombo = new QComboBox(firBox);
+    m_firTapCombo = new QComboBox(firGroup);
     m_firTapCombo->addItems({"2 048", "4 096", "8 192", "16 384", "32 768"});
     m_firTapCombo->setCurrentIndex(2); // 8192
     connect(m_firTapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         const int taps[] = {2048, 4096, 8192, 16384, 32768};
         m_session.firTapCount = taps[idx];
     });
-    firForm->addRow("Tap Count Length:", m_firTapCombo);
+    firForm->addRow("Tap Count:", m_firTapCombo);
     firLayout->addLayout(firForm);
 
-    m_phaseBlendContainer = new QWidget(firBox);
+    m_phaseBlendContainer = new QWidget(firGroup);
     auto blendLayout = new QVBoxLayout(m_phaseBlendContainer);
     blendLayout->setContentsMargins(0, 0, 0, 0);
     blendLayout->setSpacing(2);
@@ -514,23 +490,15 @@ QWidget* RoomCorrectionDlg::createSidebar() {
     m_phaseBlendContainer->setVisible(false);
     firLayout->addWidget(m_phaseBlendContainer);
 
-    m_addToFirPresetsBtn = new QPushButton("➕ Add to FIR Presets", firBox);
+    m_addToFirPresetsBtn = new QPushButton("➕ Add to FIR Presets", firGroup);
     connect(m_addToFirPresetsBtn, &QPushButton::clicked, this, &RoomCorrectionDlg::onGenerateFIR);
     firLayout->addWidget(m_addToFirPresetsBtn);
 
-    layout->addWidget(createSidebarSection("FIR Convolution", firBox));
+    layout->addWidget(firGroup);
 
     layout->addStretch(1);
     scroll->setWidget(content);
     return scroll;
-}
-
-QWidget* RoomCorrectionDlg::createSidebarSection(const QString& title, QWidget* content) {
-    auto group = new QGroupBox(title, this);
-    auto layout = new QVBoxLayout(group);
-    layout->setContentsMargins(6, 12, 6, 6);
-    layout->addWidget(content);
-    return group;
 }
 
 void RoomCorrectionDlg::toggleSidebar() {

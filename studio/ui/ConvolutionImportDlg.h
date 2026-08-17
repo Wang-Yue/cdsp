@@ -5,20 +5,20 @@
 
 #include <QDialog>
 #include <QFutureWatcher>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
+class QDialogButtonBox;
 class QDragEnterEvent;
 class QDropEvent;
-
 class QFrame;
+class QLabel;
+class QLineEdit;
+class QPushButton;
+class QScrollArea;
+class QVBoxLayout;
 
 class ConvolutionImportDlg : public QDialog {
     Q_OBJECT
@@ -57,16 +57,17 @@ private:
 
     std::vector<ImportItem> m_items;
 
-    QLineEdit* m_nameEdit;
-    QLineEdit* m_kindEdit;
-    QVBoxLayout* m_itemListLayout;
-    QFrame* m_emptyStateWidget;
-    QLabel* m_warningLabel;
-    QFrame* m_errorWidget;
-    QLabel* m_errorLabel;
-    QPushButton* m_importBtn;
-    QPushButton* m_cancelBtn;
-    QScrollArea* m_scrollArea;
+    QLineEdit* m_nameEdit = nullptr;
+    QLineEdit* m_kindEdit = nullptr;
+    QVBoxLayout* m_itemListLayout = nullptr;
+    QFrame* m_emptyStateWidget = nullptr;
+    QLabel* m_warningLabel = nullptr;
+    QFrame* m_errorWidget = nullptr;
+    QLabel* m_errorLabel = nullptr;
+    QDialogButtonBox* m_buttonBox = nullptr;
+    QPushButton* m_importBtn = nullptr;
+    QPushButton* m_cancelBtn = nullptr;
+    QScrollArea* m_scrollArea = nullptr;
 
     bool m_isImporting = false;
     QFutureWatcher<ImportResult> m_watcher;

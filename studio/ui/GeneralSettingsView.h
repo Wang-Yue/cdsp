@@ -10,6 +10,8 @@
 #include <QWidget>
 #include <memory>
 
+class QCheckBox;
+
 class GeneralSettingsView : public QWidget {
     Q_OBJECT
 
@@ -27,17 +29,17 @@ private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
 
-    QSlider* m_pollingRateSlider;
-    QLabel* m_pollingRateLabel;
+    QSlider* m_pollingRateSlider = nullptr;
+    QLabel* m_pollingRateLabel = nullptr;
 
-    QSlider* m_silenceThresholdSlider;
-    QLabel* m_silenceThresholdLabel;
+    QSlider* m_silenceThresholdSlider = nullptr;
+    QLabel* m_silenceThresholdLabel = nullptr;
 
-    QSlider* m_silenceTimeoutSlider;
-    QLabel* m_silenceTimeoutLabel;
+    QSlider* m_silenceTimeoutSlider = nullptr;
+    QLabel* m_silenceTimeoutLabel = nullptr;
 
-    class QCheckBox* m_closeToTrayCheck;
-    class QCheckBox* m_minimizeToTrayCheck;
+    QCheckBox* m_closeToTrayCheck = nullptr;
+    QCheckBox* m_minimizeToTrayCheck = nullptr;
 
     void setupUi();
 };

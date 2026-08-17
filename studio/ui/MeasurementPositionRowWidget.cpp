@@ -1,15 +1,16 @@
 #include "ui/MeasurementPositionRowWidget.h"
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QHBoxLayout>
-#include <QStyle>
+#include <QLineEdit>
+#include <QToolButton>
 
 MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosition& position,
                                                            MeasurementSession* session, QWidget* parent)
     : QWidget(parent), m_id(position.id), m_session(session) {
 
     auto layout = new QHBoxLayout(this);
-    layout->setContentsMargins(6, 3, 6, 3);
-    layout->setSpacing(6);
 
     m_enableCheck = new QCheckBox(this);
     m_enableCheck->setChecked(position.isEnabled);
@@ -18,9 +19,7 @@ MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosi
 
     m_nameEdit = new QLineEdit(QString::fromStdString(position.name), this);
     m_nameEdit->setPlaceholderText("Position Name");
-    m_nameEdit->setMinimumWidth(80);
-    m_nameEdit->setMaximumWidth(140);
-    layout->addWidget(m_nameEdit);
+    layout->addWidget(m_nameEdit, 1);
 
     m_kindCombo = new QComboBox(this);
     m_kindCombo->addItem("Full Range", static_cast<int>(MeasurementChannelKind::Full));

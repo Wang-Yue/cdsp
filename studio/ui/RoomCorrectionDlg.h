@@ -14,14 +14,20 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSplitter>
 #include <QStackedWidget>
+#include <QStatusBar>
 #include <QTabBar>
+#include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -122,7 +128,6 @@ private:
     QWidget* createHeaderToolbar();
     QWidget* createMainArea();
     QWidget* createSidebar();
-    QWidget* createSidebarSection(const QString& title, QWidget* content);
 
     void populateAudioDevices();
     void updateMicChannels();

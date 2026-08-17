@@ -2,8 +2,9 @@
 
 #include <QAction>
 #include <QEvent>
+#include <QFormLayout>
 #include <QFrame>
-#include <QGraphicsDropShadowEffect>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
@@ -44,62 +45,45 @@ PipelineOverviewWidget::PipelineOverviewWidget(std::shared_ptr<DSPEngineControll
 
 void PipelineOverviewWidget::setupUi() {
     auto rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(12, 16, 12, 12);
-    rootLayout->setSpacing(10);
 
-    // 1. Header Bar
-    auto headerBox = new QHBoxLayout();
+    // 1. Toolbar Controls Row
+    auto toolbarLayout = new QHBoxLayout();
 
-    auto titleVBox = new QVBoxLayout();
-    titleVBox->setSpacing(2);
-
-    auto topTitleRow = new QHBoxLayout();
-    m_headerTitle = new QLabel("Signal Chain", this);
-    m_headerTitle->setFont(QFont("", 13, QFont::Bold));
-    topTitleRow->addWidget(m_headerTitle);
+    m_statsLabel = new QLabel(this);
+    toolbarLayout->addWidget(m_statsLabel);
 
     m_warningBadge = new QLabel("⚠️ Broken Chain", this);
     m_warningBadge->setVisible(false);
-    topTitleRow->addWidget(m_warningBadge);
-    topTitleRow->addStretch();
+    toolbarLayout->addWidget(m_warningBadge);
 
-    titleVBox->addLayout(topTitleRow);
-
-    m_statsLabel = new QLabel(this);
-    titleVBox->addWidget(m_statsLabel);
-
-    headerBox->addLayout(titleVBox, 1);
+    toolbarLayout->addStretch();
 
     // Categorized Add Stage Menu Button
-    m_addStageBtn = new QPushButton("Add Stage…", this);
-    headerBox->addWidget(m_addStageBtn, 0, Qt::AlignVCenter);
-
+    m_addStageBtn = new QPushButton(tr("Add Stage…"), this);
     buildAddStageMenu();
+    toolbarLayout->addWidget(m_addStageBtn);
 
     // Details Toggle Button
-    m_toggleDetailsBtn = new QPushButton("Hide Elementary Steps", this);
+    m_toggleDetailsBtn = new QPushButton(tr("Hide Elementary Steps"), this);
     connect(m_toggleDetailsBtn, &QPushButton::clicked, [this]() {
         m_showElementaryDetails = !m_showElementaryDetails;
-        m_toggleDetailsBtn->setText(m_showElementaryDetails ? "Hide Elementary Steps" : "Show Elementary Steps");
+        m_toggleDetailsBtn->setText(m_showElementaryDetails ? tr("Hide Elementary Steps")
+                                                            : tr("Show Elementary Steps"));
         rebuildOverview();
     });
-    headerBox->addWidget(m_toggleDetailsBtn, 0, Qt::AlignVCenter);
+    toolbarLayout->addWidget(m_toggleDetailsBtn);
 
-    rootLayout->addLayout(headerBox);
+    rootLayout->addLayout(toolbarLayout);
 
     // 2. Channel Signal Wires Legend Bar
     auto legendRow = new QHBoxLayout();
-    legendRow->setContentsMargins(4, 0, 4, 0);
-    legendRow->setSpacing(8);
 
-    auto legendTitle = new QLabel("Channel Signal Wires:", this);
-    legendTitle->setFont(QFont("", 10, QFont::Bold));
+    auto legendTitle = new QLabel(tr("Channel Wires:"), this);
     legendRow->addWidget(legendTitle);
 
     m_legendContainerWidget = new QWidget(this);
     m_legendBarLayout = new QHBoxLayout(m_legendContainerWidget);
     m_legendBarLayout->setContentsMargins(0, 0, 0, 0);
-    m_legendBarLayout->setSpacing(6);
     m_legendBarLayout->setAlignment(Qt::AlignLeft);
     legendRow->addWidget(m_legendContainerWidget, 1);
 
@@ -113,8 +97,6 @@ void PipelineOverviewWidget::setupUi() {
 
     m_canvasWidget = new OverviewCanvasWidget(this, m_scrollArea);
     m_canvasLayout = new QHBoxLayout(m_canvasWidget);
-    m_canvasLayout->setContentsMargins(4, 8, 4, 8);
-    m_canvasLayout->setSpacing(0);
     m_canvasLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_scrollArea->setWidget(m_canvasWidget);
@@ -484,26 +466,12 @@ void PipelineOverviewWidget::rebuildOverview() {
 
     auto addConnector = [this](int fromCh, int toCh, bool isMismatch = false) {
         auto connWidget = new QWidget(m_canvasWidget);
-        connWidget->setFixedWidth(52);
-        auto connVBox = new QVBoxLayout(connWidget);
-        connVBox->setContentsMargins(0, 0, 0, 0);
-        connVBox->setSpacing(2);
+        auto connLayout = new QVBoxLayout(connWidget);
+        connLayout->setContentsMargins(0, 0, 0, 0);
 
-        auto arrowHBox = new QHBoxLayout();
-        arrowHBox->setContentsMargins(0, 0, 0, 0);
-        arrowHBox->setSpacing(2);
-        arrowHBox->setAlignment(Qt::AlignCenter);
-
-        auto connLine = new QFrame(connWidget);
-        connLine->setFrameShape(QFrame::HLine);
-        connLine->setFixedHeight(2);
-        connLine->setFixedWidth(24);
-        arrowHBox->addWidget(connLine);
-
-        auto arrowLabel = new QLabel(isMismatch ? "⚠️" : "›", connWidget);
+        auto arrowLabel = new QLabel(isMismatch ? "⚠️" : "➔", connWidget);
         arrowLabel->setAlignment(Qt::AlignCenter);
-        arrowHBox->addWidget(arrowLabel);
-        connVBox->addLayout(arrowHBox);
+        connLayout->addWidget(arrowLabel);
 
         QString labelText;
         if (isMismatch) {
@@ -516,41 +484,36 @@ void PipelineOverviewWidget::rebuildOverview() {
 
         auto tagLabel = new QLabel(labelText, connWidget);
         tagLabel->setAlignment(Qt::AlignCenter);
-        connVBox->addWidget(tagLabel);
+        connLayout->addWidget(tagLabel);
 
         m_canvasLayout->addWidget(connWidget, 0, Qt::AlignVCenter);
     };
 
     // Helper: Build Graph Node Card Box
-    auto createNodeCard = [this, isRunning](const QString& title, const QString& subtitle, const QString& iconStr,
-                                            const QString& /*colorHex*/, bool /*isActive*/, bool isWarning = false) {
+    auto createNodeCard = [this](const QString& title, const QString& subtitle, const QString& iconStr) {
         auto card = new QFrame(m_canvasWidget);
         card->setFrameShape(QFrame::StyledPanel);
-        card->setFrameShadow(QFrame::Sunken);
-        card->setFixedWidth(210);
+        card->setFixedWidth(220);
 
         auto cardLayout = new QVBoxLayout(card);
-        cardLayout->setContentsMargins(10, 10, 10, 10);
-        cardLayout->setSpacing(8);
 
-        // Header Row
+        // Header Row: Icon + Title & Subtitle
         auto headerRow = new QHBoxLayout();
-        headerRow->setSpacing(8);
-
         auto iconDot = new QLabel(iconStr, card);
-        iconDot->setFixedSize(26, 26);
         iconDot->setAlignment(Qt::AlignCenter);
         headerRow->addWidget(iconDot);
 
         auto titleVBox = new QVBoxLayout();
-        titleVBox->setSpacing(1);
         auto titleLbl = new QLabel(title, card);
-        titleLbl->setFont(QFont("", 12, QFont::Bold));
+        QFont titleFont = titleLbl->font();
+        titleFont.setBold(true);
+        titleLbl->setFont(titleFont);
         titleVBox->addWidget(titleLbl);
 
-        auto subLbl = new QLabel(subtitle, card);
-        titleVBox->addWidget(subLbl);
-
+        if (!subtitle.isEmpty()) {
+            auto subLbl = new QLabel(subtitle, card);
+            titleVBox->addWidget(subLbl);
+        }
         headerRow->addLayout(titleVBox, 1);
         cardLayout->addLayout(headerRow);
 
@@ -558,15 +521,14 @@ void PipelineOverviewWidget::rebuildOverview() {
     };
 
     // 1. Capture Input Node
-    auto [capCard, capLayout] =
-        createNodeCard("Input (Capture)", QString::fromStdString(capDevName), "🎤", "0, 122, 255", isRunning);
+    auto [capCard, capLayout] = createNodeCard(tr("Input (Capture)"), QString::fromStdString(capDevName), "🎤");
 
-    auto capInfoLbl =
-        new QLabel(QString("Channels: %1 • %2").arg(captureCh).arg(formatSampleRate(captureRate)), capCard);
-    capLayout->addWidget(capInfoLbl);
+    auto capForm = new QFormLayout();
+    capForm->addRow(tr("Channels:"), new QLabel(QString::number(captureCh), capCard));
+    capForm->addRow(tr("Sample Rate:"), new QLabel(formatSampleRate(captureRate), capCard));
+    capLayout->addLayout(capForm);
 
     auto capPillsHBox = new QHBoxLayout();
-    capPillsHBox->setSpacing(3);
     for (int c = 0; c < captureCh; ++c) {
         auto pill = new QLabel(QString::number(c + 1), capCard);
         pill->setAlignment(Qt::AlignCenter);
@@ -583,11 +545,12 @@ void PipelineOverviewWidget::rebuildOverview() {
     // 2. Resampler Node (if active)
     bool resampEnabled = settings ? settings->resamplerEnabled : false;
     if (resampEnabled) {
-        auto [resampCard, resampLayout] = createNodeCard("Resampler", "Synchronous SRC", "🔄", "0, 122, 255", true);
+        auto [resampCard, resampLayout] = createNodeCard(tr("Resampler"), tr("Synchronous SRC"), "🔄");
 
-        auto resampSub = new QLabel(
-            QString("All %1 channels\nTarget: %2").arg(captureCh).arg(formatSampleRate(captureRate)), resampCard);
-        resampLayout->addWidget(resampSub);
+        auto resampForm = new QFormLayout();
+        resampForm->addRow(tr("Channels:"), new QLabel(QString("%1 ch").arg(captureCh), resampCard));
+        resampForm->addRow(tr("Target Rate:"), new QLabel(formatSampleRate(captureRate), resampCard));
+        resampLayout->addLayout(resampForm);
 
         m_canvasLayout->addWidget(resampCard);
         addConnector(captureCh, captureCh);
@@ -611,20 +574,16 @@ void PipelineOverviewWidget::rebuildOverview() {
             bool isMismatched = (outCh != nextInCh);
             bool active = stage.isEnabled && stage.isActive();
 
-            StageCategory cat = stageTypeToCategory(stage.type);
-            QString colorHex = categoryColorHex(cat);
+            auto [stCard, stLayout] = createNodeCard(QString::fromStdString(stage.name),
+                                                     QString::fromStdString(stageTypeToString(stage.type)),
+                                                     QString::fromStdString(stageTypeToIcon(stage.type)));
 
-            auto [stCard, stLayout] = createNodeCard(
-                QString::fromStdString(stage.name), QString::fromStdString(stageTypeToString(stage.type)),
-                QString::fromStdString(stageTypeToIcon(stage.type)), colorHex, active);
-
-            // Add Stage Bypass Dot button in header row
+            // Add Stage Bypass Button in header row
             auto headerLayout = qobject_cast<QHBoxLayout*>(stLayout->itemAt(0)->layout());
             if (headerLayout) {
                 auto bypassDotBtn = new QPushButton(active ? "🟢" : "⚪", stCard);
-                bypassDotBtn->setFixedSize(16, 16);
                 bypassDotBtn->setFlat(true);
-                bypassDotBtn->setToolTip(active ? "Click to disable stage" : "Click to enable stage");
+                bypassDotBtn->setToolTip(active ? tr("Click to disable stage") : tr("Click to enable stage"));
                 connect(bypassDotBtn, &QPushButton::clicked, [this, i]() {
                     if (m_dspController && m_dspController->pipelineStore()) {
                         m_dspController->pipelineStore()->stages[i].isEnabled =
@@ -636,31 +595,23 @@ void PipelineOverviewWidget::rebuildOverview() {
                 headerLayout->addWidget(bypassDotBtn, 0, Qt::AlignVCenter);
             }
 
-            // Channel overview badge
-            auto chBadge = new QLabel(inCh != outCh ? QString(" ⚙️ %1 In ➔ %2 Out ").arg(inCh).arg(outCh)
-                                                    : QString(" ⚙️ %1 Ch ").arg(inCh),
-                                      stCard);
-            stLayout->addWidget(chBadge);
+            // Channel routing row with QFormLayout
+            auto stageForm = new QFormLayout();
+            QString routeText =
+                (inCh != outCh) ? QString("%1 In ➔ %2 Out").arg(inCh).arg(outCh) : QString("%1 Ch").arg(inCh);
+            stageForm->addRow(tr("Routing:"), new QLabel(routeText, stCard));
+            stLayout->addLayout(stageForm);
 
             // Elementary Steps breakdown
             if (m_showElementaryDetails && active) {
-                auto divider = new QFrame(stCard);
-                divider->setFrameShape(QFrame::HLine);
-                divider->setFrameShadow(QFrame::Sunken);
-                stLayout->addWidget(divider);
-
                 auto stepsRes = StageBuilders::buildStage(stage, captureRate, inCh, eqMap, convMap);
 
                 for (const auto& step : stepsRes.steps) {
                     auto stepWidget = new QFrame(stCard);
-                    stepWidget->setFrameShape(QFrame::Box);
-                    stepWidget->setFrameShadow(QFrame::Plain);
+                    stepWidget->setFrameShape(QFrame::StyledPanel);
                     auto stepVBox = new QVBoxLayout(stepWidget);
-                    stepVBox->setContentsMargins(6, 4, 6, 4);
-                    stepVBox->setSpacing(2);
 
                     auto stepHeader = new QHBoxLayout();
-                    stepHeader->setSpacing(4);
 
                     QString icon = "⚙️";
                     if (step.type == PipelineStepType::Filter)
@@ -675,7 +626,9 @@ void PipelineOverviewWidget::rebuildOverview() {
 
                     QString stepTitle = stepTypeTitle(step.type);
                     auto titleLbl = new QLabel(stepTitle, stepWidget);
-                    titleLbl->setFont(QFont("", 9, QFont::Bold));
+                    QFont font = titleLbl->font();
+                    font.setBold(true);
+                    titleLbl->setFont(font);
                     stepHeader->addWidget(titleLbl, 1);
 
                     // Target channels tag
@@ -696,15 +649,14 @@ void PipelineOverviewWidget::rebuildOverview() {
                     }
 
                     auto chTagsBox = new QHBoxLayout();
-                    chTagsBox->setSpacing(2);
                     if (chList.size() == static_cast<size_t>(inCh) && inCh > 4) {
-                        auto chTag = new QLabel("All", stepWidget);
+                        auto chTag = new QLabel(tr("All"), stepWidget);
                         chTag->setAlignment(Qt::AlignCenter);
                         chTagsBox->addWidget(chTag);
                     } else if (chList.size() > 4) {
                         bool isContiguous = true;
-                        for (size_t i = 1; i < chList.size(); ++i) {
-                            if (chList[i] != chList[i - 1] + 1) {
+                        for (size_t k = 1; k < chList.size(); ++k) {
+                            if (chList[k] != chList[k - 1] + 1) {
                                 isContiguous = false;
                                 break;
                             }
@@ -732,9 +684,6 @@ void PipelineOverviewWidget::rebuildOverview() {
                     if (!step.names.empty()) {
                         for (const auto& rawN : step.names) {
                             auto itemHBox = new QHBoxLayout();
-                            itemHBox->setContentsMargins(12, 0, 0, 0);
-                            itemHBox->setSpacing(4);
-
                             auto dotLbl = new QLabel("•", stepWidget);
                             itemHBox->addWidget(dotLbl);
 
@@ -754,12 +703,9 @@ void PipelineOverviewWidget::rebuildOverview() {
 
             // Card toolbar: Move Left, Move Right, Delete
             auto stageActionsHBox = new QHBoxLayout();
-            stageActionsHBox->setContentsMargins(0, 4, 0, 0);
-            stageActionsHBox->setSpacing(4);
 
             auto moveLeftBtn = new QPushButton("◀", stCard);
-            moveLeftBtn->setFixedSize(24, 22);
-            moveLeftBtn->setToolTip("Move stage left");
+            moveLeftBtn->setToolTip(tr("Move stage left"));
             moveLeftBtn->setEnabled(i > 0);
             connect(moveLeftBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
@@ -771,8 +717,7 @@ void PipelineOverviewWidget::rebuildOverview() {
             stageActionsHBox->addWidget(moveLeftBtn);
 
             auto moveRightBtn = new QPushButton("▶", stCard);
-            moveRightBtn->setFixedSize(24, 22);
-            moveRightBtn->setToolTip("Move stage right");
+            moveRightBtn->setToolTip(tr("Move stage right"));
             moveRightBtn->setEnabled(i + 1 < pipe->stages.size());
             connect(moveRightBtn, &QPushButton::clicked, [this, i]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
@@ -786,8 +731,7 @@ void PipelineOverviewWidget::rebuildOverview() {
             stageActionsHBox->addStretch();
 
             auto deleteBtn = new QPushButton("🗑", stCard);
-            deleteBtn->setFixedSize(24, 22);
-            deleteBtn->setToolTip("Delete stage");
+            deleteBtn->setToolTip(tr("Delete stage"));
             connect(deleteBtn, &QPushButton::clicked, [this, stageId = stage.id]() {
                 if (m_dspController && m_dspController->pipelineStore()) {
                     m_dspController->pipelineStore()->deleteStage(stageId);
@@ -809,7 +753,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         return;
                     QMenu menu(senderWidget);
 
-                    auto toggleAct = menu.addAction("Toggle Enabled");
+                    auto toggleAct = menu.addAction(tr("Toggle Enabled"));
                     connect(toggleAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->stages[i].isEnabled =
@@ -819,7 +763,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto moveLeftAct = menu.addAction("Move Left");
+                    auto moveLeftAct = menu.addAction(tr("Move Left"));
                     moveLeftAct->setEnabled(i > 0);
                     connect(moveLeftAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
@@ -829,7 +773,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto moveRightAct = menu.addAction("Move Right");
+                    auto moveRightAct = menu.addAction(tr("Move Right"));
                     moveRightAct->setEnabled(i + 1 < totalStages);
                     connect(moveRightAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
@@ -839,7 +783,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto dupAct = menu.addAction("Duplicate Stage");
+                    auto dupAct = menu.addAction(tr("Duplicate Stage"));
                     connect(dupAct, &QAction::triggered, [this, stageId]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->duplicateStage(stageId);
@@ -850,7 +794,7 @@ void PipelineOverviewWidget::rebuildOverview() {
 
                     menu.addSeparator();
 
-                    auto deleteAct = menu.addAction("Delete Stage");
+                    auto deleteAct = menu.addAction(tr("Delete Stage"));
                     connect(deleteAct, &QAction::triggered, [this, stageId]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->deleteStage(stageId);
@@ -868,21 +812,19 @@ void PipelineOverviewWidget::rebuildOverview() {
     }
 
     // 4. Playback Output Node
-    auto [playCard, playLayout] = createNodeCard("Output (Playback)", QString::fromStdString(playDevName), "🔊",
-                                                 "52, 199, 89", isRunning, isOutputMismatch);
+    auto [playCard, playLayout] = createNodeCard(tr("Output (Playback)"), QString::fromStdString(playDevName), "🔊");
 
+    auto playForm = new QFormLayout();
     if (isOutputMismatch) {
-        auto warnLbl =
-            new QLabel(QString("Got %1 ch, Device expects %2 ch").arg(finalOutputCh).arg(playbackCh), playCard);
-        playLayout->addWidget(warnLbl);
+        auto warnLbl = new QLabel(tr("Got %1 ch, Device expects %2 ch").arg(finalOutputCh).arg(playbackCh), playCard);
+        playForm->addRow(tr("Warning:"), warnLbl);
     }
 
-    auto playInfoLbl =
-        new QLabel(QString("Channels: %1 • %2").arg(playbackCh).arg(formatSampleRate(playbackRate)), playCard);
-    playLayout->addWidget(playInfoLbl);
+    playForm->addRow(tr("Channels:"), new QLabel(QString::number(playbackCh), playCard));
+    playForm->addRow(tr("Sample Rate:"), new QLabel(formatSampleRate(playbackRate), playCard));
+    playLayout->addLayout(playForm);
 
     auto playPillsHBox = new QHBoxLayout();
-    playPillsHBox->setSpacing(3);
     for (int c = 0; c < playbackCh; ++c) {
         auto pill = new QLabel(QString::number(c + 1), playCard);
         pill->setAlignment(Qt::AlignCenter);

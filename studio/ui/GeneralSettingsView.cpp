@@ -34,29 +34,30 @@ void GeneralSettingsView::setupUi() {
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
     auto pollForm = new QFormLayout(pollGroup);
+    pollForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    auto pollBox = new QHBoxLayout();
-    auto pollTitleLabel = new QLabel("Polling Rate", pollGroup);
-    pollTitleLabel->setFixedWidth(120);
-    pollBox->addWidget(pollTitleLabel);
-
+    auto pollSliderLayout = new QHBoxLayout();
     m_pollingRateSlider = new QSlider(Qt::Horizontal, pollGroup);
     m_pollingRateSlider->setRange(1, 60);
-    pollBox->addWidget(m_pollingRateSlider);
+    pollSliderLayout->addWidget(m_pollingRateSlider);
 
     m_pollingRateLabel = new QLabel("30 Hz", pollGroup);
     m_pollingRateLabel->setFont(QFont("monospace", 11));
     m_pollingRateLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_pollingRateLabel->setMinimumWidth(70);
-    pollBox->addWidget(m_pollingRateLabel);
+    m_pollingRateLabel->setMinimumWidth(60);
+    pollSliderLayout->addWidget(m_pollingRateLabel);
 
-    pollForm->addRow(pollBox);
+    pollForm->addRow("Polling Rate:", pollSliderLayout);
 
     auto pollSubLbl = new QLabel("Adjust the frequency of UI updates for meters and spectrum.", pollGroup);
+    pollSubLbl->setWordWrap(true);
     {
         QFont font = pollSubLbl->font();
         font.setPointSize(11);
         pollSubLbl->setFont(font);
+        QPalette pal = pollSubLbl->palette();
+        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
+        pollSubLbl->setPalette(pal);
     }
     pollForm->addRow(pollSubLbl);
 
@@ -75,23 +76,20 @@ void GeneralSettingsView::setupUi() {
     // Silence Detection Group
     auto silenceGroup = new QGroupBox("Silence Detection", this);
     auto silenceForm = new QFormLayout(silenceGroup);
+    silenceForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    auto threshBox = new QHBoxLayout();
-    auto threshTitleLabel = new QLabel("Silence Threshold", silenceGroup);
-    threshTitleLabel->setFixedWidth(120);
-    threshBox->addWidget(threshTitleLabel);
-
+    auto threshSliderLayout = new QHBoxLayout();
     m_silenceThresholdSlider = new QSlider(Qt::Horizontal, silenceGroup);
     m_silenceThresholdSlider->setRange(-120, 0);
-    threshBox->addWidget(m_silenceThresholdSlider);
+    threshSliderLayout->addWidget(m_silenceThresholdSlider);
 
     m_silenceThresholdLabel = new QLabel("-60 dB", silenceGroup);
     m_silenceThresholdLabel->setFont(QFont("monospace", 11));
     m_silenceThresholdLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_silenceThresholdLabel->setFixedWidth(60);
-    threshBox->addWidget(m_silenceThresholdLabel);
+    m_silenceThresholdLabel->setMinimumWidth(60);
+    threshSliderLayout->addWidget(m_silenceThresholdLabel);
 
-    silenceForm->addRow(threshBox);
+    silenceForm->addRow("Silence Threshold:", threshSliderLayout);
 
     connect(m_silenceThresholdSlider, &QSlider::valueChanged, [this](int val) {
         if (m_settings) {
@@ -100,22 +98,18 @@ void GeneralSettingsView::setupUi() {
         m_silenceThresholdLabel->setText(QString("%1 dB").arg(val));
     });
 
-    auto timeoutBox = new QHBoxLayout();
-    auto timeoutTitleLabel = new QLabel("Silence Timeout", silenceGroup);
-    timeoutTitleLabel->setFixedWidth(120);
-    timeoutBox->addWidget(timeoutTitleLabel);
-
+    auto timeoutSliderLayout = new QHBoxLayout();
     m_silenceTimeoutSlider = new QSlider(Qt::Horizontal, silenceGroup);
     m_silenceTimeoutSlider->setRange(0, 60);
-    timeoutBox->addWidget(m_silenceTimeoutSlider);
+    timeoutSliderLayout->addWidget(m_silenceTimeoutSlider);
 
     m_silenceTimeoutLabel = new QLabel("Disabled", silenceGroup);
     m_silenceTimeoutLabel->setFont(QFont("monospace", 11));
     m_silenceTimeoutLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_silenceTimeoutLabel->setFixedWidth(60);
-    timeoutBox->addWidget(m_silenceTimeoutLabel);
+    m_silenceTimeoutLabel->setMinimumWidth(60);
+    timeoutSliderLayout->addWidget(m_silenceTimeoutLabel);
 
-    silenceForm->addRow(timeoutBox);
+    silenceForm->addRow("Silence Timeout:", timeoutSliderLayout);
 
     connect(m_silenceTimeoutSlider, &QSlider::valueChanged, [this](int val) {
         if (m_settings) {
@@ -130,10 +124,14 @@ void GeneralSettingsView::setupUi() {
 
     auto silenceSubLbl =
         new QLabel("Pause processing if the input signal is silent for the specified duration.", silenceGroup);
+    silenceSubLbl->setWordWrap(true);
     {
         QFont font = silenceSubLbl->font();
         font.setPointSize(11);
         silenceSubLbl->setFont(font);
+        QPalette pal = silenceSubLbl->palette();
+        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
+        silenceSubLbl->setPalette(pal);
     }
     silenceForm->addRow(silenceSubLbl);
 

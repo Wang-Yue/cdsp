@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QSlider>
 #include <QSpinBox>
 #include <QWidget>
 #include <memory>
@@ -31,26 +32,27 @@ private:
     std::shared_ptr<AudioDeviceManager> m_devices;
     std::shared_ptr<DSPEngineController> m_dspController;
 
-    QWidget* m_contentWidget;
-    QFormLayout* m_typeForm;
-    QGroupBox* m_typeGroup;
+    QWidget* m_contentWidget = nullptr;
+    QFormLayout* m_settingsForm = nullptr;
+    QGroupBox* m_settingsGroup = nullptr;
 
-    QCheckBox* m_enabledCheck;
-    QComboBox* m_typeCombo;
-    QCheckBox* m_useProfileCheck;
-    QComboBox* m_profileCombo;
-    QSpinBox* m_sincLenSpin;
-    QSpinBox* m_oversamplingSpin;
-    QComboBox* m_windowCombo;
-    QWidget* m_fCutoffRowWidget;
-    QSlider* m_fCutoffSlider;
-    QLabel* m_fCutoffLabel;
-    QComboBox* m_sincInterpCombo;
-    QComboBox* m_polyInterpCombo;
+    QCheckBox* m_enabledCheck = nullptr;
+    QComboBox* m_typeCombo = nullptr;
+    QCheckBox* m_useProfileCheck = nullptr;
+    QComboBox* m_profileCombo = nullptr;
+    QSpinBox* m_threadsSpin = nullptr;
+    QSpinBox* m_sincLenSpin = nullptr;
+    QSpinBox* m_oversamplingSpin = nullptr;
+    QComboBox* m_windowCombo = nullptr;
+    QWidget* m_fCutoffRowWidget = nullptr;
+    QSlider* m_fCutoffSlider = nullptr;
+    QLabel* m_fCutoffLabel = nullptr;
+    QComboBox* m_sincInterpCombo = nullptr;
+    QComboBox* m_polyInterpCombo = nullptr;
 
-    QLabel* m_capRateLabel;
-    QLabel* m_pbRateLabel;
-    QLabel* m_ratioLabel;
+    QLabel* m_capRateLabel = nullptr;
+    QLabel* m_pbRateLabel = nullptr;
+    QLabel* m_ratioLabel = nullptr;
 
     void updateVisibility();
 
