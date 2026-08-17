@@ -532,6 +532,7 @@ void StageDetailView::buildStageOptionsUi() {
     // 1. Channel Selector Card (Unified for all stages except Matrix Mixer)
     if (stage.type != StageType::MatrixMixer) {
         auto chanGroup = new QGroupBox("Target Channels", m_optionsContainer);
+        chanGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
         if (stage.type == StageType::Balance || stage.type == StageType::Width || stage.type == StageType::MSProc ||
             stage.type == StageType::Crossfeed || stage.type == StageType::RACE ||
@@ -2411,4 +2412,6 @@ void StageDetailView::buildStageOptionsUi() {
         break;
     }
     }
+
+    containerLayout->addStretch();
 }
