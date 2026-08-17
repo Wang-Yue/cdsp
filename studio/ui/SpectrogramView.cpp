@@ -48,17 +48,22 @@ void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool s
     m_show3D = show3D;
     m_palette = palette;
 
-    if (!m_show3D) {
-        QDateTime now = QDateTime::currentDateTime();
-        double elapsed = 0.05;
-        if (m_lastUpdateTime.isValid()) {
-            elapsed = m_lastUpdateTime.msecsTo(now) / 1000.0;
-        }
-        if (elapsed >= 0.05 || forceRedraw) {
+    if (!isVisible())
+        return;
+
+    QDateTime now = QDateTime::currentDateTime();
+    double elapsed = 0.05;
+    if (m_lastUpdateTime.isValid()) {
+        elapsed = m_lastUpdateTime.msecsTo(now) / 1000.0;
+    }
+
+    if (elapsed >= 0.05 || forceRedraw) {
+        if (!m_show3D) {
             updateBuffer(m_history, size(), elapsed);
-            m_lastUpdateTime = now;
+        } else {
+            updateBuffer3D(m_history, size());
         }
-    } else {
+        m_lastUpdateTime = now;
         update();
     }
 }
@@ -67,6 +72,8 @@ void SpectrogramView::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     if (!m_show3D) {
         recreateBuffer(event->size(), m_history);
+    } else {
+        updateBuffer3D(m_history, event->size());
     }
 }
 
@@ -362,132 +369,174 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         }
 
     } else {
-        // 3D CSD Waterfall Landscape matching SwiftUI CSDWaterfallView
-        size_t count = m_history.size();
-        if (count < 2)
-            return;
+        if (m_3dImage.isNull() || m_3dImage.size() != rect().size()) {
+            updateBuffer3D(m_history, rect().size());
+        }
+        if (!m_3dImage.isNull()) {
+            p.drawImage(0, 0, m_3dImage);
+        }
+    }
+}
 
-        double maxShiftX = w * 0.12;
-        double maxShiftY = -h * 0.18;
-        double maxScale = 0.85;
+void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, const QSize& size) {
+    if (size.width() <= 0 || size.height() <= 0)
+        return;
 
-        double baselineY = h * 0.88;
-        double drawWidth = w * 0.82;
-        double drawHeight = h * 0.58;
-        double leftPadding = w * 0.05;
+    if (m_3dImage.isNull() || m_3dImage.size() != size) {
+        m_3dImage = QImage(size, QImage::Format_ARGB32_Premultiplied);
+    }
 
-        auto project = [&](double flatX, double flatY, double t) -> QPointF {
-            double shiftX = (1.0 - t) * maxShiftX;
-            double shiftY = (1.0 - t) * maxShiftY;
-            double scale = maxScale + (1.0 - maxScale) * t;
-            QPointF currentCenter(leftPadding + drawWidth / 2.0, baselineY);
-            double px = currentCenter.x() + (flatX - currentCenter.x()) * scale + shiftX;
-            double py = currentCenter.y() + (flatY - currentCenter.y()) * scale + shiftY;
-            return QPointF(px, py);
-        };
+    m_3dImage.fill(StyleTheme::cardBg());
+    if (history.size() < 2)
+        return;
 
-        // 1. Draw 3D floor grid lines (Time Grid Lines)
-        p.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
-        for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
-            QPainterPath timeGridPath;
-            double xFlat = leftPadding + fraction * drawWidth;
-            timeGridPath.moveTo(project(xFlat, baselineY, 0.0));
-            for (size_t i = 1; i < count; ++i) {
-                double t = static_cast<double>(i) / static_cast<double>(count - 1);
-                timeGridPath.lineTo(project(xFlat, baselineY, t));
-            }
-            p.drawPath(timeGridPath);
+    QPainter p(&m_3dImage);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    int w = size.width();
+    int h = size.height();
+    size_t count = history.size();
+
+    double maxShiftX = w * 0.12;
+    double maxShiftY = -h * 0.18;
+    double maxScale = 0.85;
+
+    double baselineY = h * 0.88;
+    double drawWidth = w * 0.82;
+    double drawHeight = h * 0.58;
+    double leftPadding = w * 0.05;
+
+    auto project = [&](double flatX, double flatY, double t) -> QPointF {
+        double shiftX = (1.0 - t) * maxShiftX;
+        double shiftY = (1.0 - t) * maxShiftY;
+        double scale = maxScale + (1.0 - maxScale) * t;
+        QPointF currentCenter(leftPadding + drawWidth / 2.0, baselineY);
+        double px = currentCenter.x() + (flatX - currentCenter.x()) * scale + shiftX;
+        double py = currentCenter.y() + (flatY - currentCenter.y()) * scale + shiftY;
+        return QPointF(px, py);
+    };
+
+    // Render standard CSD waterfall density (28 depth slices)
+    size_t targetSlices = std::min<size_t>(count, 28);
+
+    // 1. Draw 3D floor grid lines (Time Grid Lines)
+    p.setPen(QPen(StyleTheme::gridPenColor(), 0.5));
+    for (double fraction : {0.0, 0.2, 0.4, 0.6, 0.8, 1.0}) {
+        QPolygonF timeGrid;
+        timeGrid.reserve(static_cast<int>(targetSlices));
+        double xFlat = leftPadding + fraction * drawWidth;
+        for (size_t s = 0; s < targetSlices; ++s) {
+            double t = (targetSlices > 1) ? (static_cast<double>(s) / static_cast<double>(targetSlices - 1)) : 1.0;
+            timeGrid.append(project(xFlat, baselineY, t));
+        }
+        p.drawPolyline(timeGrid);
+    }
+
+    // 2. Draw 3D floor grid lines (Frequency/Depth Grid Lines)
+    for (double t : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+        QPointF ptLeft = project(leftPadding, baselineY, t);
+        QPointF ptRight = project(leftPadding + drawWidth, baselineY, t);
+        p.drawLine(ptLeft, ptRight);
+    }
+
+    // 3. Draw stacked curves from back (t = 0.0, oldest) to front (t = 1.0, newest)
+    double logMin = std::log10(20.0), logMax = std::log10(20000.0);
+
+    size_t maxNBins = 0;
+    for (size_t s = 0; s < targetSlices; ++s) {
+        size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;
+        if (history[i].magnitudes.size() > maxNBins)
+            maxNBins = history[i].magnitudes.size();
+    }
+
+    size_t drawBins = std::min(maxNBins, static_cast<size_t>(50));
+    if (drawBins >= 2) {
+        std::vector<double> xFlatTable(drawBins);
+        std::vector<size_t> binIndexTable(drawBins);
+        for (size_t k = 0; k < drawBins; ++k) {
+            size_t j =
+                std::min(maxNBins - 1,
+                         static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (maxNBins - 1))));
+            double binFrac = static_cast<double>(j) / std::max<double>(1.0, maxNBins - 1);
+            binIndexTable[k] = j;
+            xFlatTable[k] = leftPadding + binFrac * drawWidth;
         }
 
-        // 2. Draw 3D floor grid lines (Frequency/Depth Grid Lines)
-        for (double t : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-            QPointF ptLeft = project(leftPadding, baselineY, t);
-            QPointF ptRight = project(leftPadding + drawWidth, baselineY, t);
-            p.drawLine(ptLeft, ptRight);
-        }
+        QPolygonF fillPoly;
+        QPolygonF edgePoly;
+        fillPoly.reserve(static_cast<int>(drawBins + 3));
+        edgePoly.reserve(static_cast<int>(drawBins));
 
-        // 3. Draw stacked curves from back (t = 0.0, oldest) to front (t = 1.0, newest)
-        double logMin = std::log10(20.0), logMax = std::log10(20000.0);
+        // Solid opaque background brush (no alpha-blending on CPU rasterizer)
+        QBrush fillBrush(StyleTheme::cardBg());
 
-        for (size_t i = 0; i < count; ++i) {
-            const auto& frame = m_history[i];
+        QColor startColor(0, 122, 255, 76); // Blue 30%
+        QColor endColor(0, 122, 255, 255);  // Accent Blue 100%
+        int sr = startColor.red(), sg = startColor.green(), sb = startColor.blue(), sa = startColor.alpha();
+        int er = endColor.red(), eg = endColor.green(), eb = endColor.blue(), ea = endColor.alpha();
+
+        for (size_t s = 0; s < targetSlices; ++s) {
+            size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;
+            const auto& frame = history[i];
             size_t nBins = frame.magnitudes.size();
             if (nBins < 2)
                 continue;
 
-            double t = static_cast<double>(i) / static_cast<double>(count - 1);
+            double t = (targetSlices > 1) ? (static_cast<double>(s) / static_cast<double>(targetSlices - 1)) : 1.0;
             QPointF startPt = project(leftPadding, baselineY, t);
 
-            // Build closed filled shape path for background occlusion
-            QPainterPath fillPath;
-            fillPath.moveTo(startPt);
+            fillPoly.clear();
+            edgePoly.clear();
 
-            QPainterPath edgePath;
-            bool firstEdge = true;
-
-            size_t drawBins = std::min(nBins, static_cast<size_t>(100));
-            if (drawBins < 2)
-                continue;
+            fillPoly.append(startPt);
 
             for (size_t k = 0; k < drawBins; ++k) {
-                size_t j = std::min(
-                    nBins - 1, static_cast<size_t>(std::round(static_cast<double>(k) / (drawBins - 1) * (nBins - 1))));
-
-                double binFrac = static_cast<double>(j) / std::max<double>(1.0, nBins - 1);
-                double xFlat = leftPadding + binFrac * drawWidth;
+                size_t j = binIndexTable[k];
+                double xFlat = xFlatTable[k];
 
                 float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -60.0f;
                 float normMag = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
                 double yFlat = baselineY - normMag * drawHeight;
 
                 QPointF projPt = project(xFlat, yFlat, t);
-                if (!std::isfinite(projPt.x()) || !std::isfinite(projPt.y()))
-                    continue;
-
-                fillPath.lineTo(projPt);
-
-                if (firstEdge) {
-                    edgePath.moveTo(projPt);
-                    firstEdge = false;
-                } else {
-                    edgePath.lineTo(projPt);
-                }
+                fillPoly.append(projPt);
+                edgePoly.append(projPt);
             }
 
             QPointF endPt = project(leftPadding + drawWidth, baselineY, t);
-            if (std::isfinite(endPt.x()) && std::isfinite(endPt.y()) && std::isfinite(startPt.x()) &&
-                std::isfinite(startPt.y())) {
-                fillPath.lineTo(endPt);
-                fillPath.lineTo(startPt);
-            }
+            fillPoly.append(endPt);
+            fillPoly.append(startPt);
 
-            // Occlusion fill
-            QColor occlColor = StyleTheme::cardBg();
-            occlColor.setAlphaF(0.92);
-            p.fillPath(fillPath, occlColor);
+            // Fast opaque scanline polygon fill
+            p.setRenderHint(QPainter::Antialiasing, false);
+            p.setPen(Qt::NoPen);
+            p.setBrush(fillBrush);
+            p.drawPolygon(fillPoly);
 
-            // Smooth log-frequency & depth age combined color mapping
+            // Smooth antialiased wireframe stroke
+            p.setRenderHint(QPainter::Antialiasing, true);
+            p.setBrush(Qt::NoBrush);
             float tf = static_cast<float>(t);
-            QColor startColor(0, 122, 255, 76); // Blue 30%
-            QColor endColor(0, 122, 255, 255);  // Accent Blue 100%
-            int r = std::lrint(startColor.red() + tf * (endColor.red() - startColor.red()));
-            int g = std::lrint(startColor.green() + tf * (endColor.green() - startColor.green()));
-            int b = std::lrint(startColor.blue() + tf * (endColor.blue() - startColor.blue()));
-            int a = std::lrint(startColor.alpha() + tf * (endColor.alpha() - startColor.alpha()));
+            int r = sr + static_cast<int>(tf * (er - sr));
+            int g = sg + static_cast<int>(tf * (eg - sg));
+            int b = sb + static_cast<int>(tf * (eb - sb));
+            int a = sa + static_cast<int>(tf * (ea - sa));
 
             p.setPen(QPen(QColor(r, g, b, a), 1.5));
-            p.drawPath(edgePath);
+            p.drawPolyline(edgePoly);
         }
+    }
 
-        // 4. Draw frequency labels at the front (t = 1.0)
-        p.setFont(QFont("sans-serif", 8));
-        p.setPen(StyleTheme::textSecondary());
-        for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
-            double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
-            double xFlat = leftPadding + binFrac * drawWidth;
-            QPointF pt = project(xFlat, baselineY + 12.0, 1.0);
-            QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
-            p.drawText(QRectF(pt.x() - 15, pt.y(), 30, 14), Qt::AlignCenter, label);
-        }
+    // 4. Draw frequency labels at the front (t = 1.0)
+    QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    monoFont.setPointSize(8);
+    p.setFont(monoFont);
+    p.setPen(StyleTheme::textSecondary());
+    for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
+        double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
+        double xFlat = leftPadding + binFrac * drawWidth;
+        QPointF pt = project(xFlat, baselineY + 12.0, 1.0);
+        QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
+        p.drawText(QRectF(pt.x() - 15, pt.y(), 30, 14), Qt::AlignCenter, label);
     }
 }

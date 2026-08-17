@@ -33,6 +33,7 @@ private:
     ColorPalette m_palette = ColorPalette::Classic;
 
     QImage m_bufferImage;
+    QImage m_3dImage;
     double m_currentX = 0.0;
     QDateTime m_lastUpdateTime;
 
@@ -40,6 +41,7 @@ private:
     void redrawAllHistory(QImage& bufferImage, const std::deque<SpectrumData>& history, const QSize& size,
                           int drawWidth, int drawHeight);
     void updateBuffer(const std::deque<SpectrumData>& history, const QSize& size, double elapsedSeconds);
+    void updateBuffer3D(const std::deque<SpectrumData>& history, const QSize& size);
     void drawFrame(QPainter& painter, const SpectrumData& frame, double x, double width, double drawHeight,
                    size_t nBins);
 
