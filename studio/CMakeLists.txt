@@ -177,6 +177,14 @@ include_directories(
 # Collect source files
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h" "src/*.qrc")
 
+if(APPLE)
+    set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.icns")
+    set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    list(APPEND SOURCES ${APP_ICON_MACOS})
+endif()
+
 add_executable(MonitorQt WIN32 ${SOURCES})
 
 if(APPLE)
@@ -184,6 +192,7 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "MonitorQt"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.wangyue.monitorqt"
+        MACOSX_BUNDLE_ICON_FILE "app.icns"
     )
 endif()
 
