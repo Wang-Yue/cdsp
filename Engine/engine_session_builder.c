@@ -24,6 +24,7 @@
 #include "Engine/engine_playback_loop.h"
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_shared_state.h"
+#include "Engine/engine_state_manager.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
@@ -392,12 +393,10 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   return true;
 }
 
-dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
-                                              chunk_callback_t on_captured,
-                                              void* captured_ctx,
-                                              chunk_callback_t on_processed,
-                                              void* processed_ctx,
-                                              audio_backend_error_t* err) {
+dsp_session_t* engine_session_build_and_start(
+    dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
+    chunk_callback_t on_processed, void* processed_ctx,
+    const engine_state_manager_t* state_mgr, audio_backend_error_t* err) {
   if (!config) return NULL;
 
   // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
@@ -431,6 +430,14 @@ dsp_session_t* engine_session_build_and_start(dsp_config_t* config,
     dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;
+  }
+
+  // Pre-seed volume and mute parameters from state manager before pipeline
+  // creation and worker thread spawning to avoid starting at 0 dB and ramping
+  // down.
+  if (state_mgr) {
+    engine_state_manager_sync_to_processing_parameters(state_mgr,
+                                                       core->processing_params);
   }
 
   size_t pipeline_rate = config->devices.samplerate;

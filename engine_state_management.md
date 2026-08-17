@@ -210,8 +210,8 @@ sequenceDiagram
 
     U->>E: set_config(json)
     Note over E: Set config_in_progress = true<br/>(Status queries now return STARTING)
-    E->>B: build_and_start(config)
-    Note over B: Allocates backends & pipeline structures<br/>Initializes state_raw to STARTING
+    E->>B: build_and_start(config, state_mgr)
+    Note over B: Allocates backends, pre-seeds faders from state_mgr<br/>Builds pipeline & sets state_raw to STARTING
     B->>C: Spawn Capture thread
     B->>K: Spawn Playback thread
     B-->>E: Returns Session handle
@@ -239,8 +239,9 @@ sequenceDiagram
 2. **Allocating Session Core & Mutex**:
    - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [engine_session_builder.c](file:///Users/wangyue/cdsp/Engine/engine_session_builder.c)).
 
-3. **Shared State & DSD/DoP Helpers Setup**:
-   - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`).
+3. **Shared State, Processing Parameters & DSD/DoP Helpers Setup**:
+   - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`) and `processing_parameters_t`.
+   - If `state_mgr` is provided, fader volume/mute settings are immediately synchronized to `processing_parameters_t` before creating the filter pipeline, preventing full-volume (0 dB) bursts or startup ramping delays.
    - If DSD/DoP is enabled on capture, it allocates `dsd_decoder_t`. If DSD/DoP is enabled on playback, it allocates `dsd_encoder_t`.
 
 4. **Resampler Sizing & Allocation**:

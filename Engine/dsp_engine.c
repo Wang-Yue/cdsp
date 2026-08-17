@@ -135,19 +135,16 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t* impl,
       playback_device_config_get_channels(&config->devices.playback));
 
   // Ref: engine_state_management.md - Section 1.7.1: Lifecycle & Ownership
-  // Contract Matrix Ownership of config transfers to dsp_session_t on creation
-  // success.
+  // Contract Matrix & Section 3.1: Startup & Initialization Flow (Step 3
+  // Pre-seeded Fader Sync). Ownership of config transfers to dsp_session_t on
+  // creation success.
   dsp_session_t* session = dsp_session_create_and_start(
       config, engine_on_chunk_captured_callback, impl->buffers.capture,
-      engine_on_chunk_processed_callback, impl->buffers.playback, err);
+      engine_on_chunk_processed_callback, impl->buffers.playback,
+      impl->state_mgr, err);
   if (!session) {
     return false;
   }
-
-  processing_parameters_t* session_params =
-      dsp_session_get_processing_params(session);
-  engine_state_manager_sync_to_processing_parameters(impl->state_mgr,
-                                                     session_params);
 
   impl->session.active = session;
   impl->session.last_stop_reason.type = STOP_REASON_NONE;

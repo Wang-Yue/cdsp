@@ -3714,6 +3714,97 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   remove(out_file);
 }
 
+// Verifies that presetting fader volume prior to starting the configuration
+// immediately applies the volume without an initial 0dB audio burst or delayed
+// ramping.
+TEST(DSPEngineE2E_PresetFaderVolumeBeforeStart) {
+  char in_file[256];
+  char out_file[256];
+  snprintf(in_file, sizeof(in_file), "/tmp/e2e_preset_vol_in_%d.raw", getpid());
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_preset_vol_out_%d.raw",
+           getpid());
+  remove(in_file);
+  remove(out_file);
+
+  // Write 1024 frames of mono 16-bit audio with loud amplitude (20000)
+  FILE* in_f = fopen(in_file, "wb");
+  ASSERT_TRUE(in_f != NULL);
+  int16_t input_samples[1024];
+  for (int i = 0; i < 1024; i++) {
+    input_samples[i] = 20000;
+  }
+  fwrite(input_samples, sizeof(int16_t), 1024, in_f);
+  fclose(in_f);
+
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"RawFile\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 1\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           in_file, out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  // Set fader volume to -40dB BEFORE applying configuration
+  cdsp_set_fader_volume(engine, CDSP_FADER_MAIN, -40.0f, true);
+  ASSERT_EQ(-40.0f, cdsp_get_fader_volume(engine, CDSP_FADER_MAIN));
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_TRUE(success);
+
+  // Wait for file-to-file processing to complete
+  for (int i = 0; i < 200; i++) {
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
+    cdsp_sleep_ms(10);
+  }
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+
+  FILE* out_f = fopen(out_file, "rb");
+  ASSERT_TRUE(out_f != NULL);
+  int16_t output_samples[1024];
+  size_t read_count = fread(output_samples, sizeof(int16_t), 1024, out_f);
+  ASSERT_TRUE(read_count >= 512);
+  fclose(out_f);
+
+  // First sample must be scaled by -40 dB (20000 * 0.01 = 200), NEVER at 0 dB
+  // (20000) Check that the very first chunk's peak does not exceed 300
+  int16_t max_sample = 0;
+  for (size_t i = 0; i < 512; i++) {
+    int16_t abs_s =
+        output_samples[i] < 0 ? -output_samples[i] : output_samples[i];
+    if (abs_s > max_sample) max_sample = abs_s;
+  }
+  printf(
+      "First chunk peak amplitude: %d (input was 20000, target at -40dB is "
+      "~200)\n",
+      max_sample);
+  ASSERT_TRUE(max_sample <= 300);
+
+  remove(in_file);
+  remove(out_file);
+}
+
 // Real-world scenario simulated:
 // Graceful File-to-File rendering completion (EOF Queue Draining Flow -
 // Section 3.5). Verifies that when the input file reaches EOF, the capture and

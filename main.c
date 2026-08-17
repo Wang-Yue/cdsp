@@ -423,6 +423,22 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  for (int i = 0; i < CDSP_FADER_COUNT; i++) {
+    if (has_initial_gains[i]) {
+      cdsp_set_fader_volume(engine, (uint32_t)i, (float)initial_gains[i], true);
+    }
+    if (initial_mutes[i]) {
+      cdsp_set_fader_mute(engine, (uint32_t)i, true);
+    }
+  }
+
+  if (state_file_path) {
+    cdsp_set_state_file_path(engine, state_file_path);
+  }
+  if (config_path) {
+    cdsp_set_config_file_path(engine, config_path);
+  }
+
   if (config_path && !wait_config && !no_config) {
     cdsp_backend_error_t berr = {0};
     if (cdsp_engine_set_config_file(engine, config_path, samplerate_override,
@@ -444,22 +460,6 @@ int main(int argc, char** argv) {
     printf(
         "Starting engine in inactive state (waiting for websocket "
         "configuration)...\n");
-  }
-
-  for (int i = 0; i < CDSP_FADER_COUNT; i++) {
-    if (has_initial_gains[i]) {
-      cdsp_set_fader_volume(engine, (uint32_t)i, (float)initial_gains[i], true);
-    }
-    if (initial_mutes[i]) {
-      cdsp_set_fader_mute(engine, (uint32_t)i, true);
-    }
-  }
-
-  if (state_file_path) {
-    cdsp_set_state_file_path(engine, state_file_path);
-  }
-  if (config_path) {
-    cdsp_set_config_file_path(engine, config_path);
   }
 
 #ifdef ENABLE_WEBSOCKET

@@ -52,6 +52,7 @@
 #include "Engine/engine_processing_loop.h"
 #include "Engine/engine_session_builder.h"
 #include "Engine/engine_shared_state.h"
+#include "Engine/engine_state_manager.h"
 #include "Logging/app_logger.h"
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
@@ -140,14 +141,13 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
 
 // MARK: - Lifecycle (RAII Option A)
 
-dsp_session_t* dsp_session_create_and_start(dsp_config_t* config,
-                                            chunk_callback_t on_captured,
-                                            void* captured_ctx,
-                                            chunk_callback_t on_processed,
-                                            void* processed_ctx,
-                                            audio_backend_error_t* err) {
+dsp_session_t* dsp_session_create_and_start(
+    dsp_config_t* config, chunk_callback_t on_captured, void* captured_ctx,
+    chunk_callback_t on_processed, void* processed_ctx,
+    const engine_state_manager_t* state_mgr, audio_backend_error_t* err) {
   return engine_session_build_and_start(config, on_captured, captured_ctx,
-                                        on_processed, processed_ctx, err);
+                                        on_processed, processed_ctx, state_mgr,
+                                        err);
 }
 
 processing_state_t dsp_session_get_state(const dsp_session_t* core) {
