@@ -447,6 +447,65 @@ void StageDetailView::refreshUi() {
     m_isBuildingUi = false;
 }
 
+QWidget* StageDetailView::createChannelSelectorWidget(int incomingChannels,
+                                                      const std::function<std::vector<int>()>& getter,
+                                                      const std::function<void(const std::vector<int>&)>& setter,
+                                                      QWidget* parent) {
+    auto scroll = new QScrollArea(parent);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setFixedHeight(32);
+    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
+                          "QScrollArea > QWidget > QWidget { background: transparent; border: none; }\n"
+                          "QWidget#ChannelPillsViewport { background: transparent; border: none; }\n"
+                          "QWidget#ChannelPillsContainer { background: transparent; border: none; }");
+    scroll->viewport()->setObjectName("ChannelPillsViewport");
+    scroll->viewport()->setAutoFillBackground(false);
+    scroll->viewport()->setAttribute(Qt::WA_TranslucentBackground, true);
+
+    auto container = new QWidget(scroll);
+    container->setObjectName("ChannelPillsContainer");
+    container->setAutoFillBackground(false);
+    container->setAttribute(Qt::WA_TranslucentBackground, true);
+    auto layout = new QHBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+
+    std::vector<int> initialSelected = getter();
+    for (int c = 0; c < incomingChannels; ++c) {
+        auto btn = new QPushButton(QString::number(c + 1), container);
+        int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
+        btn->setFixedWidth(btnWidth);
+        btn->setCheckable(true);
+        bool isSelected = std::find(initialSelected.begin(), initialSelected.end(), c) != initialSelected.end();
+        btn->setChecked(isSelected);
+
+        connect(btn, &QPushButton::clicked, [c, btn, getter, setter]() {
+            std::vector<int> channels = getter();
+            auto it = std::find(channels.begin(), channels.end(), c);
+            if (it != channels.end()) {
+                if (channels.size() > 1) {
+                    channels.erase(it);
+                    btn->setChecked(false);
+                    setter(channels);
+                } else {
+                    btn->setChecked(true);
+                }
+            } else {
+                channels.push_back(c);
+                btn->setChecked(true);
+                setter(channels);
+            }
+        });
+        layout->addWidget(btn);
+    }
+    layout->addStretch();
+    scroll->setWidget(container);
+    return scroll;
+}
+
 void StageDetailView::buildStageOptionsUi() {
     auto containerLayout = qobject_cast<QVBoxLayout*>(m_optionsContainer->layout());
     QLayoutItem* item;
@@ -522,37 +581,21 @@ void StageDetailView::buildStageOptionsUi() {
             chanForm->addRow(descLbl);
         } else {
             auto chanLayout = new QVBoxLayout(chanGroup);
-            auto pillsLayout = new QHBoxLayout();
-            for (int c = 0; c < incomingChannels; ++c) {
-                auto btn = new QPushButton(QString::number(c + 1), chanGroup);
-                int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
-                btn->setFixedWidth(btnWidth);
-                btn->setCheckable(true);
-                bool isSelected = std::find(stage.channels.begin(), stage.channels.end(), c) != stage.channels.end();
-                btn->setChecked(isSelected);
-
-                connect(btn, &QPushButton::clicked, [this, c, btn]() {
+            auto pillsScroll = createChannelSelectorWidget(
+                incomingChannels,
+                [this]() -> std::vector<int> {
                     auto st = currentStage();
-                    if (!st)
-                        return;
-                    auto it = std::find(st->channels.begin(), st->channels.end(), c);
-                    if (it != st->channels.end()) {
-                        if (st->channels.size() > 1) {
-                            st->channels.erase(it);
-                            btn->setChecked(false);
-                        } else {
-                            btn->setChecked(true);
-                        }
-                    } else {
-                        st->channels.push_back(c);
-                        btn->setChecked(true);
+                    return st ? st->channels : std::vector<int>{};
+                },
+                [this](const std::vector<int>& chs) {
+                    auto st = currentStage();
+                    if (st) {
+                        st->channels = chs;
+                        applyConfig();
                     }
-                    applyConfig();
-                });
-                pillsLayout->addWidget(btn);
-            }
-            pillsLayout->addStretch();
-            chanLayout->addLayout(pillsLayout);
+                },
+                chanGroup);
+            chanLayout->addWidget(pillsScroll);
         }
         containerLayout->addWidget(chanGroup);
     }
@@ -1440,38 +1483,21 @@ void StageDetailView::buildStageOptionsUi() {
         });
         limForm->addRow("&Options:", delayProcOnlyCheck);
 
-        auto monitorPillsLayout = new QHBoxLayout();
-        for (int c = 0; c < incomingChannels; ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), limGroup);
-            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
-            btn->setFixedWidth(btnWidth);
-            btn->setCheckable(true);
-            bool isSelected =
-                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
-            btn->setChecked(isSelected);
-
-            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+        auto monitorScroll = createChannelSelectorWidget(
+            incomingChannels,
+            [this]() -> std::vector<int> {
                 auto st = currentStage();
-                if (!st)
-                    return;
-                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
-                if (it != st->monitorChannels.end()) {
-                    if (st->monitorChannels.size() > 1) {
-                        st->monitorChannels.erase(it);
-                        btn->setChecked(false);
-                    } else {
-                        btn->setChecked(true);
-                    }
-                } else {
-                    st->monitorChannels.push_back(c);
-                    btn->setChecked(true);
+                return st ? st->monitorChannels : std::vector<int>{};
+            },
+            [this](const std::vector<int>& chs) {
+                auto st = currentStage();
+                if (st) {
+                    st->monitorChannels = chs;
+                    applyConfig();
                 }
-                applyConfig();
-            });
-            monitorPillsLayout->addWidget(btn);
-        }
-        monitorPillsLayout->addStretch();
-        limForm->addRow("Monitor Channels:", monitorPillsLayout);
+            },
+            limGroup);
+        limForm->addRow("Monitor Channels:", monitorScroll);
 
         containerLayout->addWidget(limGroup);
         break;
@@ -1667,38 +1693,21 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addSliderRow(compForm, "&Makeup Gain:", mkSlider, mkLbl, compGroup);
 
-        auto monitorPillsLayout = new QHBoxLayout();
-        for (int c = 0; c < incomingChannels; ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), compGroup);
-            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
-            btn->setFixedWidth(btnWidth);
-            btn->setCheckable(true);
-            bool isSelected =
-                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
-            btn->setChecked(isSelected);
-
-            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+        auto monitorScroll = createChannelSelectorWidget(
+            incomingChannels,
+            [this]() -> std::vector<int> {
                 auto st = currentStage();
-                if (!st)
-                    return;
-                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
-                if (it != st->monitorChannels.end()) {
-                    if (st->monitorChannels.size() > 1) {
-                        st->monitorChannels.erase(it);
-                        btn->setChecked(false);
-                    } else {
-                        btn->setChecked(true);
-                    }
-                } else {
-                    st->monitorChannels.push_back(c);
-                    btn->setChecked(true);
+                return st ? st->monitorChannels : std::vector<int>{};
+            },
+            [this](const std::vector<int>& chs) {
+                auto st = currentStage();
+                if (st) {
+                    st->monitorChannels = chs;
+                    applyConfig();
                 }
-                applyConfig();
-            });
-            monitorPillsLayout->addWidget(btn);
-        }
-        monitorPillsLayout->addStretch();
-        compForm->addRow("Monitor Channels:", monitorPillsLayout);
+            },
+            compGroup);
+        compForm->addRow("Monitor Channels:", monitorScroll);
 
         auto softChk = new QCheckBox("Enable Soft Clip", compGroup);
         softChk->setChecked(stage.compressorSoftClip);
@@ -1796,38 +1805,21 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addSliderRow(gateForm, "&Release:", relSlider, relLbl, gateGroup);
 
-        auto monitorPillsLayout = new QHBoxLayout();
-        for (int c = 0; c < incomingChannels; ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), gateGroup);
-            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
-            btn->setFixedWidth(btnWidth);
-            btn->setCheckable(true);
-            bool isSelected =
-                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
-            btn->setChecked(isSelected);
-
-            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+        auto monitorScroll = createChannelSelectorWidget(
+            incomingChannels,
+            [this]() -> std::vector<int> {
                 auto st = currentStage();
-                if (!st)
-                    return;
-                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
-                if (it != st->monitorChannels.end()) {
-                    if (st->monitorChannels.size() > 1) {
-                        st->monitorChannels.erase(it);
-                        btn->setChecked(false);
-                    } else {
-                        btn->setChecked(true);
-                    }
-                } else {
-                    st->monitorChannels.push_back(c);
-                    btn->setChecked(true);
+                return st ? st->monitorChannels : std::vector<int>{};
+            },
+            [this](const std::vector<int>& chs) {
+                auto st = currentStage();
+                if (st) {
+                    st->monitorChannels = chs;
+                    applyConfig();
                 }
-                applyConfig();
-            });
-            monitorPillsLayout->addWidget(btn);
-        }
-        monitorPillsLayout->addStretch();
-        gateForm->addRow("Monitor Channels:", monitorPillsLayout);
+            },
+            gateGroup);
+        gateForm->addRow("Monitor Channels:", monitorScroll);
 
         containerLayout->addWidget(gateGroup);
         break;

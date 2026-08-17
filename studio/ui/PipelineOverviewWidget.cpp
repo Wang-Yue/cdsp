@@ -83,11 +83,30 @@ void PipelineOverviewWidget::setupUi() {
     auto legendTitle = new QLabel(tr("Channel Wires:"), this);
     legendRow->addWidget(legendTitle);
 
-    m_legendContainerWidget = new QWidget(this);
+    auto legendScroll = new QScrollArea(this);
+    legendScroll->setWidgetResizable(true);
+    legendScroll->setFrameShape(QFrame::NoFrame);
+    legendScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    legendScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    legendScroll->setFixedHeight(32);
+    legendScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
+                                "QScrollArea > QWidget > QWidget { background: transparent; border: none; }\n"
+                                "QWidget#LegendViewport { background: transparent; border: none; }\n"
+                                "QWidget#LegendContainer { background: transparent; border: none; }");
+    legendScroll->viewport()->setObjectName("LegendViewport");
+    legendScroll->viewport()->setAutoFillBackground(false);
+    legendScroll->viewport()->setAttribute(Qt::WA_TranslucentBackground, true);
+
+    m_legendContainerWidget = new QWidget(legendScroll);
+    m_legendContainerWidget->setObjectName("LegendContainer");
+    m_legendContainerWidget->setAutoFillBackground(false);
+    m_legendContainerWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     m_legendBarLayout = new QHBoxLayout(m_legendContainerWidget);
     m_legendBarLayout->setContentsMargins(0, 0, 0, 0);
+    m_legendBarLayout->setSpacing(6);
     m_legendBarLayout->setAlignment(Qt::AlignLeft);
-    legendRow->addWidget(m_legendContainerWidget, 1);
+    legendScroll->setWidget(m_legendContainerWidget);
+    legendRow->addWidget(legendScroll, 1);
 
     rootLayout->addLayout(legendRow);
 
@@ -177,6 +196,7 @@ void PipelineOverviewWidget::rebuildLegendBar(int maxChannels) {
         m_legendBarLayout->addWidget(pillBtn);
         m_legendBtnMap[pillBtn] = ch;
     }
+    m_legendBarLayout->addStretch();
 }
 
 void PipelineOverviewWidget::updateLegendPillStyle(QObject* obj, int ch, bool hovered) {
@@ -523,6 +543,20 @@ void PipelineOverviewWidget::rebuildOverview() {
         return std::make_pair(card, cardLayout);
     };
 
+    auto createScrollableChannelPills = [](int channelCount, QWidget* parent) -> QWidget* {
+        auto container = new QWidget(parent);
+        auto layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(4);
+        for (int c = 0; c < channelCount; ++c) {
+            auto pill = new QLabel(QString::number(c + 1), container);
+            pill->setAlignment(Qt::AlignCenter);
+            layout->addWidget(pill);
+        }
+        layout->addStretch();
+        return container;
+    };
+
     // 1. Capture Input Node
     auto [capCard, capLayout] = createNodeCard(tr("Input (Capture)"), QString::fromStdString(capDevName), "🎤");
 
@@ -530,15 +564,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     capForm->addRow(tr("Channels:"), new QLabel(QString::number(captureCh), capCard));
     capForm->addRow(tr("Sample Rate:"), new QLabel(formatSampleRate(captureRate), capCard));
     capLayout->addLayout(capForm);
-
-    auto capPillsHBox = new QHBoxLayout();
-    for (int c = 0; c < captureCh; ++c) {
-        auto pill = new QLabel(QString::number(c + 1), capCard);
-        pill->setAlignment(Qt::AlignCenter);
-        capPillsHBox->addWidget(pill);
-    }
-    capPillsHBox->addStretch();
-    capLayout->addLayout(capPillsHBox);
+    capLayout->addWidget(createScrollableChannelPills(captureCh, capCard));
 
     m_canvasLayout->addWidget(capCard);
 
@@ -826,15 +852,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     playForm->addRow(tr("Channels:"), new QLabel(QString::number(playbackCh), playCard));
     playForm->addRow(tr("Sample Rate:"), new QLabel(formatSampleRate(playbackRate), playCard));
     playLayout->addLayout(playForm);
-
-    auto playPillsHBox = new QHBoxLayout();
-    for (int c = 0; c < playbackCh; ++c) {
-        auto pill = new QLabel(QString::number(c + 1), playCard);
-        pill->setAlignment(Qt::AlignCenter);
-        playPillsHBox->addWidget(pill);
-    }
-    playPillsHBox->addStretch();
-    playLayout->addLayout(playPillsHBox);
+    playLayout->addWidget(createScrollableChannelPills(playbackCh, playCard));
 
     m_canvasLayout->addWidget(playCard);
 

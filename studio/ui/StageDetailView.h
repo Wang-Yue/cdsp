@@ -16,6 +16,7 @@
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QWidget>
+#include <functional>
 #include <memory>
 
 class VSliderWidget : public QWidget {
@@ -83,6 +84,9 @@ private:
     PipelineStage* currentStage() const;
 
     QWidget* createMatrixCellWidget(PipelineStage& stage, int dest, int src, QTableWidget* table);
+    QWidget* createChannelSelectorWidget(int incomingChannels, const std::function<std::vector<int>()>& getter,
+                                         const std::function<void(const std::vector<int>&)>& setter,
+                                         QWidget* parent = nullptr);
 };
 
 #endif // STAGE_DETAIL_VIEW_H
