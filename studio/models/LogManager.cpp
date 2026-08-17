@@ -94,9 +94,9 @@ void LogManager::appendLog(const QString& message) {
 void LogManager::onCdspLog(LogLevel level, const QString& component, const QString& message) {
     QString fullMsg;
     if (!component.isEmpty()) {
-        fullMsg = QString("[%1] [%2] %3").arg(logLevelToString(level).toUpper(), component, message);
+        fullMsg = QString("[%1] %2").arg(component, message);
     } else {
-        fullMsg = QString("[%1] %2").arg(logLevelToString(level).toUpper(), message);
+        fullMsg = QString("%1").arg(message);
     }
     QMetaObject::invokeMethod(this, [this, level, fullMsg]() { appendLog(level, fullMsg); }, Qt::QueuedConnection);
 }
@@ -118,9 +118,9 @@ namespace AppLogger {
 void log(LogLevel level, const QString& component, const QString& message) {
     QString formatted;
     if (!component.isEmpty()) {
-        formatted = QString("[%1] [%2] %3").arg(logLevelToString(level).toUpper(), component, message);
+        formatted = QString("[%1] %2").arg(component, message);
     } else {
-        formatted = QString("[%1] %2").arg(logLevelToString(level).toUpper(), message);
+        formatted = QString("%1").arg(message);
     }
     if (LogManager::instance()) {
         LogManager::instance()->appendLog(level, formatted);
