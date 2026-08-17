@@ -14,12 +14,22 @@ SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWid
     setEngine(engine);
 }
 
+SpectrogramView::~SpectrogramView() {
+    if (isVisible() && m_engine && m_engine->visibilityCount > 0) {
+        m_engine->visibilityCount--;
+    }
+}
+
 void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
     if (m_engine) {
+        if (isVisible() && m_engine->visibilityCount > 0)
+            m_engine->visibilityCount--;
         disconnect(m_engine.get(), &SpectrogramEngine::updated, this, nullptr);
     }
     m_engine = engine;
     if (m_engine) {
+        if (isVisible())
+            m_engine->visibilityCount++;
         connect(m_engine.get(), &SpectrogramEngine::updated, this, [this]() {
             if (m_engine)
                 setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
@@ -100,6 +110,11 @@ void SpectrogramView::redrawAllHistory(QImage& bufferImage, const std::deque<Spe
 
     int marginL = 40;
     size_t count = history.size();
+    if (count == 0) {
+        m_currentX = 0;
+        return;
+    }
+
     QDateTime now = QDateTime::currentDateTime();
 
     for (size_t i = 0; i < count; ++i) {
@@ -108,7 +123,7 @@ void SpectrogramView::redrawAllHistory(QImage& bufferImage, const std::deque<Spe
                                   ? frame.timestamp
                                   : now.addMSecs(-static_cast<qint64>((count - 1 - i) * 1000 / 30));
         double timeAgo = frameTime.msecsTo(now) / 1000.0;
-        if (timeAgo > 10.0)
+        if (timeAgo > 10.0 || timeAgo < 0.0)
             continue;
 
         double x = marginL + drawWidth * (1.0 - timeAgo / 10.0);
@@ -122,12 +137,14 @@ void SpectrogramView::redrawAllHistory(QImage& bufferImage, const std::deque<Spe
             double nextTimeAgo = nextFrameTime.msecsTo(now) / 1000.0;
             nextX = marginL + drawWidth * (1.0 - nextTimeAgo / 10.0);
         } else {
-            nextX = size.width();
+            nextX = marginL + drawWidth;
         }
 
         double stripWidth = std::max(1.0, nextX - x);
         drawFrame(painter, frame, x, stripWidth, drawHeight, m_engine ? m_engine->nBins : 200);
     }
+
+    m_currentX = 0;
 }
 
 void SpectrogramView::updateBuffer(const std::deque<SpectrumData>& history, const QSize& size, double elapsedSeconds) {
@@ -179,11 +196,15 @@ void SpectrogramView::updateBuffer(const std::deque<SpectrumData>& history, cons
 
 void SpectrogramView::drawFrame(QPainter& painter, const SpectrumData& frame, double x, double width, double drawHeight,
                                 size_t nBins) {
+    if (nBins == 0 || drawHeight <= 0.0)
+        return;
     double barHeight = drawHeight / static_cast<double>(nBins);
     size_t count = std::min(nBins, frame.magnitudes.size());
 
     for (size_t j = 0; j < count; ++j) {
         float db = frame.magnitudes[j];
+        if (std::isnan(db))
+            continue;
         float normalized = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
 
         if (normalized <= 0.05f)
@@ -199,13 +220,15 @@ void SpectrogramView::drawFrame(QPainter& painter, const SpectrumData& frame, do
 static QColor interpColors(float t, const std::vector<QColor>& stops) {
     if (stops.empty())
         return QColor(0, 0, 0);
-    if (stops.size() == 1 || t <= 0.0f)
+    if (std::isnan(t) || t <= 0.0f || stops.size() == 1)
         return stops.front();
     if (t >= 1.0f)
         return stops.back();
 
     float scaled = t * (stops.size() - 1);
     size_t idx = static_cast<size_t>(scaled);
+    if (idx >= stops.size() - 1)
+        return stops.back();
     float frac = scaled - idx;
 
     const QColor& c1 = stops[idx];
@@ -219,6 +242,8 @@ static QColor interpColors(float t, const std::vector<QColor>& stops) {
 }
 
 QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
+    if (std::isnan(db))
+        db = -120.0f;
     float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
 
     QColor color;
@@ -255,33 +280,16 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     }
     case ColorPalette::Classic:
     default: {
-        float alpha = norm < 0.2f ? norm / 0.2f : 1.0f;
-        float r = 0.0f, g = 0.0f, b = 0.0f;
-        if (norm < 0.35f) {
-            r = 0.0f;
-            g = 1.0f;
-            b = 0.0f;
-        } else if (norm < 0.55f) {
-            float t = (norm - 0.35f) / 0.2f;
-            r = t;
-            g = 1.0f;
-            b = 0.0f;
-        } else if (norm < 0.75f) {
-            float t = (norm - 0.55f) / 0.2f;
-            r = 1.0f;
-            g = 1.0f - t * 0.5f;
-            b = 0.0f;
-        } else if (norm < 0.95f) {
-            float t = (norm - 0.75f) / 0.2f;
-            r = 1.0f;
-            g = 0.5f - t * 0.5f;
-            b = 0.0f;
-        } else {
-            r = 1.0f;
-            g = 0.0f;
-            b = 0.0f;
-        }
-        return QColor(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255));
+        static const std::vector<QColor> classicStops = {
+            QColor(0, 0, 0),     // silence (-60 dB)
+            QColor(0, 100, 0),   // dark green (-45 dB)
+            QColor(52, 199, 89), // green (-30 dB)
+            QColor(255, 204, 0), // yellow (-18 dB)
+            QColor(255, 149, 0), // orange (-6 dB)
+            QColor(255, 59, 48)  // red (0 dB)
+        };
+        color = interpColors(norm, classicStops);
+        break;
     }
     }
 
@@ -310,7 +318,11 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         int plotW = w - marginL;
         int plotH = h - marginB;
 
-        double logMin = std::log10(20.0), logMax = std::log10(20000.0);
+        double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 20.0;
+        double maxF = (m_engine && m_engine->maxFreq > minF) ? m_engine->maxFreq : 20000.0;
+        if (minF >= maxF)
+            maxF = minF + 100.0;
+        double logMin = std::log10(minF), logMax = std::log10(maxF);
 
         if (m_bufferImage.isNull() || m_bufferImage.size() != rect().size()) {
             recreateBuffer(rect().size(), m_history);
@@ -342,6 +354,8 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
         QColor gridPenCol = palette().color(QPalette::Mid);
 
         for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
+            if (target < minF || target > maxF)
+                continue;
             double frac = (std::log10(target) - logMin) / (logMax - logMin);
             int y = plotH - static_cast<int>(frac * plotH);
 
@@ -436,7 +450,11 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
     }
 
     // 3. Draw stacked curves from back (t = 0.0, oldest) to front (t = 1.0, newest)
-    double logMin = std::log10(20.0), logMax = std::log10(20000.0);
+    double minF = (m_engine && m_engine->minFreq > 0) ? m_engine->minFreq : 20.0;
+    double maxF = (m_engine && m_engine->maxFreq > minF) ? m_engine->maxFreq : 20000.0;
+    if (minF >= maxF)
+        maxF = minF + 100.0;
+    double logMin = std::log10(minF), logMax = std::log10(maxF);
 
     size_t maxNBins = 0;
     for (size_t s = 0; s < targetSlices; ++s) {
@@ -466,8 +484,6 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
         // Solid opaque background brush (no alpha-blending on CPU rasterizer)
         QBrush fillBrush(palette().color(QPalette::Base));
 
-        QColor curveColor = palette().color(QPalette::Highlight);
-
         for (size_t s = 0; s < targetSlices; ++s) {
             size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;
             const auto& frame = history[i];
@@ -483,11 +499,14 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
 
             fillPoly.append(startPt);
 
+            float peakDB = -120.0f;
             for (size_t k = 0; k < drawBins; ++k) {
                 size_t j = binIndexTable[k];
                 double xFlat = xFlatTable[k];
 
                 float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -60.0f;
+                if (!std::isnan(db))
+                    peakDB = std::max(peakDB, db);
                 float normMag = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
                 double yFlat = baselineY - normMag * drawHeight;
 
@@ -506,9 +525,10 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
             p.setBrush(fillBrush);
             p.drawPolygon(fillPoly);
 
-            // Smooth antialiased wireframe stroke
+            // Smooth antialiased wireframe stroke using theme palette
             p.setRenderHint(QPainter::Antialiasing, true);
             p.setBrush(Qt::NoBrush);
+            QColor curveColor = colorForDB(peakDB, m_palette);
             p.setPen(QPen(curveColor, 1.5));
             p.drawPolyline(edgePoly);
         }
@@ -520,6 +540,8 @@ void SpectrogramView::updateBuffer3D(const std::deque<SpectrumData>& history, co
     p.setFont(monoFont);
     p.setPen(palette().color(QPalette::PlaceholderText));
     for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
+        if (target < minF || target > maxF)
+            continue;
         double binFrac = (std::log10(target) - logMin) / (logMax - logMin);
         double xFlat = leftPadding + binFrac * drawWidth;
         QPointF pt = project(xFlat, baselineY + 12.0, 1.0);

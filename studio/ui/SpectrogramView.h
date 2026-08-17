@@ -15,6 +15,7 @@ class SpectrogramView : public QWidget {
 public:
     explicit SpectrogramView(QWidget* parent = nullptr);
     explicit SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent = nullptr);
+    ~SpectrogramView() override;
 
     void setEngine(std::shared_ptr<SpectrogramEngine> engine);
     void setHistory(const std::deque<SpectrumData>& history, bool show3D = false,
