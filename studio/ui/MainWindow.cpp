@@ -952,9 +952,8 @@ void MainWindow::setupToolbar() {
     m_headerVolumeSlider->setSingleStep(1);
     m_headerVolumeSlider->setPageStep(2);
     m_headerVolumeSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
-    m_headerVolumeSlider->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_headerVolumeSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_headerVolumeSlider->setMinimumWidth(180);
-    m_headerVolumeSlider->setMaximumWidth(400);
     m_headerVolumeSlider->setToolTip("Master Output Volume (-60 dB to +20 dB)");
     connect(m_headerVolumeSlider, &QSlider::valueChanged, [this](int val) {
         float db = val / 2.0f;
