@@ -29,6 +29,33 @@ DevicePickerView::DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, 
     refreshUi();
 }
 
+static void synchronizeFormLabels(const QList<QFormLayout*>& forms) {
+    int maxW = 0;
+    QList<QLabel*> labels;
+    for (auto* form : forms) {
+        if (!form)
+            continue;
+        form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+        form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        for (int i = 0; i < form->rowCount(); ++i) {
+            auto* item = form->itemAt(i, QFormLayout::LabelRole);
+            if (item && item->widget()) {
+                if (auto* lbl = qobject_cast<QLabel*>(item->widget())) {
+                    labels.append(lbl);
+                    lbl->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+                    int w = lbl->fontMetrics().horizontalAdvance(lbl->text());
+                    if (w > maxW)
+                        maxW = w;
+                }
+            }
+        }
+    }
+    for (auto* lbl : labels) {
+        lbl->setFixedWidth(maxW);
+    }
+}
+
 void DevicePickerView::setupUi() {
     auto scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
@@ -41,7 +68,8 @@ void DevicePickerView::setupUi() {
     auto capGroup = new QGroupBox(tr("Capture (Input)"), container);
     auto capLayout = new QVBoxLayout(capGroup);
 
-    auto capBackendForm = new QFormLayout();
+    m_capBackendForm = new QFormLayout();
+    m_capBackendForm->setContentsMargins(0, 0, 0, 0);
     m_capBackendCombo = new QComboBox(capGroup);
 #if defined(ENABLE_COREAUDIO)
     m_capBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
@@ -97,8 +125,14 @@ void DevicePickerView::setupUi() {
         m_capStack->setCurrentIndex(getCapStackIndex(b));
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
-    capBackendForm->addRow(tr("Backend:"), m_capBackendCombo);
-    capLayout->addLayout(capBackendForm);
+
+    auto capBackendRow = new QWidget(capGroup);
+    auto capBackendBox = new QHBoxLayout(capBackendRow);
+    capBackendBox->setContentsMargins(0, 0, 0, 0);
+    capBackendBox->addWidget(m_capBackendCombo);
+    capBackendBox->addStretch();
+    m_capBackendForm->addRow(tr("Backend:"), capBackendRow);
+    capLayout->addLayout(m_capBackendForm);
 
     m_capStack = new QStackedWidget(capGroup);
     m_capStack->addWidget(createCapCoreAudioView());
@@ -113,7 +147,8 @@ void DevicePickerView::setupUi() {
     auto pbGroup = new QGroupBox(tr("Playback (Output)"), container);
     auto pbLayout = new QVBoxLayout(pbGroup);
 
-    auto pbBackendForm = new QFormLayout();
+    m_pbBackendForm = new QFormLayout();
+    m_pbBackendForm->setContentsMargins(0, 0, 0, 0);
     m_pbBackendCombo = new QComboBox(pbGroup);
 #if defined(ENABLE_COREAUDIO)
     m_pbBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
@@ -168,8 +203,14 @@ void DevicePickerView::setupUi() {
         m_pbStack->setCurrentIndex(getPbStackIndex(b));
         QTimer::singleShot(0, [this]() { applySettings(); });
     });
-    pbBackendForm->addRow(tr("Backend:"), m_pbBackendCombo);
-    pbLayout->addLayout(pbBackendForm);
+
+    auto pbBackendRow = new QWidget(pbGroup);
+    auto pbBackendBox = new QHBoxLayout(pbBackendRow);
+    pbBackendBox->setContentsMargins(0, 0, 0, 0);
+    pbBackendBox->addWidget(m_pbBackendCombo);
+    pbBackendBox->addStretch();
+    m_pbBackendForm->addRow(tr("Backend:"), pbBackendRow);
+    pbLayout->addLayout(m_pbBackendForm);
 
     m_pbStack = new QStackedWidget(pbGroup);
     m_pbStack->addWidget(createPbCoreAudioView());
@@ -296,6 +337,9 @@ void DevicePickerView::setupUi() {
     mainLayout->addLayout(btnBox);
     scroll->setWidget(container);
 
+    synchronizeFormLabels({m_capBackendForm, m_capCoreAudioForm, m_capRawFileForm, m_capWavFileForm, m_capGenForm,
+                           m_pbBackendForm, m_pbCoreAudioForm, m_pbRawFileForm, m_pbWavFileForm, m_procForm});
+
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(scroll);
@@ -360,6 +404,7 @@ void DevicePickerView::populateDeviceList(QListWidget* listWidget, QWidget* warn
 QWidget* DevicePickerView::createCapCoreAudioView() {
     auto w = new QWidget();
     m_capCoreAudioForm = new QFormLayout(w);
+    m_capCoreAudioForm->setContentsMargins(0, 0, 0, 0);
 
     m_capWarningLabel = new QLabel(tr("⚠️  No devices found"), w);
 
@@ -581,10 +626,12 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 QWidget* DevicePickerView::createCapFileView(bool isWav) {
     auto w = new QWidget();
     auto form = new QFormLayout(w);
+    form->setContentsMargins(0, 0, 0, 0);
 
     auto fileBox = new QHBoxLayout();
 
     if (isWav) {
+        m_capWavFileForm = form;
         m_capWavFilePathEdit = new QLineEdit(w);
         m_capWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
         m_capWavFilePathEdit->setClearButtonEnabled(true);
@@ -642,6 +689,7 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
         form->addRow(tr("Extra Samples:"), m_capWavExtraSamplesSpin);
 
     } else {
+        m_capRawFileForm = form;
         m_capRawFilePathEdit = new QLineEdit(w);
         m_capRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
         m_capRawFilePathEdit->setClearButtonEnabled(true);
@@ -716,11 +764,12 @@ QWidget* DevicePickerView::createCapFileView(bool isWav) {
 
 QWidget* DevicePickerView::createCapGeneratorView() {
     auto w = new QWidget();
-    auto form = new QFormLayout(w);
+    m_capGenForm = new QFormLayout(w);
+    m_capGenForm->setContentsMargins(0, 0, 0, 0);
 
     m_genTypeCombo = new QComboBox(w);
     m_genTypeCombo->addItems({"Sine", "Square", "WhiteNoise"});
-    form->addRow(tr("Signal Type:"), m_genTypeCombo);
+    m_capGenForm->addRow(tr("Signal Type:"), m_genTypeCombo);
 
     m_genChannelsSpin = new QSpinBox(w);
     m_genChannelsSpin->setRange(1, 32);
@@ -729,7 +778,7 @@ QWidget* DevicePickerView::createCapGeneratorView() {
             return;
         applySettings();
     });
-    form->addRow(tr("Channels:"), m_genChannelsSpin);
+    m_capGenForm->addRow(tr("Channels:"), m_genChannelsSpin);
 
     auto freqBox = new QHBoxLayout();
     m_genFreqSpin = new QDoubleSpinBox(w);
@@ -759,7 +808,7 @@ QWidget* DevicePickerView::createCapGeneratorView() {
 
     freqBox->addWidget(m_genFreqSpin);
     freqBox->addWidget(m_genFreqSlider);
-    form->addRow(tr("Frequency:"), freqBox);
+    m_capGenForm->addRow(tr("Frequency:"), freqBox);
 
     auto levelBox = new QHBoxLayout();
     m_genLevelSpin = new QDoubleSpinBox(w);
@@ -790,13 +839,13 @@ QWidget* DevicePickerView::createCapGeneratorView() {
 
     levelBox->addWidget(m_genLevelSpin);
     levelBox->addWidget(m_genLevelSlider);
-    form->addRow(tr("Level:"), levelBox);
+    m_capGenForm->addRow(tr("Level:"), levelBox);
 
-    connect(m_genTypeCombo, &QComboBox::currentTextChanged, [this, form, freqBox](const QString& type) {
+    connect(m_genTypeCombo, &QComboBox::currentTextChanged, [this, freqBox](const QString& type) {
         bool isNoise = (type == "WhiteNoise");
         m_genFreqSpin->setEnabled(!isNoise);
         m_genFreqSlider->setEnabled(!isNoise);
-        QWidget* freqLbl = form->labelForField(freqBox);
+        QWidget* freqLbl = m_capGenForm ? m_capGenForm->labelForField(freqBox) : nullptr;
         if (freqLbl)
             freqLbl->setEnabled(!isNoise);
         if (m_isRefreshing)
@@ -810,6 +859,7 @@ QWidget* DevicePickerView::createCapGeneratorView() {
 QWidget* DevicePickerView::createPbCoreAudioView() {
     auto w = new QWidget();
     m_pbCoreAudioForm = new QFormLayout(w);
+    m_pbCoreAudioForm->setContentsMargins(0, 0, 0, 0);
 
     m_pbWarningLabel = new QLabel(tr("⚠️  No devices found"), w);
 
@@ -1027,10 +1077,12 @@ void DevicePickerView::updateDoPCapability() {
 QWidget* DevicePickerView::createPbFileView(bool isWav) {
     auto w = new QWidget();
     auto form = new QFormLayout(w);
+    form->setContentsMargins(0, 0, 0, 0);
 
     auto fileBox = new QHBoxLayout();
 
     if (isWav) {
+        m_pbWavFileForm = form;
         m_pbWavFilePathEdit = new QLineEdit(w);
         m_pbWavFilePathEdit->setPlaceholderText("e.g. /path/to/audio.wav");
         m_pbWavFilePathEdit->setClearButtonEnabled(true);
@@ -1080,6 +1132,7 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
         });
         form->addRow(tr("WAV Format:"), m_pbWavUseRf64Combo);
     } else {
+        m_pbRawFileForm = form;
         m_pbRawFilePathEdit = new QLineEdit(w);
         m_pbRawFilePathEdit->setPlaceholderText("e.g. /path/to/audio.raw");
         m_pbRawFilePathEdit->setClearButtonEnabled(true);

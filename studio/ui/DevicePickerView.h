@@ -61,6 +61,7 @@ private:
     bool m_isRefreshing = false;
 
     // Capture Controls
+    QFormLayout* m_capBackendForm = nullptr;
     QComboBox* m_capBackendCombo = nullptr;
     QStackedWidget* m_capStack = nullptr;
 
@@ -97,6 +98,7 @@ private:
     QLineEdit* m_capPwAutoconnectEdit = nullptr;
 
     // Capture File (RawFile & WavFile)
+    QFormLayout* m_capRawFileForm = nullptr;
     QLineEdit* m_capRawFilePathEdit = nullptr;
     QComboBox* m_capRawFileFormatCombo = nullptr;
     QSpinBox* m_capRawFileChannelsSpin = nullptr;
@@ -104,12 +106,14 @@ private:
     QSpinBox* m_capRawReadBytesSpin = nullptr;
     QSpinBox* m_capRawExtraSamplesSpin = nullptr;
 
+    QFormLayout* m_capWavFileForm = nullptr;
     QLineEdit* m_capWavFilePathEdit = nullptr;
     QSpinBox* m_capWavSkipBytesSpin = nullptr;
     QSpinBox* m_capWavReadBytesSpin = nullptr;
     QSpinBox* m_capWavExtraSamplesSpin = nullptr;
 
     // Capture Generator
+    QFormLayout* m_capGenForm = nullptr;
     QComboBox* m_genTypeCombo = nullptr;
     QSpinBox* m_genChannelsSpin = nullptr;
     QDoubleSpinBox* m_genFreqSpin = nullptr;
@@ -118,6 +122,7 @@ private:
     QSlider* m_genLevelSlider = nullptr;
 
     // Playback Controls
+    QFormLayout* m_pbBackendForm = nullptr;
     QComboBox* m_pbBackendCombo = nullptr;
     QStackedWidget* m_pbStack = nullptr;
 
@@ -147,10 +152,12 @@ private:
     QLabel* m_pbDopHintLabel = nullptr;
 
     // Playback File
+    QFormLayout* m_pbRawFileForm = nullptr;
     QLineEdit* m_pbRawFilePathEdit = nullptr;
     QComboBox* m_pbRawFileFormatCombo = nullptr;
     QSpinBox* m_pbRawFileChannelsSpin = nullptr;
 
+    QFormLayout* m_pbWavFileForm = nullptr;
     QLineEdit* m_pbWavFilePathEdit = nullptr;
     QComboBox* m_pbWavFileFormatCombo = nullptr;
     QSpinBox* m_pbWavFileChannelsSpin = nullptr;
