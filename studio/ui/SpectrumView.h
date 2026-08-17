@@ -14,6 +14,7 @@ class SpectrumView : public QWidget {
 public:
     explicit SpectrumView(QWidget* parent = nullptr);
     explicit SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* parent = nullptr);
+    ~SpectrumView() override;
 
     void setEngine(std::shared_ptr<SpectrumEngine> engine);
     void setSpectrum(const SpectrumData& data, OctaveSmoothing smoothing = OctaveSmoothing::None,
@@ -24,6 +25,7 @@ protected:
     void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
     std::shared_ptr<SpectrumEngine> m_engine;
