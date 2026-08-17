@@ -1330,8 +1330,7 @@ void StageDetailView::buildStageOptionsUi() {
         break;
     }
 
-    case StageType::LookaheadLimiter:
-    case StageType::LookaheadLimiterProc: {
+    case StageType::LookaheadLimiter: {
         auto limGroup = new QGroupBox("Lookahead Peak Limiter", m_optionsContainer);
         auto limForm = new QFormLayout(limGroup);
         limForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
@@ -1379,6 +1378,100 @@ void StageDetailView::buildStageOptionsUi() {
             applyConfig();
         });
         addSliderRow(limForm, "&Release:", relSlider, relLbl, limGroup);
+
+        containerLayout->addWidget(limGroup);
+        break;
+    }
+
+    case StageType::LookaheadLimiterProc: {
+        auto limGroup = new QGroupBox("Lookahead Peak Limiter Processor", m_optionsContainer);
+        auto limForm = new QFormLayout(limGroup);
+        limForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+        auto limitSlider = new QSlider(Qt::Horizontal, limGroup);
+        limitSlider->setRange(-300, 0);
+        limitSlider->setValue(static_cast<int>(stage.lookaheadLimit * 10.0));
+        auto limitLbl = new QLabel(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1), limGroup);
+        connect(limitSlider, &QSlider::valueChanged, [this, &stage, limitLbl](int val) {
+            stage.lookaheadLimit = val / 10.0;
+            limitLbl->setText(QString("%1 dB").arg(stage.lookaheadLimit, 0, 'f', 1));
+            applyConfig();
+        });
+        addSliderRow(limForm, "&Limit:", limitSlider, limitLbl, limGroup);
+
+        auto attSlider = new QSlider(Qt::Horizontal, limGroup);
+        attSlider->setRange(1, 10000);
+        attSlider->setValue(static_cast<int>(stage.lookaheadAttack * 10.0));
+        auto attLbl = new QLabel(QString("%1 %2")
+                                     .arg(stage.lookaheadAttack, 0, 'f', 1)
+                                     .arg(QString::fromStdString(timeUnitToString(stage.lookaheadAttackUnit))),
+                                 limGroup);
+        connect(attSlider, &QSlider::valueChanged, [this, &stage, attLbl](int val) {
+            stage.lookaheadAttack = val / 10.0;
+            attLbl->setText(QString("%1 %2")
+                                .arg(stage.lookaheadAttack, 0, 'f', 1)
+                                .arg(QString::fromStdString(timeUnitToString(stage.lookaheadAttackUnit))));
+            applyConfig();
+        });
+        addSliderRow(limForm, "&Attack:", attSlider, attLbl, limGroup);
+
+        auto relSlider = new QSlider(Qt::Horizontal, limGroup);
+        relSlider->setRange(5, 1000);
+        relSlider->setSingleStep(5);
+        relSlider->setPageStep(5);
+        relSlider->setValue(static_cast<int>(stage.lookaheadRelease));
+        auto relLbl = new QLabel(QString("%1 %2")
+                                     .arg(static_cast<int>(stage.lookaheadRelease))
+                                     .arg(QString::fromStdString(timeUnitToString(stage.lookaheadReleaseUnit))),
+                                 limGroup);
+        connect(relSlider, &QSlider::valueChanged, [this, &stage, relLbl](int val) {
+            stage.lookaheadRelease = val;
+            relLbl->setText(
+                QString("%1 %2").arg(val).arg(QString::fromStdString(timeUnitToString(stage.lookaheadReleaseUnit))));
+            applyConfig();
+        });
+        addSliderRow(limForm, "&Release:", relSlider, relLbl, limGroup);
+
+        auto delayProcOnlyCheck = new QCheckBox("Delay Processed Channels Only", limGroup);
+        delayProcOnlyCheck->setChecked(stage.lookaheadDelayProcessedOnly);
+        connect(delayProcOnlyCheck, &QCheckBox::toggled, [this, &stage](bool checked) {
+            stage.lookaheadDelayProcessedOnly = checked;
+            applyConfig();
+        });
+        limForm->addRow("&Options:", delayProcOnlyCheck);
+
+        auto monitorPillsLayout = new QHBoxLayout();
+        for (int c = 0; c < incomingChannels; ++c) {
+            auto btn = new QPushButton(QString::number(c + 1), limGroup);
+            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
+            btn->setFixedWidth(btnWidth);
+            btn->setCheckable(true);
+            bool isSelected =
+                std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
+            btn->setChecked(isSelected);
+
+            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
+                if (it != st->monitorChannels.end()) {
+                    if (st->monitorChannels.size() > 1) {
+                        st->monitorChannels.erase(it);
+                        btn->setChecked(false);
+                    } else {
+                        btn->setChecked(true);
+                    }
+                } else {
+                    st->monitorChannels.push_back(c);
+                    btn->setChecked(true);
+                }
+                applyConfig();
+            });
+            monitorPillsLayout->addWidget(btn);
+        }
+        monitorPillsLayout->addStretch();
+        limForm->addRow("Monitor Channels:", monitorPillsLayout);
 
         containerLayout->addWidget(limGroup);
         break;
@@ -1574,43 +1667,38 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addSliderRow(compForm, "&Makeup Gain:", mkSlider, mkLbl, compGroup);
 
-        auto monScroll = new QScrollArea(compGroup);
-        monScroll->setWidgetResizable(true);
-        monScroll->setFixedHeight(32);
-        monScroll->setFrameShape(QFrame::NoFrame);
-        auto monContainer = new QWidget(monScroll);
-        auto monLayout = new QHBoxLayout(monContainer);
-        monLayout->setContentsMargins(0, 0, 0, 0);
-        monLayout->setSpacing(6);
-
-        for (int c = 0; c < std::max(1, incomingChannels); ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), monContainer);
-            btn->setFixedWidth(32);
-            btn->setFixedHeight(24);
+        auto monitorPillsLayout = new QHBoxLayout();
+        for (int c = 0; c < incomingChannels; ++c) {
+            auto btn = new QPushButton(QString::number(c + 1), compGroup);
+            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
+            btn->setFixedWidth(btnWidth);
             btn->setCheckable(true);
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
-                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
-                if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) {
-                        stage.monitorChannels.erase(it);
+
+            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
+                if (it != st->monitorChannels.end()) {
+                    if (st->monitorChannels.size() > 1) {
+                        st->monitorChannels.erase(it);
                         btn->setChecked(false);
                     } else {
                         btn->setChecked(true);
                     }
                 } else {
-                    stage.monitorChannels.push_back(c);
+                    st->monitorChannels.push_back(c);
                     btn->setChecked(true);
                 }
                 applyConfig();
             });
-            monLayout->addWidget(btn);
+            monitorPillsLayout->addWidget(btn);
         }
-        monLayout->addStretch();
-        monScroll->setWidget(monContainer);
-        compForm->addRow("Monitor Channels:", monScroll);
+        monitorPillsLayout->addStretch();
+        compForm->addRow("Monitor Channels:", monitorPillsLayout);
 
         auto softChk = new QCheckBox("Enable Soft Clip", compGroup);
         softChk->setChecked(stage.compressorSoftClip);
@@ -1708,43 +1796,38 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addSliderRow(gateForm, "&Release:", relSlider, relLbl, gateGroup);
 
-        auto monScroll = new QScrollArea(gateGroup);
-        monScroll->setWidgetResizable(true);
-        monScroll->setFixedHeight(32);
-        monScroll->setFrameShape(QFrame::NoFrame);
-        auto monContainer = new QWidget(monScroll);
-        auto monLayout = new QHBoxLayout(monContainer);
-        monLayout->setContentsMargins(0, 0, 0, 0);
-        monLayout->setSpacing(6);
-
-        for (int c = 0; c < std::max(1, incomingChannels); ++c) {
-            auto btn = new QPushButton(QString::number(c + 1), monContainer);
-            btn->setFixedWidth(32);
-            btn->setFixedHeight(24);
+        auto monitorPillsLayout = new QHBoxLayout();
+        for (int c = 0; c < incomingChannels; ++c) {
+            auto btn = new QPushButton(QString::number(c + 1), gateGroup);
+            int btnWidth = (c + 1 >= 100) ? 46 : ((c + 1 >= 10) ? 40 : 36);
+            btn->setFixedWidth(btnWidth);
             btn->setCheckable(true);
             bool isSelected =
                 std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c) != stage.monitorChannels.end();
             btn->setChecked(isSelected);
-            connect(btn, &QPushButton::clicked, [this, &stage, c, btn]() {
-                auto it = std::find(stage.monitorChannels.begin(), stage.monitorChannels.end(), c);
-                if (it != stage.monitorChannels.end()) {
-                    if (stage.monitorChannels.size() > 1) {
-                        stage.monitorChannels.erase(it);
+
+            connect(btn, &QPushButton::clicked, [this, c, btn]() {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                auto it = std::find(st->monitorChannels.begin(), st->monitorChannels.end(), c);
+                if (it != st->monitorChannels.end()) {
+                    if (st->monitorChannels.size() > 1) {
+                        st->monitorChannels.erase(it);
                         btn->setChecked(false);
                     } else {
                         btn->setChecked(true);
                     }
                 } else {
-                    stage.monitorChannels.push_back(c);
+                    st->monitorChannels.push_back(c);
                     btn->setChecked(true);
                 }
                 applyConfig();
             });
-            monLayout->addWidget(btn);
+            monitorPillsLayout->addWidget(btn);
         }
-        monLayout->addStretch();
-        monScroll->setWidget(monContainer);
-        gateForm->addRow("Monitor Channels:", monScroll);
+        monitorPillsLayout->addStretch();
+        gateForm->addRow("Monitor Channels:", monitorPillsLayout);
 
         containerLayout->addWidget(gateGroup);
         break;

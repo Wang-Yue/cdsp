@@ -132,7 +132,8 @@ void PipelineOverviewWidget::buildAddStageMenu() {
 
     addCategorySubMenu("Mixer", {StageType::MatrixMixer});
 
-    addCategorySubMenu("Processors", {StageType::Compressor, StageType::NoiseGate, StageType::RACE});
+    addCategorySubMenu("Processors",
+                       {StageType::Compressor, StageType::NoiseGate, StageType::RACE, StageType::LookaheadLimiterProc});
 
     addCategorySubMenu("Others",
                        {StageType::Balance, StageType::Width, StageType::MSProc, StageType::PhaseInvert,

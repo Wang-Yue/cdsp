@@ -1214,14 +1214,31 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
         for (StageCategory cat :
              {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
             QMenu* catMenu = menu.addMenu(QString::fromStdString(stageCategoryToString(cat)));
-            for (StageType st : {StageType::Balance,     StageType::Width,     StageType::MSProc,
-                                 StageType::PhaseInvert, StageType::Crossfeed, StageType::SplitWidth,
-                                 StageType::EQ,          StageType::GraphicEQ, StageType::Convolution,
-                                 StageType::Loudness,    StageType::Emphasis,  StageType::DCProtection,
-                                 StageType::Gain,        StageType::Delay,     StageType::LookaheadLimiter,
-                                 StageType::Clipper,     StageType::Volume,    StageType::MatrixMixer,
-                                 StageType::Compressor,  StageType::NoiseGate, StageType::RACE,
-                                 StageType::Dither,      StageType::DiffEq,    StageType::BiquadCombo}) {
+            for (StageType st : {StageType::Balance,
+                                 StageType::Width,
+                                 StageType::MSProc,
+                                 StageType::PhaseInvert,
+                                 StageType::Crossfeed,
+                                 StageType::SplitWidth,
+                                 StageType::EQ,
+                                 StageType::GraphicEQ,
+                                 StageType::Convolution,
+                                 StageType::Loudness,
+                                 StageType::Emphasis,
+                                 StageType::DCProtection,
+                                 StageType::Gain,
+                                 StageType::Delay,
+                                 StageType::LookaheadLimiter,
+                                 StageType::LookaheadLimiterProc,
+                                 StageType::Clipper,
+                                 StageType::Volume,
+                                 StageType::MatrixMixer,
+                                 StageType::Compressor,
+                                 StageType::NoiseGate,
+                                 StageType::RACE,
+                                 StageType::Dither,
+                                 StageType::DiffEq,
+                                 StageType::BiquadCombo}) {
                 if (stageTypeToCategory(st) == cat) {
                     QAction* act = catMenu->addAction(QString::fromStdString(stageTypeToString(st)));
                     connect(act, &QAction::triggered, [this, st]() {
