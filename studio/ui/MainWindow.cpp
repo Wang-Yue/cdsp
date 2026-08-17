@@ -414,7 +414,7 @@ void MainWindow::setupMenuBar() {
     auto fileMenu = bar->addMenu("&File");
 
     m_actAddEqPreset = new QAction("New EQ Preset", this);
-    m_actAddEqPreset->setShortcuts({QKeySequence("Cmd+N"), QKeySequence("Ctrl+N")});
+    m_actAddEqPreset->setShortcut(QKeySequence::New);
     connect(m_actAddEqPreset, &QAction::triggered, [this]() {
         m_pipeline->addEQPreset();
         if (!m_pipeline->eqPresets.empty()) {
@@ -441,7 +441,7 @@ void MainWindow::setupMenuBar() {
     fileMenu->addSeparator();
 
     m_actImportConv = new QAction("Import IR File(s)...", this);
-    m_actImportConv->setShortcuts({QKeySequence("Cmd+O"), QKeySequence("Ctrl+O")});
+    m_actImportConv->setShortcut(QKeySequence::Open);
     connect(m_actImportConv, &QAction::triggered, [this]() {
         ConvolutionImportDlg dlg(m_pipeline, this);
         dlg.exec();
@@ -458,7 +458,7 @@ void MainWindow::setupMenuBar() {
     fileMenu->addSeparator();
 
     auto closeAct = new QAction("Close Window", this);
-    closeAct->setShortcuts({QKeySequence("Cmd+W"), QKeySequence("Ctrl+W")});
+    closeAct->setShortcut(QKeySequence::Close);
     connect(closeAct, &QAction::triggered, this, &QMainWindow::close);
     fileMenu->addAction(closeAct);
 
@@ -466,7 +466,7 @@ void MainWindow::setupMenuBar() {
 
     auto settingsAct = new QAction("Settings...", this);
     settingsAct->setMenuRole(QAction::PreferencesRole);
-    settingsAct->setShortcuts({QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")});
+    settingsAct->setShortcut(QKeySequence::Preferences);
     connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
     fileMenu->addAction(settingsAct);
 
@@ -479,35 +479,35 @@ void MainWindow::setupMenuBar() {
     fileMenu->addAction(aboutAct);
 
     auto quitAct = new QAction("Quit CDSP Monitor", this);
-    quitAct->setShortcuts({QKeySequence("Cmd+Q"), QKeySequence("Ctrl+Q")});
+    quitAct->setShortcut(QKeySequence::Quit);
     quitAct->setMenuRole(QAction::QuitRole);
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
     fileMenu->addAction(quitAct);
 
     // 2. View Menu
     auto viewMenu = bar->addMenu("&View");
-    auto setupViewAct = [this, viewMenu](const QString& title, const QList<QKeySequence>& seqs, const QString& tag) {
+    auto setupViewAct = [this, viewMenu](const QString& title, const QKeySequence& seq, const QString& tag) {
         auto act = new QAction(title, this);
         act->setMenuRole(QAction::NoRole);
-        act->setShortcuts(seqs);
+        act->setShortcut(seq);
         connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
         viewMenu->addAction(act);
     };
 
-    setupViewAct("Devices", {QKeySequence("Cmd+1"), QKeySequence("Ctrl+1")}, "devices");
-    setupViewAct("Dashboard", {QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
-    setupViewAct("Level Meters", {QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
-    setupViewAct("Spectrum", {QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
-    setupViewAct("Spectroscope Waterfall", {QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "spectroscope");
-    setupViewAct("Vector Scope", {QKeySequence("Cmd+6"), QKeySequence("Ctrl+6")}, "vectorscope");
-    setupViewAct("Analog VU Meter", {QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
-    setupViewAct("Console Logs", {QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
-    setupViewAct("General Settings", {QKeySequence("Cmd+9"), QKeySequence("Ctrl+9")}, "general_settings");
+    setupViewAct("Devices", QKeySequence(Qt::CTRL | Qt::Key_1), "devices");
+    setupViewAct("Dashboard", QKeySequence(Qt::CTRL | Qt::Key_2), "dashboard");
+    setupViewAct("Level Meters", QKeySequence(Qt::CTRL | Qt::Key_3), "levels");
+    setupViewAct("Spectrum", QKeySequence(Qt::CTRL | Qt::Key_4), "spectrum");
+    setupViewAct("Spectroscope Waterfall", QKeySequence(Qt::CTRL | Qt::Key_5), "spectroscope");
+    setupViewAct("Vector Scope", QKeySequence(Qt::CTRL | Qt::Key_6), "vectorscope");
+    setupViewAct("Analog VU Meter", QKeySequence(Qt::CTRL | Qt::Key_7), "analogVU");
+    setupViewAct("Console Logs", QKeySequence(Qt::CTRL | Qt::Key_8), "logs");
+    setupViewAct("General Settings", QKeySequence(Qt::CTRL | Qt::Key_9), "general_settings");
 
     viewMenu->addSeparator();
 
     auto miniAct = new QAction("Toggle MiniPlayer", this);
-    miniAct->setShortcuts({QKeySequence("Cmd+Shift+M"), QKeySequence("Ctrl+Shift+M")});
+    miniAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
     connect(miniAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     viewMenu->addAction(miniAct);
 
@@ -540,7 +540,7 @@ void MainWindow::setupMenuBar() {
     // 4. Window Menu
     auto windowMenu = bar->addMenu("&Window");
     auto minAct = new QAction("Minimize", this);
-    minAct->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
+    minAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
     connect(minAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     windowMenu->addAction(minAct);
 
@@ -694,33 +694,33 @@ void MainWindow::selectActiveEQPreset(const QUuid& presetId) {
 }
 
 void MainWindow::setupShortcuts() {
-    auto setupNavAction = [this](const QList<QKeySequence>& seqs, const QString& tag) {
+    auto setupNavAction = [this](const QKeySequence& seq, const QString& tag) {
         auto act = new QAction(this);
-        act->setShortcuts(seqs);
+        act->setShortcut(seq);
         connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
         addAction(act);
     };
 
-    setupNavAction({QKeySequence("Cmd+1"), QKeySequence("Ctrl+1")}, "devices");
-    setupNavAction({QKeySequence("Cmd+2"), QKeySequence("Ctrl+2")}, "dashboard");
-    setupNavAction({QKeySequence("Cmd+3"), QKeySequence("Ctrl+3")}, "levels");
-    setupNavAction({QKeySequence("Cmd+4"), QKeySequence("Ctrl+4")}, "spectrum");
-    setupNavAction({QKeySequence("Cmd+5"), QKeySequence("Ctrl+5")}, "spectroscope");
-    setupNavAction({QKeySequence("Cmd+6"), QKeySequence("Ctrl+6")}, "vectorscope");
-    setupNavAction({QKeySequence("Cmd+7"), QKeySequence("Ctrl+7")}, "analogVU");
-    setupNavAction({QKeySequence("Cmd+8"), QKeySequence("Ctrl+8")}, "logs");
-    setupNavAction({QKeySequence("Cmd+9"), QKeySequence("Ctrl+9"), QKeySequence("Cmd+,"), QKeySequence("Ctrl+,")},
-                   "general_settings");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_1), "devices");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_2), "dashboard");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_3), "levels");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_4), "spectrum");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_5), "spectroscope");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_6), "vectorscope");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_7), "analogVU");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_8), "logs");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_9), "general_settings");
+    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_Comma), "general_settings");
 
-    // Cmd+M / Ctrl+M: MiniPlayer Toggle
+    // MiniPlayer Toggle
     auto actMini = new QAction(this);
-    actMini->setShortcuts({QKeySequence("Cmd+M"), QKeySequence("Ctrl+M")});
+    actMini->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
     connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
     addAction(actMini);
 
-    // Cmd+W / Ctrl+W: Close / Hide Window
+    // Close / Hide Window
     auto actClose = new QAction(this);
-    actClose->setShortcuts({QKeySequence("Cmd+W"), QKeySequence("Ctrl+W")});
+    actClose->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_W));
     connect(actClose, &QAction::triggered, this, &QMainWindow::close);
     addAction(actClose);
 
