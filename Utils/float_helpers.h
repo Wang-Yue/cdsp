@@ -199,12 +199,7 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
   vDSP_vdbcon(vector, 1, &ref, result, 1, count, 1);
 #else
   for (size_t i = 0; i < count; i++) {
-    float val = vector[i];
-    if (val <= 0.0f) {
-      result[i] = -200.0f;  // Limit minimum dB value to prevent log10(0) issues
-    } else {
-      result[i] = 20.0f * log10f(val / ref);
-    }
+    result[i] = float_to_db(vector[i] / ref);
   }
 #endif
 }
