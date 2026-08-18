@@ -100,42 +100,24 @@ static OSStatus playback_io_proc(AudioObjectID inDevice,
 
   atomic_fetch_add_explicit(&playback->active_callbacks, 1,
                             memory_order_relaxed);
-  if (!outOutputData || outOutputData->mNumberBuffers == 0 ||
-      atomic_load_explicit(&playback->stopped, memory_order_relaxed)) {
-    atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                              memory_order_relaxed);
-    return noErr;
-  }
 
-  if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
-    for (UInt32 b = 0; b < outOutputData->mNumberBuffers; b++) {
-      if (outOutputData->mBuffers[b].mData &&
-          outOutputData->mBuffers[b].mDataByteSize > 0) {
-        memset(outOutputData->mBuffers[b].mData, 0,
-               outOutputData->mBuffers[b].mDataByteSize);
-      }
-    }
-    atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                              memory_order_release);
-    return noErr;
-  }
+  if (!atomic_load_explicit(&playback->stopped, memory_order_relaxed) &&
+      outOutputData) {
+    bool is_paused =
+        atomic_load_explicit(&playback->is_paused, memory_order_relaxed);
 
-  if (outOutputData->mNumberBuffers == 1) {
-    uint8_t* dst = (uint8_t*)outOutputData->mBuffers[0].mData;
-    size_t bytes_needed = (size_t)outOutputData->mBuffers[0].mDataByteSize;
-    if (dst && bytes_needed > 0) {
-      size_t copied = spsc_byte_ring_buffer_consume(playback->ring_buffer, dst,
-                                                    bytes_needed);
-      if (copied < bytes_needed) {
-        memset(dst + copied, 0, bytes_needed - copied);
-      }
-    }
-  } else {
     for (UInt32 b = 0; b < outOutputData->mNumberBuffers; b++) {
-      if (outOutputData->mBuffers[b].mData &&
-          outOutputData->mBuffers[b].mDataByteSize > 0) {
-        memset(outOutputData->mBuffers[b].mData, 0,
-               outOutputData->mBuffers[b].mDataByteSize);
+      uint8_t* dst = (uint8_t*)outOutputData->mBuffers[b].mData;
+      size_t bytes = (size_t)outOutputData->mBuffers[b].mDataByteSize;
+      if (!dst || bytes == 0) continue;
+
+      size_t copied = 0;
+      if (b == 0 && !is_paused) {
+        copied =
+            spsc_byte_ring_buffer_consume(playback->ring_buffer, dst, bytes);
+      }
+      if (copied < bytes) {
+        memset(dst + copied, 0, bytes - copied);
       }
     }
   }
